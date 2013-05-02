@@ -31,54 +31,78 @@
 #include "BackgroundHTMLInputStream.h"
 #include "CompactHTMLToken.h"
 #include "HTMLParserOptions.h"
+#include "HTMLPreloadScanner.h"
 #include "HTMLSourceTracker.h"
 #include "HTMLToken.h"
 #include "HTMLTokenizer.h"
+#include "HTMLTreeBuilderSimulator.h"
+#include "XSSAuditorDelegate.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefPtr.h>
+#include <wtf/Vector.h>
 #include <wtf/WeakPtr.h>
 
 namespace WebCore {
 
-typedef const void* ParserIdentifier;
 class HTMLDocumentParser;
 class XSSAuditor;
 
 class BackgroundHTMLParser {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static void create(PassRefPtr<WeakReference<BackgroundHTMLParser> > reference, const HTMLParserOptions& options, const WeakPtr<HTMLDocumentParser>& parser, PassOwnPtr<XSSAuditor> xssAuditor)
+    struct Configuration {
+        HTMLParserOptions options;
+        WeakPtr<HTMLDocumentParser> parser;
+        OwnPtr<XSSAuditor> xssAuditor;
+        OwnPtr<TokenPreloadScanner> preloadScanner;
+    };
+
+    static void create(PassRefPtr<WeakReference<BackgroundHTMLParser> > reference, PassOwnPtr<Configuration> config)
     {
-        new BackgroundHTMLParser(reference, options, parser, xssAuditor);
+        new BackgroundHTMLParser(reference, config);
         // Caller must free by calling stop().
     }
 
+    struct Checkpoint {
+        WeakPtr<HTMLDocumentParser> parser;
+        OwnPtr<HTMLToken> token;
+        OwnPtr<HTMLTokenizer> tokenizer;
+        HTMLTreeBuilderSimulator::State treeBuilderState;
+        HTMLInputCheckpoint inputCheckpoint;
+        TokenPreloadScannerCheckpoint preloadScannerCheckpoint;
+        String unparsedInput;
+    };
+
     void append(const String&);
-    void resumeFrom(const WeakPtr<HTMLDocumentParser>&, PassOwnPtr<HTMLToken>, PassOwnPtr<HTMLTokenizer>, HTMLInputCheckpoint);
+    void resumeFrom(PassOwnPtr<Checkpoint>);
+    void startedChunkWithCheckpoint(HTMLInputCheckpoint);
     void finish();
     void stop();
 
     void forcePlaintextForTextDocument();
 
 private:
-    BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHTMLParser> >, const HTMLParserOptions&, const WeakPtr<HTMLDocumentParser>&, PassOwnPtr<XSSAuditor>);
+    BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHTMLParser> >, PassOwnPtr<Configuration>);
 
     void markEndOfFile();
     void pumpTokenizer();
-    bool simulateTreeBuilder(const CompactHTMLToken&);
-
     void sendTokensToMainThread();
 
-    bool m_inForeignContent; // FIXME: We need a stack of foreign content markers.
     WeakPtrFactory<BackgroundHTMLParser> m_weakFactory;
     BackgroundHTMLInputStream m_input;
     HTMLSourceTracker m_sourceTracker;
     OwnPtr<HTMLToken> m_token;
     OwnPtr<HTMLTokenizer> m_tokenizer;
+    HTMLTreeBuilderSimulator m_treeBuilderSimulator;
     HTMLParserOptions m_options;
     WeakPtr<HTMLDocumentParser> m_parser;
+
     OwnPtr<CompactHTMLTokenStream> m_pendingTokens;
+    PreloadRequestStream m_pendingPreloads;
+    XSSInfoStream m_pendingXSSInfos;
+
     OwnPtr<XSSAuditor> m_xssAuditor;
+    OwnPtr<TokenPreloadScanner> m_preloadScanner;
 };
 
 }

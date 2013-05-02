@@ -74,8 +74,8 @@
 #include "talk/app/webrtc/datachannelinterface.h"
 #include "talk/app/webrtc/dtmfsenderinterface.h"
 #include "talk/app/webrtc/jsep.h"
-#include "talk/app/webrtc/statstypes.h"
 #include "talk/app/webrtc/mediastreaminterface.h"
+#include "talk/app/webrtc/statstypes.h"
 #include "talk/base/socketaddress.h"
 
 namespace talk_base {
@@ -84,6 +84,7 @@ class Thread;
 
 namespace cricket {
 class PortAllocator;
+class WebRtcVideoDecoderFactory;
 }
 
 namespace webrtc {
@@ -225,11 +226,6 @@ class PeerConnectionInterface : public talk_base::RefCountInterface {
   // take the ownership of the |candidate|.
   virtual bool AddIceCandidate(const IceCandidateInterface* candidate) = 0;
 
-  // Deprecated, please use SignalingState instead.
-  // TODO(perkj): Remove ready_state when callers are changed.
-  typedef SignalingState ReadyState;
-  virtual ReadyState ready_state() = 0;
-
   // Returns the current SignalingState.
   virtual SignalingState signaling_state() = 0;
 
@@ -239,6 +235,9 @@ class PeerConnectionInterface : public talk_base::RefCountInterface {
   virtual IceState ice_state() = 0;
   virtual IceConnectionState ice_connection_state() = 0;
   virtual IceGatheringState ice_gathering_state() = 0;
+
+  // Terminates all media and closes the transport.
+  virtual void Close() = 0;
 
  protected:
   // Dtor protected as objects shouldn't be deleted via this interface.
@@ -352,7 +351,7 @@ class PeerConnectionFactoryInterface : public talk_base::RefCountInterface {
           const MediaConstraintsInterface* constraints,
           PortAllocatorFactoryInterface* allocator_factory,
           PeerConnectionObserver* observer) = 0;
-  virtual talk_base::scoped_refptr<LocalMediaStreamInterface>
+  virtual talk_base::scoped_refptr<MediaStreamInterface>
       CreateLocalMediaStream(const std::string& label) = 0;
 
   // Creates a AudioSourceInterface.
@@ -378,16 +377,6 @@ class PeerConnectionFactoryInterface : public talk_base::RefCountInterface {
       CreateAudioTrack(const std::string& label,
                        AudioSourceInterface* source) = 0;
 
-  // Deprecated: Please use the version that take a source as input.
-  virtual talk_base::scoped_refptr<LocalVideoTrackInterface>
-      CreateLocalVideoTrack(const std::string& label,
-                            cricket::VideoCapturer* video_device) = 0;
-
-  // Deprecated: Please use the version that take a source as input.
-  virtual talk_base::scoped_refptr<LocalAudioTrackInterface>
-      CreateLocalAudioTrack(const std::string& label,
-                            AudioDeviceModule* audio_device) = 0;
-
  protected:
   // Dtor and ctor protected as objects shouldn't be created or deleted via
   // this interface.
@@ -400,21 +389,16 @@ talk_base::scoped_refptr<PeerConnectionFactoryInterface>
 CreatePeerConnectionFactory();
 
 // Create a new instance of PeerConnectionFactoryInterface.
-// Ownership of |factory| and |default_adm| is transferred to the returned
-// factory.
+// Ownership of |factory|, |default_adm|, and |decoder_factory| is transferred
+// to the returned factory.
+// TODO(dwkang): To prevent build break the default value is added for
+// |decoder_factory|. Remove it once Chrome has a value for that.
 talk_base::scoped_refptr<PeerConnectionFactoryInterface>
-CreatePeerConnectionFactory(talk_base::Thread* worker_thread,
-                            talk_base::Thread* signaling_thread,
-                            AudioDeviceModule* default_adm);
-
-// TODO(perkj): The JsepInterface has been combined with
-// PeerConnectionInterface. Remove the below interface once no clients use
-// JsepInterface::IceServer.
-class JsepInterface {
- public:
-  typedef PeerConnectionInterface::IceServer IceServer;
-  typedef std::vector<PeerConnectionInterface::IceServer> IceServers;
-};
+CreatePeerConnectionFactory(
+    talk_base::Thread* worker_thread,
+    talk_base::Thread* signaling_thread,
+    AudioDeviceModule* default_adm,
+    cricket::WebRtcVideoDecoderFactory* decoder_factory = NULL);
 
 }  // namespace webrtc
 

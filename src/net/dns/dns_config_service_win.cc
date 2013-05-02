@@ -10,13 +10,13 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "base/files/file_path_watcher.h"
-#include "base/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/threading/thread_restrictions.h"
@@ -695,6 +695,8 @@ void DnsConfigServiceWin::ReadNow() {
 bool DnsConfigServiceWin::StartWatching() {
   // TODO(szym): re-start watcher if that makes sense. http://crbug.com/116139
   watcher_.reset(new Watcher(this));
+  UMA_HISTOGRAM_ENUMERATION("AsyncDNS.WatchStatus", DNS_CONFIG_WATCH_STARTED,
+                            DNS_CONFIG_WATCH_MAX);
   return watcher_->Watch();
 }
 

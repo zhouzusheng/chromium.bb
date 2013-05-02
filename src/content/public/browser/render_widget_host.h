@@ -28,6 +28,10 @@ namespace gfx {
 class Rect;
 }
 
+namespace WebKit {
+struct WebScreenInfo;
+}
+
 namespace content {
 
 class RenderProcessHost;
@@ -244,6 +248,10 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // or a word around the cursor.
   virtual void Replace(const string16& word) = 0;
 
+  // Makes an IPC call to tell webkit to replace the misspelling in the current
+  // selection.
+  virtual void ReplaceMisspelling(const string16& word) = 0;
+
   // Called to notify the RenderWidget that the resize rect has changed without
   // the size of the RenderWidget itself changing.
   virtual void ResizeRectChanged(const gfx::Rect& new_rect) = 0;
@@ -272,6 +280,19 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   // Remove a keyboard listener.
   virtual void RemoveKeyboardListener(KeyboardListener* listener) = 0;
+
+  // Get the screen info corresponding to this render widget.
+  virtual void GetWebScreenInfo(WebKit::WebScreenInfo* result) = 0;
+
+  // Grabs snapshot from renderer side and returns the bitmap to a callback.
+  // If |src_rect| is empty, the whole contents is copied. This is an expensive
+  // operation due to the IPC, but it can be used as a fallback method when
+  // CopyFromBackingStore fails due to the backing store not being available or,
+  // in composited mode, when the accelerated surface is not available to the
+  // browser side.
+  virtual void GetSnapshotFromRenderer(
+      const gfx::Rect& src_subrect,
+      const base::Callback<void(bool, const SkBitmap&)>& callback) = 0;
 
  protected:
   friend class RenderWidgetHostImpl;

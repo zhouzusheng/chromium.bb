@@ -4,7 +4,7 @@
 
 #include "ipc/ipc_message_utils.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/nullable_string16.h"
@@ -39,11 +39,12 @@ void LogBytes(const std::vector<CharType>& data, std::string* out) {
     if (isprint(data[i]))
       out->push_back(data[i]);
     else
-      out->append(StringPrintf("[%02X]", static_cast<unsigned char>(data[i])));
+      out->append(
+          base::StringPrintf("[%02X]", static_cast<unsigned char>(data[i])));
   }
   if (data.size() > kMaxBytesToLog) {
     out->append(
-        StringPrintf(" and %u more bytes",
+        base::StringPrintf(" and %u more bytes",
                      static_cast<unsigned>(data.size() - kMaxBytesToLog)));
   }
 #endif
@@ -309,7 +310,7 @@ bool ParamTraits<float>::Read(const Message* m, PickleIterator* iter,
 }
 
 void ParamTraits<float>::Log(const param_type& p, std::string* l) {
-  l->append(StringPrintf("%e", p));
+  l->append(base::StringPrintf("%e", p));
 }
 
 void ParamTraits<double>::Write(Message* m, const param_type& p) {
@@ -330,7 +331,7 @@ bool ParamTraits<double>::Read(const Message* m, PickleIterator* iter,
 }
 
 void ParamTraits<double>::Log(const param_type& p, std::string* l) {
-  l->append(StringPrintf("%e", p));
+  l->append(base::StringPrintf("%e", p));
 }
 
 
@@ -403,8 +404,11 @@ void ParamTraits<std::vector<unsigned char> >::Log(const param_type& p,
 
 void ParamTraits<std::vector<bool> >::Write(Message* m, const param_type& p) {
   WriteParam(m, static_cast<int>(p.size()));
+  // Cast to bool below is required because libc++'s
+  // vector<bool>::const_reference is different from bool, and we want to avoid
+  // writing an extra specialization of ParamTraits for it.
   for (size_t i = 0; i < p.size(); i++)
-    WriteParam(m, p[i]);
+    WriteParam(m, static_cast<bool>(p[i]));
 }
 
 bool ParamTraits<std::vector<bool> >::Read(const Message* m,
@@ -428,7 +432,7 @@ void ParamTraits<std::vector<bool> >::Log(const param_type& p, std::string* l) {
   for (size_t i = 0; i < p.size(); ++i) {
     if (i != 0)
       l->push_back(' ');
-    LogParam((p[i]), l);
+    LogParam(static_cast<bool>(p[i]), l);
   }
 }
 
@@ -481,9 +485,9 @@ bool ParamTraits<base::FileDescriptor>::Read(const Message* m,
 void ParamTraits<base::FileDescriptor>::Log(const param_type& p,
                                             std::string* l) {
   if (p.auto_close) {
-    l->append(StringPrintf("FD(%d auto-close)", p.fd));
+    l->append(base::StringPrintf("FD(%d auto-close)", p.fd));
   } else {
-    l->append(StringPrintf("FD(%d)", p.fd));
+    l->append(base::StringPrintf("FD(%d)", p.fd));
   }
 }
 #endif  // defined(OS_POSIX)
@@ -668,7 +672,7 @@ bool ParamTraits<IPC::ChannelHandle>::Read(const Message* m,
 
 void ParamTraits<IPC::ChannelHandle>::Log(const param_type& p,
                                           std::string* l) {
-  l->append(StringPrintf("ChannelHandle(%s", p.name.c_str()));
+  l->append(base::StringPrintf("ChannelHandle(%s", p.name.c_str()));
 #if defined(OS_POSIX)
   l->append(", ");
   ParamTraits<base::FileDescriptor>::Log(p.socket, l);
@@ -753,22 +757,22 @@ void ParamTraits<Message>::Log(const Message& p, std::string* l) {
 
 #if defined(OS_WIN)
 // Note that HWNDs/HANDLE/HCURSOR/HACCEL etc are always 32 bits, even on 64
-// bit systems.
+// bit systems. That's why we use the Windows macros to convert to 32 bits.
 void ParamTraits<HANDLE>::Write(Message* m, const param_type& p) {
-  m->WriteUInt32(reinterpret_cast<uint32>(p));
+  m->WriteInt(HandleToLong(p));
 }
 
 bool ParamTraits<HANDLE>::Read(const Message* m, PickleIterator* iter,
                                param_type* r) {
-  uint32 temp;
-  if (!m->ReadUInt32(iter, &temp))
+  int32 temp;
+  if (!m->ReadInt(iter, &temp))
     return false;
-  *r = reinterpret_cast<HANDLE>(temp);
+  *r = LongToHandle(temp);
   return true;
 }
 
 void ParamTraits<HANDLE>::Log(const param_type& p, std::string* l) {
-  l->append(StringPrintf("0x%X", p));
+  l->append(base::StringPrintf("0x%X", p));
 }
 
 void ParamTraits<LOGFONT>::Write(Message* m, const param_type& p) {
@@ -792,7 +796,7 @@ bool ParamTraits<LOGFONT>::Read(const Message* m, PickleIterator* iter,
 }
 
 void ParamTraits<LOGFONT>::Log(const param_type& p, std::string* l) {
-  l->append(StringPrintf("<LOGFONT>"));
+  l->append(base::StringPrintf("<LOGFONT>"));
 }
 
 void ParamTraits<MSG>::Write(Message* m, const param_type& p) {

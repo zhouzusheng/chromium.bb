@@ -61,7 +61,7 @@ namespace fileapi {
 // Additionally, following accessors would return valid values:
 //   filesystem_id() returns 'mount_name'.
 //
-// It is imposible to directly create a valid FileSystemURL instance (except by
+// It is impossible to directly create a valid FileSystemURL instance (except by
 // using CreatedForTest methods, which should not be used in production code).
 // To get a valid FileSystemURL, one of the following methods can be used:
 // <Friend>::CrackURL, <Friend>::CreateCrackedFileSystemURL, where <Friend> is
@@ -85,6 +85,12 @@ class WEBKIT_STORAGE_EXPORT FileSystemURL {
                                      FileSystemType mount_type,
                                      const base::FilePath& virtual_path);
 
+  // Parses filesystem scheme |url| into uncracked FileSystemURL components.
+  static bool ParseFileSystemSchemeURL(const GURL& url,
+                                       GURL* origin,
+                                       FileSystemType* type,
+                                       base::FilePath* file_path);
+
   // Returns true if this instance represents a valid FileSystem URL.
   bool is_valid() const { return is_valid_; }
 
@@ -106,21 +112,13 @@ class WEBKIT_STORAGE_EXPORT FileSystemURL {
   // Returns the filesystem ID/mount name for isolated/external filesystem URLs.
   // See the class comment for details.
   const std::string& filesystem_id() const { return filesystem_id_; }
+  const std::string& mount_filesystem_id() const {
+    return mount_filesystem_id_;
+  }
 
   FileSystemType mount_type() const { return mount_type_; }
 
   std::string DebugString() const;
-
-  // DEPRECATED: Returns a new FileSystemURL with the given path.
-  // This creates a new FileSystemURL, copies all fields of this instance
-  // to that one, resets the path_ to the given |path| and resets the
-  // virtual_path to *empty*.
-  // Note that the resulting FileSystemURL loses original URL information
-  // if it was a cracked filesystem; i.e. virtual_path and mount_type will
-  // be set to empty values.
-  //
-  // TODO(kinuko): deprecate this. http://crbug.com/174576
-  FileSystemURL WithPath(const base::FilePath& path) const;
 
   // Returns true if this URL is a strict parent of the |child|.
   bool IsParent(const FileSystemURL& child) const;
@@ -144,21 +142,27 @@ class WEBKIT_STORAGE_EXPORT FileSystemURL {
   FileSystemURL(const GURL& origin,
                 FileSystemType mount_type,
                 const base::FilePath& virtual_path,
-                const std::string& filesystem_id,
+                const std::string& mount_filesystem_id,
                 FileSystemType cracked_type,
-                const base::FilePath& cracked_path);
+                const base::FilePath& cracked_path,
+                const std::string& filesystem_id);
 
   bool is_valid_;
 
+  // Values parsed from the original URL.
   GURL origin_;
-  FileSystemType type_;
   FileSystemType mount_type_;
-  base::FilePath path_;
-
-  // Values specific to cracked URLs.
-  std::string filesystem_id_;
   base::FilePath virtual_path_;
 
+  // Values obtained by cracking URLs.
+  // |mount_filesystem_id_| is retrieved from the first round of cracking,
+  // and the rest of the fields are from recursive cracking. Permission
+  // checking on the top-level mount information should be done with the former,
+  // and the low-level file operation should be implemented with the latter.
+  std::string mount_filesystem_id_;
+  FileSystemType type_;
+  base::FilePath path_;
+  std::string filesystem_id_;
 };
 
 typedef std::set<FileSystemURL, FileSystemURL::Comparator> FileSystemURLSet;

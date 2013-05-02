@@ -37,6 +37,7 @@
 #include "EventQueue.h"
 #include "ExceptionCodePlaceholder.h"
 #include "IDBBindingUtilities.h"
+#include "IDBCursorBackendInterface.h"
 #include "IDBCursorWithValue.h"
 #include "IDBDatabase.h"
 #include "IDBEventDispatcher.h"
@@ -67,7 +68,7 @@ PassRefPtr<IDBRequest> IDBRequest::create(ScriptExecutionContext* context, PassR
 }
 
 IDBRequest::IDBRequest(ScriptExecutionContext* context, PassRefPtr<IDBAny> source, IDBDatabaseBackendInterface::TaskType taskType, IDBTransaction* transaction)
-    : ActiveDOMObject(context, this)
+    : ActiveDOMObject(context)
     , m_result(0)
     , m_errorCode(0)
     , m_contextStopped(false)
@@ -77,8 +78,8 @@ IDBRequest::IDBRequest(ScriptExecutionContext* context, PassRefPtr<IDBAny> sourc
     , m_source(source)
     , m_taskType(taskType)
     , m_hasPendingActivity(true)
-    , m_cursorType(IDBCursorBackendInterface::KeyAndValue)
-    , m_cursorDirection(IDBCursor::NEXT)
+    , m_cursorType(IndexedDB::CursorKeyAndValue)
+    , m_cursorDirection(IndexedDB::CursorNext)
     , m_cursorFinished(false)
     , m_pendingCursor(0)
     , m_didFireUpgradeNeededEvent(false)
@@ -185,7 +186,7 @@ void IDBRequest::abort()
     m_requestAborted = true;
 }
 
-void IDBRequest::setCursorDetails(IDBCursorBackendInterface::CursorType cursorType, IDBCursor::Direction direction)
+void IDBRequest::setCursorDetails(IndexedDB::CursorType cursorType, IndexedDB::CursorDirection direction)
 {
     ASSERT(m_readyState == PENDING);
     ASSERT(!m_pendingCursor);
@@ -228,7 +229,7 @@ void IDBRequest::setResultCursor(PassRefPtr<IDBCursor> cursor, PassRefPtr<IDBKey
     m_cursorPrimaryKey = primaryKey;
     m_cursorValue = value;
 
-    if (m_cursorType == IDBCursorBackendInterface::KeyOnly) {
+    if (m_cursorType == IndexedDB::CursorKeyOnly) {
         m_result = IDBAny::create(cursor);
         return;
     }
@@ -283,21 +284,21 @@ void IDBRequest::onSuccess(PassRefPtr<DOMStringList> domStringList)
     enqueueEvent(createSuccessEvent());
 }
 
-void IDBRequest::onSuccess(PassRefPtr<IDBCursorBackendInterface> backend, PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SerializedScriptValue> serializedValue)
+void IDBRequest::onSuccess(PassRefPtr<IDBCursorBackendInterface> backend, PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer> buffer)
 {
     IDB_TRACE("IDBRequest::onSuccess(IDBCursor)");
     if (!shouldEnqueueEvent())
         return;
 
     DOMRequestState::Scope scope(m_requestState);
-    ScriptValue value = deserializeIDBValue(requestState(), serializedValue);
+    ScriptValue value = deserializeIDBValueBuffer(requestState(), buffer);
     ASSERT(!m_pendingCursor);
     RefPtr<IDBCursor> cursor;
     switch (m_cursorType) {
-    case IDBCursorBackendInterface::KeyOnly:
+    case IndexedDB::CursorKeyOnly:
         cursor = IDBCursor::create(backend, m_cursorDirection, this, m_source.get(), m_transaction.get());
         break;
-    case IDBCursorBackendInterface::KeyAndValue:
+    case IndexedDB::CursorKeyAndValue:
         cursor = IDBCursorWithValue::create(backend, m_cursorDirection, this, m_source.get(), m_transaction.get());
         break;
     default:
@@ -322,14 +323,14 @@ void IDBRequest::onSuccess(PassRefPtr<IDBKey> idbKey)
     enqueueEvent(createSuccessEvent());
 }
 
-void IDBRequest::onSuccess(PassRefPtr<SerializedScriptValue> serializedScriptValue)
+void IDBRequest::onSuccess(PassRefPtr<SharedBuffer> valueBuffer)
 {
-    IDB_TRACE("IDBRequest::onSuccess(SerializedScriptValue)");
+    IDB_TRACE("IDBRequest::onSuccess(SharedBuffer)");
     if (!shouldEnqueueEvent())
         return;
 
     DOMRequestState::Scope scope(m_requestState);
-    ScriptValue value = deserializeIDBValue(requestState(), serializedScriptValue);
+    ScriptValue value = deserializeIDBValueBuffer(requestState(), valueBuffer);
     onSuccessInternal(value);
 }
 
@@ -346,9 +347,9 @@ static PassRefPtr<IDBObjectStore> effectiveObjectStore(PassRefPtr<IDBAny> source
 }
 #endif
 
-void IDBRequest::onSuccess(PassRefPtr<SerializedScriptValue> prpSerializedScriptValue, PassRefPtr<IDBKey> prpPrimaryKey, const IDBKeyPath& keyPath)
+void IDBRequest::onSuccess(PassRefPtr<SharedBuffer> valueBuffer, PassRefPtr<IDBKey> prpPrimaryKey, const IDBKeyPath& keyPath)
 {
-    IDB_TRACE("IDBRequest::onSuccess(SerializedScriptValue, IDBKey, IDBKeyPath)");
+    IDB_TRACE("IDBRequest::onSuccess(SharedBuffer, IDBKey, IDBKeyPath)");
     if (!shouldEnqueueEvent())
         return;
 
@@ -356,7 +357,7 @@ void IDBRequest::onSuccess(PassRefPtr<SerializedScriptValue> prpSerializedScript
     ASSERT(keyPath == effectiveObjectStore(m_source)->keyPath());
 #endif
     DOMRequestState::Scope scope(m_requestState);
-    ScriptValue value = deserializeIDBValue(requestState(), prpSerializedScriptValue);
+    ScriptValue value = deserializeIDBValueBuffer(requestState(), valueBuffer);
 
     RefPtr<IDBKey> primaryKey = prpPrimaryKey;
 #ifndef NDEBUG
@@ -370,12 +371,25 @@ void IDBRequest::onSuccess(PassRefPtr<SerializedScriptValue> prpSerializedScript
 
 void IDBRequest::onSuccess(int64_t value)
 {
-    return onSuccess(SerializedScriptValue::numberValue(value));
+    IDB_TRACE("IDBRequest::onSuccess(int64_t)");
+    if (!shouldEnqueueEvent())
+        return;
+    return onSuccessInternal(SerializedScriptValue::numberValue(value));
 }
 
 void IDBRequest::onSuccess()
 {
-    return onSuccess(SerializedScriptValue::undefinedValue());
+    IDB_TRACE("IDBRequest::onSuccess()");
+    if (!shouldEnqueueEvent())
+        return;
+    return onSuccessInternal(SerializedScriptValue::undefinedValue());
+}
+
+void IDBRequest::onSuccessInternal(PassRefPtr<SerializedScriptValue> value)
+{
+    ASSERT(!m_contextStopped);
+    DOMRequestState::Scope scope(m_requestState);
+    return onSuccessInternal(deserializeIDBValue(requestState(), value));
 }
 
 void IDBRequest::onSuccessInternal(const ScriptValue& value)
@@ -388,14 +402,14 @@ void IDBRequest::onSuccessInternal(const ScriptValue& value)
     enqueueEvent(createSuccessEvent());
 }
 
-void IDBRequest::onSuccess(PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SerializedScriptValue> serializedValue)
+void IDBRequest::onSuccess(PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer> buffer)
 {
     IDB_TRACE("IDBRequest::onSuccess(key, primaryKey, value)");
     if (!shouldEnqueueEvent())
         return;
 
     DOMRequestState::Scope scope(m_requestState);
-    ScriptValue value = deserializeIDBValue(requestState(), serializedValue);
+    ScriptValue value = deserializeIDBValueBuffer(requestState(), buffer);
     ASSERT(m_pendingCursor);
     setResultCursor(m_pendingCursor.release(), key, primaryKey, value);
     enqueueEvent(createSuccessEvent());
@@ -406,12 +420,11 @@ bool IDBRequest::hasPendingActivity() const
     // FIXME: In an ideal world, we should return true as long as anyone has a or can
     //        get a handle to us and we have event listeners. This is order to handle
     //        user generated events properly.
-    return m_hasPendingActivity || ActiveDOMObject::hasPendingActivity();
+    return m_hasPendingActivity && !m_contextStopped;
 }
 
 void IDBRequest::stop()
 {
-    ActiveDOMObject::stop();
     if (m_contextStopped)
         return;
 

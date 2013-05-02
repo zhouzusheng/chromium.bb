@@ -11,7 +11,7 @@
 #endif
 #include <delayimp.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
@@ -21,7 +21,7 @@
 namespace media {
 
 // FFmpeg library name.
-static const char* kFFmpegDLL = "ffmpegsumo.dll";
+static const char kFFmpegDLL[] = "ffmpegsumo.dll";
 
 // Use a global to indicate whether the library has been initialized or not.  We
 // rely on function level static initialization in InitializeMediaLibrary() to

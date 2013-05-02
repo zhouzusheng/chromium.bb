@@ -10,7 +10,6 @@
 #include "base/compiler_specific.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/devtools_agent_host.h"
-#include "content/public/common/console_message_level.h"
 
 namespace IPC {
 class Message;
@@ -32,23 +31,22 @@ class CONTENT_EXPORT DevToolsAgentHostImpl : public DevToolsAgentHost {
   void Attach();
   void Reattach(const std::string& saved_agent_state);
   void Detach();
-  void DipatchOnInspectorBackend(const std::string& message);
-  void InspectElement(int x, int y);
-  void AddMessageToConsole(ConsoleMessageLevel level,
-                           const std::string& message);
+  virtual void DispatchOnInspectorBackend(const std::string& message);
 
   void set_close_listener(CloseListener* listener) {
     close_listener_ = listener;
   }
 
-  int id() { return id_; }
-
   // DevToolsAgentHost implementation.
+  virtual void InspectElement(int x, int y) OVERRIDE;
+
+  virtual std::string GetId() OVERRIDE;
+
   virtual RenderViewHost* GetRenderViewHost() OVERRIDE;
 
  protected:
   DevToolsAgentHostImpl();
-  virtual ~DevToolsAgentHostImpl() {}
+  virtual ~DevToolsAgentHostImpl();
 
   virtual void SendMessageToAgent(IPC::Message* msg) = 0;
   virtual void NotifyClientAttaching() = 0;
@@ -56,10 +54,9 @@ class CONTENT_EXPORT DevToolsAgentHostImpl : public DevToolsAgentHost {
 
   void NotifyCloseListener();
 
-  CloseListener* close_listener_;
-
  private:
-  int id_;
+  CloseListener* close_listener_;
+  const std::string id_;
 };
 
 }  // namespace content

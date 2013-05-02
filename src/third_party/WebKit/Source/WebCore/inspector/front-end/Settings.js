@@ -62,7 +62,8 @@ var Capabilities = {
     canOverrideDeviceOrientation: false,
     canShowDebugBorders: false,
     canShowFPSCounter: false,
-    canContinuouslyPaint: false
+    canContinuouslyPaint: false,
+    canInspectWorkers: false
 }
 
 /**
@@ -71,6 +72,7 @@ var Capabilities = {
 WebInspector.Settings = function()
 {
     this._eventSupport = new WebInspector.Object();
+    this._registry = /** @type {!Object.<string, !WebInspector.Setting>} */ ({});
 
     this.colorFormat = this.createSetting("colorFormat", "original");
     this.consoleHistory = this.createSetting("consoleHistory", []);
@@ -111,44 +113,51 @@ WebInspector.Settings = function()
     this.deviceOrientationOverride = this.createSetting("deviceOrientationOverride", "");
     this.showHeapSnapshotObjectsHiddenProperties = this.createSetting("showHeaSnapshotObjectsHiddenProperties", false);
     this.showNativeSnapshotUninstrumentedSize = this.createSetting("showNativeSnapshotUninstrumentedSize", false);
-    this.showWhitespaceInEditor = this.createSetting("showWhitespaceInEditor", false);
     this.searchInContentScripts = this.createSetting("searchInContentScripts", false);
     this.textEditorIndent = this.createSetting("textEditorIndent", "    ");
     this.lastDockState = this.createSetting("lastDockState", "");
     this.cssReloadEnabled = this.createSetting("cssReloadEnabled", false);
     this.cssReloadTimeout = this.createSetting("cssReloadTimeout", 1000);
     this.showCpuOnTimelineRuler = this.createSetting("showCpuOnTimelineRuler", false);
+    this.timelineStackFramesToCapture = this.createSetting("timelineStackFramesToCapture", 30);
+    this.timelineLimitStackFramesFlag = this.createSetting("timelineLimitStackFramesFlag", false);
     this.showMetricsRulers = this.createSetting("showMetricsRulers", false);
     this.emulatedCSSMedia = this.createSetting("emulatedCSSMedia", "print");
     this.showToolbarIcons = this.createSetting("showToolbarIcons", false);
     this.workerInspectorWidth = this.createSetting("workerInspectorWidth", 600);
     this.workerInspectorHeight = this.createSetting("workerInspectorHeight", 600);
     this.messageURLFilters = this.createSetting("messageURLFilters", {});
-
-    // If there are too many breakpoints in a storage, it is likely due to a recent bug that caused
-    // periodical breakpoints duplication leading to inspector slowness.
-    if (this.breakpoints.get().length > 500000)
-        this.breakpoints.set([]);
+    this.splitVerticallyWhenDockedToRight = this.createSetting("splitVerticallyWhenDockedToRight", true);
+    this.visiblePanels = this.createSetting("visiblePanels", {});
 }
 
 WebInspector.Settings.prototype = {
     /**
-     * @return {WebInspector.Setting}
+     * @param {string} key
+     * @param {*} defaultValue
+     * @return {!WebInspector.Setting}
      */
     createSetting: function(key, defaultValue)
     {
-        return new WebInspector.Setting(key, defaultValue, this._eventSupport);
+        if (!this._registry[key])
+            this._registry[key] = new WebInspector.Setting(key, defaultValue, this._eventSupport, window.localStorage);
+        return this._registry[key];
     }
 }
 
 /**
  * @constructor
+ * @param {string} name
+ * @param {*} defaultValue
+ * @param {!WebInspector.Object} eventSupport
+ * @param {?Storage} storage
  */
-WebInspector.Setting = function(name, defaultValue, eventSupport)
+WebInspector.Setting = function(name, defaultValue, eventSupport, storage)
 {
     this._name = name;
     this._defaultValue = defaultValue;
     this._eventSupport = eventSupport;
+    this._storage = storage;
 }
 
 WebInspector.Setting.prototype = {
@@ -173,11 +182,11 @@ WebInspector.Setting.prototype = {
             return this._value;
 
         this._value = this._defaultValue;
-        if (window.localStorage != null && this._name in window.localStorage) {
+        if (this._storage && this._name in this._storage) {
             try {
-                this._value = JSON.parse(window.localStorage[this._name]);
+                this._value = JSON.parse(this._storage[this._name]);
             } catch(e) {
-                window.localStorage.removeItem(this._name);
+                delete this._storage[this._name];
             }
         }
         return this._value;
@@ -186,9 +195,9 @@ WebInspector.Setting.prototype = {
     set: function(value)
     {
         this._value = value;
-        if (window.localStorage != null) {
+        if (this._storage) {
             try {
-                window.localStorage[this._name] = JSON.stringify(value);
+                this._storage[this._name] = JSON.stringify(value);
             } catch(e) {
                 console.error("Error saving setting with name:" + this._name);
             }
@@ -205,19 +214,23 @@ WebInspector.ExperimentsSettings = function()
     this._setting = WebInspector.settings.createSetting("experiments", {});
     this._experiments = [];
     this._enabledForTest = {};
-    
+
     // Add currently running experiments here.
     this.snippetsSupport = this._createExperiment("snippetsSupport", "Snippets support");
     this.nativeMemorySnapshots = this._createExperiment("nativeMemorySnapshots", "Native memory profiling");
-    this.liveNativeMemoryChart = this._createExperiment("liveNativeMemoryChart", "Live native memory chart");
+    this.nativeMemoryTimeline = this._createExperiment("nativeMemoryTimeline", "Native memory timeline");
     this.fileSystemInspection = this._createExperiment("fileSystemInspection", "FileSystem inspection");
     this.canvasInspection = this._createExperiment("canvasInspection ", "Canvas inspection");
     this.sass = this._createExperiment("sass", "Support for Sass");
     this.codemirror = this._createExperiment("codemirror", "Use CodeMirror editor");
+    this.aceTextEditor = this._createExperiment("aceTextEditor", "Use Ace editor");
     this.cssRegions = this._createExperiment("cssRegions", "CSS Regions Support");
     this.showOverridesInDrawer = this._createExperiment("showOverridesInDrawer", "Show Overrides in drawer");
     this.fileSystemProject = this._createExperiment("fileSystemProject", "File system folders in Sources Panel");
-    this.horizontalPanelSplit = this._createExperiment("horizontalPanelSplit", "Allow horizontal split in Elements and Sources panels");
+    this.showWhitespaceInEditor = this._createExperiment("showWhitespaceInEditor", "Show whitespace characters in editor");
+    this.textEditorSmartBraces = this._createExperiment("textEditorSmartBraces", "Enable smart braces in text editor");
+    this.separateProfilers = this._createExperiment("separateProfilers", "Separate profiler tools");
+    this.cpuFlameChart = this._createExperiment("cpuFlameChart", "Show Flame Chart in CPU Profiler");
 
     this._cleanUpSetting();
 }
@@ -230,7 +243,7 @@ WebInspector.ExperimentsSettings.prototype = {
     {
         return this._experiments.slice();
     },
-    
+
     /**
      * @return {boolean}
      */
@@ -238,7 +251,7 @@ WebInspector.ExperimentsSettings.prototype = {
     {
         return Preferences.experimentsEnabled || ("experiments" in WebInspector.queryParamsObject);
     },
-    
+
     /**
      * @param {string} experimentName
      * @param {string} experimentTitle
@@ -250,7 +263,7 @@ WebInspector.ExperimentsSettings.prototype = {
         this._experiments.push(experiment);
         return experiment;
     },
-    
+
     /**
      * @param {string} experimentName
      * @return {boolean}
@@ -266,7 +279,7 @@ WebInspector.ExperimentsSettings.prototype = {
         var experimentsSetting = this._setting.get();
         return experimentsSetting[experimentName];
     },
-    
+
     /**
      * @param {string} experimentName
      * @param {boolean} enabled
@@ -320,7 +333,7 @@ WebInspector.Experiment.prototype = {
     {
         return this._name;
     },
-    
+
     /**
      * @return {string}
      */
@@ -328,7 +341,7 @@ WebInspector.Experiment.prototype = {
     {
         return this._title;
     },
-    
+
     /**
      * @return {boolean}
      */
@@ -336,7 +349,7 @@ WebInspector.Experiment.prototype = {
     {
         return this._experimentsSettings.isEnabled(this._name);
     },
-    
+
     /**
      * @param {boolean} enabled
      */
@@ -348,6 +361,63 @@ WebInspector.Experiment.prototype = {
     enableForTest: function()
     {
         this._experimentsSettings._enableForTest(this._name);
+    }
+}
+
+/**
+ * @constructor
+ */
+WebInspector.VersionController = function()
+{
+}
+
+WebInspector.VersionController.currentVersion = 2;
+
+WebInspector.VersionController.prototype = {
+    updateVersion: function()
+    {
+        var versionSetting = WebInspector.settings.createSetting("inspectorVersion", 0);
+        var currentVersion = WebInspector.VersionController.currentVersion;
+        var oldVersion = versionSetting.get();
+        var methodsToRun = this._methodsToRunToUpdateVersion(oldVersion, currentVersion);
+        for (var i = 0; i < methodsToRun.length; ++i)
+            this[methodsToRun[i]].call(this);
+        versionSetting.set(currentVersion);
+    },
+
+    /**
+     * @param {number} oldVersion
+     * @param {number} currentVersion
+     */
+    _methodsToRunToUpdateVersion: function(oldVersion, currentVersion)
+    {
+        var result = [];
+        for (var i = oldVersion; i < currentVersion; ++i)
+            result.push("_updateVersionFrom" + i + "To" + (i + 1));
+        return result;
+    },
+
+    _updateVersionFrom0To1: function()
+    {
+        this._clearBreakpointsWhenTooMany(WebInspector.settings.breakpoints, 500000);
+    },
+
+    _updateVersionFrom1To2: function()
+    {
+        var versionSetting = WebInspector.settings.createSetting("previouslyViewedFiles", []);
+        versionSetting.set([]);
+    },
+
+    /**
+     * @param {WebInspector.Setting} breakpointsSetting
+     * @param {number} maxBreakpointsCount
+     */
+    _clearBreakpointsWhenTooMany: function(breakpointsSetting, maxBreakpointsCount)
+    {
+        // If there are too many breakpoints in a storage, it is likely due to a recent bug that caused
+        // periodical breakpoints duplication leading to inspector slowness.
+        if (breakpointsSetting.get().length > maxBreakpointsCount)
+            breakpointsSetting.set([]);
     }
 }
 

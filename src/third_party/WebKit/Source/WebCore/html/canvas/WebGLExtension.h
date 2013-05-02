@@ -36,8 +36,10 @@ public:
     // Extension names are needed to properly wrap instances in JavaScript objects.
     enum ExtensionName {
         WebGLLoseContextName,
+        EXTDrawBuffersName,
         EXTTextureFilterAnisotropicName,
         OESTextureFloatName,
+        OESTextureHalfFloatName,
         OESStandardDerivativesName,
         OESVertexArrayObjectName,
         WebGLDebugRendererInfoName,
@@ -45,6 +47,8 @@ public:
         WebGLCompressedTextureS3TCName,
         WebGLDepthTextureName,
         OESElementIndexUintName,
+        WebGLCompressedTextureATCName,
+        WebGLCompressedTexturePVRTCName,
     };
 
     void ref() { m_context->ref(); }

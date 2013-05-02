@@ -26,6 +26,7 @@
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 #include "base/win/wrapped_window_proc.h"
+#include "content/browser/accessibility/browser_accessibility_manager_win.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/accessibility/browser_accessibility_win.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
@@ -67,6 +68,7 @@
 #include "ui/base/win/dpi.h"
 #include "ui/base/win/hwnd_util.h"
 #include "ui/base/win/mouse_wheel_util.h"
+#include "ui/base/win/touch_input.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
@@ -514,18 +516,27 @@ RenderWidgetHostViewWin::GetNativeViewAccessible() {
     NotifyWinEvent(EVENT_SYSTEM_ALERT, m_hWnd, kIdCustom, CHILDID_SELF);
   }
 
-  if (!GetBrowserAccessibilityManager()) {
-    // Return busy document tree while renderer accessibility tree loads.
-    AccessibilityNodeData::State busy_state =
-        static_cast<AccessibilityNodeData::State>(
-            1 << AccessibilityNodeData::STATE_BUSY);
-    SetBrowserAccessibilityManager(
-        BrowserAccessibilityManager::CreateEmptyDocument(
-            m_hWnd, busy_state, this));
-  }
+  CreateBrowserAccessibilityManagerIfNeeded();
 
   return GetBrowserAccessibilityManager()->GetRoot()->
       ToBrowserAccessibilityWin();
+}
+
+void RenderWidgetHostViewWin::CreateBrowserAccessibilityManagerIfNeeded() {
+  if (GetBrowserAccessibilityManager())
+    return;
+
+  HRESULT hr = ::CreateStdAccessibleObject(
+      m_hWnd, OBJID_WINDOW, IID_IAccessible,
+      reinterpret_cast<void **>(&window_iaccessible_));
+  DCHECK(SUCCEEDED(hr));
+
+  SetBrowserAccessibilityManager(
+      new BrowserAccessibilityManagerWin(
+          m_hWnd,
+          window_iaccessible_.get(),
+          BrowserAccessibilityManagerWin::GetEmptyDocument(),
+          this));
 }
 
 void RenderWidgetHostViewWin::MovePluginWindows(
@@ -678,6 +689,9 @@ void RenderWidgetHostViewWin::SelectionBoundsChanged(
   }
 }
 
+void RenderWidgetHostViewWin::ScrollOffsetChanged() {
+}
+
 void RenderWidgetHostViewWin::ImeCancelComposition() {
   ime_input_.CancelIME(m_hWnd);
 }
@@ -736,9 +750,14 @@ void RenderWidgetHostViewWin::DidUpdateBackingStore(
   }
 
   if (!scroll_rect.IsEmpty()) {
-    RECT clip_rect = scroll_rect.ToRECT();
-    ScrollWindowEx(scroll_delta.x(), scroll_delta.y(), NULL, &clip_rect,
-                   NULL, NULL, SW_INVALIDATE);
+    gfx::Rect pixel_rect = ui::win::DIPToScreenRect(scroll_rect);
+    // Damage might not be DIP aligned.
+    pixel_rect.Inset(-1, -1);
+    RECT clip_rect = pixel_rect.ToRECT();
+    float scale = ui::win::GetDeviceScaleFactor();
+    int dx = static_cast<int>(scale * scroll_delta.x());
+    int dy = static_cast<int>(scale * scroll_delta.y());
+    ScrollWindowEx(dx, dy, NULL, &clip_rect, NULL, NULL, SW_INVALIDATE);
   }
 
   if (!about_to_validate_and_paint_)
@@ -749,6 +768,10 @@ void RenderWidgetHostViewWin::RenderViewGone(base::TerminationStatus status,
                                              int error_code) {
   UpdateCursorIfOverSelf();
   Destroy();
+}
+
+bool RenderWidgetHostViewWin::CanSubscribeFrame() const {
+  return render_widget_host_ != NULL;
 }
 
 void RenderWidgetHostViewWin::WillWmDestroy() {
@@ -865,7 +888,7 @@ void RenderWidgetHostViewWin::ProcessAckedTouchEvent(
   DCHECK(touch_events_enabled_);
 
   ScopedVector<ui::TouchEvent> events;
-  if (!MakeUITouchEventsFromWebTouchEvents(touch, &events))
+  if (!MakeUITouchEventsFromWebTouchEvents(touch, &events, LOCAL_COORDINATES))
     return;
 
   ui::EventResult result = (ack_result ==
@@ -1770,8 +1793,9 @@ LRESULT RenderWidgetHostViewWin::OnMouseEvent(UINT message, WPARAM wparam,
   }
 
   if (message == WM_LBUTTONDOWN && pointer_down_context_ &&
-      GetBrowserAccessibilityManager())
+      GetBrowserAccessibilityManager()) {
     GetBrowserAccessibilityManager()->GotMouseDown();
+  }
 
   if (message == WM_LBUTTONUP && ui::IsMouseEventFromTouch(message) &&
       base::win::IsMetroProcess())
@@ -1891,9 +1915,9 @@ LRESULT RenderWidgetHostViewWin::OnWheelEvent(UINT message, WPARAM wparam,
     return 0;
   }
 
-  // Workaround for Thinkpad mousewheel driver. We get mouse wheel/scroll
-  // messages even if we are not in the foreground. So here we check if
-  // we have any owned popup windows in the foreground and dismiss them.
+  // We get mouse wheel/scroll messages even if we are not in the foreground.
+  // So here we check if we have any owned popup windows in the foreground and
+  // dismiss them.
   if (m_hWnd != GetForegroundWindow()) {
     HWND toplevel_hwnd = ::GetAncestor(m_hWnd, GA_ROOT);
     EnumThreadWindows(
@@ -1902,25 +1926,7 @@ LRESULT RenderWidgetHostViewWin::OnWheelEvent(UINT message, WPARAM wparam,
         reinterpret_cast<LPARAM>(toplevel_hwnd));
   }
 
-  // This is a bit of a hack, but will work for now since we don't want to
-  // pollute this object with WebContentsImpl-specific functionality...
-  bool handled_by_WebContentsImpl = false;
-  if (!is_fullscreen_ && GetParent()) {
-    // Use a special reflected message to break recursion. If we send
-    // WM_MOUSEWHEEL, the focus manager subclass of web contents will
-    // route it back here.
-    MSG new_message = {0};
-    new_message.hwnd = m_hWnd;
-    new_message.message = message;
-    new_message.wParam = wparam;
-    new_message.lParam = lparam;
-
-    handled_by_WebContentsImpl =
-        !!::SendMessage(GetParent(), base::win::kReflectedMessage, 0,
-                        reinterpret_cast<LPARAM>(&new_message));
-  }
-
-  if (!handled_by_WebContentsImpl && render_widget_host_) {
+  if (render_widget_host_) {
     render_widget_host_->ForwardWheelEvent(
         WebInputEventFactory::mouseWheelEvent(m_hWnd, message, wparam,
                                               lparam));
@@ -2088,8 +2094,11 @@ bool WebTouchState::UpdateTouchPoint(
   int radius_x = 1;
   int radius_y = 1;
   if (touch_input->dwMask & TOUCHINPUTMASKF_CONTACTAREA) {
-    radius_x = TOUCH_COORD_TO_PIXEL(touch_input->cxContact);
-    radius_y = TOUCH_COORD_TO_PIXEL(touch_input->cyContact);
+    // Some touch drivers send a contact area of "-1", yet flag it as valid.
+    radius_x = std::max(1,
+        static_cast<int>(TOUCH_COORD_TO_PIXEL(touch_input->cxContact)));
+    radius_y = std::max(1,
+        static_cast<int>(TOUCH_COORD_TO_PIXEL(touch_input->cyContact)));
   }
 
   // Detect and exclude stationary moves.
@@ -2142,8 +2151,8 @@ LRESULT RenderWidgetHostViewWin::OnTouchEvent(UINT message, WPARAM wparam,
       static_cast<int>(WebKit::WebTouchEvent::touchesLengthCap));
   TOUCHINPUT points[WebKit::WebTouchEvent::touchesLengthCap];
 
-  if (!total || !GetTouchInputInfo((HTOUCHINPUT)lparam, total,
-                                   points, sizeof(TOUCHINPUT))) {
+  if (!total || !ui::GetTouchInputInfoWrapper((HTOUCHINPUT)lparam, total,
+                                              points, sizeof(TOUCHINPUT))) {
     TRACE_EVENT0("browser", "EarlyOut_NothingToDo");
     return 0;
   }
@@ -2286,13 +2295,7 @@ LRESULT RenderWidgetHostViewWin::OnMoveOrSize(
 
 void RenderWidgetHostViewWin::OnAccessibilityNotifications(
     const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
-  if (!GetBrowserAccessibilityManager()) {
-    SetBrowserAccessibilityManager(
-        BrowserAccessibilityManager::CreateEmptyDocument(
-            m_hWnd,
-            static_cast<AccessibilityNodeData::State>(0),
-            this));
-  }
+  CreateBrowserAccessibilityManagerIfNeeded();
   GetBrowserAccessibilityManager()->OnAccessibilityNotifications(params);
 }
 
@@ -2319,11 +2322,16 @@ bool RenderWidgetHostViewWin::LockMouse() {
 
   move_to_center_request_.pending = false;
   last_mouse_position_.locked_global = last_mouse_position_.unlocked_global;
-  MoveCursorToCenterIfNecessary();
 
+  // Must set the clip rectangle before MoveCursorToCenterIfNecessary()
+  // so that if the cursor is moved it uses the clip rect set to the window
+  // rect. Otherwise, MoveCursorToCenterIfNecessary() may move the cursor
+  // to the center of the screen, and then we would clip to the window
+  // rect, thus moving the cursor and causing a movement delta.
   CRect rect;
   GetWindowRect(&rect);
   ::ClipCursor(&rect);
+  MoveCursorToCenterIfNecessary();
 
   return true;
 }
@@ -2431,14 +2439,14 @@ gfx::Rect RenderWidgetHostViewWin::GetBoundsInRootWindow() {
 gfx::GLSurfaceHandle RenderWidgetHostViewWin::GetCompositingSurface() {
   // If the window has been created, don't recreate it a second time
   if (compositor_host_window_)
-    return gfx::GLSurfaceHandle(compositor_host_window_, true);
+    return gfx::GLSurfaceHandle(compositor_host_window_, gfx::NATIVE_TRANSPORT);
 
   // On Vista and later we present directly to the view window rather than a
   // child window.
   if (GpuDataManagerImpl::GetInstance()->IsUsingAcceleratedSurface()) {
     if (!accelerated_surface_.get())
       accelerated_surface_.reset(new AcceleratedSurface(m_hWnd));
-    return gfx::GLSurfaceHandle(m_hWnd, true);
+    return gfx::GLSurfaceHandle(m_hWnd, gfx::NATIVE_TRANSPORT);
   }
 
   // On XP we need a child window that can be resized independently of the
@@ -2476,7 +2484,8 @@ gfx::GLSurfaceHandle RenderWidgetHostViewWin::GetCompositingSurface() {
 
   ui::SetWindowUserData(compositor_host_window_, this);
 
-  gfx::GLSurfaceHandle surface_handle(compositor_host_window_, true);
+  gfx::GLSurfaceHandle surface_handle(compositor_host_window_,
+                                      gfx::NATIVE_TRANSPORT);
 
   return surface_handle;
 }
@@ -2548,6 +2557,9 @@ void RenderWidgetHostViewWin::AcceleratedSurfaceSuspend() {
     accelerated_surface_->Suspend();
 }
 
+void RenderWidgetHostViewWin::AcceleratedSurfaceRelease() {
+}
+
 bool RenderWidgetHostViewWin::HasAcceleratedSurface(
       const gfx::Size& desired_size) {
   // TODO(jbates) Implement this so this view can use GetBackingStore for both
@@ -2597,6 +2609,11 @@ void RenderWidgetHostViewWin::AccessibilitySetTextSelection(
 
 gfx::Point RenderWidgetHostViewWin::GetLastTouchEventLocation() const {
   return last_touch_location_;
+}
+
+void RenderWidgetHostViewWin::FatalAccessibilityTreeError() {
+  render_widget_host_->FatalAccessibilityTreeError();
+  SetBrowserAccessibilityManager(NULL);
 }
 
 LRESULT RenderWidgetHostViewWin::OnGetObject(UINT message, WPARAM wparam,

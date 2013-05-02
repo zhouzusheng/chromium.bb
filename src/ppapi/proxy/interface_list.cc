@@ -12,6 +12,7 @@
 #include "ppapi/c/dev/ppb_crypto_dev.h"
 #include "ppapi/c/dev/ppb_cursor_control_dev.h"
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
+#include "ppapi/c/dev/ppb_directory_reader_dev.h"
 #include "ppapi/c/dev/ppb_font_dev.h"
 #include "ppapi/c/dev/ppb_gles_chromium_texture_mapping_dev.h"
 #include "ppapi/c/dev/ppb_graphics_2d_dev.h"
@@ -24,8 +25,11 @@
 #include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/dev/ppb_text_input_dev.h"
 #include "ppapi/c/dev/ppb_trace_event_dev.h"
+#include "ppapi/c/dev/ppb_truetype_font_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
+#include "ppapi/c/dev/ppb_var_array_dev.h"
 #include "ppapi/c/dev/ppb_var_deprecated.h"
+#include "ppapi/c/dev/ppb_var_dictionary_dev.h"
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
 #include "ppapi/c/dev/ppb_view_dev.h"
 #include "ppapi/c/ppb_audio_config.h"
@@ -63,11 +67,13 @@
 #include "ppapi/c/private/ppb_flash_menu.h"
 #include "ppapi/c/private/ppb_flash_message_loop.h"
 #include "ppapi/c/private/ppb_flash_print.h"
+#include "ppapi/c/private/ppb_host_resolver_private.h"
 #include "ppapi/c/private/ppb_net_address_private.h"
 #include "ppapi/c/private/ppb_network_list_private.h"
 #include "ppapi/c/private/ppb_network_monitor_private.h"
 #include "ppapi/c/private/ppb_pdf.h"
 #include "ppapi/c/private/ppb_talk_private.h"
+#include "ppapi/c/private/ppb_tcp_server_socket_private.h"
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/c/private/ppb_x509_certificate_private.h"
@@ -75,6 +81,7 @@
 #include "ppapi/c/trusted/ppb_broker_trusted.h"
 #include "ppapi/c/trusted/ppb_browser_font_trusted.h"
 #include "ppapi/c/trusted/ppb_char_set_trusted.h"
+#include "ppapi/c/trusted/ppb_file_chooser_trusted.h"
 #include "ppapi/c/trusted/ppb_file_io_trusted.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
 #include "ppapi/proxy/interface_proxy.h"
@@ -86,12 +93,10 @@
 #include "ppapi/proxy/ppb_file_system_proxy.h"
 #include "ppapi/proxy/ppb_flash_message_loop_proxy.h"
 #include "ppapi/proxy/ppb_graphics_3d_proxy.h"
-#include "ppapi/proxy/ppb_host_resolver_private_proxy.h"
 #include "ppapi/proxy/ppb_image_data_proxy.h"
 #include "ppapi/proxy/ppb_instance_proxy.h"
 #include "ppapi/proxy/ppb_message_loop_proxy.h"
 #include "ppapi/proxy/ppb_network_monitor_private_proxy.h"
-#include "ppapi/proxy/ppb_pdf_proxy.h"
 #include "ppapi/proxy/ppb_tcp_server_socket_private_proxy.h"
 #include "ppapi/proxy/ppb_tcp_socket_private_proxy.h"
 #include "ppapi/proxy/ppb_testing_proxy.h"
@@ -235,7 +240,6 @@ InterfaceList::InterfaceList() {
   // Do not add more stuff here, they should be added to interface_list*.h
   // TODO(brettw) remove these.
   AddPPB(PPB_Instance_Proxy::GetInfoPrivate(), PERMISSION_PRIVATE);
-  AddPPB(PPB_PDF_Proxy::GetInfo(), PERMISSION_PRIVATE);
   AddPPB(PPB_URLLoader_Proxy::GetTrustedInfo(), PERMISSION_PRIVATE);
   AddPPB(PPB_Var_Deprecated_Proxy::GetInfo(), PERMISSION_DEV);
 

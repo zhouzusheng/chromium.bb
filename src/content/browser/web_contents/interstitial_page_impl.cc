@@ -24,6 +24,7 @@
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
 #include "content/port/browser/render_widget_host_view_port.h"
+#include "content/port/browser/web_contents_view_port.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -33,7 +34,6 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/storage_partition.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/page_transition_types.h"
 #include "net/base/escape.h"
@@ -213,7 +213,7 @@ void InterstitialPageImpl::Show() {
     // Give delegates a chance to set some states on the navigation entry.
     delegate_->OverrideEntry(entry);
 
-    web_contents_->GetController().AddTransientEntry(entry);
+    web_contents_->GetController().SetTransientEntry(entry);
   }
 
   DCHECK(!render_view_host_);
@@ -273,19 +273,13 @@ void InterstitialPageImpl::Hide() {
                  weak_ptr_factory_.GetWeakPtr(),
                  render_view_host_));
   render_view_host_ = NULL;
-  if (web_contents_->GetInterstitialPage())
-    web_contents_->remove_interstitial_page();
+  web_contents_->DetachInterstitialPage();
   // Let's revert to the original title if necessary.
   NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
   if (!new_navigation_ && should_revert_web_contents_title_) {
     entry->SetTitle(original_web_contents_title_);
     web_contents_->NotifyNavigationStateChanged(INVALIDATE_TYPE_TITLE);
   }
-
-  NotificationService::current()->Notify(
-      NOTIFICATION_INTERSTITIAL_DETACHED,
-      Source<WebContents>(web_contents_),
-      NotificationService::NoDetails());
 
   InterstitialPageMap::iterator iter =
       g_web_contents_to_interstitial_page->find(web_contents_);
@@ -391,16 +385,7 @@ void InterstitialPageImpl::DidNavigate(
 
   // The RenderViewHost has loaded its contents, we can show it now.
   render_view_host_->GetView()->Show();
-  web_contents_->set_interstitial_page(this);
-
-  // This notification hides the bookmark bar. Note that this has to happen
-  // after the interstitial page was registered with |web_contents_|, since
-  // there will be a callback to |web_contents_| testing if an interstitial page
-  // is showing before hiding the bookmark bar.
-  NotificationService::current()->Notify(
-      NOTIFICATION_INTERSTITIAL_ATTACHED,
-      Source<WebContents>(web_contents_),
-      NotificationService::NoDetails());
+  web_contents_->AttachInterstitialPage(this);
 
   RenderWidgetHostView* rwh_view =
       web_contents_->GetRenderViewHost()->GetView();
@@ -522,8 +507,10 @@ WebContentsView* InterstitialPageImpl::CreateWebContentsView() {
   if (!enabled() || !create_view_)
     return NULL;
   WebContentsView* web_contents_view = web_contents()->GetView();
+  WebContentsViewPort* web_contents_view_port =
+      static_cast<WebContentsViewPort*>(web_contents_view);
   RenderWidgetHostView* view =
-      web_contents_view->CreateViewForWidget(render_view_host_);
+      web_contents_view_port->CreateViewForWidget(render_view_host_);
   render_view_host_->SetView(view);
   render_view_host_->AllowBindings(BINDINGS_POLICY_DOM_AUTOMATION);
 

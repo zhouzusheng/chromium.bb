@@ -41,7 +41,7 @@
   "net/base/net_resources.grd": {
     "includes": [4000],
   },
-  "webkit/glue/resources/webkit_unscaled_resources.grd": {
+  "ui/resources/ui_unscaled_resources.grd": {
     "includes": [4500],
   },
   "webkit/glue/resources/webkit_resources.grd": {
@@ -199,6 +199,10 @@
   },
   "chrome/browser/resources/memory_internals_resources.grd": {
     "includes": [27500],
+  },
+
+  "device/device_bluetooth_strings.grd": {
+    "messages": [28000],
   },
 
   # Resource ids starting at 31000 are reserved for projects built on Chromium.

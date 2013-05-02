@@ -1,6 +1,6 @@
 solutions = [
-      { "name"        : "26.0.1410.43",
-        "url"         : "https://src.chromium.org/chrome/releases/26.0.1410.43",
+      { "name"        : "27.0.1453.73",
+        "url"         : "https://src.chromium.org/chrome/releases/27.0.1453.73",
         "deps_file"   : "DEPS",
         "managed"     : True,
         "custom_deps" : {
@@ -23,6 +23,11 @@ solutions = [
             "src/chrome/tools/test/reference_build/chrome_mac": None,
             "src/third_party/hunspell_dictionaries": None,
             "src/native_client": None,
+
+            'build/third_party/cbuildbot_chromite': None,
+            'build/third_party/xvfb': None,
+            'build/xvfb': None,
+            'src/third_party/chromite': None,
 
             "src/chrome/test/data/extensions/api_test/permissions/nacl_enabled/bin": None,
             "src/chrome/test/data/perf/canvas_bench": None,
@@ -64,7 +69,6 @@ solutions = [
             "src/tools/page_cycler/acid3": None,
             "src/third_party/gnu_binutils": None,
             "src/third_party/mingw-w64/mingw/bin": None,
-            "src/third_party/WebKit/Tools/DumpRenderTree": None,
             "src/third_party/hunspell": None,
             "src/third_party/syzygy/binaries": None,
             "src/third_party/pefile": None,
@@ -79,10 +83,8 @@ solutions = [
             "src/third_party/scons-2.0.1": None,
             "src/third_party/webpagereplay": None,
             "src/third_party/libphonenumber/src/test": None,
-            "src/third_party/WebKit/Tools/Scripts": None,
             "src/third_party/pymox/src": None,
             "src/third_party/swig/Lib": None,
-            "src/third_party/WebKit/Tools/TestWebKitAPI": None,
         },
         "safesync_url": "",
     },

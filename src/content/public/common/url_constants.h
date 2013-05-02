@@ -39,6 +39,7 @@ CONTENT_EXPORT extern const char kViewSourceScheme[];
 // Hosts for about URLs.
 CONTENT_EXPORT extern const char kAboutBlankURL[];
 CONTENT_EXPORT extern const char kAboutSrcDocURL[];
+CONTENT_EXPORT extern const char kChromeUIAccessibilityHost[];
 CONTENT_EXPORT extern const char kChromeUIAppCacheInternalsHost[];
 CONTENT_EXPORT extern const char kChromeUIBlobInternalsHost[];
 CONTENT_EXPORT extern const char kChromeUIBrowserCrashHost[];
@@ -51,6 +52,10 @@ CONTENT_EXPORT extern const char kChromeUITcmallocHost[];
 CONTENT_EXPORT extern const char kChromeUITracingHost[];
 CONTENT_EXPORT extern const char kChromeUIWebRTCInternalsHost[];
 
+}  // namespace chrome
+
+namespace content {
+
 // Full about URLs (including schemes).
 CONTENT_EXPORT extern const char kChromeUICrashURL[];
 CONTENT_EXPORT extern const char kChromeUIGpuCleanURL[];
@@ -60,10 +65,6 @@ CONTENT_EXPORT extern const char kChromeUIHangURL[];
 CONTENT_EXPORT extern const char kChromeUIKillURL[];
 CONTENT_EXPORT extern const char kChromeUIPpapiFlashCrashURL[];
 CONTENT_EXPORT extern const char kChromeUIPpapiFlashHangURL[];
-
-}  // namespace chrome
-
-namespace content {
 
 // Used to separate a standard scheme and the hostname: "://".
 CONTENT_EXPORT extern const char kStandardSchemeSeparator[];

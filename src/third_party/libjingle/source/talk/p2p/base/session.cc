@@ -659,7 +659,9 @@ void BaseSession::OnTransportCandidatesAllocationDone(Transport* transport) {
   // Transport, since this removes the need to manually iterate over all
   // the transports, as is needed to make sure signals are handled properly
   // when BUNDLEing.
+#if 0
   ASSERT(!IsCandidateAllocationDone());
+#endif
   for (TransportMap::iterator iter = transports_.begin();
        iter != transports_.end(); ++iter) {
     if (iter->second->impl() == transport) {
@@ -1348,6 +1350,11 @@ bool Session::OnRedirectError(const SessionRedirect& redirect,
 
 bool Session::CheckState(State expected, MessageError* error) {
   if (state() != expected) {
+    // The server can deliver messages out of order/repeated for various
+    // reasons. For example, if the server does not recive our iq response,
+    // it could assume that the iq it sent was lost, and will then send
+    // it again. Ideally, we should implement reliable messaging with
+    // duplicate elimination.
     return BadMessage(buzz::QN_STANZA_NOT_ALLOWED,
                       "message not allowed in current state",
                       error);

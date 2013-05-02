@@ -10,7 +10,6 @@
 
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
-#include "base/platform_file.h"
 #include "base/supports_user_data.h"
 #include "base/task_runner.h"
 #include "net/base/net_export.h"
@@ -124,11 +123,23 @@ class NET_EXPORT URLFetcher {
   static void SetIgnoreCertificateRequests(bool ignored);
 
   // Sets data only needed by POSTs.  All callers making POST requests should
-  // call this before the request is started.  |upload_content_type| is the MIME
-  // type of the content, while |upload_content| is the data to be sent (the
-  // Content-Length header value will be set to the length of this data).
+  // call one of the SetUpload* methods before the request is started.
+  // |upload_content_type| is the MIME type of the content, while
+  // |upload_content| is the data to be sent (the Content-Length header value
+  // will be set to the length of this data).
   virtual void SetUploadData(const std::string& upload_content_type,
                              const std::string& upload_content) = 0;
+
+  // Sets data only needed by POSTs.  All callers making POST requests should
+  // call one of the SetUpload* methods before the request is started.
+  // |upload_content_type| is the MIME type of the content, while
+  // |file_path| is the path to the file containing the data to be sent (the
+  // Content-Length header value will be set to the length of this file).
+  // |file_task_runner| will be used for all file operations.
+  virtual void SetUploadFilePath(
+      const std::string& upload_content_type,
+      const base::FilePath& file_path,
+      scoped_refptr<base::TaskRunner> file_task_runner) = 0;
 
   // Indicates that the POST data is sent via chunked transfer encoding.
   // This may only be called before calling Start().
@@ -259,10 +270,9 @@ class NET_EXPORT URLFetcher {
   virtual const ResponseCookies& GetCookies() const = 0;
 
   // Return true if any file system operation failed.  If so, set |error_code|
-  // to the error code. File system errors are only possible if user called
+  // to the net error code. File system errors are only possible if user called
   // SaveResponseToTemporaryFile().
-  virtual bool FileErrorOccurred(
-      base::PlatformFileError* out_error_code) const = 0;
+  virtual bool FileErrorOccurred(int* out_error_code) const = 0;
 
   // Reports that the received content was malformed.
   virtual void ReceivedContentWasMalformed() = 0;

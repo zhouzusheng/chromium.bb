@@ -13,6 +13,8 @@
 #include "SkFlattenable.h"
 #include "SkColor.h"
 
+class GrContext;
+class GrEffectRef;
 class SkString;
 
 /** \class SkXfermode
@@ -74,7 +76,7 @@ public:
 
     /**
      *  The same as calling xfermode->asCoeff(..), except that this also checks
-     *  if the xfermode is NULL, and if so, treats its as kSrcOver_Mode.
+     *  if the xfermode is NULL, and if so, treats it as kSrcOver_Mode.
      */
     static bool AsCoeff(const SkXfermode*, Coeff* src, Coeff* dst);
 
@@ -99,15 +101,14 @@ public:
         kSrcATop_Mode,  //!< [Da, Sc * Da + (1 - Sa) * Dc]
         kDstATop_Mode,  //!< [Sa, Sa * Dc + Sc * (1 - Da)]
         kXor_Mode,      //!< [Sa + Da - 2 * Sa * Da, Sc * (1 - Da) + (1 - Sa) * Dc]
-
-        // all remaining modes are defined in the SVG Compositing standard
-        // http://www.w3.org/TR/2009/WD-SVGCompositing-20090430/
-        kPlus_Mode,
+        kPlus_Mode,     //!< [Sa + Da, Sc + Dc]
         kModulate_Mode, // multiplies all components (= alpha and color)
 
         // all above modes can be expressed as pair of src/dst Coeffs
         kCoeffModesCnt,
 
+        // Following blend modes are defined in the CSS Compositing standard:
+        // https://dvcs.w3.org/hg/FXTF/rawfile/tip/compositing/index.html#blending
         kScreen_Mode = kCoeffModesCnt,
         kOverlay_Mode,
         kDarken_Mode,
@@ -120,7 +121,12 @@ public:
         kExclusion_Mode,
         kMultiply_Mode,
 
-        kLastMode = kMultiply_Mode
+        kHue_Mode,
+        kSaturation_Mode,
+        kColor_Mode,
+        kLuminosity_Mode,
+
+        kLastMode = kLuminosity_Mode
     };
 
     /**
@@ -132,7 +138,7 @@ public:
 
     /**
      *  The same as calling xfermode->asMode(mode), except that this also checks
-     *  if the xfermode is NULL, and if so, treats its as kSrcOver_Mode.
+     *  if the xfermode is NULL, and if so, treats it as kSrcOver_Mode.
      */
     static bool AsMode(const SkXfermode*, Mode* mode);
 
@@ -176,6 +182,30 @@ public:
     static bool IsMode(const SkXfermode* xfer, Mode* mode) {
         return AsMode(xfer, mode);
     }
+
+    /** A subclass may implement this factory function to work with the GPU backend. It is legal
+        to call this with all but the context param NULL to simply test the return value. effect,
+        src, and dst must all be NULL or all non-NULL. If effect is non-NULL then the xfermode may
+        optionally allocate an effect to return and the caller as *effect. The caller will install
+        it and own a ref to it. Since the xfermode may or may not assign *effect, the caller should
+        set *effect to NULL beforehand. If the function returns true and *effect is NULL then the
+        src and dst coeffs will be applied to the draw. When *effect is non-NULL the coeffs are
+        ignored.
+     */
+    virtual bool asNewEffectOrCoeff(GrContext*,
+                                    GrEffectRef** effect,
+                                    Coeff* src,
+                                    Coeff* dst) const;
+
+    /**
+     *  The same as calling xfermode->asNewEffect(...), except that this also checks if the xfermode
+     *  is NULL, and if so, treats it as kSrcOver_Mode.
+     */
+    static bool AsNewEffectOrCoeff(SkXfermode*,
+                                   GrContext*,
+                                   GrEffectRef** effect,
+                                   Coeff* src,
+                                   Coeff* dst);
 
     SkDEVCODE(virtual void toString(SkString* str) const = 0;)
     SK_DECLARE_FLATTENABLE_REGISTRAR_GROUP()

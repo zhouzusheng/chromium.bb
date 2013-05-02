@@ -67,6 +67,7 @@
 #include "MediaList.h"
 #include "MediaQueryExp.h"
 #include "Page.h"
+#include "PageConsole.h"
 #include "Pair.h"
 #include "Rect.h"
 #include "RenderTheme.h"
@@ -199,6 +200,51 @@ static PassRefPtr<CSSPrimitiveValue> createPrimitiveValuePair(PassRefPtr<CSSPrim
     return cssValuePool().createValue(Pair::create(first, second));
 }
 
+class AnimationParseContext {
+public:
+    AnimationParseContext()
+        : m_animationPropertyKeywordAllowed(true)
+        , m_firstAnimationCommitted(false)
+        , m_hasSeenAnimationPropertyKeyword(false)
+    {
+    }
+
+    void commitFirstAnimation()
+    {
+        m_firstAnimationCommitted = true;
+    }
+
+    bool hasCommittedFirstAnimation() const
+    {
+        return m_firstAnimationCommitted;
+    }
+
+    void commitAnimationPropertyKeyword()
+    {
+        m_animationPropertyKeywordAllowed = false;
+    }
+
+    bool animationPropertyKeywordAllowed() const
+    {
+        return m_animationPropertyKeywordAllowed;
+    }
+
+    bool hasSeenAnimationPropertyKeyword() const
+    {
+        return m_hasSeenAnimationPropertyKeyword;
+    }
+
+    void sawAnimationPropertyKeyword()
+    {
+        m_hasSeenAnimationPropertyKeyword = true;
+    }
+
+private:
+    bool m_animationPropertyKeywordAllowed;
+    bool m_firstAnimationCommitted;
+    bool m_hasSeenAnimationPropertyKeyword;
+};
+
 const CSSParserContext& strictCSSParserContext()
 {
     DEFINE_STATIC_LOCAL(CSSParserContext, strictContext, (CSSStrictMode));
@@ -212,6 +258,7 @@ CSSParserContext::CSSParserContext(CSSParserMode mode, const KURL& baseURL)
     , isCSSCustomFilterEnabled(false)
     , isCSSStickyPositionEnabled(false)
     , isCSSRegionsEnabled(false)
+    , isCSSCompositingEnabled(false)
     , isCSSGridLayoutEnabled(false)
 #if ENABLE(CSS_VARIABLES)
     , isCSSVariablesEnabled(false)
@@ -229,6 +276,7 @@ CSSParserContext::CSSParserContext(Document* document, const KURL& baseURL, cons
     , isCSSCustomFilterEnabled(document->settings() ? document->settings()->isCSSCustomFilterEnabled() : false)
     , isCSSStickyPositionEnabled(document->cssStickyPositionEnabled())
     , isCSSRegionsEnabled(document->cssRegionsEnabled())
+    , isCSSCompositingEnabled(document->cssCompositingEnabled())
     , isCSSGridLayoutEnabled(document->cssGridLayoutEnabled())
 #if ENABLE(CSS_VARIABLES)
     , isCSSVariablesEnabled(document->settings() ? document->settings()->cssVariablesEnabled() : false)
@@ -247,6 +295,7 @@ bool operator==(const CSSParserContext& a, const CSSParserContext& b)
         && a.isCSSCustomFilterEnabled == b.isCSSCustomFilterEnabled
         && a.isCSSStickyPositionEnabled == b.isCSSStickyPositionEnabled
         && a.isCSSRegionsEnabled == b.isCSSRegionsEnabled
+        && a.isCSSCompositingEnabled == b.isCSSCompositingEnabled
         && a.isCSSGridLayoutEnabled == b.isCSSGridLayoutEnabled
 #if ENABLE(CSS_VARIABLES)
         && a.isCSSVariablesEnabled == b.isCSSVariablesEnabled
@@ -260,6 +309,9 @@ CSSParser::CSSParser(const CSSParserContext& context)
     , m_important(false)
     , m_id(CSSPropertyInvalid)
     , m_styleSheet(0)
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+    , m_supportsCondition(false)
+#endif
     , m_selectorListForParseSelector(0)
     , m_numParsedPropertiesBeforeMarginBox(INVALID_NUM_PARSED_PROPERTIES)
     , m_inParseShorthand(0)
@@ -267,6 +319,10 @@ CSSParser::CSSParser(const CSSParserContext& context)
     , m_implicitShorthand(false)
     , m_hasFontFaceOnlyValues(false)
     , m_hadSyntacticallyValidCSSRule(false)
+    , m_logErrors(false)
+#if ENABLE(CSS_SHADERS)
+    , m_inFilterRule(false)
+#endif
     , m_defaultNamespace(starAtom)
     , m_parsedTextPrefixLength(0)
     , m_propertyRange(UINT_MAX, UINT_MAX)
@@ -278,6 +334,7 @@ CSSParser::CSSParser(const CSSParserContext& context)
     , m_length(0)
     , m_token(0)
     , m_lineNumber(0)
+    , m_tokenStartLineNumber(0)
     , m_lastSelectorLineNumber(0)
     , m_allowImportRules(true)
     , m_allowNamespaceDeclarations(true)
@@ -399,7 +456,7 @@ void CSSParser::setupParser(const char* prefix, unsigned prefixLength, const Str
     m_lexFunc = &CSSParser::realLex<UChar>;
 }
 
-void CSSParser::parseSheet(StyleSheetContents* sheet, const String& string, int startLineNumber, RuleSourceDataList* ruleSourceDataResult)
+void CSSParser::parseSheet(StyleSheetContents* sheet, const String& string, int startLineNumber, RuleSourceDataList* ruleSourceDataResult, bool logErrors)
 {
     setStyleSheet(sheet);
     m_defaultNamespace = starAtom; // Reset the default namespace.
@@ -407,6 +464,7 @@ void CSSParser::parseSheet(StyleSheetContents* sheet, const String& string, int 
         m_currentRuleDataStack = adoptPtr(new RuleSourceDataList());
     m_ruleSourceDataResult = ruleSourceDataResult;
 
+    m_logErrors = logErrors && sheet->singleOwnerDocument() && !sheet->baseURL().isEmpty() && sheet->singleOwnerDocument()->page();
     m_lineNumber = startLineNumber;
     setupParser("", string, "");
     cssyyparse(this);
@@ -414,6 +472,7 @@ void CSSParser::parseSheet(StyleSheetContents* sheet, const String& string, int 
     m_currentRuleDataStack.clear();
     m_ruleSourceDataResult = 0;
     m_rule = 0;
+    m_logErrors = false;
 }
 
 PassRefPtr<StyleRuleBase> CSSParser::parseRule(StyleSheetContents* sheet, const String& string)
@@ -433,6 +492,16 @@ PassRefPtr<StyleKeyframe> CSSParser::parseKeyframeRule(StyleSheetContents* sheet
     return m_keyframe.release();
 }
 
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+bool CSSParser::parseSupportsCondition(const String& string)
+{
+    m_supportsCondition = false;
+    setupParser("@-webkit-supports-condition{ ", string, "} ");
+    cssyyparse(this);
+    return m_supportsCondition;
+}
+#endif
+
 static inline bool isColorPropertyID(CSSPropertyID propertyId)
 {
     switch (propertyId) {
@@ -451,6 +520,9 @@ static inline bool isColorPropertyID(CSSPropertyID propertyId)
     case CSSPropertyWebkitBorderEndColor:
     case CSSPropertyWebkitBorderStartColor:
     case CSSPropertyWebkitColumnRuleColor:
+#if ENABLE(CSS3_TEXT)
+    case CSSPropertyWebkitTextDecorationColor:
+#endif // CSS3_TEXT
     case CSSPropertyWebkitTextEmphasisColor:
     case CSSPropertyWebkitTextFillColor:
     case CSSPropertyWebkitTextStrokeColor:
@@ -527,7 +599,6 @@ static inline bool isSimpleLengthPropertyID(CSSPropertyID propertyId, bool& acce
     case CSSPropertyMarginRight:
     case CSSPropertyMarginTop:
     case CSSPropertyRight:
-    case CSSPropertyTextIndent:
     case CSSPropertyTop:
     case CSSPropertyWebkitMarginAfter:
     case CSSPropertyWebkitMarginBefore:
@@ -759,10 +830,11 @@ static inline bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, int 
         break;
 #if ENABLE(CSS_COMPOSITING)
     case CSSPropertyWebkitBlendMode:
-        if (valueID == CSSValueNormal || valueID == CSSValueMultiply || valueID == CSSValueScreen || valueID == CSSValueOverlay 
-            || valueID == CSSValueDarken || valueID == CSSValueLighten ||  valueID == CSSValueColorDodge || valueID == CSSValueColorBurn 
-            || valueID == CSSValueHardLight || valueID == CSSValueSoftLight || valueID == CSSValueDifference || valueID == CSSValueExclusion 
-            || valueID == CSSValueHue || valueID == CSSValueSaturation || valueID == CSSValueColor || valueID == CSSValueLuminosity)
+        if (parserContext.isCSSCompositingEnabled && (valueID == CSSValueNormal || valueID == CSSValueMultiply || valueID == CSSValueScreen
+            || valueID == CSSValueOverlay || valueID == CSSValueDarken || valueID == CSSValueLighten ||  valueID == CSSValueColorDodge
+            || valueID == CSSValueColorBurn || valueID == CSSValueHardLight || valueID == CSSValueSoftLight || valueID == CSSValueDifference
+            || valueID == CSSValueExclusion || valueID == CSSValueHue || valueID == CSSValueSaturation || valueID == CSSValueColor
+            || valueID == CSSValueLuminosity))
             return true;
         break;
 #endif
@@ -927,10 +999,6 @@ static inline bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, int 
         if (valueID == CSSValueDisc || valueID == CSSValueCircle || valueID == CSSValueSquare || valueID == CSSValueNone)
             return true;
         break;
-    case CSSPropertyWebkitTextSizeAdjust:
-        if (valueID == CSSValueAuto || valueID == CSSValueNone)
-            return true;
-        break;
     case CSSPropertyWebkitTransformStyle:
         if (valueID == CSSValueFlat || valueID == CSSValuePreserve3d)
             return true;
@@ -1082,7 +1150,6 @@ static inline bool isKeywordPropertyID(CSSPropertyID propertyId)
     case CSSPropertyWebkitTextCombine:
     case CSSPropertyWebkitTextEmphasisPosition:
     case CSSPropertyWebkitTextSecurity:
-    case CSSPropertyWebkitTextSizeAdjust:
     case CSSPropertyWebkitTransformStyle:
     case CSSPropertyWebkitUserDrag:
     case CSSPropertyWebkitUserModify:
@@ -1599,6 +1666,7 @@ bool CSSParser::validUnit(CSSParserValue* value, Units unitflags, CSSParserMode 
     case CSSParserValue::Q_EMS:
     case CSSPrimitiveValue::CSS_EMS:
     case CSSPrimitiveValue::CSS_REMS:
+    case CSSPrimitiveValue::CSS_CHS:
     case CSSPrimitiveValue::CSS_EXS:
     case CSSPrimitiveValue::CSS_PX:
     case CSSPrimitiveValue::CSS_CM:
@@ -1654,12 +1722,12 @@ inline PassRefPtr<CSSPrimitiveValue> CSSParser::createPrimitiveNumericValue(CSSP
 
 #if ENABLE(CSS_IMAGE_RESOLUTION) || ENABLE(RESOLUTION_MEDIA_QUERY)
     ASSERT((value->unit >= CSSPrimitiveValue::CSS_NUMBER && value->unit <= CSSPrimitiveValue::CSS_KHZ)
-        || (value->unit >= CSSPrimitiveValue::CSS_TURN && value->unit <= CSSPrimitiveValue::CSS_REMS)
+        || (value->unit >= CSSPrimitiveValue::CSS_TURN && value->unit <= CSSPrimitiveValue::CSS_CHS)
         || (value->unit >= CSSPrimitiveValue::CSS_VW && value->unit <= CSSPrimitiveValue::CSS_VMAX)
         || (value->unit >= CSSPrimitiveValue::CSS_DPPX && value->unit <= CSSPrimitiveValue::CSS_DPCM));
 #else
     ASSERT((value->unit >= CSSPrimitiveValue::CSS_NUMBER && value->unit <= CSSPrimitiveValue::CSS_KHZ)
-        || (value->unit >= CSSPrimitiveValue::CSS_TURN && value->unit <= CSSPrimitiveValue::CSS_REMS)
+        || (value->unit >= CSSPrimitiveValue::CSS_TURN && value->unit <= CSSPrimitiveValue::CSS_CHS)
         || (value->unit >= CSSPrimitiveValue::CSS_VW && value->unit <= CSSPrimitiveValue::CSS_VMAX));
 #endif
     return cssValuePool().createValue(value->fValue, static_cast<CSSPrimitiveValue::UnitTypes>(value->unit));
@@ -1716,7 +1784,7 @@ inline PassRefPtr<CSSPrimitiveValue> CSSParser::parseValidPrimitive(int identifi
         return createPrimitiveStringValue(value);
     if (value->unit >= CSSPrimitiveValue::CSS_NUMBER && value->unit <= CSSPrimitiveValue::CSS_KHZ)
         return createPrimitiveNumericValue(value);
-    if (value->unit >= CSSPrimitiveValue::CSS_TURN && value->unit <= CSSPrimitiveValue::CSS_REMS)
+    if (value->unit >= CSSPrimitiveValue::CSS_TURN && value->unit <= CSSPrimitiveValue::CSS_CHS)
         return createPrimitiveNumericValue(value);
     if (value->unit >= CSSPrimitiveValue::CSS_VW && value->unit <= CSSPrimitiveValue::CSS_VMAX)
         return createPrimitiveNumericValue(value);
@@ -1918,6 +1986,9 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
     case CSSPropertyTextUnderlineColor:
     case CSSPropertyTextOverlineColor:
     case CSSPropertyWebkitColumnRuleColor:
+#if ENABLE(CSS3_TEXT)
+    case CSSPropertyWebkitTextDecorationColor:
+#endif // CSS3_TEXT
     case CSSPropertyWebkitTextEmphasisColor:
     case CSSPropertyWebkitTextFillColor:
     case CSSPropertyWebkitTextStrokeColor:
@@ -2010,6 +2081,13 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
         }
         break;
     }
+
+#if ENABLE(CURSOR_VISIBILITY)
+    case CSSPropertyWebkitCursorVisibility:
+        if (id == CSSValueAuto || id == CSSValueAutoHide)
+            validPrimitive = true;
+        break;
+#endif
 
     case CSSPropertyBackgroundAttachment:
     case CSSPropertyBackgroundClip:
@@ -2111,8 +2189,8 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
             validPrimitive = validUnit(value, FLength);
         break;
 
-    case CSSPropertyTextIndent:          // <length> | <percentage> | inherit
-        validPrimitive = (!id && validUnit(value, FLength | FPercent));
+    case CSSPropertyTextIndent:
+        parsedValue = parseTextIndent();
         break;
 
     case CSSPropertyPaddingTop:          //// <padding-width> | inherit
@@ -2232,6 +2310,10 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
         if (id == CSSValueSolid || id == CSSValueDouble || id == CSSValueDotted || id == CSSValueDashed || id == CSSValueWavy)
             validPrimitive = true;
         break;
+
+    case CSSPropertyWebkitTextUnderlinePosition:
+        // auto | alphabetic | under
+        return parseTextUnderlinePosition(important);
 #endif // CSS3_TEXT
 
     case CSSPropertyZoom:          // normal | reset | document | <number> | <percentage> | inherit
@@ -2241,7 +2323,11 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
             validPrimitive = (!id && validUnit(value, FNumber | FPercent | FNonNeg, CSSStrictMode));
         break;
 
-    case CSSPropertySrc:  // Only used within @font-face, so cannot use inherit | initial or be !important.  This is a list of urls or local references.
+    case CSSPropertySrc: // Only used within @font-face and @-webkit-filter, so cannot use inherit | initial or be !important. This is a list of urls or local references.
+#if ENABLE(CSS_SHADERS)
+        if (m_inFilterRule)
+            return parseFilterRuleSrc();
+#endif
         return parseFontFaceSrc();
 
     case CSSPropertyUnicodeRange:
@@ -2381,6 +2467,7 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
 #endif
 #if ENABLE(CSS_COMPOSITING)
     case CSSPropertyWebkitBlendMode:
+        if (cssCompositingEnabled())
             validPrimitive = true;
         break;
 #endif
@@ -2519,12 +2606,20 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
     case CSSPropertyWebkitTransitionTimingFunction:
     case CSSPropertyWebkitTransitionProperty: {
         RefPtr<CSSValue> val;
-        if (parseAnimationProperty(propId, val)) {
+        AnimationParseContext context;
+        if (parseAnimationProperty(propId, val, context)) {
             addPropertyWithPrefixingVariant(propId, val.release(), important);
             return true;
         }
         return false;
     }
+
+    case CSSPropertyWebkitGridAutoColumns:
+    case CSSPropertyWebkitGridAutoRows:
+        if (!cssGridLayoutEnabled())
+            return false;
+        parsedValue = parseGridTrackSize();
+        break;
 
     case CSSPropertyWebkitGridColumns:
     case CSSPropertyWebkitGridRows:
@@ -2532,12 +2627,23 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
             return false;
         return parseGridTrackList(propId, important);
 
-    case CSSPropertyWebkitGridColumn:
-    case CSSPropertyWebkitGridRow:
+    case CSSPropertyWebkitGridStart:
+    case CSSPropertyWebkitGridEnd:
+    case CSSPropertyWebkitGridBefore:
+    case CSSPropertyWebkitGridAfter:
         if (!cssGridLayoutEnabled())
             return false;
+
         validPrimitive = id == CSSValueAuto || validUnit(value, FInteger);
         break;
+
+    case CSSPropertyWebkitGridColumn:
+    case CSSPropertyWebkitGridRow: {
+        if (!cssGridLayoutEnabled())
+            return false;
+
+        return parseGridItemPositionShorthand(propId, important);
+    }
 
     case CSSPropertyWebkitMarginCollapse: {
         if (num == 1) {
@@ -2696,7 +2802,7 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
         if (parseShorthand(propId, borderAbridgedShorthand(), important)) {
             // The CSS3 Borders and Backgrounds specification says that border also resets border-image. It's as
             // though a value of none was specified for the image.
-            addProperty(CSSPropertyBorderImage, cssValuePool().createImplicitInitialValue(), important);
+            addExpandedPropertyForValue(CSSPropertyBorderImage, cssValuePool().createImplicitInitialValue(), important);
             return true;
         }
         return false;
@@ -2947,7 +3053,6 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
     case CSSPropertyWebkitTextCombine:
     case CSSPropertyWebkitTextEmphasisPosition:
     case CSSPropertyWebkitTextSecurity:
-    case CSSPropertyWebkitTextSizeAdjust:
     case CSSPropertyWebkitTransformStyle:
     case CSSPropertyWebkitUserDrag:
     case CSSPropertyWebkitUserModify:
@@ -3226,6 +3331,7 @@ bool CSSParser::parseAnimationShorthand(bool important)
     ShorthandScope scope(this, CSSPropertyWebkitAnimation);
 
     bool parsedProperty[numProperties] = { false };
+    AnimationParseContext context;
     RefPtr<CSSValue> values[numProperties];
 
     unsigned i;
@@ -3241,18 +3347,23 @@ bool CSSParser::parseAnimationShorthand(bool important)
             }
             if (!m_valueList->current())
                 break;
+            context.commitFirstAnimation();
         }
 
         bool found = false;
         for (i = 0; i < numProperties; ++i) {
             if (!parsedProperty[i]) {
                 RefPtr<CSSValue> val;
-                if (parseAnimationProperty(animationProperties.properties()[i], val)) {
+                if (parseAnimationProperty(animationProperties.properties()[i], val, context)) {
                     parsedProperty[i] = found = true;
                     addAnimationValue(values[i], val.release());
                     break;
                 }
             }
+
+            // There are more values to process but 'none' or 'all' were already defined as the animation property, the declaration becomes invalid.
+            if (!context.animationPropertyKeywordAllowed() && context.hasCommittedFirstAnimation())
+                return false;
         }
 
         // if we didn't find at least one match, this is an
@@ -3281,6 +3392,7 @@ bool CSSParser::parseTransitionShorthand(CSSPropertyID propId, bool important)
     ShorthandScope scope(this, propId);
 
     bool parsedProperty[numProperties] = { false };
+    AnimationParseContext context;
     RefPtr<CSSValue> values[numProperties];
 
     unsigned i;
@@ -3296,16 +3408,21 @@ bool CSSParser::parseTransitionShorthand(CSSPropertyID propId, bool important)
             }
             if (!m_valueList->current())
                 break;
+            context.commitFirstAnimation();
         }
 
         bool found = false;
         for (i = 0; !found && i < numProperties; ++i) {
             if (!parsedProperty[i]) {
                 RefPtr<CSSValue> val;
-                if (parseAnimationProperty(shorthand.properties()[i], val)) {
+                if (parseAnimationProperty(shorthand.properties()[i], val, context)) {
                     parsedProperty[i] = found = true;
                     addAnimationValue(values[i], val.release());
                 }
+
+                // There are more values to process but 'none' or 'all' were already defined as the animation property, the declaration becomes invalid.
+                if (!context.animationPropertyKeywordAllowed() && context.hasCommittedFirstAnimation())
+                    return false;
             }
         }
 
@@ -4223,11 +4340,12 @@ bool CSSParser::parseFillProperty(CSSPropertyID propId, CSSPropertyID& propId1, 
                     break;
 #if ENABLE(CSS_COMPOSITING)
                 case CSSPropertyWebkitBackgroundBlendMode:
-                    if (val->id == CSSValueNormal || val->id == CSSValueMultiply || val->id == CSSValueScreen || val->id == CSSValueOverlay 
-                        || val->id == CSSValueDarken || val->id == CSSValueLighten ||  val->id == CSSValueColorDodge
-                        || val->id == CSSValueColorBurn || val->id == CSSValueHardLight || val->id == CSSValueSoftLight
-                        || val->id == CSSValueDifference || val->id == CSSValueExclusion || val->id == CSSValueHue
-                        || val->id == CSSValueSaturation || val->id == CSSValueColor || val->id == CSSValueLuminosity) {
+                    if (cssCompositingEnabled() && (val->id == CSSValueNormal || val->id == CSSValueMultiply
+                        || val->id == CSSValueScreen || val->id == CSSValueOverlay || val->id == CSSValueDarken
+                        || val->id == CSSValueLighten ||  val->id == CSSValueColorDodge || val->id == CSSValueColorBurn
+                        || val->id == CSSValueHardLight || val->id == CSSValueSoftLight || val->id == CSSValueDifference
+                        || val->id == CSSValueExclusion || val->id == CSSValueHue || val->id == CSSValueSaturation
+                        || val->id == CSSValueColor || val->id == CSSValueLuminosity)) {
                         currValue = cssValuePool().createIdentifierValue(val->id);
                         m_valueList->next();
                     }
@@ -4357,7 +4475,7 @@ PassRefPtr<CSSValue> CSSParser::parseAnimationPlayState()
     return 0;
 }
 
-PassRefPtr<CSSValue> CSSParser::parseAnimationProperty(bool& allowAnimationProperty)
+PassRefPtr<CSSValue> CSSParser::parseAnimationProperty(AnimationParseContext& context)
 {
     CSSParserValue* value = m_valueList->current();
     if (value->unit != CSSPrimitiveValue::CSS_IDENT)
@@ -4365,10 +4483,13 @@ PassRefPtr<CSSValue> CSSParser::parseAnimationProperty(bool& allowAnimationPrope
     int result = cssPropertyID(value->string);
     if (result)
         return cssValuePool().createIdentifierValue(result);
-    if (equalIgnoringCase(value, "all"))
+    if (equalIgnoringCase(value, "all")) {
+        context.sawAnimationPropertyKeyword();
         return cssValuePool().createIdentifierValue(CSSValueAll);
+    }
     if (equalIgnoringCase(value, "none")) {
-        allowAnimationProperty = false;
+        context.commitAnimationPropertyKeyword();
+        context.sawAnimationPropertyKeyword();
         return cssValuePool().createIdentifierValue(CSSValueNone);
     }
     return 0;
@@ -4477,13 +4598,12 @@ PassRefPtr<CSSValue> CSSParser::parseAnimationTimingFunction()
     return 0;
 }
 
-bool CSSParser::parseAnimationProperty(CSSPropertyID propId, RefPtr<CSSValue>& result)
+bool CSSParser::parseAnimationProperty(CSSPropertyID propId, RefPtr<CSSValue>& result, AnimationParseContext& context)
 {
     RefPtr<CSSValueList> values;
     CSSParserValue* val;
     RefPtr<CSSValue> value;
     bool allowComma = false;
-    bool allowAnimationProperty = true;
 
     result = 0;
 
@@ -4538,9 +4658,8 @@ bool CSSParser::parseAnimationProperty(CSSPropertyID propId, RefPtr<CSSValue>& r
                     break;
                 case CSSPropertyTransitionProperty:
                 case CSSPropertyWebkitTransitionProperty:
-                    if (allowAnimationProperty)
-                        currValue = parseAnimationProperty(allowAnimationProperty);
-                    if (value && !allowAnimationProperty)
+                    currValue = parseAnimationProperty(context);
+                    if (value && !context.animationPropertyKeywordAllowed())
                         return false;
                     if (currValue)
                         m_valueList->next();
@@ -4590,6 +4709,30 @@ bool CSSParser::parseAnimationProperty(CSSPropertyID propId, RefPtr<CSSValue>& r
     return false;
 }
 
+bool CSSParser::parseGridItemPositionShorthand(CSSPropertyID shorthandId, bool important)
+{
+    ShorthandScope scope(this, shorthandId);
+    const StylePropertyShorthand& shorthand = shorthandForProperty(shorthandId);
+    ASSERT(shorthand.length() == 2);
+    if (!parseValue(shorthand.properties()[0], important))
+        return false;
+
+    if (!m_valueList->current()) {
+        // Only one value was specified, the opposite value should be set to 'auto'.
+        // FIXME: If the first property was <ident>, the opposite value should be the same <ident>.
+        addProperty(shorthand.properties()[1], cssValuePool().createIdentifierValue(CSSValueAuto), important);
+        return true;
+    }
+
+    if (!isForwardSlashOperator(m_valueList->current()))
+        return false;
+
+    if (!m_valueList->next())
+        return false;
+
+    return parseValue(shorthand.properties()[1], important);
+}
+
 bool CSSParser::parseGridTrackList(CSSPropertyID propId, bool important)
 {
     CSSParserValue* value = m_valueList->current();
@@ -4603,52 +4746,45 @@ bool CSSParser::parseGridTrackList(CSSPropertyID propId, bool important)
 
     RefPtr<CSSValueList> values = CSSValueList::createSpaceSeparated();
     while (m_valueList->current()) {
-        if (!parseGridTrackGroup(values.get()))
+        RefPtr<CSSPrimitiveValue> primitiveValue = parseGridTrackSize();
+        if (!primitiveValue)
             return false;
 
-        m_valueList->next();
+        values->append(primitiveValue.release());
     }
     addProperty(propId, values.release(), important);
     return true;
 }
 
-bool CSSParser::parseGridTrackGroup(CSSValueList* values)
-{
-    return parseGridTrackMinMax(values);
-}
-
-bool CSSParser::parseGridTrackMinMax(CSSValueList* values)
+PassRefPtr<CSSPrimitiveValue> CSSParser::parseGridTrackSize()
 {
     CSSParserValue* currentValue = m_valueList->current();
-    if (currentValue->id == CSSValueAuto) {
-        values->append(cssValuePool().createIdentifierValue(CSSValueAuto));
-        return true;
-    }
+    m_valueList->next();
+
+    if (currentValue->id == CSSValueAuto)
+        return cssValuePool().createIdentifierValue(CSSValueAuto);
 
     if (currentValue->unit == CSSParserValue::Function && equalIgnoringCase(currentValue->function->name, "minmax(")) {
         // The spec defines the following grammar: minmax( <track-breadth> , <track-breadth> )
         CSSParserValueList* arguments = currentValue->function->args.get();
         if (!arguments || arguments->size() != 3 || !isComma(arguments->valueAt(1)))
-            return false;
+            return 0;
 
         RefPtr<CSSPrimitiveValue> minTrackBreadth = parseGridBreadth(arguments->valueAt(0));
         if (!minTrackBreadth)
-            return false;
+            return 0;
 
         RefPtr<CSSPrimitiveValue> maxTrackBreadth = parseGridBreadth(arguments->valueAt(2));
         if (!maxTrackBreadth)
-            return false;
+            return 0;
 
-        values->append(createPrimitiveValuePair(minTrackBreadth, maxTrackBreadth));
-        return true;
+        return createPrimitiveValuePair(minTrackBreadth, maxTrackBreadth);
     }
 
-    if (PassRefPtr<CSSPrimitiveValue> trackBreadth = parseGridBreadth(currentValue)) {
-        values->append(trackBreadth);
-        return true;
-    }
+    if (PassRefPtr<CSSPrimitiveValue> trackBreadth = parseGridBreadth(currentValue))
+        return trackBreadth;
 
-    return false;
+    return 0;
 }
 
 PassRefPtr<CSSPrimitiveValue> CSSParser::parseGridBreadth(CSSParserValue* currentValue)
@@ -5869,7 +6005,8 @@ static inline bool fastParseColorInternal(RGBA32& rgb, const CharacterType* char
     return false;
 }
 
-bool CSSParser::fastParseColor(RGBA32& rgb, const String& name, bool strict)
+template<typename StringType>
+bool CSSParser::fastParseColor(RGBA32& rgb, const StringType& name, bool strict)
 {
     unsigned length = name.length();
     bool parseResult;
@@ -5880,7 +6017,7 @@ bool CSSParser::fastParseColor(RGBA32& rgb, const String& name, bool strict)
     if (name.is8Bit())
         parseResult = fastParseColorInternal(rgb, name.characters8(), length, strict);
     else
-        parseResult = fastParseColorInternal(rgb, name.characters(), length, strict);
+        parseResult = fastParseColorInternal(rgb, name.characters16(), length, strict);
 
     if (parseResult)
         return true;
@@ -5893,7 +6030,6 @@ bool CSSParser::fastParseColor(RGBA32& rgb, const String& name, bool strict)
         return true;
     }
     return false;
-
 }
     
 inline double CSSParser::parsedDouble(CSSParserValue *v, ReleaseParsedCalcValueCondition releaseCalc)
@@ -6215,6 +6351,10 @@ PassRefPtr<CSSValueList> CSSParser::parseShadow(CSSParserValueList* valueList, C
         } else if (validUnit(val, FLength, CSSStrictMode)) {
             // We required a length and didn't get one. Invalid.
             if (!context.allowLength())
+                return 0;
+
+            // Blur radius must be non-negative.
+            if (context.allowBlur && !validUnit(val, FLength | FNonNeg, CSSStrictMode))
                 return 0;
 
             // A length is allowed here.  Construct the value and add it.
@@ -7775,7 +7915,7 @@ PassRefPtr<CSSValue> CSSParser::parseImageResolution(CSSParserValueList* valueLi
         return 0;
     if (!haveFromImage && !haveResolution)
         return 0;
-    return list;
+    return list.release();
 }
 #endif
 
@@ -7834,7 +7974,7 @@ PassRefPtr<CSSValue> CSSParser::parseImageSet(CSSParserValueList* valueList)
         arg = functionArgs->next();
     }
 
-    return imageSet;
+    return imageSet.release();
 }
 #endif
 
@@ -8581,6 +8721,56 @@ PassRefPtr<CSSValueList> CSSParser::parseCustomFilterTransform(CSSParserValueLis
     return list.release();
 }
 
+PassRefPtr<WebKitCSSShaderValue> CSSParser::parseFilterRuleSrcUriAndFormat(CSSParserValueList* valueList)
+{
+    CSSParserValue* value = valueList->current();
+    ASSERT(value && value->unit == CSSPrimitiveValue::CSS_URI);
+    RefPtr<WebKitCSSShaderValue> shaderValue = WebKitCSSShaderValue::create(completeURL(value->string));
+
+    value = valueList->next();
+    if (value && value->unit == CSSParserValue::Function && equalIgnoringCase(value->function->name, "format(")) {
+        CSSParserValueList* args = value->function->args.get();
+        if (!args || args->size() != 1)
+            return 0;
+
+        CSSParserValue* arg = args->current();
+        if (arg->unit != CSSPrimitiveValue::CSS_STRING)
+            return 0;
+
+        shaderValue->setFormat(arg->string);
+        valueList->next();
+    }
+
+    return shaderValue.release();
+}
+
+bool CSSParser::parseFilterRuleSrc()
+{
+    RefPtr<CSSValueList> srcList = CSSValueList::createCommaSeparated();
+
+    CSSParserValue* value = m_valueList->current();
+    while (value) {
+        if (value->unit != CSSPrimitiveValue::CSS_URI)
+            return false;
+
+        RefPtr<WebKitCSSShaderValue> shaderValue = parseFilterRuleSrcUriAndFormat(m_valueList.get());
+        if (!shaderValue)
+            return false;
+        srcList->append(shaderValue.release());
+
+        if (!acceptCommaOperator(m_valueList.get()))
+            return false;
+
+        value = m_valueList->current();
+    }
+
+    if (!srcList->length())
+        return false;
+
+    addProperty(CSSPropertySrc, srcList.release(), m_important);
+    return true;
+}
+
 StyleRuleBase* CSSParser::createFilterRule(const CSSParserString& filterName)
 {
     RefPtr<StyleRuleFilter> rule = StyleRuleFilter::create(filterName);
@@ -8591,7 +8781,8 @@ StyleRuleBase* CSSParser::createFilterRule(const CSSParserString& filterName)
     processAndAddNewRuleToSourceTreeIfNeeded();
     return result;
 }
-#endif
+
+#endif // ENABLE(CSS_SHADERS)
 
 PassRefPtr<WebKitCSSFilterValue> CSSParser::parseBuiltinFilterArguments(CSSParserValueList* args, WebKitCSSFilterValue::FilterOperationType filterType)
 {
@@ -8757,6 +8948,11 @@ static bool validFlowName(const String& flowName)
 bool CSSParser::cssRegionsEnabled() const
 {
     return m_context.isCSSRegionsEnabled;
+}
+
+bool CSSParser::cssCompositingEnabled() const
+{
+    return m_context.isCSSCompositingEnabled;
 }
 
 bool CSSParser::cssGridLayoutEnabled() const
@@ -8974,6 +9170,27 @@ bool CSSParser::parseTextDecoration(CSSPropertyID propId, bool important)
     return false;
 }
 
+#if ENABLE(CSS3_TEXT)
+bool CSSParser::parseTextUnderlinePosition(bool important)
+{
+    // The text-underline-position property has sintax "auto | alphabetic | [ under || [ left | right ] ]".
+    // However, values 'left' and 'right' are not implemented yet, so we will parse sintax
+    // "auto | alphabetic | under" for now.
+    CSSParserValue* value = m_valueList->current();
+    switch (value->id) {
+    case CSSValueAuto:
+    case CSSValueAlphabetic:
+    case CSSValueUnder:
+        if (m_valueList->next())
+            return false;
+
+        addProperty(CSSPropertyWebkitTextUnderlinePosition, cssValuePool().createIdentifierValue(value->id), important);
+        return true;
+    }
+    return false;
+}
+#endif // CSS3_TEXT
+
 bool CSSParser::parseTextEmphasisStyle(bool important)
 {
     unsigned valueListSize = m_valueList->size();
@@ -9029,6 +9246,50 @@ bool CSSParser::parseTextEmphasisStyle(bool important)
     }
 
     return false;
+}
+
+PassRefPtr<CSSValue> CSSParser::parseTextIndent()
+{
+    RefPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
+
+    // <length> | <percentage> | inherit
+    if (m_valueList->size() == 1) {
+        CSSParserValue* value = m_valueList->current();
+        if (!value->id && validUnit(value, FLength | FPercent)) {
+            list->append(createPrimitiveNumericValue(value));
+            m_valueList->next();
+            return list.release();
+        }
+    }
+
+#if ENABLE(CSS3_TEXT)
+    // The case where text-indent has only <length>(or <percentage>) value
+    // is handled above if statement even though CSS3_TEXT is enabled.
+
+    // [ [ <length> | <percentage> ] && -webkit-each-line ] | inherit
+    if (m_valueList->size() != 2)
+        return 0;
+
+    CSSParserValue* firstValue = m_valueList->current();
+    CSSParserValue* secondValue = m_valueList->next();
+    CSSParserValue* lengthOrPercentageValue = 0;
+
+    // [ <length> | <percentage> ] -webkit-each-line
+    if (validUnit(firstValue, FLength | FPercent) && secondValue->id == CSSValueWebkitEachLine)
+        lengthOrPercentageValue = firstValue;
+    // -webkit-each-line [ <length> | <percentage> ]
+    else if (firstValue->id == CSSValueWebkitEachLine && validUnit(secondValue, FLength | FPercent))
+        lengthOrPercentageValue = secondValue;
+
+    if (lengthOrPercentageValue) {
+        list->append(createPrimitiveNumericValue(lengthOrPercentageValue));
+        list->append(cssValuePool().createIdentifierValue(CSSValueWebkitEachLine));
+        m_valueList->next();
+        return list.release();
+    }
+#endif
+
+    return 0;
 }
 
 bool CSSParser::parseLineBoxContain(bool important)
@@ -9481,6 +9742,17 @@ inline UChar* CSSParser::tokenStart<UChar>()
     return m_tokenStart.ptr16;
 }
 
+CSSParser::Location CSSParser::currentLocation()
+{
+    Location location;
+    location.lineNumber = m_tokenStartLineNumber;
+    if (is8BitSource())
+        location.token.init(tokenStart<LChar>(), currentCharacter<LChar>() - tokenStart<LChar>());
+    else
+        location.token.init(tokenStart<UChar>(), currentCharacter<UChar>() - tokenStart<UChar>());
+    return location;
+}
+
 template <typename CharacterType>
 inline bool CSSParser::isIdentifierStart()
 {
@@ -9489,7 +9761,7 @@ inline bool CSSParser::isIdentifierStart()
 }
 
 template <typename CharacterType>
-inline CharacterType* CSSParser::checkAndSkipString(CharacterType* currentCharacter, int quote)
+static inline CharacterType* checkAndSkipString(CharacterType* currentCharacter, int quote)
 {
     // Returns with 0, if string check is failed. Otherwise
     // it returns with the following character. This is necessary
@@ -9687,61 +9959,53 @@ inline void CSSParser::parseString(CharacterType*& result, CSSParserString& resu
 }
 
 template <typename CharacterType>
-inline bool CSSParser::parseURIInternal(CharacterType*& start, CharacterType*& result)
+inline bool CSSParser::findURI(CharacterType*& start, CharacterType*& end, UChar& quote)
 {
-    CharacterType* uriStart = skipWhiteSpace(currentCharacter<CharacterType>());
-    CharacterType* savedResult = result;
-
-    if (*uriStart == '"' || *uriStart == '\'') {
-        CharacterType quote = *uriStart;
-        ++uriStart;
-
-        CharacterType* stringEnd = checkAndSkipString(uriStart, quote);
-        if (!stringEnd)
-            return true;
-        stringEnd = skipWhiteSpace(stringEnd);
-        if (*stringEnd != ')')
-            return true;
-
-        start = result = currentCharacter<CharacterType>() = uriStart;
-        if (!parseStringInternal(currentCharacter<CharacterType>(), result, quote))
+    start = skipWhiteSpace(currentCharacter<CharacterType>());
+    
+    if (*start == '"' || *start == '\'') {
+        quote = *start++;
+        end = checkAndSkipString(start, quote);
+        if (!end)
             return false;
-
-        currentCharacter<CharacterType>() = stringEnd + 1;
-        m_token = URI;
     } else {
-        CharacterType* stringEnd = uriStart;
-
-        while (isURILetter(*stringEnd)) {
-            if (*stringEnd != '\\')
-                ++stringEnd;
+        quote = 0;
+        end = start;
+        while (isURILetter(*end)) {
+            if (LIKELY(*end != '\\'))
+                ++end;
             else {
-                stringEnd = checkAndSkipEscape(stringEnd);
-                if (!stringEnd)
-                    return true;
-            }
-        }
-
-        stringEnd = skipWhiteSpace(stringEnd);
-        if (*stringEnd != ')')
-            return true;
-
-        start = result = currentCharacter<CharacterType>() = uriStart;
-        while (isURILetter(*currentCharacter<CharacterType>())) {
-            if (LIKELY(*currentCharacter<CharacterType>() != '\\'))
-                *result++ = *currentCharacter<CharacterType>()++;
-            else {
-                unsigned unicode = parseEscape<CharacterType>(currentCharacter<CharacterType>());
-                if (unicode > 0xff && sizeof(CharacterType) == 1) {
-                    result = savedResult;
+                end = checkAndSkipEscape(end);
+                if (!end)
                     return false;
-                }
-                UnicodeToChars(result, unicode);
             }
         }
+    }
 
-        currentCharacter<CharacterType>() = stringEnd + 1;
-        m_token = URI;
+    end = skipWhiteSpace(end);
+    if (*end != ')')
+        return false;
+    
+    return true;
+}
+
+template <typename SrcCharacterType, typename DestCharacterType>
+inline bool CSSParser::parseURIInternal(SrcCharacterType*& src, DestCharacterType*& dest, UChar quote)
+{
+    if (quote) {
+        ASSERT(quote == '"' || quote == '\'');
+        return parseStringInternal(src, dest, quote);
+    }
+    
+    while (isURILetter(*src)) {
+        if (LIKELY(*src != '\\'))
+            *dest++ = *src++;
+        else {
+            unsigned unicode = parseEscape<SrcCharacterType>(src);
+            if (unicode > 0xff && sizeof(SrcCharacterType) == 1)
+                return false;
+            UnicodeToChars(dest, unicode);
+        }
     }
 
     return true;
@@ -9750,14 +10014,29 @@ inline bool CSSParser::parseURIInternal(CharacterType*& start, CharacterType*& r
 template <typename CharacterType>
 inline void CSSParser::parseURI(CSSParserString& string)
 {
-    CharacterType* uriStart = string.characters<CharacterType>();
-    CharacterType* result = uriStart + string.length();
-    bool parseResult = parseURIInternal(uriStart, result);
+    CharacterType* uriStart;
+    CharacterType* uriEnd;
+    UChar quote;
+    if (!findURI(uriStart, uriEnd, quote))
+        return;
+    
+    CharacterType* dest = currentCharacter<CharacterType>() = uriStart;
+    if (LIKELY(parseURIInternal(currentCharacter<CharacterType>(), dest, quote)))
+        string.init(uriStart, dest - uriStart);
+    else {
+        // An escape sequence was encountered that can't be stored in 8 bits.
+        // Reset the current character to the start of the URI and re-parse with
+        // a 16-bit destination.
+        ASSERT(is8BitSource());
+        UChar* uriStart16 = currentCharacter16();
+        currentCharacter<CharacterType>() = uriStart;
+        bool result = parseURIInternal(currentCharacter<CharacterType>(), currentCharacter16(), quote);
+        ASSERT_UNUSED(result, result);
+        string.init(uriStart16, currentCharacter16() - uriStart16);
+    }
 
-    // parseIdentifier() parsed and created the string, therefore there shouldn't be any unhandled escapses.
-    ASSERT_UNUSED(parseResult, parseResult);
-
-    string.init(uriStart, result - uriStart);
+    currentCharacter<CharacterType>() = uriEnd + 1;
+    m_token = URI;
 }
 
 template <typename CharacterType>
@@ -9921,6 +10200,8 @@ inline void CSSParser::detectNumberToken(CharacterType* type, int length)
     case 'c':
         if (length == 2 && isASCIIAlphaCaselessEqual(type[1], 'm'))
             m_token = CMS;
+        else if (length == 2 && isASCIIAlphaCaselessEqual(type[1], 'h'))
+            m_token = CHS;
         return;
 
     case 'd':
@@ -10051,6 +10332,10 @@ inline void CSSParser::detectDashToken(int length)
 #endif
     } else if (length == 12 && isEqualToCSSIdentifier(name + 1, "webkit-calc"))
         m_token = CALCFUNCTION;
+#if ENABLE(SHADOW_DOM)
+    else if (length == 19 && isEqualToCSSIdentifier(name + 1, "webkit-distributed"))
+        m_token = DISTRIBUTEDFUNCTION;
+#endif
 }
 
 template <typename CharacterType>
@@ -10272,6 +10557,15 @@ inline void CSSParser::detectAtToken(int length, bool hasEscape)
             if (!hasEscape && isEqualToCSSIdentifier(name + 2, "webkit-keyframe-rule"))
                 m_token = WEBKIT_KEYFRAME_RULE_SYM;
             return;
+
+        case 27:
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+            if (isEqualToCSSIdentifier(name + 2, "webkit-supports-condition")) {
+                m_parsingMode = SupportsMode;
+                m_token = WEBKIT_SUPPORTS_CONDITION_SYM;
+            }
+#endif
+            return;
         }
     }
 }
@@ -10314,6 +10608,7 @@ int CSSParser::realLex(void* yylvalWithoutType)
 restartAfterComment:
     result = currentCharacter<SrcCharacterType>();
     setTokenStart(result);
+    m_tokenStartLineNumber = m_lineNumber;
     m_token = *currentCharacter<SrcCharacterType>();
     ++currentCharacter<SrcCharacterType>();
 
@@ -10882,12 +11177,7 @@ StyleRuleBase* CSSParser::createSupportsRule(bool conditionIsSupported, RuleList
 {
     m_allowImportRules = m_allowNamespaceDeclarations = false;
 
-    ASSERT(!m_supportsRuleDataStack->isEmpty());
-    RefPtr<CSSRuleSourceData> data = m_supportsRuleDataStack->last();
-    m_supportsRuleDataStack->removeLast();
-    if (m_supportsRuleDataStack->isEmpty())
-        m_supportsRuleDataStack.clear();
-
+    RefPtr<CSSRuleSourceData> data = popSupportsRuleData();
     RefPtr<StyleRuleSupports> rule;
     String conditionText;
     unsigned conditionOffset = data->ruleHeaderRange.start + 9;
@@ -10924,13 +11214,22 @@ void CSSParser::markSupportsRuleHeaderStart()
 
 void CSSParser::markSupportsRuleHeaderEnd()
 {
-    ASSERT(!m_supportsRuleDataStack->isEmpty());
+    ASSERT(m_supportsRuleDataStack && !m_supportsRuleDataStack->isEmpty());
 
     if (is8BitSource())
         m_supportsRuleDataStack->last()->ruleHeaderRange.end = tokenStart<LChar>() - m_dataStart8.get();
     else
         m_supportsRuleDataStack->last()->ruleHeaderRange.end = tokenStart<UChar>() - m_dataStart16.get();
 }
+
+PassRefPtr<CSSRuleSourceData> CSSParser::popSupportsRuleData()
+{
+    ASSERT(m_supportsRuleDataStack && !m_supportsRuleDataStack->isEmpty());
+    RefPtr<CSSRuleSourceData> data = m_supportsRuleDataStack->last();
+    m_supportsRuleDataStack->removeLast();
+    return data.release();
+}
+
 #endif
 
 CSSParser::RuleList* CSSParser::createRuleList()
@@ -10973,6 +11272,40 @@ PassRefPtr<CSSRuleSourceData> CSSParser::popRuleData()
     RefPtr<CSSRuleSourceData> data = m_currentRuleDataStack->last();
     m_currentRuleDataStack->removeLast();
     return data.release();
+}
+
+void CSSParser::syntaxError(const Location& location, SyntaxErrorType error)
+{
+    if (!isLoggingErrors())
+        return;
+    StringBuilder builder;
+    switch (error) {
+    case PropertyDeclarationError:
+        builder.appendLiteral("Invalid CSS property declaration at: ");
+        break;
+
+    default:
+        builder.appendLiteral("Unexpected CSS token: ");
+    }
+
+    if (location.token.is8Bit())
+        builder.append(location.token.characters8(), location.token.length());
+    else
+        builder.append(location.token.characters16(), location.token.length());
+
+    logError(builder.toString(), location.lineNumber);
+}
+
+bool CSSParser::isLoggingErrors()
+{
+    // FIXME: return logging back (https://bugs.webkit.org/show_bug.cgi?id=113401).
+    return false;
+}
+
+void CSSParser::logError(const String& message, int lineNumber)
+{
+    PageConsole* console = m_styleSheet->singleOwnerDocument()->page()->console();
+    console->addMessage(CSSMessageSource, WarningMessageLevel, message, m_styleSheet->baseURL().string(), lineNumber + 1);
 }
 
 StyleRuleKeyframes* CSSParser::createKeyframesRule(const String& name, PassOwnPtr<Vector<RefPtr<StyleKeyframe> > > popKeyframes)
@@ -11069,25 +11402,39 @@ QualifiedName CSSParser::determineNameInNamespace(const AtomicString& prefix, co
     return QualifiedName(prefix, localName, m_styleSheet->determineNamespace(prefix));
 }
 
-void CSSParser::updateSpecifiersWithNamespaceIfNeeded(CSSParserSelector* specifiers)
+CSSParserSelector* CSSParser::rewriteSpecifiersWithNamespaceIfNeeded(CSSParserSelector* specifiers)
 {
     if (m_defaultNamespace != starAtom || specifiers->isCustomPseudoElement())
-        updateSpecifiersWithElementName(nullAtom, starAtom, specifiers, /*tagIsForNamespaceRule*/true);
+        return rewriteSpecifiersWithElementName(nullAtom, starAtom, specifiers, /*tagIsForNamespaceRule*/true);
+#if ENABLE(SHADOW_DOM)
+    if (CSSParserSelector* distributedPseudoElementSelector = specifiers->findDistributedPseudoElementSelector()) {
+        specifiers->prependTagSelector(QualifiedName(nullAtom, starAtom, m_defaultNamespace), /*tagIsForNamespaceRule*/true);
+        return rewriteSpecifiersForShadowDistributed(specifiers, distributedPseudoElementSelector);
+    }
+#endif
+    return specifiers;
 }
 
-void CSSParser::updateSpecifiersWithElementName(const AtomicString& namespacePrefix, const AtomicString& elementName, CSSParserSelector* specifiers, bool tagIsForNamespaceRule)
+CSSParserSelector* CSSParser::rewriteSpecifiersWithElementName(const AtomicString& namespacePrefix, const AtomicString& elementName, CSSParserSelector* specifiers, bool tagIsForNamespaceRule)
 {
     AtomicString determinedNamespace = namespacePrefix != nullAtom && m_styleSheet ? m_styleSheet->determineNamespace(namespacePrefix) : m_defaultNamespace;
     QualifiedName tag(namespacePrefix, elementName, determinedNamespace);
 
+#if ENABLE(SHADOW_DOM)
+    if (CSSParserSelector* distributedPseudoElementSelector = specifiers->findDistributedPseudoElementSelector()) {
+        specifiers->prependTagSelector(tag, tagIsForNamespaceRule);
+        return rewriteSpecifiersForShadowDistributed(specifiers, distributedPseudoElementSelector);
+    }
+#endif
+
     if (!specifiers->isCustomPseudoElement()) {
         if (tag == anyQName())
-            return;
+            return specifiers;
 #if ENABLE(VIDEO_TRACK)
         if (!(specifiers->pseudoType() == CSSSelector::PseudoCue))
 #endif
             specifiers->prependTagSelector(tag, tagIsForNamespaceRule);
-        return;
+        return specifiers;
     }
 
     CSSParserSelector* lastShadowDescendant = specifiers;
@@ -11101,7 +11448,7 @@ void CSSParser::updateSpecifiersWithElementName(const AtomicString& namespacePre
     if (lastShadowDescendant->tagHistory()) {
         if (tag != anyQName())
             lastShadowDescendant->tagHistory()->prependTagSelector(tag, tagIsForNamespaceRule);
-        return;
+        return specifiers;
     }
 
     // For shadow-ID pseudo-elements to be correctly matched, the ShadowDescendant combinator has to be used.
@@ -11109,9 +11456,31 @@ void CSSParser::updateSpecifiersWithElementName(const AtomicString& namespacePre
     OwnPtr<CSSParserSelector> elementNameSelector = adoptPtr(new CSSParserSelector(tag));
     lastShadowDescendant->setTagHistory(elementNameSelector.release());
     lastShadowDescendant->setRelation(CSSSelector::ShadowDescendant);
+    return specifiers;
 }
 
-CSSParserSelector* CSSParser::updateSpecifiers(CSSParserSelector* specifiers, CSSParserSelector* newSpecifier)
+#if ENABLE(SHADOW_DOM)
+CSSParserSelector* CSSParser::rewriteSpecifiersForShadowDistributed(CSSParserSelector* specifiers, CSSParserSelector* distributedPseudoElementSelector)
+{
+    CSSParserSelector* argumentSelector = distributedPseudoElementSelector->functionArgumentSelector();
+    ASSERT(argumentSelector);
+    ASSERT(!specifiers->isDistributedPseudoElement());
+    for (CSSParserSelector* end = specifiers; end->tagHistory(); end = end->tagHistory()) {
+        if (end->tagHistory()->isDistributedPseudoElement()) {
+            end->clearTagHistory();
+            break;
+        }
+    }
+    CSSParserSelector* end = argumentSelector;
+    while (end->tagHistory())
+        end = end->tagHistory();
+    end->setTagHistory(sinkFloatingSelector(specifiers));
+    end->setRelation(CSSSelector::ShadowDistributed);
+    return argumentSelector;
+}
+#endif
+
+CSSParserSelector* CSSParser::rewriteSpecifiers(CSSParserSelector* specifiers, CSSParserSelector* newSpecifier)
 {
 #if ENABLE(VIDEO_TRACK)
     if (newSpecifier->isCustomPseudoElement() || newSpecifier->pseudoType() == CSSSelector::PseudoCue) {
@@ -11551,7 +11920,8 @@ static CSSPropertyID cssPropertyID(const CharacterType* propertyName, unsigned l
 #if ENABLE(LEGACY_CSS_VENDOR_PREFIXES)
         // If the prefix is -apple- or -khtml-, change it to -webkit-.
         // This makes the string one character longer.
-        if (hasPrefix(buffer, length, "-apple-") || hasPrefix(buffer, length, "-khtml-")) {
+        if (RuntimeEnabledFeatures::legacyCSSVendorPrefixesEnabled()
+            && (hasPrefix(buffer, length, "-apple-") || hasPrefix(buffer, length, "-khtml-"))) {
             memmove(buffer + 7, buffer + 6, length + 1 - 6);
             memcpy(buffer, "-webkit", 7);
             ++length;

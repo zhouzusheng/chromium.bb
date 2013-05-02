@@ -27,6 +27,7 @@
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/serialized_var.h"
+#include "ppapi/proxy/truetype_font_singleton_resource.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/ppb_url_util_shared.h"
 #include "ppapi/shared_impl/ppb_view_shared.h"
@@ -357,6 +358,9 @@ Resource* PPB_Instance_Proxy::GetSingletonResource(PP_Instance instance,
     case GAMEPAD_SINGLETON_ID:
       new_singleton = new GamepadResource(connection, instance);
       break;
+    case TRUETYPE_FONT_SINGLETON_ID:
+      new_singleton = new TrueTypeFontSingletonResource(connection, instance);
+      break;
 // Flash/trusted resources aren't needed for NaCl.
 #if !defined(OS_NACL) && !defined(NACL_WIN64)
     case BROWSER_FONT_SINGLETON_ID:
@@ -375,12 +379,16 @@ Resource* PPB_Instance_Proxy::GetSingletonResource(PP_Instance instance,
       new_singleton = new FlashResource(connection, instance,
           static_cast<PluginDispatcher*>(dispatcher()));
       break;
+    case PDF_SINGLETON_ID:
+      // TODO(raymes): fill this in.
+      break;
 #else
     case BROWSER_FONT_SINGLETON_ID:
     case FLASH_CLIPBOARD_SINGLETON_ID:
     case FLASH_FILE_SINGLETON_ID:
     case FLASH_FULLSCREEN_SINGLETON_ID:
     case FLASH_SINGLETON_ID:
+    case PDF_SINGLETON_ID:
       NOTREACHED();
       break;
 #endif  // !defined(OS_NACL) && !defined(NACL_WIN64)
@@ -676,7 +684,8 @@ void PPB_Instance_Proxy::PostMessage(PP_Instance instance,
                                      PP_Var message) {
   dispatcher()->Send(new PpapiHostMsg_PPBInstance_PostMessage(
       API_ID_PPB_INSTANCE,
-      instance, SerializedVarSendInput(dispatcher(), message)));
+      instance, SerializedVarSendInputShmem(dispatcher(), message,
+                                            instance)));
 }
 
 PP_Bool PPB_Instance_Proxy::SetCursor(PP_Instance instance,
@@ -908,7 +917,9 @@ void PPB_Instance_Proxy::OnHostMsgPostMessage(
     SerializedVarReceiveInput message) {
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded())
-    enter.functions()->PostMessage(instance, message.Get(dispatcher()));
+    enter.functions()->PostMessage(instance,
+                                   message.GetForInstance(dispatcher(),
+                                                          instance));
 }
 
 void PPB_Instance_Proxy::OnHostMsgLockMouse(PP_Instance instance) {

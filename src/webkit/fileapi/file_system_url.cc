@@ -18,10 +18,31 @@ namespace fileapi {
 
 namespace {
 
-bool ParseFileSystemURL(const GURL& url,
-                        GURL* origin_url,
-                        FileSystemType* type,
-                        base::FilePath* file_path) {
+}  // namespace
+
+FileSystemURL::FileSystemURL()
+    : is_valid_(false),
+      mount_type_(kFileSystemTypeUnknown),
+      type_(kFileSystemTypeUnknown) {
+}
+
+// static
+FileSystemURL FileSystemURL::CreateForTest(const GURL& url) {
+  return FileSystemURL(url);
+}
+
+FileSystemURL FileSystemURL::CreateForTest(const GURL& origin,
+                                           FileSystemType type,
+                                           const base::FilePath& path) {
+  return FileSystemURL(origin, type, path);
+}
+
+// static
+bool FileSystemURL::ParseFileSystemSchemeURL(
+    const GURL& url,
+    GURL* origin_url,
+    FileSystemType* type,
+    base::FilePath* file_path) {
   GURL origin;
   FileSystemType file_system_type = kFileSystemTypeUnknown;
 
@@ -77,29 +98,10 @@ bool ParseFileSystemURL(const GURL& url,
   return true;
 }
 
-}  // namespace
-
-FileSystemURL::FileSystemURL()
-    : is_valid_(false),
-      type_(kFileSystemTypeUnknown),
-      mount_type_(kFileSystemTypeUnknown) {
-}
-
-// static
-FileSystemURL FileSystemURL::CreateForTest(const GURL& url) {
-  return FileSystemURL(url);
-}
-
-FileSystemURL FileSystemURL::CreateForTest(const GURL& origin,
-                                           FileSystemType type,
-                                           const base::FilePath& path) {
-  return FileSystemURL(origin, type, path);
-}
-
 FileSystemURL::FileSystemURL(const GURL& url)
-    : type_(kFileSystemTypeUnknown),
-      mount_type_(kFileSystemTypeUnknown) {
-  is_valid_ = ParseFileSystemURL(url, &origin_, &type_, &path_);
+    : mount_type_(kFileSystemTypeUnknown),
+      type_(kFileSystemTypeUnknown) {
+  is_valid_ = ParseFileSystemSchemeURL(url, &origin_, &type_, &path_);
   virtual_path_ = path_;
   mount_type_ = type_;
 }
@@ -109,25 +111,27 @@ FileSystemURL::FileSystemURL(const GURL& origin,
                              const base::FilePath& path)
     : is_valid_(true),
       origin_(origin),
-      type_(type),
       mount_type_(type),
-      path_(path.NormalizePathSeparators()),
-      virtual_path_(path.NormalizePathSeparators()) {
+      virtual_path_(path.NormalizePathSeparators()),
+      type_(type),
+      path_(path.NormalizePathSeparators()) {
 }
 
 FileSystemURL::FileSystemURL(const GURL& origin,
                              FileSystemType mount_type,
                              const base::FilePath& virtual_path,
-                             const std::string& filesystem_id,
+                             const std::string& mount_filesystem_id,
                              FileSystemType cracked_type,
-                             const base::FilePath& cracked_path)
+                             const base::FilePath& cracked_path,
+                             const std::string& filesystem_id)
     : is_valid_(true),
       origin_(origin),
-      type_(cracked_type),
       mount_type_(mount_type),
+      virtual_path_(virtual_path.NormalizePathSeparators()),
+      mount_filesystem_id_(mount_filesystem_id),
+      type_(cracked_type),
       path_(cracked_path.NormalizePathSeparators()),
-      filesystem_id_(filesystem_id),
-      virtual_path_(virtual_path.NormalizePathSeparators()) {
+      filesystem_id_(filesystem_id) {
 }
 
 FileSystemURL::~FileSystemURL() {}
@@ -149,13 +153,6 @@ std::string FileSystemURL::DebugString() const {
     ss << path_.value();
   }
   return ss.str();
-}
-
-FileSystemURL FileSystemURL::WithPath(const base::FilePath& path) const {
-  FileSystemURL url = *this;
-  url.path_ = path;
-  url.virtual_path_.clear();
-  return url;
 }
 
 bool FileSystemURL::IsParent(const FileSystemURL& child) const {

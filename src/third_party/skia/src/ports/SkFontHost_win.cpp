@@ -29,6 +29,20 @@
 #include <usp10.h>
 #include <objbase.h>
 
+static void (*gEnsureLOGFONTAccessibleProc)(const LOGFONT&);
+
+void SkTypeface_SetEnsureLOGFONTAccessibleProc(void (*proc)(const LOGFONT&)) {
+    gEnsureLOGFONTAccessibleProc = proc;
+}
+
+static void call_ensure_accessible(const LOGFONT& lf) {
+    if (gEnsureLOGFONTAccessibleProc) {
+        gEnsureLOGFONTAccessibleProc(lf);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 // always packed xxRRGGBB
 typedef uint32_t SkGdiRGB;
 
@@ -162,7 +176,7 @@ public:
 
         TEXTMETRIC textMetric;
         if (0 == GetTextMetrics(deviceContext, &textMetric)) {
-            SkFontHost::EnsureTypefaceAccessible(*this);
+            call_ensure_accessible(lf);
             if (0 == GetTextMetrics(deviceContext, &textMetric)) {
                 textMetric.tmPitchAndFamily = TMPF_TRUETYPE;
             }
@@ -190,6 +204,18 @@ public:
         SkFontID fontID = SkTypefaceCache::NewFontID();
         return new LogFontTypeface(style, fontID, lf);
     }
+
+    static void EnsureAccessible(const SkTypeface* face) {
+        call_ensure_accessible(static_cast<const LogFontTypeface*>(face)->fLogFont);
+    }
+
+protected:
+    virtual SkStream* onOpenStream(int* ttcIndex) const SK_OVERRIDE;
+    virtual SkScalerContext* onCreateScalerContext(const SkDescriptor*) const SK_OVERRIDE;
+    virtual void onFilterRec(SkScalerContextRec*) const SK_OVERRIDE;
+    virtual SkAdvancedTypefaceMetrics* onGetAdvancedTypefaceMetrics(
+                                SkAdvancedTypefaceMetrics::PerGlyphInfo,
+                                const uint32_t*, uint32_t) const SK_OVERRIDE;
 };
 
 class FontMemResourceTypeface : public LogFontTypeface {
@@ -274,18 +300,11 @@ void SkLOGFONTFromTypeface(const SkTypeface* face, LOGFONT* lf) {
     }
 }
 
-SkFontID SkFontHost::NextLogicalFont(SkFontID currFontID, SkFontID origFontID) {
+SkTypeface* SkFontHost::NextLogicalTypeface(SkFontID currFontID, SkFontID origFontID) {
   // Zero means that we don't have any fallback fonts for this fontID.
   // This function is implemented on Android, but doesn't have much
   // meaning here.
-  return 0;
-}
-
-static void ensure_typeface_accessible(SkFontID fontID) {
-    LogFontTypeface* face = static_cast<LogFontTypeface*>(SkTypefaceCache::FindByID(fontID));
-    if (face) {
-        SkFontHost::EnsureTypefaceAccessible(*face);
-    }
+  return NULL;
 }
 
 static void GetLogFontByID(SkFontID fontID, LOGFONT* lf) {
@@ -416,7 +435,7 @@ const void* HDCOffscreen::draw(const SkGlyph& glyph, bool isBW,
         SelectObject(fDC, fFont);
 
         COLORREF color = 0x00FFFFFF;
-        COLORREF prev = SetTextColor(fDC, color);
+        SkDEBUGCODE(COLORREF prev =) SetTextColor(fDC, color);
         SkASSERT(prev != CLR_INVALID);
     }
 
@@ -481,7 +500,7 @@ const void* HDCOffscreen::draw(const SkGlyph& glyph, bool isBW,
 
 class SkScalerContext_Windows : public SkScalerContext {
 public:
-    SkScalerContext_Windows(const SkDescriptor* desc);
+    SkScalerContext_Windows(SkTypeface*, const SkDescriptor* desc);
     virtual ~SkScalerContext_Windows();
 
 protected:
@@ -549,10 +568,17 @@ static BYTE compute_quality(const SkScalerContext::Rec& rec) {
     }
 }
 
-SkScalerContext_Windows::SkScalerContext_Windows(const SkDescriptor* desc)
-        : SkScalerContext(desc), fDDC(0), fFont(0), fSavefont(0), fSC(0)
+SkScalerContext_Windows::SkScalerContext_Windows(SkTypeface* rawTypeface,
+                                                 const SkDescriptor* desc)
+        : SkScalerContext(rawTypeface, desc)
+        , fDDC(0)
+        , fFont(0)
+        , fSavefont(0)
+        , fSC(0)
         , fGlyphCount(-1) {
     SkAutoMutexAcquire  ac(gFTMutex);
+
+    LogFontTypeface* typeface = reinterpret_cast<LogFontTypeface*>(rawTypeface);
 
     fDDC = ::CreateCompatibleDC(NULL);
     SetGraphicsMode(fDDC, GM_ADVANCED);
@@ -560,8 +586,7 @@ SkScalerContext_Windows::SkScalerContext_Windows(const SkDescriptor* desc)
 
     // Scaling by the DPI is inconsistent with how Skia draws elsewhere
     //SkScalar height = -(fRec.fTextSize * GetDeviceCaps(ddc, LOGPIXELSY) / 72);
-    LOGFONT lf;
-    GetLogFontByID(fRec.fFontID, &lf);
+    LOGFONT lf = typeface->fLogFont;
     lf.lfHeight = -gCanonicalTextSize;
     lf.lfQuality = compute_quality(fRec);
     fFont = CreateFontIndirect(&lf);
@@ -583,7 +608,7 @@ SkScalerContext_Windows::SkScalerContext_Windows(const SkDescriptor* desc)
     fSavefont = (HFONT)SelectObject(fDDC, fFont);
 
     if (0 == GetTextMetrics(fDDC, &fTM)) {
-        ensure_typeface_accessible(fRec.fFontID);
+        call_ensure_accessible(lf);
         if (0 == GetTextMetrics(fDDC, &fTM)) {
             fTM.tmPitchAndFamily = TMPF_TRUETYPE;
         }
@@ -650,7 +675,7 @@ SkScalerContext_Windows::SkScalerContext_Windows(const SkDescriptor* desc)
         fFont = bitmapFont;
 
         if (0 == GetTextMetrics(fDDC, &fTM)) {
-            ensure_typeface_accessible(fRec.fFontID);
+            call_ensure_accessible(lf);
             //if the following fails, we'll just draw at gCanonicalTextSize.
             GetTextMetrics(fDDC, &fTM);
         }
@@ -746,7 +771,7 @@ void SkScalerContext_Windows::generateMetrics(SkGlyph* glyph) {
 
     DWORD status = GetGlyphOutlineW(fDDC, glyphId, GGO_METRICS | GGO_GLYPH_INDEX, &gm, 0, NULL, &fMat22);
     if (GDI_ERROR == status) {
-        ensure_typeface_accessible(fRec.fFontID);
+        LogFontTypeface::EnsureAccessible(this->getTypeface());
         status = GetGlyphOutlineW(fDDC, glyphId, GGO_METRICS | GGO_GLYPH_INDEX, &gm, 0, NULL, &fMat22);
         if (GDI_ERROR == status) {
             glyph->zeroMetrics();
@@ -831,7 +856,7 @@ void SkScalerContext_Windows::generateFontMetrics(SkPaint::FontMetrics* mx, SkPa
 
     uint32_t ret = GetOutlineTextMetrics(fDDC, sizeof(otm), &otm);
     if (GDI_ERROR == ret) {
-        ensure_typeface_accessible(fRec.fFontID);
+        LogFontTypeface::EnsureAccessible(this->getTypeface());
         ret = GetOutlineTextMetrics(fDDC, sizeof(otm), &otm);
     }
     if (sizeof(otm) != ret) {
@@ -1074,7 +1099,7 @@ void SkScalerContext_Windows::generateImage(const SkGlyph& glyph) {
     size_t srcRB;
     const void* bits = fOffscreen.draw(glyph, isBW, &srcRB);
     if (NULL == bits) {
-        ensure_typeface_accessible(fRec.fFontID);
+        LogFontTypeface::EnsureAccessible(this->getTypeface());
         bits = fOffscreen.draw(glyph, isBW, &srcRB);
         if (NULL == bits) {
             sk_bzero(glyph.fImage, glyph.computeImageSize());
@@ -1167,7 +1192,7 @@ void SkScalerContext_Windows::generatePath(const SkGlyph& glyph, SkPath* path) {
     GLYPHMETRICS gm;
     uint32_t total_size = GetGlyphOutlineW(fDDC, glyph.fID, GGO_NATIVE | GGO_GLYPH_INDEX, &gm, BUFFERSIZE, glyphbuf, &fMat22);
     if (GDI_ERROR == total_size) {
-        ensure_typeface_accessible(fRec.fFontID);
+        LogFontTypeface::EnsureAccessible(this->getTypeface());
         total_size = GetGlyphOutlineW(fDDC, glyph.fID, GGO_NATIVE | GGO_GLYPH_INDEX, &gm, BUFFERSIZE, glyphbuf, &fMat22);
         if (GDI_ERROR == total_size) {
             SkASSERT(false);
@@ -1266,7 +1291,7 @@ void SkFontHost::Serialize(const SkTypeface* rawFace, SkWStream* stream) {
 
     int fontNameLen; //length of fontName in TCHARS.
     if (0 == (fontNameLen = GetTextFace(deviceContext, 0, NULL))) {
-        SkFontHost::EnsureTypefaceAccessible(*rawFace);
+        LogFontTypeface::EnsureAccessible(rawFace);
         if (0 == (fontNameLen = GetTextFace(deviceContext, 0, NULL))) {
             fontNameLen = 0;
         }
@@ -1274,7 +1299,7 @@ void SkFontHost::Serialize(const SkTypeface* rawFace, SkWStream* stream) {
 
     SkAutoSTArray<LF_FULLFACESIZE, TCHAR> fontName(fontNameLen+1);
     if (0 == GetTextFace(deviceContext, fontNameLen, fontName.get())) {
-        SkFontHost::EnsureTypefaceAccessible(*rawFace);
+        LogFontTypeface::EnsureAccessible(rawFace);
         if (0 == GetTextFace(deviceContext, fontNameLen, fontName.get())) {
             fontName[0] = 0;
         }
@@ -1297,11 +1322,14 @@ void SkFontHost::Serialize(const SkTypeface* rawFace, SkWStream* stream) {
 
     if (face->fSerializeAsStream) {
         // store the entire font in the fontData
-        SkAutoTUnref<SkStream> fontStream(SkFontHost::OpenStream(face->uniqueID()));
-        const uint32_t length = fontStream->getLength();
-
-        stream->writePackedUInt(length);
-        stream->writeStream(fontStream, length);
+        SkAutoTUnref<SkStream> fontStream(face->openStream(NULL));
+        if (fontStream.get()) {
+            const uint32_t length = fontStream->getLength();
+            stream->writePackedUInt(length);
+            stream->writeStream(fontStream, length);
+        } else {
+            stream->writePackedUInt(0);
+        }
     } else {
         stream->writePackedUInt(0);
     }
@@ -1336,14 +1364,11 @@ static bool getWidthAdvance(HDC hdc, int gId, int16_t* advance) {
     return true;
 }
 
-// static
-SkAdvancedTypefaceMetrics* SkFontHost::GetAdvancedTypefaceMetrics(
-        uint32_t fontID,
+SkAdvancedTypefaceMetrics* LogFontTypeface::onGetAdvancedTypefaceMetrics(
         SkAdvancedTypefaceMetrics::PerGlyphInfo perGlyphInfo,
         const uint32_t* glyphIDs,
-        uint32_t glyphIDsCount) {
-    LOGFONT lf;
-    GetLogFontByID(fontID, &lf);
+        uint32_t glyphIDsCount) const {
+    LOGFONT lf = fLogFont;
     SkAdvancedTypefaceMetrics* info = NULL;
 
     HDC hdc = CreateCompatibleDC(NULL);
@@ -1360,7 +1385,7 @@ SkAdvancedTypefaceMetrics* SkFontHost::GetAdvancedTypefaceMetrics(
     OUTLINETEXTMETRIC otm;
     unsigned int otmRet = GetOutlineTextMetrics(hdc, sizeof(otm), &otm);
     if (0 == otmRet) {
-        ensure_typeface_accessible(fontID);
+        call_ensure_accessible(lf);
         otmRet = GetOutlineTextMetrics(hdc, sizeof(otm), &otm);
     }
     if (!otmRet || !GetTextFace(hdc, LF_FACESIZE, lf.lfFaceName)) {
@@ -1396,7 +1421,7 @@ SkAdvancedTypefaceMetrics* SkFontHost::GetAdvancedTypefaceMetrics(
         info->fStemV = 0;
         info->fCapHeight = 0;
         info->fBBox = SkIRect::MakeEmpty();
-        return info;
+        goto ReturnInfo;
     }
 
     // If this bit is clear the font is a fixed pitch font.
@@ -1406,8 +1431,6 @@ SkAdvancedTypefaceMetrics* SkFontHost::GetAdvancedTypefaceMetrics(
     if (otm.otmTextMetrics.tmItalic) {
         info->fStyle |= SkAdvancedTypefaceMetrics::kItalic_Style;
     }
-    // Setting symbolic style by default for now.
-    info->fStyle |= SkAdvancedTypefaceMetrics::kSymbolic_Style;
     if (otm.otmTextMetrics.tmPitchAndFamily & FF_ROMAN) {
         info->fStyle |= SkAdvancedTypefaceMetrics::kSerif_Style;
     } else if (otm.otmTextMetrics.tmPitchAndFamily & FF_SCRIPT) {
@@ -1465,6 +1488,7 @@ SkAdvancedTypefaceMetrics* SkFontHost::GetAdvancedTypefaceMetrics(
     }
 
 Error:
+ReturnInfo:
     SelectObject(hdc, savefont);
     DeleteObject(designFont);
     DeleteObject(font);
@@ -1569,11 +1593,12 @@ SkTypeface* SkFontHost::CreateTypefaceFromStream(SkStream* stream) {
     return SkCreateFontMemResourceTypefaceFromLOGFONT(lf, fontReference);
 }
 
-SkStream* SkFontHost::OpenStream(SkFontID uniqueID) {
+SkStream* LogFontTypeface::onOpenStream(int* ttcIndex) const {
+    *ttcIndex = 0;
+
     const DWORD kTTCTag =
         SkEndian_SwapBE32(SkSetFourByteTag('t', 't', 'c', 'f'));
-    LOGFONT lf;
-    GetLogFontByID(uniqueID, &lf);
+    LOGFONT lf = fLogFont;
 
     HDC hdc = ::CreateCompatibleDC(NULL);
     HFONT font = CreateFontIndirect(&lf);
@@ -1584,7 +1609,7 @@ SkStream* SkFontHost::OpenStream(SkFontID uniqueID) {
     for (int i = 0; i < SK_ARRAY_COUNT(tables); i++) {
         size_t bufferSize = GetFontData(hdc, tables[i], 0, NULL, 0);
         if (bufferSize == GDI_ERROR) {
-            ensure_typeface_accessible(uniqueID);
+            call_ensure_accessible(lf);
             bufferSize = GetFontData(hdc, tables[i], 0, NULL, 0);
         }
         if (bufferSize != GDI_ERROR) {
@@ -1606,8 +1631,8 @@ SkStream* SkFontHost::OpenStream(SkFontID uniqueID) {
     return stream;
 }
 
-SkScalerContext* SkFontHost::CreateScalerContext(const SkDescriptor* desc) {
-    return SkNEW_ARGS(SkScalerContext_Windows, (desc));
+SkScalerContext* LogFontTypeface::onCreateScalerContext(const SkDescriptor* desc) const {
+    return SkNEW_ARGS(SkScalerContext_Windows, (const_cast<LogFontTypeface*>(this), desc));
 }
 
 /** Return the closest matching typeface given either an existing family
@@ -1636,16 +1661,11 @@ SkTypeface* SkFontHost::CreateTypeface(const SkTypeface* familyFace,
 }
 
 SkTypeface* SkFontHost::CreateTypefaceFromFile(const char path[]) {
-    SkTypeface* face = NULL;
-    SkAutoTUnref<SkFILEStream> stream(SkNEW_ARGS(SkFILEStream, (path)));
-
-    if (stream->isValid()) {
-        face = CreateTypefaceFromStream(stream);
-    }
-    return face;
+    SkAutoTUnref<SkStream> stream(SkStream::NewFromFile(path));
+    return stream.get() ? CreateTypefaceFromStream(stream) : NULL;
 }
 
-void SkFontHost::FilterRec(SkScalerContext::Rec* rec, SkTypeface* typeface) {
+void LogFontTypeface::onFilterRec(SkScalerContextRec* rec) const {
     unsigned flagsWeDontSupport = SkScalerContext::kDevKernText_Flag |
                                   SkScalerContext::kAutohinting_Flag |
                                   SkScalerContext::kEmbeddedBitmapText_Flag |
@@ -1685,8 +1705,7 @@ void SkFontHost::FilterRec(SkScalerContext::Rec* rec, SkTypeface* typeface) {
     }
 #endif
 
-    LogFontTypeface* logfontTypeface = static_cast<LogFontTypeface*>(typeface);
-    if (!logfontTypeface->fCanBeLCD && isLCD(*rec)) {
+    if (!fCanBeLCD && isLCD(*rec)) {
         rec->fMaskFormat = SkMask::kA8_Format;
         rec->fFlags &= ~SkScalerContext::kGenA8FromLCD_Flag;
     }

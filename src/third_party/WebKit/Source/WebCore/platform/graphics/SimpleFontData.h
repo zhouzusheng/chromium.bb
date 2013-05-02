@@ -160,6 +160,8 @@ public:
     Glyph zeroWidthSpaceGlyph() const { return m_zeroWidthSpaceGlyph; }
     void setZeroWidthSpaceGlyph(Glyph spaceGlyph) { m_zeroWidthSpaceGlyph = spaceGlyph; }
     bool isZeroWidthSpaceGlyph(Glyph glyph) const { return glyph == m_zeroWidthSpaceGlyph && glyph; }
+    Glyph zeroGlyph() const { return m_zeroGlyph; }
+    void setZeroGlyph(Glyph zeroGlyph) { m_zeroGlyph = zeroGlyph; }
 
     virtual const SimpleFontData* fontDataForCharacter(UChar32) const;
     virtual bool containsCharacters(const UChar*, int length) const;
@@ -201,15 +203,18 @@ public:
 
     bool applyTransforms(GlyphBufferGlyph* glyphs, GlyphBufferAdvance* advances, size_t glyphCount, TypesettingFeatures typesettingFeatures) const
     {
-#if !PLATFORM(MAC) || __MAC_OS_X_VERSION_MIN_REQUIRED <= 1080
+#if PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED > 1080
+        wkCTFontTransformOptions options = (typesettingFeatures & Kerning ? wkCTFontTransformApplyPositioning : 0) | (typesettingFeatures & Ligatures ? wkCTFontTransformApplyShaping : 0);
+        return wkCTFontTransformGlyphs(m_platformData.ctFont(), glyphs, reinterpret_cast<CGSize*>(advances), glyphCount, options);
+#elif PLATFORM(QT) && QT_VERSION >= 0x050100
+        QRawFont::LayoutFlags flags = (typesettingFeatures & Kerning) ? QRawFont::KernedAdvances : QRawFont::SeparateAdvances;
+        return m_platformData.rawFont().advancesForGlyphIndexes(glyphs, advances, glyphCount, flags);
+#else
         UNUSED_PARAM(glyphs);
         UNUSED_PARAM(advances);
         UNUSED_PARAM(glyphCount);
         UNUSED_PARAM(typesettingFeatures);
         return false;
-#else
-    wkCTFontTransformOptions options = (typesettingFeatures & Kerning ? wkCTFontTransformApplyPositioning : 0) | (typesettingFeatures & Ligatures ? wkCTFontTransformApplyShaping : 0);
-    return wkCTFontTransformGlyphs(m_platformData.ctFont(), glyphs, reinterpret_cast<CGSize*>(advances), glyphCount, options);
 #endif
     }
 
@@ -244,9 +249,8 @@ private:
     
     void initCharWidths();
 
-    void commonInit();
-
     PassRefPtr<SimpleFontData> createScaledFontData(const FontDescription&, float scaleFactor) const;
+    PassRefPtr<SimpleFontData> platformCreateScaledFontData(const FontDescription&, float scaleFactor) const;
 
 #if (PLATFORM(WIN) && !OS(WINCE)) \
     || (OS(WINDOWS) && PLATFORM(WX))
@@ -279,6 +283,7 @@ private:
     
     Glyph m_spaceGlyph;
     float m_spaceWidth;
+    Glyph m_zeroGlyph;
     float m_adjustedSpaceWidth;
 
     Glyph m_zeroWidthSpaceGlyph;

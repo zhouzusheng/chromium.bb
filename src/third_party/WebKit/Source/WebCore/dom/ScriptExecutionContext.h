@@ -36,7 +36,6 @@
 #include "SecurityContext.h"
 #include "Supplementable.h"
 #include <wtf/Forward.h>
-#include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/OwnPtr.h>
@@ -60,10 +59,6 @@ class MessagePort;
 
 #if ENABLE(BLOB)
 class PublicURLManager;
-#endif
-
-#if ENABLE(BLOB)
-class FileThread;
 #endif
 
 class ScriptExecutionContext : public SecurityContext, public Supplementable<ScriptExecutionContext> {
@@ -107,14 +102,14 @@ public:
     bool activeDOMObjectsAreStopped() const { return m_activeDOMObjectsAreStopped; }
 
     // Called from the constructor and destructors of ActiveDOMObject.
-    void didCreateActiveDOMObject(ActiveDOMObject*, void* upcastPointer);
+    void didCreateActiveDOMObject(ActiveDOMObject*);
     void willDestroyActiveDOMObject(ActiveDOMObject*);
 
     // Called after the construction of an ActiveDOMObject to synchronize suspend state.
     void suspendActiveDOMObjectIfNeeded(ActiveDOMObject*);
 
-    typedef const HashMap<ActiveDOMObject*, void*> ActiveDOMObjectsMap;
-    ActiveDOMObjectsMap& activeDOMObjects() const { return m_activeDOMObjects; }
+    typedef HashSet<ActiveDOMObject*> ActiveDOMObjectsSet;
+    const ActiveDOMObjectsSet& activeDOMObjects() const { return m_activeDOMObjects; }
 
     void didCreateDestructionObserver(ContextDestructionObserver*);
     void willDestroyDestructionObserver(ContextDestructionObserver*);
@@ -145,20 +140,15 @@ public:
 
     virtual void postTask(PassOwnPtr<Task>) = 0; // Executes the task on context's thread asynchronously.
 
-    // Creates a unique id for setTimeout, setInterval or navigator.geolocation.watchPosition.
-    int newUniqueID();
+    // Gets the next id in a circular sequence from 1 to 2^31-1.
+    int circularSequentialID();
 
-    void addTimeout(int timeoutId, DOMTimer* timer) { ASSERT(!m_timeouts.contains(timeoutId)); m_timeouts.set(timeoutId, timer); }
+    bool addTimeout(int timeoutId, DOMTimer* timer) { return m_timeouts.add(timeoutId, timer).isNewEntry; }
     void removeTimeout(int timeoutId) { m_timeouts.remove(timeoutId); }
     DOMTimer* findTimeout(int timeoutId) { return m_timeouts.get(timeoutId); }
 
 #if USE(JSC)
     JSC::JSGlobalData* globalData();
-#endif
-
-#if ENABLE(BLOB)
-    FileThread* fileThread();
-    void stopFileThread();
 #endif
 
     // Interval is in seconds.
@@ -212,11 +202,11 @@ private:
 
     HashSet<MessagePort*> m_messagePorts;
     HashSet<ContextDestructionObserver*> m_destructionObservers;
-    HashMap<ActiveDOMObject*, void*> m_activeDOMObjects;
+    ActiveDOMObjectsSet m_activeDOMObjects;
     bool m_iteratingActiveDOMObjects;
     bool m_inDestructor;
 
-    int m_sequentialID;
+    int m_circularSequentialID;
     typedef HashMap<int, DOMTimer*> TimeoutMap;
     TimeoutMap m_timeouts;
 
@@ -230,7 +220,6 @@ private:
 
 #if ENABLE(BLOB)
     OwnPtr<PublicURLManager> m_publicURLManager;
-    RefPtr<FileThread> m_fileThread;
 #endif
 
 #if ENABLE(SQL_DATABASE)

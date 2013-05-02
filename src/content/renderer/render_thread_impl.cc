@@ -30,6 +30,7 @@
 #include "content/common/database_messages.h"
 #include "content/common/db_message_filter.h"
 #include "content/common/dom_storage_messages.h"
+#include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/indexed_db/indexed_db_dispatcher.h"
@@ -52,9 +53,9 @@
 #include "content/renderer/dom_storage/dom_storage_dispatcher.h"
 #include "content/renderer/dom_storage/webstoragearea_impl.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
-#include "content/renderer/gpu/compositor_thread.h"
 #include "content/renderer/gpu/compositor_output_surface.h"
 #include "content/renderer/gpu/gpu_benchmarking_extension.h"
+#include "content/renderer/gpu/input_handler_manager.h"
 #include "content/renderer/media/audio_input_message_filter.h"
 #include "content/renderer/media/audio_message_filter.h"
 #include "content/renderer/media/audio_renderer_mixer_manager.h"
@@ -78,8 +79,6 @@
 #include "media/base/media_switches.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCompositorSupport.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebColorName.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
@@ -142,8 +141,11 @@ base::LazyInstance<base::ThreadLocalPointer<RenderThreadImpl> >
 
 class RenderViewZoomer : public RenderViewVisitor {
  public:
-  RenderViewZoomer(const std::string& host, double zoom_level)
-      : host_(host), zoom_level_(zoom_level) {
+  RenderViewZoomer(const std::string& scheme,
+                   const std::string& host,
+                   double zoom_level) : scheme_(scheme),
+                                        host_(host),
+                                        zoom_level_(zoom_level) {
   }
 
   virtual bool Visit(RenderView* render_view) OVERRIDE {
@@ -154,15 +156,19 @@ class RenderViewZoomer : public RenderViewVisitor {
     // zoom settings.
     if (document.isPluginDocument())
       return true;
-
-    if (net::GetHostOrSpecFromURL(GURL(document.url())) == host_)
+    GURL url(document.url());
+    // Empty scheme works as wildcard that matches any scheme,
+    if ((net::GetHostOrSpecFromURL(url) == host_) &&
+        (scheme_.empty() || scheme_ == url.scheme())) {
       webview->setZoomLevel(false, zoom_level_);
+    }
     return true;
   }
 
  private:
-  std::string host_;
-  double zoom_level_;
+  const std::string scheme_;
+  const std::string host_;
+  const double zoom_level_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewZoomer);
 };
@@ -229,6 +235,28 @@ class RenderThreadImpl::GpuVDAContextLostCallback
   virtual void onContextLost() {
     ChildThread::current()->message_loop()->PostTask(FROM_HERE, base::Bind(
         &RenderThreadImpl::OnGpuVDAContextLoss));
+  }
+};
+
+class RenderThreadImpl::RendererContextProviderCommandBuffer
+    : public ContextProviderCommandBuffer {
+ public:
+  static scoped_refptr<RendererContextProviderCommandBuffer> Create() {
+    scoped_refptr<RendererContextProviderCommandBuffer> provider =
+        new RendererContextProviderCommandBuffer();
+    if (!provider->InitializeOnMainThread())
+      return NULL;
+    return provider;
+  }
+
+ protected:
+  virtual ~RendererContextProviderCommandBuffer() {}
+
+  virtual scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
+  CreateOffscreenContext3d() OVERRIDE {
+    RenderThreadImpl* self = RenderThreadImpl::current();
+    DCHECK(self);
+    return self->CreateOffscreenContext3d().Pass();
   }
 };
 
@@ -321,7 +349,9 @@ void RenderThreadImpl::Init() {
   hidden_widget_count_ = 0;
   idle_notification_delay_in_ms_ = kInitialIdleHandlerDelayMs;
   idle_notifications_to_skip_ = 0;
-  compositor_initialized_ = false;
+  should_send_focus_ipcs_ = true;
+  short_circuit_size_updates_ = false;
+  skip_error_pages_ = false;
 
   appcache_dispatcher_.reset(new AppCacheDispatcher(Get()));
   dom_storage_dispatcher_.reset(new DomStorageDispatcher());
@@ -344,10 +374,11 @@ void RenderThreadImpl::Init() {
   vc_manager_ = new VideoCaptureImplManager();
   AddFilter(vc_manager_->video_capture_message_filter());
 
-  audio_input_message_filter_ = new AudioInputMessageFilter();
+  audio_input_message_filter_ =
+      new AudioInputMessageFilter(GetIOMessageLoopProxy());
   AddFilter(audio_input_message_filter_.get());
 
-  audio_message_filter_ = new AudioMessageFilter();
+  audio_message_filter_ = new AudioMessageFilter(GetIOMessageLoopProxy());
   AddFilter(audio_message_filter_.get());
 
   AddFilter(new IndexedDBMessageFilter);
@@ -365,7 +396,7 @@ void RenderThreadImpl::Init() {
 
   // Note that under Linux, the media library will normally already have
   // been initialized by the Zygote before this instance became a Renderer.
-  FilePath media_path;
+  base::FilePath media_path;
   PathService::Get(DIR_MEDIA_LIBS, &media_path);
   if (!media_path.empty())
     media::InitializeMediaLibrary(media_path);
@@ -407,13 +438,10 @@ RenderThreadImpl::~RenderThreadImpl() {
     compositor_output_surface_filter_ = NULL;
   }
 
-  if (compositor_initialized_) {
-    WebKit::Platform::current()->compositorSupport()->shutdown();
-    compositor_initialized_ = false;
-  }
-  if (compositor_thread_.get()) {
-    RemoveFilter(compositor_thread_->GetMessageFilter());
-    compositor_thread_.reset();
+  compositor_thread_.reset();
+  if (input_handler_manager_.get()) {
+    RemoveFilter(input_handler_manager_->GetMessageFilter());
+    input_handler_manager_.reset();
   }
 
   if (webkit_platform_support_.get())
@@ -426,6 +454,11 @@ RenderThreadImpl::~RenderThreadImpl() {
   // Clean up plugin channels before this thread goes away.
   NPChannelBase::CleanupChannels();
 #endif
+
+  // Leak shared contexts on other threads, as we can not get to the correct
+  // thread to destroy them.
+  if (shared_contexts_compositor_thread_)
+    shared_contexts_compositor_thread_->set_leak_on_destroy();
 }
 
 bool RenderThreadImpl::Send(IPC::Message* msg) {
@@ -597,26 +630,36 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   WebKit::setIDBFactory(
       webkit_platform_support_.get()->idbFactory());
 
-  WebKit::WebCompositorSupport* compositor_support =
-      WebKit::Platform::current()->compositorSupport();
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
   bool enable = command_line.HasSwitch(switches::kEnableThreadedCompositing);
   if (enable) {
-    compositor_thread_.reset(new CompositorThread(this));
-    AddFilter(compositor_thread_->GetMessageFilter());
-    compositor_support->initialize(compositor_thread_->GetWebThread());
-  } else {
-    compositor_support->initialize(NULL);
+    MessageLoop* override_loop =
+        GetContentClient()->renderer()->OverrideCompositorMessageLoop();
+    if (override_loop) {
+      compositor_message_loop_proxy_ = override_loop->message_loop_proxy();
+    } else {
+      compositor_thread_.reset(new base::Thread("Compositor"));
+      compositor_thread_->Start();
+      compositor_message_loop_proxy_ =
+          compositor_thread_->message_loop_proxy();
+    }
+
+    if (GetContentClient()->renderer()->ShouldCreateCompositorInputHandler()) {
+      input_handler_manager_.reset(
+          new InputHandlerManager(this, compositor_message_loop_proxy_));
+      AddFilter(input_handler_manager_->GetMessageFilter());
+    }
   }
-  compositor_initialized_ = true;
 
-  MessageLoop* output_surface_loop = enable ?
-      compositor_thread_->message_loop() :
-      MessageLoop::current();
+  scoped_refptr<base::MessageLoopProxy> output_surface_loop;
+  if (enable)
+    output_surface_loop = compositor_message_loop_proxy_;
+  else
+    output_surface_loop = base::MessageLoopProxy::current();
 
-  compositor_output_surface_filter_ = CompositorOutputSurface::CreateFilter(
-      output_surface_loop->message_loop_proxy());
+  compositor_output_surface_filter_ =
+      CompositorOutputSurface::CreateFilter(output_surface_loop);
   AddFilter(compositor_output_surface_filter_.get());
 
   WebScriptController::enableV8SingleThreadMode();
@@ -717,10 +760,12 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 
   if (command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures)) {
     WebRuntimeFeatures::enableStyleScoped(true);
+    WebRuntimeFeatures::enableCustomDOMElements(true);
     WebRuntimeFeatures::enableCSSExclusions(true);
     WebRuntimeFeatures::enableExperimentalContentSecurityPolicyFeatures(true);
     WebRuntimeFeatures::enableCSSRegions(true);
     WebRuntimeFeatures::enableDialogElement(true);
+    WebRuntimeFeatures::enableFontLoadEvents(true);
   }
 
   WebRuntimeFeatures::enableSeamlessIFrames(
@@ -881,8 +926,8 @@ void RenderThreadImpl::OnGpuVDAContextLoss() {
   DCHECK(self);
   if (!self->gpu_vda_context3d_.get())
     return;
-  if (self->compositor_thread()) {
-    self->compositor_thread()->GetWebThread()->message_loop()->DeleteSoon(
+  if (self->compositor_message_loop_proxy()) {
+    self->compositor_message_loop_proxy()->DeleteSoon(
         FROM_HERE, self->gpu_vda_context3d_.release());
   } else {
     self->gpu_vda_context3d_.reset();
@@ -902,6 +947,49 @@ RenderThreadImpl::GetGpuVDAContext3D() {
   return gpu_vda_context3d_.get();
 }
 
+scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
+RenderThreadImpl::CreateOffscreenContext3d() {
+  WebKit::WebGraphicsContext3D::Attributes attributes;
+  attributes.shareResources = true;
+  attributes.depth = false;
+  attributes.stencil = false;
+  attributes.antialias = false;
+  attributes.noAutomaticFlushes = true;
+
+  return make_scoped_ptr(
+      WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
+          this,
+          attributes,
+          GURL("chrome://gpu/RenderThreadImpl::CreateOffscreenContext3d")));
+}
+
+scoped_refptr<ContextProviderCommandBuffer>
+RenderThreadImpl::OffscreenContextProviderForMainThread() {
+  DCHECK(IsMainThread());
+
+  if (!shared_contexts_main_thread_ ||
+      shared_contexts_main_thread_->DestroyedOnMainThread()) {
+    shared_contexts_main_thread_ =
+        RendererContextProviderCommandBuffer::Create();
+    if (shared_contexts_main_thread_ &&
+        !shared_contexts_main_thread_->BindToCurrentThread())
+      shared_contexts_main_thread_ = NULL;
+  }
+  return shared_contexts_main_thread_;
+}
+
+scoped_refptr<ContextProviderCommandBuffer>
+RenderThreadImpl::OffscreenContextProviderForCompositorThread() {
+  DCHECK(IsMainThread());
+
+  if (!shared_contexts_compositor_thread_ ||
+      shared_contexts_compositor_thread_->DestroyedOnMainThread()) {
+    shared_contexts_compositor_thread_ =
+        RendererContextProviderCommandBuffer::Create();
+  }
+  return shared_contexts_compositor_thread_;
+}
+
 AudioRendererMixerManager* RenderThreadImpl::GetAudioRendererMixerManager() {
   if (!audio_renderer_mixer_manager_.get()) {
     audio_renderer_mixer_manager_.reset(new AudioRendererMixerManager(
@@ -913,18 +1001,13 @@ AudioRendererMixerManager* RenderThreadImpl::GetAudioRendererMixerManager() {
 
 media::AudioHardwareConfig* RenderThreadImpl::GetAudioHardwareConfig() {
   if (!audio_hardware_config_) {
-    int output_buffer_size;
-    int output_sample_rate;
-    int input_sample_rate;
-    media::ChannelLayout input_channel_layout;
-
+    media::AudioParameters input_params;
+    media::AudioParameters output_params;
     Send(new ViewHostMsg_GetAudioHardwareConfig(
-        &output_buffer_size, &output_sample_rate,
-        &input_sample_rate, &input_channel_layout));
+        &input_params, &output_params));
 
     audio_hardware_config_.reset(new media::AudioHardwareConfig(
-        output_buffer_size, output_sample_rate, input_sample_rate,
-        input_channel_layout));
+        input_params, output_params));
     audio_message_filter_->SetAudioHardwareConfig(audio_hardware_config_.get());
   }
 
@@ -1025,9 +1108,10 @@ void RenderThreadImpl::DoNotNotifyWebKitOfModalLoop() {
   notify_webkit_of_modal_loop_ = false;
 }
 
-void RenderThreadImpl::OnSetZoomLevelForCurrentURL(const std::string& host,
+void RenderThreadImpl::OnSetZoomLevelForCurrentURL(const std::string& scheme,
+                                                   const std::string& host,
                                                    double zoom_level) {
-  RenderViewZoomer zoomer(host, zoom_level);
+  RenderViewZoomer zoomer(scheme, host, zoom_level);
   RenderView::ForEach(&zoomer);
 }
 
@@ -1055,6 +1139,8 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewMsg_PurgePluginListCache, OnPurgePluginListCache)
     IPC_MESSAGE_HANDLER(ViewMsg_NetworkStateChanged, OnNetworkStateChanged)
     IPC_MESSAGE_HANDLER(ViewMsg_TempCrashWithData, OnTempCrashWithData)
+    IPC_MESSAGE_HANDLER(ViewMsg_SetWebKitSharedTimersSuspended,
+                        OnSetWebKitSharedTimersSuspended)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -1076,7 +1162,8 @@ void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
       params.swapped_out,
       params.next_page_id,
       params.screen_info,
-      params.accessibility_mode);
+      params.accessibility_mode,
+      params.allow_partial_swap);
 }
 
 GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
@@ -1130,9 +1217,14 @@ WebKit::WebMediaStreamCenter* RenderThreadImpl::CreateMediaStreamCenter(
 #endif
 
 #if defined(ENABLE_WEBRTC)
-  if (!media_stream_center_)
-    media_stream_center_ = new MediaStreamCenter(
-        client, GetMediaStreamDependencyFactory());
+  if (!media_stream_center_) {
+    media_stream_center_ = GetContentClient()->renderer()
+        ->OverrideCreateWebMediaStreamCenter(client);
+    if (!media_stream_center_) {
+      media_stream_center_ = new MediaStreamCenter(
+          client, GetMediaStreamDependencyFactory());
+    }
+  }
 #endif
   return media_stream_center_;
 }
@@ -1179,6 +1271,10 @@ void RenderThreadImpl::OnNetworkStateChanged(bool online) {
 void RenderThreadImpl::OnTempCrashWithData(const GURL& data) {
   GetContentClient()->SetActiveURL(data);
   CHECK(false);
+}
+
+void RenderThreadImpl::OnSetWebKitSharedTimersSuspended(bool suspend) {
+  ToggleWebKitSharedTimer(suspend);
 }
 
 scoped_refptr<base::MessageLoopProxy>

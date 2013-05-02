@@ -74,20 +74,20 @@ SVGTextContentElement::SVGTextContentElement(const QualifiedName& tagName, Docum
     registerAnimatedPropertiesForSVGTextContentElement();
 }
 
-void SVGTextContentElement::synchronizeTextLength(void* contextElement)
+void SVGTextContentElement::synchronizeTextLength(SVGElement* contextElement)
 {
     ASSERT(contextElement);
-    SVGTextContentElement* ownerType = static_cast<SVGTextContentElement*>(contextElement);
+    SVGTextContentElement* ownerType = toSVGTextContentElement(contextElement);
     if (!ownerType->m_textLength.shouldSynchronize)
         return;
     AtomicString value(SVGPropertyTraits<SVGLength>::toString(ownerType->m_specifiedTextLength));
     ownerType->m_textLength.synchronize(ownerType, textLengthPropertyInfo()->attributeName, value);
 }
 
-PassRefPtr<SVGAnimatedProperty> SVGTextContentElement::lookupOrCreateTextLengthWrapper(void* contextElement)
+PassRefPtr<SVGAnimatedProperty> SVGTextContentElement::lookupOrCreateTextLengthWrapper(SVGElement* contextElement)
 {
     ASSERT(contextElement);
-    SVGTextContentElement* ownerType = static_cast<SVGTextContentElement*>(contextElement);
+    SVGTextContentElement* ownerType = toSVGTextContentElement(contextElement);
     return SVGAnimatedProperty::lookupOrCreateWrapper<SVGTextContentElement, SVGAnimatedLength, SVGLength>
            (ownerType, textLengthPropertyInfo(), ownerType->m_textLength.value);
 }
@@ -233,14 +233,14 @@ bool SVGTextContentElement::isPresentationAttribute(const QualifiedName& name) c
     return SVGStyledElement::isPresentationAttribute(name);
 }
 
-void SVGTextContentElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
+void SVGTextContentElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {
-    if (!isSupportedAttribute(attribute.name()))
-        SVGStyledElement::collectStyleForPresentationAttribute(attribute, style);
-    else if (attribute.name().matches(XMLNames::spaceAttr)) {
+    if (!isSupportedAttribute(name))
+        SVGStyledElement::collectStyleForPresentationAttribute(name, value, style);
+    else if (name.matches(XMLNames::spaceAttr)) {
         DEFINE_STATIC_LOCAL(const AtomicString, preserveString, ("preserve", AtomicString::ConstructFromLiteral));
 
-        if (attribute.value() == preserveString)
+        if (value == preserveString)
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWhiteSpace, CSSValuePre);
         else
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWhiteSpace, CSSValueNowrap);

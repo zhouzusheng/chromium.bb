@@ -11,18 +11,18 @@
 #ifndef WEBRTC_MODULES_VIDEO_CODING_MEDIA_OPT_UTIL_H_
 #define WEBRTC_MODULES_VIDEO_CODING_MEDIA_OPT_UTIL_H_
 
-#include "typedefs.h"
-#include "trace.h"
-#include "exp_filter.h"
-#include "internal_defines.h"
-#include "qm_select.h"
-
 #include <cmath>
 #include <cstdlib>
 
+#include "webrtc/modules/video_coding/utility/include/exp_filter.h"
+#include "webrtc/modules/video_coding/main/source/internal_defines.h"
+#include "webrtc/modules/video_coding/main/source/qm_select.h"
+#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/typedefs.h"
 
-namespace webrtc
-{
+namespace webrtc {
+namespace media_optimization {
+
 // Number of time periods used for (max) window filter for packet loss
 // TODO (marpan): set reasonable window size for filtered packet loss,
 // adjustment should be based on logged/real data of loss stats/correlation.
@@ -72,8 +72,8 @@ struct VCMProtectionParameters
 
 
 /******************************/
-/* VCMProtectionMethod class    */
-/****************************/
+/* VCMProtectionMethod class  */
+/******************************/
 
 enum VCMProtectionMethodEnum
 {
@@ -251,14 +251,14 @@ public:
     //        - newMethodType    : New requested protection method type. If one
     //                           is already set, it will be deleted and replaced
     // Return value:             Returns true on update
-    bool SetMethod(enum VCMProtectionMethodEnum newMethodType);
+    bool SetMethod(VCMProtectionMethodEnum newMethodType);
 
     // Remove requested protection method
     // Input:
     //        - method          : method to be removed (if currently selected)
     //
     // Return value:             Returns true on update
-    bool RemoveMethod(enum VCMProtectionMethodEnum method);
+    bool RemoveMethod(VCMProtectionMethodEnum method);
 
     // Return required bit rate per selected protectin method
     float RequiredBitRate() const;
@@ -390,6 +390,7 @@ private:
     int                       _numLayers;
 };
 
+} // namespace media_optimization
 } // namespace webrtc
 
 #endif // WEBRTC_MODULES_VIDEO_CODING_MEDIA_OPT_UTIL_H_

@@ -55,12 +55,12 @@
 #include <wtf/Threading.h>
 
 #include "FrameLoaderClientImpl.h"
-#include "PlatformMessagePortChannel.h"
-#include "WebFileSystemCallbacks.h"
+#include "PlatformMessagePortChannelChromium.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
 #include "WebPermissionClient.h"
 #include "WebViewImpl.h"
+#include <public/WebFileSystemCallbacks.h>
 #include <public/WebMessagePortChannel.h>
 #include <public/WebString.h>
 #include <public/WebURL.h>
@@ -122,8 +122,8 @@ bool WebWorkerClientImpl::allowFileSystem()
     return !webView->permissionClient() || webView->permissionClient()->allowFileSystem(m_webFrame);
 }
 
-void WebWorkerClientImpl::openFileSystem(WebFileSystem::Type type, long long size, bool create,
-                                         WebFileSystemCallbacks* callbacks)
+void WebWorkerClientImpl::openFileSystem(WebFileSystemType type, long long size, bool create,
+    WebFileSystemCallbacks* callbacks)
 {
     if (askedToTerminate()) {
         callbacks->didFail(WebFileErrorAbort);
@@ -140,6 +140,15 @@ bool WebWorkerClientImpl::allowIndexedDB(const WebString& name)
     if (!webView)
         return false;
     return !webView->permissionClient() || webView->permissionClient()->allowIndexedDB(m_webFrame, name, WebSecurityOrigin());
+}
+
+void WebWorkerClientImpl::queryUsageAndQuota(WebStorageQuotaType type, WebStorageQuotaCallbacks* callbacks)
+{
+    if (askedToTerminate()) {
+        callbacks->didFail(WebStorageQuotaErrorAbort);
+        return;
+    }
+    m_webFrame->client()->queryStorageUsageAndQuota(m_webFrame, type, callbacks);
 }
 
 WebWorkerClientImpl::WebWorkerClientImpl(Worker* worker, WebFrameImpl* webFrame)

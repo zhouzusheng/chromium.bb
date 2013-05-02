@@ -63,7 +63,13 @@ public:
     // Used by canvas to gain raw pixel access
     void paintCurrentFrameInContext(GraphicsContext*, const IntRect&);
 
+    // Used by WebGL to do GPU-GPU textures copy if possible.
+    // See more details at MediaPlayer::copyVideoTextureToPlatformTexture() defined in Source/WebCore/platform/graphics/MediaPlayer.h.
+    bool copyVideoTextureToPlatformTexture(GraphicsContext3D*, Platform3DObject texture, GC3Dint level, GC3Denum type, GC3Denum internalFormat, bool premultiplyAlpha, bool flipY);
+
     bool shouldDisplayPosterImage() const { return displayMode() == Poster || displayMode() == PosterWaitingForVideo; }
+
+    KURL posterImageURL() const;
 
 private:
     HTMLVideoElement(const QualifiedName&, Document*, bool);
@@ -75,12 +81,12 @@ private:
     virtual void attach();
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
     virtual bool isVideo() const { return true; }
     virtual bool hasVideo() const { return player() && player()->hasVideo(); }
     virtual bool supportsFullscreen() const;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual const QualifiedName& imageSourceAttributeName() const;
+    virtual const AtomicString& imageSourceURL() const OVERRIDE;
 
     virtual bool hasAvailableVideoFrame() const;
     virtual void updateDisplayState();
@@ -89,6 +95,7 @@ private:
 
     OwnPtr<HTMLImageLoader> m_imageLoader;
 
+    AtomicString m_defaultPosterURL;
 };
 
 } //namespace

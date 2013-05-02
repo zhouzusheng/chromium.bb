@@ -91,6 +91,8 @@ class HBasicBlock: public ZoneObject {
   void set_last_instruction_index(int index) {
     last_instruction_index_ = index;
   }
+  bool is_osr_entry() { return is_osr_entry_; }
+  void set_osr_entry() { is_osr_entry_ = true; }
 
   void AttachLoopInformation();
   void DetachLoopInformation();
@@ -193,6 +195,7 @@ class HBasicBlock: public ZoneObject {
   bool is_inline_return_target_;
   bool is_deoptimizing_;
   bool dominates_loop_successors_;
+  bool is_osr_entry_;
 };
 
 
@@ -247,7 +250,7 @@ class HGraph: public ZoneObject {
  public:
   explicit HGraph(CompilationInfo* info);
 
-  Isolate* isolate() { return isolate_; }
+  Isolate* isolate() const { return isolate_; }
   Zone* zone() const { return zone_; }
   CompilationInfo* info() const { return info_; }
 
@@ -457,7 +460,7 @@ class HEnvironment: public ZoneObject {
                Handle<JSFunction> closure,
                Zone* zone);
 
-  explicit HEnvironment(Zone* zone);
+  HEnvironment(Zone* zone, int parameter_count);
 
   HEnvironment* arguments_environment() {
     return outer()->frame_type() == ARGUMENTS_ADAPTOR ? outer() : this;
@@ -875,6 +878,11 @@ class HGraphBuilder {
   HInstruction* AddInstruction(HInstruction* instr);
   void AddSimulate(BailoutId id,
                    RemovableSimulate removable = FIXED_SIMULATE);
+  HBoundsCheck* AddBoundsCheck(
+      HValue* index,
+      HValue* length,
+      BoundsCheckKeyMode key_mode = DONT_ALLOW_SMI_KEY,
+      Representation r = Representation::None());
 
  protected:
   virtual bool BuildGraph() = 0;
@@ -912,27 +920,52 @@ class HGraphBuilder {
   HInstruction* BuildStoreMap(HValue* object, HValue* map, BailoutId id);
   HInstruction* BuildStoreMap(HValue* object, Handle<Map> map, BailoutId id);
 
+  class CheckBuilder {
+   public:
+    CheckBuilder(HGraphBuilder* builder, BailoutId id);
+    ~CheckBuilder() {
+      if (!finished_) End();
+    }
+
+    void CheckNotUndefined(HValue* value);
+    void CheckIntegerEq(HValue* left, HValue* right);
+    void End();
+
+   private:
+    Zone* zone() { return builder_->zone(); }
+
+    HGraphBuilder* builder_;
+    bool finished_;
+    HBasicBlock* failure_block_;
+    HBasicBlock* merge_block_;
+    BailoutId id_;
+  };
+
   class IfBuilder {
    public:
-    IfBuilder(HGraphBuilder* builder,
-              BailoutId id = BailoutId::StubEntry());
+    IfBuilder(HGraphBuilder* builder, BailoutId id);
     ~IfBuilder() {
       if (!finished_) End();
     }
 
-    void BeginTrue(HValue* left, HValue* right, Token::Value token);
+    HInstruction* BeginTrue(
+        HValue* left,
+        HValue* right,
+        Token::Value token,
+        Representation input_representation = Representation::Integer32());
     void BeginFalse();
     void End();
 
    private:
+    Zone* zone() { return builder_->zone(); }
+
     HGraphBuilder* builder_;
     bool finished_;
-    HBasicBlock* true_block_;
-    HBasicBlock* false_block_;
+    HBasicBlock* first_true_block_;
+    HBasicBlock* last_true_block_;
+    HBasicBlock* first_false_block_;
     HBasicBlock* merge_block_;
     BailoutId id_;
-
-    Zone* zone() { return builder_->zone(); }
   };
 
   class LoopBuilder {
@@ -947,15 +980,21 @@ class HGraphBuilder {
     LoopBuilder(HGraphBuilder* builder,
                 HValue* context,
                 Direction direction,
-                BailoutId id = BailoutId::StubEntry());
+                BailoutId id);
     ~LoopBuilder() {
       ASSERT(finished_);
     }
 
-    HValue* BeginBody(HValue* initial, HValue* terminating, Token::Value token);
+    HValue* BeginBody(
+        HValue* initial,
+        HValue* terminating,
+        Token::Value token,
+        Representation input_representation = Representation::Integer32());
     void EndBody();
 
    private:
+    Zone* zone() { return builder_->zone(); }
+
     HGraphBuilder* builder_;
     HValue* context_;
     HInstruction* increment_;
@@ -966,8 +1005,6 @@ class HGraphBuilder {
     Direction direction_;
     BailoutId id_;
     bool finished_;
-
-    Zone* zone() { return builder_->zone(); }
   };
 
   HValue* BuildAllocateElements(HContext* context,
@@ -1243,6 +1280,9 @@ class HOptimizedGraphBuilder: public HGraphBuilder, public AstVisitor {
   bool TryInlineSetter(Handle<JSFunction> setter,
                        Assignment* assignment,
                        HValue* implicit_return_value);
+  bool TryInlineApply(Handle<JSFunction> function,
+                      Call* expr,
+                      int arguments_count);
   bool TryInlineBuiltinMethodCall(Call* expr,
                                   HValue* receiver,
                                   Handle<Map> receiver_map,
@@ -1283,9 +1323,9 @@ class HOptimizedGraphBuilder: public HGraphBuilder, public AstVisitor {
                                HValue* value,
                                NilValue nil);
 
-  HStringCharCodeAt* BuildStringCharCodeAt(HValue* context,
-                                           HValue* string,
-                                           HValue* index);
+  HInstruction* BuildStringCharCodeAt(HValue* context,
+                                      HValue* string,
+                                      HValue* index);
   HInstruction* BuildBinaryOperation(BinaryOperation* expr,
                                      HValue* left,
                                      HValue* right);

@@ -7,6 +7,7 @@
 #include <windows.h>
 
 #include "base/win/scoped_hdc.h"
+#include "ui/base/layout.h"
 #include "base/win/registry.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/point_conversions.h"
@@ -18,11 +19,13 @@ namespace {
 int kDefaultDPIX = 96;
 int kDefaultDPIY = 96;
 
-
 float GetDeviceScaleFactorImpl() {
 #if defined(ENABLE_HIDPI)
-  return gfx::Display::HasForceDeviceScaleFactor() ?
+  float scale = gfx::Display::HasForceDeviceScaleFactor() ?
       gfx::Display::GetForcedDeviceScaleFactor() : ui::GetDPIScale();
+  // Quantize to nearest supported scale factor.
+  scale = ui::GetScaleFactorScale(ui::GetScaleFactorFromScale(scale));
+  return scale;
 #else
   return 1.0f;
 #endif
@@ -109,6 +112,11 @@ gfx::Size ScreenToDIPSize(const gfx::Size& size_in_pixels) {
 
 gfx::Size DIPToScreenSize(const gfx::Size& dip_size) {
   return gfx::ToFlooredSize(gfx::ScaleSize(dip_size, GetDeviceScaleFactor()));
+}
+
+int GetSystemMetricsInDIP(int metric) {
+  return static_cast<int>(GetSystemMetrics(metric) /
+      GetDeviceScaleFactor() + 0.5);
 }
 
 double GetUndocumentedDPIScale() {

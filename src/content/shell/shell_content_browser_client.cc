@@ -9,6 +9,8 @@
 #include "base/path_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
+#include "content/public/browser/storage_partition.h"
+#include "content/public/common/content_switches.h"
 #include "content/shell/geolocation/shell_access_token_store.h"
 #include "content/shell/shell.h"
 #include "content/shell/shell_browser_context.h"
@@ -16,6 +18,7 @@
 #include "content/shell/shell_devtools_delegate.h"
 #include "content/shell/shell_message_filter.h"
 #include "content/shell/shell_messages.h"
+#include "content/shell/shell_quota_permission_context.h"
 #include "content/shell/shell_resource_dispatcher_host_delegate.h"
 #include "content/shell/shell_switches.h"
 #include "content/shell/shell_web_contents_view_delegate_creator.h"
@@ -55,6 +58,18 @@ base::FilePath GetWebKitRootDirFilePath() {
   return base_path;
 }
 
+base::FilePath GetChromiumRootDirFilePath() {
+  base::FilePath webkit_path = GetWebKitRootDirFilePath();
+  if (file_util::PathExists(webkit_path.Append(
+          FILE_PATH_LITERAL("Source/WebKit/chromium/webkit/support")))) {
+    // We're in a WebKit-only checkout.
+    return webkit_path.Append(FILE_PATH_LITERAL("Source/WebKit/chromium"));
+  } else {
+    // We're in a Chromium checkout, and WebKit is in third_party/WebKit.
+    return webkit_path.Append(FILE_PATH_LITERAL("../.."));
+  }
+}
+
 }  // namespace
 
 ShellContentBrowserClient::ShellContentBrowserClient()
@@ -78,46 +93,22 @@ void ShellContentBrowserClient::RenderProcessHostCreated(
 
 net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
     BrowserContext* content_browser_context,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        blob_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        file_system_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        developer_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        chrome_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        chrome_devtools_protocol_handler) {
+    ProtocolHandlerMap* protocol_handlers) {
   ShellBrowserContext* shell_browser_context =
       ShellBrowserContextForBrowserContext(content_browser_context);
-  return shell_browser_context->CreateRequestContext(
-      blob_protocol_handler.Pass(), file_system_protocol_handler.Pass(),
-      developer_protocol_handler.Pass(), chrome_protocol_handler.Pass(),
-      chrome_devtools_protocol_handler.Pass());
+  return shell_browser_context->CreateRequestContext(protocol_handlers);
 }
 
 net::URLRequestContextGetter*
 ShellContentBrowserClient::CreateRequestContextForStoragePartition(
     BrowserContext* content_browser_context,
-    const FilePath& partition_path,
+    const base::FilePath& partition_path,
     bool in_memory,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        blob_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        file_system_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        developer_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        chrome_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        chrome_devtools_protocol_handler) {
+    ProtocolHandlerMap* protocol_handlers) {
   ShellBrowserContext* shell_browser_context =
       ShellBrowserContextForBrowserContext(content_browser_context);
   return shell_browser_context->CreateRequestContextForStoragePartition(
-      partition_path, in_memory, blob_protocol_handler.Pass(),
-      file_system_protocol_handler.Pass(),
-      developer_protocol_handler.Pass(), chrome_protocol_handler.Pass(),
-      chrome_devtools_protocol_handler.Pass());
+      partition_path, in_memory, protocol_handlers);
 }
 
 void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
@@ -143,13 +134,24 @@ std::string ShellContentBrowserClient::GetDefaultDownloadName() {
   return "download";
 }
 
+bool ShellContentBrowserClient::SupportsBrowserPlugin(
+    content::BrowserContext* browser_context, const GURL& url) {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableBrowserPluginForAllViewTypes);
+}
+
 WebContentsViewDelegate* ShellContentBrowserClient::GetWebContentsViewDelegate(
     WebContents* web_contents) {
-#if defined(TOOLKIT_GTK) || defined(OS_WIN) || defined(OS_MACOSX)
+#if !defined(USE_AURA)
   return CreateShellWebContentsViewDelegate(web_contents);
-#endif
-  NOTIMPLEMENTED();
+#else
   return NULL;
+#endif
+}
+
+QuotaPermissionContext*
+ShellContentBrowserClient::CreateQuotaPermissionContext() {
+  return new ShellQuotaPermissionContext();
 }
 
 #if defined(OS_ANDROID)

@@ -17,7 +17,6 @@ class GURL;
 struct IndexedDBDatabaseMetadata;
 struct IndexedDBHostMsg_DatabaseCount_Params;
 struct IndexedDBHostMsg_DatabaseCreateIndex_Params;
-struct IndexedDBHostMsg_DatabaseCreateObjectStoreOld_Params;
 struct IndexedDBHostMsg_DatabaseCreateObjectStore_Params;
 struct IndexedDBHostMsg_DatabaseCreateTransaction_Params;
 struct IndexedDBHostMsg_DatabaseDeleteRange_Params;
@@ -28,12 +27,6 @@ struct IndexedDBHostMsg_DatabaseSetIndexKeys_Params;
 struct IndexedDBHostMsg_FactoryDeleteDatabase_Params;
 struct IndexedDBHostMsg_FactoryGetDatabaseNames_Params;
 struct IndexedDBHostMsg_FactoryOpen_Params;
-struct IndexedDBHostMsg_IndexCount_Params;
-struct IndexedDBHostMsg_IndexOpenCursor_Params;
-struct IndexedDBHostMsg_ObjectStoreCount_Params;
-struct IndexedDBHostMsg_ObjectStoreCreateIndex_Params;
-struct IndexedDBHostMsg_ObjectStoreOpenCursor_Params;
-struct IndexedDBHostMsg_ObjectStorePut_Params;
 
 namespace WebKit {
 class WebIDBCursor;
@@ -48,7 +41,6 @@ class IndexedDBContextImpl;
 class IndexedDBKey;
 class IndexedDBKeyPath;
 class IndexedDBKeyRange;
-class SerializedScriptValue;
 
 // Handles all IndexedDB related messages from a particular renderer process.
 class IndexedDBDispatcherHost : public BrowserMessageFilter {
@@ -133,7 +125,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnCreateTransaction(
         const IndexedDBHostMsg_DatabaseCreateTransaction_Params&);
     void OnOpen(int32 ipc_database_id, int32 ipc_thread_id,
-                int32 ipc_response_id);
+                int32 ipc_callbacks_id);
     void OnClose(int32 ipc_database_id);
     void OnDestroyed(int32 ipc_database_id);
 
@@ -152,7 +144,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnDeleteRange(
         const IndexedDBHostMsg_DatabaseDeleteRange_Params& params);
     void OnClear(int32 ipc_thread_id,
-                 int32 ipc_response_id,
+                 int32 ipc_callbacks_id,
                  int32 ipc_database_id,
                  int64 transaction_id,
                  int64 object_store_id);
@@ -181,27 +173,23 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     bool OnMessageReceived(const IPC::Message& message, bool *msg_is_ok);
     void Send(IPC::Message* message);
 
-    void OnUpdate(int32 ipc_object_store_id,
-                  int32 ipc_thread_id,
-                  int32 ipc_response_id,
-                  const SerializedScriptValue& value);
     void OnAdvance(int32 ipc_object_store_id,
                    int32 ipc_thread_id,
-                   int32 ipc_response_id,
+                   int32 ipc_callbacks_id,
                    unsigned long count);
     void OnContinue(int32 ipc_object_store_id,
                     int32 ipc_thread_id,
-                    int32 ipc_response_id,
+                    int32 ipc_callbacks_id,
                     const IndexedDBKey& key);
     void OnPrefetch(int32 ipc_cursor_id,
                     int32 ipc_thread_id,
-                    int32 ipc_response_id,
+                    int32 ipc_callbacks_id,
                     int n);
     void OnPrefetchReset(int32 ipc_cursor_id, int used_prefetches,
                          int unused_prefetches);
     void OnDelete(int32 ipc_object_store_id,
                   int32 ipc_thread_id,
-                  int32 ipc_response_id);
+                  int32 ipc_callbacks_id);
     void OnDestroyed(int32 ipc_cursor_id);
 
     IndexedDBDispatcherHost* parent_;

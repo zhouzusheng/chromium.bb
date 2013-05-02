@@ -245,9 +245,14 @@
   OP(TraceEndCHROMIUM)                                         /* 488 */ \
   OP(AsyncTexSubImage2DCHROMIUM)                               /* 489 */ \
   OP(AsyncTexImage2DCHROMIUM)                                  /* 490 */ \
-  OP(DiscardFramebufferEXT)                                    /* 491 */ \
-  OP(DiscardFramebufferEXTImmediate)                           /* 492 */ \
-  OP(LoseContextCHROMIUM)                                      /* 493 */ \
+  OP(WaitAsyncTexImage2DCHROMIUM)                              /* 491 */ \
+  OP(DiscardFramebufferEXT)                                    /* 492 */ \
+  OP(DiscardFramebufferEXTImmediate)                           /* 493 */ \
+  OP(LoseContextCHROMIUM)                                      /* 494 */ \
+  OP(InsertSyncPointCHROMIUM)                                  /* 495 */ \
+  OP(WaitSyncPointCHROMIUM)                                    /* 496 */ \
+  OP(DrawBuffersEXT)                                           /* 497 */ \
+  OP(DrawBuffersEXTImmediate)                                  /* 498 */ \
 
 enum CommandId {
   kStartPoint = cmd::kLastCommonId,  // All GLES2 commands start after this.

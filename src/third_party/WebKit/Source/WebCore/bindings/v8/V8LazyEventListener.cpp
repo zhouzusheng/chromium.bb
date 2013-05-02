@@ -70,7 +70,7 @@ v8::Handle<v8::Object> toObjectWrapper(T* domObject, v8::Isolate* isolate)
     v8::Handle<v8::Value> value = toV8(domObject, v8::Handle<v8::Object>(), isolate);
     if (value.IsEmpty())
         return v8::Object::New();
-    return value.As<v8::Object>();
+    return v8::Local<v8::Object>::New(isolate, value.As<v8::Object>());
 }
 
 v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ScriptExecutionContext* context, v8::Handle<v8::Value> jsEvent, Event* event)
@@ -93,7 +93,7 @@ v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ScriptExecutionCo
     if (!context->isDocument())
         return v8::Local<v8::Value>();
 
-    Frame* frame = static_cast<Document*>(context)->frame();
+    Frame* frame = toDocument(context)->frame();
     if (!frame)
         return v8::Local<v8::Value>();
 
@@ -113,16 +113,19 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
     if (hasExistingListenerObject())
         return;
 
-    if (context->isDocument() && !static_cast<Document*>(context)->contentSecurityPolicy()->allowInlineEventHandlers(m_sourceURL, m_position.m_line))
+    if (context->isDocument() && !toDocument(context)->contentSecurityPolicy()->allowInlineEventHandlers(m_sourceURL, m_position.m_line))
+        return;
+
+    ASSERT(context->isDocument());
+    Frame* frame = toDocument(context)->frame();
+    if (!frame)
+        return;
+
+    if (!frame->script()->canExecuteScripts(NotAboutToExecuteScript))
         return;
 
     v8::HandleScope handleScope;
 
-    ASSERT(context->isDocument());
-    Frame* frame = static_cast<Document*>(context)->frame();
-    ASSERT(frame);
-    if (!frame->script()->canExecuteScripts(NotAboutToExecuteScript))
-        return;
     // Use the outer scope to hold context.
     v8::Local<v8::Context> v8Context = toV8Context(context, worldContext());
     v8::Isolate* isolate = v8Context->GetIsolate();
@@ -177,7 +180,7 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
 
     HTMLFormElement* formElement = 0;
     if (m_node && m_node->isHTMLElement())
-        formElement = static_cast<HTMLElement*>(m_node)->form();
+        formElement = toHTMLElement(m_node)->form();
 
     v8::Handle<v8::Object> nodeWrapper = toObjectWrapper<Node>(m_node, isolate);
     v8::Handle<v8::Object> formWrapper = toObjectWrapper<HTMLFormElement>(formElement, isolate);

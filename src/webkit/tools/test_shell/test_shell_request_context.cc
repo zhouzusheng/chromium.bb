@@ -7,15 +7,12 @@
 #include "build/build_config.h"
 
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/worker_pool.h"
 #include "net/base/cert_verifier.h"
-#include "net/base/default_server_bound_cert_store.h"
-#include "net/base/host_resolver.h"
-#include "net/base/server_bound_cert_service.h"
-#include "net/base/ssl_config_service_defaults.h"
 #include "net/cookies/cookie_monster.h"
+#include "net/dns/host_resolver.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_network_session.h"
@@ -23,6 +20,9 @@
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_service.h"
+#include "net/ssl/default_server_bound_cert_store.h"
+#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
@@ -40,12 +40,9 @@ class TestShellHttpUserAgentSettings : public net::HttpUserAgentSettings {
   TestShellHttpUserAgentSettings() {}
   virtual ~TestShellHttpUserAgentSettings() {}
 
-  // hard-code A-L and A-C for test shells
+  // Hard-code Accept-Language for test shells.
   virtual std::string GetAcceptLanguage() const OVERRIDE {
     return "en-us,en";
-  }
-  virtual std::string GetAcceptCharset() const OVERRIDE {
-    return "iso-8859-1,*,utf-8";
   }
 
   virtual std::string GetUserAgent(const GURL& url) const OVERRIDE {
@@ -80,9 +77,10 @@ void TestShellRequestContext::Init(
 
   storage_.set_http_user_agent_settings(new TestShellHttpUserAgentSettings);
 
-  // Use no proxy; it's not needed for testing and just breaks things.
+  // Use the system proxy settings.
   scoped_ptr<net::ProxyConfigService> proxy_config_service(
-      new net::ProxyConfigServiceFixed(net::ProxyConfig()));
+      net::ProxyService::CreateSystemProxyConfigService(
+              base::ThreadTaskRunnerHandle::Get(), NULL));
 
   storage_.set_host_resolver(net::HostResolver::CreateDefaultResolver(NULL));
   storage_.set_cert_verifier(net::CertVerifier::CreateDefault());

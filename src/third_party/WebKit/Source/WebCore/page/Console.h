@@ -29,10 +29,7 @@
 #ifndef Console_h
 #define Console_h
 
-#include "ConsoleAPITypes.h"
-#include "ConsoleTypes.h"
 #include "DOMWindowProperty.h"
-#include "ScriptCallStack.h"
 #include "ScriptProfile.h"
 #include "ScriptState.h"
 #include "ScriptWrappable.h"
@@ -42,12 +39,10 @@
 
 namespace WebCore {
 
-class Document;
 class Frame;
 class MemoryInfo;
 class Page;
 class ScriptArguments;
-class ScriptCallStack;
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)
 typedef Vector<RefPtr<ScriptProfile> > ProfilesArray;
@@ -58,10 +53,6 @@ public:
     static PassRefPtr<Console> create(Frame* frame) { return adoptRef(new Console(frame)); }
     virtual ~Console();
 
-    void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack> = 0, ScriptState* = 0, unsigned long requestIdentifier = 0);
-    void addMessage(MessageSource, MessageLevel, const String& message, PassRefPtr<ScriptCallStack>);
-    void addMessage(MessageSource, MessageLevel, const String& message, unsigned long requestIdentifier = 0, Document* = 0);
-
     void debug(ScriptState*, PassRefPtr<ScriptArguments>);
     void error(ScriptState*, PassRefPtr<ScriptArguments>);
     void info(ScriptState*, PassRefPtr<ScriptArguments>);
@@ -70,6 +61,7 @@ public:
     void warn(ScriptState*, PassRefPtr<ScriptArguments>);
     void dir(ScriptState*, PassRefPtr<ScriptArguments>);
     void dirxml(ScriptState*, PassRefPtr<ScriptArguments>);
+    void table(ScriptState*, PassRefPtr<ScriptArguments>);
     void trace(ScriptState*, PassRefPtr<ScriptArguments>);
     void assertCondition(ScriptState*, PassRefPtr<ScriptArguments>, bool condition);
     void count(ScriptState*, PassRefPtr<ScriptArguments>);
@@ -85,12 +77,6 @@ public:
     void group(ScriptState*, PassRefPtr<ScriptArguments>);
     void groupCollapsed(ScriptState*, PassRefPtr<ScriptArguments>);
     void groupEnd();
-
-    static void mute();
-    static void unmute();
-
-    static bool shouldPrintExceptions();
-    static void setShouldPrintExceptions(bool);
 
     PassRefPtr<MemoryInfo> memory() const;
 

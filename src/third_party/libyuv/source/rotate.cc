@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -20,7 +20,7 @@ namespace libyuv {
 extern "C" {
 #endif
 
-#if !defined(YUV_DISABLE_ASM) && \
+#if !defined(LIBYUV_DISABLE_X86) && \
     (defined(_M_IX86) || defined(__x86_64__) || defined(__i386__))
 #if defined(__APPLE__) && defined(__i386__)
 #define DECLARE_FUNCTION(name)                                                 \
@@ -41,7 +41,8 @@ extern "C" {
 #endif
 #endif
 
-#if !defined(YUV_DISABLE_ASM) && (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
+#if !defined(LIBYUV_DISABLE_NEON) && \
+    (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
 #define HAS_MIRRORROW_NEON
 void MirrorRow_NEON(const uint8* src, uint8* dst, int width);
 #define HAS_MIRRORROW_UV_NEON
@@ -56,8 +57,8 @@ void TransposeUVWx8_NEON(const uint8* src, int src_stride,
                          int width);
 #endif  // defined(__ARM_NEON__)
 
-#if !defined(YUV_DISABLE_ASM) && defined(__mips__)
-#if defined(__mips_dsp) && (__mips_dsp_rev >= 2)
+#if !defined(LIBYUV_DISABLE_MIPS) && defined(__mips__) && \
+    defined(__mips_dsp) && (__mips_dsp_rev >= 2)
 #define HAS_TRANSPOSE_WX8_MIPS_DSPR2
 void TransposeWx8_MIPS_DSPR2(const uint8* src, int src_stride,
                              uint8* dst, int dst_stride, int width);
@@ -69,11 +70,9 @@ void TransposeUVWx8_MIPS_DSPR2(const uint8* src, int src_stride,
                                uint8* dst_a, int dst_stride_a,
                                uint8* dst_b, int dst_stride_b,
                                int width);
-#endif
-#endif
+#endif  // defined(__mips__)
 
-
-#if !defined(YUV_DISABLE_ASM) && defined(_M_IX86)
+#if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86)
 #define HAS_TRANSPOSE_WX8_SSSE3
 __declspec(naked) __declspec(align(16))
 static void TransposeWx8_SSSE3(const uint8* src, int src_stride,
@@ -295,7 +294,7 @@ static void TransposeUVWx8_SSE2(const uint8* src, int src_stride,
     ret
   }
 }
-#elif !defined(YUV_DISABLE_ASM) && (defined(__i386__) || defined(__x86_64__))
+#elif !defined(LIBYUV_DISABLE_X86) && (defined(__i386__) || defined(__x86_64__))
 #define HAS_TRANSPOSE_WX8_SSSE3
 static void TransposeWx8_SSSE3(const uint8* src, int src_stride,
                                uint8* dst, int dst_stride, int width) {
@@ -384,7 +383,7 @@ static void TransposeWx8_SSSE3(const uint8* src, int src_stride,
   );
 }
 
-#if !defined(YUV_DISABLE_ASM) && defined (__i386__)
+#if !defined(LIBYUV_DISABLE_X86) && defined (__i386__)
 #define HAS_TRANSPOSE_UVWX8_SSE2
 extern "C" void TransposeUVWx8_SSE2(const uint8* src, int src_stride,
                                     uint8* dst_a, int dst_stride_a,
@@ -506,7 +505,7 @@ extern "C" void TransposeUVWx8_SSE2(const uint8* src, int src_stride,
     "pop    %ebx                               \n"
     "ret                                       \n"
 );
-#elif !defined(YUV_DISABLE_ASM) && defined(__x86_64__)
+#elif !defined(LIBYUV_DISABLE_X86) && defined(__x86_64__)
 // 64 bit version has enough registers to do 16x8 to 8x16 at a time.
 #define HAS_TRANSPOSE_WX8_FAST_SSSE3
 static void TransposeWx8_FAST_SSSE3(const uint8* src, int src_stride,
@@ -882,6 +881,13 @@ void RotatePlane180(const uint8* src, int src_stride,
     MirrorRow = MirrorRow_SSSE3;
   }
 #endif
+#if defined(HAS_MIRRORROW_AVX2)
+  bool clear = false;
+  if (TestCpuFlag(kCpuHasAVX2) && IS_ALIGNED(width, 32)) {
+    clear = true;
+    MirrorRow = MirrorRow_AVX2;
+  }
+#endif
 #if defined(HAS_MIRRORROW_MIPS_DSPR2)
   if (TestCpuFlag(kCpuHasMIPS_DSPR2) &&
       IS_ALIGNED(src, 4) && IS_ALIGNED(src_stride, 4) &&
@@ -907,6 +913,17 @@ void RotatePlane180(const uint8* src, int src_stride,
     CopyRow = CopyRow_SSE2;
   }
 #endif
+#if defined(HAS_COPYROW_AVX2)
+  // TODO(fbarchard): Detect Fast String support.
+  if (TestCpuFlag(kCpuHasAVX2)) {
+    CopyRow = CopyRow_AVX2;
+  }
+#endif
+#if defined(HAS_COPYROW_MIPS)
+  if (TestCpuFlag(kCpuHasMIPS)) {
+    CopyRow = CopyRow_MIPS;
+  }
+#endif
   if (width > kMaxStride) {
     return;
   }
@@ -925,6 +942,11 @@ void RotatePlane180(const uint8* src, int src_stride,
     src_bot -= src_stride;
     dst_bot -= dst_stride;
   }
+#if defined(HAS_MIRRORROW_AVX2)
+  if (clear) {
+    __asm vzeroupper;
+  }
+#endif
 }
 
 static void TransposeUVWx8_C(const uint8* src, int src_stride,

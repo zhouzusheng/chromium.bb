@@ -68,8 +68,8 @@
                   'USING_V8_SHARED',
                 ],
               },
-              'conditions': [
-                ['OS=="android"', {
+              'target_conditions': [
+                ['OS=="android" and _toolset=="target"', {
                   'libraries': [
                     '-llog',
                   ],
@@ -77,6 +77,8 @@
                     'src/common/android/include',
                   ],
                 }],
+              ],
+              'conditions': [
                 ['OS=="mac"', {
                   'xcode_settings': {
                     'OTHER_LDFLAGS': ['-dynamiclib', '-all_load']
@@ -343,6 +345,9 @@
             '../../src/heap-inl.h',
             '../../src/heap-profiler.cc',
             '../../src/heap-profiler.h',
+            '../../src/heap-snapshot-generator-inl.h',
+            '../../src/heap-snapshot-generator.cc',
+            '../../src/heap-snapshot-generator.h',
             '../../src/heap.cc',
             '../../src/heap.h',
             '../../src/hydrogen-instructions.cc',
@@ -478,6 +483,7 @@
             '../../src/unicode-inl.h',
             '../../src/unicode.cc',
             '../../src/unicode.h',
+            '../../src/uri.h',
             '../../src/utils-inl.h',
             '../../src/utils.cc',
             '../../src/utils.h',

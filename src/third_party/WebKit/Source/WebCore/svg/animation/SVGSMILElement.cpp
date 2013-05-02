@@ -165,10 +165,10 @@ void SVGSMILElement::buildPendingResource()
     String href = getAttribute(XLinkNames::hrefAttr);
     Element* target;
     if (href.isEmpty())
-        target = parentNode() && parentNode()->isElementNode() ? static_cast<Element*>(parentNode()) : 0;
+        target = parentNode() && parentNode()->isElementNode() ? toElement(parentNode()) : 0;
     else
         target = SVGURIReference::targetElementFromIRIString(href, document(), &id);
-    SVGElement* svgTarget = target && target->isSVGElement() ? static_cast<SVGElement*>(target) : 0;
+    SVGElement* svgTarget = target && target->isSVGElement() ? toSVGElement(target) : 0;
 
     if (svgTarget && !svgTarget->inDocument())
         svgTarget = 0;
@@ -713,7 +713,7 @@ SMILTime SVGSMILElement::simpleDuration() const
 
 void SVGSMILElement::addBeginTime(SMILTime eventTime, SMILTime beginTime, SMILTimeWithOrigin::Origin origin)
 {
-    ASSERT(!isnan(beginTime.value()));
+    ASSERT(!std::isnan(beginTime.value()));
     m_beginTimes.append(SMILTimeWithOrigin(beginTime, origin));
     sortTimeList(m_beginTimes);
     beginListChanged(eventTime);
@@ -721,7 +721,7 @@ void SVGSMILElement::addBeginTime(SMILTime eventTime, SMILTime beginTime, SMILTi
 
 void SVGSMILElement::addEndTime(SMILTime eventTime, SMILTime endTime, SMILTimeWithOrigin::Origin origin)
 {
-    ASSERT(!isnan(endTime.value()));
+    ASSERT(!std::isnan(endTime.value()));
     m_endTimes.append(SMILTimeWithOrigin(endTime, origin));
     sortTimeList(m_endTimes);
     endListChanged(eventTime);
@@ -742,7 +742,7 @@ SMILTime SVGSMILElement::findInstanceTime(BeginOrEnd beginOrEnd, SMILTime minimu
 
     const SMILTimeWithOrigin* result = approximateBinarySearch<const SMILTimeWithOrigin, SMILTime>(list, sizeOfList, minimumTime, extractTimeFromVector);
     int indexOfResult = result - list.begin();
-    ASSERT(indexOfResult < sizeOfList);
+    ASSERT_WITH_SECURITY_IMPLICATION(indexOfResult < sizeOfList);
     const SMILTime& currentTime = list[indexOfResult].time();
 
     // The special value "indefinite" does not yield an instance time in the begin list.

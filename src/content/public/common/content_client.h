@@ -104,6 +104,9 @@ class CONTENT_EXPORT ContentClient {
       std::vector<std::string>* standard_schemes,
       std::vector<std::string>* savable_schemes) {}
 
+  // Returns whether the given message should be sent in a swapped out renderer.
+  virtual bool CanSendWhileSwappedOut(const IPC::Message* message);
+
   // Returns whether the given message should be processed in the browser on
   // behalf of a swapped out renderer.
   virtual bool CanHandleWhileSwappedOut(const IPC::Message& message);
@@ -129,6 +132,10 @@ class CONTENT_EXPORT ContentClient {
 
   // Returns a native image given its id.
   virtual gfx::Image& GetNativeImageNamed(int resource_id) const;
+
+  // Called by content::GetProcessTypeNameInEnglish for process types that it
+  // doesn't know about because they're from the embedder.
+  virtual std::string GetProcessTypeNameInEnglish(int type);
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   // Allows the embedder to define a new |sandbox_type| by mapping it to the

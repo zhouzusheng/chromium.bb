@@ -56,6 +56,10 @@
 #include "ScrollingCoordinatorCoordinatedGraphics.h"
 #endif
 
+#if PLATFORM(BLACKBERRY)
+#include "ScrollingCoordinatorBlackBerry.h"
+#endif
+
 namespace WebCore {
 
 PassRefPtr<ScrollingCoordinator> ScrollingCoordinator::create(Page* page)
@@ -72,36 +76,11 @@ PassRefPtr<ScrollingCoordinator> ScrollingCoordinator::create(Page* page)
     return adoptRef(new ScrollingCoordinatorCoordinatedGraphics(page));
 #endif
 
+#if PLATFORM(BLACKBERRY)
+    return adoptRef(new ScrollingCoordinatorBlackBerry(page));
+#endif
+
     return adoptRef(new ScrollingCoordinator(page));
-}
-
-static int fixedPositionScrollOffset(int visibleContentSize, int contentsSize, int scrollPosition, int scrollOrigin, float frameScaleFactor, bool fixedElementsLayoutRelativeToFrame)
-{
-    int maxValue = contentsSize - visibleContentSize;
-    if (maxValue <= 0)
-        return 0;
-
-    if (!scrollOrigin) {
-        if (scrollPosition <= 0)
-            return 0;
-        if (scrollPosition > maxValue)
-            scrollPosition = maxValue;
-    } else {
-        if (scrollPosition >= 0)
-            return 0;
-        if (scrollPosition < -maxValue)
-            scrollPosition = -maxValue;
-    }
-
-    float dragFactor = fixedElementsLayoutRelativeToFrame ? 1 : (contentsSize - visibleContentSize * frameScaleFactor) / maxValue;
-    return scrollPosition * dragFactor / frameScaleFactor;
-}
-
-IntSize scrollOffsetForFixedPosition(const IntRect& visibleContentRect, const IntSize& contentsSize, const IntPoint& scrollPosition, const IntPoint& scrollOrigin, float frameScaleFactor, bool fixedElementsLayoutRelativeToFrame)
-{
-    int x = fixedPositionScrollOffset(visibleContentRect.width(), contentsSize.width(), scrollPosition.x(), scrollOrigin.x(), frameScaleFactor, fixedElementsLayoutRelativeToFrame);
-    int y = fixedPositionScrollOffset(visibleContentRect.height(), contentsSize.height(), scrollPosition.y(), scrollOrigin.y(), frameScaleFactor, fixedElementsLayoutRelativeToFrame);
-    return IntSize(x, y);
 }
 
 ScrollingCoordinator::ScrollingCoordinator(Page* page)
@@ -173,7 +152,7 @@ Region ScrollingCoordinator::computeNonFastScrollableRegion(const Frame* frame, 
             if (!(*it)->isPluginViewBase())
                 continue;
 
-            PluginViewBase* pluginViewBase = static_cast<PluginViewBase*>((*it).get());
+            PluginViewBase* pluginViewBase = toPluginViewBase((*it).get());
             if (pluginViewBase->wantsWheelEvents())
                 nonFastScrollableRegion.unite(pluginViewBase->frameRect());
         }
@@ -239,7 +218,7 @@ static void accumulateDocumentEventTargetRects(Vector<IntRect>& rects, const Doc
         }
 
         if (touchTarget->isDocumentNode() && touchTarget != document) {
-            accumulateDocumentEventTargetRects(rects, static_cast<const Document*>(touchTarget));
+            accumulateDocumentEventTargetRects(rects, toDocument(touchTarget));
             continue;
         }
 
@@ -300,6 +279,23 @@ void ScrollingCoordinator::frameViewFixedObjectsDidChange(FrameView* frameView)
 
     updateShouldUpdateScrollLayerPositionOnMainThread();
 }
+
+#if USE(ACCELERATED_COMPOSITING)
+GraphicsLayer* ScrollingCoordinator::scrollLayerForScrollableArea(ScrollableArea* scrollableArea)
+{
+    return scrollableArea->layerForScrolling();
+}
+
+GraphicsLayer* ScrollingCoordinator::horizontalScrollbarLayerForScrollableArea(ScrollableArea* scrollableArea)
+{
+    return scrollableArea->layerForHorizontalScrollbar();
+}
+
+GraphicsLayer* ScrollingCoordinator::verticalScrollbarLayerForScrollableArea(ScrollableArea* scrollableArea)
+{
+    return scrollableArea->layerForVerticalScrollbar();
+}
+#endif
 
 GraphicsLayer* ScrollingCoordinator::scrollLayerForFrameView(FrameView* frameView)
 {
@@ -470,8 +466,6 @@ MainThreadScrollingReasons ScrollingCoordinator::mainThreadScrollingReasons() co
         mainThreadScrollingReasons |= HasViewportConstrainedObjectsWithoutSupportingFixedLayers;
     if (supportsFixedPositionLayers() && hasVisibleSlowRepaintViewportConstrainedObjects(frameView))
         mainThreadScrollingReasons |= HasNonLayerViewportConstrainedObjects;
-    if (m_page->mainFrame()->document()->isImageDocument())
-        mainThreadScrollingReasons |= IsImageDocument;
 
     return mainThreadScrollingReasons;
 }
@@ -513,8 +507,6 @@ String ScrollingCoordinator::mainThreadScrollingReasonsAsText(MainThreadScrollin
         stringBuilder.append("Has viewport constrained objects without supporting fixed layers, ");
     if (reasons & ScrollingCoordinator::HasNonLayerViewportConstrainedObjects)
         stringBuilder.append("Has non-layer viewport-constrained objects, ");
-    if (reasons & ScrollingCoordinator::IsImageDocument)
-        stringBuilder.append("Is image document, ");
 
     if (stringBuilder.length())
         stringBuilder.resize(stringBuilder.length() - 2);

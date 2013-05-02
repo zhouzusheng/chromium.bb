@@ -32,6 +32,7 @@
         'mock/mock_rtp_receiver_video.h',
         'fec_test_helper.cc',
         'fec_test_helper.h',
+        'nack_rtx_unittest.cc',
         'producer_fec_unittest.cc',
         'receiver_fec_unittest.cc',
         'rtcp_format_remb_unittest.cc',

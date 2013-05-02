@@ -13,15 +13,16 @@ base.require('tracks.timeline_async_slice_group_track');
 base.require('timeline_filter');
 base.require('ui');
 
-base.exportTo('tracks', function() {
+base.exportTo('tracing.tracks', function() {
 
   /**
    * Visualizes a TimelineThread using a series of of TimelineSliceTracks.
    * @constructor
    */
-  var TimelineThreadTrack = base.ui.define(tracks.TimelineContainerTrack);
+  var TimelineThreadTrack =
+      tracing.ui.define(tracing.tracks.TimelineContainerTrack);
   TimelineThreadTrack.prototype = {
-    __proto__: tracks.TimelineContainerTrack.prototype,
+    __proto__: tracing.tracks.TimelineContainerTrack.prototype,
 
     decorate: function() {
       this.classList.add('timeline-thread-track');
@@ -62,7 +63,7 @@ base.exportTo('tracks', function() {
     updateChildTracks_: function() {
       this.detach();
       if (this.thread_) {
-        var cpuTrack = new tracks.TimelineSliceTrack();
+        var cpuTrack = new tracing.tracks.TimelineSliceTrack();
         cpuTrack.heading = '';
         cpuTrack.slices = this.thread_.cpuSlices;
         cpuTrack.height = '4px';
@@ -71,7 +72,7 @@ base.exportTo('tracks', function() {
         }
         this.addTrack_(cpuTrack);
 
-        var asyncTrack = new tracks.TimelineAsyncSliceGroupTrack();
+        var asyncTrack = new tracing.tracks.TimelineAsyncSliceGroupTrack();
         asyncTrack.categoryFilter = this.categoryFilter;
         asyncTrack.decorateHit = function(hit) {
           // TODO(simonjam): figure out how to associate subSlice hits back
@@ -80,12 +81,24 @@ base.exportTo('tracks', function() {
         asyncTrack.group = this.thread_.asyncSlices;
         this.addTrack_(asyncTrack);
 
-        var track = new tracks.TimelineSliceGroupTrack();
+        var track = new tracing.tracks.TimelineSliceGroupTrack();
         track.decorateHit = function(hit) {
           hit.thread = this.thread_;
         }
         track.group = this.thread_;
         this.addTrack_(track);
+
+        if (this.thread_.samples.length) {
+          var samplesTrack = new tracing.tracks.TimelineSliceTrack();
+          samplesTrack.group = this.thread_;
+          samplesTrack.slices = this.thread_.samples;
+          samplesTrack.decorateHit = function(hit) {
+            // TODO(johnmccutchan): Figure out what else should be associated
+            // with the hit.
+            hit.thread = this.thread_;
+          }
+          this.addTrack_(samplesTrack);
+        }
 
         this.updateVisibility_();
       }

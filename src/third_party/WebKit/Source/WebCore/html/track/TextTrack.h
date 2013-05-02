@@ -35,12 +35,20 @@
 #include <wtf/RefCounted.h>
 #include <wtf/text/WTFString.h>
 
+#if USE(PLATFORM_TEXT_TRACK_MENU)
+#include "PlatformTextTrack.h"
+#endif
+
 namespace WebCore {
 
 class HTMLMediaElement;
 class TextTrack;
 class TextTrackCue;
 class TextTrackCueList;
+#if ENABLE(WEBVTT_REGIONS)
+class TextTrackRegion;
+class TextTrackRegionList;
+#endif
 
 class TextTrackClient {
 public:
@@ -53,7 +61,11 @@ public:
     virtual void textTrackRemoveCue(TextTrack*, PassRefPtr<TextTrackCue>) = 0;
 };
 
-class TextTrack : public TrackBase {
+class TextTrack : public TrackBase
+#if USE(PLATFORM_TEXT_TRACK_MENU)
+    , public PlatformTextTrackClient
+#endif
+    {
 public:
     static PassRefPtr<TextTrack> create(ScriptExecutionContext* context, TextTrackClient* client, const AtomicString& kind, const AtomicString& label, const AtomicString& language)
     {
@@ -101,6 +113,12 @@ public:
     void removeCue(TextTrackCue*, ExceptionCode&);
     bool hasCue(TextTrackCue*);
 
+#if ENABLE(VIDEO_TRACK) && ENABLE(WEBVTT_REGIONS)
+    TextTrackRegionList* regions();
+    void addRegion(PassRefPtr<TextTrackRegion>);
+    void removeRegion(TextTrackRegion*, ExceptionCode&);
+#endif
+
     void cueWillChange(TextTrackCue*);
     void cueDidChange(TextTrackCue*);
 
@@ -110,6 +128,10 @@ public:
     TextTrackType trackType() const { return m_trackType; }
 
     virtual bool isClosedCaptions() const { return false; }
+
+    virtual bool containsOnlyForcedSubtitles() const { return false; }
+    virtual bool isMainProgramContent() const;
+    virtual bool isEasyToRead() const { return false; }
 
     int trackIndex();
     void invalidateTrackIndex();
@@ -125,13 +147,29 @@ public:
 
     void removeAllCues();
 
+#if USE(PLATFORM_TEXT_TRACK_MENU)
+    PassRefPtr<PlatformTextTrack> platformTextTrack();
+#endif
+
 protected:
     TextTrack(ScriptExecutionContext*, TextTrackClient*, const AtomicString& kind, const AtomicString& label, const AtomicString& language, TextTrackType);
 
     RefPtr<TextTrackCueList> m_cues;
 
 private:
+#if ENABLE(VIDEO_TRACK) && ENABLE(WEBVTT_REGIONS)
+    TextTrackRegionList* ensureTextTrackRegionList();
+    RefPtr<TextTrackRegionList> m_regions;
+#endif
+
+#if USE(PLATFORM_TEXT_TRACK_MENU)
+    virtual TextTrack* publicTrack() OVERRIDE { return this; }
+
+    RefPtr<PlatformTextTrack> m_platformTextTrack;
+#endif
+
     TextTrackCueList* ensureTextTrackCueList();
+
     HTMLMediaElement* m_mediaElement;
     AtomicString m_kind;
     AtomicString m_label;

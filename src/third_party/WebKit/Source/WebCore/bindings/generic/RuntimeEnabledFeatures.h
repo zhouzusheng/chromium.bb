@@ -63,6 +63,14 @@ public:
     static bool webkitIndexedDBEnabled() { return isIndexedDBEnabled; }
     static bool indexedDBEnabled() { return isIndexedDBEnabled; }
 
+#if ENABLE(CANVAS_PATH)
+    static void setCanvasPathEnabled(bool isEnabled) { isCanvasPathEnabled = isEnabled; }
+    static bool canvasPathEnabled() { return isCanvasPathEnabled; }
+#else
+    static void setCanvasPathEnabled(bool) { }
+    static bool canvasPathEnabled() { return false; }
+#endif
+
 #if ENABLE(CSS_EXCLUSIONS)
     static void setCSSExclusionsEnabled(bool isEnabled) { isCSSExclusionsEnabled = isEnabled; }
     static bool cssExclusionsEnabled() { return isCSSExclusionsEnabled; }
@@ -77,6 +85,22 @@ public:
 #else
     static void setCSSRegionsEnabled(bool) { }
     static bool cssRegionsEnabled() { return false; }
+#endif
+
+#if ENABLE(CSS_COMPOSITING)
+    static void setCSSCompositingEnabled(bool isEnabled) { isCSSCompositingEnabled = isEnabled; }
+    static bool cssCompositingEnabled() { return isCSSCompositingEnabled; }
+#else
+    static void setCSSCompositingEnabled(bool) { }
+    static bool cssCompositingEnabled() { return false; }
+#endif
+
+#if ENABLE(FONT_LOAD_EVENTS)
+    static void setFontLoadEventsEnabled(bool isEnabled) { isFontLoadEventsEnabled = isEnabled; }
+    static bool fontLoadEventsEnabled() { return isFontLoadEventsEnabled; }
+#else
+    static void setFontLoadEventsEnabled(bool) { }
+    static bool fontLoadEventsEnabled() { return false; }
 #endif
 
 #if ENABLE(FULLSCREEN_API)
@@ -177,6 +201,11 @@ public:
     static bool webkitRTCPeerConnectionEnabled() { return peerConnectionEnabled(); }
 #endif
 
+#if ENABLE(LEGACY_CSS_VENDOR_PREFIXES)
+    static void setLegacyCSSVendorPrefixesEnabled(bool isEnabled) { isLegacyCSSVendorPrefixesEnabled = isEnabled; }
+    static bool legacyCSSVendorPrefixesEnabled() { return isLegacyCSSVendorPrefixesEnabled; }
+#endif
+
 #if ENABLE(GAMEPAD)
     static void setWebkitGetGamepadsEnabled(bool isEnabled) { isGamepadEnabled = isEnabled; }
     static bool webkitGetGamepadsEnabled() { return isGamepadEnabled; }
@@ -208,6 +237,11 @@ public:
 
     static bool authorShadowDOMForAnyElementEnabled() { return isAuthorShadowDOMForAnyElementEnabled; }
     static void setAuthorShadowDOMForAnyElementEnabled(bool isEnabled) { isAuthorShadowDOMForAnyElementEnabled = isEnabled; }
+#endif
+
+#if ENABLE(CUSTOM_ELEMENTS)
+    static bool customDOMElementsEnabled() { return isCustomDOMElementsEnabled; }
+    static void setCustomDOMElements(bool isEnabled) { isCustomDOMElementsEnabled = isEnabled; }
 #endif
 
 #if ENABLE(STYLE_SCOPED)
@@ -269,13 +303,6 @@ public:
     static void setRequestAutocompleteEnabled(bool isEnabled) { isRequestAutocompleteEnabled = isEnabled; }
 #endif
 
-#if ENABLE(WEB_INTENTS)
-    static bool webkitStartActivityEnabled() { return isWebIntentsEnabled; }
-    static bool webkitIntentEnabled() { return isWebIntentsEnabled; }
-    static bool webKitIntentEnabled() { return isWebIntentsEnabled; }
-    static void setWebIntentsEnabled(bool isEnabled) { isWebIntentsEnabled = isEnabled; }
-#endif
-
 private:
     // Never instantiate.
     RuntimeEnabledFeatures() { }
@@ -292,8 +319,10 @@ private:
     static bool isDeviceMotionEnabled;
     static bool isDeviceOrientationEnabled;
     static bool isSpeechInputEnabled;
+    static bool isCanvasPathEnabled;
     static bool isCSSExclusionsEnabled;
     static bool isCSSRegionsEnabled;
+    static bool isCSSCompositingEnabled;
     WEBCORE_TESTING static bool isLangAttributeAwareFormControlUIEnabled;
 #if ENABLE(SCRIPTED_SPEECH)
     static bool isScriptedSpeechEnabled;
@@ -313,6 +342,10 @@ private:
 
 #if ENABLE(GAMEPAD)
     static bool isGamepadEnabled;
+#endif
+
+#if ENABLE(LEGACY_CSS_VENDOR_PREFIXES)
+    static bool isLegacyCSSVendorPrefixesEnabled;
 #endif
 
 #if ENABLE(QUOTA)
@@ -339,6 +372,10 @@ private:
     static bool isShadowDOMEnabled;
 
     static bool isAuthorShadowDOMForAnyElementEnabled;
+#endif
+
+#if ENABLE(CUSTOM_ELEMENTS)
+    static bool isCustomDOMElementsEnabled;
 #endif
 
 #if ENABLE(STYLE_SCOPED)
@@ -385,8 +422,8 @@ private:
     static bool areSeamlessIFramesEnabled;
 #endif
 
-#if ENABLE(WEB_INTENTS)
-    static bool isWebIntentsEnabled;
+#if ENABLE(FONT_LOAD_EVENTS)
+    static bool isFontLoadEventsEnabled;
 #endif
 
 };

@@ -30,11 +30,12 @@ namespace WebCore {
 
 namespace {
 
-class GestureToken : public UserGestureIndicator::Token {
+class GestureToken : public UserGestureToken {
 public:
-    static PassRefPtr<UserGestureIndicator::Token> create() { return adoptRef(new GestureToken); }
+    static PassRefPtr<UserGestureToken> create() { return adoptRef(new GestureToken); }
 
     virtual ~GestureToken() { }
+    virtual bool hasGestures() const OVERRIDE { return m_consumableGestures > 0; }
 
     void addGesture() { m_consumableGestures++; }
     bool consumeGesture()
@@ -44,7 +45,6 @@ public:
         m_consumableGestures--;
         return true;
     }
-    bool hasGestures() const { return m_consumableGestures > 0; }
 
 private:
     GestureToken()
@@ -85,7 +85,7 @@ UserGestureIndicator::UserGestureIndicator(ProcessingUserGestureState state)
     ASSERT(isDefinite(s_state));
 }
 
-UserGestureIndicator::UserGestureIndicator(PassRefPtr<UserGestureIndicator::Token> token)
+UserGestureIndicator::UserGestureIndicator(PassRefPtr<UserGestureToken> token)
     : m_previousState(s_state)
 {
     if (token && static_cast<GestureToken*>(token.get())->hasGestures()) {
@@ -123,11 +123,25 @@ bool UserGestureIndicator::consumeUserGesture()
     return static_cast<GestureToken*>(s_topmostIndicator->currentToken())->consumeGesture();
 }
 
-UserGestureIndicator::Token* UserGestureIndicator::currentToken()
+UserGestureToken* UserGestureIndicator::currentToken()
 {
     if (!s_topmostIndicator)
         return 0;
     return s_topmostIndicator->m_token.get();
+}
+
+UserGestureIndicatorDisabler::UserGestureIndicatorDisabler()
+    : m_savedState(UserGestureIndicator::s_state)
+    , m_savedIndicator(UserGestureIndicator::s_topmostIndicator)
+{
+    UserGestureIndicator::s_state = DefinitelyNotProcessingUserGesture;
+    UserGestureIndicator::s_topmostIndicator = 0;
+}
+
+UserGestureIndicatorDisabler::~UserGestureIndicatorDisabler()
+{
+    UserGestureIndicator::s_state = m_savedState;
+    UserGestureIndicator::s_topmostIndicator = m_savedIndicator;
 }
 
 }

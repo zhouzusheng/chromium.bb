@@ -8,7 +8,7 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/process_util.h"
 #include "base/utf_string_conversions.h"
 #include "content/browser/browser_child_process_host_impl.h"
@@ -26,7 +26,47 @@
 #include "ui/base/ui_base_switches.h"
 #include "webkit/plugins/plugin_switches.h"
 
+#if defined(OS_WIN)
+#include "content/common/sandbox_win.h"
+#include "content/public/common/sandboxed_process_launcher_delegate.h"
+#include "sandbox/win/src/sandbox_policy.h"
+#endif
+
 namespace content {
+
+#if defined(OS_WIN)
+// NOTE: changes to this class need to be reviewed by the security team.
+class PpapiPluginSandboxedProcessLauncherDelegate
+    : public content::SandboxedProcessLauncherDelegate {
+ public:
+  explicit PpapiPluginSandboxedProcessLauncherDelegate(bool is_broker)
+      : is_broker_(is_broker) {}
+  virtual ~PpapiPluginSandboxedProcessLauncherDelegate() {}
+
+  virtual void ShouldSandbox(bool* in_sandbox) OVERRIDE {
+    if (is_broker_)
+      *in_sandbox = false;
+  }
+
+  virtual void PreSpawnTarget(sandbox::TargetPolicy* policy,
+                              bool* success) {
+    if (is_broker_)
+      return;
+    // The Pepper process as locked-down as a renderer execpt that it can
+    // create the server side of chrome pipes.
+    sandbox::ResultCode result;
+    result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_NAMED_PIPES,
+                             sandbox::TargetPolicy::NAMEDPIPES_ALLOW_ANY,
+                             L"\\\\.\\pipe\\chrome.*");
+    *success = (result == sandbox::SBOX_ALL_OK);
+  }
+
+ private:
+  bool is_broker_;
+
+  DISALLOW_COPY_AND_ASSIGN(PpapiPluginSandboxedProcessLauncherDelegate);
+};
+#endif  // OS_WIN
 
 class PpapiPluginProcessHost::PluginNetworkObserver
     : public net::NetworkChangeNotifier::IPAddressObserver,
@@ -175,13 +215,11 @@ PpapiPluginProcessHost::PpapiPluginProcessHost(
   process_.reset(new BrowserChildProcessHostImpl(
       PROCESS_TYPE_PPAPI_PLUGIN, this));
 
-  filter_ = new PepperMessageFilter(process_->GetData().type,
-                                    permissions_,
-                                    host_resolver);
+  filter_ = new PepperMessageFilter(permissions_, host_resolver);
 
   host_impl_.reset(new BrowserPpapiHostImpl(this, permissions_, info.name,
                                             profile_data_directory,
-                                            process_->GetData().type));
+                                            false));
 
   process_->GetHost()->AddFilter(filter_.get());
   process_->GetHost()->AddFilter(host_impl_->message_filter());
@@ -205,7 +243,7 @@ PpapiPluginProcessHost::PpapiPluginProcessHost()
   base::FilePath profile_data_directory;
   host_impl_.reset(new BrowserPpapiHostImpl(this, permissions, plugin_name,
                                             profile_data_directory,
-                                            process_->GetData().type));
+                                            false));
 }
 
 bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
@@ -284,7 +322,7 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
 #endif  // OS_POSIX
   process_->Launch(
 #if defined(OS_WIN)
-      base::FilePath(),
+      new PpapiPluginSandboxedProcessLauncherDelegate(is_broker_),
 #elif defined(OS_POSIX)
       use_zygote,
       base::EnvironmentVector(),

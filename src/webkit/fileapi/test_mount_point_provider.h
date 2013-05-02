@@ -5,7 +5,7 @@
 #ifndef WEBKIT_FILEAPI_TEST_MOUNT_POINT_PROVIDER_H_
 #define WEBKIT_FILEAPI_TEST_MOUNT_POINT_PROVIDER_H_
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "webkit/fileapi/async_file_util_adapter.h"
@@ -42,8 +42,6 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE TestMountPointProvider
   virtual base::FilePath GetFileSystemRootPathOnFileThread(
       const FileSystemURL& url,
       bool create) OVERRIDE;
-  virtual bool IsAccessAllowed(const FileSystemURL& url) OVERRIDE;
-  virtual bool IsRestrictedFileName(const base::FilePath& filename) const OVERRIDE;
   virtual FileSystemFileUtil* GetFileUtil(FileSystemType type) OVERRIDE;
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
   virtual FilePermissionPolicy GetPermissionPolicy(

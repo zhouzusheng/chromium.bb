@@ -18,6 +18,8 @@
         'SHELL_DIALOGS_IMPLEMENTATION',
       ],
       'sources': [
+        'shell_dialogs/android/shell_dialogs_jni_registrar.cc',
+        'shell_dialogs/android/shell_dialogs_jni_registrar.h',
         'shell_dialogs/base_shell_dialog.cc',
         'shell_dialogs/base_shell_dialog.h',
         'shell_dialogs/base_shell_dialog_win.cc',
@@ -26,7 +28,8 @@
         'shell_dialogs/gtk/select_file_dialog_impl.h',
         'shell_dialogs/gtk/select_file_dialog_impl_gtk.cc',
         'shell_dialogs/gtk/select_file_dialog_impl_kde.cc',
-        'shell_dialogs/linux_ui_shell_dialog.h',
+        'shell_dialogs/linux_shell_dialog.cc',
+        'shell_dialogs/linux_shell_dialog.h',
         'shell_dialogs/select_file_dialog.cc',
         'shell_dialogs/select_file_dialog.h',
         'shell_dialogs/select_file_dialog_android.cc',
@@ -67,7 +70,7 @@
             ],
           },
         }],
-        ['OS=="android" and android_build_type==0', {
+        ['OS=="android" and android_webview_build==0', {
           'dependencies': [
             'ui_java',
           ],

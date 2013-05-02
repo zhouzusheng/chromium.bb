@@ -34,10 +34,13 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "CachedResourceLoader.h"
+#include "Clipboard.h"
 #include "ClipboardEvent.h"
 #include "CompositionEvent.h"
 #include "CreateLinkCommand.h"
+#if ENABLE(DELETION_UI)
 #include "DeleteButtonController.h"
+#endif
 #include "DeleteSelectionCommand.h"
 #include "DictationAlternative.h"
 #include "DictationCommand.h"
@@ -54,6 +57,7 @@
 #include "GraphicsContext.h"
 #include "HTMLFormControlElement.h"
 #include "HTMLFrameOwnerElement.h"
+#include "HTMLImageElement.h"
 #include "HTMLNames.h"
 #include "HTMLTextAreaElement.h"
 #include "HitTestResult.h"
@@ -87,9 +91,9 @@
 #include "TextIterator.h"
 #include "TypingCommand.h"
 #include "UserTypingGestureIndicator.h"
+#include "VisibleUnits.h"
 #include "htmlediting.h"
 #include "markup.h"
-#include "visible_units.h"
 #include <wtf/UnusedParam.h>
 #include <wtf/unicode/CharacterNames.h>
 #include <wtf/unicode/Unicode.h>
@@ -100,6 +104,65 @@ using namespace std;
 using namespace HTMLNames;
 using namespace WTF;
 using namespace Unicode;
+
+#if ENABLE(DELETION_UI)
+PassRefPtr<Range> Editor::avoidIntersectionWithDeleteButtonController(const Range* range) const
+{
+    DeleteButtonController* controller = deleteButtonController();
+    if (!range || !controller)
+        return 0;
+
+    Document* document = range->ownerDocument();
+
+    Node* startContainer = range->startContainer();
+    int startOffset = range->startOffset();
+    Node* endContainer = range->endContainer();
+    int endOffset = range->endOffset();
+
+    if (!startContainer)
+        return 0;
+
+    ASSERT(endContainer);
+
+    Element* element = controller->containerElement();
+    if (startContainer == element || startContainer->isDescendantOf(element)) {
+        ASSERT(element->parentNode());
+        startContainer = element->parentNode();
+        startOffset = element->nodeIndex();
+    }
+    if (endContainer == element || endContainer->isDescendantOf(element)) {
+        ASSERT(element->parentNode());
+        endContainer = element->parentNode();
+        endOffset = element->nodeIndex();
+    }
+
+    return Range::create(document, startContainer, startOffset, endContainer, endOffset);
+}
+
+VisibleSelection Editor::avoidIntersectionWithDeleteButtonController(const VisibleSelection& selection) const
+{
+    DeleteButtonController* controller = deleteButtonController();
+    if (selection.isNone() || !controller)
+        return selection;
+
+    Element* element = controller->containerElement();
+    if (!element)
+        return selection;
+    VisibleSelection updatedSelection = selection;
+
+    Position updatedBase = selection.base();
+    updatePositionForNodeRemoval(updatedBase, element);
+    if (updatedBase != selection.base())
+        updatedSelection.setBase(updatedBase);
+
+    Position updatedExtent = selection.extent();
+    updatePositionForNodeRemoval(updatedExtent, element);
+    if (updatedExtent != selection.extent())
+        updatedSelection.setExtent(updatedExtent);
+
+    return updatedSelection;
+}
+#endif
 
 // When an event handler has moved the selection outside of a text control
 // we should use the target control's selection for this editing operation.
@@ -412,7 +475,7 @@ void Editor::replaceSelectionWithFragment(PassRefPtr<DocumentFragment> fragment,
     applyCommand(ReplaceSelectionCommand::create(m_frame->document(), fragment, options, EditActionPaste));
     revealSelectionAfterEditingOperation();
 
-    if (m_frame->selection()->isInPasswordField())
+    if (m_frame->selection()->isInPasswordField() || !isContinuousSpellCheckingEnabled())
         return;
     Node* nodeToCheck = m_frame->selection()->rootEditableElement();
     if (!nodeToCheck)
@@ -471,17 +534,14 @@ bool Editor::shouldInsertText(const String& text, Range* range, EditorInsertActi
     return client() && client()->shouldInsertText(text, range, action);
 }
 
-bool Editor::shouldShowDeleteInterface(HTMLElement* element) const
-{
-    return client() && client()->shouldShowDeleteInterface(element);
-}
-
 void Editor::notifyComponentsOnChangedSelection(const VisibleSelection& oldSelection, FrameSelection::SetSelectionOptions options)
 {
     if (client())
         client()->respondToChangedSelection(m_frame);
     setStartNewKillRingSequence(true);
+#if ENABLE(DELETION_UI)
     m_deleteButtonController->respondToChangedSelection(oldSelection);
+#endif
     m_alternativeTextController->respondToChangedSelection(oldSelection, options);
 }
 
@@ -836,7 +896,6 @@ void Editor::reappliedEditing(PassRefPtr<EditCommandComposition> cmd)
 
 Editor::Editor(Frame* frame)
     : FrameDestructionObserver(frame)
-    , m_deleteButtonController(adoptPtr(new DeleteButtonController(frame)))
     , m_ignoreCompositionSelectionChange(false)
     , m_shouldStartNewKillRingSequence(false)
     // This is off by default, since most editors want this behavior (this matches IE but not FF).
@@ -847,6 +906,9 @@ Editor::Editor(Frame* frame)
     , m_areMarkedTextMatchesHighlighted(false)
     , m_defaultParagraphSeparator(EditorParagraphSeparatorIsDiv)
 {
+#if ENABLE(DELETION_UI)
+    m_deleteButtonController = adoptPtr(new DeleteButtonController(frame));
+#endif
 }
 
 Editor::~Editor()
@@ -981,10 +1043,10 @@ void Editor::cut()
     if (shouldDeleteRange(selection.get())) {
         updateMarkersForWordsAffectedByEditing(true);
         if (enclosingTextFormControl(m_frame->selection()->start())) {
-            Pasteboard::generalPasteboard()->writePlainText(selectedText(),
+            Pasteboard::generalPasteboard()->writePlainText(selectedTextForClipboard(),
                 canSmartCopyOrDelete() ? Pasteboard::CanSmartReplace : Pasteboard::CannotSmartReplace);
         } else
-            Pasteboard::generalPasteboard()->writeSelection(selection.get(), canSmartCopyOrDelete(), m_frame);
+            Pasteboard::generalPasteboard()->writeSelection(selection.get(), canSmartCopyOrDelete(), m_frame, IncludeImageAltTextForClipboard);
         didWriteSelectionToPasteboard();
         deleteSelectionWithSmartDelete(canSmartCopyOrDelete());
     }
@@ -1001,14 +1063,14 @@ void Editor::copy()
 
     willWriteSelectionToPasteboard(selectedRange());
     if (enclosingTextFormControl(m_frame->selection()->start())) {
-        Pasteboard::generalPasteboard()->writePlainText(selectedText(),
+        Pasteboard::generalPasteboard()->writePlainText(selectedTextForClipboard(),
             canSmartCopyOrDelete() ? Pasteboard::CanSmartReplace : Pasteboard::CannotSmartReplace);
     } else {
         Document* document = m_frame->document();
         if (HTMLImageElement* imageElement = imageElementFromImageDocument(document))
             Pasteboard::generalPasteboard()->writeImage(imageElement, document->url(), document->title());
         else
-            Pasteboard::generalPasteboard()->writeSelection(selectedRange().get(), canSmartCopyOrDelete(), m_frame);
+            Pasteboard::generalPasteboard()->writeSelection(selectedRange().get(), canSmartCopyOrDelete(), m_frame, IncludeImageAltTextForClipboard);
     }
 
     didWriteSelectionToPasteboard();
@@ -2074,7 +2136,7 @@ void Editor::markAndReplaceFor(PassRefPtr<SpellCheckRequest> request, const Vect
 {
     ASSERT(request);
 
-    TextCheckingTypeMask textCheckingOptions = request->mask();
+    TextCheckingTypeMask textCheckingOptions = request->data().mask();
     TextCheckingParagraph paragraph(request->checkingRange(), request->paragraphRange());
 
     bool shouldMarkSpelling = textCheckingOptions & TextCheckingTypeSpelling;
@@ -2385,7 +2447,8 @@ PassRefPtr<Range> Editor::rangeForPoint(const IntPoint& windowPoint)
         return 0;
     IntPoint framePoint = frameView->windowToContents(windowPoint);
     VisibleSelection selection(frame->visiblePositionForPoint(framePoint));
-    return avoidIntersectionWithNode(selection.toNormalizedRange().get(), m_deleteButtonController->containerElement());
+
+    return avoidIntersectionWithDeleteButtonController(selection.toNormalizedRange().get());
 }
 
 void Editor::revealSelectionAfterEditingOperation(const ScrollAlignment& alignment, RevealExtentOption revealExtentOption)
@@ -2550,8 +2613,20 @@ void Editor::changeSelectionAfterCommand(const VisibleSelection& newSelection,  
 
 String Editor::selectedText() const
 {
+    return selectedText(TextIteratorDefaultBehavior);
+}
+
+String Editor::selectedTextForClipboard() const
+{
+    if (m_frame->settings() && m_frame->settings()->selectionIncludesAltImageText())
+        return selectedText(TextIteratorEmitsImageAltText);
+    return selectedText();
+}
+
+String Editor::selectedText(TextIteratorBehavior behavior) const
+{
     // We remove '\0' characters because they are not visibly rendered to the user.
-    return plainText(m_frame->selection()->toNormalizedRange().get()).replace(0, "");
+    return plainText(m_frame->selection()->toNormalizedRange().get(), behavior).replace(0, "");
 }
 
 IntRect Editor::firstRectForRange(Range* range) const
@@ -2658,7 +2733,7 @@ void Editor::applyEditingStyleToBodyElement() const
     RefPtr<NodeList> list = m_frame->document()->getElementsByTagName("body");
     unsigned len = list->length();
     for (unsigned i = 0; i < len; i++)
-        applyEditingStyleToElement(static_cast<Element*>(list->item(i)));
+        applyEditingStyleToElement(toElement(list->item(i)));
 }
 
 void Editor::applyEditingStyleToElement(Element* element) const
@@ -2757,7 +2832,7 @@ PassRefPtr<Range> Editor::rangeOfString(const String& target, Range* referenceRa
     }
 
     // If nothing was found in the shadow tree, search in main content following the shadow tree.
-    if (resultRange->collapsed() && shadowTreeRoot) {
+    if (resultRange->collapsed(ASSERT_NO_EXCEPTION) && shadowTreeRoot) {
         searchRange = rangeOfContents(m_frame->document());
         if (forward)
             searchRange->setStartAfter(shadowTreeRoot->shadowHost());
@@ -2769,7 +2844,7 @@ PassRefPtr<Range> Editor::rangeOfString(const String& target, Range* referenceRa
 
     // If we didn't find anything and we're wrapping, search again in the entire document (this will
     // redundantly re-search the area already searched in some cases).
-    if (resultRange->collapsed() && options & WrapAround) {
+    if (resultRange->collapsed(ASSERT_NO_EXCEPTION) && options & WrapAround) {
         searchRange = rangeOfContents(m_frame->document());
         resultRange = findPlainText(searchRange.get(), target, options);
         // We used to return false here if we ended up with the same range that we started with
@@ -2777,7 +2852,7 @@ PassRefPtr<Range> Editor::rangeOfString(const String& target, Range* referenceRa
         // this should be a success case instead, so we'll just fall through in that case.
     }
 
-    return resultRange->collapsed() ? 0 : resultRange.release();
+    return resultRange->collapsed(ASSERT_NO_EXCEPTION) ? 0 : resultRange.release();
 }
 
 static bool isFrameInRange(Frame* frame, Range* range)
@@ -2810,16 +2885,15 @@ unsigned Editor::countMatchesForText(const String& target, Range* range, FindOpt
     Node* originalEndContainer = searchRange->endContainer();
     int originalEndOffset = searchRange->endOffset();
 
-    ExceptionCode exception = 0;
     unsigned matchCount = 0;
     do {
         RefPtr<Range> resultRange(findPlainText(searchRange.get(), target, options & ~Backwards));
-        if (resultRange->collapsed(exception)) {
+        if (resultRange->collapsed(IGNORE_EXCEPTION)) {
             if (!resultRange->startContainer()->isInShadowTree())
                 break;
 
-            searchRange->setStartAfter(resultRange->startContainer()->shadowHost(), exception);
-            searchRange->setEnd(originalEndContainer, originalEndOffset, exception);
+            searchRange->setStartAfter(resultRange->startContainer()->shadowHost(), IGNORE_EXCEPTION);
+            searchRange->setEnd(originalEndContainer, originalEndOffset, IGNORE_EXCEPTION);
             continue;
         }
 
@@ -2838,11 +2912,11 @@ unsigned Editor::countMatchesForText(const String& target, Range* range, FindOpt
         // result range. There is no need to use a VisiblePosition here,
         // since findPlainText will use a TextIterator to go over the visible
         // text nodes. 
-        searchRange->setStart(resultRange->endContainer(exception), resultRange->endOffset(exception), exception);
+        searchRange->setStart(resultRange->endContainer(IGNORE_EXCEPTION), resultRange->endOffset(IGNORE_EXCEPTION), IGNORE_EXCEPTION);
 
         Node* shadowTreeRoot = searchRange->shadowRoot();
-        if (searchRange->collapsed(exception) && shadowTreeRoot)
-            searchRange->setEnd(shadowTreeRoot, shadowTreeRoot->childNodeCount(), exception);
+        if (searchRange->collapsed(IGNORE_EXCEPTION) && shadowTreeRoot)
+            searchRange->setEnd(shadowTreeRoot, shadowTreeRoot->childNodeCount(), IGNORE_EXCEPTION);
     } while (true);
 
     if (markMatches || matches) {
@@ -3003,7 +3077,9 @@ TextCheckingTypeMask Editor::resolveTextCheckingTypeMask(TextCheckingTypeMask te
 
 void Editor::deviceScaleFactorChanged()
 {
+#if ENABLE(DELETION_UI)
     m_deleteButtonController->deviceScaleFactorChanged();
+#endif
 }
 
 bool Editor::unifiedTextCheckerEnabled() const

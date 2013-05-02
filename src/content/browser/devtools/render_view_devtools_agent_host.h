@@ -17,9 +17,8 @@
 
 namespace content {
 
+class RendererOverridesHandler;
 class RenderViewHost;
-
-class DevToolsAgentHostRvhObserver;
 
 class CONTENT_EXPORT RenderViewDevToolsAgentHost
     : public DevToolsAgentHostImpl,
@@ -34,25 +33,28 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
 
  private:
   friend class DevToolsAgentHost;
-  friend class DevToolsAgentHostRvhObserver;
+  class DevToolsAgentHostRvhObserver;
 
   virtual ~RenderViewDevToolsAgentHost();
 
   // DevTooolsAgentHost overrides.
   virtual RenderViewHost* GetRenderViewHost() OVERRIDE;
 
-  // DevToolsAgentHostImpl implementation.
+  // DevToolsAgentHostImpl overrides.
+  virtual void DispatchOnInspectorBackend(const std::string& message) OVERRIDE;
   virtual void SendMessageToAgent(IPC::Message* msg) OVERRIDE;
   virtual void NotifyClientAttaching() OVERRIDE;
   virtual void NotifyClientDetaching() OVERRIDE;
 
   // WebContentsObserver overrides.
   virtual void AboutToNavigateRenderView(RenderViewHost* dest_rvh) OVERRIDE;
+  virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
 
   void ConnectRenderViewHost(RenderViewHost* rvh, bool reattach);
   void DisconnectRenderViewHost();
 
   void RenderViewHostDestroyed(RenderViewHost* rvh);
+  void RenderViewCrashed();
   bool OnRvhMessageReceived(const IPC::Message& message);
 
   void OnDispatchOnInspectorFrontend(const std::string& message);
@@ -62,10 +64,9 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
 
   bool CaptureScreenshot(std::string* base_64_data);
 
-  bool HandleJavaScriptDialog(bool accept);
-
   RenderViewHost* render_view_host_;
   scoped_ptr<DevToolsAgentHostRvhObserver> rvh_observer_;
+  scoped_ptr<RendererOverridesHandler> overrides_handler_;
   std::string state_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewDevToolsAgentHost);

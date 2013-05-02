@@ -218,12 +218,12 @@ const usb_keymap usb_keycode_map[] = {
   // USB#070086 is used on AS/400 keyboards. Standard Keypad_= is USB#070067.
   //USB_KEYMAP(0x070086, 0x0000, 0x0000, 0xffff),  // Keypad_=
   // USB#070087 is used for Brazilian /? and Japanese _ 'ro'.
-  USB_KEYMAP(0x070087, 0x0000, 0x0000, 0x005e),  // International1
+  USB_KEYMAP(0x070087, 0x0061, 0x0000, 0x005e),  // International1
 
   // USB#070088 is used as Japanese Hiragana/Katakana key.
   USB_KEYMAP(0x070088, 0x0065, 0x0000, 0x0068),  // International2
   // USB#070089 is used as Japanese Yen key.
-  USB_KEYMAP(0x070089, 0x0000, 0x007d, 0x005d),  // International3
+  USB_KEYMAP(0x070089, 0x0084, 0x007d, 0x005d),  // International3
   // USB#07008a is used as Japanese Henkan (Convert) key.
   USB_KEYMAP(0x07008a, 0x0064, 0x0000, 0xffff),  // International4
   // USB#07008b is used as Japanese Muhenkan (No-convert) key.
@@ -376,9 +376,15 @@ const usb_keymap usb_keycode_map[] = {
   USB_KEYMAP(0x0c028c, 0x00ef, 0x0000, 0xffff),  // AC_Send
 };
 
-const uint16_t kInvalidKeycode = usb_keycode_map[0].native_keycode;
+inline uint16_t InvalidNativeKeycode() {
+  return usb_keycode_map[0].native_keycode;
+}
 
-static uint16 UsbKeycodeToNativeKeycode(uint32_t usb_keycode) {
+inline uint16_t InvalidUsbKeycode() {
+  return usb_keycode_map[0].usb_keycode;
+}
+
+inline uint16_t UsbKeycodeToNativeKeycode(uint32_t usb_keycode) {
   // Deal with some special-cases that don't fit the 1:1 mapping.
   if (usb_keycode == 0x070032) // non-US hash.
     usb_keycode = 0x070031; // US backslash.
@@ -391,5 +397,13 @@ static uint16 UsbKeycodeToNativeKeycode(uint32_t usb_keycode) {
     if (usb_keycode_map[i].usb_keycode == usb_keycode)
       return usb_keycode_map[i].native_keycode;
   }
-  return kInvalidKeycode;
+  return InvalidNativeKeycode();
+}
+
+inline uint32_t NativeKeycodeToUsbKeycode(uint16_t native_keycode) {
+  for (size_t i = 0; i < arraysize(usb_keycode_map); ++i) {
+    if (usb_keycode_map[i].native_keycode == native_keycode)
+      return usb_keycode_map[i].usb_keycode;
+  }
+  return InvalidUsbKeycode();
 }

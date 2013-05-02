@@ -19,8 +19,6 @@ namespace gles2 {
 // FeatureInfo records the features that are available for a ContextGroup.
 class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
  public:
-  typedef scoped_refptr<FeatureInfo> Ref;
-
   struct FeatureFlags {
     FeatureFlags();
 
@@ -41,6 +39,8 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool native_vertex_array_object;
     bool disable_workarounds;
     bool enable_shader_name_hashing;
+    bool enable_samplers;
+    bool ext_draw_buffers;
   };
 
   struct Workarounds {
@@ -55,7 +55,9 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool use_current_program_after_successful_link;
     bool restore_scissor_on_fbo_change;
     bool flush_on_context_switch;
+    bool makecurrent_recreates_surfaces;
     bool delete_instead_of_resize_fbo;
+    bool use_client_side_arrays_for_stream_buffers;
 
     // Note: 0 here means use driver limit.
     GLint max_texture_size;

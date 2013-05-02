@@ -699,12 +699,10 @@ LInstruction* LChunkBuilder::AssignPointerMap(LInstruction* instr) {
 LUnallocated* LChunkBuilder::TempRegister() {
   LUnallocated* operand =
       new(zone()) LUnallocated(LUnallocated::MUST_HAVE_REGISTER);
-  int vreg = allocator_->GetVirtualRegister();
+  operand->set_virtual_register(allocator_->GetVirtualRegister());
   if (!allocator_->AllocationOk()) {
-    Abort("Out of virtual registers while trying to allocate temp register.");
-    return NULL;
+    Abort("Not enough virtual registers (temps).");
   }
-  operand->set_virtual_register(vreg);
   return operand;
 }
 
@@ -897,6 +895,35 @@ void LChunkBuilder::VisitInstruction(HInstruction* current) {
   LInstruction* instr = current->CompileToLithium(this);
 
   if (instr != NULL) {
+#if DEBUG
+    // Make sure that the lithium instruction has either no fixed register
+    // constraints in temps or the result OR no uses that are only used at
+    // start. If this invariant doesn't hold, the register allocator can decide
+    // to insert a split of a range immediately before the instruction due to an
+    // already allocated register needing to be used for the instruction's fixed
+    // register constraint. In this case, The register allocator won't see an
+    // interference between the split child and the use-at-start (it would if
+    // the it was just a plain use), so it is free to move the split child into
+    // the same register that is used for the use-at-start.
+    // See https://code.google.com/p/chromium/issues/detail?id=201590
+    if (!(instr->ClobbersRegisters() && instr->ClobbersDoubleRegisters())) {
+      int fixed = 0;
+      int used_at_start = 0;
+      for (UseIterator it(instr); !it.Done(); it.Advance()) {
+        LUnallocated* operand = LUnallocated::cast(it.Current());
+        if (operand->IsUsedAtStart()) ++used_at_start;
+      }
+      if (instr->Output() != NULL) {
+        if (LUnallocated::cast(instr->Output())->HasFixedPolicy()) ++fixed;
+      }
+      for (TempIterator it(instr); !it.Done(); it.Advance()) {
+        LUnallocated* operand = LUnallocated::cast(it.Current());
+        if (operand->HasFixedPolicy()) ++fixed;
+      }
+      ASSERT(fixed == 0 || used_at_start == 0);
+    }
+#endif
+
     if (FLAG_stress_pointer_maps && !instr->HasPointerMap()) {
       instr = AssignPointerMap(instr);
     }
@@ -1028,6 +1055,12 @@ LInstruction* LChunkBuilder::DoInstanceOfKnownGlobal(
 }
 
 
+LInstruction* LChunkBuilder::DoInstanceSize(HInstanceSize* instr) {
+  LOperand* object = UseRegisterAtStart(instr->object());
+  return DefineAsRegister(new(zone()) LInstanceSize(object));
+}
+
+
 LInstruction* LChunkBuilder::DoWrapReceiver(HWrapReceiver* instr) {
   LOperand* receiver = UseRegister(instr->receiver());
   LOperand* function = UseRegisterAtStart(instr->function());
@@ -1141,7 +1174,16 @@ LInstruction* LChunkBuilder::DoUnaryMathOperation(HUnaryMathOperation* instr) {
                                                                   input);
     return MarkAsCall(DefineFixedDouble(result, xmm1), instr);
   } else {
-    LOperand* input = UseRegisterAtStart(instr->value());
+    LOperand* input;
+    if (op == kMathRound &&
+        (!CpuFeatures::IsSupported(SSE4_1) ||
+         instr->CheckFlag(HValue::kBailoutOnMinusZero))) {
+      // Math.round implemented without roundsd.  Input may be overwritten.
+      ASSERT(instr->value()->representation().IsDouble());
+      input = UseTempRegister(instr->value());
+    } else {
+      input = UseRegisterAtStart(instr->value());
+    }
     LOperand* context = UseAny(instr->context());  // Deferred use by MathAbs.
     if (op == kMathPowHalf) {
       LOperand* temp = TempRegister();
@@ -1714,6 +1756,17 @@ LInstruction* LChunkBuilder::DoSeqStringSetChar(HSeqStringSetChar* instr) {
 }
 
 
+LInstruction* LChunkBuilder::DoNumericConstraint(HNumericConstraint* instr) {
+  return NULL;
+}
+
+
+LInstruction* LChunkBuilder::DoInductionVariableAnnotation(
+    HInductionVariableAnnotation* instr) {
+  return NULL;
+}
+
+
 LInstruction* LChunkBuilder::DoBoundsCheck(HBoundsCheck* instr) {
   return AssignEnvironment(new(zone()) LBoundsCheck(
       UseRegisterOrConstantAtStart(instr->index()),
@@ -1854,6 +1907,12 @@ LInstruction* LChunkBuilder::DoCheckPrototypeMaps(HCheckPrototypeMaps* instr) {
 
 
 LInstruction* LChunkBuilder::DoCheckSmi(HCheckSmi* instr) {
+  LOperand* value = UseAtStart(instr->value());
+  return AssignEnvironment(new(zone()) LCheckSmi(value));
+}
+
+
+LInstruction* LChunkBuilder::DoCheckSmiOrInt32(HCheckSmiOrInt32* instr) {
   LOperand* value = UseAtStart(instr->value());
   return AssignEnvironment(new(zone()) LCheckSmi(value));
 }

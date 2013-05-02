@@ -37,8 +37,8 @@ namespace WebKit {
 
 class WebRTCStatsResponse {
 public:
-    WebRTCStatsResponse() { }
     WebRTCStatsResponse(const WebRTCStatsResponse& other) { assign(other); }
+    WebRTCStatsResponse() { }
     ~WebRTCStatsResponse() { reset(); }
 
     WebRTCStatsResponse& operator=(const WebRTCStatsResponse& other)
@@ -51,9 +51,8 @@ public:
 
     WEBKIT_EXPORT void reset();
 
-    WEBKIT_EXPORT size_t addReport();
-    WEBKIT_EXPORT void addElement(size_t report, bool isLocal, double timestamp);
-    WEBKIT_EXPORT void addStatistic(size_t report, bool isLocal, WebString name, WebString value);
+    WEBKIT_EXPORT size_t addReport(WebString id, WebString type, double timestamp);
+    WEBKIT_EXPORT void addStatistic(size_t report, WebString name, WebString value);
 
 #if WEBKIT_IMPLEMENTATION
     WebRTCStatsResponse(const WTF::PassRefPtr<WebCore::RTCStatsResponseBase>&);

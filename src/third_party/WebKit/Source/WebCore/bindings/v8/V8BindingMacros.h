@@ -33,11 +33,6 @@
 
 namespace WebCore {
 
-enum ParameterDefaultPolicy {
-    DefaultIsUndefined,
-    DefaultIsNullString
-};
-
 #define V8TRYCATCH(type, var, value) \
     type var;                             \
     {                                     \
@@ -45,6 +40,38 @@ enum ParameterDefaultPolicy {
         var = (value);                    \
         if (block.HasCaught())            \
             return block.ReThrow();       \
+    }
+
+#define V8TRYCATCH_WITH_TYPECHECK(type, var, value, isolate) \
+    type var;                                                \
+    {                                                        \
+        bool ok = true;                                      \
+        {                                                    \
+            v8::TryCatch block;                              \
+            var = (value);                                   \
+            if (block.HasCaught())                           \
+                return block.ReThrow();                      \
+        }                                                    \
+        if (UNLIKELY(!ok))                                   \
+            return throwTypeError(0, isolate);               \
+    }
+
+#define V8TRYCATCH_WITH_TYPECHECK_VOID(type, var, value, isolate) \
+    type var;                                                     \
+    {                                                             \
+        bool ok = true;                                           \
+        {                                                         \
+            v8::TryCatch block;                                   \
+            var = (value);                                        \
+            if (block.HasCaught()) {                              \
+                block.ReThrow();                                  \
+                return;                                           \
+            }                                                     \
+        }                                                         \
+        if (UNLIKELY(!ok)) {                                      \
+            throwTypeError(0, isolate);                           \
+            return;                                               \
+        }                                                         \
     }
 
 #define V8TRYCATCH_FOR_V8STRINGRESOURCE(type, var, value) \
@@ -56,9 +83,6 @@ enum ParameterDefaultPolicy {
     type var(value);                                                 \
     if (!var.prepare())                                              \
         return;
-
-#define MAYBE_MISSING_PARAMETER(args, index, policy) \
-    (((policy) == DefaultIsNullString && (index) >= (args).Length()) ? (v8::Local<v8::Value>()) : ((args)[(index)]))
 
 } // namespace WebCore
 

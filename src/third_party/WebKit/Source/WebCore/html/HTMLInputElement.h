@@ -240,6 +240,8 @@ public:
     void addSearchResult();
     void onSearch();
 
+    void updateClearButtonVisibility();
+
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
 #if ENABLE(DATALIST_ELEMENT)
@@ -281,7 +283,6 @@ public:
 
     virtual void blur() OVERRIDE;
     void defaultBlur();
-    virtual void focus(bool restorePreviousSelection = true, FocusDirection = FocusDirectionNone) OVERRIDE;
 
     virtual const AtomicString& name() const OVERRIDE;
 
@@ -346,7 +347,7 @@ private:
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
     virtual void finishParsingChildren();
 
     virtual void copyNonAttributePropertiesFromElement(const Element&);
@@ -382,7 +383,7 @@ private:
     virtual void updatePlaceholderText();
     virtual bool isEmptyValue() const OVERRIDE { return innerTextValue().isEmpty(); }
     virtual bool isEmptySuggestedValue() const { return suggestedValue().isEmpty(); }
-    virtual void handleFocusEvent(FocusDirection) OVERRIDE;
+    virtual void handleFocusEvent(Node* oldFocusedNode, FocusDirection) OVERRIDE;
     virtual void handleBlurEvent();
 
     virtual bool isOptionalFormControl() const { return !isRequiredFormControl(); }

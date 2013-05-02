@@ -63,18 +63,19 @@ WebInspector.TextEditor.prototype = {
     /**
      * @param {string} regex
      * @param {string} cssClass
-     * @return {WebInspector.TextEditorMainPanel.HighlightDescriptor}
+     * @return {Object}
      */
     highlightRegex: function(regex, cssClass) { },
 
     /**
      * @param {WebInspector.TextRange} range
      * @param {string} cssClass
+     * @return {Object}
      */
     highlightRange: function(range, cssClass) { },
 
     /**
-     * @param {WebInspector.TextEditorMainPanel.HighlightDescriptor} highlightDescriptor
+     * @param {Object} highlightDescriptor
      */
     removeHighlight: function(highlightDescriptor) { },
 
@@ -99,12 +100,6 @@ WebInspector.TextEditor.prototype = {
      * @param {number} lineNumber
      */
     setExecutionLine: function(lineNumber) { },
-
-    /**
-     * @param {WebInspector.TextRange} range
-     * @return {string}
-     */
-    copyRange: function(range) { },
 
     clearExecutionLine: function() { },
 
@@ -174,6 +169,12 @@ WebInspector.TextEditor.prototype = {
      * @param {WebInspector.TextRange} textRange
      */
     setSelection: function(textRange) { },
+
+    /**
+     * @param {WebInspector.TextRange} range
+     * @return {string}
+     */
+    copyRange: function(range) { },
 
     /**
      * @param {string} text 

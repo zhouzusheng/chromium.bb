@@ -12,18 +12,19 @@
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
+#include "base/run_loop.h"
 #include "base/time.h"
 #include "net/base/address_family.h"
 #include "net/base/address_list.h"
 #include "net/base/auth.h"
 #include "net/base/load_timing_info.h"
-#include "net/base/ssl_cert_request_info.h"
-#include "net/base/ssl_info.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/socket/client_socket_pool_histograms.h"
 #include "net/socket/socket.h"
+#include "net/ssl/ssl_cert_request_info.h"
+#include "net/ssl/ssl_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 // Socket events are easier to debug if you log individual reads and writes.
@@ -471,7 +472,7 @@ void DeterministicSocketData::Run() {
   // since they can change in either.
   while ((!at_write_eof() || !at_read_eof()) && !stopped()) {
     if (counter % 2 == 0)
-      MessageLoop::current()->RunUntilIdle();
+      base::RunLoop().RunUntilIdle();
     if (counter % 2 == 1) {
       InvokeCallbacks();
     }
@@ -482,7 +483,7 @@ void DeterministicSocketData::Run() {
   while (socket_ && (socket_->write_pending() || socket_->read_pending()) &&
          !stopped()) {
     InvokeCallbacks();
-    MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
   SetStopped(false);
   is_running_ = false;
@@ -1296,6 +1297,7 @@ MockUDPClientSocket::MockUDPClientSocket(SocketDataProvider* data,
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   DCHECK(data_);
   data_->Reset();
+  peer_addr_ = data->connect_data().peer_addr;
 }
 
 MockUDPClientSocket::~MockUDPClientSocket() {}
@@ -1359,7 +1361,7 @@ void MockUDPClientSocket::Close() {
 }
 
 int MockUDPClientSocket::GetPeerAddress(IPEndPoint* address) const {
-  NOTIMPLEMENTED();
+  *address = peer_addr_;
   return OK;
 }
 
@@ -1495,7 +1497,7 @@ bool ClientSocketPoolTest::ReleaseOneConnection(KeepAlive keep_alive) {
       if (keep_alive == NO_KEEP_ALIVE)
         (*i)->handle()->socket()->Disconnect();
       (*i)->handle()->Reset();
-      MessageLoop::current()->RunUntilIdle();
+      base::RunLoop().RunUntilIdle();
       return true;
     }
   }

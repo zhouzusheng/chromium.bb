@@ -28,6 +28,7 @@
 #include "PseudoElement.h"
 
 #include "ContentData.h"
+#include "InspectorInstrumentation.h"
 #include "NodeRenderingContext.h"
 #include "RenderObject.h"
 #include "RenderQuote.h"
@@ -60,7 +61,14 @@ PseudoElement::PseudoElement(Element* parent, PseudoId pseudoId)
 {
     ASSERT(pseudoId != NOPSEUDO);
     setParentOrShadowHostNode(parent);
-    setHasCustomCallbacks();
+    setHasCustomStyleCallbacks();
+}
+
+PseudoElement::~PseudoElement()
+{
+#if USE(ACCELERATED_COMPOSITING)
+    InspectorInstrumentation::pseudoElementDestroyed(document()->page(), this);
+#endif
 }
 
 PassRefPtr<RenderStyle> PseudoElement::customStyleForRenderer()

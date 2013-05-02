@@ -60,6 +60,14 @@ namespace webrtc {
 class IceRestartAnswerLatch;
 class MediaStreamSignaling;
 
+extern const char kCreateChannelFailed[];
+extern const char kInvalidCandidates[];
+extern const char kInvalidSdp[];
+extern const char kMlineMismatch[];
+extern const char kSdpWithoutCrypto[];
+extern const char kSessionError[];
+extern const char kUpdateStateFailed[];
+
 // ICE state callback interface.
 class IceObserver {
  public:
@@ -94,6 +102,9 @@ class WebRtcSession : public cricket::BaseSession,
   virtual ~WebRtcSession();
 
   bool Initialize(const MediaConstraintsInterface* constraints);
+  // Deletes the voice, video and data channel and changes the session state
+  // to STATE_RECEIVEDTERMINATE.
+  void Terminate();
 
   void RegisterIceObserver(IceObserver* observer) {
     ice_observer_ = observer;
@@ -125,8 +136,10 @@ class WebRtcSession : public cricket::BaseSession,
       const MediaConstraintsInterface* constraints,
       const SessionDescriptionInterface* offer);
 
-  bool SetLocalDescription(SessionDescriptionInterface* desc);
-  bool SetRemoteDescription(SessionDescriptionInterface* desc);
+  bool SetLocalDescription(SessionDescriptionInterface* desc,
+                           std::string* err_desc);
+  bool SetRemoteDescription(SessionDescriptionInterface* desc,
+                            std::string* err_desc);
   bool ProcessIceMessage(const IceCandidateInterface* ice_candidate);
   const SessionDescriptionInterface* local_description() const {
     return local_desc_.get();
@@ -136,7 +149,7 @@ class WebRtcSession : public cricket::BaseSession,
   }
 
   // Get the id used as a media stream track's "id" field from ssrc.
-  virtual bool GetTrackIdBySsrc(uint32 ssrc, std::string* name);
+  virtual bool GetTrackIdBySsrc(uint32 ssrc, std::string* id);
 
   // AudioMediaProviderInterface implementation.
   virtual void SetAudioPlayout(const std::string& name, bool enable);
@@ -156,6 +169,7 @@ class WebRtcSession : public cricket::BaseSession,
   virtual bool CanInsertDtmf(const std::string& track_id);
   virtual bool InsertDtmf(const std::string& track_id,
                           int code, int duration);
+  virtual sigslot::signal0<>* GetOnDestroyedSignal();
 
   talk_base::scoped_refptr<DataChannel> CreateDataChannel(
       const std::string& label,
@@ -209,14 +223,15 @@ class WebRtcSession : public cricket::BaseSession,
       const SessionDescriptionInterface* remote_desc);
   // Uses |candidate| in this session.
   bool UseCandidate(const IceCandidateInterface* candidate);
+  // Deletes the corresponding channel of contents that don't exist in |desc|.
+  // |desc| can be null. This means that all channels are deleted.
   void RemoveUnusedChannelsAndTransports(
       const cricket::SessionDescription* desc);
 
   // Allocates media channels based on the |desc|. If |desc| doesn't have
   // the BUNDLE option, this method will disable BUNDLE in PortAllocator.
   // This method will also delete any existing media channels before creating.
-  bool CreateChannels(Action action,
-                      const cricket::SessionDescription* desc);
+  bool CreateChannels(const cricket::SessionDescription* desc);
 
   // Helper methods to create media channels.
   bool CreateVoiceChannel(const cricket::SessionDescription* desc);
@@ -232,9 +247,10 @@ class WebRtcSession : public cricket::BaseSession,
   // Called when processing the local session description.
   void UpdateSessionDescriptionSecurePolicy(cricket::SessionDescription* desc);
 
-  bool GetLocalTrackName(uint32 ssrc, std::string* name);
-  bool GetRemoteTrackName(uint32 ssrc, std::string* name);
+  bool GetLocalTrackId(uint32 ssrc, std::string* track_id);
+  bool GetRemoteTrackId(uint32 ssrc, std::string* track_id);
 
+  std::string BadStateErrMsg(const std::string& type, State state);
   void SetIceConnectionState(PeerConnectionInterface::IceConnectionState state);
 
   talk_base::scoped_ptr<cricket::VoiceChannel> voice_channel_;
@@ -258,6 +274,9 @@ class WebRtcSession : public cricket::BaseSession,
   // by the constraint kEnableRtpDataChannels.
   bool allow_rtp_data_engine_;
   talk_base::scoped_ptr<IceRestartAnswerLatch> ice_restart_latch_;
+  sigslot::signal0<> SignalVoiceChannelDestroyed;
+  sigslot::signal0<> SignalVideoChannelDestroyed;
+  sigslot::signal0<> SignalDataChannelDestroyed;
 };
 
 }  // namespace webrtc

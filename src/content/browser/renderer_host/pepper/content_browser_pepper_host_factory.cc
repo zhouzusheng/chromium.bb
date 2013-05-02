@@ -8,9 +8,11 @@
 #include "content/browser/renderer_host/pepper/pepper_browser_font_singleton_host.h"
 #include "content/browser/renderer_host/pepper/pepper_flash_file_message_filter.h"
 #include "content/browser/renderer_host/pepper/pepper_gamepad_host.h"
+#include "content/browser/renderer_host/pepper/pepper_host_resolver_private_message_filter.h"
 #include "content/browser/renderer_host/pepper/pepper_print_settings_manager.h"
 #include "content/browser/renderer_host/pepper/pepper_printing_host.h"
-#include "content/browser/renderer_host/pepper/pepper_udp_socket_private_host.h"
+#include "content/browser/renderer_host/pepper/pepper_truetype_font_list_host.h"
+#include "content/browser/renderer_host/pepper/pepper_udp_socket_private_message_filter.h"
 #include "ppapi/host/message_filter_host.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/host/resource_host.h"
@@ -59,6 +61,10 @@ scoped_ptr<ResourceHost> ContentBrowserPepperHostFactory::CreateResourceHost(
              host_->GetPpapiHost(), instance,
              params.pp_resource(), manager.Pass()));
       }
+      case PpapiHostMsg_TrueTypeFontSingleton_Create::ID: {
+        return scoped_ptr<ResourceHost>(new PepperTrueTypeFontListHost(
+            host_, instance, params.pp_resource()));
+      }
     }
   }
 
@@ -71,17 +77,23 @@ scoped_ptr<ResourceHost> ContentBrowserPepperHostFactory::CreateResourceHost(
     }
   }
 
-  // UDPSocketPrivate interface.
-  //
-  // Permissions for UDPSocketPrivate interface will be checked at the
-  // time of the instance's methods calls (because permission check
-  // for UDPSocketPrivate can be performed only on the UI
-  // thread). Currently this interface is available only for
+  // Permissions for the following interfaces will be checked at the
+  // time of the corresponding instance's methods calls (because
+  // permission check can be performed only on the UI
+  // thread). Currently thise interfaces are available only for
   // whitelisted apps which may not have access to the other private
   // interfaces.
+  if (message.type() == PpapiHostMsg_HostResolverPrivate_Create::ID) {
+    scoped_refptr<ResourceMessageFilter> host_resolver(
+        new PepperHostResolverPrivateMessageFilter(host_, instance));
+    return scoped_ptr<ResourceHost>(new MessageFilterHost(
+        host_->GetPpapiHost(), instance, params.pp_resource(), host_resolver));
+  }
   if (message.type() == PpapiHostMsg_UDPSocketPrivate_Create::ID) {
-    return scoped_ptr<ResourceHost>(new PepperUDPSocketPrivateHost(
-        host_, instance, params.pp_resource()));
+    scoped_refptr<ResourceMessageFilter> udp_socket(
+        new PepperUDPSocketPrivateMessageFilter(host_, instance));
+    return scoped_ptr<ResourceHost>(new MessageFilterHost(
+        host_->GetPpapiHost(), instance, params.pp_resource(), udp_socket));
   }
 
   // Flash interfaces.

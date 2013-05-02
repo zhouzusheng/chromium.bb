@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/memory/singleton.h"
 #include "base/synchronization/lock.h"
@@ -161,6 +161,10 @@ class WEBKIT_STORAGE_EXPORT IsolatedContext : public MountPoints {
   // Obtain an instance of this class via GetInstance().
   IsolatedContext();
   virtual ~IsolatedContext();
+
+  // MountPoints overrides.
+  virtual FileSystemURL CrackFileSystemURL(
+      const FileSystemURL& url) const OVERRIDE;
 
   // Unregisters a file system of given |filesystem_id|. Must be called with
   // lock_ held.  Returns true if the file system is unregistered.

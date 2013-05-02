@@ -10,7 +10,6 @@
 #   'target_name': 'my_package_apk',
 #   'type': 'none',
 #   'variables': {
-#     'package_name': 'my_package',
 #     'apk_name': 'MyPackage',
 #     'java_in_dir': 'path/to/package/root',
 #     'resource_dir': 'res',
@@ -18,19 +17,10 @@
 #   'includes': ['path/to/this/gypi/file'],
 # }
 #
-# If you have package_name="content_shell" and
-# java_in_dir="content/shell/android/java" you should have a directory structure
-# like:
-#
-# content/shell/android/java/src/org/chromium/base/Foo.java
-# content/shell/android/java/src/org/chromium/base/Bar.java
-#
 # Required variables:
-#  package_name - Used to name the intermediate output directory and in the
-#    names of some output files.
 #  apk_name - The final apk will be named <apk_name>.apk
 #  java_in_dir - The top-level java directory. The src should be in
-#    <java_in_dir>/src.
+#    <(java_in_dir)/src.
 # Optional/automatic variables:
 #  additional_input_paths - These paths will be included in the 'inputs' list to
 #    ensure that this target is rebuilt when one of these paths changes.
@@ -39,8 +29,8 @@
 #    each directory in additional_res_dirs.
 #  additional_src_dirs - Additional directories with .java files to be compiled
 #    and included in the output of this target.
-#  asset_location - The absolute path to the directory where assets are located
-#    (default: <(ant_build_out)/<(package_name)/assets).
+#  asset_location - The directory where assets are located (default:
+#    <(ant_build_out)/<(_target_name)/assets).
 #  generated_src_dirs - Same as additional_src_dirs except used for .java files
 #    that are generated at build time. This should be set automatically by a
 #    target's dependencies. The .java files in these directories are not
@@ -57,6 +47,8 @@
 #    By default, the package given in AndroidManifest.xml will be used.
 #  java_strings_grd - The name of the grd file from which to generate localized
 #    strings.xml files, if any.
+#  library_manifest_paths'- Paths to additional AndroidManifest.xml files from
+#    libraries.
 
 {
   'variables': {
@@ -70,7 +62,7 @@
     'proguard_enabled%': 'false',
     'proguard_flags%': '',
     'native_libs_paths': [],
-    'jar_name%': 'chromium_apk_<(package_name).jar',
+    'jar_name%': 'chromium_apk_<(_target_name).jar',
     'resource_dir%':'',
     'R_package%':'',
     'additional_res_dirs': [],
@@ -78,6 +70,7 @@
     'is_test_apk%': 0,
     'java_strings_grd%': '',
     'grit_grd_file%': '',
+    'library_manifest_paths%' : [],
   },
   'sources': [
       '<@(native_libs_paths)'
@@ -95,19 +88,21 @@
       'rule_name': 'copy_and_strip_native_libraries',
       'extension': 'so',
       'variables': {
-        'stripped_library_path': '<(PRODUCT_DIR)/<(package_name)/libs/<(android_app_abi)/<(RULE_INPUT_ROOT).so',
+        'apk_libraries_dir': '<(PRODUCT_DIR)/<(_target_name)/libs/<(android_app_abi)',
+        'stripped_library_path': '<(apk_libraries_dir)/<(RULE_INPUT_ROOT).so',
       },
+      'inputs': [
+        '<(DEPTH)/build/android/strip_library_for_apk.py',
+      ],
       'outputs': [
         '<(stripped_library_path)',
       ],
-      # There is no way to do 2 actions for each source library in gyp. So to
-      # both strip the library and create the link in <(link_dir) a separate
-      # script is required.
       'action': [
-        '<(DEPTH)/build/android/prepare_library_for_apk',
-        '<(android_strip)',
+        'python', '<(DEPTH)/build/android/strip_library_for_apk.py',
+        '--android-strip=<(android_strip)',
+        '--android-strip-arg=--strip-unneeded',
+        '--stripped-libraries-dir=<(apk_libraries_dir)',
         '<(RULE_INPUT_PATH)',
-        '<(stripped_library_path)',
       ],
     },
   ],
@@ -143,19 +138,20 @@
   ],
   'actions': [
     {
-      'action_name': 'ant_<(package_name)_apk',
-      'message': 'Building <(package_name) apk.',
+      'action_name': 'ant_<(_target_name)',
+      'message': 'Building <(_target_name).',
       'inputs': [
         '<(java_in_dir)/AndroidManifest.xml',
         '<(DEPTH)/build/android/ant/chromium-apk.xml',
         '<(DEPTH)/build/android/ant/common.xml',
-        '<(DEPTH)/build/android/ant/sdk-targets.xml',
+        '<(DEPTH)/build/android/ant/apk-build.xml',
         # If there is a separate find for additional_src_dirs, it will find the
         # wrong .java files when additional_src_dirs is empty.
         '>!@(find >(java_in_dir) >(additional_src_dirs) -name "*.java")',
         '>@(input_jars_paths)',
         '>@(native_libs_paths)',
         '>@(additional_input_paths)',
+        '>@(library_manifest_paths)',
       ],
       'conditions': [
         ['resource_dir!=""', {
@@ -177,7 +173,7 @@
         }],
         ['proguard_enabled == "true" and proguard_flags != ""', {
           'inputs': ['<(java_in_dir)/<(proguard_flags)']
-        }]
+        }],
       ],
       'outputs': [
         '<(PRODUCT_DIR)/apks/<(apk_name).apk',
@@ -201,7 +197,7 @@
         '-DGENERATED_SRC_DIRS=>(generated_src_dirs)',
         '-DINPUT_JARS_PATHS=>(input_jars_paths)',
         '-DJAR_NAME=<(jar_name)',
-        '-DPACKAGE_NAME=<(package_name)',
+        '-DOUT_DIR=<(ant_build_out)/<(_target_name)',
         '-DRESOURCE_DIR=<(resource_dir)',
         '-DADDITIONAL_R_TEXT_FILES=>(additional_R_text_files)',
         '-DADDITIONAL_RES_DIRS=>(additional_res_dirs)',
@@ -210,6 +206,12 @@
         '-DAPP_MANIFEST_VERSION_CODE=<(app_manifest_version_code)',
         '-DPROGUARD_FLAGS=>(proguard_flags)',
         '-DPROGUARD_ENABLED=>(proguard_enabled)',
+        '-DLIBRARY_MANIFEST_PATHS=>(library_manifest_paths)',
+
+        # Add list of inputs to the command line, so if inputs change
+        # (e.g. if a Java file is removed), the command will be re-run.
+        # TODO(newt): remove this once crbug.com/177552 is fixed in ninja.
+        '-DTHIS_IS_IGNORED=>(_inputs)',
 
         '-Dbasedir=<(java_in_dir)',
         '-buildfile',

@@ -45,9 +45,9 @@
 #include "crypto/nss_util.h"
 #include "media/audio/audio_manager.h"
 #include "net/base/network_change_notifier.h"
-#include "net/base/ssl_config_service.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/tcp_client_socket.h"
+#include "net/ssl/ssl_config_service.h"
 #include "ui/base/clipboard/clipboard.h"
 
 #if defined(USE_AURA)
@@ -68,9 +68,9 @@
 #include <shellapi.h>
 
 #include "content/browser/system_message_window_win.h"
-#include "content/common/sandbox_policy.h"
-#include "ui/base/l10n/l10n_util_win.h"
+#include "content/common/sandbox_win.h"
 #include "net/base/winsock_init.h"
+#include "ui/base/l10n/l10n_util_win.h"
 #endif
 
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
@@ -97,10 +97,6 @@
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
-#endif
-
-#if !defined(OS_IOS)
-#include "webkit/glue/webkit_glue.h"
 #endif
 
 // One of the linux specific headers defines this as a macro.
@@ -176,6 +172,10 @@ static void GLibLogHandler(const gchar* log_domain,
              strstr(log_domain, "<unknown>")) {
     LOG(ERROR) << "DBus call timeout or out of memory: "
                << "http://crosbug.com/15496";
+  } else if (strstr(message, "Could not connect: Connection refused") &&
+             strstr(log_domain, "<unknown>")) {
+    LOG(ERROR) << "DConf settings backend could not connect to session bus: "
+               << "http://crbug.com/179797";
   } else if (strstr(message, "XDG_RUNTIME_DIR variable not set")) {
     LOG(ERROR) << message << " (http://bugs.chromium.org/97293)";
   } else if (strstr(message, "Attempting to store changes into") ||
@@ -241,8 +241,17 @@ class BrowserMainLoop::MemoryObserver : public MessageLoop::TaskObserver {
   }
 
   virtual void DidProcessTask(const base::PendingTask& pending_task) OVERRIDE {
-#if !defined(OS_IOS)
-    HISTOGRAM_MEMORY_KB("Memory.BrowserUsed", webkit_glue::MemoryUsageKB());
+#if !defined(OS_IOS)  // No ProcessMetrics on IOS.
+    scoped_ptr<base::ProcessMetrics> process_metrics(
+        base::ProcessMetrics::CreateProcessMetrics(
+#if defined(OS_MACOSX)
+            base::GetCurrentProcessHandle(), NULL));
+#else
+            base::GetCurrentProcessHandle()));
+#endif
+    size_t private_bytes;
+    process_metrics->GetMemoryBytes(&private_bytes, NULL);
+    HISTOGRAM_MEMORY_KB("Memory.BrowserUsed", private_bytes >> 10);
 #endif
   }
  private:
@@ -321,7 +330,7 @@ void BrowserMainLoop::EarlyInitialization() {
   // TODO(abarth): Should this move to InitializeNetworkOptions?  This doesn't
   // seem dependent on SSL initialization().
   if (parsed_command_line_.HasSwitch(switches::kEnableTcpFastOpen))
-    net::set_tcp_fastopen_enabled(true);
+    net::SetTCPFastOpenEnabled(true);
 
 #if !defined(OS_IOS)
   if (parsed_command_line_.HasSwitch(switches::kRendererProcessLimit)) {
@@ -393,9 +402,7 @@ void BrowserMainLoop::MainMessageLoopStart() {
     parts_->PostMainMessageLoopStart();
 
 #if defined(OS_ANDROID)
-  SurfaceTexturePeer::InitInstance(new SurfaceTexturePeerBrowserImpl(
-      parameters_.command_line.HasSwitch(
-          switches::kMediaPlayerInRenderProcess)));
+  SurfaceTexturePeer::InitInstance(new SurfaceTexturePeerBrowserImpl());
   DataFetcherImplAndroid::Init(base::android::AttachCurrentThread());
 #endif
 

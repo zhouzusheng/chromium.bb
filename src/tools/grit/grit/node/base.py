@@ -6,6 +6,7 @@
 '''Base types for nodes in a GRIT resource tree.
 '''
 
+import collections
 import os
 import sys
 import types
@@ -26,6 +27,12 @@ class Node(object):
 
   # Default nodes to not whitelist skipped
   _whitelist_marked_as_skip = False
+
+  # A class-static cache to memoize EvaluateExpression().
+  # It has a 2 level nested dict structure.  The outer dict has keys
+  # of tuples which define the environment in which the expression
+  # will be evaluated. The inner dict is map of expr->result.
+  eval_expr_cache = collections.defaultdict(dict)
 
   def __init__(self):
     self.children = []        # A list of child elements
@@ -434,13 +441,17 @@ class Node(object):
       return [self.attrs['name']]
     return []
 
-  @staticmethod
-  def EvaluateExpression(expr, defs, target_platform, extra_variables=None):
+  @classmethod
+  def EvaluateExpression(cls, expr, defs, target_platform, extra_variables=None):
     '''Worker for EvaluateCondition (below) and conditions in XTB files.'''
+    cache_dict = cls.eval_expr_cache[
+        (tuple(defs.iteritems()), target_platform, extra_variables)]
+    if expr in cache_dict:
+      return cache_dict[expr]
     def pp_ifdef(symbol):
       return symbol in defs
     def pp_if(symbol):
-      return symbol in defs and defs[symbol]
+      return defs.get(symbol, False)
     variable_map = {
         'defs' : defs,
         'os': target_platform,
@@ -453,9 +464,9 @@ class Node(object):
         'pp_if' : pp_if,
     }
     if extra_variables:
-      for key in extra_variables:
-        variable_map[key] = extra_variables[key]
-    return eval(expr, {}, variable_map)
+      variable_map.update(extra_variables)
+    eval_result = cache_dict[expr] = eval(expr, {}, variable_map)
+    return eval_result
 
   def EvaluateCondition(self, expr):
     '''Returns true if and only if the Python expression 'expr' evaluates
@@ -478,10 +489,10 @@ class Node(object):
     context = getattr(root, 'output_context', '')
     defs = getattr(root, 'defines', {})
     target_platform = getattr(root, 'target_platform', '')
-    extra_variables = {
-        'lang' : lang,
-        'context' : context,
-    }
+    extra_variables = (
+        ('lang', lang),
+        ('context', context),
+    )
     return Node.EvaluateExpression(
         expr, defs, target_platform, extra_variables)
 

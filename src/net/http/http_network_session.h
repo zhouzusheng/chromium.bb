@@ -9,13 +9,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/threading/non_thread_safe.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/host_resolver.h"
 #include "net/base/net_export.h"
-#include "net/base/ssl_client_auth_cache.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_stream_factory.h"
 #include "net/quic/quic_stream_factory.h"
 #include "net/spdy/spdy_session_pool.h"
+#include "net/ssl/ssl_client_auth_cache.h"
 
 namespace base {
 class Value;
@@ -36,6 +36,8 @@ class NetLog;
 class NetworkDelegate;
 class ServerBoundCertService;
 class ProxyService;
+class QuicClock;
+class QuicCryptoClientStreamFactory;
 class SOCKSClientSocketPool;
 class SSLClientSocketPool;
 class SSLConfigService;
@@ -75,15 +77,17 @@ class NET_EXPORT HttpNetworkSession
     bool enable_spdy_compression;
     bool enable_spdy_ping_based_connection_checking;
     NextProto spdy_default_protocol;
-    size_t spdy_initial_recv_window_size;
+    size_t spdy_stream_initial_recv_window_size;
     size_t spdy_initial_max_concurrent_streams;
     size_t spdy_max_concurrent_streams_limit;
     SpdySessionPool::TimeFunc time_func;
     std::string trusted_spdy_proxy;
     bool enable_quic;
     uint16 origin_port_to_force_quic_on;
-    bool use_spdy_over_quic;
+    QuicClock* quic_clock;  // Will be owned by QuicStreamFactory.
+    QuicRandom* quic_random;
     bool enable_user_alternate_protocol_ports;
+    QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory;
   };
 
   enum SocketPoolType {

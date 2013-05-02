@@ -4,13 +4,13 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
 #include "libyuv/row.h"
 
-#include <string.h>  // For memcpy
+#include <string.h>  // For memcpy and memset.
 
 #include "libyuv/basic_types.h"
 
@@ -29,54 +29,6 @@ static inline void WRITEWORD(uint8* p, uint32 v) {
   p[3] = (uint8)((v >> 24) & 255);
 }
 #endif
-
-void BGRAToARGBRow_C(const uint8* src_bgra, uint8* dst_argb, int width) {
-  for (int x = 0; x < width; ++x) {
-    // To support in-place conversion.
-    uint8 a = src_bgra[0];
-    uint8 r = src_bgra[1];
-    uint8 g = src_bgra[2];
-    uint8 b = src_bgra[3];
-    dst_argb[0] = b;
-    dst_argb[1] = g;
-    dst_argb[2] = r;
-    dst_argb[3] = a;
-    dst_argb += 4;
-    src_bgra += 4;
-  }
-}
-
-void ABGRToARGBRow_C(const uint8* src_abgr, uint8* dst_argb, int width) {
-  for (int x = 0; x < width; ++x) {
-    // To support in-place conversion.
-    uint8 r = src_abgr[0];
-    uint8 g = src_abgr[1];
-    uint8 b = src_abgr[2];
-    uint8 a = src_abgr[3];
-    dst_argb[0] = b;
-    dst_argb[1] = g;
-    dst_argb[2] = r;
-    dst_argb[3] = a;
-    dst_argb += 4;
-    src_abgr += 4;
-  }
-}
-
-void RGBAToARGBRow_C(const uint8* src_abgr, uint8* dst_argb, int width) {
-  for (int x = 0; x < width; ++x) {
-    // To support in-place conversion.
-    uint8 a = src_abgr[0];
-    uint8 b = src_abgr[1];
-    uint8 g = src_abgr[2];
-    uint8 r = src_abgr[3];
-    dst_argb[0] = b;
-    dst_argb[1] = g;
-    dst_argb[2] = r;
-    dst_argb[3] = a;
-    dst_argb += 4;
-    src_abgr += 4;
-  }
-}
 
 void RGB24ToARGBRow_C(const uint8* src_rgb24, uint8* dst_argb, int width) {
   for (int x = 0; x < width; ++x) {
@@ -149,21 +101,6 @@ void ARGB4444ToARGBRow_C(const uint8* src_argb4444, uint8* dst_argb,
     dst_argb[3] = (a << 4) | a;
     dst_argb += 4;
     src_argb4444 += 2;
-  }
-}
-
-void ARGBToRGBARow_C(const uint8* src_argb, uint8* dst_rgb, int width) {
-  for (int x = 0; x < width; ++x) {
-    uint8 b = src_argb[0];
-    uint8 g = src_argb[1];
-    uint8 r = src_argb[2];
-    uint8 a = src_argb[3];
-    dst_rgb[0] = a;
-    dst_rgb[1] = b;
-    dst_rgb[2] = g;
-    dst_rgb[3] = r;
-    dst_rgb += 4;
-    src_argb += 4;
   }
 }
 
@@ -701,6 +638,161 @@ void ARGBShadeRow_C(const uint8* src_argb, uint8* dst_argb, int width,
 #undef REPEAT8
 #undef SHADE
 
+#define REPEAT8(v) (v) | ((v) << 8)
+#define SHADE(f, v) v * f >> 16
+
+void ARGBMultiplyRow_C(const uint8* src_argb0, const uint8* src_argb1,
+                       uint8* dst_argb, int width) {
+  for (int i = 0; i < width; ++i) {
+    const uint32 b = REPEAT8(src_argb0[0]);
+    const uint32 g = REPEAT8(src_argb0[1]);
+    const uint32 r = REPEAT8(src_argb0[2]);
+    const uint32 a = REPEAT8(src_argb0[3]);
+    const uint32 b_scale = src_argb1[0];
+    const uint32 g_scale = src_argb1[1];
+    const uint32 r_scale = src_argb1[2];
+    const uint32 a_scale = src_argb1[3];
+    dst_argb[0] = SHADE(b, b_scale);
+    dst_argb[1] = SHADE(g, g_scale);
+    dst_argb[2] = SHADE(r, r_scale);
+    dst_argb[3] = SHADE(a, a_scale);
+    src_argb0 += 4;
+    src_argb1 += 4;
+    dst_argb += 4;
+  }
+}
+#undef REPEAT8
+#undef SHADE
+
+#define SHADE(f, v) ((v + f) > 255) ? 255 : (v + f)
+
+void ARGBAddRow_C(const uint8* src_argb0, const uint8* src_argb1,
+                  uint8* dst_argb, int width) {
+  for (int i = 0; i < width; ++i) {
+    const uint32 b = src_argb0[0];
+    const uint32 g = src_argb0[1];
+    const uint32 r = src_argb0[2];
+    const uint32 a = src_argb0[3];
+    const uint32 b_add = src_argb1[0];
+    const uint32 g_add = src_argb1[1];
+    const uint32 r_add = src_argb1[2];
+    const uint32 a_add = src_argb1[3];
+    dst_argb[0] = SHADE(b, b_add);
+    dst_argb[1] = SHADE(g, g_add);
+    dst_argb[2] = SHADE(r, r_add);
+    dst_argb[3] = SHADE(a, a_add);
+    src_argb0 += 4;
+    src_argb1 += 4;
+    dst_argb += 4;
+  }
+}
+#undef SHADE
+
+#define SHADE(f, v) ((f - v) > f) ? 0 : (f - v)
+
+void ARGBSubtractRow_C(const uint8* src_argb0, const uint8* src_argb1,
+                       uint8* dst_argb, int width) {
+  for (int i = 0; i < width; ++i) {
+    const uint32 b = src_argb0[0];
+    const uint32 g = src_argb0[1];
+    const uint32 r = src_argb0[2];
+    const uint32 a = src_argb0[3];
+    const uint32 b_sub = src_argb1[0];
+    const uint32 g_sub = src_argb1[1];
+    const uint32 r_sub = src_argb1[2];
+    const uint32 a_sub = src_argb1[3];
+    dst_argb[0] = SHADE(b, b_sub);
+    dst_argb[1] = SHADE(g, g_sub);
+    dst_argb[2] = SHADE(r, r_sub);
+    dst_argb[3] = SHADE(a, a_sub);
+    src_argb0 += 4;
+    src_argb1 += 4;
+    dst_argb += 4;
+  }
+}
+#undef SHADE
+
+// Sobel functions which mimics SSSE3.
+void SobelXRow_C(const uint8* src_y0, const uint8* src_y1, const uint8* src_y2,
+                 uint8* dst_sobelx, int width) {
+  for (int i = 0; i < width; ++i) {
+    int a = src_y0[i];
+    int b = src_y1[i];
+    int c = src_y2[i];
+    int a_sub = src_y0[i + 2];
+    int b_sub = src_y1[i + 2];
+    int c_sub = src_y2[i + 2];
+    int a_diff = a - a_sub;
+    int b_diff = b - b_sub;
+    int c_diff = c - c_sub;
+    int sobel = a_diff + b_diff * 2 + c_diff;
+    if (sobel < 0) {
+      sobel = -sobel;
+    }
+    if (sobel > 255) {
+      sobel = 255;
+    }
+    dst_sobelx[i] = static_cast<uint8>(sobel);
+  }
+}
+
+void SobelYRow_C(const uint8* src_y0, const uint8* src_y1,
+                 uint8* dst_sobely, int width) {
+  for (int i = 0; i < width; ++i) {
+    int a = src_y0[i + 0];
+    int b = src_y0[i + 1];
+    int c = src_y0[i + 2];
+    int a_sub = src_y1[i + 0];
+    int b_sub = src_y1[i + 1];
+    int c_sub = src_y1[i + 2];
+    int a_diff = a - a_sub;
+    int b_diff = b - b_sub;
+    int c_diff = c - c_sub;
+    int sobel = a_diff + b_diff * 2 + c_diff;
+    if (sobel < 0) {
+      sobel = -sobel;
+    }
+    if (sobel > 255) {
+      sobel = 255;
+    }
+    dst_sobely[i] = static_cast<uint8>(sobel);
+  }
+}
+
+void SobelRow_C(const uint8* src_sobelx, const uint8* src_sobely,
+                uint8* dst_argb, int width) {
+  for (int i = 0; i < width; ++i) {
+    int r = src_sobelx[i];
+    int b = src_sobely[i];
+    int s = r + b;
+    if (s > 255) {
+      s = 255;
+    }
+    dst_argb[0] = static_cast<uint8>(s);
+    dst_argb[1] = static_cast<uint8>(s);
+    dst_argb[2] = static_cast<uint8>(s);
+    dst_argb[3] = static_cast<uint8>(255u);
+    dst_argb += 4;
+  }
+}
+
+void SobelXYRow_C(const uint8* src_sobelx, const uint8* src_sobely,
+                  uint8* dst_argb, int width) {
+  for (int i = 0; i < width; ++i) {
+    int r = src_sobelx[i];
+    int b = src_sobely[i];
+    int g = r + b;
+    if (g > 255) {
+      g = 255;
+    }
+    dst_argb[0] = static_cast<uint8>(b);
+    dst_argb[1] = static_cast<uint8>(g);
+    dst_argb[2] = static_cast<uint8>(r);
+    dst_argb[3] = static_cast<uint8>(255u);
+    dst_argb += 4;
+  }
+}
+
 void I400ToARGBRow_C(const uint8* src_y, uint8* dst_argb, int width) {
   // Copy a Y to RGB.
   for (int x = 0; x < width; ++x) {
@@ -758,7 +850,8 @@ static __inline void YuvPixel2(uint8 y, uint8 u, uint8 v,
   *r = Clip(static_cast<int32>((u * UR + v * VR) - (BR) + y1) >> 6);
 }
 
-#if !defined(YUV_DISABLE_ASM) && (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
+#if !defined(LIBYUV_DISABLE_NEON) && \
+    (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
 // C mimic assembly.
 // TODO(fbarchard): Remove subsampling from Neon.
 void I444ToARGBRow_C(const uint8* src_y,
@@ -1451,10 +1544,10 @@ void ARGBAttenuateRow_C(const uint8* src_argb, uint8* dst_argb, int width) {
 // g = (g * 255 + (a / 2)) / a;
 // r = (r * 255 + (a / 2)) / a;
 // Reciprocal method is off by 1 on some values. ie 125
-// 8.16 fixed point inverse table
-#define T(a) 0x10000 / a
+// 8.8 fixed point inverse table with 1.0 in upper short and 1 / a in lower.
+#define T(a) 0x01000000 + (0x10000 / a)
 uint32 fixed_invtbl8[256] = {
-  0x0100, T(0x01), T(0x02), T(0x03), T(0x04), T(0x05), T(0x06), T(0x07),
+  0x01000000, 0x0100ffff, T(0x02), T(0x03), T(0x04), T(0x05), T(0x06), T(0x07),
   T(0x08), T(0x09), T(0x0a), T(0x0b), T(0x0c), T(0x0d), T(0x0e), T(0x0f),
   T(0x10), T(0x11), T(0x12), T(0x13), T(0x14), T(0x15), T(0x16), T(0x17),
   T(0x18), T(0x19), T(0x1a), T(0x1b), T(0x1c), T(0x1d), T(0x1e), T(0x1f),
@@ -1485,7 +1578,7 @@ uint32 fixed_invtbl8[256] = {
   T(0xe0), T(0xe1), T(0xe2), T(0xe3), T(0xe4), T(0xe5), T(0xe6), T(0xe7),
   T(0xe8), T(0xe9), T(0xea), T(0xeb), T(0xec), T(0xed), T(0xee), T(0xef),
   T(0xf0), T(0xf1), T(0xf2), T(0xf3), T(0xf4), T(0xf5), T(0xf6), T(0xf7),
-  T(0xf8), T(0xf9), T(0xfa), T(0xfb), T(0xfc), T(0xfd), T(0xfe), 0x0100 };
+  T(0xf8), T(0xf9), T(0xfa), T(0xfb), T(0xfc), T(0xfd), T(0xfe), 0x01000100 };
 #undef T
 
 void ARGBUnattenuateRow_C(const uint8* src_argb, uint8* dst_argb, int width) {
@@ -1494,21 +1587,19 @@ void ARGBUnattenuateRow_C(const uint8* src_argb, uint8* dst_argb, int width) {
     uint32 g = src_argb[1];
     uint32 r = src_argb[2];
     const uint32 a = src_argb[3];
-    if (a) {
-      const uint32 ia = fixed_invtbl8[a];  // 8.16 fixed point
-      b = (b * ia) >> 8;
-      g = (g * ia) >> 8;
-      r = (r * ia) >> 8;
-      // Clamping should not be necessary but is free in assembly.
-      if (b > 255) {
-        b = 255;
-      }
-      if (g > 255) {
-        g = 255;
-      }
-      if (r > 255) {
-        r = 255;
-      }
+    const uint32 ia = fixed_invtbl8[a] & 0xffff;  // 8.8 fixed point
+    b = (b * ia) >> 8;
+    g = (g * ia) >> 8;
+    r = (r * ia) >> 8;
+    // Clamping should not be necessary but is free in assembly.
+    if (b > 255) {
+      b = 255;
+    }
+    if (g > 255) {
+      g = 255;
+    }
+    if (r > 255) {
+      r = 255;
     }
     dst_argb[0] = b;
     dst_argb[1] = g;
@@ -1616,6 +1707,29 @@ void ARGBToBayerRow_C(const uint8* src_argb,
   }
 }
 
+// Use first 4 shuffler values to reorder ARGB channels.
+void ARGBShuffleRow_C(const uint8* src_argb, uint8* dst_argb,
+                      const uint8* shuffler, int pix) {
+  int index0 = shuffler[0];
+  int index1 = shuffler[1];
+  int index2 = shuffler[2];
+  int index3 = shuffler[3];
+  // Shuffle a row of ARGB.
+  for (int x = 0; x < pix; ++x) {
+    // To support in-place conversion.
+    uint8 b = src_argb[index0];
+    uint8 g = src_argb[index1];
+    uint8 r = src_argb[index2];
+    uint8 a = src_argb[index3];
+    dst_argb[0] = b;
+    dst_argb[1] = g;
+    dst_argb[2] = r;
+    dst_argb[3] = a;
+    src_argb += 4;
+    dst_argb += 4;
+  }
+}
+
 void I422ToYUY2Row_C(const uint8* src_y,
                      const uint8* src_u,
                      const uint8* src_v,
@@ -1660,7 +1774,7 @@ void I422ToUYVYRow_C(const uint8* src_y,
     }
 }
 
-#if !defined(YUV_DISABLE_ASM)
+#if !defined(LIBYUV_DISABLE_X86)
 // row_win.cc has asm version, but GCC uses 2 step wrapper.  5% slower.
 // TODO(fbarchard): Handle width > kMaxStride here instead of calling code.
 #if defined(__x86_64__) || defined(__i386__)
@@ -1759,7 +1873,7 @@ void UYVYToARGBRow_Unaligned_SSSE3(const uint8* src_uyvy,
 }
 
 #endif  // defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
-#endif  // !defined(YUV_DISABLE_ASM)
+#endif  // !defined(LIBYUV_DISABLE_X86)
 
 #ifdef __cplusplus
 }  // extern "C"

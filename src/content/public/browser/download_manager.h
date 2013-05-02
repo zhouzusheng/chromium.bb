@@ -32,7 +32,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/time.h"
@@ -144,8 +144,8 @@ class CONTENT_EXPORT DownloadManager
   // Called by the embedder, after creating the download manager, to let it know
   // about downloads from previous runs of the browser.
   virtual DownloadItem* CreateDownloadItem(
-      const FilePath& current_path,
-      const FilePath& target_path,
+      const base::FilePath& current_path,
+      const base::FilePath& target_path,
       const std::vector<GURL>& url_chain,
       const GURL& referrer_url,
       const base::Time& start_time,

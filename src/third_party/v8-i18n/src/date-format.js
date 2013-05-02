@@ -248,7 +248,7 @@ function initializeDateTimeFormat(dateFormat, locales, options) {
   // Filter out supported extension keys so we know what to put in resolved
   // section later on.
   // We need to pass calendar and number system to the method.
-  var tz = options.timeZone;
+  var tz = canonicalizeTimeZoneID(options.timeZone);
 
   // ICU prefers options to be passed using -u- extension key/values, so
   // we need to build that.
@@ -281,8 +281,9 @@ function initializeDateTimeFormat(dateFormat, locales, options) {
   var formatter = NativeJSCreateDateTimeFormat(
     requestedLocale, {skeleton: ldmlString, timeZone: tz}, resolved);
 
-  // Check if we actually support the time zone.
-  checkTimeZone(tz, resolved.timeZone);
+  if (tz !== undefined && tz !== resolved.timeZone) {
+    throw new RangeError('Unsupported time zone specified ' + tz);
+  }
 
   Object.defineProperty(dateFormat, 'formatter', {value: formatter});
   Object.defineProperty(dateFormat, 'resolved', {value: resolved});
@@ -299,7 +300,10 @@ function initializeDateTimeFormat(dateFormat, locales, options) {
  *
  * @constructor
  */
-Intl.DateTimeFormat = function(locales, options) {
+Intl.DateTimeFormat = function() {
+  var locales = arguments[0];
+  var options = arguments[1];
+
   if (!this || this === Intl) {
     // Constructor is called as a function.
     return new Intl.DateTimeFormat(locales, options);
@@ -315,8 +319,8 @@ Intl.DateTimeFormat = function(locales, options) {
 Intl.DateTimeFormat.prototype.resolvedOptions = function() {
   if (!this || typeof this !== 'object' ||
       this.__initializedIntlObject !== 'dateformat') {
-    throw new TypeError(['resolvedOptions method called on a non-object or ',
-                         'on a object that is not DateTimeFormat.'].join(''));
+    throw new TypeError('resolvedOptions method called on a non-object or ' +
+        'on a object that is not Intl.DateTimeFormat.');
   }
 
   var format = this;
@@ -330,16 +334,12 @@ Intl.DateTimeFormat.prototype.resolvedOptions = function() {
 
   var locale = getOptimalLanguageTag(format.resolved.requestedLocale,
                                      format.resolved.locale);
-  var tz = format.resolved.timeZone;
-  if (tz === 'GMT') {
-    tz = 'UTC';
-  }
 
   var result = {
     locale: locale,
     numberingSystem: format.resolved.numberingSystem,
     calendar: userCalendar,
-    timeZone: tz
+    timeZone: format.resolved.timeZone
   };
 
   addWECPropertyIfDefined(result, 'timeZoneName', fromPattern.timeZoneName);
@@ -361,9 +361,10 @@ Intl.DateTimeFormat.prototype.resolvedOptions = function() {
  * Returns the subset of the given locale list for which this locale list
  * has a matching (possibly fallback) locale. Locales appear in the same
  * order in the returned list as in the input list.
+ * Options are optional parameter.
  */
-Intl.DateTimeFormat.supportedLocalesOf = function(locales, options) {
-  return supportedLocalesOf('dateformat', locales, options);
+Intl.DateTimeFormat.supportedLocalesOf = function(locales) {
+  return supportedLocalesOf('dateformat', locales, arguments[1]);
 };
 
 
@@ -408,24 +409,35 @@ addBoundMethod(Intl.DateTimeFormat, 'v8Parse', parseDate, 1);
 
 
 /**
- * Throws if original and resolved time zones don't match.
+ * Returns canonical Area/Location name, or throws an exception if the zone
+ * name is invalid IANA name.
  */
-function checkTimeZone(original, resolved) {
-  if (original === undefined) {
-    return;
+function canonicalizeTimeZoneID(tzID) {
+  // Skip undefined zones.
+  if (tzID === undefined) {
+    return tzID;
   }
 
-  var upperTimeZone = original.toUpperCase();
-  if ((upperTimeZone === 'UTC' || upperTimeZone == 'GMT') &&
-      resolved === 'GMT') {
-    return;
+  // Special case handling (UTC, GMT).
+  var upperID = tzID.toUpperCase();
+  if (upperID === 'UTC' || upperID === 'GMT' ||
+      upperID === 'ETC/UTC' || upperID === 'ETC/GMT') {
+    return 'UTC';
   }
 
-  // Drop : character - to cover GMT+0700 and GMT+07:00 case.
-  // Make comparison case insensitive.
-  var canonicalOriginal = original.replace(':', '').toLowerCase();
-  var canonicalResolved = resolved.replace(':', '').toLowerCase();
-  if (canonicalOriginal !== canonicalResolved) {
-    throw new RangeError('Unsupported time zone provided: ' + original);
+  // We expect only _ and / beside ASCII letters.
+  // All inputs should conform to Area/Location from now on.
+  var match = TIMEZONE_NAME_CHECK_RE.exec(tzID);
+  if (match === null) {
+    throw new RangeError('Expected Area/Location for time zone, got ' + tzID);
   }
+
+  var result = toTitleCaseWord(match[1]) + '/' + toTitleCaseWord(match[2]);
+  var i = 3;
+  while (match[i] !== undefined && i < match.length) {
+    result = result + '_' + toTitleCaseWord(match[i]);
+    i++;
+  }
+
+  return result;
 }

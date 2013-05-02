@@ -103,40 +103,51 @@ PassRefPtr<NodeFilter> toNodeFilter(v8::Handle<v8::Value> callback)
     return NodeFilter::create(V8NodeFilterCondition::create(callback));
 }
 
-int toInt32(v8::Handle<v8::Value> value, bool& ok)
+const int32_t kMaxInt32 = 0x7fffffff;
+const int32_t kMinInt32 = -kMaxInt32 - 1;
+const uint32_t kMaxUInt32 = 0xffffffff;
+const int64_t kJSMaxInteger = 0x20000000000000LL - 1; // 2^53 - 1, maximum integer exactly representable in ECMAScript.
+
+static double enforceRange(double x, double minimum, double maximum, bool& ok)
+{
+    if (std::isnan(x) || std::isinf(x)) {
+        ok = false;
+        return 0;
+    }
+    x = trunc(x);
+    if (x < minimum || x > maximum) {
+        ok = false;
+        return 0;
+    }
+    return x;
+}
+
+int32_t toInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
 {
     ok = true;
-    
+
     // Fast case. The value is already a 32-bit integer.
     if (value->IsInt32())
         return value->Int32Value();
-    
+
     // Can the value be converted to a number?
     v8::Local<v8::Number> numberObject = value->ToNumber();
     if (numberObject.IsEmpty()) {
         ok = false;
         return 0;
     }
-    
+
+    if (configuration == EnforceRange)
+        return enforceRange(numberObject->Value(), kMinInt32, kMaxInt32, ok);
+
     // Does the value convert to nan or to an infinity?
     double numberValue = numberObject->Value();
-    if (isnan(numberValue) || isinf(numberValue)) {
-        ok = false;
+    if (std::isnan(numberValue) || std::isinf(numberValue))
         return 0;
-    }
-    
-    // Can the value be converted to a 32-bit integer?
-    v8::Local<v8::Int32> intValue = value->ToInt32();
-    if (intValue.IsEmpty()) {
-        ok = false;
-        return 0;
-    }
-    
-    // Return the result of the int32 conversion.
-    return intValue->Value();
+    return numberObject->Int32Value();
 }
-    
-uint32_t toUInt32(v8::Handle<v8::Value> value, bool& ok)
+
+uint32_t toUInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
 {
     ok = true;
 
@@ -144,10 +155,16 @@ uint32_t toUInt32(v8::Handle<v8::Value> value, bool& ok)
     if (value->IsUint32())
         return value->Uint32Value();
 
+    // Fast case. The value is a 32-bit signed integer - possibly positive?
     if (value->IsInt32()) {
         int32_t result = value->Int32Value();
         if (result >= 0)
             return result;
+        if (configuration == EnforceRange) {
+            ok = false;
+            return 0;
+        }
+        return result;
     }
 
     // Can the value be converted to a number?
@@ -157,21 +174,78 @@ uint32_t toUInt32(v8::Handle<v8::Value> value, bool& ok)
         return 0;
     }
 
+    if (configuration == EnforceRange)
+        return enforceRange(numberObject->Value(), 0, kMaxUInt32, ok);
+
     // Does the value convert to nan or to an infinity?
     double numberValue = numberObject->Value();
-    if (isnan(numberValue) || isinf(numberValue)) {
+    if (std::isnan(numberValue) || std::isinf(numberValue))
+        return 0;
+    return numberObject->Uint32Value();
+}
+
+int64_t toInt64(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+{
+    ok = true;
+
+    // Fast case. The value is a 32-bit integer.
+    if (value->IsInt32())
+        return value->Int32Value();
+
+    // Can the value be converted to a number?
+    v8::Local<v8::Number> numberObject = value->ToNumber();
+    if (numberObject.IsEmpty()) {
         ok = false;
         return 0;
     }
 
-    // Can the value be converted to a 32-bit unsigned integer?
-    v8::Local<v8::Uint32> uintValue = value->ToUint32();
-    if (uintValue.IsEmpty()) {
+    double x = numberObject->Value();
+
+    if (configuration == EnforceRange)
+        return enforceRange(x, -kJSMaxInteger, kJSMaxInteger, ok);
+
+    // NaNs and +/-Infinity should be 0, otherwise modulo 2^64.
+    unsigned long long integer;
+    doubleToInteger(x, integer);
+    return integer;
+}
+
+uint64_t toUInt64(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+{
+    ok = true;
+
+    // Fast case. The value is a 32-bit unsigned integer.
+    if (value->IsUint32())
+        return value->Uint32Value();
+
+    // Fast case. The value is a 32-bit integer.
+    if (value->IsInt32()) {
+        int32_t result = value->Int32Value();
+        if (result >= 0)
+            return result;
+        if (configuration == EnforceRange) {
+            ok = false;
+            return 0;
+        }
+        return result;
+    }
+
+    // Can the value be converted to a number?
+    v8::Local<v8::Number> numberObject = value->ToNumber();
+    if (numberObject.IsEmpty()) {
         ok = false;
         return 0;
     }
 
-    return uintValue->Value();
+    double x = numberObject->Value();
+
+    if (configuration == EnforceRange)
+        return enforceRange(x, 0, kJSMaxInteger, ok);
+
+    // NaNs and +/-Infinity should be 0, otherwise modulo 2^64.
+    unsigned long long integer;
+    doubleToInteger(x, integer);
+    return integer;
 }
 
 v8::Persistent<v8::FunctionTemplate> createRawTemplate(v8::Isolate* isolate)
@@ -185,7 +259,7 @@ PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value> value, v8::Isola
 {
     v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(value));
 
-    if (V8DOMStringList::HasInstance(v8Value, isolate)) {
+    if (V8DOMStringList::HasInstance(v8Value, isolate, worldType(isolate))) {
         RefPtr<DOMStringList> ret = V8DOMStringList::toNative(v8::Handle<v8::Object>::Cast(v8Value));
         return ret.release();
     }
@@ -205,7 +279,7 @@ PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value> value, v8::Isola
 PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value> value, v8::Isolate* isolate)
 {
     RefPtr<XPathNSResolver> resolver;
-    if (V8XPathNSResolver::HasInstance(value, isolate))
+    if (V8XPathNSResolver::HasInstance(value, isolate, worldType(isolate)))
         resolver = V8XPathNSResolver::toNative(v8::Handle<v8::Object>::Cast(value));
     else if (value->IsObject())
         resolver = V8CustomXPathNSResolver::create(value->ToObject(), isolate);
@@ -221,19 +295,25 @@ DOMWindow* toDOMWindow(v8::Handle<v8::Context> context)
 {
     v8::Handle<v8::Object> global = context->Global();
     ASSERT(!global.IsEmpty());
-    global = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate()));
-    ASSERT(!global.IsEmpty());
-    return V8DOMWindow::toNative(global);
+    v8::Handle<v8::Object> window = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), MainWorld));
+    if (!window.IsEmpty())
+        return V8DOMWindow::toNative(window);
+    window = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), IsolatedWorld));
+    ASSERT(!window.IsEmpty());
+    return V8DOMWindow::toNative(window);
 }
 
 ScriptExecutionContext* toScriptExecutionContext(v8::Handle<v8::Context> context)
 {
     v8::Handle<v8::Object> global = context->Global();
-    v8::Handle<v8::Object> windowWrapper = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate()));
+    v8::Handle<v8::Object> windowWrapper = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), MainWorld));
+    if (!windowWrapper.IsEmpty())
+        return V8DOMWindow::toNative(windowWrapper)->scriptExecutionContext();
+    windowWrapper = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), IsolatedWorld));
     if (!windowWrapper.IsEmpty())
         return V8DOMWindow::toNative(windowWrapper)->scriptExecutionContext();
 #if ENABLE(WORKERS)
-    v8::Handle<v8::Object> workerWrapper = global->FindInstanceInPrototypeChain(V8WorkerContext::GetTemplate(context->GetIsolate()));
+    v8::Handle<v8::Object> workerWrapper = global->FindInstanceInPrototypeChain(V8WorkerContext::GetTemplate(context->GetIsolate(), WorkerWorld));
     if (!workerWrapper.IsEmpty())
         return V8WorkerContext::toNative(workerWrapper)->scriptExecutionContext();
 #endif
@@ -255,7 +335,7 @@ Frame* toFrameIfNotDetached(v8::Handle<v8::Context> context)
 v8::Local<v8::Context> toV8Context(ScriptExecutionContext* context, const WorldContextHandle& worldContext)
 {
     if (context->isDocument()) {
-        if (Frame* frame = static_cast<Document*>(context)->frame())
+        if (Frame* frame = toDocument(context)->frame())
             return worldContext.adjustedContext(frame->script());
 #if ENABLE(WORKERS)
     } else if (context->isWorkerContext()) {
@@ -269,9 +349,9 @@ v8::Local<v8::Context> toV8Context(ScriptExecutionContext* context, const WorldC
 v8::Local<v8::Context> toV8Context(ScriptExecutionContext* context, DOMWrapperWorld* world)
 {
     if (context->isDocument()) {
-        if (Frame* frame = static_cast<Document*>(context)->frame()) {
+        if (Frame* frame = toDocument(context)->frame()) {
             // FIXME: Store the DOMWrapperWorld for the main world in the v8::Context so callers
-            // that are looking up their world with DOMWrapperWorld::getWorld(v8::Context::GetCurrent())
+            // that are looking up their world with DOMWrapperWorld::isolatedWorld(v8::Context::GetCurrent())
             // won't end up passing null here when later trying to get their v8::Context back.
             if (!world)
                 return frame->script()->mainWorldContext();
@@ -323,6 +403,26 @@ void crashIfV8IsDead()
         // such as out-of-memory by crashing the renderer.
         CRASH();
     }
+}
+
+WrapperWorldType worldType(v8::Isolate* isolate)
+{
+    V8PerIsolateData* data = V8PerIsolateData::from(isolate);
+    // FIXME: Rename domDataStore() to workerDataStore().
+    if (!data->domDataStore())
+        return worldTypeInMainThread(isolate);
+    return WorkerWorld;
+}
+
+WrapperWorldType worldTypeInMainThread(v8::Isolate* isolate)
+{
+    if (!DOMWrapperWorld::isolatedWorldsExist())
+        return MainWorld;
+    ASSERT(!v8::Context::GetEntered().IsEmpty());
+    DOMWrapperWorld* isolatedWorld = DOMWrapperWorld::isolatedWorld(v8::Context::GetEntered());
+    if (isolatedWorld)
+        return IsolatedWorld;
+    return MainWorld;
 }
 
 } // namespace WebCore

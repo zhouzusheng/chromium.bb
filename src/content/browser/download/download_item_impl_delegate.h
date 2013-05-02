@@ -6,7 +6,7 @@
 #define CONTENT_BROWSER_DOWNLOAD_DOWNLOAD_ITEM_IMPL_DELEGATE_H_
 
 #include "base/callback.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/download_danger_type.h"
 #include "content/public/browser/download_item.h"
@@ -86,9 +86,6 @@ class CONTENT_EXPORT DownloadItemImplDelegate {
   // Handle any delegate portions of a state change operation on the
   // DownloadItem.
   virtual void DownloadRemoved(DownloadItemImpl* download);
-
-  // Show the download in the browser.
-  virtual void ShowDownloadInBrowser(DownloadItemImpl* download);
 
   // Assert consistent state for delgate object at various transitions.
   virtual void AssertStateConsistent(DownloadItemImpl* download) const;

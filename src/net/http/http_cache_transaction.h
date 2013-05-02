@@ -13,6 +13,7 @@
 #include "base/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_log.h"
+#include "net/base/request_priority.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_request_headers.h"
@@ -57,7 +58,8 @@ class HttpCache::Transaction : public HttpTransaction {
     UPDATE          = READ_META | WRITE,  // READ_WRITE & ~READ_DATA
   };
 
-  Transaction(HttpCache* cache,
+  Transaction(RequestPriority priority,
+              HttpCache* cache,
               HttpTransactionDelegate* transaction_delegate,
               InfiniteCacheTransaction* infinite_cache_transaction);
   virtual ~Transaction();
@@ -104,8 +106,9 @@ class HttpCache::Transaction : public HttpTransaction {
   const BoundNetLog& net_log() const;
 
   // HttpTransaction methods:
-  virtual int Start(const HttpRequestInfo*, const CompletionCallback&,
-                    const BoundNetLog&) OVERRIDE;
+  virtual int Start(const HttpRequestInfo* request_info,
+                    const CompletionCallback& callback,
+                    const BoundNetLog& net_log) OVERRIDE;
   virtual int RestartIgnoringLastError(
       const CompletionCallback& callback) OVERRIDE;
   virtual int RestartWithCertificate(
@@ -124,6 +127,7 @@ class HttpCache::Transaction : public HttpTransaction {
   virtual UploadProgress GetUploadProgress(void) const OVERRIDE;
   virtual bool GetLoadTimingInfo(
       LoadTimingInfo* load_timing_info) const OVERRIDE;
+  virtual void SetPriority(RequestPriority priority) OVERRIDE;
 
  private:
   static const size_t kNumValidationHeaders = 2;
@@ -309,6 +313,9 @@ class HttpCache::Transaction : public HttpTransaction {
   // satisfiable).
   void FailRangeRequest();
 
+  // Setups the transaction for reading from the cache entry.
+  int SetupEntryForRead();
+
   // Reads data from the network.
   int ReadFromNetwork(IOBuffer* data, int data_len);
 
@@ -381,6 +388,7 @@ class HttpCache::Transaction : public HttpTransaction {
 
   State next_state_;
   const HttpRequestInfo* request_;
+  RequestPriority priority_;
   BoundNetLog net_log_;
   scoped_ptr<HttpRequestInfo> custom_request_;
   HttpRequestHeaders request_headers_copy_;
@@ -408,6 +416,7 @@ class HttpCache::Transaction : public HttpTransaction {
   bool cache_pending_;  // We are waiting for the HttpCache.
   bool done_reading_;
   bool vary_mismatch_;  // The request doesn't match the stored vary data.
+  bool couldnt_conditionalize_request_;
   scoped_refptr<IOBuffer> read_buf_;
   int io_buf_len_;
   int read_offset_;

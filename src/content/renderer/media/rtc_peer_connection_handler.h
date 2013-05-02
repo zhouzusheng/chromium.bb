@@ -24,22 +24,22 @@ class PeerConnectionTracker;
 
 // Mockable wrapper for WebKit::WebRTCStatsResponse
 class CONTENT_EXPORT LocalRTCStatsResponse
-    : public talk_base::RefCountInterface {
+    : public NON_EXPORTED_BASE(talk_base::RefCountInterface) {
  public:
   explicit LocalRTCStatsResponse(const WebKit::WebRTCStatsResponse& impl)
       : impl_(impl) {
   }
-  // Constructor for testing.
-  LocalRTCStatsResponse() {}
 
   virtual WebKit::WebRTCStatsResponse webKitStatsResponse() const;
-  virtual size_t addReport();
-  virtual void addElement(size_t report, bool is_local, double timestamp);
-  virtual void addStatistic(size_t report, bool is_local,
+  virtual size_t addReport(WebKit::WebString type, WebKit::WebString id,
+                           double timestamp);
+  virtual void addStatistic(size_t report,
                             WebKit::WebString name, WebKit::WebString value);
 
  protected:
   virtual ~LocalRTCStatsResponse() {}
+  // Constructor for creating mocks.
+  LocalRTCStatsResponse() {}
 
  private:
   WebKit::WebRTCStatsResponse impl_;
@@ -47,7 +47,7 @@ class CONTENT_EXPORT LocalRTCStatsResponse
 
 // Mockable wrapper for WebKit::WebRTCStatsRequest
 class CONTENT_EXPORT LocalRTCStatsRequest
-    : public talk_base::RefCountInterface {
+    : public NON_EXPORTED_BASE(talk_base::RefCountInterface) {
  public:
   explicit LocalRTCStatsRequest(WebKit::WebRTCStatsRequest impl);
   // Constructor for testing.

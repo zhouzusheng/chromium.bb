@@ -192,6 +192,9 @@ WebInspector.ConsoleMessage.prototype = {
         // Implemented by concrete instances
     },
 
+    /**
+     * @return {WebInspector.DebuggerModel.Location}
+     */
     location: function()
     {
         // Implemented by concrete instances
@@ -218,11 +221,15 @@ WebInspector.ConsoleMessage.create = function(source, level, message, type, url,
 
 // Note: Keep these constants in sync with the ones in Console.h
 WebInspector.ConsoleMessage.MessageSource = {
-    HTML: "html",
     XML: "xml",
     JS: "javascript",
     Network: "network",
     ConsoleAPI: "console-api",
+    Storage: "storage",
+    AppCache: "appcache",
+    Rendering: "rendering",
+    CSS: "css",
+    Security: "security",
     Other: "other"
 }
 
@@ -230,17 +237,19 @@ WebInspector.ConsoleMessage.MessageType = {
     Log: "log",
     Dir: "dir",
     DirXML: "dirxml",
+    Table: "table",
     Trace: "trace",
     Clear: "clear",
     StartGroup: "startGroup",
     StartGroupCollapsed: "startGroupCollapsed",
     EndGroup: "endGroup",
     Assert: "assert",
-    Result: "result"
+    Result: "result",
+    Profile: "profile",
+    ProfileEnd: "profileEnd"
 }
 
 WebInspector.ConsoleMessage.MessageLevel = {
-    Tip: "tip",
     Log: "log",
     Warning: "warning",
     Error: "error",

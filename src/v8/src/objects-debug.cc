@@ -329,6 +329,15 @@ void Map::SharedMapVerify() {
 }
 
 
+void Map::VerifyOmittedPrototypeChecks() {
+  if (!FLAG_omit_prototype_checks_for_leaf_maps) return;
+  if (HasTransitionArray() || is_dictionary_map()) {
+    CHECK_EQ(0, dependent_code()->number_of_entries(
+        DependentCode::kPrototypeCheckGroup));
+  }
+}
+
+
 void CodeCache::CodeCacheVerify() {
   VerifyHeapPointer(default_cache());
   VerifyHeapPointer(normal_type_cache());
@@ -604,7 +613,8 @@ void Code::VerifyEmbeddedMapsDependency() {
       it.rinfo()->target_object()->IsMap()) {
       Map* map = Map::cast(it.rinfo()->target_object());
       if (map->CanTransition()) {
-        CHECK(map->dependent_codes()->Contains(this));
+        CHECK(map->dependent_code()->Contains(
+            DependentCode::kWeaklyEmbeddedGroup, this));
       }
     }
   }
@@ -707,13 +717,31 @@ void Foreign::ForeignVerify() {
 
 
 void AccessorInfo::AccessorInfoVerify() {
-  CHECK(IsAccessorInfo());
-  VerifyPointer(getter());
-  VerifyPointer(setter());
   VerifyPointer(name());
-  VerifyPointer(data());
   VerifyPointer(flag());
   VerifyPointer(expected_receiver_type());
+}
+
+
+void ExecutableAccessorInfo::ExecutableAccessorInfoVerify() {
+  CHECK(IsExecutableAccessorInfo());
+  AccessorInfoVerify();
+  VerifyPointer(getter());
+  VerifyPointer(setter());
+  VerifyPointer(data());
+}
+
+
+void DeclaredAccessorDescriptor::DeclaredAccessorDescriptorVerify() {
+  CHECK(IsDeclaredAccessorDescriptor());
+  VerifySmiField(kInternalFieldOffset);
+}
+
+
+void DeclaredAccessorInfo::DeclaredAccessorInfoVerify() {
+  CHECK(IsDeclaredAccessorInfo());
+  AccessorInfoVerify();
+  VerifyPointer(descriptor());
 }
 
 

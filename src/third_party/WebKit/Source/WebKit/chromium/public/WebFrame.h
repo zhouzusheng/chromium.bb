@@ -33,16 +33,16 @@
 
 #include "../../../Platform/chromium/public/WebCanvas.h"
 #include "../../../Platform/chromium/public/WebFileSystem.h"
+#include "../../../Platform/chromium/public/WebFileSystemType.h"
+#include "../../../Platform/chromium/public/WebMessagePortChannel.h"
 #include "../../../Platform/chromium/public/WebReferrerPolicy.h"
 #include "../../../Platform/chromium/public/WebURL.h"
 #include "WebIconURL.h"
-#include "WebMessagePortChannel.h"
 #include "WebNode.h"
 #include "WebURLLoaderOptions.h"
 
 struct NPObject;
 
-#if WEBKIT_USING_V8
 namespace v8 {
 class Context;
 class Function;
@@ -51,20 +51,16 @@ class Value;
 template <class T> class Handle;
 template <class T> class Local;
 }
-#endif
 
 namespace WebKit {
 
-class WebAnimationController;
 class WebData;
 class WebDataSource;
-class WebDeliveredIntentClient;
 class WebDocument;
 class WebElement;
 class WebFormElement;
 class WebHistoryItem;
 class WebInputElement;
-class WebIntent;
 class WebPerformance;
 class WebRange;
 class WebSecurityOrigin;
@@ -104,12 +100,10 @@ public:
     // is not currently being displayed in a Frame.
     WEBKIT_EXPORT static WebFrame* frameForCurrentContext();
 
-#if WEBKIT_USING_V8
     // Returns the frame corresponding to the given context. This can return 0
     // if the context is detached from the frame, or if the context doesn't
     // correspond to a frame (e.g., workers).
     WEBKIT_EXPORT static WebFrame* frameForContext(v8::Handle<v8::Context>);
-#endif
 
     // Returns the frame inside a given frame or iframe element. Returns 0 if
     // the given element is not a frame, iframe or if the frame is empty.
@@ -133,10 +127,10 @@ public:
     virtual long long identifier() const = 0;
 
     // The urls of the given combination types of favicon (if any) specified by
-    // the document loaded in this frame. The iconTypes is a bit-mask of
+    // the document loaded in this frame. The iconTypesMask is a bit-mask of
     // WebIconURL::Type values, used to select from the available set of icon
     // URLs
-    virtual WebVector<WebIconURL> iconURLs(int iconTypes) const = 0;
+    virtual WebVector<WebIconURL> iconURLs(int iconTypesMask) const = 0;
 
 
     // Geometry -----------------------------------------------------------
@@ -222,8 +216,6 @@ public:
 
     virtual WebDocument document() const = 0;
 
-    virtual WebAnimationController* animationController() = 0;
-
     virtual WebPerformance performance() const = 0;
 
 
@@ -275,7 +267,6 @@ public:
     // to this frame.
     virtual bool checkIfRunInsecureContent(const WebURL&) const = 0;
 
-#if WEBKIT_USING_V8
     // Executes script in the context of the current page and returns the value
     // that the script evaluated to.
     virtual v8::Handle<v8::Value> executeScriptAndReturnValue(
@@ -301,23 +292,21 @@ public:
     virtual v8::Local<v8::Context> mainWorldScriptContext() const = 0;
 
     // Creates an instance of file system object.
-    virtual v8::Handle<v8::Value> createFileSystem(WebFileSystem::Type,
-                                                   const WebString& name,
-                                                   const WebString& rootURL) = 0;
+    virtual v8::Handle<v8::Value> createFileSystem(WebFileSystemType,
+        const WebString& name,
+        const WebString& rootURL) = 0;
     // Creates an instance of serializable file system object.
     // FIXME: Remove this API after we have a better way of creating serialized
     // file system object.
-    virtual v8::Handle<v8::Value> createSerializableFileSystem(WebFileSystem::Type,
-                                                               const WebString& name,
-                                                               const WebString& rootURL) = 0;
+    virtual v8::Handle<v8::Value> createSerializableFileSystem(WebFileSystemType,
+        const WebString& name,
+        const WebString& rootURL) = 0;
     // Creates an instance of file or directory entry object.
-    virtual v8::Handle<v8::Value> createFileEntry(WebFileSystem::Type,
-                                                  const WebString& fileSystemName,
-                                                  const WebString& fileSystemRootURL,
-                                                  const WebString& filePath,
-                                                  bool isDirectory) = 0;
-#endif
-
+    virtual v8::Handle<v8::Value> createFileEntry(WebFileSystemType,
+        const WebString& fileSystemName,
+        const WebString& fileSystemRootURL,
+        const WebString& filePath,
+        bool isDirectory) = 0;
 
     // Navigation ----------------------------------------------------------
 
@@ -406,12 +395,6 @@ public:
 
     // Returns the number of registered unload listeners.
     virtual unsigned unloadListenerCount() const = 0;
-
-    // Returns true if a user gesture is currently being processed.
-    virtual bool isProcessingUserGesture() const = 0;
-
-    // Returns true if a consumable gesture exists and has been successfully consumed.
-    virtual bool consumeUserGesture() const = 0;
 
     // Returns true if this frame is in the process of opening a new frame
     // with a suppressed opener.
@@ -620,26 +603,10 @@ public:
 
     // Events --------------------------------------------------------------
 
-    // These functions all work on the WebFrame's DOMWindow. Keep in mind
-    // that these events might be generated by web content and not genuine
-    // DOM events.
-
-    virtual void addEventListener(const WebString& eventType,
-                                  WebDOMEventListener*, bool useCapture) = 0;
-    virtual void removeEventListener(const WebString& eventType,
-                                     WebDOMEventListener*, bool useCapture) = 0;
-    virtual bool dispatchEvent(const WebDOMEvent&) = 0;
+    // Dispatches a message event on the current DOMWindow in this WebFrame.
     virtual void dispatchMessageEventWithOriginCheck(
         const WebSecurityOrigin& intendedTargetOrigin,
         const WebDOMEvent&) = 0;
-
-
-    // Web Intents ---------------------------------------------------------
-
-    // Called on a target service page to deliver an intent to the window.
-    // The ports are any transferred ports that accompany the intent as a result
-    // of MessagePort transfer.
-    virtual void deliverIntent(const WebIntent&, WebMessagePortChannelArray* ports, WebDeliveredIntentClient*) = 0;
 
 
     // Utility -------------------------------------------------------------

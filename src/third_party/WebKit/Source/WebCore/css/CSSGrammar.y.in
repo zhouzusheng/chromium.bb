@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2003 Lars Knoll (knoll@kde.org)
- *  Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
+ *  Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013 Apple Inc. All rights reserved.
  *  Copyright (C) 2006 Alexey Proskuryakov (ap@nypop.com)
  *  Copyright (C) 2008 Eric Seidel <eric@webkit.org>
  *  Copyright (C) 2012 Intel Corporation. All rights reserved.
@@ -50,6 +50,7 @@
     Vector<RefPtr<StyleKeyframe> >* keyframeRuleList;
     float val;
     CSSPropertyID id;
+    CSSParser::Location location;
 }
 
 %{
@@ -59,9 +60,38 @@ static inline int cssyyerror(void*, const char*)
     return 1;
 }
 
+static inline bool isCSSTokenAString(int yytype)
+{
+    switch (yytype) {
+    case IDENT:
+    case STRING:
+    case NTH:
+    case HEX:
+    case IDSEL:
+    case DIMEN:
+    case INVALIDDIMEN:
+    case URI:
+    case FUNCTION:
+    case ANYFUNCTION:
+    case NOTFUNCTION:
+    case CALCFUNCTION:
+    case MINFUNCTION:
+    case MAXFUNCTION:
+    case VAR_DEFINITION:
+    case UNICODERANGE:
+        return true;
+    default:
+        return false;
+    }
+}
+
 %}
 
-%expect 66
+#if ENABLE_SHADOW_DOM
+%expect 68
+#else
+%expect 67
+#endif
 
 %nonassoc LOWEST_PREC
 
@@ -111,6 +141,9 @@ static inline int cssyyerror(void*, const char*)
 %token WEBKIT_SELECTOR_SYM
 %token WEBKIT_REGION_RULE_SYM
 %token WEBKIT_VIEWPORT_RULE_SYM
+#if ENABLE_CSS3_CONDITIONAL_RULES
+%token WEBKIT_SUPPORTS_CONDITION_SYM
+#endif
 #if ENABLE_CSS_SHADERS
 %token WEBKIT_FILTER_RULE_SYM
 #endif
@@ -144,6 +177,7 @@ static inline int cssyyerror(void*, const char*)
 #endif
 
 %token <number> REMS
+%token <number> CHS
 %token <number> QEMS
 %token <number> EMS
 %token <number> EXS
@@ -181,6 +215,7 @@ static inline int cssyyerror(void*, const char*)
 %token <string> CUEFUNCTION
 #endif
 %token <string> NOTFUNCTION
+%token <string> DISTRIBUTEDFUNCTION
 %token <string> CALCFUNCTION
 %token <string> MINFUNCTION
 %token <string> MAXFUNCTION
@@ -249,6 +284,7 @@ static inline int cssyyerror(void*, const char*)
 %type <boolean> supports_conjunction
 %type <boolean> supports_disjunction
 %type <boolean> supports_declaration_condition
+%type <boolean> supports_error
 #endif
 
 %type <string> keyframe_name
@@ -301,6 +337,9 @@ static inline int cssyyerror(void*, const char*)
 %type <string> element_name
 %type <string> attr_name
 
+%type <location> errors
+%type <location> error_location
+
 %%
 
 stylesheet:
@@ -311,6 +350,9 @@ stylesheet:
   | webkit_mediaquery maybe_space
   | webkit_selector maybe_space
   | webkit_keyframe_rule maybe_space
+#if ENABLE_CSS3_CONDITIONAL_RULES
+  | webkit_supports_condition maybe_space
+#endif
   ;
 
 webkit_rule:
@@ -357,6 +399,14 @@ webkit_selector:
         }
     }
 ;
+
+#if ENABLE_CSS3_CONDITIONAL_RULES
+webkit_supports_condition:
+    WEBKIT_SUPPORTS_CONDITION_SYM '{' maybe_space supports_condition '}' {
+        parser->m_supportsCondition = $4;
+    }
+;
+#endif
 
 maybe_space:
     /* empty */ %prec UNIMPORTANT_TOK
@@ -692,7 +742,15 @@ supports:
     before_supports_rule SUPPORTS_SYM maybe_space supports_condition at_supports_rule_header_end '{' at_rule_body_start maybe_space block_rule_list save_block {
         $$ = parser->createSupportsRule($4, $9);
     }
+    | before_supports_rule SUPPORTS_SYM supports_error {
+        parser->popRuleData();
+        parser->popSupportsRuleData();
+    }
     ;
+
+supports_error:
+    error ';'
+    | error invalid_block
 
 before_supports_rule:
     /* empty */ {
@@ -744,6 +802,7 @@ supports_condition_in_parens:
         $$ = $3;
     }
     | supports_declaration_condition
+    | '(' error ')'
     ;
 
 supports_declaration_condition:
@@ -1037,12 +1096,14 @@ region:
 before_filter_rule:
     /* empty */ {
         parser->markRuleHeaderStart(CSSRuleSourceData::FILTER_RULE);
+        parser->m_inFilterRule = true;
     }
     ;
 
 filter:
     before_filter_rule WEBKIT_FILTER_RULE_SYM WHITESPACE IDENT at_rule_header_end_maybe_space
     '{' at_rule_body_start maybe_space_before_declaration declaration_list closing_brace {
+        parser->m_inFilterRule = false;
         $$ = parser->createFilterRule($4);
     }
     ;
@@ -1179,12 +1240,12 @@ simple_selector:
     | element_name specifier_list {
         $$ = $2;
         if ($$)
-            parser->updateSpecifiersWithElementName(nullAtom, $1, $$);
+            $$ = parser->rewriteSpecifiersWithElementName(nullAtom, $1, $$);
     }
     | specifier_list {
         $$ = $1;
         if ($$)
-            parser->updateSpecifiersWithNamespaceIfNeeded($$);
+            $$ = parser->rewriteSpecifiersWithNamespaceIfNeeded($$);
     }
     | namespace_selector element_name {
         $$ = parser->createFloatingSelectorWithTagName(parser->determineNameInNamespace($1, $2));
@@ -1192,12 +1253,12 @@ simple_selector:
     | namespace_selector element_name specifier_list {
         $$ = $3;
         if ($$)
-            parser->updateSpecifiersWithElementName($1, $2, $$);
+            $$ = parser->rewriteSpecifiersWithElementName($1, $2, $$);
     }
     | namespace_selector specifier_list {
         $$ = $2;
         if ($$)
-            parser->updateSpecifiersWithElementName($1, starAtom, $$);
+            $$ = parser->rewriteSpecifiersWithElementName($1, starAtom, $$);
     }
   ;
 
@@ -1242,7 +1303,7 @@ specifier_list:
         if (!$2)
             $$ = 0;
         else if ($1)
-            $$ = parser->updateSpecifiers($1, $2);
+            $$ = parser->rewriteSpecifiers($1, $2);
     }
     | specifier_list error {
         $$ = 0;
@@ -1389,6 +1450,19 @@ pseudo:
             $$ = 0;
     }
 #endif
+#if ENABLE_SHADOW_DOM
+    | ':' ':' DISTRIBUTEDFUNCTION maybe_space selector maybe_space ')' {
+        if (!$5)
+            $$ = 0;
+        else {
+            $$ = parser->createFloatingSelector();
+            $$->setMatch(CSSSelector::PseudoElement);
+            $$->setFunctionArgumentSelector($5);
+            $3.lower();
+            $$->setValue($3);
+        }
+    }
+#endif
     // use by :-webkit-any.
     // FIXME: should we support generic selectors here or just simple_selectors?
     // Use simple_selector_list for now to match -moz-any.
@@ -1464,7 +1538,8 @@ pseudo:
   ;
 
 declaration_list:
-    declaration {
+    /* empty */ { $$ = false; }
+    | declaration {
         $$ = $1;
     }
     | decl_list declaration {
@@ -1475,16 +1550,20 @@ declaration_list:
     | decl_list {
         $$ = $1;
     }
-    | error invalid_block_list error {
+    | errors invalid_block_list error {
+        parser->syntaxError($1, CSSParser::PropertyDeclarationError);
         $$ = false;
     }
-    | error {
+    | errors {
+        parser->syntaxError($1, CSSParser::PropertyDeclarationError);
         $$ = false;
     }
-    | decl_list error {
+    | decl_list errors {
+        parser->syntaxError($2, CSSParser::PropertyDeclarationError);
         $$ = $1;
     }
-    | decl_list invalid_block_list {
+    | decl_list error_location invalid_block_list {
+        parser->syntaxError($2, CSSParser::PropertyDeclarationError);
         $$ = $1;
     }
     ;
@@ -1494,17 +1573,21 @@ decl_list:
         parser->markPropertyStart();
         $$ = $1;
     }
-    | declaration invalid_block_list maybe_space {
+    | declaration error_location invalid_block_list maybe_space {
+        parser->syntaxError($2);
         $$ = false;
     }
-    | declaration invalid_block_list ';' maybe_space {
+    | declaration error_location invalid_block_list ';' maybe_space {
+        parser->syntaxError($2);
         $$ = false;
     }
-    | error ';' maybe_space {
+    | errors ';' maybe_space {
+        parser->syntaxError($1, CSSParser::PropertyDeclarationError);
         parser->markPropertyStart();
         $$ = false;
     }
-    | error invalid_block_list error ';' maybe_space {
+    | errors invalid_block_list error ';' maybe_space {
+        parser->syntaxError($1, CSSParser::PropertyDeclarationError);
         $$ = false;
     }
     | decl_list declaration ';' maybe_space {
@@ -1513,11 +1596,13 @@ decl_list:
         if ($2)
             $$ = $2;
     }
-    | decl_list error ';' maybe_space {
+    | decl_list errors ';' maybe_space {
+        parser->syntaxError($2, CSSParser::PropertyDeclarationError);
         parser->markPropertyStart();
         $$ = $1;
     }
-    | decl_list error invalid_block_list error ';' maybe_space {
+    | decl_list errors invalid_block_list error ';' maybe_space {
+        parser->syntaxError($2, CSSParser::PropertyDeclarationError);
         parser->markPropertyStart();
         $$ = $1;
     }
@@ -1550,14 +1635,16 @@ declaration:
         parser->markPropertyEnd($5, isPropertyParsed);
     }
     |
-    property error {
+    property errors {
+        parser->syntaxError($2);
         $$ = false;
     }
     |
-    property ':' maybe_space error expr prio {
+    property ':' maybe_space errors expr prio {
         /* The default movable type template has letter-spacing: .none;  Handle this by looking for
         error tokens at the start of an expr, recover the expr and then treat as an error, cleaning
         up and deleting the shifted expr.  */
+        parser->syntaxError($4);
         parser->markPropertyEnd(false, false);
         $$ = false;
     }
@@ -1568,25 +1655,29 @@ declaration:
         $$ = false;
     }
     |
-    IMPORTANT_SYM maybe_space {
+    IMPORTANT_SYM maybe_space error_location {
         /* Handle this case: div { text-align: center; !important } Just reduce away the stray !important. */
+        parser->syntaxError($3);
         $$ = false;
     }
     |
-    property ':' maybe_space {
+    property ':' maybe_space error_location {
         /* div { font-family: } Just reduce away this property with no value. */
+        parser->syntaxError($4);
         parser->markPropertyEnd(false, false);
         $$ = false;
     }
     |
-    property ':' maybe_space error {
+    property ':' maybe_space errors {
         /* if we come across rules with invalid values like this case: p { weight: *; }, just discard the rule */
+        parser->syntaxError($4);
         parser->markPropertyEnd(false, false);
         $$ = false;
     }
     |
-    property invalid_block {
+    property error_location invalid_block {
         /* if we come across: div { color{;color:maroon} }, ignore everything within curly brackets */
+        parser->syntaxError($2);
         $$ = false;
     }
   ;
@@ -1709,6 +1800,7 @@ unary_term:
       if (parser->m_styleSheet)
           parser->m_styleSheet->parserSetUsesRemUnits(true);
   }
+  | CHS maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_CHS; }
   | VW maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_VW; }
   | VH maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_VH; }
   | VMIN maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_VMIN; }
@@ -1939,6 +2031,17 @@ invalid_block_list:
     invalid_block
   | invalid_block_list error invalid_block
 ;
+
+errors:
+    error error_location {
+        $$ = $2;
+    }
+    ;
+
+error_location: {
+        $$ = parser->currentLocation();
+    }
+    ;
 
 %%
 

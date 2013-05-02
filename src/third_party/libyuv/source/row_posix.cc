@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 // This module is for GCC x86 and x64
-#if !defined(YUV_DISABLE_ASM) && (defined(__x86_64__) || defined(__i386__))
+#if !defined(LIBYUV_DISABLE_X86) && (defined(__x86_64__) || defined(__i386__))
 
 // GCC 4.2 on OSX has link error when passing static or const to inline.
 // TODO(fbarchard): Use static const when gcc 4.2 support is dropped.
@@ -101,26 +101,6 @@ CONST uvec8 kShuffleMaskRAWToARGB = {
   2u, 1u, 0u, 12u, 5u, 4u, 3u, 13u, 8u, 7u, 6u, 14u, 11u, 10u, 9u, 15u
 };
 
-// Shuffle table for converting ABGR to ARGB.
-CONST uvec8 kShuffleMaskABGRToARGB = {
-  2u, 1u, 0u, 3u, 6u, 5u, 4u, 7u, 10u, 9u, 8u, 11u, 14u, 13u, 12u, 15u
-};
-
-// Shuffle table for converting BGRA to ARGB.
-CONST uvec8 kShuffleMaskBGRAToARGB = {
-  3u, 2u, 1u, 0u, 7u, 6u, 5u, 4u, 11u, 10u, 9u, 8u, 15u, 14u, 13u, 12u
-};
-
-// Shuffle table for converting RGBA to ARGB.
-CONST uvec8 kShuffleMaskRGBAToARGB = {
-  1u, 2u, 3u, 0u, 5u, 6u, 7u, 4u, 9u, 10u, 11u, 8u, 13u, 14u, 15u, 12u
-};
-
-// Shuffle table for converting ARGB to RGBA.
-CONST uvec8 kShuffleMaskARGBToRGBA = {
-  3u, 0u, 1u, 2u, 7u, 4u, 5u, 6u, 11u, 8u, 9u, 10u, 15u, 12u, 13u, 14u
-};
-
 // Shuffle table for converting ARGB to RGB24.
 CONST uvec8 kShuffleMaskARGBToRGB24 = {
   0u, 1u, 2u, 4u, 5u, 6u, 8u, 9u, 10u, 12u, 13u, 14u, 128u, 128u, 128u, 128u
@@ -198,101 +178,6 @@ void I400ToARGBRow_Unaligned_SSE2(const uint8* src_y, uint8* dst_argb,
   : "memory", "cc"
 #if defined(__SSE2__)
     , "xmm0", "xmm1", "xmm5"
-#endif
-  );
-}
-
-void ABGRToARGBRow_SSSE3(const uint8* src_abgr, uint8* dst_argb, int pix) {
-  asm volatile (
-    "movdqa    %3,%%xmm5                       \n"
-    "sub       %0,%1                           \n"
-    ".p2align  4                               \n"
-  "1:                                          \n"
-    "movdqa    (%0),%%xmm0                     \n"
-    "pshufb    %%xmm5,%%xmm0                   \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%0,%1,1)                \n"
-    "lea       0x10(%0),%0                     \n"
-    "jg        1b                              \n"
-
-  : "+r"(src_abgr),  // %0
-    "+r"(dst_argb),  // %1
-    "+r"(pix)        // %2
-  : "m"(kShuffleMaskABGRToARGB)  // %3
-  : "memory", "cc"
-#if defined(__SSE2__)
-    , "xmm0", "xmm5"
-#endif
-  );
-}
-
-void BGRAToARGBRow_SSSE3(const uint8* src_bgra, uint8* dst_argb, int pix) {
-  asm volatile (
-    "movdqa    %3,%%xmm5                       \n"
-    "sub       %0,%1                           \n"
-    ".p2align  4                               \n"
-  "1:                                          \n"
-    "movdqa    (%0),%%xmm0                     \n"
-    "pshufb    %%xmm5,%%xmm0                   \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%0,%1,1)                \n"
-    "lea       0x10(%0),%0                     \n"
-    "jg        1b                              \n"
-  : "+r"(src_bgra),  // %0
-    "+r"(dst_argb),  // %1
-    "+r"(pix)        // %2
-  : "m"(kShuffleMaskBGRAToARGB)  // %3
-  : "memory", "cc"
-#if defined(__SSE2__)
-    , "xmm0", "xmm5"
-#endif
-  );
-}
-
-void RGBAToARGBRow_SSSE3(const uint8* src_rgba, uint8* dst_argb, int pix) {
-  asm volatile (
-    "movdqa    %3,%%xmm5                       \n"
-    "sub       %0,%1                           \n"
-    ".p2align  4                               \n"
-  "1:                                          \n"
-    "movdqa    (%0),%%xmm0                     \n"
-    "pshufb    %%xmm5,%%xmm0                   \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%0,%1,1)                \n"
-    "lea       0x10(%0),%0                     \n"
-    "jg        1b                              \n"
-
-  : "+r"(src_rgba),  // %0
-    "+r"(dst_argb),  // %1
-    "+r"(pix)        // %2
-  : "m"(kShuffleMaskRGBAToARGB)  // %3
-  : "memory", "cc"
-#if defined(__SSE2__)
-    , "xmm0", "xmm5"
-#endif
-  );
-}
-
-void ARGBToRGBARow_SSSE3(const uint8* src_argb, uint8* dst_rgba, int pix) {
-  asm volatile (
-    "movdqa    %3,%%xmm5                       \n"
-    "sub       %0,%1                           \n"
-    ".p2align  4                               \n"
-  "1:                                          \n"
-    "movdqa    (%0),%%xmm0                     \n"
-    "pshufb    %%xmm5,%%xmm0                   \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%0,%1,1)                \n"
-    "lea       0x10(%0),%0                     \n"
-    "jg        1b                              \n"
-
-  : "+r"(src_argb),  // %0
-    "+r"(dst_rgba),  // %1
-    "+r"(pix)        // %2
-  : "m"(kShuffleMaskARGBToRGBA)  // %3
-  : "memory", "cc"
-#if defined(__SSE2__)
-    , "xmm0", "xmm5"
 #endif
   );
 }
@@ -921,6 +806,128 @@ void ARGBToUVRow_Unaligned_SSSE3(const uint8* src_argb0, int src_stride_argb,
   : "memory", "cc"
 #if defined(__SSE2__)
     , "xmm0", "xmm1", "xmm2", "xmm6", "xmm7"
+#endif
+  );
+}
+
+void ARGBToUV444Row_SSSE3(const uint8* src_argb, uint8* dst_u, uint8* dst_v,
+                          int width) {
+  asm volatile (
+    "movdqa    %0,%%xmm4                       \n"
+    "movdqa    %1,%%xmm3                       \n"
+    "movdqa    %2,%%xmm5                       \n"
+  :
+  : "m"(kARGBToU),  // %0
+    "m"(kARGBToV),  // %1
+    "m"(kAddUV128)  // %2
+  );
+  asm volatile (
+    "sub       %1,%2                           \n"
+    ".p2align  4                               \n"
+  "1:                                          \n"
+    "movdqa    (%0),%%xmm0                     \n"
+    "movdqa    0x10(%0),%%xmm1                 \n"
+    "movdqa    0x20(%0),%%xmm2                 \n"
+    "movdqa    0x30(%0),%%xmm6                 \n"
+    "pmaddubsw %%xmm4,%%xmm0                   \n"
+    "pmaddubsw %%xmm4,%%xmm1                   \n"
+    "pmaddubsw %%xmm4,%%xmm2                   \n"
+    "pmaddubsw %%xmm4,%%xmm6                   \n"
+    "phaddw    %%xmm1,%%xmm0                   \n"
+    "phaddw    %%xmm6,%%xmm2                   \n"
+    "psraw     $0x8,%%xmm0                     \n"
+    "psraw     $0x8,%%xmm2                     \n"
+    "packsswb  %%xmm2,%%xmm0                   \n"
+    "paddb     %%xmm5,%%xmm0                   \n"
+    "sub       $0x10,%3                        \n"
+    "movdqa    %%xmm0,(%1)                     \n"
+    "movdqa    (%0),%%xmm0                     \n"
+    "movdqa    0x10(%0),%%xmm1                 \n"
+    "movdqa    0x20(%0),%%xmm2                 \n"
+    "movdqa    0x30(%0),%%xmm6                 \n"
+    "pmaddubsw %%xmm3,%%xmm0                   \n"
+    "pmaddubsw %%xmm3,%%xmm1                   \n"
+    "pmaddubsw %%xmm3,%%xmm2                   \n"
+    "pmaddubsw %%xmm3,%%xmm6                   \n"
+    "phaddw    %%xmm1,%%xmm0                   \n"
+    "phaddw    %%xmm6,%%xmm2                   \n"
+    "psraw     $0x8,%%xmm0                     \n"
+    "psraw     $0x8,%%xmm2                     \n"
+    "packsswb  %%xmm2,%%xmm0                   \n"
+    "paddb     %%xmm5,%%xmm0                   \n"
+    "lea       0x40(%0),%0                     \n"
+    "movdqa    %%xmm0,(%1,%2,1)                \n"
+    "lea       0x10(%1),%1                     \n"
+    "jg        1b                              \n"
+  : "+r"(src_argb),        // %0
+    "+r"(dst_u),           // %1
+    "+r"(dst_v),           // %2
+    "+rm"(width)           // %3
+  :
+  : "memory", "cc"
+#if defined(__SSE2__)
+    , "xmm0", "xmm1", "xmm2", "xmm6"
+#endif
+  );
+}
+
+void ARGBToUV444Row_Unaligned_SSSE3(const uint8* src_argb, uint8* dst_u,
+                                    uint8* dst_v, int width) {
+  asm volatile (
+    "movdqa    %0,%%xmm4                       \n"
+    "movdqa    %1,%%xmm3                       \n"
+    "movdqa    %2,%%xmm5                       \n"
+  :
+  : "m"(kARGBToU),  // %0
+    "m"(kARGBToV),  // %1
+    "m"(kAddUV128)  // %2
+  );
+  asm volatile (
+    "sub       %1,%2                           \n"
+    ".p2align  4                               \n"
+  "1:                                          \n"
+    "movdqu    (%0),%%xmm0                     \n"
+    "movdqu    0x10(%0),%%xmm1                 \n"
+    "movdqu    0x20(%0),%%xmm2                 \n"
+    "movdqu    0x30(%0),%%xmm6                 \n"
+    "pmaddubsw %%xmm4,%%xmm0                   \n"
+    "pmaddubsw %%xmm4,%%xmm1                   \n"
+    "pmaddubsw %%xmm4,%%xmm2                   \n"
+    "pmaddubsw %%xmm4,%%xmm6                   \n"
+    "phaddw    %%xmm1,%%xmm0                   \n"
+    "phaddw    %%xmm6,%%xmm2                   \n"
+    "psraw     $0x8,%%xmm0                     \n"
+    "psraw     $0x8,%%xmm2                     \n"
+    "packsswb  %%xmm2,%%xmm0                   \n"
+    "paddb     %%xmm5,%%xmm0                   \n"
+    "sub       $0x10,%3                        \n"
+    "movdqu    %%xmm0,(%1)                     \n"
+    "movdqu    (%0),%%xmm0                     \n"
+    "movdqu    0x10(%0),%%xmm1                 \n"
+    "movdqu    0x20(%0),%%xmm2                 \n"
+    "movdqu    0x30(%0),%%xmm6                 \n"
+    "pmaddubsw %%xmm3,%%xmm0                   \n"
+    "pmaddubsw %%xmm3,%%xmm1                   \n"
+    "pmaddubsw %%xmm3,%%xmm2                   \n"
+    "pmaddubsw %%xmm3,%%xmm6                   \n"
+    "phaddw    %%xmm1,%%xmm0                   \n"
+    "phaddw    %%xmm6,%%xmm2                   \n"
+    "psraw     $0x8,%%xmm0                     \n"
+    "psraw     $0x8,%%xmm2                     \n"
+    "packsswb  %%xmm2,%%xmm0                   \n"
+    "paddb     %%xmm5,%%xmm0                   \n"
+    "lea       0x40(%0),%0                     \n"
+    "movdqu    %%xmm0,(%1,%2,1)                \n"
+    "lea       0x10(%1),%1                     \n"
+    "jg        1b                              \n"
+  : "+r"(src_argb),        // %0
+    "+r"(dst_u),           // %1
+    "+r"(dst_v),           // %2
+    "+rm"(width)           // %3
+  :
+  : "memory", "cc"
+#if defined(__SSE2__)
+    , "xmm0", "xmm1", "xmm2", "xmm6"
 #endif
   );
 }
@@ -3629,8 +3636,6 @@ void ARGBUnattenuateRow_SSE2(const uint8* src_argb, uint8* dst_argb,
   uintptr_t alpha = 0;
   asm volatile (
     "sub       %0,%1                           \n"
-    "pcmpeqb   %%xmm4,%%xmm4                   \n"
-    "pslld     $0x18,%%xmm4                    \n"
 
     // 4 pixel loop.
     ".p2align  4                               \n"
@@ -3641,8 +3646,8 @@ void ARGBUnattenuateRow_SSE2(const uint8* src_argb, uint8* dst_argb,
     "movd      0x0(%4,%3,4),%%xmm2             \n"
     "movzb     0x7(%0),%3                      \n"
     "movd      0x0(%4,%3,4),%%xmm3             \n"
-    "pshuflw   $0xc0,%%xmm2,%%xmm2             \n"
-    "pshuflw   $0xc0,%%xmm3,%%xmm3             \n"
+    "pshuflw   $0x40,%%xmm2,%%xmm2             \n"
+    "pshuflw   $0x40,%%xmm3,%%xmm3             \n"
     "movlhps   %%xmm3,%%xmm2                   \n"
     "pmulhuw   %%xmm2,%%xmm0                   \n"
     "movdqa    (%0),%%xmm1                     \n"
@@ -3651,14 +3656,11 @@ void ARGBUnattenuateRow_SSE2(const uint8* src_argb, uint8* dst_argb,
     "movd      0x0(%4,%3,4),%%xmm2             \n"
     "movzb     0xf(%0),%3                      \n"
     "movd      0x0(%4,%3,4),%%xmm3             \n"
-    "pshuflw   $0xc0,%%xmm2,%%xmm2             \n"
-    "pshuflw   $0xc0,%%xmm3,%%xmm3             \n"
+    "pshuflw   $0x40,%%xmm2,%%xmm2             \n"
+    "pshuflw   $0x40,%%xmm3,%%xmm3             \n"
     "movlhps   %%xmm3,%%xmm2                   \n"
     "pmulhuw   %%xmm2,%%xmm1                   \n"
-    "movdqa    (%0),%%xmm2                     \n"
-    "pand      %%xmm4,%%xmm2                   \n"
     "packuswb  %%xmm1,%%xmm0                   \n"
-    "por       %%xmm2,%%xmm0                   \n"
     "sub       $0x4,%2                         \n"
     "movdqa    %%xmm0,(%0,%1,1)                \n"
     "lea       0x10(%0),%0                     \n"
@@ -3948,10 +3950,10 @@ void ARGBShadeRow_SSE2(const uint8* src_argb, uint8* dst_argb, int width,
     "movdqa    %%xmm0,(%0,%1,1)                \n"
     "lea       0x10(%0),%0                     \n"
     "jg        1b                              \n"
-  : "+r"(src_argb),       // %0
-    "+r"(dst_argb),       // %1
-    "+r"(width)           // %2
-  : "r"(value)            // %3
+  : "+r"(src_argb),  // %0
+    "+r"(dst_argb),  // %1
+    "+r"(width)      // %2
+  : "r"(value)       // %3
   : "memory", "cc"
 #if defined(__SSE2__)
     , "xmm0", "xmm1", "xmm2"
@@ -3959,6 +3961,111 @@ void ARGBShadeRow_SSE2(const uint8* src_argb, uint8* dst_argb, int width,
   );
 }
 #endif  // HAS_ARGBSHADEROW_SSE2
+
+#ifdef HAS_ARGBMULTIPLYROW_SSE2
+// Multiply 2 rows of ARGB pixels together, 4 pixels at a time.
+// Aligned to 16 bytes.
+void ARGBMultiplyRow_SSE2(const uint8* src_argb0, const uint8* src_argb1,
+                          uint8* dst_argb, int width) {
+  asm volatile (
+    "pxor      %%xmm5,%%xmm5                   \n"
+    "sub       %0,%1                           \n"
+    "sub       %0,%2                           \n"
+
+    // 4 pixel loop.
+    ".p2align  4                               \n"
+  "1:                                          \n"
+    "movdqa    (%0),%%xmm0                     \n"
+    "movdqa    (%0,%1),%%xmm2                  \n"
+    "movdqa    %%xmm0,%%xmm1                   \n"
+    "movdqa    %%xmm2,%%xmm3                   \n"
+    "punpcklbw %%xmm0,%%xmm0                   \n"
+    "punpckhbw %%xmm1,%%xmm1                   \n"
+    "punpcklbw %%xmm5,%%xmm2                   \n"
+    "punpckhbw %%xmm5,%%xmm3                   \n"
+    "pmulhuw   %%xmm2,%%xmm0                   \n"
+    "pmulhuw   %%xmm3,%%xmm1                   \n"
+    "packuswb  %%xmm1,%%xmm0                   \n"
+    "sub       $0x4,%3                         \n"
+    "movdqa    %%xmm0,(%0,%2,1)                \n"
+    "lea       0x10(%0),%0                     \n"
+    "jg        1b                              \n"
+  : "+r"(src_argb0),  // %0
+    "+r"(src_argb1),  // %1
+    "+r"(dst_argb),   // %2
+    "+r"(width)       // %3
+  :
+  : "memory", "cc"
+#if defined(__SSE2__)
+    , "xmm0", "xmm1", "xmm2", "xmm3", "xmm5"
+#endif
+  );
+}
+#endif  // HAS_ARGBMULTIPLYROW_SSE2
+
+#ifdef HAS_ARGBADDROW_SSE2
+// Add 2 rows of ARGB pixels together, 4 pixels at a time.
+// Aligned to 16 bytes.
+void ARGBAddRow_SSE2(const uint8* src_argb0, const uint8* src_argb1,
+                     uint8* dst_argb, int width) {
+  asm volatile (
+    "sub       %0,%1                           \n"
+    "sub       %0,%2                           \n"
+
+    // 4 pixel loop.
+    ".p2align  4                               \n"
+  "1:                                          \n"
+    "movdqa    (%0),%%xmm0                     \n"
+    "movdqa    (%0,%1),%%xmm1                  \n"
+    "paddusb   %%xmm1,%%xmm0                   \n"
+    "sub       $0x4,%3                         \n"
+    "movdqa    %%xmm0,(%0,%2,1)                \n"
+    "lea       0x10(%0),%0                     \n"
+    "jg        1b                              \n"
+  : "+r"(src_argb0),  // %0
+    "+r"(src_argb1),  // %1
+    "+r"(dst_argb),   // %2
+    "+r"(width)       // %3
+  :
+  : "memory", "cc"
+#if defined(__SSE2__)
+    , "xmm0", "xmm1"
+#endif
+  );
+}
+#endif  // HAS_ARGBADDROW_SSE2
+
+#ifdef HAS_ARGBSUBTRACTROW_SSE2
+// Subtract 2 rows of ARGB pixels, 4 pixels at a time.
+// Aligned to 16 bytes.
+void ARGBSubtractRow_SSE2(const uint8* src_argb0, const uint8* src_argb1,
+                          uint8* dst_argb, int width) {
+  asm volatile (
+    "sub       %0,%1                           \n"
+    "sub       %0,%2                           \n"
+
+    // 4 pixel loop.
+    ".p2align  4                               \n"
+  "1:                                          \n"
+    "movdqa    (%0),%%xmm0                     \n"
+    "movdqa    (%0,%1),%%xmm1                  \n"
+    "psubusb   %%xmm1,%%xmm0                   \n"
+    "sub       $0x4,%3                         \n"
+    "movdqa    %%xmm0,(%0,%2,1)                \n"
+    "lea       0x10(%0),%0                     \n"
+    "jg        1b                              \n"
+  : "+r"(src_argb0),  // %0
+    "+r"(src_argb1),  // %1
+    "+r"(dst_argb),   // %2
+    "+r"(width)       // %3
+  :
+  : "memory", "cc"
+#if defined(__SSE2__)
+    , "xmm0", "xmm1"
+#endif
+  );
+}
+#endif  // HAS_ARGBSUBTRACTROW_SSE2
 
 #ifdef HAS_COMPUTECUMULATIVESUMROW_SSE2
 // Creates a table of cumulative sums where each value is a sum of all values
@@ -4332,10 +4439,9 @@ void ARGBInterpolateRow_SSSE3(uint8* dst_argb, const uint8* src_argb,
     "lea       0x10(%1),%1                     \n"
     "jg        100b                            \n"
 
-    // Extrude last pixel.
   "99:                                         \n"
-  : "+r"(dst_argb),    // %0
-    "+r"(src_argb),    // %1
+  : "+r"(dst_argb),   // %0
+    "+r"(src_argb),   // %1
     "+r"(dst_width),  // %2
     "+r"(source_y_fraction)  // %3
   : "r"(static_cast<intptr_t>(src_stride))  // %4
@@ -4346,18 +4452,130 @@ void ARGBInterpolateRow_SSSE3(uint8* dst_argb, const uint8* src_argb,
   );
 }
 
+// Bilinear image filtering.
+// Same as ScaleARGBFilterRows_SSSE3 but without last pixel duplicated.
+void ARGBInterpolateRow_SSE2(uint8* dst_argb, const uint8* src_argb,
+                             ptrdiff_t src_stride, int dst_width,
+                             int source_y_fraction) {
+  asm volatile (
+    "sub       %1,%0                           \n"
+    "shr       %3                              \n"
+    "cmp       $0x0,%3                         \n"
+    "je        100f                            \n"
+    "cmp       $0x20,%3                        \n"
+    "je        75f                             \n"
+    "cmp       $0x40,%3                        \n"
+    "je        50f                             \n"
+    "cmp       $0x60,%3                        \n"
+    "je        25f                             \n"
+
+    "movd      %3,%%xmm0                       \n"
+    "neg       %3                              \n"
+    "add       $0x80,%3                        \n"
+    "movd      %3,%%xmm5                       \n"
+    "punpcklbw %%xmm0,%%xmm5                   \n"
+    "punpcklwd %%xmm5,%%xmm5                   \n"
+    "pshufd    $0x0,%%xmm5,%%xmm5              \n"
+    "pxor      %%xmm4,%%xmm4                   \n"
+
+    // General purpose row blend.
+    ".p2align  4                               \n"
+  "1:                                          \n"
+    "movdqa    (%1),%%xmm0                     \n"
+    "movdqa    (%1,%4,1),%%xmm2                \n"
+    "movdqa    %%xmm0,%%xmm1                   \n"
+    "movdqa    %%xmm2,%%xmm3                   \n"
+    "punpcklbw %%xmm4,%%xmm2                   \n"
+    "punpckhbw %%xmm4,%%xmm3                   \n"
+    "punpcklbw %%xmm4,%%xmm0                   \n"
+    "punpckhbw %%xmm4,%%xmm1                   \n"
+    "psubw     %%xmm0,%%xmm2                   \n"
+    "psubw     %%xmm1,%%xmm3                   \n"
+    "paddw     %%xmm2,%%xmm2                   \n"
+    "paddw     %%xmm3,%%xmm3                   \n"
+    "pmulhw    %%xmm5,%%xmm2                   \n"
+    "pmulhw    %%xmm5,%%xmm3                   \n"
+    "paddw     %%xmm2,%%xmm0                   \n"
+    "paddw     %%xmm3,%%xmm1                   \n"
+    "packuswb  %%xmm1,%%xmm0                   \n"
+    "sub       $0x4,%2                         \n"
+    "movdqa    %%xmm0,(%1,%0,1)                \n"
+    "lea       0x10(%1),%1                     \n"
+    "jg        1b                              \n"
+    "jmp       99f                             \n"
+
+    // Blend 25 / 75.
+    ".p2align  4                               \n"
+  "25:                                         \n"
+    "movdqa    (%1),%%xmm0                     \n"
+    "movdqa    (%1,%4,1),%%xmm1                \n"
+    "pavgb     %%xmm1,%%xmm0                   \n"
+    "pavgb     %%xmm1,%%xmm0                   \n"
+    "sub       $0x4,%2                         \n"
+    "movdqa    %%xmm0,(%1,%0,1)                \n"
+    "lea       0x10(%1),%1                     \n"
+    "jg        25b                             \n"
+    "jmp       99f                             \n"
+
+    // Blend 50 / 50.
+    ".p2align  4                               \n"
+  "50:                                         \n"
+    "movdqa    (%1),%%xmm0                     \n"
+    "movdqa    (%1,%4,1),%%xmm1                \n"
+    "pavgb     %%xmm1,%%xmm0                   \n"
+    "sub       $0x4,%2                         \n"
+    "movdqa    %%xmm0,(%1,%0,1)                \n"
+    "lea       0x10(%1),%1                     \n"
+    "jg        50b                             \n"
+    "jmp       99f                             \n"
+
+    // Blend 75 / 25.
+    ".p2align  4                               \n"
+  "75:                                         \n"
+    "movdqa    (%1),%%xmm1                     \n"
+    "movdqa    (%1,%4,1),%%xmm0                \n"
+    "pavgb     %%xmm1,%%xmm0                   \n"
+    "pavgb     %%xmm1,%%xmm0                   \n"
+    "sub       $0x4,%2                         \n"
+    "movdqa    %%xmm0,(%1,%0,1)                \n"
+    "lea       0x10(%1),%1                     \n"
+    "jg        75b                             \n"
+    "jmp       99f                             \n"
+
+    // Blend 100 / 0 - Copy row unchanged.
+    ".p2align  4                               \n"
+  "100:                                        \n"
+    "movdqa    (%1),%%xmm0                     \n"
+    "sub       $0x4,%2                         \n"
+    "movdqa    %%xmm0,(%1,%0,1)                \n"
+    "lea       0x10(%1),%1                     \n"
+    "jg        100b                            \n"
+
+  "99:                                         \n"
+  : "+r"(dst_argb),   // %0
+    "+r"(src_argb),   // %1
+    "+r"(dst_width),  // %2
+    "+r"(source_y_fraction)  // %3
+  : "r"(static_cast<intptr_t>(src_stride))  // %4
+  : "memory", "cc"
+#if defined(__SSE2__)
+    , "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
+#endif
+  );
+}
+
 void HalfRow_SSE2(const uint8* src_uv, int src_uv_stride,
                   uint8* dst_uv, int pix) {
   asm volatile (
-    "sub        %0,%1                            \n"
-    ".p2align  4                                 \n"
-  "1:                                            \n"
-    "movdqa     (%0),%%xmm0                      \n"
-    "pavgb      (%0,%3),%%xmm0                   \n"
-    "sub        $0x10,%2                         \n"
-    "movdqa     %%xmm0,(%0,%1)                   \n"
-    "lea        0x10(%0),%0                      \n"
-    "jg         1b                               \n"
+    "sub       %0,%1                           \n"
+    ".p2align  4                               \n"
+  "1:                                          \n"
+    "movdqa    (%0),%%xmm0                     \n"
+    "pavgb     (%0,%3),%%xmm0                  \n"
+    "sub       $0x10,%2                        \n"
+    "movdqa    %%xmm0,(%0,%1)                  \n"
+    "lea       0x10(%0),%0                     \n"
+    "jg        1b                              \n"
   : "+r"(src_uv),  // %0
     "+r"(dst_uv),  // %1
     "+r"(pix)      // %2
@@ -4372,24 +4590,82 @@ void HalfRow_SSE2(const uint8* src_uv, int src_uv_stride,
 void ARGBToBayerRow_SSSE3(const uint8* src_argb, uint8* dst_bayer,
                           uint32 selector, int pix) {
   asm volatile (
-    "movd   %3,%%xmm5                          \n"
-    "pshufd $0x0,%%xmm5,%%xmm5                 \n"
+    "movd      %3,%%xmm5                       \n"
+    "pshufd    $0x0,%%xmm5,%%xmm5              \n"
     ".p2align  4                               \n"
   "1:                                          \n"
-    "movdqa (%0),%%xmm0                        \n"
-    "lea    0x10(%0),%0                        \n"
-    "pshufb %%xmm5,%%xmm0                      \n"
-    "sub    $0x4,%2                            \n"
-    "movd   %%xmm0,(%1)                        \n"
-    "lea    0x4(%1),%1                         \n"
-    "jg     1b                                 \n"
+    "movdqa    (%0),%%xmm0                     \n"
+    "movdqa    0x10(%0),%%xmm1                 \n"
+    "lea       0x20(%0),%0                     \n"
+    "pshufb    %%xmm5,%%xmm0                   \n"
+    "pshufb    %%xmm5,%%xmm1                   \n"
+    "punpckldq %%xmm1,%%xmm0                   \n"
+    "sub       $0x8,%2                         \n"
+    "movq      %%xmm0,(%1)                     \n"
+    "lea       0x8(%1),%1                      \n"
+    "jg        1b                              \n"
   : "+r"(src_argb),  // %0
     "+r"(dst_bayer), // %1
     "+r"(pix)        // %2
   : "g"(selector)    // %3
   : "memory", "cc"
 #if defined(__SSE2__)
-    , "xmm0", "xmm5"
+    , "xmm0", "xmm1", "xmm5"
+#endif
+  );
+}
+
+// For BGRAToARGB, ABGRToARGB, RGBAToARGB, and ARGBToRGBA.
+void ARGBShuffleRow_SSSE3(const uint8* src_argb, uint8* dst_argb,
+                          const uint8* shuffler, int pix) {
+  asm volatile (
+    "movdqa    (%3),%%xmm5                     \n"
+    ".p2align  4                               \n"
+  "1:                                          \n"
+    "movdqa    (%0),%%xmm0                     \n"
+    "movdqa    0x10(%0),%%xmm1                 \n"
+    "lea       0x20(%0),%0                     \n"
+    "pshufb    %%xmm5,%%xmm0                   \n"
+    "pshufb    %%xmm5,%%xmm1                   \n"
+    "sub       $0x8,%2                         \n"
+    "movdqa    %%xmm0,(%1)                     \n"
+    "movdqa    %%xmm1,0x10(%1)                 \n"
+    "lea       0x20(%1),%1                     \n"
+    "jg        1b                              \n"
+  : "+r"(src_argb),  // %0
+    "+r"(dst_argb),  // %1
+    "+r"(pix)        // %2
+  : "r"(shuffler)    // %3
+  : "memory", "cc"
+#if defined(__SSE2__)
+    , "xmm0", "xmm1", "xmm5"
+#endif
+  );
+}
+
+void ARGBShuffleRow_Unaligned_SSSE3(const uint8* src_argb, uint8* dst_argb,
+                                    const uint8* shuffler, int pix) {
+  asm volatile (
+    "movdqa    (%3),%%xmm5                     \n"
+    ".p2align  4                               \n"
+  "1:                                          \n"
+    "movdqu    (%0),%%xmm0                     \n"
+    "movdqu    0x10(%0),%%xmm1                 \n"
+    "lea       0x20(%0),%0                     \n"
+    "pshufb    %%xmm5,%%xmm0                   \n"
+    "pshufb    %%xmm5,%%xmm1                   \n"
+    "sub       $0x8,%2                         \n"
+    "movdqu    %%xmm0,(%1)                     \n"
+    "movdqu    %%xmm1,0x10(%1)                 \n"
+    "lea       0x20(%1),%1                     \n"
+    "jg        1b                              \n"
+  : "+r"(src_argb),  // %0
+    "+r"(dst_argb),  // %1
+    "+r"(pix)        // %2
+  : "r"(shuffler)    // %3
+  : "memory", "cc"
+#if defined(__SSE2__)
+    , "xmm0", "xmm1", "xmm5"
 #endif
   );
 }
@@ -4399,7 +4675,7 @@ void I422ToYUY2Row_SSE2(const uint8* src_y,
                         const uint8* src_v,
                         uint8* dst_frame, int width) {
  asm volatile (
-    "sub        %1,%2                            \n"
+    "sub       %1,%2                             \n"
     ".p2align  4                                 \n"
   "1:                                            \n"
     "movq      (%1),%%xmm2                       \n"

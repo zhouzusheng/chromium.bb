@@ -15,7 +15,6 @@
 #include "net/base/connection_type_histograms.h"
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
-#include "net/base/ssl_cert_request_info.h"
 #include "net/http/http_basic_stream.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_pipelined_connection.h"
@@ -38,16 +37,19 @@
 #include "net/spdy/spdy_http_stream.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_session_pool.h"
+#include "net/ssl/ssl_cert_request_info.h"
 
 namespace net {
 
 // Returns parameters associated with the start of a HTTP stream job.
 Value* NetLogHttpStreamJobCallback(const GURL* original_url,
                                    const GURL* url,
+                                   RequestPriority priority,
                                    NetLog::LogLevel /* log_level */) {
   DictionaryValue* dict = new DictionaryValue();
   dict->SetString("original_url", original_url->GetOrigin().spec());
   dict->SetString("url", url->GetOrigin().spec());
+  dict->SetInteger("priority", priority);
   return dict;
 }
 
@@ -71,11 +73,13 @@ Value* NetLogHttpStreamProtoCallback(
 HttpStreamFactoryImpl::Job::Job(HttpStreamFactoryImpl* stream_factory,
                                 HttpNetworkSession* session,
                                 const HttpRequestInfo& request_info,
+                                RequestPriority priority,
                                 const SSLConfig& server_ssl_config,
                                 const SSLConfig& proxy_ssl_config,
                                 NetLog* net_log)
     : request_(NULL),
       request_info_(request_info),
+      priority_(priority),
       server_ssl_config_(server_ssl_config),
       proxy_ssl_config_(proxy_ssl_config),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_HTTP_STREAM_JOB)),
@@ -168,9 +172,15 @@ LoadState HttpStreamFactoryImpl::Job::GetLoadState() const {
   }
 }
 
-void HttpStreamFactoryImpl::Job::MarkAsAlternate(const GURL& original_url) {
+void HttpStreamFactoryImpl::Job::MarkAsAlternate(
+    const GURL& original_url,
+    PortAlternateProtocolPair alternate) {
   DCHECK(!original_url_.get());
   original_url_.reset(new GURL(original_url));
+  if (alternate.protocol == QUIC_1) {
+    DCHECK(session_->params().enable_quic);
+    using_quic_ = true;
+  }
 }
 
 void HttpStreamFactoryImpl::Job::WaitFor(Job* job) {
@@ -570,7 +580,8 @@ int HttpStreamFactoryImpl::Job::DoStart() {
 
   net_log_.BeginEvent(NetLog::TYPE_HTTP_STREAM_JOB,
                       base::Bind(&NetLogHttpStreamJobCallback,
-                                 &request_info_.url, &origin_url_));
+                                 &request_info_.url, &origin_url_,
+                                 priority_));
 
   // Don't connect to restricted ports.
   bool is_port_allowed = IsPortAllowedByDefault(port);
@@ -649,7 +660,7 @@ bool HttpStreamFactoryImpl::Job::ShouldForceSpdyWithoutSSL() const {
 }
 
 bool HttpStreamFactoryImpl::Job::ShouldForceQuic() const {
-  return session_->params().enable_quic &&
+  return session_->params().enable_quic && request_info_.url.SchemeIs("http") &&
       session_->params().origin_port_to_force_quic_on == origin_.port() &&
       proxy_info_.is_direct();
 }
@@ -676,9 +687,17 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
   using_ssl_ = request_info_.url.SchemeIs("https") || ShouldForceSpdySSL();
   using_spdy_ = false;
 
-  if (ShouldForceQuic()) {
-    next_state_ = STATE_CREATE_STREAM;
+  if (ShouldForceQuic())
     using_quic_ = true;
+
+  if (using_quic_) {
+    DCHECK(session_->params().enable_quic);
+    if (!proxy_info_.is_direct()) {
+      NOTREACHED();
+      // TODO(rch): support QUIC proxies.
+      return ERR_NOT_IMPLEMENTED;
+    }
+    next_state_ = STATE_CREATE_STREAM;
     return OK;
   }
 
@@ -752,7 +771,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
         origin_url_,
         request_info_.extra_headers,
         request_info_.load_flags,
-        request_info_.priority,
+        priority_,
         session_,
         proxy_info_,
         ShouldForceSpdySSL(),
@@ -770,7 +789,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
         OnHostResolutionCallback();
     return InitSocketHandleForHttpRequest(
         origin_url_, request_info_.extra_headers, request_info_.load_flags,
-        request_info_.priority, session_, proxy_info_, ShouldForceSpdySSL(),
+        priority_, session_, proxy_info_, ShouldForceSpdySSL(),
         want_spdy_over_npn, server_ssl_config_, proxy_ssl_config_, net_log_,
         connection_.get(), resolution_callback, io_callback_);
   }

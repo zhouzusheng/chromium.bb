@@ -6,10 +6,12 @@
 
 #include "base/command_line.h"
 #include "base/string_piece.h"
+#include "base/utf_string_conversions.h"
 #include "content/public/common/content_switches.h"
 #include "content/shell/shell_switches.h"
 #include "grit/shell_resources.h"
 #include "grit/webkit_resources.h"
+#include "grit/webkit_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/user_agent/user_agent_util.h"
@@ -28,6 +30,7 @@ std::string ShellContentClient::GetUserAgent() const {
 }
 
 string16 ShellContentClient::GetLocalizedString(int message_id) const {
+  // SHEZ: remove upstream code here, used only for testing
   return l10n_util::GetStringUTF16(message_id);
 }
 
@@ -42,6 +45,10 @@ base::StringPiece ShellContentClient::GetDataResource(
 base::RefCountedStaticMemory* ShellContentClient::GetDataResourceBytes(
     int resource_id) const {
   return ResourceBundle::GetSharedInstance().LoadDataResourceBytes(resource_id);
+}
+
+gfx::Image& ShellContentClient::GetNativeImageNamed(int resource_id) const {
+  return ResourceBundle::GetSharedInstance().GetNativeImageNamed(resource_id);
 }
 
 }  // namespace content

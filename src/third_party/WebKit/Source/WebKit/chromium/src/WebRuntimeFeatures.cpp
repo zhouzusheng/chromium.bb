@@ -481,6 +481,25 @@ bool WebRuntimeFeatures::isShadowDOMEnabled()
 #endif
 }
 
+void WebRuntimeFeatures::enableCustomDOMElements(bool enable)
+{
+#if ENABLE(CUSTOM_ELEMENTS)
+    RuntimeEnabledFeatures::setCustomDOMElements(enable);
+#else
+    UNUSED_PARAM(enable);
+#endif
+}
+
+bool WebRuntimeFeatures::isCustomDOMElementsEnabled()
+{
+#if ENABLE(CUSTOM_ELEMENTS)
+    return RuntimeEnabledFeatures::customDOMElementsEnabled();
+#else
+    return false;
+#endif
+}
+
+
 void WebRuntimeFeatures::enableStyleScoped(bool enable)
 {
 #if ENABLE(STYLE_SCOPED)
@@ -661,6 +680,16 @@ bool WebRuntimeFeatures::areSeamlessIFramesEnabled()
 #endif
 }
 
+void WebRuntimeFeatures::enableCanvasPath(bool enable)
+{
+    RuntimeEnabledFeatures::setCanvasPathEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isCanvasPathEnabled()
+{
+    return RuntimeEnabledFeatures::canvasPathEnabled();
+}
+
 void WebRuntimeFeatures::enableCSSExclusions(bool enable)
 {
     RuntimeEnabledFeatures::setCSSExclusionsEnabled(enable);
@@ -681,6 +710,26 @@ bool WebRuntimeFeatures::isCSSRegionsEnabled()
     return RuntimeEnabledFeatures::cssRegionsEnabled();
 }
 
+void WebRuntimeFeatures::enableCSSCompositing(bool enable)
+{
+    RuntimeEnabledFeatures::setCSSCompositingEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isCSSCompositingEnabled()
+{
+    return RuntimeEnabledFeatures::cssCompositingEnabled();
+}
+
+void WebRuntimeFeatures::enableFontLoadEvents(bool enable)
+{
+    RuntimeEnabledFeatures::setFontLoadEventsEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isFontLoadEventsEnabled()
+{
+    return RuntimeEnabledFeatures::fontLoadEventsEnabled();
+}
+
 void WebRuntimeFeatures::enableRequestAutocomplete(bool enable)
 {
 #if ENABLE(REQUEST_AUTOCOMPLETE)
@@ -694,24 +743,6 @@ bool WebRuntimeFeatures::isRequestAutocompleteEnabled()
 {
 #if ENABLE(REQUEST_AUTOCOMPLETE)
     return RuntimeEnabledFeatures::requestAutocompleteEnabled();
-#else
-    return false;
-#endif
-}
-
-void WebRuntimeFeatures::enableWebIntents(bool enable)
-{
-#if ENABLE(WEB_INTENTS)
-    RuntimeEnabledFeatures::setWebIntentsEnabled(enable);
-#else
-    UNUSED_PARAM(enable);
-#endif
-}
-
-bool WebRuntimeFeatures::isWebIntentsEnabled()
-{
-#if ENABLE(WEB_INTENTS)
-    return RuntimeEnabledFeatures::webkitStartActivityEnabled();
 #else
     return false;
 #endif

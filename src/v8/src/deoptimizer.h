@@ -255,6 +255,7 @@ class Deoptimizer : public Malloced {
 
 
   static Address GetDeoptimizationEntry(
+      Isolate* isolate,
       int id,
       BailoutType type,
       GetEntryMode mode = ENSURE_ENTRY_CODE);
@@ -316,7 +317,8 @@ class Deoptimizer : public Malloced {
 
   static size_t GetMaxDeoptTableSize();
 
-  static void EnsureCodeForDeoptimizationEntry(BailoutType type,
+  static void EnsureCodeForDeoptimizationEntry(Isolate* isolate,
+                                               BailoutType type,
                                                int max_entry_id);
 
  private:
@@ -345,8 +347,8 @@ class Deoptimizer : public Malloced {
   void DoComputeAccessorStubFrame(TranslationIterator* iterator,
                                   int frame_index,
                                   bool is_setter_stub_frame);
-  void DoCompiledStubFrame(TranslationIterator* iterator,
-                           int frame_index);
+  void DoComputeCompiledStubFrame(TranslationIterator* iterator,
+                                  int frame_index);
   void DoTranslateCommand(TranslationIterator* iterator,
                           int frame_index,
                           unsigned output_offset);
@@ -675,7 +677,7 @@ class Translation BASE_EMBEDDED {
   void StoreUint32StackSlot(int index);
   void StoreDoubleStackSlot(int index);
   void StoreLiteral(int literal_id);
-  void StoreArgumentsObject(int args_index, int args_length);
+  void StoreArgumentsObject(bool args_known, int args_index, int args_length);
   void MarkDuplicate();
 
   Zone* zone() const { return zone_; }
@@ -733,36 +735,35 @@ class SlotRef BASE_EMBEDDED {
   SlotRef(Address addr, SlotRepresentation representation)
       : addr_(addr), representation_(representation) { }
 
-  explicit SlotRef(Object* literal)
-      : literal_(literal), representation_(LITERAL) { }
+  SlotRef(Isolate* isolate, Object* literal)
+      : literal_(literal, isolate), representation_(LITERAL) { }
 
-  Handle<Object> GetValue() {
+  Handle<Object> GetValue(Isolate* isolate) {
     switch (representation_) {
       case TAGGED:
-        return Handle<Object>(Memory::Object_at(addr_));
+        return Handle<Object>(Memory::Object_at(addr_), isolate);
 
       case INT32: {
         int value = Memory::int32_at(addr_);
         if (Smi::IsValid(value)) {
-          return Handle<Object>(Smi::FromInt(value));
+          return Handle<Object>(Smi::FromInt(value), isolate);
         } else {
-          return Isolate::Current()->factory()->NewNumberFromInt(value);
+          return isolate->factory()->NewNumberFromInt(value);
         }
       }
 
       case UINT32: {
         uint32_t value = Memory::uint32_at(addr_);
         if (value <= static_cast<uint32_t>(Smi::kMaxValue)) {
-          return Handle<Object>(Smi::FromInt(static_cast<int>(value)));
+          return Handle<Object>(Smi::FromInt(static_cast<int>(value)), isolate);
         } else {
-          return Isolate::Current()->factory()->NewNumber(
-            static_cast<double>(value));
+          return isolate->factory()->NewNumber(static_cast<double>(value));
         }
       }
 
       case DOUBLE: {
         double value = Memory::double_at(addr_);
-        return Isolate::Current()->factory()->NewNumber(value);
+        return isolate->factory()->NewNumber(value);
       }
 
       case LITERAL:

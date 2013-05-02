@@ -62,7 +62,6 @@
           'dependencies': [
             'symbolize',
             '../build/linux/system.gyp:glib',
-            '../build/linux/system.gyp:x11',
             'xdg_mime',
           ],
           'defines': [
@@ -73,7 +72,6 @@
           ],
           'export_dependent_settings': [
             '../build/linux/system.gyp:glib',
-            '../build/linux/system.gyp:x11',
           ],
         }, {  # use_glib!=1
             'sources/': [
@@ -81,7 +79,23 @@
               ['exclude', '_nss\\.cc$'],
             ],
         }],
+        ['use_x11==1', {
+          'dependencies': [
+            '../build/linux/system.gyp:x11',
+          ],
+          'export_dependent_settings': [
+            '../build/linux/system.gyp:x11',
+          ],
+        }],
         ['OS == "android" and _toolset == "host"', {
+          # Always build base as a static_library for host toolset, even if
+          # we're doing a component build. Specifically, we only care about the
+          # target toolset using components since that's what developers are
+          # focusing on. In theory we should do this more generally for all
+          # targets when building for host, but getting the gyp magic
+          # per-toolset for the "component" variable is hard, and we really only
+          # need base on host.
+          'type': 'static_library',
           # Base for host support is the minimum required to run the
           # ssl false start blacklist tool. It requires further changes
           # to generically support host builds (and tests).
@@ -145,7 +159,7 @@
             '../build/android/cpufeatures.gypi',
           ],
         }],
-        ['OS == "android" and _toolset == "target" and android_build_type == 0', {
+        ['OS == "android" and _toolset == "target" and android_webview_build == 0', {
           'dependencies': [
             'base_java',
           ],
@@ -339,6 +353,10 @@
         'prefs/overlay_user_pref_store.cc',
         'prefs/overlay_user_pref_store.h',
         'prefs/persistent_pref_store.h',
+        'prefs/pref_change_registrar.cc',
+        'prefs/pref_change_registrar.h',
+        'prefs/pref_member.cc',
+        'prefs/pref_member.h',
         'prefs/pref_notifier.h',
         'prefs/pref_notifier_impl.cc',
         'prefs/pref_notifier_impl.h',
@@ -357,11 +375,6 @@
         'prefs/pref_value_map.h',
         'prefs/pref_value_store.cc',
         'prefs/pref_value_store.h',
-        'prefs/public/pref_change_registrar.cc',
-        'prefs/public/pref_change_registrar.h',
-        'prefs/public/pref_member.cc',
-        'prefs/public/pref_member.h',
-        'prefs/public/pref_service_base.h',
         'prefs/value_map_pref_store.cc',
         'prefs/value_map_pref_store.h',
       ],
@@ -378,6 +391,8 @@
         'prefs/mock_pref_change_callback.cc',
         'prefs/pref_store_observer_mock.cc',
         'prefs/pref_store_observer_mock.h',
+        'prefs/testing_pref_service.cc',
+        'prefs/testing_pref_service.h',
         'prefs/testing_pref_store.cc',
         'prefs/testing_pref_store.h',
       ],
@@ -449,10 +464,10 @@
         'debug/trace_event_unittest.h',
         'debug/trace_event_win_unittest.cc',
         'environment_unittest.cc',
-        'file_path_unittest.cc',
         'file_util_unittest.cc',
         'file_version_info_unittest.cc',
         'files/dir_reader_posix_unittest.cc',
+        'files/file_path_unittest.cc',
         'files/file_util_proxy_unittest.cc',
         'files/important_file_writer_unittest.cc',
         'files/scoped_temp_dir_unittest.cc',
@@ -520,9 +535,14 @@
         'posix/file_descriptor_shuffle_unittest.cc',
         'posix/unix_domain_socket_linux_unittest.cc',
         'pr_time_unittest.cc',
+        'prefs/default_pref_store_unittest.cc',
         'prefs/json_pref_store_unittest.cc',
         'prefs/mock_pref_change_callback.h',
         'prefs/overlay_user_pref_store_unittest.cc',
+        'prefs/pref_change_registrar_unittest.cc',
+        'prefs/pref_member_unittest.cc',
+        'prefs/pref_notifier_impl_unittest.cc',
+        'prefs/pref_service_unittest.cc',
         'prefs/pref_value_map_unittest.cc',
         'prefs/pref_value_store_unittest.cc',
         'process_util_unittest.cc',
@@ -805,9 +825,6 @@
         'test/expectations/expectation.h',
         'test/expectations/parser.cc',
         'test/expectations/parser.h',
-        'test/main_hook.cc',
-        'test/main_hook.h',
-        'test/main_hook_ios.mm',
         'test/mock_chrome_application_mac.h',
         'test/mock_chrome_application_mac.mm',
         'test/mock_devices_changed_observer.cc',
@@ -829,6 +846,10 @@
         'test/sequenced_task_runner_test_template.h',
         'test/sequenced_worker_pool_owner.cc',
         'test/sequenced_worker_pool_owner.h',
+        'test/simple_test_clock.cc',
+        'test/simple_test_clock.h',
+        'test/simple_test_tick_clock.cc',
+        'test/simple_test_tick_clock.h',
         'test/task_runner_test_template.cc',
         'test/task_runner_test_template.h',
         'test/test_file_util.h',
@@ -840,6 +861,8 @@
         'test/test_listener_ios.mm',
         'test/test_pending_task.cc',
         'test/test_pending_task.h',
+        'test/test_process_killer_win.cc',
+        'test/test_process_killer_win.h',
         'test/test_reg_util_win.cc',
         'test/test_reg_util_win.h',
         'test/test_shortcut_win.cc',
@@ -1092,6 +1115,7 @@
           'sources': [
             'android/java/src/org/chromium/base/BuildInfo.java',
             'android/java/src/org/chromium/base/CpuFeatures.java',
+            'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java',
             'android/java/src/org/chromium/base/LocaleUtils.java',
             'android/java/src/org/chromium/base/PathService.java',
             'android/java/src/org/chromium/base/PathUtils.java',
@@ -1100,7 +1124,7 @@
             'android/java/src/org/chromium/base/ThreadUtils.java',
           ],
           'variables': {
-            'jni_gen_dir': 'base',
+            'jni_gen_package': 'base',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -1108,10 +1132,16 @@
           'target_name': 'base_java',
           'type': 'none',
           'variables': {
-            'package_name': 'base',
             'java_in_dir': '../base/android/java',
           },
           'includes': [ '../build/java.gypi' ],
+          'conditions': [
+            ['android_webview_build==0', {
+              'dependencies': [
+                '../third_party/jsr-305/jsr-305.gyp:jsr_305_javalib',
+              ],
+            }]
+          ],
         },
         {
           'target_name': 'base_java_test_support',
@@ -1120,8 +1150,19 @@
             'base_java',
           ],
           'variables': {
-            'package_name': 'base_javatests',
             'java_in_dir': '../base/test/android/javatests',
+          },
+          'includes': [ '../build/java.gypi' ],
+        },
+        {
+          'target_name': 'base_javatests',
+          'type': 'none',
+          'dependencies': [
+            'base_java',
+            'base_java_test_support',
+          ],
+          'variables': {
+            'java_in_dir': '../base/android/javatests',
           },
           'includes': [ '../build/java.gypi' ],
         },

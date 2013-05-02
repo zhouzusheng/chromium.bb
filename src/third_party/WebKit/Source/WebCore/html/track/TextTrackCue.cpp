@@ -119,9 +119,8 @@ void TextTrackCueBox::applyCSSProperties(const IntSize&)
     //  the 'unicode-bidi' property must be set to 'plaintext'
     setInlineStyleProperty(CSSPropertyUnicodeBidi, CSSValueWebkitPlaintext);
 
-    // FIXME: Determine the text direction using the BIDI algorithm. http://wkb.ug/79749
     // the 'direction' property must be set to direction
-    setInlineStyleProperty(CSSPropertyDirection, CSSValueLtr);
+    setInlineStyleProperty(CSSPropertyDirection, m_cue->getCSSWritingDirection());
 
     // the 'writing-mode' property must be set to writing-mode
     setInlineStyleProperty(CSSPropertyWebkitWritingMode, m_cue->getCSSWritingMode(), false);
@@ -185,12 +184,6 @@ RenderObject* TextTrackCueBox::createRenderer(RenderArena* arena, RenderStyle*)
 
 // ----------------------------
 
-const AtomicString& TextTrackCue::allNodesShadowPseudoId()
-{
-    DEFINE_STATIC_LOCAL(const AtomicString, subtitles, ("-webkit-media-text-track-all-nodes", AtomicString::ConstructFromLiteral));
-    return subtitles;
-}
-
 TextTrackCue::TextTrackCue(ScriptExecutionContext* context, double start, double end, const String& content)
     : m_startTime(start)
     , m_endTime(end)
@@ -208,8 +201,9 @@ TextTrackCue::TextTrackCue(ScriptExecutionContext* context, double start, double
     , m_isActive(false)
     , m_pauseOnExit(false)
     , m_snapToLines(true)
-    , m_allDocumentNodes(HTMLDivElement::create(static_cast<Document*>(context)))
+    , m_cueBackgroundBox(HTMLDivElement::create(toDocument(context)))
     , m_displayTreeShouldChange(true)
+    , m_displayDirection(CSSValueLtr)
 {
     ASSERT(m_scriptExecutionContext->isDocument());
 
@@ -277,7 +271,7 @@ void TextTrackCue::setId(const String& id)
 void TextTrackCue::setStartTime(double value, ExceptionCode& ec)
 {
     // NaN, Infinity and -Infinity values should trigger a TypeError.
-    if (isinf(value) || isnan(value)) {
+    if (std::isinf(value) || std::isnan(value)) {
         ec = TypeError;
         return;
     }
@@ -294,7 +288,7 @@ void TextTrackCue::setStartTime(double value, ExceptionCode& ec)
 void TextTrackCue::setEndTime(double value, ExceptionCode& ec)
 {
     // NaN, Infinity and -Infinity values should trigger a TypeError.
-    if (isinf(value) || isnan(value)) {
+    if (std::isinf(value) || std::isnan(value)) {
         ec = TypeError;
         return;
     }
@@ -590,11 +584,58 @@ int TextTrackCue::calculateComputedLinePosition()
     return n;
 }
 
+static bool isCueParagraphSeparator(UChar character)
+{
+    // Within a cue, paragraph boundaries are only denoted by Type B characters,
+    // such as U+000A LINE FEED (LF), U+0085 NEXT LINE (NEL), and U+2029 PARAGRAPH SEPARATOR.
+    return WTF::Unicode::category(character) & WTF::Unicode::Separator_Paragraph;
+}
+
+void TextTrackCue::determineTextDirection()
+{
+    DEFINE_STATIC_LOCAL(const String, rtTag, (ASCIILiteral("rt")));
+    createWebVTTNodeTree();
+
+    // Apply the Unicode Bidirectional Algorithm's Paragraph Level steps to the
+    // concatenation of the values of each WebVTT Text Object in nodes, in a
+    // pre-order, depth-first traversal, excluding WebVTT Ruby Text Objects and
+    // their descendants.
+    StringBuilder paragraphBuilder;
+    for (Node* node = m_webVTTNodeTree->firstChild(); node; node = NodeTraversal::next(node, m_webVTTNodeTree.get())) {
+        if (!node->isTextNode() || node->localName() == rtTag)
+            continue;
+
+        paragraphBuilder.append(node->nodeValue());
+    }
+
+    String paragraph = paragraphBuilder.toString();
+    if (!paragraph.length())
+        return;
+
+    for (size_t i = 0; i < paragraph.length(); ++i) {
+        UChar current = paragraph[i];
+        if (!current || isCueParagraphSeparator(current))
+            return;
+
+        if (UChar current = paragraph[i]) {
+            WTF::Unicode::Direction charDirection = WTF::Unicode::direction(current);
+            if (charDirection == WTF::Unicode::LeftToRight) {
+                m_displayDirection = CSSValueLtr;
+                return;
+            }
+            if (charDirection == WTF::Unicode::RightToLeft
+                || charDirection == WTF::Unicode::RightToLeftArabic) {
+                m_displayDirection = CSSValueRtl;
+                return;
+            }
+        }
+    }
+}
+
 void TextTrackCue::calculateDisplayParameters()
 {
-    // FIXME(BUG 79749): Determine the text direction using the BIDI algorithm.
     // Steps 10.2, 10.3
-    m_displayDirection = CSSValueLtr;
+    determineTextDirection();
 
     // 10.4 If the text track cue writing direction is horizontal, then let
     // block-flow be 'tb'. Otherwise, if the text track cue writing direction is
@@ -719,12 +760,12 @@ void TextTrackCue::updateDisplayTree(float movieTime)
       return;
 
     // Clear the contents of the set.
-    m_allDocumentNodes->removeChildren();
+    m_cueBackgroundBox->removeChildren();
 
     // Update the two sets containing past and future WebVTT objects.
     RefPtr<DocumentFragment> referenceTree = createCueRenderingTree();
     markFutureAndPastNodes(referenceTree.get(), startTime(), movieTime);
-    m_allDocumentNodes->appendChild(referenceTree);
+    m_cueBackgroundBox->appendChild(referenceTree);
 }
 
 PassRefPtr<TextTrackCueBox> TextTrackCue::getDisplayTree(const IntSize& videoSize)
@@ -747,9 +788,9 @@ PassRefPtr<TextTrackCueBox> TextTrackCue::getDisplayTree(const IntSize& videoSiz
     // 'display' property has the value 'inline'. This is the WebVTT cue
     // background box.
 
-    // Note: This is contained by default in m_allDocumentNodes.
-    m_allDocumentNodes->setPseudo(allNodesShadowPseudoId());
-    displayTree->appendChild(m_allDocumentNodes, ASSERT_NO_EXCEPTION, true);
+    // Note: This is contained by default in m_cueBackgroundBox.
+    m_cueBackgroundBox->setPseudo(cueShadowPseudoId());
+    displayTree->appendChild(m_cueBackgroundBox, ASSERT_NO_EXCEPTION, AttachLazily);
 
     // FIXME(BUG 79916): Runs of children of WebVTT Ruby Objects that are not
     // WebVTT Ruby Text Objects must be wrapped in anonymous boxes whose
@@ -1032,6 +1073,11 @@ void TextTrackCue::setCueSettings(const String& input)
 NextSetting:
         position = endOfSetting;
     }
+}
+
+int TextTrackCue::getCSSWritingDirection() const
+{
+    return m_displayDirection;
 }
 
 int TextTrackCue::getCSSWritingMode() const

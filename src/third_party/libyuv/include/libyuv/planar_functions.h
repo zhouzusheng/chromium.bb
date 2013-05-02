@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -22,6 +22,13 @@ namespace libyuv {
 extern "C" {
 #endif
 
+// Copy a plane of data.
+LIBYUV_API
+void CopyPlane(const uint8* src_y, int src_stride_y,
+               uint8* dst_y, int dst_stride_y,
+               int width, int height);
+
+// Set a plane of data to a 32 bit value.
 LIBYUV_API
 void SetPlane(uint8* dst_y, int dst_stride_y,
               int width, int height,
@@ -33,11 +40,28 @@ int I400ToI400(const uint8* src_y, int src_stride_y,
                uint8* dst_y, int dst_stride_y,
                int width, int height);
 
-// Copy a plane of data (I420 to I400).
+
+// Copy I422 to I422.
+#define I422ToI422 I422Copy
 LIBYUV_API
-void CopyPlane(const uint8* src_y, int src_stride_y,
-               uint8* dst_y, int dst_stride_y,
-               int width, int height);
+int I422Copy(const uint8* src_y, int src_stride_y,
+             const uint8* src_u, int src_stride_u,
+             const uint8* src_v, int src_stride_v,
+             uint8* dst_y, int dst_stride_y,
+             uint8* dst_u, int dst_stride_u,
+             uint8* dst_v, int dst_stride_v,
+             int width, int height);
+
+// Copy I444 to I444.
+#define I444ToI444 I444Copy
+LIBYUV_API
+int I444Copy(const uint8* src_y, int src_stride_y,
+             const uint8* src_u, int src_stride_u,
+             const uint8* src_v, int src_stride_v,
+             uint8* dst_y, int dst_stride_y,
+             uint8* dst_u, int dst_stride_u,
+             uint8* dst_v, int dst_stride_v,
+             int width, int height);
 
 // Convert YUY2 to I422.
 LIBYUV_API
@@ -209,6 +233,27 @@ int ARGBBlend(const uint8* src_argb0, int src_stride_argb0,
               uint8* dst_argb, int dst_stride_argb,
               int width, int height);
 
+// Multiply ARGB image by ARGB image. Shifted down by 8. Saturates to 255.
+LIBYUV_API
+int ARGBMultiply(const uint8* src_argb0, int src_stride_argb0,
+                 const uint8* src_argb1, int src_stride_argb1,
+                 uint8* dst_argb, int dst_stride_argb,
+                 int width, int height);
+
+// Add ARGB image with ARGB image. Saturates to 255.
+LIBYUV_API
+int ARGBAdd(const uint8* src_argb0, int src_stride_argb0,
+            const uint8* src_argb1, int src_stride_argb1,
+            uint8* dst_argb, int dst_stride_argb,
+            int width, int height);
+
+// Subtract ARGB image (argb1) from ARGB image (argb0). Saturates to 0.
+LIBYUV_API
+int ARGBSubtract(const uint8* src_argb0, int src_stride_argb0,
+                 const uint8* src_argb1, int src_stride_argb1,
+                 uint8* dst_argb, int dst_stride_argb,
+                 int width, int height);
+
 // Convert I422 to YUY2.
 LIBYUV_API
 int I422ToYUY2(const uint8* src_y, int src_stride_y,
@@ -279,7 +324,7 @@ int ARGBInterpolate(const uint8* src_argb0, int src_stride_argb0,
 
 #if defined(__CLR_VER) || defined(COVERAGE_ENABLED) || \
     defined(TARGET_IPHONE_SIMULATOR)
-#define YUV_DISABLE_ASM
+#define LIBYUV_DISABLE_X86
 #endif
 // Row functions for copying a pixels from a source with a slope to a row
 // of destination. Useful for scaling, rotation, mirror, texture mapping.
@@ -287,13 +332,32 @@ LIBYUV_API
 void ARGBAffineRow_C(const uint8* src_argb, int src_argb_stride,
                      uint8* dst_argb, const float* uv_dudv, int width);
 // The following are available on all x86 platforms:
-#if !defined(YUV_DISABLE_ASM) && \
+#if !defined(LIBYUV_DISABLE_X86) && \
     (defined(_M_IX86) || defined(__x86_64__) || defined(__i386__))
 LIBYUV_API
 void ARGBAffineRow_SSE2(const uint8* src_argb, int src_argb_stride,
                         uint8* dst_argb, const float* uv_dudv, int width);
 #define HAS_ARGBAFFINEROW_SSE2
-#endif
+#endif  // LIBYUV_DISABLE_X86
+
+// Shuffle ARGB channel order.  e.g. BGRA to ARGB.
+// shuffler is 16 bytes and must be aligned.
+LIBYUV_API
+int ARGBShuffle(const uint8* src_bgra, int src_stride_bgra,
+                uint8* dst_argb, int dst_stride_argb,
+                const uint8* shuffler, int width, int height);
+
+// Sobel ARGB effect.
+LIBYUV_API
+int ARGBSobel(const uint8* src_argb, int src_stride_argb,
+              uint8* dst_argb, int dst_stride_argb,
+              int width, int height);
+
+// Sobel ARGB effect w/ Sobel X, Sobel, Sobel Y in ARGB.
+LIBYUV_API
+int ARGBSobelXY(const uint8* src_argb, int src_stride_argb,
+                uint8* dst_argb, int dst_stride_argb,
+                int width, int height);
 
 #ifdef __cplusplus
 }  // extern "C"

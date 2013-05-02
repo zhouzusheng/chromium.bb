@@ -1,10 +1,10 @@
-win beta release 26.0.1410.43
-released 03/26/13
-trunk revision 181864
-branch revision 189671
-webkit revision 142426
-webkit version: 537.31
-v8 version 3.16.14.9
+win beta release 27.0.1453.73
+released 05/01/13
+trunk revision 190564
+branch revision 197225
+webkit revision 146842
+webkit version: 537.36
+v8 version 3.17.6.10
 
-created from true branch 1410
-http://src.chromium.org/svn/releases/26.0.1410.43/
+created from true branch 1453
+http://src.chromium.org/svn/releases/27.0.1453.73/

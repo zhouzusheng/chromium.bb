@@ -72,6 +72,7 @@ inline HTMLLinkElement::HTMLLinkElement(const QualifiedName& tagName, Document* 
     , m_firedLoad(false)
     , m_loadedSheet(false)
     , m_pendingSheetType(None)
+    , m_beforeLoadRecurseCount(0)
 {
     ASSERT(hasTagName(linkTag));
 }
@@ -166,13 +167,25 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
 
 bool HTMLLinkElement::shouldLoadLink()
 {
+    bool continueLoad = true;
     RefPtr<Document> originalDocument = document();
+    int recursionRank = ++m_beforeLoadRecurseCount;
     if (!dispatchBeforeLoadEvent(m_url))
-        return false;
+        continueLoad = false;
+
     // A beforeload handler might have removed us from the document or changed the document.
-    if (!inDocument() || document() != originalDocument)
-        return false;
-    return true;
+    if (continueLoad && (!inDocument() || document() != originalDocument))
+        continueLoad = false;
+
+    // If the beforeload handler recurses into the link element by mutating it, we should only
+    // let the latest (innermost) mutation occur.
+    if (recursionRank != m_beforeLoadRecurseCount)
+        continueLoad = false;
+
+    if (recursionRank == 1)
+        m_beforeLoadRecurseCount = 0;
+
+    return continueLoad;
 }
 
 void HTMLLinkElement::process()
@@ -421,7 +434,7 @@ void HTMLLinkElement::startLoadingDynamicSheet()
 
 bool HTMLLinkElement::isURLAttribute(const Attribute& attribute) const
 {
-    return attribute.name() == hrefAttr || HTMLElement::isURLAttribute(attribute);
+    return attribute.name().localName() == hrefAttr || HTMLElement::isURLAttribute(attribute);
 }
 
 KURL HTMLLinkElement::href() const

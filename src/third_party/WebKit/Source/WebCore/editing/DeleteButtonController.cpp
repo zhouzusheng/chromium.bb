@@ -34,6 +34,7 @@
 #include "DeleteButton.h"
 #include "Document.h"
 #include "Editor.h"
+#include "EditorClient.h"
 #include "Frame.h"
 #include "FrameSelection.h"
 #include "htmlediting.h"
@@ -50,6 +51,8 @@
 namespace WebCore {
 
 using namespace HTMLNames;
+
+#if ENABLE(DELETION_UI)
 
 const char* const DeleteButtonController::containerElementIdentifier = "WebKit-Editing-Delete-Container";
 const char* const DeleteButtonController::buttonElementIdentifier = "WebKit-Editing-Delete-Button";
@@ -280,7 +283,8 @@ void DeleteButtonController::show(HTMLElement* element)
     if (!enabled() || !element || !element->inDocument() || !isDeletableElement(element))
         return;
 
-    if (!m_frame->editor()->shouldShowDeleteInterface(element))
+    EditorClient* client = m_frame->editor()->client();
+    if (!client || !client->shouldShowDeleteInterface(element))
         return;
 
     // we rely on the renderer having current information, so we should update the layout if needed
@@ -391,5 +395,6 @@ void DeleteButtonController::deleteTarget()
     applyCommand(RemoveTargetCommand::create(m_frame->document(), m_target));
     m_frame->selection()->setSelection(VisiblePosition(pos));
 }
+#endif
 
 } // namespace WebCore

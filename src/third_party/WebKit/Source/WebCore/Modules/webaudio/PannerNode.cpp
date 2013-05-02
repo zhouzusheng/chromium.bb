@@ -44,7 +44,7 @@ namespace WebCore {
 
 static void fixNANs(double &x)
 {
-    if (isnan(x) || isinf(x))
+    if (std::isnan(x) || std::isinf(x))
         x = 0.0;
 }
 
@@ -56,14 +56,19 @@ PannerNode::PannerNode(AudioContext* context, float sampleRate)
 {
     addInput(adoptPtr(new AudioNodeInput(this)));
     addOutput(adoptPtr(new AudioNodeOutput(this, 2)));
-    
-    m_distanceGain = AudioGain::create(context, "distanceGain", 1.0, 0.0, 1.0);
-    m_coneGain = AudioGain::create(context, "coneGain", 1.0, 0.0, 1.0);
+
+    // Node-specific default mixing rules.
+    m_channelCount = 2;
+    m_channelCountMode = ClampedMax;
+    m_channelInterpretation = AudioBus::Speakers;
+
+    m_distanceGain = AudioParam::create(context, "distanceGain", 1.0, 0.0, 1.0);
+    m_coneGain = AudioParam::create(context, "coneGain", 1.0, 0.0, 1.0);
 
     m_position = FloatPoint3D(0, 0, 0);
     m_orientation = FloatPoint3D(1, 0, 0);
     m_velocity = FloatPoint3D(0, 0, 0);
-    
+
     setNodeType(NodeTypePanner);
 
     initialize();

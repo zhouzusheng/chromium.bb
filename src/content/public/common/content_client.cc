@@ -52,6 +52,10 @@ ContentClient::ContentClient()
 ContentClient::~ContentClient() {
 }
 
+bool ContentClient::CanSendWhileSwappedOut(const IPC::Message* message) {
+  return false;
+}
+
 bool ContentClient::CanHandleWhileSwappedOut(const IPC::Message& message) {
   return false;
 }
@@ -82,6 +86,11 @@ base::RefCountedStaticMemory* ContentClient::GetDataResourceBytes(
 gfx::Image& ContentClient::GetNativeImageNamed(int resource_id) const {
   CR_DEFINE_STATIC_LOCAL(gfx::Image, kEmptyImage, ());
   return kEmptyImage;
+}
+
+std::string ContentClient::GetProcessTypeNameInEnglish(int type) {
+  NOTIMPLEMENTED();
+  return std::string();
 }
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)

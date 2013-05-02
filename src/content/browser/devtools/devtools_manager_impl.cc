@@ -72,7 +72,7 @@ bool DevToolsManagerImpl::DispatchOnInspectorBackend(
     return false;
   DevToolsAgentHostImpl* agent_host_impl =
       static_cast<DevToolsAgentHostImpl*>(agent_host);
-  agent_host_impl->DipatchOnInspectorBackend(message);
+  agent_host_impl->DispatchOnInspectorBackend(message);
   return true;
 }
 
@@ -86,21 +86,6 @@ void DevToolsManagerImpl::DispatchOnInspectorFrontend(
     return;
   }
   client_host->DispatchOnInspectorFrontend(message);
-}
-
-void DevToolsManagerImpl::InspectElement(DevToolsAgentHost* agent_host,
-                                         int x, int y) {
-  DevToolsAgentHostImpl* agent_host_impl =
-      static_cast<DevToolsAgentHostImpl*>(agent_host);
-  agent_host_impl->InspectElement(x, y);
-}
-
-void DevToolsManagerImpl::AddMessageToConsole(DevToolsAgentHost* agent_host,
-                                              ConsoleMessageLevel level,
-                                              const std::string& message) {
-  DevToolsAgentHostImpl* agent_host_impl =
-      static_cast<DevToolsAgentHostImpl*>(agent_host);
-  agent_host_impl->AddMessageToConsole(level, message);
 }
 
 void DevToolsManagerImpl::ClientHostClosing(DevToolsClientHost* client_host) {

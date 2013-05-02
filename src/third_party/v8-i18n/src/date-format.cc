@@ -259,29 +259,41 @@ static void SetResolvedSettings(const icu::Locale& icu_locale,
                                 v8::Handle<v8::Object> resolved) {
   v8::HandleScope handle_scope;
 
+  UErrorCode status = U_ZERO_ERROR;
   icu::UnicodeString pattern;
   date_format->toPattern(pattern);
   resolved->Set(v8::String::New("pattern"),
                 v8::String::New(reinterpret_cast<const uint16_t*>(
                     pattern.getBuffer()), pattern.length()));
 
+  // Set time zone and calendar.
   if (date_format) {
     const icu::Calendar* calendar = date_format->getCalendar();
     const char* calendar_name = calendar->getType();
     resolved->Set(v8::String::New("calendar"), v8::String::New(calendar_name));
-    // Get timeZone ID.
+
     const icu::TimeZone& tz = calendar->getTimeZone();
     icu::UnicodeString time_zone;
     tz.getID(time_zone);
-    resolved->Set(v8::String::New("timeZone"),
-                  v8::String::New(reinterpret_cast<const uint16_t*>(
-                      time_zone.getBuffer()), time_zone.length()));
+
+    icu::UnicodeString canonical_time_zone;
+    icu::TimeZone::getCanonicalID(time_zone, canonical_time_zone, status);
+    if (U_SUCCESS(status)) {
+      if (canonical_time_zone == UNICODE_STRING_SIMPLE("Etc/GMT")) {
+        resolved->Set(v8::String::New("timeZone"), v8::String::New("UTC"));
+      } else {
+        resolved->Set(v8::String::New("timeZone"),
+                      v8::String::New(reinterpret_cast<const uint16_t*>(
+                          canonical_time_zone.getBuffer()),
+                                      canonical_time_zone.length()));
+      }
+    }
   }
 
   // Ugly hack. ICU doesn't expose numbering system in any way, so we have
   // to assume that for given locale NumberingSystem constructor produces the
   // same digits as NumberFormat/Calendar would.
-  UErrorCode status = U_ZERO_ERROR;
+  status = U_ZERO_ERROR;
   icu::NumberingSystem* numbering_system =
       icu::NumberingSystem::createInstance(icu_locale, status);
   if (U_SUCCESS(status)) {

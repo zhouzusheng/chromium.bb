@@ -166,6 +166,20 @@ WebInspector.ElementsTreeOutline.prototype = {
             this._selectedNodeChanged();
     },
 
+    /**
+     * @return {boolean}
+     */
+    editing: function()
+    {
+        var node = this.selectedDOMNode();
+        if (!node)
+            return false;
+        var treeElement = this.findTreeElement(node);
+        if (!treeElement)
+            return false;
+        return treeElement._editing || false;
+    },
+
     update: function()
     {
         var selectedNode = this.selectedTreeElement ? this.selectedTreeElement.representedObject : null;
@@ -483,7 +497,7 @@ WebInspector.ElementsTreeOutline.prototype = {
             return;
 
         if (!treeElement._editing && WebInspector.KeyboardShortcut.hasNoModifiers(keyboardEvent) && keyboardEvent.keyCode === WebInspector.KeyboardShortcut.Keys.H.code) {
-            WebInspector.cssModel.toggleInlineVisibility(node.id);
+            this._toggleHideShortcut(node);
             event.consume(true);
             return;
         }
@@ -505,7 +519,7 @@ WebInspector.ElementsTreeOutline.prototype = {
             WebInspector.domAgent.inspectElement(treeElement.representedObject.id);
         }
         var contextMenu = new WebInspector.ContextMenu(event);
-        contextMenu.appendItem(WebInspector.UIString("Reveal in Elements Panel"), focusElement.bind(this));
+        contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Reveal in Elements panel" : "Reveal in Elements Panel"), focusElement.bind(this));
         contextMenu.show();
     },
 
@@ -513,7 +527,7 @@ WebInspector.ElementsTreeOutline.prototype = {
     {
         var treeElement = this._treeElementFromEvent(event);
         if (!treeElement)
-            return false;
+            return;
 
         var isTag = treeElement.representedObject.nodeType() === Node.ELEMENT_NODE;
         var textNode = event.target.enclosingNodeOrSelfWithClass("webkit-html-text-node");
@@ -608,6 +622,48 @@ WebInspector.ElementsTreeOutline.prototype = {
                 newTreeItem.expand();
         }
         return newTreeItem;
+    },
+
+    /**
+     * Runs a script on the node's remote object that toggles a class name on
+     * the node and injects a stylesheet into the head of the node's document
+     * containing a rule to set "visibility: hidden" on the class and all it's
+     * ancestors.
+     *
+     * @param {WebInspector.DOMNode} node
+     * @param {function(?WebInspector.RemoteObject)=} userCallback
+     */
+    _toggleHideShortcut: function(node, userCallback)
+    {
+        function resolvedNode(object)
+        {
+            if (!object)
+                return;
+
+            function toggleClassAndInjectStyleRule()
+            {
+                const className = "__web-inspector-hide-shortcut__";
+                const styleTagId = "__web-inspector-hide-shortcut-style__";
+                const styleRule = ".__web-inspector-hide-shortcut__, .__web-inspector-hide-shortcut__ * { visibility: hidden !important; }";
+
+                this.classList.toggle(className);
+
+                var style = document.head.querySelector("style#" + styleTagId);
+                if (style)
+                    return;
+
+                style = document.createElement("style");
+                style.id = styleTagId;
+                style.type = "text/css";
+                style.innerHTML = styleRule;
+                document.head.appendChild(style);
+            }
+
+            object.callFunction(toggleClassAndInjectStyleRule, undefined, userCallback);
+            object.release();
+        }
+
+        WebInspector.RemoteObject.resolveNode(node, "", resolvedNode);
     },
 
     __proto__: TreeOutline.prototype
@@ -1210,7 +1266,7 @@ WebInspector.ElementsTreeElement.prototype = {
         this.treeOutline._populateContextMenu(contextMenu, this.representedObject);
 
         contextMenu.appendSeparator();
-        contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Scroll into view" : "Scroll Into View"), this._scrollIntoView.bind(this)); 
+        contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Scroll into view" : "Scroll into View"), this._scrollIntoView.bind(this)); 
     },
 
     _populateForcedPseudoStateItems: function(subMenu)

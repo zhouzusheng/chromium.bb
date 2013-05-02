@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -22,14 +22,15 @@ extern "C" {
 
 // ARGBScale has a function to copy pixels to a row, striding each source
 // pixel by a constant.
-#if !defined(YUV_DISABLE_ASM) && (defined(_M_IX86) || \
+#if !defined(LIBYUV_DISABLE_X86) && (defined(_M_IX86) || \
   defined(__x86_64__) || defined(__i386__))
 #define HAS_SCALEARGBROWDOWNEVEN_SSE2
 void ScaleARGBRowDownEven_SSE2(const uint8* src_ptr, int src_stride,
                                int src_stepx,
                                uint8* dst_ptr, int dst_width);
 #endif
-#if !defined(YUV_DISABLE_ASM) && (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
+#if !defined(LIBYUV_DISABLE_NEON) && \
+    (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
 #define HAS_SCALEARGBROWDOWNEVEN_NEON
 void ScaleARGBRowDownEven_NEON(const uint8* src_ptr, int src_stride,
                                int src_stepx,
@@ -98,7 +99,15 @@ void ARGBRotate180(const uint8* src, int src_stride,
       IS_ALIGNED(dst, 16) && IS_ALIGNED(dst_stride, 16)) {
     ARGBMirrorRow = ARGBMirrorRow_SSSE3;
   }
-#elif defined(HAS_ARGBMIRRORROW_NEON)
+#endif
+#if defined(HAS_ARGBMIRRORROW_AVX2)
+  bool clear = false;
+  if (TestCpuFlag(kCpuHasAVX2) && IS_ALIGNED(width, 8)) {
+    clear = true;
+    ARGBMirrorRow = ARGBMirrorRow_AVX2;
+  }
+#endif
+#if defined(HAS_ARGBMIRRORROW_NEON)
   if (TestCpuFlag(kCpuHasNEON) && IS_ALIGNED(width, 4)) {
     ARGBMirrorRow = ARGBMirrorRow_NEON;
   }
@@ -121,6 +130,17 @@ void ARGBRotate180(const uint8* src, int src_stride,
     CopyRow = CopyRow_SSE2;
   }
 #endif
+#if defined(HAS_COPYROW_AVX2)
+  // TODO(fbarchard): Detect Fast String support.
+  if (TestCpuFlag(kCpuHasAVX2)) {
+    CopyRow = CopyRow_AVX2;
+  }
+#endif
+#if defined(HAS_COPYROW_MIPS)
+  if (TestCpuFlag(kCpuHasMIPS)) {
+    CopyRow = CopyRow_MIPS;
+  }
+#endif
   if (width * 4 > kMaxStride) {
     return;
   }
@@ -139,6 +159,11 @@ void ARGBRotate180(const uint8* src, int src_stride,
     src_bot -= src_stride;
     dst_bot -= dst_stride;
   }
+#if defined(HAS_ARGBMIRRORROW_AVX2)
+  if (clear) {
+    __asm vzeroupper;
+  }
+#endif
 }
 
 LIBYUV_API

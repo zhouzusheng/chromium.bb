@@ -75,6 +75,7 @@
         'base/clipboard/clipboard.cc',
         'base/clipboard/clipboard.h',
         'base/clipboard/clipboard_android.cc',
+        'base/clipboard/clipboard_android_initialization.h',
         'base/clipboard/clipboard_aurax11.cc',
         'base/clipboard/clipboard_chromeos.cc',
         'base/clipboard/clipboard_gtk.cc',
@@ -95,10 +96,18 @@
         'base/cocoa/find_pasteboard.mm',
         'base/cocoa/focus_tracker.h',
         'base/cocoa/focus_tracker.mm',
+        'base/cocoa/focus_window_set.h',
+        'base/cocoa/focus_window_set.mm',
         'base/cocoa/fullscreen_window_manager.h',
         'base/cocoa/fullscreen_window_manager.mm',
+        'base/cocoa/hover_button.h',
+        'base/cocoa/hover_button.mm',
+        'base/cocoa/hover_image_button.h',
+        'base/cocoa/hover_image_button.mm',
         'base/cocoa/nib_loading.h',
         'base/cocoa/nib_loading.mm',
+        'base/cocoa/tracking_area.h',
+        'base/cocoa/tracking_area.mm',
         'base/cocoa/underlay_opengl_hosting_window.h',
         'base/cocoa/underlay_opengl_hosting_window.mm',
         'base/cocoa/window_size_constants.h',
@@ -117,15 +126,15 @@
         'base/dragdrop/drag_drop_types.h',
         'base/dragdrop/drag_drop_types_gtk.cc',
         'base/dragdrop/drag_drop_types_win.cc',
-        'base/dragdrop/drag_source.cc',
-        'base/dragdrop/drag_source.h',
+        'base/dragdrop/drag_source_win.cc',
+        'base/dragdrop/drag_source_win.h',
         'base/dragdrop/drag_utils.cc',
         'base/dragdrop/drag_utils.h',
         'base/dragdrop/drag_utils_aura.cc',
         'base/dragdrop/drag_utils_gtk.cc',
         'base/dragdrop/drag_utils_win.cc',
-        'base/dragdrop/drop_target.cc',
-        'base/dragdrop/drop_target.h',
+        'base/dragdrop/drop_target_win.cc',
+        'base/dragdrop/drop_target_win.h',
         'base/dragdrop/gtk_dnd_util.cc',
         'base/dragdrop/gtk_dnd_util.h',
         'base/dragdrop/os_exchange_data.cc',
@@ -219,6 +228,7 @@
         'base/layout_mac.mm',
         'base/models/button_menu_item_model.cc',
         'base/models/button_menu_item_model.h',
+        'base/models/combobox_model.cc',
         'base/models/combobox_model.h',
         'base/models/list_model.h',
         'base/models/list_model_observer.h',
@@ -267,6 +277,8 @@
         'base/touch/touch_device.h',
         'base/touch/touch_device_android.cc',
         'base/touch/touch_device_win.cc',
+        'base/touch/touch_editing_controller.cc',
+        'base/touch/touch_editing_controller.h',
         'base/touch/touch_factory.cc',
         'base/touch/touch_factory.h',
         'base/ui_base_exports.cc',
@@ -306,6 +318,8 @@
         'base/win/shell.h',
         'base/win/singleton_hwnd.cc',
         'base/win/singleton_hwnd.h',
+        'base/win/touch_input.cc',
+        'base/win/touch_input.h',
         'base/win/window_impl.cc',
         'base/win/window_impl.h',
         'base/window_open_disposition.cc',
@@ -514,8 +528,6 @@
         'gfx/vector3d_f.h',
         'gfx/video_decode_acceleration_support_mac.h',
         'gfx/video_decode_acceleration_support_mac.mm',
-        'notifications/notification_types.h',
-        'notifications/notification_types.cc',
         'webui/jstemplate_builder.cc',
         'webui/jstemplate_builder.h',
         'webui/web_ui_util.cc',
@@ -608,29 +620,13 @@
             ['exclude', '^base/gestures/*'],
           ]
         }],
-        ['use_aura==1 and use_ash==0 and OS=="linux"', {
-          'sources': [
-            'base/linux_ui.cc',
-            'base/linux_ui.h',
-          ]
-        }],
         ['use_glib == 1', {
           'dependencies': [
             # font_gtk.cc uses fontconfig.
             '../build/linux/system.gyp:fontconfig',
             '../build/linux/system.gyp:glib',
             '../build/linux/system.gyp:pangocairo',
-            '../build/linux/system.gyp:x11',
-            '../build/linux/system.gyp:xext',
-            '../build/linux/system.gyp:xfixes',
           ],
-          'link_settings': {
-            'libraries': [
-              '-lXcursor',  # For XCursor* function calls in x11_util.cc.
-              '-lXrender',  # For XRender* function calls in x11_util.cc.
-              '-lXrandr',   # For XRR* function calls in x11_util.cc.
-            ],
-          },
           'conditions': [
             ['toolkit_views==0', {
               # Note: because of gyp predence rules this has to be defined as
@@ -734,11 +730,7 @@
             }],
           ],
           'sources!': [
-            'base/dragdrop/drag_source.cc',
-            'base/dragdrop/drag_source.h',
             'base/dragdrop/drag_drop_types.h',
-            'base/dragdrop/drop_target.cc',
-            'base/dragdrop/drop_target.h',
             'base/dragdrop/os_exchange_data.cc',
           ],
           'sources/': [
@@ -774,9 +766,23 @@
                 '-lX11',
                 '-lXcursor',
                 '-lXrandr',  # For XRR* function calls in x11_util.cc.
+                '-lXrender',  # For XRender* function calls in x11_util.cc.
               ],
             },
           },
+          'link_settings': {
+            'libraries': [
+              '-lX11',
+              '-lXcursor',
+              '-lXrandr',  # For XRR* function calls in x11_util.cc.
+              '-lXrender',  # For XRender* function calls in x11_util.cc.
+            ],
+          },
+          'dependencies': [
+            '../build/linux/system.gyp:x11',
+            '../build/linux/system.gyp:xext',
+            '../build/linux/system.gyp:xfixes',
+          ],
         }, {  # use_x11==0
           'sources/': [
             ['exclude', 'base/keycodes/keyboard_code_conversion_x.*'],
@@ -820,7 +826,7 @@
             ],
           },
         }],
-        ['OS=="android" and android_build_type==0', {
+        ['OS=="android" and android_webview_build==0', {
           'dependencies': [
             'ui_java',
           ],
@@ -860,9 +866,10 @@
              'android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java',
              'android/java/src/org/chromium/ui/gfx/NativeWindow.java',
              'android/java/src/org/chromium/ui/SelectFileDialog.java',
+             'android/java/src/org/chromium/ui/Clipboard.java',
            ],
            'variables': {
-             'jni_gen_dir': 'ui',
+             'jni_gen_package': 'ui',
            },
            'includes': [ '../build/jni_generator.gypi' ],
          },
@@ -870,7 +877,6 @@
            'target_name': 'ui_java',
            'type': 'none',
            'variables': {
-             'package_name': 'ui',
              'java_in_dir': '../ui/android/java',
              'has_java_resources': 1,
              'R_package': 'org.chromium.ui',

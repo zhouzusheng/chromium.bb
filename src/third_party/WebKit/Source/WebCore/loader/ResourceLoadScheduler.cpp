@@ -42,7 +42,11 @@
 #include <wtf/TemporaryChange.h>
 #include <wtf/text/CString.h>
 
+#if PLATFORM(CHROMIUM)
+#define REQUEST_MANAGEMENT_ENABLED 0
+#else
 #define REQUEST_MANAGEMENT_ENABLED 1
+#endif
 
 namespace WebCore {
 

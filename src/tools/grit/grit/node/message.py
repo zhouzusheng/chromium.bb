@@ -50,13 +50,20 @@ class MessageNode(base.ContentNode):
     # that shortcut keys (e.g. &J) within each shortcut group are unique.
     self.shortcut_groups_ = []
 
+    # Formatter-specific data used to control the output of individual strings.
+    # formatter_data is a space separated list of C preprocessor-style
+    # definitions. Names without values are given the empty string value.
+    # Example: "foo=5 bar baz=100"
+    self.formatter_data = {}
+
   def _IsValidChild(self, child):
     return isinstance(child, (PhNode))
 
   def _IsValidAttribute(self, name, value):
     if name not in ['name', 'offset', 'translateable', 'desc', 'meaning',
                     'internal_comment', 'shortcut_groups', 'custom_type',
-                    'validation_expr', 'use_name_for_id', 'sub_variable']:
+                    'validation_expr', 'use_name_for_id', 'sub_variable',
+                    'formatter_data']:
       return False
     if (name in ('translateable', 'sub_variable') and
         value not in ['true', 'false']):
@@ -70,6 +77,7 @@ class MessageNode(base.ContentNode):
     return {
       'custom_type' : '',
       'desc' : '',
+      'formatter_data' : '',
       'internal_comment' : '',
       'meaning' : '',
       'shortcut_groups' : '',
@@ -78,6 +86,15 @@ class MessageNode(base.ContentNode):
       'use_name_for_id' : 'false',
       'validation_expr' : '',
     }
+
+  def HandleAttribute(self, attrib, value):
+    base.ContentNode.HandleAttribute(self, attrib, value)
+    if attrib == 'formatter_data':
+      # Parse value, a space-separated list of defines, into a dict.
+      # Example: "foo=5 bar" -> {'foo':'5', 'bar':''}
+      for item in value.split():
+        name, sep, val = item.partition('=')
+        self.formatter_data[name] = val
 
   def GetTextualIds(self):
     '''

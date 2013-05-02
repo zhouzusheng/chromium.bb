@@ -419,6 +419,7 @@ public:
     virtual bool isMenuListPopup() const { return false; }
     virtual bool isMenuListOption() const { return false; }
     virtual bool isSpinButton() const { return roleValue() == SpinButtonRole; }
+    virtual bool isNativeSpinButton() const { return false; }
     virtual bool isSpinButtonPart() const { return false; }
     virtual bool isMockObject() const { return false; }
     virtual bool isMediaControlLabel() const { return false; }
@@ -486,7 +487,9 @@ public:
     virtual Node* node() const { return 0; }
     virtual RenderObject* renderer() const { return 0; }
     virtual bool accessibilityIsIgnored() const;
-
+    virtual AccessibilityObjectInclusion defaultObjectInclusion() const;
+    bool accessibilityIsIgnoredByDefault() const;
+    
     int blockquoteLevel() const;
     virtual int headingLevel() const { return 0; }
     virtual int tableLevel() const { return 0; }
@@ -514,6 +517,11 @@ public:
     AccessibilitySortDirection sortDirection() const;
     virtual bool canvasHasFallbackContent() const { return false; }
     bool supportsRangeValue() const;
+
+    bool supportsARIASetSize() const;
+    bool supportsARIAPosInSet() const;
+    int ariaSetSize() const;
+    int ariaPosInSet() const;
     
     // ARIA drag and drop
     virtual bool supportsARIADropping() const { return false; }
@@ -844,6 +852,7 @@ protected:
     static bool isAccessibilityTextSearchMatch(AccessibilityObject*, AccessibilitySearchCriteria*);
     static bool objectMatchesSearchCriteriaWithResultLimit(AccessibilityObject*, AccessibilitySearchCriteria*, AccessibilityChildrenVector&);
     virtual AccessibilityRole buttonRoleType() const;
+    bool ariaIsHidden() const;
 
 #if PLATFORM(GTK) || (PLATFORM(EFL) && HAVE(ACCESSIBILITY))
     bool allowsTextRanges() const;

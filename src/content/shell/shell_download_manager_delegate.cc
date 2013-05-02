@@ -14,6 +14,7 @@
 #endif
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/string_util.h"
@@ -23,6 +24,8 @@
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "content/shell/shell_switches.h"
+#include "content/shell/webkit_test_controller.h"
 #include "net/base/net_util.h"
 
 namespace content {
@@ -84,6 +87,13 @@ bool ShellDownloadManagerDelegate::DetermineDownloadTarget(
   return true;
 }
 
+bool ShellDownloadManagerDelegate::ShouldOpenDownload(
+      DownloadItem* item,
+      const DownloadOpenDelayedCallback& callback) {
+  // SHEZ: remove upstream code here, used only for testing
+  return true;
+}
+
 void ShellDownloadManagerDelegate::GenerateFilename(
     int32 download_id,
     const DownloadTargetCallback& callback,
@@ -135,7 +145,7 @@ void ShellDownloadManagerDelegate::ChooseDownloadPath(
   OPENFILENAME save_as;
   ZeroMemory(&save_as, sizeof(save_as));
   save_as.lStructSize = sizeof(OPENFILENAME);
-  save_as.hwndOwner = item->GetWebContents()->GetNativeView();
+  save_as.hwndOwner = item->GetWebContents()->GetView()->GetNativeView();
   save_as.lpstrFile = file_name;
   save_as.nMaxFile = arraysize(file_name);
 

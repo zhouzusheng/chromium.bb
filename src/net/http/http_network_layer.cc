@@ -6,8 +6,8 @@
 
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_network_transaction.h"
 #include "net/http/http_server_properties_impl.h"
@@ -48,12 +48,13 @@ void HttpNetworkLayer::ForceAlternateProtocol() {
 
 //-----------------------------------------------------------------------------
 
-int HttpNetworkLayer::CreateTransaction(scoped_ptr<HttpTransaction>* trans,
+int HttpNetworkLayer::CreateTransaction(RequestPriority priority,
+                                        scoped_ptr<HttpTransaction>* trans,
                                         HttpTransactionDelegate* delegate) {
   if (suspended_)
     return ERR_NETWORK_IO_SUSPENDED;
 
-  trans->reset(new HttpNetworkTransaction(GetSession()));
+  trans->reset(new HttpNetworkTransaction(priority, GetSession()));
   return OK;
 }
 

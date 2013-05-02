@@ -32,11 +32,21 @@ typedef long                int64;
 typedef long long           int64;
 #endif
 
-// NOTE: unsigned types are DANGEROUS in loops and other arithmetical
-// places.  Use the signed types unless your variable represents a bit
-// pattern (eg a hash value) or you really need the extra bit.  Do NOT
-// use 'unsigned' to express "this value should always be positive";
+// NOTE: It is DANGEROUS to compare signed with unsigned types in loop
+// conditions and other conditional expressions, and it is DANGEROUS to
+// compute object/allocation sizes, indices, and offsets with signed types.
+// Integer overflow behavior for signed types is UNDEFINED in the C/C++
+// standards, but is defined for unsigned types.
+//
+// Use the unsigned types if your variable represents a bit pattern (e.g. a
+// hash value), object or allocation size, object count, offset,
+// array/vector index, etc.
+//
+// Do NOT use 'unsigned' to express "this value should always be positive";
 // use assertions for this.
+//
+// See the Chromium style guide for more information.
+// https://sites.google.com/a/chromium.org/dev/developers/coding-style
 
 typedef unsigned char      uint8;
 typedef unsigned short     uint16;
@@ -67,6 +77,14 @@ const  int32 kint32min  = (( int32) 0x80000000);
 const  int32 kint32max  = (( int32) 0x7FFFFFFF);
 const  int64 kint64min  = (( int64) GG_LONGLONG(0x8000000000000000));
 const  int64 kint64max  = (( int64) GG_LONGLONG(0x7FFFFFFFFFFFFFFF));
+
+// Put this in the private: declarations for a class to be uncopyable.
+#define DISALLOW_COPY(TypeName) \
+  TypeName(const TypeName&)
+
+// Put this in the private: declarations for a class to be unassignable.
+#define DISALLOW_ASSIGN(TypeName) \
+  void operator=(const TypeName&)
 
 // A macro to disallow the copy constructor and operator= functions
 // This should be used in the private: declarations for a class

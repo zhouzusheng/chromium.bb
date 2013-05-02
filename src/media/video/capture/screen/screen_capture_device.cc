@@ -193,7 +193,8 @@ void ScreenCaptureDevice::Core::OnCaptureCompleted(
     base::AutoLock auto_lock(event_handler_lock_);
     if (event_handler_) {
       event_handler_->OnIncomingCapturedFrame(
-          capture_data->data(), buffer_size, base::Time::Now());
+          capture_data->data(), buffer_size, base::Time::Now(),
+          0, false, false);
     }
     return;
   }
@@ -253,7 +254,7 @@ void ScreenCaptureDevice::Core::OnCaptureCompleted(
   if (event_handler_) {
     event_handler_->OnIncomingCapturedFrame(
         reinterpret_cast<uint8*>(resized_bitmap_.getPixels()), buffer_size,
-        base::Time::Now());
+        base::Time::Now(), 0, false, false);
   }
 }
 
@@ -270,8 +271,15 @@ void ScreenCaptureDevice::Core::DoAllocate(int frame_rate) {
   frame_rate_ = frame_rate;
 
   // Create and start frame capturer.
+#if defined(OS_CHROMEOS)
+  // ScreenCapturerX11 polls by default, due to poor driver support for DAMAGE.
+  // ChromeOS' drivers [can be patched to] support DAMAGE properly, so use it.
+  if (!screen_capturer_)
+    screen_capturer_ = ScreenCapturer::CreateWithXDamage(true);
+#else
   if (!screen_capturer_)
     screen_capturer_ = ScreenCapturer::Create();
+#endif
   if (screen_capturer_)
     screen_capturer_->Start(this);
 

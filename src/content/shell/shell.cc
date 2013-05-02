@@ -141,28 +141,31 @@ Shell* Shell::CreateNewWindow(BrowserContext* browser_context,
 }
 
 void Shell::LoadURL(const GURL& url) {
-  web_contents_->GetController().LoadURL(
-      url,
-      Referrer(),
-      PageTransitionFromInt(PAGE_TRANSITION_TYPED |
-                            PAGE_TRANSITION_FROM_ADDRESS_BAR),
-      std::string());
-  web_contents_->Focus();
+  LoadURLForFrame(url, std::string());
+}
+
+void Shell::LoadURLForFrame(const GURL& url, const std::string& frame_name) {
+  NavigationController::LoadURLParams params(url);
+  params.transition_type = PageTransitionFromInt(
+      PAGE_TRANSITION_TYPED | PAGE_TRANSITION_FROM_ADDRESS_BAR);
+  params.frame_name = frame_name;
+  web_contents_->GetController().LoadURLWithParams(params);
+  web_contents_->GetView()->Focus();
 }
 
 void Shell::GoBackOrForward(int offset) {
   web_contents_->GetController().GoToOffset(offset);
-  web_contents_->Focus();
+  web_contents_->GetView()->Focus();
 }
 
 void Shell::Reload() {
   web_contents_->GetController().Reload(false);
-  web_contents_->Focus();
+  web_contents_->GetView()->Focus();
 }
 
 void Shell::Stop() {
   web_contents_->Stop();
-  web_contents_->Focus();
+  web_contents_->GetView()->Focus();
 }
 
 void Shell::UpdateNavigationControls() {
@@ -192,7 +195,7 @@ void Shell::CloseDevTools() {
 gfx::NativeView Shell::GetContentView() {
   if (!web_contents_.get())
     return NULL;
-  return web_contents_->GetNativeView();
+  return web_contents_->GetView()->GetNativeView();
 }
 
 WebContents* Shell::OpenURLFromTab(WebContents* source,
@@ -245,6 +248,7 @@ bool Shell::CanOverscrollContent() const {
 
 void Shell::WebContentsCreated(WebContents* source_contents,
                                int64 source_frame_id,
+                               const string16& frame_name,
                                const GURL& target_url,
                                WebContents* new_contents) {
   CreateShell(new_contents);
@@ -271,6 +275,14 @@ bool Shell::AddMessageToConsole(WebContents* source,
 
 void Shell::RendererUnresponsive(WebContents* source) {
   // SHEZ: Remove upstream code here, used only for testing.
+}
+
+void Shell::ActivateContents(WebContents* contents) {
+  contents->GetRenderViewHost()->Focus();
+}
+
+void Shell::DeactivateContents(WebContents* contents) {
+  contents->GetRenderViewHost()->Blur();
 }
 
 void Shell::Observe(int type,

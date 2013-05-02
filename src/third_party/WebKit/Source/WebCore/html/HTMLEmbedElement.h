@@ -36,12 +36,12 @@ private:
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
     virtual bool rendererIsNeeded(const NodeRenderingContext&);
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual const QualifiedName& imageSourceAttributeName() const;
+    virtual const AtomicString& imageSourceURL() const OVERRIDE;
 
     virtual RenderWidget* renderWidgetForJSBindings() const;
 

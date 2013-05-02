@@ -30,7 +30,6 @@
           },
         },
       }],
-      
     ],
   },
   'conditions': [
@@ -98,6 +97,8 @@
               ],
             }],
           ],
+          # Disable c4267 warnings until we fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         },
       ],
       'conditions': [
@@ -132,6 +133,8 @@
               'includes': [
                 'content_ppapi_plugin.gypi',
               ],
+              # Disable c4267 warnings until we fix size_t to int truncations.
+              'msvs_disabled_warnings': [ 4267, ],
             },
             {
               'target_name': 'content_renderer',
@@ -222,6 +225,8 @@
           'target_name': 'content_common',
           'type': 'none',
           'dependencies': ['content', 'content_resources.gyp:content_resources'],
+          # Disable c4267 warnings until we fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         },
         {
           'target_name': 'content_gpu',
@@ -237,6 +242,8 @@
           'target_name': 'content_ppapi_plugin',
           'type': 'none',
           'dependencies': ['content'],
+          # Disable c4267 warnings until we fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         },
         {
           'target_name': 'content_renderer',
@@ -261,12 +268,11 @@
           'target_name': 'common_aidl',
           'type': 'none',
           'variables': {
-            'package_name': 'content',
             'aidl_interface_file': 'public/android/java/src/org/chromium/content/common/common.aidl',
           },
           'sources': [
-            'public/android/java/src/org/chromium/content/common/ISandboxedProcessCallback.aidl',
-            'public/android/java/src/org/chromium/content/common/ISandboxedProcessService.aidl',
+            'public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl',
+            'public/android/java/src/org/chromium/content/common/IChildProcessService.aidl',
           ],
           'includes': [ '../build/java_aidl.gypi' ],
         },
@@ -284,7 +290,6 @@
             'result_codes_java',
           ],
           'variables': {
-            'package_name': 'content',
             'java_in_dir': '../content/public/android/java',
             'has_java_resources': 1,
             'R_package': 'org.chromium.content',
@@ -292,7 +297,7 @@
             'java_strings_grd': 'android_content_strings.grd',
           },
           'conditions': [
-            ['android_build_type == 0', {
+            ['android_webview_build == 0', {
               'dependencies': [
                 '../third_party/eyesfree/eyesfree.gyp:eyesfree_java',
                 '../third_party/guava/guava.gyp:guava_javalib',
@@ -308,7 +313,7 @@
             'public/android/java/src/org/chromium/content/browser/PageTransitionTypes.template',
           ],
           'variables': {
-            'package_name': 'org.chromium.content.browser',
+            'package_name': 'org/chromium/content/browser',
             'template_deps': ['public/common/page_transition_types_list.h'],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],
@@ -329,9 +334,8 @@
           'target_name': 'surface_texture_jni_headers',
           'type': 'none',
           'variables': {
-            'jni_gen_dir': 'content',
+            'jni_gen_package': 'content',
             'input_java_class': 'android/graphics/SurfaceTexture.class',
-            'input_jar_file': '<(android_sdk)/android.jar',
           },
           'includes': [ '../build/jar_file_jni_generator.gypi' ],
         },
@@ -339,9 +343,8 @@
           'target_name': 'surface_jni_headers',
           'type': 'none',
           'variables': {
-            'jni_gen_dir': 'content',
+            'jni_gen_package': 'content',
             'input_java_class': 'android/view/Surface.class',
-            'input_jar_file': '<(android_sdk)/android.jar',
           },
           'includes': [ '../build/jar_file_jni_generator.gypi' ],
         },
@@ -349,9 +352,8 @@
           'target_name': 'java_set_jni_headers',
           'type': 'none',
           'variables': {
-            'jni_gen_dir': 'content',
+            'jni_gen_package': 'content',
             'input_java_class': 'java/util/HashSet.class',
-            'input_jar_file': '<(android_sdk)/android.jar',
           },
           'includes': [ '../build/jar_file_jni_generator.gypi' ],
         },

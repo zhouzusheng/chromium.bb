@@ -54,7 +54,7 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface,
           PeerConnectionObserver* observer);
   bool Initialize();
 
-  virtual talk_base::scoped_refptr<LocalMediaStreamInterface>
+  virtual talk_base::scoped_refptr<MediaStreamInterface>
       CreateLocalMediaStream(const std::string& label);
 
   virtual talk_base::scoped_refptr<AudioSourceInterface> CreateAudioSource(
@@ -71,14 +71,6 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface,
   virtual talk_base::scoped_refptr<AudioTrackInterface>
       CreateAudioTrack(const std::string& id,
                        AudioSourceInterface* audio_source);
-  // Deprecated:
-  virtual talk_base::scoped_refptr<LocalVideoTrackInterface>
-      CreateLocalVideoTrack(const std::string& id,
-                            cricket::VideoCapturer* video_device);
-  // Deprecated:
-  virtual talk_base::scoped_refptr<LocalAudioTrackInterface>
-      CreateLocalAudioTrack(const std::string& id,
-                            AudioDeviceModule* audio_device);
 
   virtual cricket::ChannelManager* channel_manager();
   virtual talk_base::Thread* signaling_thread();
@@ -89,7 +81,8 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface,
   PeerConnectionFactory(
       talk_base::Thread* worker_thread,
       talk_base::Thread* signaling_thread,
-      AudioDeviceModule* default_adm);
+      AudioDeviceModule* default_adm,
+      cricket::WebRtcVideoDecoderFactory* video_decoder_factory);
   virtual ~PeerConnectionFactory();
 
 
@@ -116,6 +109,10 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface,
   // External Audio device used for audio playback.
   talk_base::scoped_refptr<AudioDeviceModule> default_adm_;
   talk_base::scoped_ptr<cricket::ChannelManager> channel_manager_;
+  // External Video decoder factory. This can be NULL if the client has not
+  // injected any. In that case, video engine will use the internal SW decoder.
+  talk_base::scoped_ptr<cricket::WebRtcVideoDecoderFactory>
+      video_decoder_factory_;
 };
 
 }  // namespace webrtc

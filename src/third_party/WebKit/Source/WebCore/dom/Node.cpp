@@ -67,6 +67,7 @@
 #include "HTMLFrameOwnerElement.h"
 #include "HTMLNames.h"
 #include "HTMLStyleElement.h"
+#include "InsertionPoint.h"
 #include "InspectorCounters.h"
 #include "KeyboardEvent.h"
 #include "LabelsNodeList.h"
@@ -101,6 +102,7 @@
 #include "TemplateContentDocumentFragment.h"
 #include "Text.h"
 #include "TextEvent.h"
+#include "TouchEvent.h"
 #include "TreeScopeAdopter.h"
 #include "UIEvent.h"
 #include "UIEventWithKeyState.h"
@@ -200,16 +202,16 @@ void Node::dumpStatistics()
                 ++elementNodes;
 
                 // Tag stats
-                Element* element = static_cast<Element*>(node);
+                Element* element = toElement(node);
                 HashMap<String, size_t>::AddResult result = perTagCount.add(element->tagName(), 1);
                 if (!result.isNewEntry)
                     result.iterator->value++;
 
-                if (ElementAttributeData* attributeData = element->attributeData()) {
-                    attributes += attributeData->length();
+                if (ElementData* elementData = element->elementData()) {
+                    attributes += elementData->length();
                     ++elementsWithAttributeStorage;
-                    for (unsigned i = 0; i < attributeData->length(); ++i) {
-                        Attribute* attr = attributeData->attributeItem(i);
+                    for (unsigned i = 0; i < elementData->length(); ++i) {
+                        Attribute* attr = elementData->attributeItem(i);
                         if (attr->attr())
                             ++attributesWithAttr;
                     }
@@ -296,7 +298,7 @@ void Node::dumpStatistics()
     printf("Attributes:\n");
     printf("  Number of Attributes (non-Node and Node): %zu [%zu]\n", attributes, sizeof(Attribute));
     printf("  Number of Attributes with an Attr: %zu\n", attributesWithAttr);
-    printf("  Number of Elements with attribute storage: %zu [%zu]\n", elementsWithAttributeStorage, sizeof(ElementAttributeData));
+    printf("  Number of Elements with attribute storage: %zu [%zu]\n", elementsWithAttributeStorage, sizeof(ElementData));
     printf("  Number of Elements with RareData: %zu\n", elementsWithRareData);
     printf("  Number of Elements with NamedNodeMap: %zu [%zu]\n", elementsWithNamedNodeMap, sizeof(NamedNodeMap));
 #endif
@@ -535,22 +537,22 @@ Node* Node::firstDescendant() const
     return n;
 }
 
-bool Node::insertBefore(PassRefPtr<Node> newChild, Node* refChild, ExceptionCode& ec, bool shouldLazyAttach)
+bool Node::insertBefore(PassRefPtr<Node> newChild, Node* refChild, ExceptionCode& ec, AttachBehavior attachBehavior)
 {
     if (!isContainerNode()) {
         ec = HIERARCHY_REQUEST_ERR;
         return false;
     }
-    return toContainerNode(this)->insertBefore(newChild, refChild, ec, shouldLazyAttach);
+    return toContainerNode(this)->insertBefore(newChild, refChild, ec, attachBehavior);
 }
 
-bool Node::replaceChild(PassRefPtr<Node> newChild, Node* oldChild, ExceptionCode& ec, bool shouldLazyAttach)
+bool Node::replaceChild(PassRefPtr<Node> newChild, Node* oldChild, ExceptionCode& ec, AttachBehavior attachBehavior)
 {
     if (!isContainerNode()) {
         ec = HIERARCHY_REQUEST_ERR;
         return false;
     }
-    return toContainerNode(this)->replaceChild(newChild, oldChild, ec, shouldLazyAttach);
+    return toContainerNode(this)->replaceChild(newChild, oldChild, ec, attachBehavior);
 }
 
 bool Node::removeChild(Node* oldChild, ExceptionCode& ec)
@@ -562,13 +564,13 @@ bool Node::removeChild(Node* oldChild, ExceptionCode& ec)
     return toContainerNode(this)->removeChild(oldChild, ec);
 }
 
-bool Node::appendChild(PassRefPtr<Node> newChild, ExceptionCode& ec, bool shouldLazyAttach)
+bool Node::appendChild(PassRefPtr<Node> newChild, ExceptionCode& ec, AttachBehavior attachBehavior)
 {
     if (!isContainerNode()) {
         ec = HIERARCHY_REQUEST_ERR;
         return false;
     }
-    return toContainerNode(this)->appendChild(newChild, ec, shouldLazyAttach);
+    return toContainerNode(this)->appendChild(newChild, ec, attachBehavior);
 }
 
 void Node::remove(ExceptionCode& ec)
@@ -588,7 +590,7 @@ void Node::normalize()
     while (node) {
         NodeType type = node->nodeType();
         if (type == ELEMENT_NODE)
-            static_cast<Element*>(node.get())->normalizeAttributes();
+            toElement(node.get())->normalizeAttributes();
 
         if (node == this)
             break;
@@ -901,6 +903,14 @@ Node* Node::focusDelegate()
     return this;
 }
 
+#if ENABLE(DIALOG_ELEMENT)
+bool Node::isInert() const
+{
+    Element* dialog = document()->activeModalDialog();
+    return dialog && !containsIncludingShadowDOM(dialog) && !dialog->containsIncludingShadowDOM(this);
+}
+#endif
+
 unsigned Node::nodeIndex() const
 {
     Node *_tempNode = previousSibling();
@@ -1057,7 +1067,6 @@ void Node::attach()
     ASSERT(!attached());
     ASSERT(!renderer() || (renderer()->style() && renderer()->parent()));
 
-    // FIXME: This is O(N^2) for the innerHTML case, where all children are replaced at once (and not attached).
     // If this node got a renderer it may be the previousRenderer() of sibling text nodes and thus affect the
     // result of Text::textRendererIsNeeded() for those nodes.
     if (renderer()) {
@@ -1065,9 +1074,16 @@ void Node::attach()
             if (next->renderer())
                 break;
             if (!next->attached())
-                break;  // Assume this means none of the following siblings are attached.
-            if (next->isTextNode())
-                toText(next)->createTextRendererIfNeeded();
+                break; // Assume this means none of the following siblings are attached.
+            if (!next->isTextNode())
+                continue;
+            ASSERT(!next->renderer());
+            toText(next)->createTextRendererIfNeeded();
+            // If we again decided not to create a renderer for next, we can bail out the loop,
+            // because it won't affect the result of Text::textRendererIsNeeded() for the rest
+            // of sibling nodes.
+            if (!next->renderer())
+                break;
         }
     }
 
@@ -1258,28 +1274,33 @@ Element* Node::parentOrShadowHostElement() const
     return toElement(parent);
 }
 
+Node* Node::insertionParentForBinding() const
+{
+    return resolveReprojection(this);
+}
+
 bool Node::needsShadowTreeWalkerSlow() const
 {
     return (isShadowRoot() || (isElementNode() && (isInsertionPoint() || isPseudoElement() || toElement(this)->hasPseudoElements() || toElement(this)->shadow())));
 }
 
-bool Node::isBlockFlow() const
+bool Node::isBlockFlowElement() const
 {
-    return renderer() && renderer()->isBlockFlow();
+    return isElementNode() && renderer() && renderer()->isBlockFlow();
 }
 
 Element *Node::enclosingBlockFlowElement() const
 {
     Node *n = const_cast<Node *>(this);
-    if (isBlockFlow())
-        return static_cast<Element *>(n);
+    if (isBlockFlowElement())
+        return toElement(n);
 
     while (1) {
         n = n->parentNode();
         if (!n)
             break;
-        if (n->isBlockFlow() || n->hasTagName(bodyTag))
-            return static_cast<Element *>(n);
+        if (n->isBlockFlowElement() || n->hasTagName(bodyTag))
+            return toElement(n);
     }
     return 0;
 }
@@ -1303,7 +1324,7 @@ Element* Node::rootEditableElement() const
     Element* result = 0;
     for (Node* n = const_cast<Node*>(this); n && n->rendererIsEditable(); n = n->parentNode()) {
         if (n->isElementNode())
-            result = static_cast<Element*>(n);
+            result = toElement(n);
         if (n->hasTagName(bodyTag))
             break;
     }
@@ -1457,7 +1478,7 @@ bool Node::isDefaultNamespace(const AtomicString& namespaceURIMaybeEmpty) const
 
     switch (nodeType()) {
         case ELEMENT_NODE: {
-            const Element* elem = static_cast<const Element*>(this);
+            const Element* elem = toElement(this);
             
             if (elem->prefix().isNull())
                 return elem->namespaceURI() == namespaceURI;
@@ -1477,7 +1498,7 @@ bool Node::isDefaultNamespace(const AtomicString& namespaceURIMaybeEmpty) const
             return false;
         }
         case DOCUMENT_NODE:
-            if (Element* de = static_cast<const Document*>(this)->documentElement())
+            if (Element* de = toDocument(this)->documentElement())
                 return de->isDefaultNamespace(namespaceURI);
             return false;
         case ENTITY_NODE:
@@ -1510,7 +1531,7 @@ String Node::lookupPrefix(const AtomicString &namespaceURI) const
         case ELEMENT_NODE:
             return lookupNamespacePrefix(namespaceURI, static_cast<const Element *>(this));
         case DOCUMENT_NODE:
-            if (Element* de = static_cast<const Document*>(this)->documentElement())
+            if (Element* de = toDocument(this)->documentElement())
                 return de->lookupPrefix(namespaceURI);
             return String();
         case ENTITY_NODE:
@@ -1568,7 +1589,7 @@ String Node::lookupNamespaceURI(const String &prefix) const
             return String();
         }
         case DOCUMENT_NODE:
-            if (Element* de = static_cast<const Document*>(this)->documentElement())
+            if (Element* de = toDocument(this)->documentElement())
                 return de->lookupNamespaceURI(prefix);
             return String();
         case ENTITY_NODE:
@@ -1702,7 +1723,7 @@ Element* Node::ancestorElement() const
     // In theory, there can be EntityReference nodes between elements, but this is currently not supported.
     for (ContainerNode* n = parentNode(); n; n = n->parentNode()) {
         if (n->isElementNode())
-            return static_cast<Element*>(n);
+            return toElement(n);
     }
     return 0;
 }
@@ -1742,7 +1763,7 @@ unsigned short Node::compareDocumentPosition(Node* otherNode)
     if (attr1 && attr2 && start1 == start2 && start1) {
         // We are comparing two attributes on the same node. Crawl our attribute map and see which one we hit first.
         Element* owner1 = attr1->ownerElement();
-        owner1->updatedAttributeData(); // Force update invalid attributes.
+        owner1->synchronizeAllAttributes();
         unsigned length = owner1->attributeCount();
         for (unsigned i = 0; i < length; ++i) {
             // If neither of the two determining nodes is a child node and nodeType is the same for both determining nodes, then an 
@@ -1774,10 +1795,17 @@ unsigned short Node::compareDocumentPosition(Node* otherNode)
         chain1.append(current);
     for (current = start2; current; current = current->parentNode())
         chain2.append(current);
-   
-    // Walk the two chains backwards and look for the first difference.
+
     unsigned index1 = chain1.size();
     unsigned index2 = chain2.size();
+
+    // If the two elements don't have a common root, they're not in the same tree.
+    if (chain1[index1 - 1] != chain2[index2 - 1]) {
+        unsigned short direction = (start1 > start2) ? DOCUMENT_POSITION_PRECEDING : DOCUMENT_POSITION_FOLLOWING;
+        return DOCUMENT_POSITION_DISCONNECTED | DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC | direction;
+    }
+
+    // Walk the two chains backwards and look for the first difference.
     for (unsigned i = min(index1, index2); i; --i) {
         Node* child1 = chain1[--index1];
         Node* child2 = chain2[--index2];
@@ -1846,7 +1874,7 @@ static void appendAttributeDesc(const Node* node, StringBuilder& stringBuilder, 
     if (!node->isElementNode())
         return;
 
-    String attr = static_cast<const Element*>(node)->getAttribute(name);
+    String attr = toElement(node)->getAttribute(name);
     if (attr.isEmpty())
         return;
 
@@ -2310,6 +2338,10 @@ bool Node::dispatchEvent(PassRefPtr<Event> event)
 {
     if (event->isMouseEvent())
         return EventDispatcher::dispatchEvent(this, MouseEventDispatchMediator::create(adoptRef(toMouseEvent(event.leakRef())), MouseEventDispatchMediator::SyntheticMouseEvent));
+#if ENABLE(TOUCH_EVENTS)
+    if (event->isTouchEvent())
+        return dispatchTouchEvent(adoptRef(toTouchEvent(event.leakRef())));
+#endif
     return EventDispatcher::dispatchEvent(this, EventDispatchMediator::create(event));
 }
 
@@ -2330,20 +2362,14 @@ void Node::dispatchFocusInEvent(const AtomicString& eventType, PassRefPtr<Node> 
 {
     ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
     ASSERT(eventType == eventNames().focusinEvent || eventType == eventNames().DOMFocusInEvent);
-    // FIXME: We should pass oldFocusedNode to FocusEvent::create() and
-    // remove oldFocusedNode from FocusInEventDispatchMediator::create().
-    // See https://bugs.webkit.org/show_bug.cgi?id=109261
-    dispatchScopedEventDispatchMediator(FocusInEventDispatchMediator::create(FocusEvent::create(eventType, true, false, document()->defaultView(), 0, 0), oldFocusedNode));
+    dispatchScopedEventDispatchMediator(FocusInEventDispatchMediator::create(FocusEvent::create(eventType, true, false, document()->defaultView(), 0, oldFocusedNode)));
 }
 
 void Node::dispatchFocusOutEvent(const AtomicString& eventType, PassRefPtr<Node> newFocusedNode)
 {
     ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
     ASSERT(eventType == eventNames().focusoutEvent || eventType == eventNames().DOMFocusOutEvent);
-    // FIXME: We should pass newFocusedNode to FocusEvent::create() and
-    // remove newFocusedNode from FocusOutEventDispatchMediator::create().
-    // See https://bugs.webkit.org/show_bug.cgi?id=109261
-    dispatchScopedEventDispatchMediator(FocusOutEventDispatchMediator::create(FocusEvent::create(eventType, true, false, document()->defaultView(), 0, 0), newFocusedNode));
+    dispatchScopedEventDispatchMediator(FocusOutEventDispatchMediator::create(FocusEvent::create(eventType, true, false, document()->defaultView(), 0, newFocusedNode)));
 }
 
 bool Node::dispatchDOMActivateEvent(int detail, PassRefPtr<Event> underlyingEvent)
@@ -2376,6 +2402,13 @@ bool Node::dispatchGestureEvent(const PlatformGestureEvent& event)
 }
 #endif
 
+#if ENABLE(TOUCH_EVENTS)
+bool Node::dispatchTouchEvent(PassRefPtr<TouchEvent> event)
+{
+    return EventDispatcher::dispatchEvent(this, TouchEventDispatchMediator::create(event));
+}
+#endif
+
 void Node::dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions eventOptions, SimulatedClickVisualOptions visualOptions)
 {
     EventDispatcher::dispatchSimulatedClick(this, underlyingEvent, eventOptions, visualOptions);
@@ -2402,11 +2435,8 @@ void Node::dispatchFocusEvent(PassRefPtr<Node> oldFocusedNode, FocusDirection)
     if (document()->page())
         document()->page()->chrome()->client()->elementDidFocus(this);
 
-    // FIXME: We should pass oldFocusedNode to FocusEvent::create() and
-    // remove oldFocusedNode from FocusEventDispatchMediator::create().
-    // See https://bugs.webkit.org/show_bug.cgi?id=109261
-    RefPtr<FocusEvent> event = FocusEvent::create(eventNames().focusEvent, false, false, document()->defaultView(), 0, 0);
-    EventDispatcher::dispatchEvent(this, FocusEventDispatchMediator::create(event.release(), oldFocusedNode));
+    RefPtr<FocusEvent> event = FocusEvent::create(eventNames().focusEvent, false, false, document()->defaultView(), 0, oldFocusedNode);
+    EventDispatcher::dispatchEvent(this, FocusEventDispatchMediator::create(event.release()));
 }
 
 void Node::dispatchBlurEvent(PassRefPtr<Node> newFocusedNode)
@@ -2414,11 +2444,8 @@ void Node::dispatchBlurEvent(PassRefPtr<Node> newFocusedNode)
     if (document()->page())
         document()->page()->chrome()->client()->elementDidBlur(this);
 
-    // FIXME: We should pass newFocusedNode to FocusEvent::create() and
-    // remove newFocusedNode from BlurEventDispatchMediator::create().
-    // See https://bugs.webkit.org/show_bug.cgi?id=109261
-    RefPtr<FocusEvent> event = FocusEvent::create(eventNames().blurEvent, false, false, document()->defaultView(), 0, 0);
-    EventDispatcher::dispatchEvent(this, BlurEventDispatchMediator::create(event.release(), newFocusedNode));
+    RefPtr<FocusEvent> event = FocusEvent::create(eventNames().blurEvent, false, false, document()->defaultView(), 0, newFocusedNode);
+    EventDispatcher::dispatchEvent(this, BlurEventDispatchMediator::create(event.release()));
 }
 
 void Node::dispatchChangeEvent()
@@ -2433,6 +2460,10 @@ void Node::dispatchInputEvent()
 
 bool Node::disabled() const
 {
+#if ENABLE(DIALOG_ELEMENT)
+    if (isInert())
+        return true;
+#endif
     return false;
 }
 
@@ -2604,8 +2635,8 @@ void Node::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     ScriptWrappable::reportMemoryUsage(memoryObjectInfo);
     info.addMember(m_parentOrShadowHostNode, "parentOrShadowHostNode");
     info.addMember(m_treeScope, "treeScope");
-    info.addMember(m_next, "next");
-    info.addMember(m_previous, "previous");
+    info.ignoreMember(m_next);
+    info.ignoreMember(m_previous);
     info.addMember(this->renderer(), "renderer");
     if (hasRareData()) {
         if (isElementNode())

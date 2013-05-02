@@ -35,8 +35,10 @@
 namespace v8 {
 namespace internal {
 
+static const int kSweeperThreadStackSize = 64 * KB;
+
 SweeperThread::SweeperThread(Isolate* isolate)
-     : Thread("SweeperThread"),
+     : Thread(Thread::Options("v8:SweeperThread", kSweeperThreadStackSize)),
        isolate_(isolate),
        heap_(isolate->heap()),
        collector_(heap_->mark_compact_collector()),
@@ -50,9 +52,6 @@ SweeperThread::SweeperThread(Isolate* isolate)
            heap_->paged_space(OLD_POINTER_SPACE)) {
   NoBarrier_Store(&stop_thread_, static_cast<AtomicWord>(false));
 }
-
-
-bool SweeperThread::sweeping_pending_ = false;
 
 
 void SweeperThread::Run() {
@@ -75,17 +74,16 @@ void SweeperThread::Run() {
   }
 }
 
+
 intptr_t SweeperThread::StealMemory(PagedSpace* space) {
-  intptr_t free_bytes = 0;
   if (space->identity() == OLD_POINTER_SPACE) {
-    free_bytes = space->free_list()->Concatenate(&free_list_old_pointer_space_);
-    space->AddToAccountingStats(free_bytes);
+    return space->free_list()->Concatenate(&free_list_old_pointer_space_);
   } else if (space->identity() == OLD_DATA_SPACE) {
-    free_bytes = space->free_list()->Concatenate(&free_list_old_data_space_);
-    space->AddToAccountingStats(free_bytes);
+    return space->free_list()->Concatenate(&free_list_old_data_space_);
   }
-  return free_bytes;
+  return 0;
 }
+
 
 void SweeperThread::Stop() {
   Release_Store(&stop_thread_, static_cast<AtomicWord>(true));

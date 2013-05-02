@@ -48,7 +48,6 @@ public:
     virtual bool scrollAnimatorEnabled() const;
     virtual bool viewportEnabled() const { return m_viewportEnabled; }
     virtual void setAccelerated2dCanvasEnabled(bool);
-    virtual void setAcceleratedAnimationEnabled(bool);
     virtual void setAcceleratedCompositingEnabled(bool);
     virtual void setAcceleratedCompositingFor3DTransformsEnabled(bool);
     virtual void setAcceleratedCompositingForAnimationEnabled(bool);
@@ -59,7 +58,6 @@ public:
     virtual void setAcceleratedCompositingForScrollableFramesEnabled(bool);
     virtual void setAcceleratedCompositingForVideoEnabled(bool);
     virtual void setAcceleratedFiltersEnabled(bool);
-    virtual void setAcceleratedPaintingEnabled(bool);
     virtual void setAllowDisplayOfInsecureContent(bool);
     virtual void setAllowFileAccessFromFileURLs(bool);
     virtual void setAllowCustomScrollbarInMainFrame(bool);
@@ -81,7 +79,7 @@ public:
     virtual void setDefaultFixedFontSize(int);
     virtual void setDefaultFontSize(int);
     virtual void setDefaultTextEncodingName(const WebString&);
-    virtual void setDefaultTileSize(WebSize);
+    virtual void setDefaultVideoPosterURL(const WebString&);
     virtual void setDeferred2dCanvasEnabled(bool);
     virtual void setDeferredImageDecodingEnabled(bool);
     virtual void setDeveloperExtrasEnabled(bool);
@@ -109,6 +107,7 @@ public:
     virtual void setGestureTapHighlightEnabled(bool);
     virtual void setHyperlinkAuditingEnabled(bool);
     virtual void setImagesEnabled(bool);
+    virtual void setInitializeAtMinimumPageScale(bool);
     virtual void setInteractiveFormValidationEnabled(bool);
     virtual void setJavaEnabled(bool);
     virtual void setJavaScriptCanAccessClipboard(bool);
@@ -117,7 +116,6 @@ public:
     virtual void setLayoutFallbackWidth(int);
     virtual void setLoadsImagesAutomatically(bool);
     virtual void setLocalStorageEnabled(bool);
-    virtual void setMaxUntiledLayerSize(WebSize);
     virtual void setMediaPlaybackRequiresUserGesture(bool);
     virtual void setMemoryInfoEnabled(bool);
     virtual void setMinimumAccelerated2dCanvasSize(int);
@@ -135,10 +133,9 @@ public:
     virtual void setPictographFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
     virtual void setPluginsEnabled(bool);
     virtual void setPrivilegedWebGLExtensionsEnabled(bool);
-    virtual void setRecordRenderingStats(bool);
-    virtual void setRenderVSyncEnabled(bool);
     virtual void setRenderVSyncNotificationEnabled(bool);
     virtual void setSansSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
+    virtual void setSelectTrailingWhitespaceEnabled(bool);
     virtual void setSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
     virtual void setShouldDisplayCaptions(bool);
     virtual void setShouldDisplaySubtitles(bool);
@@ -148,8 +145,8 @@ public:
     virtual void setShowDebugBorders(bool);
     virtual void setShowFPSCounter(bool);
     virtual void setShowPaintRects(bool);
-    virtual void setShowPlatformLayerTree(bool);
     virtual void setShrinksStandaloneImagesToFit(bool);
+    virtual void setSmartInsertDeleteEnabled(bool);
     virtual void setStandardFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
     virtual void setSupportsMultipleWindows(bool);
     virtual void setSyncXHRInDocumentsEnabled(bool);
@@ -173,38 +170,28 @@ public:
     virtual void setXSSAuditorEnabled(bool);
 
     bool showFPSCounter() const { return m_showFPSCounter; }
-    bool showPlatformLayerTree() const { return m_showPlatformLayerTree; }
     bool showPaintRects() const { return m_showPaintRects; }
-    bool renderVSyncEnabled() const { return m_renderVSyncEnabled; }
     bool renderVSyncNotificationEnabled() const { return m_renderVSyncNotificationEnabled; }
     bool applyDeviceScaleFactorInCompositor() const;
     bool applyPageScaleFactorInCompositor() const;
+    bool initializeAtMinimumPageScale() const { return m_initializeAtMinimumPageScale; }
     bool autoZoomFocusedNodeToLegibleScale() const { return m_autoZoomFocusedNodeToLegibleScale; }
     bool gestureTapHighlightEnabled() const { return m_gestureTapHighlightEnabled; }
     bool doubleTapToZoomEnabled() const { return m_doubleTapToZoomEnabled; }
     bool perTilePaintingEnabled() const { return m_perTilePaintingEnabled; }
-    bool acceleratedAnimationEnabled() const { return m_acceleratedAnimationEnabled; }
-    bool recordRenderingStats() const { return m_recordRenderingStats; }
-    WebSize defaultTileSize() const { return m_defaultTileSize; }
-    WebSize maxUntiledLayerSize() const { return m_maxUntiledLayerSize; }
 
 private:
     WebCore::Settings* m_settings;
     bool m_showFPSCounter;
-    bool m_showPlatformLayerTree;
     bool m_showPaintRects;
-    bool m_renderVSyncEnabled;
     bool m_renderVSyncNotificationEnabled;
     bool m_viewportEnabled;
+    bool m_initializeAtMinimumPageScale;
     bool m_gestureTapHighlightEnabled;
     bool m_autoZoomFocusedNodeToLegibleScale;
     bool m_deferredImageDecodingEnabled;
     bool m_doubleTapToZoomEnabled;
     bool m_perTilePaintingEnabled;
-    bool m_acceleratedAnimationEnabled;
-    bool m_recordRenderingStats;
-    WebSize m_defaultTileSize;
-    WebSize m_maxUntiledLayerSize;
 };
 
 } // namespace WebKit

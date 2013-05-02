@@ -14,7 +14,6 @@
 #include "content/renderer/media/media_stream_dispatcher.h"
 #include "content/renderer/media/media_stream_extra_data.h"
 #include "content/renderer/media/media_stream_source_extra_data.h"
-#include "content/renderer/media/rtc_video_decoder.h"
 #include "content/renderer/media/rtc_video_renderer.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/webrtc_audio_capturer.h"
@@ -85,15 +84,16 @@ void CreateWebKitSourceVector(
   for (size_t i = 0; i < devices.size(); ++i) {
     const char* track_type =
         (type == WebKit::WebMediaStreamSource::TypeAudio) ? "a" : "v";
-    std::string source_id = StringPrintf("%s%s%u", label.c_str(),
-                                         track_type,
-                                         static_cast<unsigned int>(i));
+    std::string source_id = base::StringPrintf("%s%s%u", label.c_str(),
+                                               track_type,
+                                               static_cast<unsigned int>(i));
     webkit_sources[i].initialize(
           UTF8ToUTF16(source_id),
           type,
           UTF8ToUTF16(devices[i].device.name));
     webkit_sources[i].setExtraData(
         new content::MediaStreamSourceExtraData(devices[i]));
+    webkit_sources[i].setDeviceId(UTF8ToUTF16(devices[i].device.id.c_str()));
   }
 }
 
@@ -103,10 +103,7 @@ webrtc::MediaStreamInterface* GetNativeMediaStream(
       static_cast<content::MediaStreamExtraData*>(descriptor.extraData());
   if (!extra_data)
     return NULL;
-  webrtc::MediaStreamInterface* stream = extra_data->local_stream();
-  if (!stream)
-    stream = extra_data->remote_stream();
-  return stream;
+  return extra_data->stream();
 }
 
 }  // namespace
@@ -131,6 +128,8 @@ void MediaStreamImpl::OnLocalMediaStreamStop(
 
   UserMediaRequestInfo* user_media_request = FindUserMediaRequestInfo(label);
   if (user_media_request) {
+    dependency_factory_->StopLocalAudioSource(user_media_request->descriptor);
+
     media_stream_dispatcher_->StopStream(label);
     DeleteUserMediaRequestInfo(user_media_request);
   } else {
@@ -222,9 +221,8 @@ bool MediaStreamImpl::CheckMediaStream(const GURL& url) {
     return false;  // This is not a valid stream.
 
   webrtc::MediaStreamInterface* stream = GetNativeMediaStream(descriptor);
-  return stream &&
-         ((stream->video_tracks() && stream->video_tracks()->count() > 0) ||
-          (stream->audio_tracks() && stream->audio_tracks()->count() > 0));
+  return (stream &&
+      (!stream->GetVideoTracks().empty() || !stream->GetAudioTracks().empty()));
 }
 
 scoped_refptr<webkit_media::VideoFrameProvider>
@@ -248,25 +246,6 @@ MediaStreamImpl::GetVideoFrameProvider(
   return NULL;
 }
 
-scoped_refptr<media::VideoDecoder> MediaStreamImpl::GetVideoDecoder(
-    const GURL& url,
-    const scoped_refptr<base::MessageLoopProxy>& message_loop) {
-  DCHECK(CalledOnValidThread());
-  WebKit::WebMediaStream descriptor(GetMediaStream(url));
-
-  if (descriptor.isNull() || !descriptor.extraData())
-    return NULL;  // This is not a valid stream.
-
-  DVLOG(1) << "MediaStreamImpl::GetVideoDecoder stream:"
-           << UTF16ToUTF8(descriptor.label());
-
-  webrtc::MediaStreamInterface* stream = GetNativeMediaStream(descriptor);
-  if (stream)
-    return CreateVideoDecoder(stream, message_loop);
-  NOTREACHED();
-  return NULL;
-}
-
 scoped_refptr<webkit_media::MediaStreamAudioRenderer>
 MediaStreamImpl::GetAudioRenderer(const GURL& url) {
   DCHECK(CalledOnValidThread());
@@ -281,31 +260,28 @@ MediaStreamImpl::GetAudioRenderer(const GURL& url) {
   MediaStreamExtraData* extra_data =
       static_cast<MediaStreamExtraData*>(descriptor.extraData());
 
-  if (extra_data->remote_stream()) {
-    if (!extra_data->remote_stream()->audio_tracks() ||
-        extra_data->remote_stream()->audio_tracks()->count() == 0)
-      return NULL;
-
-    WebRtcAudioDeviceImpl* audio_device =
-        dependency_factory_->GetWebRtcAudioDevice();
-
-    // Share the existing renderer if any, otherwise create a new one.
-    scoped_refptr<WebRtcAudioRenderer> renderer(audio_device->renderer());
-    if (!renderer) {
-      renderer = CreateRemoteAudioRenderer(extra_data->remote_stream());
-
-      if (renderer && !audio_device->SetRenderer(renderer))
-        renderer = NULL;
-    }
-
-    return renderer;
-  } else if (extra_data->local_stream()) {
+  if (extra_data->is_local()) {
     // Create the local audio renderer if the stream contains audio tracks.
-    return CreateLocalAudioRenderer(extra_data->local_stream());
+    return CreateLocalAudioRenderer(extra_data->stream());
   }
 
-  NOTREACHED();
-  return NULL;
+  webrtc::MediaStreamInterface* stream = extra_data->stream();
+  if (!stream || stream->GetAudioTracks().empty())
+    return NULL;
+
+  // This is a remote media stream.
+  WebRtcAudioDeviceImpl* audio_device =
+      dependency_factory_->GetWebRtcAudioDevice();
+
+  // Share the existing renderer if any, otherwise create a new one.
+  scoped_refptr<WebRtcAudioRenderer> renderer(audio_device->renderer());
+  if (!renderer) {
+    renderer = CreateRemoteAudioRenderer(extra_data->stream());
+
+    if (renderer && !audio_device->SetAudioRenderer(renderer))
+      renderer = NULL;
+  }
+  return renderer;
 }
 
 // Callback from MediaStreamDispatcher.
@@ -514,6 +490,9 @@ void MediaStreamImpl::FrameWillClose(WebKit::WebFrame* frame) {
       // MediaStreamDispatcher know that the stream is no longer wanted.
       // If not, we cancel the request and delete the request object.
       if ((*request_it)->generated) {
+        // Stop the local audio track before closing the device in the browser.
+        dependency_factory_->StopLocalAudioSource((*request_it)->descriptor);
+
         media_stream_dispatcher_->StopStream(
             UTF16ToUTF8((*request_it)->descriptor.label()));
       } else {
@@ -532,36 +511,21 @@ MediaStreamImpl::CreateVideoFrameProvider(
     webrtc::MediaStreamInterface* stream,
     const base::Closure& error_cb,
     const webkit_media::VideoFrameProvider::RepaintCB& repaint_cb) {
-  if (!stream->video_tracks() || stream->video_tracks()->count() == 0)
+  if (stream->GetVideoTracks().empty())
     return NULL;
 
   DVLOG(1) << "MediaStreamImpl::CreateRemoteVideoFrameProvider label:"
            << stream->label();
 
   return new RTCVideoRenderer(
-      stream->video_tracks()->at(0),
+      stream->GetVideoTracks()[0],
       error_cb,
       repaint_cb);
 }
 
-scoped_refptr<media::VideoDecoder> MediaStreamImpl::CreateVideoDecoder(
-    webrtc::MediaStreamInterface* stream,
-    const scoped_refptr<base::MessageLoopProxy>& message_loop) {
-  if (!stream->video_tracks() || stream->video_tracks()->count() == 0)
-    return NULL;
-
-  DVLOG(1) << "MediaStreamImpl::CreateRemoteVideoDecoder label:"
-           << stream->label();
-
-  return new RTCVideoDecoder(
-      message_loop,
-      base::MessageLoopProxy::current(),
-      stream->video_tracks()->at(0));
-}
-
 scoped_refptr<WebRtcAudioRenderer> MediaStreamImpl::CreateRemoteAudioRenderer(
     webrtc::MediaStreamInterface* stream) {
-  if (!stream->audio_tracks() || stream->audio_tracks()->count() == 0)
+  if (stream->GetAudioTracks().empty())
     return NULL;
 
   DVLOG(1) << "MediaStreamImpl::CreateRemoteAudioRenderer label:"
@@ -573,7 +537,7 @@ scoped_refptr<WebRtcAudioRenderer> MediaStreamImpl::CreateRemoteAudioRenderer(
 scoped_refptr<WebRtcLocalAudioRenderer>
 MediaStreamImpl::CreateLocalAudioRenderer(
     webrtc::MediaStreamInterface* stream) {
-  if (!stream->audio_tracks() || stream->audio_tracks()->count() == 0)
+  if (stream->GetAudioTracks().empty())
     return NULL;
 
   DVLOG(1) << "MediaStreamImpl::CreateLocalAudioRenderer label:"
@@ -585,9 +549,17 @@ MediaStreamImpl::CreateLocalAudioRenderer(
     return NULL;
   }
 
+  webrtc::AudioTrackVector audio_tracks = stream->GetAudioTracks();
+  DCHECK_EQ(audio_tracks.size(), 1u);
+  webrtc::AudioTrackInterface* audio_track = audio_tracks[0];
+  DVLOG(1) << "audio_track.kind   : " << audio_track->kind()
+           << "audio_track.id     : " << audio_track->id()
+           << "audio_track.enabled: " << audio_track->enabled();
+
   // Create a new WebRtcLocalAudioRenderer instance and connect it to the
   // existing WebRtcAudioCapturer so that the renderer can use it as source.
-  return new WebRtcLocalAudioRenderer(source, RenderViewObserver::routing_id());
+  return new WebRtcLocalAudioRenderer(source, audio_track,
+                                      RenderViewObserver::routing_id());
 }
 
 MediaStreamSourceExtraData::MediaStreamSourceExtraData(
@@ -603,13 +575,9 @@ MediaStreamSourceExtraData::MediaStreamSourceExtraData(
 MediaStreamSourceExtraData::~MediaStreamSourceExtraData() {}
 
 MediaStreamExtraData::MediaStreamExtraData(
-    webrtc::MediaStreamInterface* remote_stream)
-    : remote_stream_(remote_stream) {
-}
-
-MediaStreamExtraData::MediaStreamExtraData(
-    webrtc::LocalMediaStreamInterface* local_stream)
-    : local_stream_(local_stream) {
+    webrtc::MediaStreamInterface* stream, bool is_local)
+    : stream_(stream),
+      is_local_(is_local) {
 }
 
 MediaStreamExtraData::~MediaStreamExtraData() {
@@ -622,7 +590,7 @@ void MediaStreamExtraData::SetLocalStreamStopCallback(
 
 void MediaStreamExtraData::OnLocalStreamStop() {
   if (!stream_stop_callback_.is_null())
-    stream_stop_callback_.Run(local_stream_->label());
+    stream_stop_callback_.Run(stream_->label());
 }
 
 }  // namespace content

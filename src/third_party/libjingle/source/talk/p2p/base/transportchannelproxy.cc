@@ -47,6 +47,8 @@ TransportChannelProxy::TransportChannelProxy(const std::string& content_name,
 }
 
 TransportChannelProxy::~TransportChannelProxy() {
+  // Clearing any pending signal.
+  worker_thread_->Clear(this);
   if (impl_)
     impl_->GetTransport()->DestroyChannel(impl_->component());
 }
@@ -157,6 +159,14 @@ bool TransportChannelProxy::ExportKeyingMaterial(const std::string& label,
   }
   return impl_->ExportKeyingMaterial(label, context, context_len, use_context,
                                      result, result_len);
+}
+
+TransportRole TransportChannelProxy::GetRole() const {
+  ASSERT(talk_base::Thread::Current() == worker_thread_);
+  if (!impl_) {
+    return ROLE_UNKNOWN;
+  }
+  return impl_->GetRole();
 }
 
 void TransportChannelProxy::OnReadableState(TransportChannel* channel) {

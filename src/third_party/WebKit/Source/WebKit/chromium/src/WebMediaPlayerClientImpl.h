@@ -84,8 +84,6 @@ public:
     virtual float volume() const;
     virtual void playbackStateChanged();
     virtual WebMediaPlayer::Preload preload() const;
-    virtual void sourceOpened();
-    virtual WebKit::WebURL sourceURL() const;
     virtual void keyAdded(const WebString& keySystem, const WebString& sessionId);
     virtual void keyError(const WebString& keySystem, const WebString& sessionId, MediaKeyErrorCode, unsigned short systemCode);
     virtual void keyMessage(const WebString& keySystem, const WebString& sessionId, const unsigned char* message, unsigned messageLength, const WebURL& defaultURL);
@@ -96,6 +94,9 @@ public:
 
     // MediaPlayerPrivateInterface methods:
     virtual void load(const WTF::String& url);
+#if ENABLE(MEDIA_SOURCE)
+    virtual void load(const WTF::String& url, PassRefPtr<WebCore::MediaSource>);
+#endif
     virtual void cancelLoad();
 #if USE(ACCELERATED_COMPOSITING)
     virtual WebKit::WebLayer* platformLayer() const;
@@ -129,6 +130,7 @@ public:
     virtual void setSize(const WebCore::IntSize&);
     virtual void paint(WebCore::GraphicsContext*, const WebCore::IntRect&);
     virtual void paintCurrentFrameInContext(WebCore::GraphicsContext*, const WebCore::IntRect&);
+    virtual bool copyVideoTextureToPlatformTexture(WebCore::GraphicsContext3D*, Platform3DObject texture, GC3Dint level, GC3Denum type, GC3Denum internalFormat, bool premultiplyAlpha, bool flipY);
     virtual void setPreload(WebCore::MediaPlayer::Preload);
     virtual bool hasSingleSecurityOrigin() const;
     virtual bool didPassCORSAccessCheck() const;
@@ -157,17 +159,6 @@ public:
     virtual void putCurrentFrame(WebVideoFrame*);
 #endif
 
-#if ENABLE(MEDIA_SOURCE)
-    virtual WebCore::MediaPlayer::AddIdStatus sourceAddId(const String& id, const String& type, const Vector<String>& codecs);
-    virtual bool sourceRemoveId(const String&);
-    virtual WTF::PassRefPtr<WebCore::TimeRanges> sourceBuffered(const String&);
-    virtual bool sourceAppend(const String&, const unsigned char* data, unsigned length);
-    virtual bool sourceAbort(const String&);
-    virtual void sourceSetDuration(double);
-    virtual void sourceEndOfStream(WebCore::MediaPlayer::EndOfStreamStatus);
-    virtual bool sourceSetTimestampOffset(const String&, double offset);
-#endif
-
 #if ENABLE(ENCRYPTED_MEDIA)
     virtual WebCore::MediaPlayer::MediaKeyException generateKeyRequest(const String& keySystem, const unsigned char* initData, unsigned initDataLength) OVERRIDE;
     virtual WebCore::MediaPlayer::MediaKeyException addKey(const String& keySystem, const unsigned char* key, unsigned keyLength, const unsigned char* initData, unsigned initDataLength, const String& sessionId) OVERRIDE;
@@ -182,6 +173,7 @@ protected:
     WebMediaPlayerClientImpl();
 private:
     void startDelayedLoad();
+    void loadRequested();
     void loadInternal();
 
     static PassOwnPtr<WebCore::MediaPlayerPrivateInterface> create(WebCore::MediaPlayer*);
@@ -201,7 +193,7 @@ private:
     WebCore::MediaPlayer* m_mediaPlayer;
     OwnPtr<WebMediaPlayer> m_webMediaPlayer;
     WebVideoFrame* m_currentVideoFrame;
-    String m_url;
+    WebCore::KURL m_url;
     bool m_delayingLoad;
     WebCore::MediaPlayer::Preload m_preload;
     RefPtr<WebHelperPluginImpl> m_helperPlugin;
@@ -258,6 +250,10 @@ private:
     };
 
     AudioSourceProviderImpl m_audioSourceProvider;
+#endif
+
+#if ENABLE(MEDIA_SOURCE)
+    RefPtr<WebCore::MediaSource> m_mediaSource;
 #endif
 };
 

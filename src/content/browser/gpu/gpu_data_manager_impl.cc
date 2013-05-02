@@ -23,10 +23,12 @@
 #include "content/browser/gpu/gpu_util.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/gpu/gpu_info_collector.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
 #include "grit/content_resources.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gl/gl_implementation.h"
@@ -100,7 +102,7 @@ void GpuDataManagerImpl::InitializeForTesting(
   // This function is for testing only, so disable histograms.
   update_histograms_ = false;
 
-  InitializeImpl(gpu_blacklist_json, gpu_info);
+  InitializeImpl(gpu_blacklist_json, "", "", gpu_info);
 }
 
 GpuFeatureType GpuDataManagerImpl::GetBlacklistedFeatures() const {
@@ -205,22 +207,6 @@ void GpuDataManagerImpl::RemoveObserver(GpuDataManagerObserver* observer) {
   observer_list_->RemoveObserver(observer);
 }
 
-void GpuDataManagerImpl::SetWindowCount(uint32 count) {
-  {
-    base::AutoLock auto_lock(gpu_info_lock_);
-    window_count_ = count;
-  }
-  GpuProcessHost::SendOnIO(
-      GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED,
-      CAUSE_FOR_GPU_LAUNCH_NO_LAUNCH,
-      new GpuMsg_SetVideoMemoryWindowCount(count));
-}
-
-uint32 GpuDataManagerImpl::GetWindowCount() const {
-  base::AutoLock auto_lock(gpu_info_lock_);
-  return window_count_;
-}
-
 void GpuDataManagerImpl::UnblockDomainFrom3DAPIs(const GURL& url) {
   // This method must do two things:
   //
@@ -302,14 +288,28 @@ void GpuDataManagerImpl::Initialize() {
 #endif
 
   std::string gpu_blacklist_string;
+  std::string gpu_switching_list_string;
+  std::string gpu_driver_bug_list_string;
   if (!command_line->HasSwitch(switches::kIgnoreGpuBlacklist)) {
     const base::StringPiece gpu_blacklist_json =
         GetContentClient()->GetDataResource(
             IDR_GPU_BLACKLIST, ui::SCALE_FACTOR_NONE);
     gpu_blacklist_string = gpu_blacklist_json.as_string();
+    const base::StringPiece gpu_switching_list_json =
+        GetContentClient()->GetDataResource(
+            IDR_GPU_SWITCHING_LIST, ui::SCALE_FACTOR_NONE);
+    gpu_switching_list_string = gpu_switching_list_json.as_string();
   }
-
-  InitializeImpl(gpu_blacklist_string, gpu_info);
+  if (!command_line->HasSwitch(switches::kDisableGpuDriverBugWorkarounds)) {
+    const base::StringPiece gpu_driver_bug_list_json =
+        GetContentClient()->GetDataResource(
+            IDR_GPU_DRIVER_BUG_LIST, ui::SCALE_FACTOR_NONE);
+    gpu_driver_bug_list_string = gpu_driver_bug_list_json.as_string();
+  }
+  InitializeImpl(gpu_blacklist_string,
+                 gpu_switching_list_string,
+                 gpu_driver_bug_list_string,
+                 gpu_info);
 }
 
 void GpuDataManagerImpl::UpdateGpuInfo(const GPUInfo& gpu_info) {
@@ -329,20 +329,26 @@ void GpuDataManagerImpl::UpdateGpuInfo(const GPUInfo& gpu_info) {
   GetContentClient()->SetGpuInfo(my_gpu_info);
 
   if (gpu_blacklist_.get()) {
-    GpuBlacklist::Decision decision =
-        gpu_blacklist_->MakeBlacklistDecision(
-            GpuBlacklist::kOsAny, "", my_gpu_info);
+    int features = gpu_blacklist_->MakeDecision(
+        GpuControlList::kOsAny, "", my_gpu_info);
     if (update_histograms_)
-      UpdateStats(gpu_blacklist_.get(), decision.blacklisted_features);
+      UpdateStats(gpu_blacklist_.get(), features);
 
-    UpdateBlacklistedFeatures(decision.blacklisted_features);
-    if (decision.gpu_switching != GPU_SWITCHING_OPTION_UNKNOWN) {
+    UpdateBlacklistedFeatures(static_cast<GpuFeatureType>(features));
+  }
+  if (gpu_switching_list_.get()) {
+    int option = gpu_switching_list_->MakeDecision(
+        GpuControlList::kOsAny, "", my_gpu_info);
+    if (option != GPU_SWITCHING_OPTION_UNKNOWN) {
       // Blacklist decision should not overwrite commandline switch from users.
       CommandLine* command_line = CommandLine::ForCurrentProcess();
       if (!command_line->HasSwitch(switches::kGpuSwitching))
-        gpu_switching_ = decision.gpu_switching;
+        gpu_switching_ = static_cast<GpuSwitchingOption>(option);
     }
   }
+  if (gpu_driver_bug_list_.get())
+    gpu_driver_bugs_ = gpu_driver_bug_list_->MakeDecision(
+        GpuControlList::kOsAny, "", my_gpu_info);
 
   // We have to update GpuFeatureType before notify all the observers.
   NotifyGpuInfoUpdate();
@@ -438,8 +444,11 @@ void GpuDataManagerImpl::AppendGpuCommandLine(
 #if defined(OS_WIN)
   // DisplayLink 7.1 and earlier can cause the GPU process to crash on startup.
   // http://crbug.com/177611
-  if (gpu_info_.display_link_version.IsValid()
-      && gpu_info_.display_link_version.IsOlderThan("7.2")) {
+  // Thinkpad USB Port Replicator driver causes GPU process to crash when the
+  // sandbox is enabled. http://crbug.com/181665.
+  if ((gpu_info_.display_link_version.IsValid()
+      && gpu_info_.display_link_version.IsOlderThan("7.2")) ||
+      gpu_info_.lenovo_dcute) {
     command_line->AppendSwitch(switches::kReduceGpuSandbox);
   }
 #endif
@@ -495,7 +504,7 @@ GpuSwitchingOption GpuDataManagerImpl::GetGpuSwitchingOption() const {
   return gpu_switching_;
 }
 
-void GpuDataManagerImpl::BlacklistCard() {
+void GpuDataManagerImpl::DisableHardwareAcceleration() {
   card_blacklisted_ = true;
 
   blacklisted_features_ = GPU_FEATURE_TYPE_ALL;
@@ -513,7 +522,7 @@ std::string GpuDataManagerImpl::GetBlacklistVersion() const {
 base::ListValue* GpuDataManagerImpl::GetBlacklistReasons() const {
   ListValue* reasons = new ListValue();
   if (gpu_blacklist_.get())
-    gpu_blacklist_->GetBlacklistReasons(reasons);
+    gpu_blacklist_->GetReasons(reasons);
   return reasons;
 }
 
@@ -525,6 +534,19 @@ void GpuDataManagerImpl::AddLogMessage(
   dict->SetString("header", header);
   dict->SetString("message", message);
   log_messages_.Append(dict);
+}
+
+void GpuDataManagerImpl::ProcessCrashed(base::TerminationStatus exit_code) {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    BrowserThread::PostTask(BrowserThread::UI,
+                            FROM_HERE,
+                            base::Bind(&GpuDataManagerImpl::ProcessCrashed,
+                                       base::Unretained(this),
+                                       exit_code));
+    return;
+  }
+  observer_list_->Notify(&GpuDataManagerObserver::OnGpuProcessCrashed,
+                         exit_code);
 }
 
 base::ListValue* GpuDataManagerImpl::GetLogMessages() const {
@@ -569,9 +591,21 @@ void GpuDataManagerImpl::BlockDomainFrom3DAPIs(
   BlockDomainFrom3DAPIsAtTime(url, guilt, base::Time::Now());
 }
 
-GpuDataManagerImpl::DomainBlockStatus
-GpuDataManagerImpl::Are3DAPIsBlocked(const GURL& url) const {
-  return Are3DAPIsBlockedAtTime(url, base::Time::Now());
+bool GpuDataManagerImpl::Are3DAPIsBlocked(const GURL& url,
+                                          int render_process_id,
+                                          int render_view_id,
+                                          ThreeDAPIType requester) {
+  bool blocked = Are3DAPIsBlockedAtTime(url, base::Time::Now()) !=
+      GpuDataManagerImpl::DOMAIN_BLOCK_STATUS_NOT_BLOCKED;
+  if (blocked) {
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&GpuDataManagerImpl::Notify3DAPIBlocked,
+                   base::Unretained(this), url, render_process_id,
+                   render_view_id, requester));
+  }
+
+  return blocked;
 }
 
 void GpuDataManagerImpl::DisableDomainBlockingFor3DAPIsForTesting() {
@@ -595,7 +629,7 @@ GpuDataManagerImpl::GpuDataManagerImpl()
     command_line->AppendSwitch(switches::kDisableAcceleratedLayers);
   }
   if (command_line->HasSwitch(switches::kDisableGpu))
-    BlacklistCard();
+    DisableHardwareAcceleration();
   if (command_line->HasSwitch(switches::kGpuSwitching)) {
     std::string option_string = command_line->GetSwitchValueASCII(
         switches::kGpuSwitching);
@@ -617,17 +651,30 @@ GpuDataManagerImpl::~GpuDataManagerImpl() {
 
 void GpuDataManagerImpl::InitializeImpl(
     const std::string& gpu_blacklist_json,
+    const std::string& gpu_switching_list_json,
+    const std::string& gpu_driver_bug_list_json,
     const GPUInfo& gpu_info) {
+  std::string browser_version_string = ProcessVersionString(
+      GetContentClient()->GetProduct());
+  CHECK(!browser_version_string.empty());
+
   if (!gpu_blacklist_json.empty()) {
-    std::string browser_version_string = ProcessVersionString(
-        GetContentClient()->GetProduct());
-    CHECK(!browser_version_string.empty());
-    gpu_blacklist_.reset(new GpuBlacklist());
-    bool succeed = gpu_blacklist_->LoadGpuBlacklist(
-        browser_version_string,
-        gpu_blacklist_json,
-        GpuBlacklist::kCurrentOsOnly);
-    CHECK(succeed);
+    gpu_blacklist_.reset(GpuBlacklist::Create());
+    gpu_blacklist_->LoadList(
+        browser_version_string, gpu_blacklist_json,
+        GpuControlList::kCurrentOsOnly);
+  }
+  if (!gpu_switching_list_json.empty()) {
+    gpu_switching_list_.reset(GpuSwitchingList::Create());
+    gpu_switching_list_->LoadList(
+        browser_version_string, gpu_switching_list_json,
+        GpuControlList::kCurrentOsOnly);
+  }
+  if (!gpu_driver_bug_list_json.empty()) {
+    gpu_driver_bug_list_.reset(GpuDriverBugList::Create());
+    gpu_driver_bug_list_->LoadList(
+        browser_version_string, gpu_driver_bug_list_json,
+        GpuControlList::kCurrentOsOnly);
   }
 
   {
@@ -789,6 +836,14 @@ GpuDataManagerImpl::Are3DAPIsBlockedAtTime(
 
 int64 GpuDataManagerImpl::GetBlockAllDomainsDurationInMs() const {
   return kBlockAllDomainsMs;
+}
+
+void GpuDataManagerImpl::Notify3DAPIBlocked(const GURL& url,
+                                            int render_process_id,
+                                            int render_view_id,
+                                            ThreeDAPIType requester) {
+  observer_list_->Notify(&GpuDataManagerObserver::DidBlock3DAPIs,
+                         url, render_process_id, render_view_id, requester);
 }
 
 }  // namespace content

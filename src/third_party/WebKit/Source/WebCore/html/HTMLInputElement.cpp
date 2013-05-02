@@ -137,7 +137,7 @@ HTMLInputElement::HTMLInputElement(const QualifiedName& tagName, Document* docum
 {
     ASSERT(hasTagName(inputTag) || hasTagName(isindexTag));
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    setHasCustomCallbacks();
+    setHasCustomStyleCallbacks();
 #endif
 }
 
@@ -378,12 +378,6 @@ void HTMLInputElement::defaultBlur()
     HTMLTextFormControlElement::blur();
 }
 
-void HTMLInputElement::focus(bool restorePreviousSelection, FocusDirection direction)
-{
-    if (!m_inputType->willCancelFocus(restorePreviousSelection, direction))
-        HTMLTextFormControlElement::focus(restorePreviousSelection, direction);
-}
-
 bool HTMLInputElement::hasCustomFocusLogic() const
 {
     return m_inputType->hasCustomFocusLogic();
@@ -441,9 +435,9 @@ bool HTMLInputElement::shouldUseInputMethod()
     return m_inputType->shouldUseInputMethod();
 }
 
-void HTMLInputElement::handleFocusEvent(FocusDirection direction)
+void HTMLInputElement::handleFocusEvent(Node* oldFocusedNode, FocusDirection direction)
 {
-    m_inputType->handleFocusEvent(direction);
+    m_inputType->handleFocusEvent(oldFocusedNode, direction);
 }
 
 void HTMLInputElement::handleBlurEvent()
@@ -529,12 +523,12 @@ void HTMLInputElement::updateType()
         registerForSuspensionCallbackIfNeeded();
 
     if (didRespectHeightAndWidth != m_inputType->shouldRespectHeightAndWidthAttributes()) {
-        ASSERT(attributeData());
-        if (Attribute* height = getAttributeItem(heightAttr))
+        ASSERT(elementData());
+        if (const Attribute* height = getAttributeItem(heightAttr))
             attributeChanged(heightAttr, height->value());
-        if (Attribute* width = getAttributeItem(widthAttr))
+        if (const Attribute* width = getAttributeItem(widthAttr))
             attributeChanged(widthAttr, width->value());
-        if (Attribute* align = getAttributeItem(alignAttr))
+        if (const Attribute* align = getAttributeItem(alignAttr))
             attributeChanged(alignAttr, align->value());
     }
 
@@ -609,27 +603,27 @@ bool HTMLInputElement::isPresentationAttribute(const QualifiedName& name) const
     return HTMLTextFormControlElement::isPresentationAttribute(name);
 }
 
-void HTMLInputElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
+void HTMLInputElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {
-    if (attribute.name() == vspaceAttr) {
-        addHTMLLengthToStyle(style, CSSPropertyMarginTop, attribute.value());
-        addHTMLLengthToStyle(style, CSSPropertyMarginBottom, attribute.value());
-    } else if (attribute.name() == hspaceAttr) {
-        addHTMLLengthToStyle(style, CSSPropertyMarginLeft, attribute.value());
-        addHTMLLengthToStyle(style, CSSPropertyMarginRight, attribute.value());
-    } else if (attribute.name() == alignAttr) {
+    if (name == vspaceAttr) {
+        addHTMLLengthToStyle(style, CSSPropertyMarginTop, value);
+        addHTMLLengthToStyle(style, CSSPropertyMarginBottom, value);
+    } else if (name == hspaceAttr) {
+        addHTMLLengthToStyle(style, CSSPropertyMarginLeft, value);
+        addHTMLLengthToStyle(style, CSSPropertyMarginRight, value);
+    } else if (name == alignAttr) {
         if (m_inputType->shouldRespectAlignAttribute())
-            applyAlignmentAttributeToStyle(attribute, style);
-    } else if (attribute.name() == widthAttr) {
+            applyAlignmentAttributeToStyle(value, style);
+    } else if (name == widthAttr) {
         if (m_inputType->shouldRespectHeightAndWidthAttributes())
-            addHTMLLengthToStyle(style, CSSPropertyWidth, attribute.value());
-    } else if (attribute.name() == heightAttr) {
+            addHTMLLengthToStyle(style, CSSPropertyWidth, value);
+    } else if (name == heightAttr) {
         if (m_inputType->shouldRespectHeightAndWidthAttributes())
-            addHTMLLengthToStyle(style, CSSPropertyHeight, attribute.value());
-    } else if (attribute.name() == borderAttr && isImageButton())
-        applyBorderAttributeToStyle(attribute, style);
+            addHTMLLengthToStyle(style, CSSPropertyHeight, value);
+    } else if (name == borderAttr && isImageButton())
+        applyBorderAttributeToStyle(value, style);
     else
-        HTMLTextFormControlElement::collectStyleForPresentationAttribute(attribute, style);
+        HTMLTextFormControlElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
 void HTMLInputElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -671,6 +665,7 @@ void HTMLInputElement::parseAttribute(const QualifiedName& name, const AtomicStr
         setFormControlValueMatchesRenderer(false);
         setNeedsValidityCheck();
         m_valueAttributeWasUpdatedAfterParsing = !m_parsingInProgress;
+        m_inputType->valueAttributeChanged();
     } else if (name == checkedAttr) {
         // Another radio button in the same group might be checked by state
         // restore. We shouldn't call setChecked() even if this has the checked
@@ -779,7 +774,7 @@ void HTMLInputElement::parseAttribute(const QualifiedName& name, const AtomicStr
 #endif
     else
         HTMLTextFormControlElement::parseAttribute(name, value);
-    m_inputType->updateInnerTextValue();
+    m_inputType->attributeChanged();
 }
 
 void HTMLInputElement::finishParsingChildren()
@@ -1075,7 +1070,7 @@ double HTMLInputElement::valueAsNumber() const
 
 void HTMLInputElement::setValueAsNumber(double newValue, ExceptionCode& ec, TextFieldEventBehavior eventBehavior)
 {
-    if (!isfinite(newValue)) {
+    if (!std::isfinite(newValue)) {
         ec = NOT_SUPPORTED_ERR;
         return;
     }
@@ -1480,6 +1475,11 @@ void HTMLInputElement::onSearch()
     dispatchEvent(Event::create(eventNames().searchEvent, true, false));
 }
 
+void HTMLInputElement::updateClearButtonVisibility()
+{
+    m_inputType->updateClearButtonVisibility();
+}
+
 void HTMLInputElement::documentDidResumeFromPageCache()
 {
     ASSERT(needsSuspensionCallback());
@@ -1566,6 +1566,7 @@ void HTMLInputElement::requiredAttributeChanged()
     HTMLTextFormControlElement::requiredAttributeChanged();
     if (CheckedRadioButtons* buttons = checkedRadioButtons())
         buttons->requiredAttributeChanged(this);
+    m_inputType->requiredAttributeChanged();
 }
 
 #if ENABLE(INPUT_TYPE_COLOR)

@@ -38,9 +38,10 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
         int command_id,
         ui::Accelerator* accelerator) = 0;
 
-    // Some command ids have labels and icons that change over time.
+    // Some command ids have labels, sublabels and icons that change over time.
     virtual bool IsItemForCommandIdDynamic(int command_id) const;
     virtual string16 GetLabelForCommandId(int command_id) const;
+    virtual string16 GetSublabelForCommandId(int command_id) const;
     // Gets the icon for the item with the specified id, returning true if there
     // is an icon, false otherwise.
     virtual bool GetIconForCommandId(int command_id,
@@ -50,11 +51,10 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
     // visually highlighted within the menu.
     virtual void CommandIdHighlighted(int command_id);
 
-    // Performs the action associated with the specified command id.
-    virtual void ExecuteCommand(int command_id) = 0;
-    // Performs the action associates with the specified command id
-    // with |event_flags|.
-    virtual void ExecuteCommand(int command_id, int event_flags);
+    // Performs the action associates with the specified command id.
+    // The passed |event_flags| are the flags from the event which issued this
+    // command and they can be examined to find modifier keys.
+    virtual void ExecuteCommand(int command_id, int event_flags) = 0;
 
     // Notifies the delegate that the menu is about to show.
     virtual void MenuWillShow(SimpleMenuModel* source);
@@ -114,6 +114,9 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
   // Sets the icon for the item at |index|.
   void SetIcon(int index, const gfx::Image& icon);
 
+  // Sets the sublabel for the item at |index|.
+  void SetSublabel(int index, const string16& sublabel);
+
   // Clears all items. Note that it does not free MenuModel of submenu.
   void Clear();
 
@@ -128,6 +131,7 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
   virtual ui::MenuSeparatorType GetSeparatorTypeAt(int index) const OVERRIDE;
   virtual int GetCommandIdAt(int index) const OVERRIDE;
   virtual string16 GetLabelAt(int index) const OVERRIDE;
+  virtual string16 GetSublabelAt(int index) const OVERRIDE;
   virtual bool IsItemDynamicAt(int index) const OVERRIDE;
   virtual bool GetAcceleratorAt(int index,
                                 ui::Accelerator* accelerator) const OVERRIDE;

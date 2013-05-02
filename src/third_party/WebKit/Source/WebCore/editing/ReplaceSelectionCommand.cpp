@@ -55,9 +55,9 @@
 #include "StylePropertySet.h"
 #include "Text.h"
 #include "TextIterator.h"
+#include "VisibleUnits.h"
 #include "htmlediting.h"
 #include "markup.h"
-#include "visible_units.h"
 #include <wtf/StdLibExtras.h>
 #include <wtf/Vector.h>
 
@@ -356,6 +356,14 @@ inline void ReplaceSelectionCommand::InsertedNodes::willRemoveNode(Node* node)
         m_lastNodeInserted = NodeTraversal::previousSkippingChildren(m_lastNodeInserted.get());
 }
 
+inline void ReplaceSelectionCommand::InsertedNodes::didReplaceNode(Node* node, Node* newNode)
+{
+    if (m_firstNodeInserted == node)
+        m_firstNodeInserted = newNode;
+    if (m_lastNodeInserted == node)
+        m_lastNodeInserted = newNode;
+}
+
 ReplaceSelectionCommand::ReplaceSelectionCommand(Document* document, PassRefPtr<DocumentFragment> fragment, CommandOptions options, EditAction editAction)
     : CompositeEditCommand(document)
     , m_selectReplacement(options & SelectReplacement)
@@ -418,10 +426,10 @@ bool ReplaceSelectionCommand::shouldMergeEnd(bool selectionEndWasEndOfParagraph)
 
 static bool isMailPasteAsQuotationNode(const Node* node)
 {
-    return node && node->hasTagName(blockquoteTag) && node->isElementNode() && static_cast<const Element*>(node)->getAttribute(classAttr) == ApplePasteAsQuotation;
+    return node && node->hasTagName(blockquoteTag) && node->isElementNode() && toElement(node)->getAttribute(classAttr) == ApplePasteAsQuotation;
 }
 
-static bool isHeaderElement(Node* a)
+static bool isHeaderElement(const Node* a)
 {
     if (!a)
         return false;
@@ -436,7 +444,7 @@ static bool isHeaderElement(Node* a)
 
 static bool haveSameTagName(Node* a, Node* b)
 {
-    return a && b && a->isElementNode() && b->isElementNode() && static_cast<Element*>(a)->tagName() == static_cast<Element*>(b)->tagName();
+    return a && b && a->isElementNode() && b->isElementNode() && toElement(a)->tagName() == toElement(b)->tagName();
 }
 
 bool ReplaceSelectionCommand::shouldMerge(const VisiblePosition& source, const VisiblePosition& destination)
@@ -476,6 +484,23 @@ void ReplaceSelectionCommand::removeRedundantStylesAndKeepStyleSpanInline(Insert
         const StylePropertySet* inlineStyle = element->inlineStyle();
         RefPtr<EditingStyle> newInlineStyle = EditingStyle::create(inlineStyle);
         if (inlineStyle) {
+            if (element->isHTMLElement()) {
+                Vector<QualifiedName> attributes;
+                HTMLElement* htmlElement = toHTMLElement(element);
+
+                if (newInlineStyle->conflictsWithImplicitStyleOfElement(htmlElement)) {
+                    // e.g. <b style="font-weight: normal;"> is converted to <span style="font-weight: normal;">
+                    node = replaceElementWithSpanPreservingChildrenAndAttributes(htmlElement);
+                    element = static_cast<StyledElement*>(node.get());
+                    insertedNodes.didReplaceNode(htmlElement, node.get());
+                } else if (newInlineStyle->extractConflictingImplicitStyleOfAttributes(htmlElement, EditingStyle::PreserveWritingDirection, 0, attributes,
+                    EditingStyle::DoNotExtractMatchingStyle)) {
+                    // e.g. <font size="3" style="font-size: 20px;"> is converted to <font style="font-size: 20px;">
+                    for (size_t i = 0; i < attributes.size(); i++)
+                        removeNodeAttribute(element, attributes[i]);
+                }
+            }
+
             ContainerNode* context = element->parentNode();
 
             // If Mail wraps the fragment with a Paste as Quotation blockquote, or if you're pasting into a quoted region,
@@ -488,12 +513,12 @@ void ReplaceSelectionCommand::removeRedundantStylesAndKeepStyleSpanInline(Insert
         }
 
         if (!inlineStyle || newInlineStyle->isEmpty()) {
-            if (isStyleSpanOrSpanWithOnlyStyleAttribute(element)) {
+            if (isStyleSpanOrSpanWithOnlyStyleAttribute(element) || isEmptyFontTag(element, AllowNonEmptyStyleAttribute)) {
                 insertedNodes.willRemoveNodePreservingChildren(element);
                 removeNodePreservingChildren(element);
                 continue;
-            } else
-                removeNodeAttribute(element, styleAttr);
+            }
+            removeNodeAttribute(element, styleAttr);
         } else if (newInlineStyle->style()->propertyCount() != inlineStyle->propertyCount())
             setNodeAttribute(element, styleAttr, newInlineStyle->style()->asText());
 
@@ -531,6 +556,107 @@ void ReplaceSelectionCommand::removeRedundantStylesAndKeepStyleSpanInline(Insert
                 element->style()->setPropertyInternal(CSSPropertyFloat, "none", false, IGNORE_EXCEPTION);
         }
     }
+}
+
+static bool isProhibitedParagraphChild(const AtomicString& name)
+{
+    // https://dvcs.w3.org/hg/editing/raw-file/57abe6d3cb60/editing.html#prohibited-paragraph-child
+    DEFINE_STATIC_LOCAL(HashSet<AtomicString>, elements, ());
+    if (elements.isEmpty()) {
+        elements.add(addressTag.localName());
+        elements.add(articleTag.localName());
+        elements.add(asideTag.localName());
+        elements.add(blockquoteTag.localName());
+        elements.add(captionTag.localName());
+        elements.add(centerTag.localName());
+        elements.add(colTag.localName());
+        elements.add(colgroupTag.localName());
+        elements.add(ddTag.localName());
+        elements.add(detailsTag.localName());
+        elements.add(dirTag.localName());
+        elements.add(divTag.localName());
+        elements.add(dlTag.localName());
+        elements.add(dtTag.localName());
+        elements.add(fieldsetTag.localName());
+        elements.add(figcaptionTag.localName());
+        elements.add(figureTag.localName());
+        elements.add(footerTag.localName());
+        elements.add(formTag.localName());
+        elements.add(h1Tag.localName());
+        elements.add(h2Tag.localName());
+        elements.add(h3Tag.localName());
+        elements.add(h4Tag.localName());
+        elements.add(h5Tag.localName());
+        elements.add(h6Tag.localName());
+        elements.add(headerTag.localName());
+        elements.add(hgroupTag.localName());
+        elements.add(hrTag.localName());
+        elements.add(liTag.localName());
+        elements.add(listingTag.localName());
+        elements.add(mainTag.localName()); // Missing in the specification.
+        elements.add(menuTag.localName());
+        elements.add(navTag.localName());
+        elements.add(olTag.localName());
+        elements.add(pTag.localName());
+        elements.add(plaintextTag.localName());
+        elements.add(preTag.localName());
+        elements.add(sectionTag.localName());
+        elements.add(summaryTag.localName());
+        elements.add(tableTag.localName());
+        elements.add(tbodyTag.localName());
+        elements.add(tdTag.localName());
+        elements.add(tfootTag.localName());
+        elements.add(thTag.localName());
+        elements.add(theadTag.localName());
+        elements.add(trTag.localName());
+        elements.add(ulTag.localName());
+        elements.add(xmpTag.localName());
+    }
+    return elements.contains(name);
+}
+
+void ReplaceSelectionCommand::makeInsertedContentRoundTrippableWithHTMLTreeBuilder(InsertedNodes& insertedNodes)
+{
+    RefPtr<Node> pastEndNode = insertedNodes.pastLastLeaf();
+    RefPtr<Node> next;
+    for (RefPtr<Node> node = insertedNodes.firstNodeInserted(); node && node != pastEndNode; node = next) {
+        next = NodeTraversal::next(node.get());
+
+        if (!node->isHTMLElement())
+            continue;
+
+        if (isProhibitedParagraphChild(toHTMLElement(node.get())->localName())) {
+            if (HTMLElement* paragraphElement = toHTMLElement(enclosingNodeWithTag(positionInParentBeforeNode(node.get()), pTag)))
+                moveNodeOutOfAncestor(node, paragraphElement);
+        }
+
+        if (isHeaderElement(node.get())) {
+            if (HTMLElement* headerElement = static_cast<HTMLElement*>(highestEnclosingNodeOfType(positionInParentBeforeNode(node.get()), isHeaderElement)))
+                moveNodeOutOfAncestor(node, headerElement);
+        }
+    }
+}
+
+void ReplaceSelectionCommand::moveNodeOutOfAncestor(PassRefPtr<Node> prpNode, PassRefPtr<Node> prpAncestor)
+{
+    RefPtr<Node> node = prpNode;
+    RefPtr<Node> ancestor = prpAncestor;
+
+    VisiblePosition positionAtEndOfNode = lastPositionInOrAfterNode(node.get());
+    VisiblePosition lastPositionInParagraph = lastPositionInNode(ancestor.get());
+    if (positionAtEndOfNode == lastPositionInParagraph) {
+        removeNode(node);
+        if (ancestor->nextSibling())
+            insertNodeBefore(node, ancestor->nextSibling());
+        else
+            appendNode(node, ancestor->parentNode());
+    } else {
+        RefPtr<Node> nodeToSplitTo = splitTreeToNode(node.get(), ancestor.get(), true);
+        removeNode(node);
+        insertNodeBefore(node, nodeToSplitTo);
+    }
+    if (!ancestor->firstChild())
+        removeNode(ancestor.release());
 }
 
 static inline bool nodeHasVisibleRenderText(Text* text)
@@ -610,7 +736,7 @@ static bool handleStyleSpansBeforeInsertion(ReplacementFragment& fragment, const
 
     // FIXME: This string comparison is a naive way of comparing two styles.
     // We should be taking the diff and check that the diff is empty.
-    if (styleText != static_cast<Element*>(wrappingStyleSpan)->getAttribute(styleAttr))
+    if (styleText != toElement(wrappingStyleSpan)->getAttribute(styleAttr))
         return false;
 
     fragment.removeNodePreservingChildren(wrappingStyleSpan);
@@ -643,7 +769,7 @@ void ReplaceSelectionCommand::handleStyleSpans(InsertedNodes& insertedNodes)
     if (!wrappingStyleSpan)
         return;
 
-    RefPtr<EditingStyle> style = EditingStyle::create(wrappingStyleSpan->ensureMutableInlineStyle());
+    RefPtr<EditingStyle> style = EditingStyle::create(wrappingStyleSpan->inlineStyle());
     ContainerNode* context = wrappingStyleSpan->parentNode();
 
     // If Mail wraps the fragment with a Paste as Quotation blockquote, or if you're pasting into a quoted region,
@@ -716,11 +842,11 @@ void ReplaceSelectionCommand::mergeEndIfNeeded()
 static Node* enclosingInline(Node* node)
 {
     while (ContainerNode* parent = node->parentNode()) {
-        if (parent->isBlockFlow() || parent->hasTagName(bodyTag))
+        if (parent->isBlockFlowElement() || parent->hasTagName(bodyTag))
             return node;
         // Stop if any previous sibling is a block.
         for (Node* sibling = node->previousSibling(); sibling; sibling = sibling->previousSibling()) {
-            if (sibling->isBlockFlow())
+            if (sibling->isBlockFlowElement())
                 return node;
         }
         node = parent;
@@ -1003,6 +1129,8 @@ void ReplaceSelectionCommand::doApply()
             removeNode(nodeToRemove);
         }
     }
+    
+    makeInsertedContentRoundTrippableWithHTMLTreeBuilder(insertedNodes);
 
     removeRedundantStylesAndKeepStyleSpanInline(insertedNodes);
 
@@ -1083,7 +1211,7 @@ void ReplaceSelectionCommand::doApply()
         mergeEndIfNeeded();
 
     if (Node* mailBlockquote = enclosingNodeOfType(positionAtStartOfInsertedContent().deepEquivalent(), isMailPasteAsQuotationNode))
-        removeNodeAttribute(static_cast<Element*>(mailBlockquote), classAttr);
+        removeNodeAttribute(toElement(mailBlockquote), classAttr);
 
     if (shouldPerformSmartReplace())
         addSpacesForSmartReplace();
@@ -1316,8 +1444,6 @@ Node* ReplaceSelectionCommand::insertAsListItems(PassRefPtr<HTMLElement> prpList
     }
     if (isStart || isMiddle)
         lastNode = lastNode->previousSibling();
-    if (isMiddle)
-        insertNodeAfter(createListItemElement(document()), lastNode);
     return lastNode;
 }
 

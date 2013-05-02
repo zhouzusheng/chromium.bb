@@ -72,9 +72,6 @@ public:
     void setRemoteDescription(PassRefPtr<RTCSessionDescription>, PassRefPtr<VoidCallback>, PassRefPtr<RTCErrorCallback>, ExceptionCode&);
     PassRefPtr<RTCSessionDescription> remoteDescription(ExceptionCode&);
 
-    // DEPRECATED
-    String readyState() const;
-
     String signalingState() const;
 
     void updateIce(const Dictionary& rtcConfiguration, const Dictionary& mediaConstraints, ExceptionCode&);
@@ -88,6 +85,8 @@ public:
     MediaStreamVector getLocalStreams() const;
 
     MediaStreamVector getRemoteStreams() const;
+
+    MediaStream* getStreamById(const String& streamId);
 
     void addStream(PassRefPtr<MediaStream>, const Dictionary& mediaConstraints, ExceptionCode&);
 
@@ -103,11 +102,10 @@ public:
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(negotiationneeded);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(icecandidate);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(statechange);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(signalingstatechange);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(addstream);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(removestream);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(gatheringchange);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(icechange);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(iceconnectionstatechange);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(datachannel);
 
     // RTCPeerConnectionHandlerClient

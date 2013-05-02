@@ -6,18 +6,18 @@
 #define WEBKIT_COMPOSITOR_BINDINGS_WEB_TO_CCSCROLLBAR_THEME_PAINTER_ADAPTER_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "cc/scrollbar_theme_painter.h"
+#include "cc/layers/scrollbar_theme_painter.h"
 
-namespace WebKit {
+namespace WebKit { class WebScrollbarThemePainter; }
 
-class WebScrollbarThemePainter;
+namespace webkit {
 
 class WebToCCScrollbarThemePainterAdapter : public cc::ScrollbarThemePainter {
  public:
   static scoped_ptr<WebToCCScrollbarThemePainterAdapter> Create(
-      scoped_ptr<WebScrollbarThemePainter> webPainter) {
-    return make_scoped_ptr(new WebToCCScrollbarThemePainterAdapter(
-        webPainter.Pass()));
+      scoped_ptr<WebKit::WebScrollbarThemePainter> web_painter) {
+    return make_scoped_ptr(
+        new WebToCCScrollbarThemePainterAdapter(web_painter.Pass()));
   }
   virtual ~WebToCCScrollbarThemePainterAdapter();
 
@@ -37,19 +37,18 @@ class WebToCCScrollbarThemePainterAdapter : public cc::ScrollbarThemePainter {
       OVERRIDE;
   virtual void PaintForwardButtonEnd(SkCanvas* canvas, const gfx::Rect& rect)
       OVERRIDE;
-  virtual void PaintTickmarks(SkCanvas* canvas, const gfx::Rect& rect)
-      OVERRIDE;
-  virtual void PaintThumb(SkCanvas* canvas, const gfx::Rect& rect)
-      OVERRIDE;
+  virtual void PaintTickmarks(SkCanvas* canvas, const gfx::Rect& rect) OVERRIDE;
+  virtual void PaintThumb(SkCanvas* canvas, const gfx::Rect& rect) OVERRIDE;
 
  private:
-  WebToCCScrollbarThemePainterAdapter(
-      scoped_ptr<WebScrollbarThemePainter> webPainter)
-      : painter_(webPainter.Pass()) {}
+  explicit WebToCCScrollbarThemePainterAdapter(
+      scoped_ptr<WebKit::WebScrollbarThemePainter> web_painter);
 
-  scoped_ptr<WebScrollbarThemePainter> painter_;
+  scoped_ptr<WebKit::WebScrollbarThemePainter> painter_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebToCCScrollbarThemePainterAdapter);
 };
 
-}  // namespace WebKit
+}  // namespace webkit
 
 #endif  // WEBKIT_COMPOSITOR_BINDINGS_WEB_TO_CCSCROLLBAR_THEME_PAINTER_ADAPTER_H_

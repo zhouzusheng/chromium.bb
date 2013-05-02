@@ -221,11 +221,22 @@ bool InspectorClientImpl::captureScreenshot(String* data)
     return false;
 }
 
-bool InspectorClientImpl::handleJavaScriptDialog(bool accept)
+bool InspectorClientImpl::handleJavaScriptDialog(bool accept, const String* promptText)
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        return agent->handleJavaScriptDialog(accept);
+        return agent->handleJavaScriptDialog(accept, promptText);
     return false;
+}
+
+bool InspectorClientImpl::canSetFileInputFiles()
+{
+    return true;
+}
+
+void InspectorClientImpl::setTraceEventCallback(TraceEventCallback callback)
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->setTraceEventCallback(callback);
 }
 
 WebDevToolsAgentImpl* InspectorClientImpl::devToolsAgent()

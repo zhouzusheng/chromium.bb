@@ -33,7 +33,6 @@
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
 class ChildProcessSecurityPolicyTest;
-class ComponentUpdateInterceptor;
 class TestAutomationProvider;
 class URLRequestAutomationJob;
 
@@ -59,23 +58,10 @@ class ResourceDispatcherHostTest;
 
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
-namespace extensions {
-class AutoUpdateInterceptor;
-class UserScriptListenerTest;
-}
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
 namespace fileapi {
 class FileSystemDirURLRequestJobTest;
 class FileSystemURLRequestJobTest;
 class FileWriterDelegateTest;
-}
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
-namespace policy {
-class CannedResponseInterceptor;
 }
 
 // Temporary layering violation to allow existing users of a deprecated
@@ -206,7 +192,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     static ProtocolFactory* RegisterProtocolFactory(const std::string& scheme,
                                                     ProtocolFactory* factory);
 
-    // Use URLRequestJobFactory::Interceptor instead.
+    // TODO(pauljensen): Remove this when AppCacheInterceptor is a
+    // ProtocolHandler, see crbug.com/161547.
     static void RegisterRequestInterceptor(Interceptor* interceptor);
     static void UnregisterRequestInterceptor(Interceptor* interceptor);
 
@@ -628,11 +615,9 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // Returns the priority level for this request.
   RequestPriority priority() const { return priority_; }
-  void set_priority(RequestPriority priority) {
-    DCHECK_GE(priority, MINIMUM_PRIORITY);
-    DCHECK_LT(priority, NUM_PRIORITIES);
-    priority_ = priority;
-  }
+
+  // Sets the priority level for this request and any related jobs.
+  void SetPriority(RequestPriority priority);
 
   // Returns true iff this request would be internally redirected to HTTPS
   // due to HSTS. If so, |redirect_url| is rewritten to the new HTTPS URL.

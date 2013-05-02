@@ -21,8 +21,11 @@
 
 namespace webrtc {
 
+enum { kMaxReceiverDelayMs = 10000 };
+
 VCMReceiver::VCMReceiver(VCMTiming* timing,
                          Clock* clock,
+                         EventFactory* event_factory,
                          int32_t vcm_id,
                          int32_t receiver_id,
                          bool master)
@@ -31,13 +34,14 @@ VCMReceiver::VCMReceiver(VCMTiming* timing,
       clock_(clock),
       receiver_id_(receiver_id),
       master_(master),
-      jitter_buffer_(clock_, vcm_id, receiver_id, master),
+      jitter_buffer_(clock_, event_factory, vcm_id, receiver_id, master),
       timing_(timing),
-      render_wait_event_(),
-      state_(kPassive) {}
+      render_wait_event_(event_factory->CreateEvent()),
+      state_(kPassive),
+      max_video_delay_ms_(kMaxVideoDelayMs) {}
 
 VCMReceiver::~VCMReceiver() {
-  render_wait_event_.Set();
+  render_wait_event_->Set();
   delete crit_sect_;
 }
 
@@ -48,7 +52,7 @@ void VCMReceiver::Reset() {
   } else {
     jitter_buffer_.Flush();
   }
-  render_wait_event_.Reset();
+  render_wait_event_->Reset();
   if (master_) {
     state_ = kReceiving;
   } else {
@@ -60,7 +64,7 @@ int32_t VCMReceiver::Initialize() {
   CriticalSectionScoped cs(crit_sect_);
   Reset();
   if (!master_) {
-    SetNackMode(kNoNack);
+    SetNackMode(kNoNack, -1, -1);
   }
   return VCM_OK;
 }
@@ -69,7 +73,8 @@ void VCMReceiver::UpdateRtt(uint32_t rtt) {
   jitter_buffer_.UpdateRtt(rtt);
 }
 
-int32_t VCMReceiver::InsertPacket(const VCMPacket& packet, uint16_t frame_width,
+int32_t VCMReceiver::InsertPacket(const VCMPacket& packet,
+                                  uint16_t frame_width,
                                   uint16_t frame_height) {
   // Find an empty frame.
   VCMEncodedFrame* buffer = NULL;
@@ -108,20 +113,21 @@ int32_t VCMReceiver::InsertPacket(const VCMPacket& packet, uint16_t frame_width,
       jitter_buffer_.Flush();
       timing_->Reset(clock_->TimeInMilliseconds());
       return VCM_FLUSH_INDICATOR;
-    } else if (render_time_ms < now_ms - kMaxVideoDelayMs) {
+    } else if (render_time_ms < now_ms - max_video_delay_ms_) {
       WEBRTC_TRACE(webrtc::kTraceWarning, webrtc::kTraceVideoCoding,
                    VCMId(vcm_id_, receiver_id_),
                    "This frame should have been rendered more than %u ms ago."
                    "Flushing jitter buffer and resetting timing.",
-                   kMaxVideoDelayMs);
+                   max_video_delay_ms_);
       jitter_buffer_.Flush();
       timing_->Reset(clock_->TimeInMilliseconds());
       return VCM_FLUSH_INDICATOR;
-    } else if (timing_->TargetVideoDelay() > kMaxVideoDelayMs) {
+    } else if (static_cast<int>(timing_->TargetVideoDelay()) >
+               max_video_delay_ms_) {
       WEBRTC_TRACE(webrtc::kTraceWarning, webrtc::kTraceVideoCoding,
                    VCMId(vcm_id_, receiver_id_),
                    "More than %u ms target delay. Flushing jitter buffer and"
-                   "resetting timing.", kMaxVideoDelayMs);
+                   "resetting timing.", max_video_delay_ms_);
       jitter_buffer_.Flush();
       timing_->Reset(clock_->TimeInMilliseconds());
       return VCM_FLUSH_INDICATOR;
@@ -239,7 +245,7 @@ VCMEncodedFrame* VCMReceiver::FrameForDecoding(
     // No time to wait for a complete frame, check if we have an incomplete.
     const bool dual_receiver_enabled_and_passive = (dual_receiver != NULL &&
         dual_receiver->State() == kPassive &&
-        dual_receiver->NackMode() == kNackInfinite);
+        dual_receiver->NackMode() == kNack);
     if (dual_receiver_enabled_and_passive &&
         !jitter_buffer_.CompleteSequenceWithNextFrame()) {
       // Jitter buffer state might get corrupt with this frame.
@@ -265,7 +271,7 @@ VCMEncodedFrame* VCMReceiver::FrameForDecoding(
     // No time left to wait, we must decode this frame now.
     const bool dual_receiver_enabled_and_passive = (dual_receiver != NULL &&
         dual_receiver->State() == kPassive &&
-        dual_receiver->NackMode() == kNackInfinite);
+        dual_receiver->NackMode() == kNack);
     if (dual_receiver_enabled_and_passive &&
         !jitter_buffer_.CompleteSequenceWithNextFrame()) {
       // Jitter buffer state might get corrupt with this frame.
@@ -293,7 +299,7 @@ VCMEncodedFrame* VCMReceiver::FrameForRendering(uint16_t max_wait_time_ms,
     return NULL;
   }
   // Wait until it's time to render.
-  render_wait_event_.Wait(wait_time_ms);
+  render_wait_event_->Wait(wait_time_ms);
 
   // Get a complete frame if possible.
   VCMEncodedFrame* frame = jitter_buffer_.GetCompleteFrameForDecoding(0);
@@ -302,7 +308,7 @@ VCMEncodedFrame* VCMReceiver::FrameForRendering(uint16_t max_wait_time_ms,
     // Get an incomplete frame.
     const bool dual_receiver_enabled_and_passive = (dual_receiver != NULL &&
         dual_receiver->State() == kPassive &&
-        dual_receiver->NackMode() == kNackInfinite);
+        dual_receiver->NackMode() == kNack);
     if (dual_receiver_enabled_and_passive &&
         !jitter_buffer_.CompleteSequenceWithNextFrame()) {
       // Jitter buffer state might get corrupt with this frame.
@@ -336,10 +342,13 @@ uint32_t VCMReceiver::DiscardedPackets() const {
   return jitter_buffer_.num_discarded_packets();
 }
 
-void VCMReceiver::SetNackMode(VCMNackMode nackMode) {
+void VCMReceiver::SetNackMode(VCMNackMode nackMode,
+                              int low_rtt_nack_threshold_ms,
+                              int high_rtt_nack_threshold_ms) {
   CriticalSectionScoped cs(crit_sect_);
   // Default to always having NACK enabled in hybrid mode.
-  jitter_buffer_.SetNackMode(nackMode, kLowRttNackMs, -1);
+  jitter_buffer_.SetNackMode(nackMode, low_rtt_nack_threshold_ms,
+                             high_rtt_nack_threshold_ms);
   if (!master_) {
     state_ = kPassive;  // The dual decoder defaults to passive.
   }
@@ -357,24 +366,21 @@ VCMNackMode VCMReceiver::NackMode() const {
 }
 
 VCMNackStatus VCMReceiver::NackList(uint16_t* nack_list,
-                                    uint16_t* size) {
-  bool extended = false;
-  uint16_t nack_list_size = 0;
-  uint16_t* internal_nack_list = jitter_buffer_.CreateNackList(&nack_list_size,
-                                                               &extended);
-  if (internal_nack_list == NULL && nack_list_size == 0xffff) {
+                                    uint16_t size,
+                                    uint16_t* nack_list_length) {
+  bool request_key_frame = false;
+  uint16_t* internal_nack_list = jitter_buffer_.GetNackList(
+      nack_list_length, &request_key_frame);
+  if (request_key_frame) {
     // This combination is used to trigger key frame requests.
-    *size = 0;
     return kNackKeyFrameRequest;
   }
-  if (nack_list_size > *size) {
-    *size = nack_list_size;
+  if (*nack_list_length > size) {
     return kNackNeedMoreMemory;
   }
-  if (internal_nack_list != NULL && nack_list_size > 0) {
-    memcpy(nack_list, internal_nack_list, nack_list_size * sizeof(uint16_t));
+  if (internal_nack_list != NULL && *nack_list_length > 0) {
+    memcpy(nack_list, internal_nack_list, *nack_list_length * sizeof(uint16_t));
   }
-  *size = nack_list_size;
   return kNackOk;
 }
 
@@ -400,6 +406,17 @@ void VCMReceiver::CopyJitterBufferStateFromReceiver(
 VCMReceiverState VCMReceiver::State() const {
   CriticalSectionScoped cs(crit_sect_);
   return state_;
+}
+
+int VCMReceiver::SetMinReceiverDelay(int desired_delay_ms) {
+  CriticalSectionScoped cs(crit_sect_);
+  if (desired_delay_ms < 0 || desired_delay_ms > kMaxReceiverDelayMs) {
+    return -1;
+  }
+  jitter_buffer_.SetMaxJitterEstimate(desired_delay_ms);
+  max_video_delay_ms_ = desired_delay_ms + kMaxVideoDelayMs;
+  timing_->SetMaxVideoDelay(max_video_delay_ms_);
+  return 0;
 }
 
 void VCMReceiver::UpdateState(VCMReceiverState new_state) {

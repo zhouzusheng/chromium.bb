@@ -186,9 +186,6 @@ PlatformGestureEventBuilder::PlatformGestureEventBuilder(Widget* widget, const W
     case WebInputEvent::GestureTapCancel:
         m_type = PlatformEvent::GestureTapDownCancel;
         break;
-    case WebInputEvent::GestureDoubleTap:
-        m_type = PlatformEvent::GestureDoubleTap;
-        break;
     case WebInputEvent::GestureTwoFingerTap:
         m_type = PlatformEvent::GestureTwoFingerTap;
         m_area = expandedIntSize(FloatSize(e.data.twoFingerTap.firstFingerWidth / scale, e.data.twoFingerTap.firstFingerHeight / scale));
@@ -433,8 +430,10 @@ static void updateWebMouseEventFromWebCoreMouseEvent(const MouseRelatedEvent& ev
     webEvent.timeStampSeconds = event.timeStamp() / millisPerSecond;
     webEvent.modifiers = getWebInputModifiers(event);
 
-    ScrollView* view = widget.root();
-    IntPoint windowPoint = view->contentsToWindow(IntPoint(event.absoluteLocation().x(), event.absoluteLocation().y()));
+    ScrollView* view = widget.parent();
+    IntPoint windowPoint = IntPoint(event.absoluteLocation().x(), event.absoluteLocation().y());
+    if (view)
+        windowPoint = view->contentsToWindow(windowPoint);
     webEvent.globalX = event.screenX();
     webEvent.globalY = event.screenY();
     webEvent.windowX = windowPoint.x();

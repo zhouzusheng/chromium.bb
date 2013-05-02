@@ -40,6 +40,8 @@
 
 // TODO(svenpanne) Remove me when the Chrome bindings are adapted.
 #define V8_DISABLE_DEPRECATIONS 1
+// TODO(dcarney): Remove once Latin-1 transitions in WebKit has stuck.
+#define V8_ONE_BYTE_STRINGS_ENABLED 1
 
 #include "v8stdint.h"
 
@@ -2840,16 +2842,6 @@ class V8EXPORT HeapStatistics {
   size_t heap_size_limit() { return heap_size_limit_; }
 
  private:
-  void set_total_heap_size(size_t size) { total_heap_size_ = size; }
-  void set_total_heap_size_executable(size_t size) {
-    total_heap_size_executable_ = size;
-  }
-  void set_total_physical_size(size_t size) {
-    total_physical_size_ = size;
-  }
-  void set_used_heap_size(size_t size) { used_heap_size_ = size; }
-  void set_heap_size_limit(size_t size) { heap_size_limit_ = size; }
-
   size_t total_heap_size_;
   size_t total_heap_size_executable_;
   size_t total_physical_size_;
@@ -2857,6 +2849,7 @@ class V8EXPORT HeapStatistics {
   size_t heap_size_limit_;
 
   friend class V8;
+  friend class Isolate;
 };
 
 
@@ -2945,6 +2938,11 @@ class V8EXPORT Isolate {
    * Returns NULL if SetData has never been called.
    */
   V8_INLINE(void* GetData());
+
+  /**
+   * Get statistics about the heap memory usage.
+   */
+  void GetHeapStatistics(HeapStatistics* heap_statistics);
 
  private:
   Isolate();
@@ -3042,7 +3040,19 @@ struct JitCodeEvent {
   enum EventType {
     CODE_ADDED,
     CODE_MOVED,
-    CODE_REMOVED
+    CODE_REMOVED,
+    CODE_ADD_LINE_POS_INFO,
+    CODE_START_LINE_INFO_RECORDING,
+    CODE_END_LINE_INFO_RECORDING
+  };
+  // Definition of the code position type. The "POSITION" type means the place
+  // in the source code which are of interest when making stack traces to
+  // pin-point the source location of a stack frame as close as possible.
+  // The "STATEMENT_POSITION" means the place at the beginning of each
+  // statement, and is used to indicate possible break locations.
+  enum PositionType {
+    POSITION,
+    STATEMENT_POSITION
   };
 
   // Type of event.
@@ -3051,6 +3061,13 @@ struct JitCodeEvent {
   void* code_start;
   // Size of the instructions.
   size_t code_len;
+  // Script info for CODE_ADDED event.
+  Handle<Script> script;
+  // User-defined data for *_LINE_INFO_* event. It's used to hold the source
+  // code line information which is returned from the
+  // CODE_START_LINE_INFO_RECORDING event. And it's passed to subsequent
+  // CODE_ADD_LINE_POS_INFO and CODE_END_LINE_INFO_RECORDING events.
+  void* user_data;
 
   union {
     // Only valid for CODE_ADDED.
@@ -3061,6 +3078,17 @@ struct JitCodeEvent {
       // Number of chars in str.
       size_t len;
     } name;
+
+    // Only valid for CODE_ADD_LINE_POS_INFO
+    struct {
+      // PC offset
+      size_t offset;
+      // Code postion
+      size_t pos;
+      // The position type.
+      PositionType position_type;
+    } line_info;
+
     // New location of instructions. Only valid for CODE_MOVED.
     void* new_code_start;
   };
@@ -3504,10 +3532,8 @@ class V8EXPORT V8 {
    */
   static bool Dispose();
 
-  /**
-   * Get statistics about the heap memory usage.
-   */
-  static void GetHeapStatistics(HeapStatistics* heap_statistics);
+  /** Deprecated. Use Isolate::GetHeapStatistics instead. */
+  V8_DEPRECATED(static void GetHeapStatistics(HeapStatistics* heap_statistics));
 
   /**
    * Iterates through all external resources referenced from current isolate
@@ -4205,7 +4231,7 @@ class Internals {
   static const int kNodeIsIndependentShift = 4;
   static const int kNodeIsPartiallyDependentShift = 5;
 
-  static const int kJSObjectType = 0xab;
+  static const int kJSObjectType = 0xad;
   static const int kFirstNonstringType = 0x80;
   static const int kOddballType = 0x82;
   static const int kForeignType = 0x85;

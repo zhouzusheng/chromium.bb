@@ -212,13 +212,14 @@ void RenderInline::updateAlwaysCreateLineBoxes(bool fullLayout)
     RenderStyle* parentStyle = parent()->style();
     RenderInline* parentRenderInline = parent()->isRenderInline() ? toRenderInline(parent()) : 0;
     bool checkFonts = document()->inNoQuirksMode();
+    RenderFlowThread* flowThread = flowThreadContainingBlock();
     bool alwaysCreateLineBoxes = (parentRenderInline && parentRenderInline->alwaysCreateLineBoxes())
         || (parentRenderInline && parentStyle->verticalAlign() != BASELINE)
         || style()->verticalAlign() != BASELINE
         || style()->textEmphasisMark() != TextEmphasisMarkNone
         || (checkFonts && (!parentStyle->font().fontMetrics().hasIdenticalAscentDescentAndLineGap(style()->font().fontMetrics())
         || parentStyle->lineHeight() != style()->lineHeight()))
-        || (inRenderFlowThread() && enclosingRenderFlowThread()->hasRegionsWithStyling());
+        || (flowThread && flowThread->hasRegionsWithStyling());
 
     if (!alwaysCreateLineBoxes && checkFonts && document()->styleSheetCollection()->usesFirstLineRules()) {
         // Have to check the first line style as well.
@@ -335,7 +336,7 @@ RenderInline* RenderInline::clone() const
 {
     RenderInline* cloneInline = new (renderArena()) RenderInline(node());
     cloneInline->setStyle(style());
-    cloneInline->setInRenderFlowThread(inRenderFlowThread());
+    cloneInline->setFlowThreadState(flowThreadState());
     return cloneInline;
 }
 
@@ -1012,7 +1013,7 @@ LayoutRect RenderInline::clippedOverflowRectForRepaint(const RenderLayerModelObj
             break;
         }
         if (inlineFlow->style()->hasInFlowPosition() && inlineFlow->hasLayer())
-            repaintRect.move(toRenderInline(inlineFlow)->layer()->offsetForInFlowPosition());
+            repaintRect.move(toRenderInline(inlineFlow)->layer()->paintOffset());
     }
 
     LayoutUnit outlineSize = style()->outlineSize();
@@ -1059,7 +1060,7 @@ void RenderInline::computeRectForRepaint(const RenderLayerModelObject* repaintCo
         if (v->layoutStateEnabled() && !repaintContainer) {
             LayoutState* layoutState = v->layoutState();
             if (style()->hasInFlowPosition() && layer())
-                rect.move(layer()->offsetForInFlowPosition());
+                rect.move(layer()->paintOffset());
             rect.move(layoutState->m_paintOffset);
             if (layoutState->m_clipped)
                 rect.intersect(layoutState->m_clipRect);
@@ -1092,7 +1093,7 @@ void RenderInline::computeRectForRepaint(const RenderLayerModelObject* repaintCo
         // is translated, but the render box isn't, so we need to do this to get the
         // right dirty rect. Since this is called from RenderObject::setStyle, the relative or sticky position
         // flag on the RenderObject has been cleared, so use the one on the style().
-        topLeft += layer()->offsetForInFlowPosition();
+        topLeft += layer()->paintOffset();
     }
     
     // FIXME: We ignore the lightweight clipping rect that controls use, since if |o| is in mid-layout,
@@ -1144,7 +1145,7 @@ void RenderInline::mapLocalToContainer(const RenderLayerModelObject* repaintCont
             LayoutState* layoutState = v->layoutState();
             LayoutSize offset = layoutState->m_paintOffset;
             if (style()->hasInFlowPosition() && layer())
-                offset += layer()->offsetForInFlowPosition();
+                offset += layer()->paintOffset();
             transformState.move(offset);
             return;
         }

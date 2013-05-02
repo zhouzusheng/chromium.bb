@@ -734,12 +734,14 @@ SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_END
 #if SK_SUPPORT_GPU
 
 #include "effects/GrTextureStripAtlas.h"
+#include "GrTBackendEffectFactory.h"
 #include "SkGr.h"
 
 GrGLGradientEffect::GrGLGradientEffect(const GrBackendEffectFactory& factory)
     : INHERITED(factory)
     , fCachedYCoord(SK_ScalarMax)
-    , fFSYUni(GrGLUniformManager::kInvalidUniformHandle) {
+    , fFSYUni(GrGLUniformManager::kInvalidUniformHandle)
+    , fEffectMatrix(kCoordsType) {
 }
 
 GrGLGradientEffect::~GrGLGradientEffect() { }
@@ -749,10 +751,11 @@ void GrGLGradientEffect::emitYCoordUniform(GrGLShaderBuilder* builder) {
                                   kFloat_GrSLType, "GradientYCoordFS");
 }
 
-void GrGLGradientEffect::setData(const GrGLUniformManager& uman, const GrEffectStage& stage) {
-    const GrGradientEffect& e = GetEffectFromStage<GrGradientEffect>(stage);
+void GrGLGradientEffect::setData(const GrGLUniformManager& uman,
+                                 const GrDrawEffect& drawEffect) {
+    const GrGradientEffect& e = drawEffect.castEffect<GrGradientEffect>();
     const GrTexture* texture = e.texture(0);
-    fEffectMatrix.setData(uman, e.getMatrix(), stage.getCoordChangeMatrix(), texture);
+    fEffectMatrix.setData(uman, e.getMatrix(), drawEffect, texture);
 
     SkScalar yCoord = e.getYCoord();
     if (yCoord != fCachedYCoord) {
@@ -761,21 +764,19 @@ void GrGLGradientEffect::setData(const GrGLUniformManager& uman, const GrEffectS
     }
 }
 
-GrGLEffect::EffectKey GrGLGradientEffect::GenMatrixKey(const GrEffectStage& s) {
-    const GrGradientEffect& e = GetEffectFromStage<GrGradientEffect>(s);
+GrGLEffect::EffectKey GrGLGradientEffect::GenMatrixKey(const GrDrawEffect& drawEffect) {
+    const GrGradientEffect& e = drawEffect.castEffect<GrGradientEffect>();
     const GrTexture* texture = e.texture(0);
-    return GrGLEffectMatrix::GenKey(e.getMatrix(), s.getCoordChangeMatrix(), texture);
+    return GrGLEffectMatrix::GenKey(e.getMatrix(), drawEffect, kCoordsType, texture);
 }
 
 void GrGLGradientEffect::setupMatrix(GrGLShaderBuilder* builder,
                                      EffectKey key,
-                                     const char* vertexCoords,
                                      const char** fsCoordName,
                                      const char** vsVaryingName,
                                      GrSLType* vsVaryingType) {
     fEffectMatrix.emitCodeMakeFSCoords2D(builder,
                                          key & kMatrixKeyMask,
-                                         vertexCoords,
                                          fsCoordName,
                                          vsVaryingName,
                                          vsVaryingType);
@@ -787,13 +788,15 @@ void GrGLGradientEffect::emitColorLookup(GrGLShaderBuilder* builder,
                                          const char* inputColor,
                                          const GrGLShaderBuilder::TextureSampler& sampler) {
 
-    SkString* code = &builder->fFSCode;
-    code->appendf("\tvec2 coord = vec2(%s, %s);\n",
-                  gradientTValue,
-                  builder->getUniformVariable(fFSYUni).c_str());
-    code->appendf("\t%s = ", outputColor);
-    builder->appendTextureLookupAndModulate(code, inputColor, sampler, "coord");
-    code->append(";\n");
+    builder->fsCodeAppendf("\tvec2 coord = vec2(%s, %s);\n",
+                           gradientTValue,
+                           builder->getUniformVariable(fFSYUni).c_str());
+    builder->fsCodeAppendf("\t%s = ", outputColor);
+    builder->appendTextureLookupAndModulate(GrGLShaderBuilder::kFragment_ShaderType,
+                                            inputColor,
+                                            sampler,
+                                            "coord");
+    builder->fsCodeAppend(";\n");
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -863,14 +866,14 @@ bool GrGradientEffect::onIsEqual(const GrEffect& effect) const {
 }
 
 void GrGradientEffect::getConstantColorComponents(GrColor* color, uint32_t* validFlags) const {
-    if (fIsOpaque && (kA_ValidComponentFlag & *validFlags) && 0xff == GrColorUnpackA(*color)) {
-        *validFlags = kA_ValidComponentFlag;
+    if (fIsOpaque && (kA_GrColorComponentFlag & *validFlags) && 0xff == GrColorUnpackA(*color)) {
+        *validFlags = kA_GrColorComponentFlag;
     } else {
         *validFlags = 0;
     }
 }
 
-int GrGradientEffect::RandomGradientParams(SkRandom* random,
+int GrGradientEffect::RandomGradientParams(SkMWCRandom* random,
                                            SkColor colors[],
                                            SkScalar** stops,
                                            SkShader::TileMode* tm) {

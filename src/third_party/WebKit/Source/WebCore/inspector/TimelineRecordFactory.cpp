@@ -59,6 +59,14 @@ PassRefPtr<InspectorObject> TimelineRecordFactory::createGenericRecord(double st
     return record.release();
 }
 
+PassRefPtr<InspectorObject> TimelineRecordFactory::createBackgroundRecord(double startTime, const String& threadName)
+{
+    RefPtr<InspectorObject> record = InspectorObject::create();
+    record->setNumber("startTime", startTime);
+    record->setString("thread", threadName);
+    return record.release();
+}
+
 PassRefPtr<InspectorObject> TimelineRecordFactory::createGCEventData(const size_t usedHeapSizeDelta)
 {
     RefPtr<InspectorObject> data = InspectorObject::create();
@@ -184,10 +192,16 @@ PassRefPtr<InspectorObject> TimelineRecordFactory::createResizeImageData(bool sh
     return data.release();
 }
 
-PassRefPtr<InspectorObject> TimelineRecordFactory::createParseHTMLData(unsigned int length, unsigned int startLine)
+PassRefPtr<InspectorObject> TimelineRecordFactory::createMarkData(bool isMainFrame)
 {
     RefPtr<InspectorObject> data = InspectorObject::create();
-    data->setNumber("length", length);
+    data->setBoolean("isMainFrame", isMainFrame);
+    return data.release();
+}
+
+PassRefPtr<InspectorObject> TimelineRecordFactory::createParseHTMLData(unsigned startLine)
+{
+    RefPtr<InspectorObject> data = InspectorObject::create();
     data->setNumber("startLine", startLine);
     return data.release();
 }

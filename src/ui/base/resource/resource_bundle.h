@@ -11,7 +11,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
@@ -249,7 +249,7 @@ class UI_EXPORT ResourceBundle {
   // Used on Android to load the local file in the browser process and pass it
   // to the sandboxed renderer process.
   base::FilePath GetLocaleFilePath(const std::string& app_locale,
-                             bool test_file_exists);
+                                   bool test_file_exists);
 
   // Returns the maximum scale factor currently loaded.
   // Returns SCALE_FACTOR_100P if no resource is loaded.

@@ -10,8 +10,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "google_apis/gaia/oauth2_access_token_consumer.h"
 #include "google_apis/gaia/oauth2_access_token_fetcher.h"
-#include "google_apis/gaia/oauth2_mint_token_consumer.h"
-#include "google_apis/gaia/oauth2_mint_token_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
 class GoogleServiceAuthError;
@@ -51,6 +49,11 @@ class OAuth2ApiCallFlow
 
   // Start the flow.
   virtual void Start();
+
+#if defined(OS_CHROMEOS)
+  void SetChromeOAuthClientInfo(const std::string& chrome_client_id,
+                                const std::string& chrome_client_secret);
+#endif
 
   // OAuth2AccessTokenFetcher implementation.
   virtual void OnGetTokenSuccess(const std::string& access_token,
@@ -114,6 +117,10 @@ class OAuth2ApiCallFlow
   std::string refresh_token_;
   std::string access_token_;
   std::vector<std::string> scopes_;
+
+  // Override values for the main chrome client id and secret.
+  std::string chrome_client_id_;
+  std::string chrome_client_secret_;
 
   State state_;
   // Whether we have already tried minting an access token once.

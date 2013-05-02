@@ -374,15 +374,15 @@ String InputType::validationMessage() const
     const String value = element()->value();
 
     // The order of the following checks is meaningful. e.g. We'd like to show the
-    // valueMissing message even if the control has other validation errors.
+    // badInput message even if the control has other validation errors.
+    if (hasBadInput())
+        return badInputText();
+
     if (valueMissing(value))
         return valueMissingText();
 
     if (typeMismatch())
         return typeMismatchText();
-
-    if (hasBadInput())
-        return badInputText();
 
     if (patternMismatch(value))
         return validationMessagePatternMismatchText();
@@ -476,11 +476,6 @@ void InputType::blur()
     element()->defaultBlur();
 }
 
-bool InputType::willCancelFocus(bool, FocusDirection)
-{
-    return false;
-}
-
 void InputType::createShadowSubtree()
 {
 }
@@ -568,7 +563,7 @@ bool InputType::shouldUseInputMethod() const
     return false;
 }
 
-void InputType::handleFocusEvent(FocusDirection)
+void InputType::handleFocusEvent(Node*, FocusDirection)
 {
 }
 
@@ -901,6 +896,10 @@ void InputType::updatePlaceholderText()
 {
 }
 
+void InputType::attributeChanged()
+{
+}
+
 void InputType::multipleAttributeChanged()
 {
 }
@@ -910,6 +909,14 @@ void InputType::disabledAttributeChanged()
 }
 
 void InputType::readonlyAttributeChanged()
+{
+}
+
+void InputType::requiredAttributeChanged()
+{
+}
+
+void InputType::valueAttributeChanged()
 {
 }
 
@@ -941,6 +948,10 @@ Decimal InputType::findClosestTickMarkValue(const Decimal&)
     return Decimal::nan();
 }
 #endif
+
+void InputType::updateClearButtonVisibility()
+{
+}
 
 bool InputType::supportsIndeterminateAppearance() const
 {

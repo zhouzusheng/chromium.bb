@@ -8,14 +8,14 @@
 
 #include "common/angleutils.h"
 #include "compiler/debug.h"
-#include "compiler/InfoSink.h"
-#include "compiler/UnfoldShortCircuit.h"
-#include "compiler/SearchSymbol.h"
 #include "compiler/DetectDiscontinuity.h"
+#include "compiler/InfoSink.h"
+#include "compiler/SearchSymbol.h"
+#include "compiler/UnfoldShortCircuit.h"
 
-#include <limits.h>
-#include <stdio.h>
 #include <algorithm>
+#include <cfloat>
+#include <stdio.h>
 
 // SHEZ: include cfloat to get FLT_MAX (needed for VS2008 build)
 #include <cfloat>
@@ -977,7 +977,7 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
 
                     if (element)
                     {
-                        int i = element->getUnionArrayPointer()[0].getIConst();
+                        int i = element->getIConst(0);
 
                         switch (i)
                         {
@@ -1980,7 +1980,7 @@ bool OutputHLSL::handleExcessiveLoop(TIntermLoop *node)
                         if (constant->getBasicType() == EbtInt && constant->getNominalSize() == 1)
                         {
                             index = symbol;
-                            initial = constant->getUnionArrayPointer()[0].getIConst();
+                            initial = constant->getIConst(0);
                         }
                     }
                 }
@@ -2002,7 +2002,7 @@ bool OutputHLSL::handleExcessiveLoop(TIntermLoop *node)
                 if (constant->getBasicType() == EbtInt && constant->getNominalSize() == 1)
                 {
                     comparator = test->getOp();
-                    limit = constant->getUnionArrayPointer()[0].getIConst();
+                    limit = constant->getIConst(0);
                 }
             }
         }
@@ -2023,7 +2023,7 @@ bool OutputHLSL::handleExcessiveLoop(TIntermLoop *node)
             {
                 if (constant->getBasicType() == EbtInt && constant->getNominalSize() == 1)
                 {
-                    int value = constant->getUnionArrayPointer()[0].getIConst();
+                    int value = constant->getIConst(0);
 
                     switch (op)
                     {

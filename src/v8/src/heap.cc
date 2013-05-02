@@ -139,8 +139,8 @@ Heap::Heap()
       survival_rate_(0),
       previous_survival_rate_trend_(Heap::STABLE),
       survival_rate_trend_(Heap::STABLE),
-      max_gc_pause_(0),
-      total_gc_time_ms_(0),
+      max_gc_pause_(0.0),
+      total_gc_time_ms_(0.0),
       max_alive_after_gc_(0),
       min_in_mutator_(kMaxInt),
       alive_after_last_gc_(0),
@@ -396,7 +396,7 @@ void Heap::PrintShortHeapStatistics() {
            this->SizeOfObjects() / KB,
            this->Available() / KB,
            this->CommittedMemory() / KB);
-  PrintPID("Total time spent in GC  : %d ms\n", total_gc_time_ms_);
+  PrintPID("Total time spent in GC  : %.1f ms\n", total_gc_time_ms_);
 }
 
 
@@ -449,7 +449,7 @@ void Heap::GarbageCollectionPrologue() {
 
 intptr_t Heap::SizeOfObjects() {
   intptr_t total = 0;
-  AllSpaces spaces;
+  AllSpaces spaces(this);
   for (Space* space = spaces.next(); space != NULL; space = spaces.next()) {
     total += space->SizeOfObjects();
   }
@@ -458,7 +458,7 @@ intptr_t Heap::SizeOfObjects() {
 
 
 void Heap::RepairFreeListsAfterBoot() {
-  PagedSpaces spaces;
+  PagedSpaces spaces(this);
   for (PagedSpace* space = spaces.next();
        space != NULL;
        space = spaces.next()) {
@@ -591,7 +591,6 @@ void Heap::CollectAllAvailableGarbage(const char* gc_reason) {
   mark_compact_collector()->SetFlags(kNoGCFlags);
   new_space_.Shrink();
   UncommitFromSpace();
-  Shrink();
   incremental_marking()->UncommitMarkingDeque();
 }
 
@@ -789,11 +788,6 @@ void Heap::EnsureFromSpaceIsCommitted() {
   if (new_space_.CommitFromSpaceIfNeeded()) return;
 
   // Committing memory to from space failed.
-  // Try shrinking and try again.
-  Shrink();
-  if (new_space_.CommitFromSpaceIfNeeded()) return;
-
-  // Committing memory to from space failed again.
   // Memory is exhausted and we will die.
   V8::FatalProcessOutOfMemory("Committing semi space failed.");
 }
@@ -820,7 +814,6 @@ void Heap::ClearJSFunctionResultCaches() {
     context = Context::cast(context)->get(Context::NEXT_CONTEXT_LINK);
   }
 }
-
 
 
 void Heap::ClearNormalizedMapCaches() {
@@ -2205,8 +2198,8 @@ MaybeObject* Heap::AllocateMap(InstanceType instance_type,
   map->set_inobject_properties(0);
   map->set_pre_allocated_property_fields(0);
   map->set_code_cache(empty_fixed_array(), SKIP_WRITE_BARRIER);
-  map->set_dependent_codes(DependentCodes::cast(empty_fixed_array()),
-                           SKIP_WRITE_BARRIER);
+  map->set_dependent_code(DependentCode::cast(empty_fixed_array()),
+                          SKIP_WRITE_BARRIER);
   map->init_back_pointer(undefined_value());
   map->set_unused_property_fields(0);
   map->set_instance_descriptors(empty_descriptor_array());
@@ -2342,18 +2335,18 @@ bool Heap::CreateInitialMaps() {
 
   // Fix the instance_descriptors for the existing maps.
   meta_map()->set_code_cache(empty_fixed_array());
-  meta_map()->set_dependent_codes(DependentCodes::cast(empty_fixed_array()));
+  meta_map()->set_dependent_code(DependentCode::cast(empty_fixed_array()));
   meta_map()->init_back_pointer(undefined_value());
   meta_map()->set_instance_descriptors(empty_descriptor_array());
 
   fixed_array_map()->set_code_cache(empty_fixed_array());
-  fixed_array_map()->set_dependent_codes(
-      DependentCodes::cast(empty_fixed_array()));
+  fixed_array_map()->set_dependent_code(
+      DependentCode::cast(empty_fixed_array()));
   fixed_array_map()->init_back_pointer(undefined_value());
   fixed_array_map()->set_instance_descriptors(empty_descriptor_array());
 
   oddball_map()->set_code_cache(empty_fixed_array());
-  oddball_map()->set_dependent_codes(DependentCodes::cast(empty_fixed_array()));
+  oddball_map()->set_dependent_code(DependentCode::cast(empty_fixed_array()));
   oddball_map()->init_back_pointer(undefined_value());
   oddball_map()->set_instance_descriptors(empty_descriptor_array());
 
@@ -2689,13 +2682,13 @@ bool Heap::CreateApiObjects() {
 
 void Heap::CreateJSEntryStub() {
   JSEntryStub stub;
-  set_js_entry_code(*stub.GetCode());
+  set_js_entry_code(*stub.GetCode(isolate()));
 }
 
 
 void Heap::CreateJSConstructEntryStub() {
   JSConstructEntryStub stub;
-  set_js_construct_entry_code(*stub.GetCode());
+  set_js_construct_entry_code(*stub.GetCode(isolate()));
 }
 
 
@@ -2704,7 +2697,7 @@ void Heap::CreateFixedStubs() {
   // for cooking and uncooking (check out frames.cc).
   // The eliminates the need for doing dictionary lookup in the
   // stub cache for these stubs.
-  HandleScope scope;
+  HandleScope scope(isolate());
   // gcc-4.4 has problem generating correct code of following snippet:
   // {  JSEntryStub stub;
   //    js_entry_code_ = *stub.GetCode();
@@ -2720,7 +2713,7 @@ void Heap::CreateFixedStubs() {
   // create them if we need them during the creation of another stub.
   // Stub creation mixes raw pointers and handles in an unsafe manner so
   // we cannot create stubs while we are creating stubs.
-  CodeStub::GenerateStubsAheadOfTime();
+  CodeStub::GenerateStubsAheadOfTime(isolate());
 }
 
 
@@ -3278,7 +3271,7 @@ MaybeObject* Heap::AllocateSharedFunctionInfo(Object* name) {
   Code* illegal = isolate_->builtins()->builtin(Builtins::kIllegal);
   share->set_code(illegal);
   share->ClearOptimizedCodeMap();
-  share->set_scope_info(ScopeInfo::Empty());
+  share->set_scope_info(ScopeInfo::Empty(isolate_));
   Code* construct_stub =
       isolate_->builtins()->builtin(Builtins::kJSConstructStubGeneric);
   share->set_construct_stub(construct_stub);
@@ -3600,7 +3593,9 @@ MaybeObject* Heap::AllocateExternalStringFromAscii(
     return Failure::OutOfMemoryException(0x5);
   }
 
+#ifndef ENABLE_LATIN_1
   ASSERT(String::IsAscii(resource->data(), static_cast<int>(length)));
+#endif  // ENABLE_LATIN_1
 
   Map* map = external_ascii_string_map();
   Object* result;
@@ -5537,9 +5532,10 @@ bool Heap::IdleGlobalGC() {
 void Heap::Print() {
   if (!HasBeenSetUp()) return;
   isolate()->PrintStack();
-  AllSpaces spaces;
-  for (Space* space = spaces.next(); space != NULL; space = spaces.next())
+  AllSpaces spaces(this);
+  for (Space* space = spaces.next(); space != NULL; space = spaces.next()) {
     space->Print();
+  }
 }
 
 
@@ -5568,7 +5564,7 @@ void Heap::ReportHeapStatistics(const char* title) {
   PrintF("old_gen_limit_factor_ %d\n", old_gen_limit_factor_);
 
   PrintF("\n");
-  PrintF("Number of handles : %d\n", HandleScope::NumberOfHandles());
+  PrintF("Number of handles : %d\n", HandleScope::NumberOfHandles(isolate_));
   isolate_->global_handles()->PrintStats();
   PrintF("\n");
 
@@ -6167,7 +6163,7 @@ void Heap::RecordStats(HeapStats* stats, bool take_snapshot) {
   *stats->os_error = OS::GetLastError();
       isolate()->memory_allocator()->Available();
   if (take_snapshot) {
-    HeapIterator iterator;
+    HeapIterator iterator(this);
     for (HeapObject* obj = iterator.next();
          obj != NULL;
          obj = iterator.next()) {
@@ -6206,7 +6202,7 @@ static void InitializeGCOnce() {
   MarkCompactCollector::Initialize();
 }
 
-bool Heap::SetUp(bool create_heap_objects) {
+bool Heap::SetUp() {
 #ifdef DEBUG
   allocation_timeout_ = FLAG_gc_interval;
 #endif
@@ -6297,17 +6293,6 @@ bool Heap::SetUp(bool create_heap_objects) {
     }
   }
 
-  if (create_heap_objects) {
-    // Create initial maps.
-    if (!CreateInitialMaps()) return false;
-    if (!CreateApiObjects()) return false;
-
-    // Create initial objects
-    if (!CreateInitialObjects()) return false;
-
-    native_contexts_list_ = undefined_value();
-  }
-
   LOG(isolate_, IntPtrTEvent("heap-capacity", Capacity()));
   LOG(isolate_, IntPtrTEvent("heap-available", Available()));
 
@@ -6315,6 +6300,18 @@ bool Heap::SetUp(bool create_heap_objects) {
 
   if (FLAG_parallel_recompilation) relocation_mutex_ = OS::CreateMutex();
 
+  return true;
+}
+
+bool Heap::CreateHeapObjects() {
+  // Create initial maps.
+  if (!CreateInitialMaps()) return false;
+  if (!CreateApiObjects()) return false;
+
+  // Create initial objects
+  if (!CreateInitialObjects()) return false;
+
+  native_contexts_list_ = undefined_value();
   return true;
 }
 
@@ -6347,13 +6344,13 @@ void Heap::TearDown() {
     PrintF("\n");
     PrintF("gc_count=%d ", gc_count_);
     PrintF("mark_sweep_count=%d ", ms_count_);
-    PrintF("max_gc_pause=%d ", get_max_gc_pause());
-    PrintF("total_gc_time=%d ", total_gc_time_ms_);
-    PrintF("min_in_mutator=%d ", get_min_in_mutator());
+    PrintF("max_gc_pause=%.1f ", get_max_gc_pause());
+    PrintF("total_gc_time=%.1f ", total_gc_time_ms_);
+    PrintF("min_in_mutator=%.1f ", get_min_in_mutator());
     PrintF("max_alive_after_gc=%" V8_PTR_PREFIX "d ",
            get_max_alive_after_gc());
-    PrintF("total_marking_time=%f ", marking_time());
-    PrintF("total_sweeping_time=%f ", sweeping_time());
+    PrintF("total_marking_time=%.1f ", marking_time());
+    PrintF("total_sweeping_time=%.1f ", sweeping_time());
     PrintF("\n\n");
   }
 
@@ -6407,17 +6404,6 @@ void Heap::TearDown() {
   isolate_->memory_allocator()->TearDown();
 
   delete relocation_mutex_;
-}
-
-
-void Heap::Shrink() {
-  // Try to shrink all paged spaces.
-  PagedSpaces spaces;
-  for (PagedSpace* space = spaces.next();
-       space != NULL;
-       space = spaces.next()) {
-    space->ReleaseAllUnusedPages();
-  }
 }
 
 
@@ -6485,19 +6471,19 @@ void Heap::PrintHandles() {
 Space* AllSpaces::next() {
   switch (counter_++) {
     case NEW_SPACE:
-      return HEAP->new_space();
+      return heap_->new_space();
     case OLD_POINTER_SPACE:
-      return HEAP->old_pointer_space();
+      return heap_->old_pointer_space();
     case OLD_DATA_SPACE:
-      return HEAP->old_data_space();
+      return heap_->old_data_space();
     case CODE_SPACE:
-      return HEAP->code_space();
+      return heap_->code_space();
     case MAP_SPACE:
-      return HEAP->map_space();
+      return heap_->map_space();
     case CELL_SPACE:
-      return HEAP->cell_space();
+      return heap_->cell_space();
     case LO_SPACE:
-      return HEAP->lo_space();
+      return heap_->lo_space();
     default:
       return NULL;
   }
@@ -6507,15 +6493,15 @@ Space* AllSpaces::next() {
 PagedSpace* PagedSpaces::next() {
   switch (counter_++) {
     case OLD_POINTER_SPACE:
-      return HEAP->old_pointer_space();
+      return heap_->old_pointer_space();
     case OLD_DATA_SPACE:
-      return HEAP->old_data_space();
+      return heap_->old_data_space();
     case CODE_SPACE:
-      return HEAP->code_space();
+      return heap_->code_space();
     case MAP_SPACE:
-      return HEAP->map_space();
+      return heap_->map_space();
     case CELL_SPACE:
-      return HEAP->cell_space();
+      return heap_->cell_space();
     default:
       return NULL;
   }
@@ -6526,26 +6512,28 @@ PagedSpace* PagedSpaces::next() {
 OldSpace* OldSpaces::next() {
   switch (counter_++) {
     case OLD_POINTER_SPACE:
-      return HEAP->old_pointer_space();
+      return heap_->old_pointer_space();
     case OLD_DATA_SPACE:
-      return HEAP->old_data_space();
+      return heap_->old_data_space();
     case CODE_SPACE:
-      return HEAP->code_space();
+      return heap_->code_space();
     default:
       return NULL;
   }
 }
 
 
-SpaceIterator::SpaceIterator()
-    : current_space_(FIRST_SPACE),
+SpaceIterator::SpaceIterator(Heap* heap)
+    : heap_(heap),
+      current_space_(FIRST_SPACE),
       iterator_(NULL),
       size_func_(NULL) {
 }
 
 
-SpaceIterator::SpaceIterator(HeapObjectCallback size_func)
-    : current_space_(FIRST_SPACE),
+SpaceIterator::SpaceIterator(Heap* heap, HeapObjectCallback size_func)
+    : heap_(heap),
+      current_space_(FIRST_SPACE),
       iterator_(NULL),
       size_func_(size_func) {
 }
@@ -6585,25 +6573,26 @@ ObjectIterator* SpaceIterator::CreateIterator() {
 
   switch (current_space_) {
     case NEW_SPACE:
-      iterator_ = new SemiSpaceIterator(HEAP->new_space(), size_func_);
+      iterator_ = new SemiSpaceIterator(heap_->new_space(), size_func_);
       break;
     case OLD_POINTER_SPACE:
-      iterator_ = new HeapObjectIterator(HEAP->old_pointer_space(), size_func_);
+      iterator_ =
+          new HeapObjectIterator(heap_->old_pointer_space(), size_func_);
       break;
     case OLD_DATA_SPACE:
-      iterator_ = new HeapObjectIterator(HEAP->old_data_space(), size_func_);
+      iterator_ = new HeapObjectIterator(heap_->old_data_space(), size_func_);
       break;
     case CODE_SPACE:
-      iterator_ = new HeapObjectIterator(HEAP->code_space(), size_func_);
+      iterator_ = new HeapObjectIterator(heap_->code_space(), size_func_);
       break;
     case MAP_SPACE:
-      iterator_ = new HeapObjectIterator(HEAP->map_space(), size_func_);
+      iterator_ = new HeapObjectIterator(heap_->map_space(), size_func_);
       break;
     case CELL_SPACE:
-      iterator_ = new HeapObjectIterator(HEAP->cell_space(), size_func_);
+      iterator_ = new HeapObjectIterator(heap_->cell_space(), size_func_);
       break;
     case LO_SPACE:
-      iterator_ = new LargeObjectIterator(HEAP->lo_space(), size_func_);
+      iterator_ = new LargeObjectIterator(heap_->lo_space(), size_func_);
       break;
   }
 
@@ -6674,15 +6663,18 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
 };
 
 
-HeapIterator::HeapIterator()
-    : filtering_(HeapIterator::kNoFiltering),
+HeapIterator::HeapIterator(Heap* heap)
+    : heap_(heap),
+      filtering_(HeapIterator::kNoFiltering),
       filter_(NULL) {
   Init();
 }
 
 
-HeapIterator::HeapIterator(HeapIterator::HeapObjectsFiltering filtering)
-    : filtering_(filtering),
+HeapIterator::HeapIterator(Heap* heap,
+                           HeapIterator::HeapObjectsFiltering filtering)
+    : heap_(heap),
+      filtering_(filtering),
       filter_(NULL) {
   Init();
 }
@@ -6695,7 +6687,7 @@ HeapIterator::~HeapIterator() {
 
 void HeapIterator::Init() {
   // Start the iteration.
-  space_iterator_ = new SpaceIterator;
+  space_iterator_ = new SpaceIterator(heap_);
   switch (filtering_) {
     case kFilterUnreachable:
       filter_ = new UnreachableObjectsFilter;
@@ -6960,9 +6952,9 @@ void Heap::TracePathToGlobal() {
 #endif
 
 
-static intptr_t CountTotalHolesSize() {
+static intptr_t CountTotalHolesSize(Heap* heap) {
   intptr_t holes_size = 0;
-  OldSpaces spaces;
+  OldSpaces spaces(heap);
   for (OldSpace* space = spaces.next();
        space != NULL;
        space = spaces.next()) {
@@ -6998,7 +6990,7 @@ GCTracer::GCTracer(Heap* heap,
     scopes_[i] = 0;
   }
 
-  in_free_list_or_wasted_before_gc_ = CountTotalHolesSize();
+  in_free_list_or_wasted_before_gc_ = CountTotalHolesSize(heap);
 
   allocated_since_last_gc_ =
       heap_->SizeOfObjects() - heap_->alive_after_last_gc_;
@@ -7026,7 +7018,7 @@ GCTracer::~GCTracer() {
   heap_->alive_after_last_gc_ = heap_->SizeOfObjects();
   heap_->last_gc_end_timestamp_ = OS::TimeCurrentMillis();
 
-  int time = static_cast<int>(heap_->last_gc_end_timestamp_ - start_time_);
+  double time = heap_->last_gc_end_timestamp_ - start_time_;
 
   // Update cumulative GC statistics if required.
   if (FLAG_print_cumulative_gc_stat) {
@@ -7036,7 +7028,7 @@ GCTracer::~GCTracer() {
                                      heap_->alive_after_last_gc_);
     if (!first_gc) {
       heap_->min_in_mutator_ = Min(heap_->min_in_mutator_,
-                                   static_cast<int>(spent_in_mutator_));
+                                   spent_in_mutator_);
     }
   } else if (FLAG_trace_gc_verbose) {
     heap_->total_gc_time_ms_ += time;
@@ -7063,16 +7055,16 @@ GCTracer::~GCTracer() {
            end_memory_size_mb);
 
     if (external_time > 0) PrintF("%d / ", external_time);
-    PrintF("%d ms", time);
+    PrintF("%.1f ms", time);
     if (steps_count_ > 0) {
       if (collector_ == SCAVENGER) {
-        PrintF(" (+ %d ms in %d steps since last GC)",
-               static_cast<int>(steps_took_since_last_gc_),
+        PrintF(" (+ %.1f ms in %d steps since last GC)",
+               steps_took_since_last_gc_,
                steps_count_since_last_gc_);
       } else {
-        PrintF(" (+ %d ms in %d steps since start of marking, "
-                   "biggest step %f ms)",
-               static_cast<int>(steps_took_),
+        PrintF(" (+ %.1f ms in %d steps since start of marking, "
+                   "biggest step %.1f ms)",
+               steps_took_,
                steps_count_,
                longest_step_);
       }
@@ -7088,8 +7080,8 @@ GCTracer::~GCTracer() {
 
     PrintF(".\n");
   } else {
-    PrintF("pause=%d ", time);
-    PrintF("mutator=%d ", static_cast<int>(spent_in_mutator_));
+    PrintF("pause=%.1f ", time);
+    PrintF("mutator=%.1f ", spent_in_mutator_);
     PrintF("gc=");
     switch (collector_) {
       case SCAVENGER:
@@ -7103,29 +7095,25 @@ GCTracer::~GCTracer() {
     }
     PrintF(" ");
 
-    PrintF("external=%d ", static_cast<int>(scopes_[Scope::EXTERNAL]));
-    PrintF("mark=%d ", static_cast<int>(scopes_[Scope::MC_MARK]));
-    PrintF("sweep=%d ", static_cast<int>(scopes_[Scope::MC_SWEEP]));
-    PrintF("sweepns=%d ", static_cast<int>(scopes_[Scope::MC_SWEEP_NEWSPACE]));
-    PrintF("evacuate=%d ", static_cast<int>(scopes_[Scope::MC_EVACUATE_PAGES]));
-    PrintF("new_new=%d ",
-           static_cast<int>(scopes_[Scope::MC_UPDATE_NEW_TO_NEW_POINTERS]));
-    PrintF("root_new=%d ",
-           static_cast<int>(scopes_[Scope::MC_UPDATE_ROOT_TO_NEW_POINTERS]));
-    PrintF("old_new=%d ",
-           static_cast<int>(scopes_[Scope::MC_UPDATE_OLD_TO_NEW_POINTERS]));
-    PrintF("compaction_ptrs=%d ",
-           static_cast<int>(scopes_[Scope::MC_UPDATE_POINTERS_TO_EVACUATED]));
-    PrintF("intracompaction_ptrs=%d ", static_cast<int>(scopes_[
-        Scope::MC_UPDATE_POINTERS_BETWEEN_EVACUATED]));
-    PrintF("misc_compaction=%d ",
-           static_cast<int>(scopes_[Scope::MC_UPDATE_MISC_POINTERS]));
+    PrintF("external=%.1f ", scopes_[Scope::EXTERNAL]);
+    PrintF("mark=%.1f ", scopes_[Scope::MC_MARK]);
+    PrintF("sweep=%.1f ", scopes_[Scope::MC_SWEEP]);
+    PrintF("sweepns=%.1f ", scopes_[Scope::MC_SWEEP_NEWSPACE]);
+    PrintF("evacuate=%.1f ", scopes_[Scope::MC_EVACUATE_PAGES]);
+    PrintF("new_new=%.1f ", scopes_[Scope::MC_UPDATE_NEW_TO_NEW_POINTERS]);
+    PrintF("root_new=%.1f ", scopes_[Scope::MC_UPDATE_ROOT_TO_NEW_POINTERS]);
+    PrintF("old_new=%.1f ", scopes_[Scope::MC_UPDATE_OLD_TO_NEW_POINTERS]);
+    PrintF("compaction_ptrs=%.1f ",
+        scopes_[Scope::MC_UPDATE_POINTERS_TO_EVACUATED]);
+    PrintF("intracompaction_ptrs=%.1f ",
+        scopes_[Scope::MC_UPDATE_POINTERS_BETWEEN_EVACUATED]);
+    PrintF("misc_compaction=%.1f ", scopes_[Scope::MC_UPDATE_MISC_POINTERS]);
 
     PrintF("total_size_before=%" V8_PTR_PREFIX "d ", start_object_size_);
     PrintF("total_size_after=%" V8_PTR_PREFIX "d ", heap_->SizeOfObjects());
     PrintF("holes_size_before=%" V8_PTR_PREFIX "d ",
            in_free_list_or_wasted_before_gc_);
-    PrintF("holes_size_after=%" V8_PTR_PREFIX "d ", CountTotalHolesSize());
+    PrintF("holes_size_after=%" V8_PTR_PREFIX "d ", CountTotalHolesSize(heap_));
 
     PrintF("allocated=%" V8_PTR_PREFIX "d ", allocated_since_last_gc_);
     PrintF("promoted=%" V8_PTR_PREFIX "d ", promoted_objects_size_);
@@ -7135,11 +7123,11 @@ GCTracer::~GCTracer() {
 
     if (collector_ == SCAVENGER) {
       PrintF("stepscount=%d ", steps_count_since_last_gc_);
-      PrintF("stepstook=%d ", static_cast<int>(steps_took_since_last_gc_));
+      PrintF("stepstook=%.1f ", steps_took_since_last_gc_);
     } else {
       PrintF("stepscount=%d ", steps_count_);
-      PrintF("stepstook=%d ", static_cast<int>(steps_took_));
-      PrintF("longeststep=%.f ", longest_step_);
+      PrintF("stepstook=%.1f ", steps_took_);
+      PrintF("longeststep=%.1f ", longest_step_);
     }
 
     PrintF("\n");

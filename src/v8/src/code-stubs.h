@@ -126,7 +126,7 @@ class CodeStub BASE_EMBEDDED {
   };
 
   // Retrieve the code for the stub. Generate the code if needed.
-  Handle<Code> GetCode();
+  Handle<Code> GetCode(Isolate* isolate);
 
   static Major MajorKeyFromKey(uint32_t key) {
     return static_cast<Major>(MajorKeyBits::decode(key));
@@ -154,8 +154,8 @@ class CodeStub BASE_EMBEDDED {
   // See comment above, where Instanceof is defined.
   virtual bool IsPregenerated() { return false; }
 
-  static void GenerateStubsAheadOfTime();
-  static void GenerateFPStubs();
+  static void GenerateStubsAheadOfTime(Isolate* isolate);
+  static void GenerateFPStubs(Isolate* isolate);
 
   // Some stubs put untagged junk on the stack that cannot be scanned by the
   // GC.  This means that we must be statically sure that no GC can occur while
@@ -264,8 +264,6 @@ struct CodeStubInterfaceDescriptor {
 };
 
 
-class HGraph;
-struct Register;
 class HydrogenCodeStub : public CodeStub {
  public:
   // Retrieve the code for the stub. Generate the code if needed.
@@ -475,7 +473,7 @@ class FastCloneShallowArrayStub : public PlatformCodeStub {
 };
 
 
-class FastCloneShallowObjectStub : public PlatformCodeStub {
+class FastCloneShallowObjectStub : public HydrogenCodeStub {
  public:
   // Maximum number of properties in copied object.
   static const int kMaximumClonedProperties = 6;
@@ -485,13 +483,21 @@ class FastCloneShallowObjectStub : public PlatformCodeStub {
     ASSERT_LE(length_, kMaximumClonedProperties);
   }
 
-  void Generate(MacroAssembler* masm);
+  int length() const { return length_; }
+
+  virtual Handle<Code> GenerateCode();
+
+  virtual void InitializeInterfaceDescriptor(
+      Isolate* isolate,
+      CodeStubInterfaceDescriptor* descriptor);
 
  private:
   int length_;
 
   Major MajorKey() { return FastCloneShallowObject; }
   int MinorKey() { return length_; }
+
+  DISALLOW_COPY_AND_ASSIGN(FastCloneShallowObjectStub);
 };
 
 
@@ -730,7 +736,7 @@ class BinaryOpStub: public PlatformCodeStub {
   void GenerateBothStringStub(MacroAssembler* masm);
   void GenerateGeneric(MacroAssembler* masm);
   void GenerateGenericStub(MacroAssembler* masm);
-  void GenerateHeapNumberStub(MacroAssembler* masm);
+  void GenerateNumberStub(MacroAssembler* masm);
   void GenerateInt32Stub(MacroAssembler* masm);
   void GenerateLoadArguments(MacroAssembler* masm);
   void GenerateOddballStub(MacroAssembler* masm);
@@ -802,7 +808,7 @@ class ICCompareStub: public PlatformCodeStub {
   virtual int GetCodeKind() { return Code::COMPARE_IC; }
 
   void GenerateSmis(MacroAssembler* masm);
-  void GenerateHeapNumbers(MacroAssembler* masm);
+  void GenerateNumbers(MacroAssembler* masm);
   void GenerateSymbols(MacroAssembler* masm);
   void GenerateStrings(MacroAssembler* masm);
   void GenerateObjects(MacroAssembler* masm);
@@ -815,7 +821,7 @@ class ICCompareStub: public PlatformCodeStub {
 
   virtual void AddToSpecialCache(Handle<Code> new_object);
   virtual bool FindCodeInSpecialCache(Code** code_out, Isolate* isolate);
-  virtual bool UseSpecialCache() { return state_ == CompareIC::KNOWN_OBJECTS; }
+  virtual bool UseSpecialCache() { return state_ == CompareIC::KNOWN_OBJECT; }
 
   Token::Value op_;
   CompareIC::State left_;
@@ -838,7 +844,7 @@ class CEntryStub : public PlatformCodeStub {
   // their code generation.  On machines that always have gp registers (x64) we
   // can generate both variants ahead of time.
   virtual bool IsPregenerated();
-  static void GenerateAheadOfTime();
+  static void GenerateAheadOfTime(Isolate* isolate);
 
  private:
   void GenerateCore(MacroAssembler* masm,
@@ -1060,6 +1066,13 @@ class StringCharCodeAtGenerator {
   void GenerateSlow(MacroAssembler* masm,
                     const RuntimeCallHelper& call_helper);
 
+  // Skip handling slow case and directly jump to bailout.
+  void SkipSlow(MacroAssembler* masm, Label* bailout) {
+    masm->bind(&index_not_smi_);
+    masm->bind(&call_runtime_);
+    masm->jmp(bailout);
+  }
+
  private:
   Register object_;
   Register index_;
@@ -1099,6 +1112,12 @@ class StringCharFromCodeGenerator {
   // deferred code). Always jumps back to the fast case.
   void GenerateSlow(MacroAssembler* masm,
                     const RuntimeCallHelper& call_helper);
+
+  // Skip handling slow case and directly jump to bailout.
+  void SkipSlow(MacroAssembler* masm, Label* bailout) {
+    masm->bind(&slow_case_);
+    masm->jmp(bailout);
+  }
 
  private:
   Register code_;
@@ -1142,13 +1161,25 @@ class StringCharAtGenerator {
 
   // Generates the fast case code. On the fallthrough path |result|
   // register contains the result.
-  void GenerateFast(MacroAssembler* masm);
+  void GenerateFast(MacroAssembler* masm) {
+    char_code_at_generator_.GenerateFast(masm);
+    char_from_code_generator_.GenerateFast(masm);
+  }
 
   // Generates the slow case code. Must not be naturally
   // reachable. Expected to be put after a ret instruction (e.g., in
   // deferred code). Always jumps back to the fast case.
   void GenerateSlow(MacroAssembler* masm,
-                    const RuntimeCallHelper& call_helper);
+                    const RuntimeCallHelper& call_helper) {
+    char_code_at_generator_.GenerateSlow(masm, call_helper);
+    char_from_code_generator_.GenerateSlow(masm, call_helper);
+  }
+
+  // Skip handling slow case and directly jump to bailout.
+  void SkipSlow(MacroAssembler* masm, Label* bailout) {
+    char_code_at_generator_.SkipSlow(masm, bailout);
+    char_from_code_generator_.SkipSlow(masm, bailout);
+  }
 
  private:
   StringCharCodeAtGenerator char_code_at_generator_;
@@ -1197,9 +1228,6 @@ class KeyedLoadFastElementStub : public HydrogenCodeStub {
         IsJSArrayBits::encode(is_js_array);
   }
 
-  Major MajorKey() { return KeyedLoadElement; }
-  int MinorKey() { return bit_field_; }
-
   bool is_js_array() const {
     return IsJSArrayBits::decode(bit_field_);
   }
@@ -1219,6 +1247,9 @@ class KeyedLoadFastElementStub : public HydrogenCodeStub {
   class ElementsKindBits: public BitField<ElementsKind, 0, 8> {};
   uint32_t bit_field_;
 
+  Major MajorKey() { return KeyedLoadElement; }
+  int MinorKey() { return bit_field_; }
+
   DISALLOW_COPY_AND_ASSIGN(KeyedLoadFastElementStub);
 };
 
@@ -1230,9 +1261,6 @@ class TransitionElementsKindStub : public HydrogenCodeStub {
     bit_field_ = FromKindBits::encode(from_kind) |
         ToKindBits::encode(to_kind);
   }
-
-  Major MajorKey() { return TransitionElementsKind; }
-  int MinorKey() { return bit_field_; }
 
   ElementsKind from_kind() const {
     return FromKindBits::decode(bit_field_);
@@ -1252,6 +1280,9 @@ class TransitionElementsKindStub : public HydrogenCodeStub {
   class FromKindBits: public BitField<ElementsKind, 8, 8> {};
   class ToKindBits: public BitField<ElementsKind, 0, 8> {};
   uint32_t bit_field_;
+
+  Major MajorKey() { return TransitionElementsKind; }
+  int MinorKey() { return bit_field_; }
 
   DISALLOW_COPY_AND_ASSIGN(TransitionElementsKindStub);
 };
@@ -1431,7 +1462,7 @@ class StubFailureTrampolineStub : public PlatformCodeStub {
 
   virtual bool IsPregenerated() { return true; }
 
-  static void GenerateAheadOfTime();
+  static void GenerateAheadOfTime(Isolate* isolate);
 
  private:
   Major MajorKey() { return StubFailureTrampoline; }

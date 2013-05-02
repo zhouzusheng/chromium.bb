@@ -33,7 +33,9 @@
 
 #include "../../../Platform/chromium/public/WebCommon.h"
 #include "../../../Platform/chromium/public/WebFileSystem.h"
+#include "../../../Platform/chromium/public/WebFileSystemType.h"
 #include "../../../Platform/chromium/public/WebURLError.h"
+#include "../../../Platform/chromium/public/WebURLRequest.h"
 #include "WebDOMMessageEvent.h"
 #include "WebIconURL.h"
 #include "WebNavigationPolicy.h"
@@ -41,10 +43,7 @@
 #include "WebSecurityOrigin.h"
 #include "WebStorageQuotaType.h"
 #include "WebTextDirection.h"
-
-#if WEBKIT_USING_V8
 #include <v8.h>
-#endif
 
 namespace WebKit {
 
@@ -56,9 +55,6 @@ class WebDataSource;
 class WebDOMEvent;
 class WebFormElement;
 class WebFrame;
-class WebIntent;
-class WebIntentRequest;
-class WebIntentServiceInfo;
 class WebMediaPlayer;
 class WebMediaPlayerClient;
 class WebNode;
@@ -71,7 +67,6 @@ class WebStorageQuotaCallbacks;
 class WebString;
 class WebURL;
 class WebURLLoader;
-class WebURLRequest;
 class WebURLResponse;
 class WebWorker;
 struct WebPluginParams;
@@ -104,6 +99,11 @@ public:
 
 
     // General notifications -----------------------------------------------
+
+    // Indicates that another page has accessed the DOM of the initial empty
+    // document of a main frame. After this, it is no longer safe to show a
+    // pending navigation's URL, because a URL spoof is possible.
+    virtual void didAccessInitialDocument(WebFrame*) { }
 
     // A child frame was created in this frame. This is called when the frame
     // is created and initialized.
@@ -275,6 +275,9 @@ public:
     virtual void didReceiveResponse(
         WebFrame*, unsigned identifier, const WebURLResponse&) { }
 
+    virtual void didChangeResourcePriority(
+        WebFrame*, unsigned identifier, const WebKit::WebURLRequest::Priority&) { }
+
     // The resource request given by identifier succeeded.
     virtual void didFinishResourceLoad(
         WebFrame*, unsigned identifier) { }
@@ -304,7 +307,6 @@ public:
     // Script in the page tried to allocate too much memory.
     virtual void didExhaustMemoryAvailableForScript(WebFrame*) { }
 
-#if WEBKIT_USING_V8
     // Notifies that a new script context has been created for this frame.
     // This is similar to didClearWindowObject but only called once per
     // frame context.
@@ -312,7 +314,6 @@ public:
 
     // WebKit is about to release its reference to a v8 context for a frame.
     virtual void willReleaseScriptContext(WebFrame*, v8::Handle<v8::Context>, int worldId) { }
-#endif
 
     // Geometry notifications ----------------------------------------------
 
@@ -360,7 +361,7 @@ public:
     // called otherwise. The create bool is for indicating whether or not to
     // create root path for file systems if it do not exist.
     virtual void openFileSystem(
-        WebFrame*, WebFileSystem::Type, long long size,
+        WebFrame*, WebFileSystemType, long long size,
         bool create, WebFileSystemCallbacks*) { }
 
     // Deletes FileSystem.
@@ -370,7 +371,7 @@ public:
     // All in-flight operations and following operations may fail after the
     // FileSystem is deleted.
     virtual void deleteFileSystem(
-        WebFrame*, WebFileSystem::Type, WebFileSystemCallbacks*) { }
+        WebFrame*, WebFileSystemType, WebFileSystemCallbacks*) { }
 
     // Quota ---------------------------------------------------------
 
@@ -398,15 +399,6 @@ public:
         WebFrame*, WebStorageQuotaType,
         unsigned long long newQuotaInBytes,
         WebStorageQuotaCallbacks*) { }
-
-    // Web Intents ---------------------------------------------------
-
-    // Register a service to handle Web Intents.
-    virtual void registerIntentService(WebFrame*, const WebIntentServiceInfo&) { }
-
-    // Start a Web Intents activity. The callee uses the |WebIntentRequest|
-    // object to coordinate replies to the intent invocation.
-    virtual void dispatchIntent(WebFrame*, const WebIntentRequest&) { }
 
     // WebSocket -----------------------------------------------------
 

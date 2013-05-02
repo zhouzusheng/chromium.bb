@@ -84,8 +84,10 @@ AudioCodec CodecIDToAudioCodec(CodecID codec_id) {
       return kCodecGSM_MS;
     case CODEC_ID_PCM_MULAW:
       return kCodecPCM_MULAW;
+#ifndef CHROMIUM_OMIT_CODEC_ID_OPUS
     case CODEC_ID_OPUS:
       return kCodecOpus;
+#endif
     default:
       DVLOG(1) << "Unknown audio CodecID: " << codec_id;
   }
@@ -129,8 +131,10 @@ static CodecID AudioCodecToCodecID(AudioCodec audio_codec,
       return CODEC_ID_GSM_MS;
     case kCodecPCM_MULAW:
       return CODEC_ID_PCM_MULAW;
+#ifndef CHROMIUM_OMIT_CODEC_ID_OPUS
     case kCodecOpus:
       return CODEC_ID_OPUS;
+#endif
     default:
       DVLOG(1) << "Unknown AudioCodec: " << audio_codec;
   }
@@ -147,8 +151,10 @@ VideoCodec CodecIDToVideoCodec(CodecID codec_id) {
       return kCodecMPEG4;
     case CODEC_ID_VP8:
       return kCodecVP8;
+#ifndef CHROMIUM_OMIT_AV_CODEC_ID_VP9
     case AV_CODEC_ID_VP9:
       return kCodecVP9;
+#endif
     default:
       DVLOG(1) << "Unknown video CodecID: " << codec_id;
   }
@@ -165,8 +171,10 @@ static CodecID VideoCodecToCodecID(VideoCodec video_codec) {
       return CODEC_ID_MPEG4;
     case kCodecVP8:
       return CODEC_ID_VP8;
+#ifndef CHROMIUM_OMIT_AV_CODEC_ID_VP9
     case kCodecVP9:
       return AV_CODEC_ID_VP9;
+#endif
     default:
       DVLOG(1) << "Unknown VideoCodec: " << video_codec;
   }
@@ -261,34 +269,9 @@ static AVSampleFormat SampleFormatToAVSampleFormat(SampleFormat sample_format) {
   return AV_SAMPLE_FMT_NONE;
 }
 
-// Converts a channel count into a channel layout.  Layouts chosen based on the
-// Vorbis / Opus channel layout.
-static ChannelLayout GuessChannelLayout(int channels) {
-  switch (channels) {
-    case 1:
-      return CHANNEL_LAYOUT_MONO;
-    case 2:
-      return CHANNEL_LAYOUT_STEREO;
-    case 3:
-      return CHANNEL_LAYOUT_SURROUND;
-    case 4:
-      return CHANNEL_LAYOUT_QUAD;
-    case 5:
-      return CHANNEL_LAYOUT_5_0;
-    case 6:
-      return CHANNEL_LAYOUT_5_1;
-    case 7:
-      return CHANNEL_LAYOUT_6_1;
-    case 8:
-      return CHANNEL_LAYOUT_7_1;
-    default:
-      DVLOG(1) << "Unsupported channel count: " << channels;
-  }
-  return CHANNEL_LAYOUT_UNSUPPORTED;
-}
-
-void AVCodecContextToAudioDecoderConfig(
+static void AVCodecContextToAudioDecoderConfig(
     const AVCodecContext* codec_context,
+    bool is_encrypted,
     AudioDecoderConfig* config) {
   DCHECK_EQ(codec_context->codec_type, AVMEDIA_TYPE_AUDIO);
 
@@ -312,12 +295,23 @@ void AVCodecContextToAudioDecoderConfig(
                      codec_context->sample_rate,
                      codec_context->extradata,
                      codec_context->extradata_size,
-                     false,  // Not encrypted.
+                     is_encrypted,
                      true);
   if (codec != kCodecOpus) {
     DCHECK_EQ(av_get_bytes_per_sample(codec_context->sample_fmt) * 8,
               config->bits_per_channel());
   }
+}
+
+void AVStreamToAudioDecoderConfig(
+    const AVStream* stream,
+    AudioDecoderConfig* config) {
+  bool is_encrypted = false;
+  AVDictionaryEntry* key = av_dict_get(stream->metadata, "enc_key_id", NULL, 0);
+  if (key)
+    is_encrypted = true;
+  return AVCodecContextToAudioDecoderConfig(stream->codec,
+                                            is_encrypted, config);
 }
 
 void AudioDecoderConfigToAVCodecContext(const AudioDecoderConfig& config,
@@ -383,12 +377,17 @@ void AVStreamToVideoDecoderConfig(
     coded_size = natural_size;
   }
 
+  bool is_encrypted = false;
+  AVDictionaryEntry* key = av_dict_get(stream->metadata, "enc_key_id", NULL, 0);
+  if (key)
+    is_encrypted = true;
+
   config->Initialize(codec,
                      profile,
                      format,
                      coded_size, visible_rect, natural_size,
                      stream->codec->extradata, stream->codec->extradata_size,
-                     false,  // Not encrypted.
+                     is_encrypted,
                      true);
 }
 
@@ -468,8 +467,10 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout, int channels) {
       return CHANNEL_LAYOUT_6_1_FRONT;
     case AV_CH_LAYOUT_7POINT0_FRONT:
       return CHANNEL_LAYOUT_7_0_FRONT;
+#ifdef AV_CH_LAYOUT_7POINT1_WIDE_BACK
     case AV_CH_LAYOUT_7POINT1_WIDE_BACK:
       return CHANNEL_LAYOUT_7_1_WIDE_BACK;
+#endif
     case AV_CH_LAYOUT_OCTAGONAL:
       return CHANNEL_LAYOUT_OCTAGONAL;
     default:

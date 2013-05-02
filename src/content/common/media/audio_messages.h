@@ -5,8 +5,6 @@
 // IPC messages for the audio.
 // Multiply-included message file, hence no include guard.
 
-#include <string>
-
 #include "base/basictypes.h"
 #include "base/shared_memory.h"
 #include "base/sync_socket.h"
@@ -48,19 +46,21 @@ IPC_MESSAGE_CONTROL4(AudioMsg_NotifyStreamCreated,
 
 // Tell the renderer process that an audio input stream has been created.
 // The renderer process would be given a SyncSocket that it should read
-// from from then on.
+// from from then on. It is also given number of segments in shared memory.
 #if defined(OS_WIN)
-IPC_MESSAGE_CONTROL4(AudioInputMsg_NotifyStreamCreated,
+IPC_MESSAGE_CONTROL5(AudioInputMsg_NotifyStreamCreated,
                      int /* stream id */,
                      base::SharedMemoryHandle /* handle */,
                      base::SyncSocket::Handle /* socket handle */,
-                     uint32 /* length */)
+                     uint32 /* length */,
+                     uint32 /* segment count */)
 #else
-IPC_MESSAGE_CONTROL4(AudioInputMsg_NotifyStreamCreated,
+IPC_MESSAGE_CONTROL5(AudioInputMsg_NotifyStreamCreated,
                      int /* stream id */,
                      base::SharedMemoryHandle /* handle */,
                      base::FileDescriptor /* socket handle */,
-                     uint32 /* length */)
+                     uint32 /* length */,
+                     uint32 /* segment count */)
 #endif
 
 // Notification message sent from AudioRendererHost to renderer after an output
@@ -85,10 +85,6 @@ IPC_MESSAGE_CONTROL2(AudioInputMsg_NotifyStreamVolume,
                      int /* stream id */,
                      double /* volume */)
 
-IPC_MESSAGE_CONTROL2(AudioInputMsg_NotifyDeviceStarted,
-                     int /* stream id */,
-                     std::string /* device_id */)
-
 // Messages sent from the renderer to the browser.
 
 // Request that got sent to browser for creating an audio output stream
@@ -97,11 +93,12 @@ IPC_MESSAGE_CONTROL2(AudioHostMsg_CreateStream,
                      media::AudioParameters /* params */)
 
 // Request that got sent to browser for creating an audio input stream
-IPC_MESSAGE_CONTROL4(AudioInputHostMsg_CreateStream,
+IPC_MESSAGE_CONTROL5(AudioInputHostMsg_CreateStream,
                      int /* stream_id */,
+                     int /* session_id */,
                      media::AudioParameters /* params */,
-                     std::string /* device_id */,
-                     bool /* automatic_gain_control */)
+                     bool /* automatic_gain_control */,
+                     uint32 /* shared memory count */)
 
 // Indicate that audio for a stream is produced by the specified render view.
 IPC_MESSAGE_CONTROL2(AudioHostMsg_AssociateStreamWithProducer,
@@ -147,9 +144,3 @@ IPC_MESSAGE_CONTROL2(AudioHostMsg_SetVolume,
 IPC_MESSAGE_CONTROL2(AudioInputHostMsg_SetVolume,
                      int /* stream_id */,
                      double /* volume */)
-
-// Start the device referenced by the session_id for the input stream specified
-// by stream_id.
-IPC_MESSAGE_CONTROL2(AudioInputHostMsg_StartDevice,
-                     int /* stream_id */,
-                     int /* session_id */)

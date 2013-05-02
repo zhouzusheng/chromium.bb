@@ -731,6 +731,14 @@ EVENT_TYPE(URL_REQUEST_BLOCKED_ON_DELEGATE)
 EVENT_TYPE(URL_REQUEST_JOB_BYTES_READ)
 EVENT_TYPE(URL_REQUEST_JOB_FILTERED_BYTES_READ)
 
+// This event is sent when the priority of a net::URLRequest is
+// changed after it has started. The parameters attached to this event
+// are:
+//   {
+//     "priority": <Numerical value of the priority (higher is more important)>,
+//   }
+EVENT_TYPE(URL_REQUEST_SET_PRIORITY)
+
 // ------------------------------------------------------------------------
 // HttpCache
 // ------------------------------------------------------------------------
@@ -1070,14 +1078,28 @@ EVENT_TYPE(SPDY_SESSION_GOAWAY)
 //     "stream_id": <The stream ID for the window update>,
 //     "delta"    : <The delta window size>,
 //   }
-EVENT_TYPE(SPDY_SESSION_RECEIVED_WINDOW_UPDATE)
+EVENT_TYPE(SPDY_SESSION_RECEIVED_WINDOW_UPDATE_FRAME)
 
 // Sending of a SPDY WINDOW_UPDATE frame (which controls the receive window).
 //   {
 //     "stream_id": <The stream ID for the window update>,
 //     "delta"    : <The delta window size>,
 //   }
-EVENT_TYPE(SPDY_SESSION_SENT_WINDOW_UPDATE)
+EVENT_TYPE(SPDY_SESSION_SENT_WINDOW_UPDATE_FRAME)
+
+// This event indicates that the send window has been updated for a session.
+//   {
+//     "delta":      <The window size delta>,
+//     "new_window": <The new window size>,
+//   }
+EVENT_TYPE(SPDY_SESSION_UPDATE_SEND_WINDOW)
+
+// This event indicates that the recv window has been updated for a session.
+//   {
+//     "delta":      <The window size delta>,
+//     "new_window": <The new window size>,
+//   }
+EVENT_TYPE(SPDY_SESSION_UPDATE_RECV_WINDOW)
 
 // Sending of a SPDY CREDENTIAL frame (which sends a certificate or
 // certificate chain to the server).
@@ -1103,8 +1125,11 @@ EVENT_TYPE(SPDY_SESSION_SEND_DATA)
 //   }
 EVENT_TYPE(SPDY_SESSION_RECV_DATA)
 
-// Logs that a stream is stalled on the send window being closed.
-EVENT_TYPE(SPDY_SESSION_STALLED_ON_SEND_WINDOW)
+// Logs that a stream is stalled on the session send window being closed.
+EVENT_TYPE(SPDY_SESSION_STREAM_STALLED_ON_SESSION_SEND_WINDOW)
+
+// Logs that a stream is stalled on its send window being closed.
+EVENT_TYPE(SPDY_SESSION_STREAM_STALLED_ON_STREAM_SEND_WINDOW)
 
 // Session is closing
 //   {
@@ -1174,7 +1199,7 @@ EVENT_TYPE(SPDY_STREAM)
 // Logs that a stream attached to a pushed stream.
 EVENT_TYPE(SPDY_STREAM_ADOPTED_PUSH_STREAM)
 
-// This event indicates that the send window has been updated
+// This event indicates that the send window has been updated for a stream.
 //   {
 //     "id":         <The stream id>,
 //     "delta":      <The window size delta>,
@@ -1182,7 +1207,7 @@ EVENT_TYPE(SPDY_STREAM_ADOPTED_PUSH_STREAM)
 //   }
 EVENT_TYPE(SPDY_STREAM_UPDATE_SEND_WINDOW)
 
-// This event indicates that the recv window has been updated
+// This event indicates that the recv window has been updated for a stream.
 //   {
 //     "id":         <The stream id>,
 //     "delta":      <The window size delta>,
@@ -1207,6 +1232,119 @@ EVENT_TYPE(SPDY_PROXY_CLIENT_SESSION)
 //   {
 //     "source_dependency":  <Source identifier for the underlying session>,
 //   }
+
+// ------------------------------------------------------------------------
+// QuicSession
+// ------------------------------------------------------------------------
+
+// The start/end of a QuicSession.
+//   {
+//     "host": <The host-port string>,
+//   }
+EVENT_TYPE(QUIC_SESSION)
+
+// Session is closing because of an error.
+//   {
+//     "net_error": <Net error code for the closure>,
+//   }
+EVENT_TYPE(QUIC_SESSION_CLOSE_ON_ERROR)
+
+// Session received a QUIC packet.
+//   {
+//     "peer_address": <The ip:port of the peer>,
+//     "self_address": <The local ip:port which received the packet>,
+//   }
+EVENT_TYPE(QUIC_SESSION_PACKET_RECEIVED)
+
+// Session received a QUIC packet header for a valid packet.
+//   {
+//     "guid": <The 64-bit GUID for this connection, as a base-10 string>,
+//     "public_flags": <The public flags set for this packet>,
+//     "packet_sequence_number": <The packet's full 64-bit sequence number,
+//                                as a base-10 string.>,
+//     "private_flags": <The private flags set for this packet>,
+//     "fec_group": <The FEC group of this packet>,
+//   }
+EVENT_TYPE(QUIC_SESSION_PACKET_HEADER_RECEIVED)
+
+// Session received a STREAM frame.
+//   {
+//     "stream_id": <The id of the stream which this data is for>,
+//     "fin": <True if this is the final data set by the peer on this stream>,
+//     "offset": <Offset in the byte stream where this data starts>,
+//     "length": <Length of the data in this frame>,
+//   }
+EVENT_TYPE(QUIC_SESSION_STREAM_FRAME_RECEIVED)
+
+// Session received an ACK frame.
+//   {
+//     "sent_info": <Details of packet sent by the peer>
+//       {
+//         "least_unacked": <Lowest sequence number of a packet sent by the peer
+//                           for which it has not received an ACK>,
+//       }
+//     "received_info": <Details of packet received by the peer>
+//       {
+//         "largest_observed": <The largest sequence number of a packet received
+//                               by (or inferred by) the peer>,
+//         "missing": <List of sequence numbers of packets lower than
+//                     largest_observed which have not been received by the
+//                     peer>,
+//       }
+//   }
+EVENT_TYPE(QUIC_SESSION_ACK_FRAME_RECEIVED)
+
+// Session recevied a RST_STREAM frame.
+//   {
+//     "offset": <Offset in the byte stream which triggered the reset>,
+//     "error_code": <QuicErrorCode in the frame>,
+//     "details": <Human readable description>,
+//   }
+EVENT_TYPE(QUIC_SESSION_RST_STREAM_FRAME_RECEIVED)
+
+// Session received a CONGESTION_FEEDBACK frame.
+//   {
+//     "type": <The specific type of feedback being provided>,
+//     Other per-feedback type details:
+//
+//     for InterArrival:
+//     "accumulated_number_of_lost_packets": <Total number of lost packets
+//                                            over the life of this session>,
+//     "received_packets": <List of strings of the form:
+//                          <sequence_number>@<receive_time_in_ms>>,
+//
+//     for FixRate:
+//     "bitrate_in_bytes_per_second": <The configured bytes per second>,
+//
+//     for TCP:
+//     "accumulated_number_of_lost_packets": <Total number of lost packets
+//                                            over the life of this session>,
+//     "receive_window": <Number of bytes in the receive window>,
+//   }
+EVENT_TYPE(QUIC_SESSION_CONGESTION_FEEDBACK_FRAME_RECEIVED)
+
+// Session received a CONNECTION_CLOSE frame.
+//   {
+//     "error_code": <QuicErrorCode in the frame>,
+//     "details": <Human readable description>,
+//   }
+EVENT_TYPE(QUIC_SESSION_CONNECTION_CLOSE_FRAME_RECEIVED)
+
+// ------------------------------------------------------------------------
+// QuicHttpStream
+// ------------------------------------------------------------------------
+
+// The stream is sending the request headers.
+//   {
+//     "headers": <The list of header:value pairs>
+//   }
+EVENT_TYPE(QUIC_HTTP_STREAM_SEND_REQUEST_HEADERS)
+
+// The stream has read the response headers.
+//   {
+//     "headers": <The list of header:value pairs>
+//   }
+EVENT_TYPE(QUIC_HTTP_STREAM_READ_RESPONSE_HEADERS)
 
 // ------------------------------------------------------------------------
 // HttpStreamParser

@@ -27,6 +27,8 @@
 #include "DragController.h"
 
 #if ENABLE(DRAG_SUPPORT)
+
+#include "CachedImage.h"
 #include "Clipboard.h"
 #include "ClipboardAccessPolicy.h"
 #include "CachedResourceLoader.h"
@@ -36,6 +38,7 @@
 #include "DragClient.h"
 #include "DragData.h"
 #include "DragSession.h"
+#include "DragState.h"
 #include "Editor.h"
 #include "EditorClient.h"
 #include "Element.h"
@@ -304,7 +307,7 @@ static Element* elementUnderMouse(Document* documentUnderMouse, const IntPoint& 
     if (n)
         n = n->deprecatedShadowAncestorNode();
 
-    return static_cast<Element*>(n);
+    return toElement(n);
 }
 
 bool DragController::tryDocumentDrag(DragData* dragData, DragDestinationAction actionMask, DragSession& dragSession)
@@ -411,7 +414,7 @@ DragOperation DragController::operationForLoad(DragData* dragData)
     bool pluginDocumentAcceptsDrags = false;
 
     if (doc && doc->isPluginDocument()) {
-        const Widget* widget = static_cast<PluginDocument*>(doc)->pluginWidget();
+        const Widget* widget = toPluginDocument(doc)->pluginWidget();
         const PluginViewBase* pluginView = (widget && widget->isPluginViewBase()) ? static_cast<const PluginViewBase*>(widget) : 0;
 
         if (pluginView)
@@ -560,7 +563,7 @@ bool DragController::canProcessDrag(DragData* dragData)
     if (!m_page->mainFrame()->contentRenderer())
         return false;
 
-    result = m_page->mainFrame()->eventHandler()->hitTestResultAtPoint(point, true);
+    result = m_page->mainFrame()->eventHandler()->hitTestResultAtPoint(point, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::AllowShadowContent);
 
     if (!result.innerNonSharedNode())
         return false;
@@ -744,7 +747,7 @@ bool DragController::startDrag(Frame* src, const DragState& state, DragOperation
     if (!src->view() || !src->contentRenderer())
         return false;
 
-    HitTestResult hitTestResult = src->eventHandler()->hitTestResultAtPoint(dragOrigin, true);
+    HitTestResult hitTestResult = src->eventHandler()->hitTestResultAtPoint(dragOrigin, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::AllowShadowContent);
     if (!state.m_dragSrc->contains(hitTestResult.innerNode()))
         // The original node being dragged isn't under the drag origin anymore... maybe it was
         // hidden or moved out from under the cursor. Regardless, we don't want to start a drag on
@@ -782,11 +785,11 @@ bool DragController::startDrag(Frame* src, const DragState& state, DragOperation
 
     Node* node = state.m_dragSrc.get();
 
-    Image* image = getImage(static_cast<Element*>(node));
+    Image* image = node->isElementNode() ? getImage(toElement(node)) : 0;
     if (state.m_dragType == DragSourceActionSelection) {
         if (!clipboard->hasData()) {
             if (enclosingTextFormControl(src->selection()->start()))
-                clipboard->writePlainText(src->editor()->selectedText());
+                clipboard->writePlainText(src->editor()->selectedTextForClipboard());
             else {
                 RefPtr<Range> selectionRange = src->selection()->toNormalizedRange();
                 ASSERT(selectionRange);
@@ -806,7 +809,7 @@ bool DragController::startDrag(Frame* src, const DragState& state, DragOperation
         // We shouldn't be starting a drag for an image that can't provide an extension.
         // This is an early detection for problems encountered later upon drop.
         ASSERT(!image->filenameExtension().isEmpty());
-        Element* element = static_cast<Element*>(node);
+        Element* element = toElement(node);
         if (!clipboard->hasData()) {
             m_draggingImageURL = imageURL;
             prepareClipboardForImageDrag(src, clipboard, element, linkURL, imageURL, hitTestResult.altDisplayString());

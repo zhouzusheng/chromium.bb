@@ -75,14 +75,17 @@ class TracingMessageHandler
   virtual void OnTraceDataCollected(
       const scoped_refptr<base::RefCountedString>& trace_fragment) OVERRIDE;
   virtual void OnTraceBufferPercentFullReply(float percent_full) OVERRIDE;
+  virtual void OnKnownCategoriesCollected(
+      const std::set<std::string>& known_categories) OVERRIDE;
 
   // Messages.
-  void OnTracingControllerInitialized(const ListValue* list);
-  void OnBeginTracing(const ListValue* list);
-  void OnEndTracingAsync(const ListValue* list);
-  void OnBeginRequestBufferPercentFull(const ListValue* list);
-  void OnLoadTraceFile(const ListValue* list);
-  void OnSaveTraceFile(const ListValue* list);
+  void OnTracingControllerInitialized(const base::ListValue* list);
+  void OnBeginTracing(const base::ListValue* list);
+  void OnEndTracingAsync(const base::ListValue* list);
+  void OnBeginRequestBufferPercentFull(const base::ListValue* list);
+  void OnLoadTraceFile(const base::ListValue* list);
+  void OnSaveTraceFile(const base::ListValue* list);
+  void OnGetKnownCategories(const base::ListValue* list);
 
   // Callbacks.
   void LoadTraceFileComplete(string16* file_contents);
@@ -188,15 +191,18 @@ void TracingMessageHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("saveTraceFile",
       base::Bind(&TracingMessageHandler::OnSaveTraceFile,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("getKnownCategories",
+      base::Bind(&TracingMessageHandler::OnGetKnownCategories,
+                 base::Unretained(this)));
 }
 
 void TracingMessageHandler::OnTracingControllerInitialized(
-    const ListValue* args) {
+    const base::ListValue* args) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // Send the client info to the tracingController
   {
-    scoped_ptr<DictionaryValue> dict(new DictionaryValue());
+    scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
     dict->SetString("version", GetContentClient()->GetProduct());
 
     dict->SetString("command_line",
@@ -208,7 +214,7 @@ void TracingMessageHandler::OnTracingControllerInitialized(
 }
 
 void TracingMessageHandler::OnBeginRequestBufferPercentFull(
-    const ListValue* list) {
+    const base::ListValue* list) {
   TraceController::GetInstance()->GetTraceBufferPercentFullAsync(this);
 }
 
@@ -298,7 +304,7 @@ void TracingMessageHandler::FileSelectionCanceled(void* params) {
   }
 }
 
-void TracingMessageHandler::OnLoadTraceFile(const ListValue* list) {
+void TracingMessageHandler::OnLoadTraceFile(const base::ListValue* list) {
   // Only allow a single dialog at a time.
   if (select_trace_file_dialog_.get())
     return;
@@ -340,7 +346,7 @@ void TracingMessageHandler::LoadTraceFileComplete(string16* contents) {
       "delete window.traceData;"));
 }
 
-void TracingMessageHandler::OnSaveTraceFile(const ListValue* list) {
+void TracingMessageHandler::OnSaveTraceFile(const base::ListValue* list) {
   // Only allow a single dialog at a time.
   if (select_trace_file_dialog_.get())
     return;
@@ -370,9 +376,10 @@ void TracingMessageHandler::SaveTraceFileComplete() {
   web_ui()->CallJavascriptFunction("tracingController.onSaveTraceFileComplete");
 }
 
-void TracingMessageHandler::OnBeginTracing(const ListValue* args) {
+void TracingMessageHandler::OnBeginTracing(const base::ListValue* args) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(args->GetSize(), (size_t) 2);
+  DCHECK_GE(args->GetSize(), (size_t) 2);
+  DCHECK_LE(args->GetSize(), (size_t) 3);
 
   bool system_tracing_requested = false;
   bool ok = args->GetBoolean(0, &system_tracing_requested);
@@ -382,12 +389,22 @@ void TracingMessageHandler::OnBeginTracing(const ListValue* args) {
   ok = args->GetString(1, &chrome_categories);
   DCHECK(ok);
 
+  base::debug::TraceLog::Options options =
+      base::debug::TraceLog::RECORD_UNTIL_FULL;
+  if (args->GetSize() >= 3) {
+    std::string options_;
+    ok = args->GetString(2, &options_);
+    DCHECK(ok);
+    options = base::debug::TraceLog::TraceOptionsFromString(options_);
+  }
+
   trace_enabled_ = true;
   // TODO(jbates) This may fail, but that's OK for current use cases.
   //              Ex: Multiple about:gpu traces can not trace simultaneously.
   // TODO(nduca) send feedback to javascript about whether or not BeginTracing
   //             was successful.
-  TraceController::GetInstance()->BeginTracing(this, chrome_categories);
+  TraceController::GetInstance()->BeginTracing(this, chrome_categories,
+                                               options);
 
   if (system_tracing_requested) {
 #if defined(OS_CHROMEOS)
@@ -400,7 +417,7 @@ void TracingMessageHandler::OnBeginTracing(const ListValue* args) {
   }
 }
 
-void TracingMessageHandler::OnEndTracingAsync(const ListValue* list) {
+void TracingMessageHandler::OnEndTracingAsync(const base::ListValue* list) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // TODO(nduca): fix javascript code to make sure trace_enabled_ is always true
@@ -442,7 +459,7 @@ void TracingMessageHandler::OnEndSystemTracingAck(
 
   web_ui()->CallJavascriptFunction(
       "tracingController.onSystemTraceDataCollected",
-      *scoped_ptr<Value>(Value::CreateStringValue(events_str_ptr->data())));
+      *scoped_ptr<base::Value>(new base::StringValue(events_str_ptr->data())));
   DCHECK(!system_trace_in_progress_);
 
   OnEndTracingComplete();
@@ -469,7 +486,31 @@ void TracingMessageHandler::OnTraceBufferPercentFullReply(float percent_full) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   web_ui()->CallJavascriptFunction(
       "tracingController.onRequestBufferPercentFullComplete",
-      *scoped_ptr<Value>(Value::CreateDoubleValue(percent_full)));
+      *scoped_ptr<base::Value>(new base::FundamentalValue(percent_full)));
+}
+
+void TracingMessageHandler::OnGetKnownCategories(const base::ListValue* list) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (!TraceController::GetInstance()->GetKnownCategoriesAsync(this)) {
+    std::set<std::string> ret;
+    OnKnownCategoriesCollected(ret);
+  }
+}
+
+void TracingMessageHandler::OnKnownCategoriesCollected(
+    const std::set<std::string>& known_categories) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  scoped_ptr<base::ListValue> categories(new base::ListValue());
+  // SHEZ: modified upstream code here to fix compile error.
+  for (std::set<std::string>::const_iterator iter = known_categories.begin();
+       iter != known_categories.end();
+       ++iter) {
+    categories->AppendString(*iter);
+  }
+
+  web_ui()->CallJavascriptFunction(
+      "tracingController.onKnownCategoriesCollected", *categories);
 }
 
 }  // namespace

@@ -18,7 +18,7 @@ void* GetAddress(SharedMemory* shared_memory,
                  uint32 shm_data_offset,
                  uint32 shm_data_size) {
   // Memory bounds have already been validated, so there
-  // is just DCHECKS here.
+  // are just DCHECKS here.
   DCHECK(shared_memory);
   DCHECK(shared_memory->memory());
   DCHECK_LE(shm_data_offset + shm_data_size, shm_size);
@@ -28,13 +28,6 @@ void* GetAddress(SharedMemory* shared_memory,
 
 namespace gfx {
 
-#if !defined(OS_ANDROID)
-scoped_ptr<AsyncPixelTransferDelegate>
-    AsyncPixelTransferDelegate::Create(gfx::GLContext* context) {
-  return AsyncPixelTransferDelegateStub::Create(context);
-}
-#endif
-
 scoped_ptr<AsyncPixelTransferDelegate>
       AsyncPixelTransferDelegateStub::Create(gfx::GLContext* context) {
   return make_scoped_ptr(
@@ -43,9 +36,6 @@ scoped_ptr<AsyncPixelTransferDelegate>
 }
 
 AsyncTransferStateStub::AsyncTransferStateStub(GLuint texture_id) {
-  static const AsyncTexImage2DParams zero_params = {0, 0, 0, 0, 0, 0, 0, 0};
-  late_bind_define_params_ = zero_params;
-  needs_late_bind_ = false;
 }
 
 AsyncTransferStateStub::~AsyncTransferStateStub() {
@@ -53,13 +43,6 @@ AsyncTransferStateStub::~AsyncTransferStateStub() {
 
 bool AsyncTransferStateStub::TransferIsInProgress() {
   return false;
-}
-
-void AsyncTransferStateStub::BindTransfer(AsyncTexImage2DParams* out_params) {
-  DCHECK(out_params);
-  DCHECK(needs_late_bind_);
-  *out_params = late_bind_define_params_;
-  needs_late_bind_ = false;
 }
 
 AsyncPixelTransferDelegateStub::AsyncPixelTransferDelegateStub()
@@ -71,9 +54,14 @@ AsyncPixelTransferDelegateStub::~AsyncPixelTransferDelegateStub() {
 
 AsyncPixelTransferState*
     AsyncPixelTransferDelegateStub::CreateRawPixelTransferState(
-        GLuint texture_id) {
-  return static_cast<AsyncPixelTransferState*>(
-      new AsyncTransferStateStub(texture_id));
+        GLuint texture_id,
+        const AsyncTexImage2DParams& define_params) {
+  return new AsyncTransferStateStub(texture_id);
+}
+
+bool AsyncPixelTransferDelegateStub::BindCompletedAsyncTransfers() {
+  // Everything is already bound.
+  return false;
 }
 
 void AsyncPixelTransferDelegateStub::AsyncNotifyCompletion(
@@ -85,17 +73,11 @@ void AsyncPixelTransferDelegateStub::AsyncNotifyCompletion(
 void AsyncPixelTransferDelegateStub::AsyncTexImage2D(
     AsyncPixelTransferState* transfer_state,
     const AsyncTexImage2DParams& tex_params,
-    const AsyncMemoryParams& mem_params) {
+    const AsyncMemoryParams& mem_params,
+    const base::Closure& bind_callback) {
   // Save the define params to return later during deferred
   // binding of the transfer texture.
   DCHECK(transfer_state);
-  AsyncTransferStateStub* state =
-      static_cast<AsyncTransferStateStub*>(transfer_state);
-  // We don't actually need a late bind since this stub does
-  // everything synchronously, but this tries to be similar
-  // as an async implementation.
-  state->needs_late_bind_ = true;
-  state->late_bind_define_params_ = tex_params;
   void* data = GetAddress(mem_params.shared_memory,
                           mem_params.shm_size,
                           mem_params.shm_data_offset,
@@ -110,6 +92,8 @@ void AsyncPixelTransferDelegateStub::AsyncTexImage2D(
       tex_params.format,
       tex_params.type,
       data);
+  // The texture is already fully bound so just call it now.
+  bind_callback.Run();
 }
 
 void AsyncPixelTransferDelegateStub::AsyncTexSubImage2D(
@@ -121,9 +105,6 @@ void AsyncPixelTransferDelegateStub::AsyncTexSubImage2D(
                           mem_params.shm_data_offset,
                           mem_params.shm_data_size);
   DCHECK(transfer_state);
-  AsyncTransferStateStub* state =
-      static_cast<AsyncTransferStateStub*>(transfer_state);
-  DCHECK(!state->needs_late_bind_);
   base::TimeTicks begin_time(base::TimeTicks::HighResNow());
   glTexSubImage2D(
       tex_params.target,
@@ -139,12 +120,25 @@ void AsyncPixelTransferDelegateStub::AsyncTexSubImage2D(
   total_texture_upload_time_ += base::TimeTicks::HighResNow() - begin_time;
 }
 
+void AsyncPixelTransferDelegateStub::WaitForTransferCompletion(
+    AsyncPixelTransferState* state) {
+  // Already done.
+}
+
 uint32 AsyncPixelTransferDelegateStub::GetTextureUploadCount() {
   return texture_upload_count_;
 }
 
 base::TimeDelta AsyncPixelTransferDelegateStub::GetTotalTextureUploadTime() {
   return total_texture_upload_time_;
+}
+
+bool AsyncPixelTransferDelegateStub::ProcessMorePendingTransfers() {
+  return false;
+}
+
+bool AsyncPixelTransferDelegateStub::NeedsProcessMorePendingTransfers() {
+  return false;
 }
 
 }  // namespace gfx

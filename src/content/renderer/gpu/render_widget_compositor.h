@@ -5,9 +5,14 @@
 #ifndef CONTENT_RENDERER_GPU_RENDER_WIDGET_COMPOSITOR_H_
 #define CONTENT_RENDERER_GPU_RENDER_WIDGET_COMPOSITOR_H_
 
-#include "cc/layer_tree_host_client.h"
-#include "cc/layer_tree_settings.h"
+#include "base/time.h"
+#include "cc/debug/rendering_stats.h"
+#include "cc/trees/layer_tree_host_client.h"
+#include "cc/trees/layer_tree_settings.h"
+#include "skia/ext/refptr.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebLayerTreeView.h"
+
+class SkPicture;
 
 namespace cc {
 class LayerTreeHost;
@@ -21,14 +26,17 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
  public:
   // Attempt to construct and initialize a compositor instance for the widget
   // with the given settings. Returns NULL if initialization fails.
-  static scoped_ptr<RenderWidgetCompositor> Create(
-      RenderWidget* widget,
-      WebKit::WebLayerTreeViewClient* client,
-      WebKit::WebLayerTreeView::Settings settings);
+  static scoped_ptr<RenderWidgetCompositor> Create(RenderWidget* widget);
 
   virtual ~RenderWidgetCompositor();
 
-  cc::LayerTreeHost* layer_tree_host() const { return layer_tree_host_.get(); }
+  void SetSuppressScheduleComposite(bool suppress);
+  void Animate(base::TimeTicks time);
+  void Composite(base::TimeTicks frame_begin_time);
+  void GetRenderingStats(cc::RenderingStats* stats);
+  skia::RefPtr<SkPicture> CapturePicture();
+  void EnableHidingTopControls(bool enable);
+  void SetOverdrawBottomHeight(float overdraw_bottom_height);
 
   // WebLayerTreeView implementation.
   virtual void setSurfaceReady();
@@ -56,12 +64,11 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   virtual void setNeedsAnimate();
   virtual void setNeedsRedraw();
   virtual bool commitRequested() const;
-  virtual void composite();
-  virtual void updateAnimations(double frame_begin_time);
   virtual void didStopFlinging();
   virtual bool compositeAndReadback(void *pixels, const WebKit::WebRect& rect);
   virtual void finishAllRendering();
   virtual void setDeferCommits(bool defer_commits);
+  virtual void registerForAnimations(WebKit::WebLayer* layer);
   virtual void renderingStats(WebKit::WebRenderingStats& stats) const {}
   virtual void setShowFPSCounter(bool show);
   virtual void setShowPaintRects(bool show);
@@ -69,31 +76,33 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   virtual void setContinuousPaintingEnabled(bool enabled);
 
   // cc::LayerTreeHostClient implementation.
-  virtual void willBeginFrame() OVERRIDE;
-  virtual void didBeginFrame() OVERRIDE;
-  virtual void animate(double monotonic_frame_begin_time) OVERRIDE;
-  virtual void layout() OVERRIDE;
-  virtual void applyScrollAndScale(gfx::Vector2d scroll_delta,
+  virtual void WillBeginFrame() OVERRIDE;
+  virtual void DidBeginFrame() OVERRIDE;
+  virtual void Animate(double frame_begin_time) OVERRIDE;
+  virtual void Layout() OVERRIDE;
+  virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
                                    float page_scale) OVERRIDE;
-  virtual scoped_ptr<cc::OutputSurface> createOutputSurface() OVERRIDE;
-  virtual void didRecreateOutputSurface(bool success) OVERRIDE;
-  virtual scoped_ptr<cc::InputHandler> createInputHandler() OVERRIDE;
-  virtual void willCommit() OVERRIDE;
-  virtual void didCommit() OVERRIDE;
-  virtual void didCommitAndDrawFrame() OVERRIDE;
-  virtual void didCompleteSwapBuffers() OVERRIDE;
-  virtual void scheduleComposite() OVERRIDE;
-  virtual scoped_ptr<cc::FontAtlas> createFontAtlas() OVERRIDE;
+  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface() OVERRIDE;
+  virtual void DidRecreateOutputSurface(bool success) OVERRIDE;
+  virtual scoped_ptr<cc::InputHandler> CreateInputHandler() OVERRIDE;
+  virtual void WillCommit() OVERRIDE;
+  virtual void DidCommit() OVERRIDE;
+  virtual void DidCommitAndDrawFrame() OVERRIDE;
+  virtual void DidCompleteSwapBuffers() OVERRIDE;
+  virtual void ScheduleComposite() OVERRIDE;
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForMainThread() OVERRIDE;
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForCompositorThread() OVERRIDE;
 
 private:
-  RenderWidgetCompositor(RenderWidget* widget,
-                         WebKit::WebLayerTreeViewClient* client);
+  explicit RenderWidgetCompositor(RenderWidget* widget);
 
   bool initialize(cc::LayerTreeSettings settings);
 
   bool threaded_;
+  bool suppress_schedule_composite_;
   RenderWidget* widget_;
-  WebKit::WebLayerTreeViewClient* client_;
   scoped_ptr<cc::LayerTreeHost> layer_tree_host_;
 };
 

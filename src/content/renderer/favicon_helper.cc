@@ -60,7 +60,9 @@ static FaviconURL::IconType ToFaviconType(WebIconURL::Type type) {
 }
 
 FaviconHelper::FaviconHelper(RenderView* render_view)
-    : RenderViewObserver(render_view) {
+    : RenderViewObserver(render_view),
+      icon_types_changed_(WebIconURL::TypeInvalid),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
 }
 
 void FaviconHelper::DidChangeIcon(WebKit::WebFrame* frame,
@@ -71,7 +73,32 @@ void FaviconHelper::DidChangeIcon(WebKit::WebFrame* frame,
   if (!TouchEnabled() && icon_type != WebIconURL::TypeFavicon)
     return;
 
-  WebVector<WebIconURL> icon_urls = frame->iconURLs(icon_type);
+  DCHECK(!render_view()->GetWebView() ||
+         frame == render_view()->GetWebView()->mainFrame());
+
+  weak_ptr_factory_.InvalidateWeakPtrs();
+  icon_types_changed_ =
+      static_cast<WebKit::WebIconURL::Type>(icon_types_changed_ | icon_type);
+  MessageLoop::current()->PostTask(FROM_HERE,
+      base::Bind(&FaviconHelper::ProcessDidChangeIcon,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
+FaviconHelper::~FaviconHelper() {
+}
+
+void FaviconHelper::ProcessDidChangeIcon() {
+  WebKit::WebIconURL::Type icon_types = icon_types_changed_;
+  icon_types_changed_ = WebIconURL::TypeInvalid;
+  WebKit::WebView* web_view = render_view()->GetWebView();
+  if (!web_view) {
+    return;
+  }
+  WebFrame* frame = web_view->mainFrame();
+  if (!frame) {
+    return;
+  }
+  WebVector<WebIconURL> icon_urls = frame->iconURLs(icon_types);
   std::vector<FaviconURL> urls;
   for (size_t i = 0; i < icon_urls.size(); i++) {
     urls.push_back(FaviconURL(icon_urls[i].iconURL(),
@@ -80,11 +107,9 @@ void FaviconHelper::DidChangeIcon(WebKit::WebFrame* frame,
   SendUpdateFaviconURL(routing_id(), render_view()->GetPageId(), urls);
 }
 
-FaviconHelper::~FaviconHelper() {
-}
-
 void FaviconHelper::OnDownloadFavicon(int id,
                                       const GURL& image_url,
+                                      bool is_favicon,
                                       int image_size) {
   std::vector<SkBitmap> result_images;
   if (image_url.SchemeIs("data")) {
@@ -92,7 +117,7 @@ void FaviconHelper::OnDownloadFavicon(int id,
     if (!data_image.empty())
       result_images.push_back(data_image);
   } else {
-    if (DownloadFavicon(id, image_url, image_size)) {
+    if (DownloadFavicon(id, image_url, is_favicon, image_size)) {
       // Will complete asynchronously via FaviconHelper::DidDownloadFavicon
       return;
     }
@@ -107,14 +132,18 @@ void FaviconHelper::OnDownloadFavicon(int id,
 
 bool FaviconHelper::DownloadFavicon(int id,
                                     const GURL& image_url,
+                                    bool is_favicon,
                                     int image_size) {
   // Make sure webview was not shut down.
   if (!render_view()->GetWebView())
     return false;
   // Create an image resource fetcher and assign it with a call back object.
   image_fetchers_.push_back(new MultiResolutionImageResourceFetcher(
-      image_url, render_view()->GetWebView()->mainFrame(), id,
-      WebURLRequest::TargetIsFavicon,
+      image_url,
+      render_view()->GetWebView()->mainFrame(),
+      id,
+      is_favicon ? WebURLRequest::TargetIsFavicon :
+                   WebURLRequest::TargetIsImage,
       base::Bind(&FaviconHelper::DidDownloadFavicon,
                  base::Unretained(this), image_size)));
   return true;

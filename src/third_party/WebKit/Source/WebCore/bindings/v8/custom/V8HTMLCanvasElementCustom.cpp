@@ -48,14 +48,14 @@
 
 namespace WebCore {
 
-v8::Handle<v8::Value> V8HTMLCanvasElement::getContextCallback(const v8::Arguments& args)
+v8::Handle<v8::Value> V8HTMLCanvasElement::getContextMethodCustom(const v8::Arguments& args)
 {
     v8::Handle<v8::Object> holder = args.Holder();
     HTMLCanvasElement* imp = V8HTMLCanvasElement::toNative(holder);
     String contextId = toWebCoreString(args[0]);
     RefPtr<CanvasContextAttributes> attrs;
 #if ENABLE(WEBGL)
-    if (contextId == "experimental-webgl" || contextId == "webkit-3d") {
+    if (contextId == "webgl" || contextId == "experimental-webgl" || contextId == "webkit-3d") {
         attrs = WebGLContextAttributes::create();
         WebGLContextAttributes* webGLAttrs = static_cast<WebGLContextAttributes*>(attrs.get());
         if (args.Length() > 1 && args[1]->IsObject()) {
@@ -112,7 +112,7 @@ v8::Handle<v8::Value> V8HTMLCanvasElement::getContextCallback(const v8::Argument
     return v8Null(args.GetIsolate());
 }
 
-v8::Handle<v8::Value> V8HTMLCanvasElement::toDataURLCallback(const v8::Arguments& args)
+v8::Handle<v8::Value> V8HTMLCanvasElement::toDataURLMethodCustom(const v8::Arguments& args)
 {
     v8::Handle<v8::Object> holder = args.Holder();
     HTMLCanvasElement* canvas = V8HTMLCanvasElement::toNative(holder);

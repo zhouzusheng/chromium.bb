@@ -126,7 +126,8 @@ void ValidateRootOnFileThread(
 
 }  // anonymous namespace
 
-const base::FilePath::CharType SandboxMountPointProvider::kFileSystemDirectory[] =
+const base::FilePath::CharType
+SandboxMountPointProvider::kFileSystemDirectory[] =
     FILE_PATH_LITERAL("File System");
 
 // static
@@ -148,10 +149,12 @@ SandboxMountPointProvider::SandboxMountPointProvider(
           new AsyncFileUtilAdapter(
               new ObfuscatedFileUtil(
                   profile_path.Append(kFileSystemDirectory)))),
+      file_system_usage_cache_(new FileSystemUsageCache(file_task_runner)),
       quota_observer_(new SandboxQuotaObserver(
                       quota_manager_proxy,
                       file_task_runner,
-                      sandbox_sync_file_util())),
+                      sandbox_sync_file_util(),
+                      file_system_usage_cache_.get())),
       enable_sync_directory_operation_(
           CommandLine::ForCurrentProcess()->HasSwitch(
               kEnableSyncDirectoryOperation)),
@@ -172,10 +175,14 @@ SandboxMountPointProvider::~SandboxMountPointProvider() {
   if (!file_task_runner_->RunsTasksOnCurrentThread()) {
     AsyncFileUtilAdapter* sandbox_file_util = sandbox_file_util_.release();
     SandboxQuotaObserver* quota_observer = quota_observer_.release();
+    FileSystemUsageCache* file_system_usage_cache =
+        file_system_usage_cache_.release();
     if (!file_task_runner_->DeleteSoon(FROM_HERE, sandbox_file_util))
       delete sandbox_file_util;
     if (!file_task_runner_->DeleteSoon(FROM_HERE, quota_observer))
       delete quota_observer;
+    if (!file_task_runner_->DeleteSoon(FROM_HERE, file_system_usage_cache))
+      delete file_system_usage_cache;
   }
 }
 
@@ -225,34 +232,6 @@ SandboxMountPointProvider::GetFileSystemRootPathOnFileThread(
   return GetBaseDirectoryForOriginAndType(url.origin(), url.type(), create);
 }
 
-bool SandboxMountPointProvider::IsAccessAllowed(const FileSystemURL& url) {
-  if (!CanHandleType(url.type()))
-    return false;
-  // We essentially depend on quota to do our access controls, so here
-  // we only check if the requested scheme is allowed or not.
-  return IsAllowedScheme(url.origin());
-}
-
-bool SandboxMountPointProvider::IsRestrictedFileName(const base::FilePath& filename)
-    const {
-  if (filename.value().empty())
-    return false;
-
-  for (size_t i = 0; i < arraysize(kRestrictedNames); ++i) {
-    // Exact match.
-    if (filename.value() == kRestrictedNames[i])
-      return true;
-  }
-
-  for (size_t i = 0; i < arraysize(kRestrictedChars); ++i) {
-    if (filename.value().find(kRestrictedChars[i]) !=
-        base::FilePath::StringType::npos)
-      return true;
-  }
-
-  return false;
-}
-
 FileSystemFileUtil* SandboxMountPointProvider::GetFileUtil(
     FileSystemType type) {
   DCHECK(sandbox_file_util_.get());
@@ -266,10 +245,33 @@ AsyncFileUtil* SandboxMountPointProvider::GetAsyncFileUtil(
 
 FilePermissionPolicy SandboxMountPointProvider::GetPermissionPolicy(
     const FileSystemURL& url, int permissions) const {
+  if (!CanHandleType(url.type()) || !IsAllowedScheme(url.origin()))
+    return FILE_PERMISSION_ALWAYS_DENY;
+
+  if (url.path().ReferencesParent())
+    return FILE_PERMISSION_ALWAYS_DENY;
+
+  // Any write access is disallowed on the root path.
+  if ((url.path().empty() || VirtualPath::DirName(url.path()) == url.path())
+      && (permissions & ~kReadFilePermissions))
+    return FILE_PERMISSION_ALWAYS_DENY;
+
+  if ((permissions & kCreateFilePermissions) == kCreateFilePermissions) {
+    base::FilePath filename = VirtualPath::BaseName(url.path());
+    // See if the name is allowed to create.
+    for (size_t i = 0; i < arraysize(kRestrictedNames); ++i) {
+      if (filename.value() == kRestrictedNames[i])
+        return FILE_PERMISSION_ALWAYS_DENY;
+    }
+    for (size_t i = 0; i < arraysize(kRestrictedChars); ++i) {
+      if (filename.value().find(kRestrictedChars[i]) !=
+          base::FilePath::StringType::npos)
+        return FILE_PERMISSION_ALWAYS_DENY;
+    }
+  }
+
   // Access to the sandbox directory (and only to the directory) should be
   // always allowed.
-  CHECK(CanHandleType(url.type()));
-  CHECK(!url.path().ReferencesParent());
   return FILE_PERMISSION_ALWAYS_ALLOW;
 }
 
@@ -285,9 +287,8 @@ FileSystemOperation* SandboxMountPointProvider::CreateFileSystemOperation(
     operation_context->set_update_observers(syncable_update_observers_);
     operation_context->set_change_observers(syncable_change_observers_);
     operation_context->set_access_observers(access_observers_);
-    return new SyncableFileSystemOperation(
-        context,
-        new LocalFileSystemOperation(context, operation_context.Pass()));
+    return new sync_file_system::SyncableFileSystemOperation(
+        context, operation_context.Pass());
   }
 
   // For regular sandboxed types.
@@ -362,6 +363,7 @@ SandboxMountPointProvider::DeleteOriginDataOnFileThread(
   int64 usage = GetOriginUsageOnFileThread(file_system_context,
                                            origin_url, type);
 
+  file_system_usage_cache_->CloseCacheFiles();
   bool result = sandbox_sync_file_util()->DeleteDirectoryForOriginAndType(
           origin_url, type);
   if (result && proxy) {
@@ -424,19 +426,18 @@ int64 SandboxMountPointProvider::GetOriginUsageOnFileThread(
   base::FilePath usage_file_path =
       base_path.Append(FileSystemUsageCache::kUsageFileName);
 
-  bool is_valid = FileSystemUsageCache::IsValid(usage_file_path);
-  int32 dirty_status = FileSystemUsageCache::GetDirty(usage_file_path);
+  bool is_valid = file_system_usage_cache_->IsValid(usage_file_path);
+  int32 dirty_status = file_system_usage_cache_->GetDirty(usage_file_path);
   bool visited = (visited_origins_.find(origin_url) != visited_origins_.end());
   visited_origins_.insert(origin_url);
   if (is_valid && (dirty_status == 0 || (dirty_status > 0 && visited))) {
     // The usage cache is clean (dirty == 0) or the origin is already
     // initialized and running.  Read the cache file to get the usage.
-    return FileSystemUsageCache::GetUsage(usage_file_path);
+    return file_system_usage_cache_->GetUsage(usage_file_path);
   }
   // The usage cache has not been initialized or the cache is dirty.
   // Get the directory size now and update the cache.
-  FileSystemUsageCache::Delete(usage_file_path);
-
+  file_system_usage_cache_->Delete(usage_file_path);
   FileSystemOperationContext context(file_system_context);
   FileSystemURL url = file_system_context->CreateCrackedFileSystemURL(
       origin_url, type, base::FilePath());
@@ -451,7 +452,7 @@ int64 SandboxMountPointProvider::GetOriginUsageOnFileThread(
     usage += ObfuscatedFileUtil::ComputeFilePathCost(file_path_each);
   }
   // This clears the dirty flag too.
-  FileSystemUsageCache::UpdateUsage(usage_file_path, usage);
+  file_system_usage_cache_->UpdateUsage(usage_file_path, usage);
   return usage;
 }
 
@@ -463,7 +464,7 @@ void SandboxMountPointProvider::InvalidateUsageCache(
       sandbox_sync_file_util(), origin_url, type, &error);
   if (error != base::PLATFORM_FILE_OK)
     return;
-  FileSystemUsageCache::IncrementDirty(usage_file_path);
+  file_system_usage_cache_->IncrementDirty(usage_file_path);
 }
 
 void SandboxMountPointProvider::CollectOpenFileSystemMetrics(

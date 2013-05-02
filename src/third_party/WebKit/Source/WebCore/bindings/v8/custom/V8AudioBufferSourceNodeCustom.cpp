@@ -36,13 +36,13 @@
 
 namespace WebCore {
 
-void V8AudioBufferSourceNode::bufferAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
+void V8AudioBufferSourceNode::bufferAttrSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
 {
     v8::Handle<v8::Object> holder = info.Holder();
     AudioBufferSourceNode* imp = V8AudioBufferSourceNode::toNative(holder);
 
     AudioBuffer* buffer = 0;
-    if (V8AudioBuffer::HasInstance(value, info.GetIsolate())) {
+    if (V8AudioBuffer::HasInstance(value, info.GetIsolate(), worldType(info.GetIsolate()))) {
         buffer = V8AudioBuffer::toNative(value->ToObject());
         if (buffer && !imp->setBuffer(buffer)) {
             throwTypeError("AudioBuffer unsupported number of channels", info.GetIsolate());

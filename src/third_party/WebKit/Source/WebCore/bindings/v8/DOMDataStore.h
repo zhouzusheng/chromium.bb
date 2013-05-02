@@ -35,6 +35,7 @@
 #include "DOMWrapperWorld.h"
 #include "Node.h"
 #include "V8GCController.h"
+#include "WrapperTypeInfo.h"
 #include <v8.h>
 #include <wtf/HashMap.h>
 #include <wtf/MainThread.h>
@@ -50,13 +51,7 @@ namespace WebCore {
 class DOMDataStore {
     WTF_MAKE_NONCOPYABLE(DOMDataStore);
 public:
-    enum Type {
-        MainWorld,
-        IsolatedWorld,
-        Worker,
-    };
-
-    explicit DOMDataStore(Type);
+    explicit DOMDataStore(WrapperWorldType);
     ~DOMDataStore();
 
     static DOMDataStore* current(v8::Isolate*);
@@ -70,7 +65,7 @@ public:
         // is an object that can exist in the main world. The second fastest
         // way is to check whether the wrappable's wrapper is the same as
         // the holder.
-        if ((!DOMWrapperWorld::isolatedWorldsExist() && isMainWorldObject(object)) || holderContainsWrapper(container, holder)) {
+        if ((!DOMWrapperWorld::isolatedWorldsExist() && !canExistInWorker(object)) || holderContainsWrapper(container, holder)) {
             if (mainWorldWrapperIsStoredInObject(object))
                 return getWrapperFromObject(object);
             return mainWorldStore()->m_wrapperMap.get(object);
@@ -81,7 +76,7 @@ public:
     template<typename T>
     static v8::Handle<v8::Object> getWrapper(T* object, v8::Isolate* isolate)
     {
-        if (mainWorldWrapperIsStoredInObject(object) && isMainWorldObject(object)) {
+        if (mainWorldWrapperIsStoredInObject(object) && !canExistInWorker(object)) {
             if (LIKELY(!DOMWrapperWorld::isolatedWorldsExist()))
                 return getWrapperFromObject(object);
         }
@@ -89,9 +84,17 @@ public:
     }
 
     template<typename T>
+    static v8::Handle<v8::Object> getWrapperForMainWorld(T* object)
+    {
+        if (mainWorldWrapperIsStoredInObject(object))
+            return getWrapperFromObject(object);
+        return mainWorldStore()->get(object);
+    }
+
+    template<typename T>
     static void setWrapper(T* object, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, const WrapperConfiguration& configuration)
     {
-        if (mainWorldWrapperIsStoredInObject(object) && isMainWorldObject(object)) {
+        if (mainWorldWrapperIsStoredInObject(object) && !canExistInWorker(object)) {
             if (LIKELY(!DOMWrapperWorld::isolatedWorldsExist())) {
                 setWrapperInObject(object, wrapper, isolate, configuration);
                 return;
@@ -128,8 +131,8 @@ private:
     static bool mainWorldWrapperIsStoredInObject(void*) { return false; }
     static bool mainWorldWrapperIsStoredInObject(ScriptWrappable*) { return true; }
 
-    static bool isMainWorldObject(void*) { return false; }
-    static bool isMainWorldObject(Node*) { return true; }
+    static bool canExistInWorker(void*) { return true; }
+    static bool canExistInWorker(Node*) { return false; }
 
     template<typename HolderContainer>
     static bool holderContainsWrapper(const HolderContainer&, void*)
@@ -163,7 +166,7 @@ private:
         object->setWrapper(wrapper, isolate, configuration);
     }
 
-    Type m_type;
+    WrapperWorldType m_type;
     DOMWrapperMap<void> m_wrapperMap;
 };
 

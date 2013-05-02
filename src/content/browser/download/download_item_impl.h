@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
@@ -80,6 +80,7 @@ class CONTENT_EXPORT DownloadItemImpl
                    const GURL& url,
                    DownloadId download_id,
                    const std::string& mime_type,
+                   scoped_ptr<DownloadRequestHandleInterface> request_handle,
                    const net::BoundNetLog& bound_net_log);
 
   virtual ~DownloadItemImpl();
@@ -298,8 +299,10 @@ class CONTENT_EXPORT DownloadItemImpl
   // Indicate that an error has occurred on the download.
   void Interrupt(DownloadInterruptReason reason);
 
-  // Cancel the DownloadFile if we have it.
-  void CancelDownloadFile();
+  // Destroy the DownloadFile object.  If |destroy_file| is true, the file is
+  // destroyed with it.  Otherwise, DownloadFile::Detach() is called
+  // before object destruction to prevent file destruction.
+  void ReleaseDownloadFile(bool destroy_file);
 
   // Check if a download is ready for completion.  The callback provided
   // may be called at some point in the future if an external entity
@@ -461,6 +464,11 @@ class CONTENT_EXPORT DownloadItemImpl
 
   // True if we've saved all the data for the download.
   bool all_data_saved_;
+
+  // Error return from DestinationError.  Stored separately from
+  // last_reason_ so that we can avoid handling destination errors until
+  // after file name determination has occurred.
+  DownloadInterruptReason destination_error_;
 
   // Did the user open the item either directly or indirectly (such as by
   // setting always open files of this type)? The shelf also sets this field

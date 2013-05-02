@@ -53,7 +53,6 @@ PassRefPtr<GestureEvent> GestureEvent::create(PassRefPtr<AbstractView> view, con
         eventType = eventNames().gesturetapEvent; break;
     case PlatformEvent::GestureTapDown:
         eventType = eventNames().gesturetapdownEvent; break;
-    case PlatformEvent::GestureDoubleTap:
     case PlatformEvent::GestureTwoFingerTap:
     case PlatformEvent::GestureLongPress:
     case PlatformEvent::GesturePinchBegin:
@@ -122,7 +121,7 @@ bool GestureEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) co
     if (dispatcher->node()->disabled())
         return true;
 
-    dispatcher->dispatchEvent(event());
+    dispatcher->dispatch();
     ASSERT(!event()->defaultPrevented());
     return event()->defaultHandled() || event()->defaultPrevented();
 }

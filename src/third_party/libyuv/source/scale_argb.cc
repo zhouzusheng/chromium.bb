@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -23,12 +23,10 @@ namespace libyuv {
 extern "C" {
 #endif
 
-// Bilinear SSE2 is disabled.
-#define SSE2_DISABLED 1
-
 // ARGB scaling uses bilinear or point, but not box filter.
 
-#if !defined(YUV_DISABLE_ASM) && (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
+#if !defined(LIBYUV_DISABLE_NEON) && \
+    (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
 #define HAS_SCALEARGBROWDOWNEVEN_NEON
 #define HAS_SCALEARGBROWDOWN2_NEON
 #define HAS_SCALEARGBFILTERROWS_NEON
@@ -47,12 +45,7 @@ void ScaleARGBFilterRows_NEON(uint8* dst_ptr,
                               int dst_width, int source_y_fraction);
 #endif
 
-/**
- * SSE2 downscalers with bilinear interpolation.
- */
-
-#if !defined(YUV_DISABLE_ASM) && defined(_M_IX86)
-
+#if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86)
 #define HAS_SCALEARGBROWDOWN2_SSE2
 // Reads 8 pixels, throws half away and writes 4 even pixels (0, 2, 4, 6)
 // Alignment requirement: src_argb 16 byte aligned, dst_argb 16 byte aligned.
@@ -207,8 +200,7 @@ static void ScaleARGBRowDownEvenInt_SSE2(const uint8* src_argb,
 }
 
 // Bilinear row filtering combines 4x2 -> 4x1. SSE2 version.
-#ifndef SSE2_DISABLED
-#define HAS_SCALEARGBFILTERROWS_SSE2_DISABLED
+#define HAS_SCALEARGBFILTERROWS_SSE2
 __declspec(naked) __declspec(align(16))
 void ScaleARGBFilterRows_SSE2(uint8* dst_argb, const uint8* src_argb,
                               ptrdiff_t src_stride, int dst_width,
@@ -222,19 +214,24 @@ void ScaleARGBFilterRows_SSE2(uint8* dst_argb, const uint8* src_argb,
     mov        ecx, [esp + 8 + 16]  // dst_width
     mov        eax, [esp + 8 + 20]  // source_y_fraction (0..255)
     sub        edi, esi
+    // Dispatch to specialized filters if applicable.
     cmp        eax, 0
-    je         xloop1
+    je         xloop100  // 0 / 256.  Blend 100 / 0.
+    cmp        eax, 64
+    je         xloop75   // 64 / 256 is 0.25.  Blend 75 / 25.
     cmp        eax, 128
-    je         xloop2
+    je         xloop50   // 128 / 256 is 0.50.  Blend 50 / 50.
+    cmp        eax, 192
+    je         xloop25   // 192 / 256 is 0.75.  Blend 25 / 75.
 
     movd       xmm5, eax            // xmm5 = y fraction
     punpcklbw  xmm5, xmm5
+    psrlw      xmm5, 1
     punpcklwd  xmm5, xmm5
-    pshufd     xmm5, xmm5, 0
+    punpckldq  xmm5, xmm5
+    punpcklqdq xmm5, xmm5
     pxor       xmm4, xmm4
 
-    // f * row1 + (1 - frac) row0
-    // frac * (row1 - row0) + row0
     align      16
   xloop:
     movdqa     xmm0, [esi]  // row0
@@ -247,6 +244,8 @@ void ScaleARGBFilterRows_SSE2(uint8* dst_argb, const uint8* src_argb,
     punpckhbw  xmm1, xmm4
     psubw      xmm2, xmm0  // row1 - row0
     psubw      xmm3, xmm1
+    paddw      xmm2, xmm2  // 9 bits * 15 bits = 8.16
+    paddw      xmm3, xmm3
     pmulhw     xmm2, xmm5  // scale diff
     pmulhw     xmm3, xmm5
     paddw      xmm0, xmm2  // sum rows
@@ -256,44 +255,63 @@ void ScaleARGBFilterRows_SSE2(uint8* dst_argb, const uint8* src_argb,
     movdqa     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop
+    jmp        xloop99
 
+    // Blend 25 / 75.
+    align      16
+  xloop25:
+    movdqa     xmm0, [esi]
+    movdqa     xmm1, [esi + edx]
+    pavgb      xmm0, xmm1
+    pavgb      xmm0, xmm1
+    sub        ecx, 4
+    movdqa     [esi + edi], xmm0
+    lea        esi, [esi + 16]
+    jg         xloop25
+    jmp        xloop99
+
+    // Blend 50 / 50.
+    align      16
+  xloop50:
+    movdqa     xmm0, [esi]
+    movdqa     xmm1, [esi + edx]
+    pavgb      xmm0, xmm1
+    sub        ecx, 4
+    movdqa     [esi + edi], xmm0
+    lea        esi, [esi + 16]
+    jg         xloop50
+    jmp        xloop99
+
+    // Blend 75 / 25.
+    align      16
+  xloop75:
+    movdqa     xmm1, [esi]
+    movdqa     xmm0, [esi + edx]
+    pavgb      xmm0, xmm1
+    pavgb      xmm0, xmm1
+    sub        ecx, 4
+    movdqa     [esi + edi], xmm0
+    lea        esi, [esi + 16]
+    jg         xloop75
+    jmp        xloop99
+
+    // Blend 100 / 0 - Copy row unchanged.
+    align      16
+  xloop100:
+    movdqa     xmm0, [esi]
+    sub        ecx, 4
+    movdqa     [esi + edi], xmm0
+    lea        esi, [esi + 16]
+    jg         xloop100
+
+  xloop99:
     shufps     xmm0, xmm0, 0xff
     movdqa     [esi + edi], xmm0    // duplicate last pixel for filtering
     pop        edi
     pop        esi
     ret
-
-    align      16
-  xloop1:
-    movdqa     xmm0, [esi]
-    sub        ecx, 4
-    movdqa     [esi + edi], xmm0
-    lea        esi, [esi + 16]
-    jg         xloop1
-
-    shufps     xmm0, xmm0, 0xff
-    movdqa     [esi + edi], xmm0
-    pop        edi
-    pop        esi
-    ret
-
-    align      16
-  xloop2:
-    movdqa     xmm0, [esi]
-    pavgb      xmm0, [esi + edx]
-    sub        ecx, 4
-    movdqa     [esi + edi], xmm0
-    lea        esi, [esi + 16]
-    jg         xloop2
-
-    shufps     xmm0, xmm0, 0xff
-    movdqa     [esi + edi], xmm0
-    pop        edi
-    pop        esi
-    ret
   }
 }
-#endif  // SSE2_DISABLED
 
 // Bilinear row filtering combines 4x2 -> 4x1. SSSE3 version.
 #define HAS_SCALEARGBFILTERROWS_SSSE3
@@ -403,8 +421,7 @@ void ScaleARGBFilterRows_SSSE3(uint8* dst_argb, const uint8* src_argb,
   }
 }
 
-#elif !defined(YUV_DISABLE_ASM) && (defined(__x86_64__) || defined(__i386__))
-
+#elif !defined(LIBYUV_DISABLE_X86) && (defined(__x86_64__) || defined(__i386__))
 // GCC versions of row functions are verbatim conversions from Visual C.
 // Generated using gcc disassembly on Visual C object file:
 // objdump -D yuvscaler.obj >yuvscaler.txt
@@ -552,23 +569,33 @@ static void ScaleARGBRowDownEvenInt_SSE2(const uint8* src_argb,
   );
 }
 
-#ifndef SSE2_DISABLED
 // Bilinear row filtering combines 4x2 -> 4x1. SSE2 version
-#define HAS_SCALEARGBFILTERROWS_SSE2_DISABLED
+#define HAS_SCALEARGBFILTERROWS_SSE2
 void ScaleARGBFilterRows_SSE2(uint8* dst_argb, const uint8* src_argb,
                               ptrdiff_t src_stride, int dst_width,
                               int source_y_fraction) {
   asm volatile (
     "sub       %1,%0                           \n"
+    "shr       %3                              \n"
     "cmp       $0x0,%3                         \n"
-    "je        2f                              \n"
-    "cmp       $0x80,%3                        \n"
-    "je        3f                              \n"
+    "je        100f                            \n"
+    "cmp       $0x20,%3                        \n"
+    "je        75f                             \n"
+    "cmp       $0x40,%3                        \n"
+    "je        50f                             \n"
+    "cmp       $0x60,%3                        \n"
+    "je        25f                             \n"
+
+    "movd      %3,%%xmm0                       \n"
+    "neg       %3                              \n"
+    "add       $0x80,%3                        \n"
     "movd      %3,%%xmm5                       \n"
-    "punpcklbw %%xmm5,%%xmm5                   \n"
+    "punpcklbw %%xmm0,%%xmm5                   \n"
     "punpcklwd %%xmm5,%%xmm5                   \n"
     "pshufd    $0x0,%%xmm5,%%xmm5              \n"
     "pxor      %%xmm4,%%xmm4                   \n"
+
+    // General purpose row blend.
     ".p2align  4                               \n"
   "1:                                          \n"
     "movdqa    (%1),%%xmm0                     \n"
@@ -581,6 +608,8 @@ void ScaleARGBFilterRows_SSE2(uint8* dst_argb, const uint8* src_argb,
     "punpckhbw %%xmm4,%%xmm1                   \n"
     "psubw     %%xmm0,%%xmm2                   \n"
     "psubw     %%xmm1,%%xmm3                   \n"
+    "paddw     %%xmm2,%%xmm2                   \n"
+    "paddw     %%xmm3,%%xmm3                   \n"
     "pmulhw    %%xmm5,%%xmm2                   \n"
     "pmulhw    %%xmm5,%%xmm3                   \n"
     "paddw     %%xmm2,%%xmm0                   \n"
@@ -590,31 +619,61 @@ void ScaleARGBFilterRows_SSE2(uint8* dst_argb, const uint8* src_argb,
     "movdqa    %%xmm0,(%1,%0,1)                \n"
     "lea       0x10(%1),%1                     \n"
     "jg        1b                              \n"
-    "jmp       4f                              \n"
+    "jmp       99f                             \n"
+
+    // Blend 25 / 75.
     ".p2align  4                               \n"
-  "2:                                          \n"
+  "25:                                         \n"
+    "movdqa    (%1),%%xmm0                     \n"
+    "movdqa    (%1,%4,1),%%xmm1                \n"
+    "pavgb     %%xmm1,%%xmm0                   \n"
+    "pavgb     %%xmm1,%%xmm0                   \n"
+    "sub       $0x4,%2                         \n"
+    "movdqa    %%xmm0,(%1,%0,1)                \n"
+    "lea       0x10(%1),%1                     \n"
+    "jg        25b                             \n"
+    "jmp       99f                             \n"
+
+    // Blend 50 / 50.
+    ".p2align  4                               \n"
+  "50:                                         \n"
+    "movdqa    (%1),%%xmm0                     \n"
+    "movdqa    (%1,%4,1),%%xmm1                \n"
+    "pavgb     %%xmm1,%%xmm0                   \n"
+    "sub       $0x4,%2                         \n"
+    "movdqa    %%xmm0,(%1,%0,1)                \n"
+    "lea       0x10(%1),%1                     \n"
+    "jg        50b                             \n"
+    "jmp       99f                             \n"
+
+    // Blend 75 / 25.
+    ".p2align  4                               \n"
+  "75:                                         \n"
+    "movdqa    (%1),%%xmm1                     \n"
+    "movdqa    (%1,%4,1),%%xmm0                \n"
+    "pavgb     %%xmm1,%%xmm0                   \n"
+    "pavgb     %%xmm1,%%xmm0                   \n"
+    "sub       $0x4,%2                         \n"
+    "movdqa    %%xmm0,(%1,%0,1)                \n"
+    "lea       0x10(%1),%1                     \n"
+    "jg        75b                             \n"
+    "jmp       99f                             \n"
+
+    // Blend 100 / 0 - Copy row unchanged.
+    ".p2align  4                               \n"
+  "100:                                        \n"
     "movdqa    (%1),%%xmm0                     \n"
     "sub       $0x4,%2                         \n"
     "movdqa    %%xmm0,(%1,%0,1)                \n"
     "lea       0x10(%1),%1                     \n"
-    "jg        2b                              \n"
-    "jmp       4f                              \n"
-    ".p2align  4                               \n"
-  "3:                                          \n"
-    "movdqa    (%1),%%xmm0                     \n"
-    "pavgb     (%1,%4,1),%%xmm0                \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
-    "lea       0x10(%1),%1                     \n"
-    "lea       0x10(%1),%1                     \n"
-    "jg        3b                              \n"
-    ".p2align  4                               \n"
-  "4:                                          \n"
+    "jg        100b                            \n"
+
+  "99:                                         \n"
     "shufps    $0xff,%%xmm0,%%xmm0             \n"
     "movdqa    %%xmm0,(%1,%0,1)                \n"
-  : "+r"(dst_argb),     // %0
-    "+r"(src_argb),     // %1
-    "+r"(dst_width),   // %2
+  : "+r"(dst_argb),   // %0
+    "+r"(src_argb),   // %1
+    "+r"(dst_width),  // %2
     "+r"(source_y_fraction)  // %3
   : "r"(static_cast<intptr_t>(src_stride))  // %4
   : "memory", "cc"
@@ -623,7 +682,6 @@ void ScaleARGBFilterRows_SSE2(uint8* dst_argb, const uint8* src_argb,
 #endif
   );
 }
-#endif  // SSE2_DISABLED
 
 // Bilinear row filtering combines 4x2 -> 4x1. SSSE3 version
 #define HAS_SCALEARGBFILTERROWS_SSSE3
@@ -883,13 +941,10 @@ void ScaleARGBFilterRows_C(uint8* dst_argb, const uint8* src_argb,
   dst_argb[3] = dst_argb[-1];
 }
 
-/**
- * ScaleARGB ARGB, 1/2
- *
- * This is an optimized version for scaling down a ARGB to 1/2 of
- * its original size.
- *
- */
+// ScaleARGB ARGB, 1/2
+// This is an optimized version for scaling down a ARGB to 1/2 of
+// its original size.
+
 static void ScaleARGBDown2(int /* src_width */, int /* src_height */,
                            int dst_width, int dst_height,
                            int src_stride, int dst_stride,
@@ -921,13 +976,10 @@ static void ScaleARGBDown2(int /* src_width */, int /* src_height */,
   }
 }
 
-/**
- * ScaleARGB ARGB Even
- *
- * This is an optimized version for scaling down a ARGB to even
- * multiple of its original size.
- *
- */
+// ScaleARGB ARGB Even
+// This is an optimized version for scaling down a ARGB to even
+// multiple of its original size.
+
 static void ScaleARGBDownEven(int src_width, int src_height,
                               int dst_width, int dst_height,
                               int src_stride, int dst_stride,
@@ -962,10 +1014,9 @@ static void ScaleARGBDownEven(int src_width, int src_height,
     dst_argb += dst_stride;
   }
 }
-/**
- * ScaleARGB ARGB to/from any dimensions, with bilinear
- * interpolation.
- */
+
+// ScaleARGB ARGB to/from any dimensions, with bilinear
+// interpolation.
 
 // Maximum width handled by 2 pass Bilinear.
 static const int kMaxInputWidth = 2560;
@@ -1036,12 +1087,11 @@ static void ScaleARGBCols(uint8* dst_argb, const uint8* src_argb,
   }
 }
 
-/**
- * ScaleARGB ARGB to/from any dimensions, without interpolation.
- * Fixed point math is used for performance: The upper 16 bits
- * of x and dx is the integer part of the source position and
- * the lower 16 bits are the fixed decimal part.
- */
+
+// ScaleARGB ARGB to/from any dimensions, without interpolation.
+// Fixed point math is used for performance: The upper 16 bits
+// of x and dx is the integer part of the source position and
+// the lower 16 bits are the fixed decimal part.
 
 static void ScaleARGBSimple(int src_width, int src_height,
                             int dst_width, int dst_height,
@@ -1059,9 +1109,8 @@ static void ScaleARGBSimple(int src_width, int src_height,
   }
 }
 
-/**
- * ScaleARGB ARGB to/from any dimensions.
- */
+// ScaleARGB ARGB to/from any dimensions.
+
 static void ScaleARGBAnySize(int src_width, int src_height,
                              int dst_width, int dst_height,
                              int src_stride, int dst_stride,

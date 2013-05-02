@@ -40,6 +40,8 @@ public:
     RenderFlexibleBox(Element*);
     virtual ~RenderFlexibleBox();
 
+    static RenderFlexibleBox* createAnonymous(Document*);
+
     virtual const char* renderName() const OVERRIDE;
 
     virtual bool isFlexibleBox() const OVERRIDE { return true; }
@@ -58,6 +60,8 @@ public:
 protected:
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
     virtual void computePreferredLogicalWidths() OVERRIDE;
+
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
 private:
     enum FlexSign {
@@ -141,7 +145,8 @@ private:
     void updateAutoMarginsInMainAxis(RenderBox* child, LayoutUnit autoMarginOffset);
     bool hasAutoMarginsInCrossAxis(RenderBox* child) const;
     bool updateAutoMarginsInCrossAxis(RenderBox* child, LayoutUnit availableAlignmentSpace);
-    void repositionLogicalHeightDependentFlexItems(Vector<LineContext>&, LayoutUnit& oldClientAfterEdge);
+    void repositionLogicalHeightDependentFlexItems(Vector<LineContext>&);
+    LayoutUnit clientLogicalBottomAfterRepositioning();
     void appendChildFrameRects(ChildFrameRects&);
     void repaintChildrenDuringLayoutIfMoved(const ChildFrameRects&);
 
@@ -172,6 +177,21 @@ private:
     mutable OrderIterator m_orderIterator;
     int m_numberOfInFlowChildrenOnFirstLine;
 };
+
+inline RenderFlexibleBox* toRenderFlexibleBox(RenderObject* object)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isFlexibleBox());
+    return static_cast<RenderFlexibleBox*>(object);
+}
+
+inline const RenderFlexibleBox* toRenderFlexibleBox(const RenderObject* object)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isFlexibleBox());
+    return static_cast<const RenderFlexibleBox*>(object);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toRenderFlexibleBox(const RenderFlexibleBox*);
 
 } // namespace WebCore
 

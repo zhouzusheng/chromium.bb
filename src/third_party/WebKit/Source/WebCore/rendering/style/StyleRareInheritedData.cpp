@@ -78,7 +78,6 @@ StyleRareInheritedData::StyleRareInheritedData()
     , overflowWrap(RenderStyle::initialOverflowWrap())
     , nbspMode(NBNORMAL)
     , lineBreak(LineBreakAuto)
-    , textSizeAdjust(RenderStyle::initialTextSizeAdjust())
     , resize(RenderStyle::initialResize())
     , userSelect(RenderStyle::initialUserSelect())
     , colorSpace(ColorSpaceDeviceRGB)
@@ -88,6 +87,9 @@ StyleRareInheritedData::StyleRareInheritedData()
     , textEmphasisMark(TextEmphasisMarkNone)
     , textEmphasisPosition(TextEmphasisPositionOver)
     , m_textOrientation(TextOrientationVerticalRight)
+#if ENABLE(CSS3_TEXT)
+    , m_textIndentLine(RenderStyle::initialTextIndentLine())
+#endif
     , m_lineBoxContain(RenderStyle::initialLineBoxContain())
 #if ENABLE(CSS_IMAGE_ORIENTATION)
     , m_imageOrientation(RenderStyle::initialImageOrientation())
@@ -104,6 +106,7 @@ StyleRareInheritedData::StyleRareInheritedData()
 #endif
 #if ENABLE(CSS3_TEXT)
     , m_textAlignLast(RenderStyle::initialTextAlignLast())
+    , m_textUnderlinePosition(RenderStyle::initialTextUnderlinePosition())
 #endif // CSS3_TEXT
     , m_rubyPosition(RenderStyle::initialRubyPosition())
     , hyphenationLimitBefore(-1)
@@ -148,7 +151,6 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , overflowWrap(o.overflowWrap)
     , nbspMode(o.nbspMode)
     , lineBreak(o.lineBreak)
-    , textSizeAdjust(o.textSizeAdjust)
     , resize(o.resize)
     , userSelect(o.userSelect)
     , colorSpace(o.colorSpace)
@@ -158,6 +160,9 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , textEmphasisMark(o.textEmphasisMark)
     , textEmphasisPosition(o.textEmphasisPosition)
     , m_textOrientation(o.m_textOrientation)
+#if ENABLE(CSS3_TEXT)
+    , m_textIndentLine(o.m_textIndentLine)
+#endif
     , m_lineBoxContain(o.m_lineBoxContain)
 #if ENABLE(CSS_IMAGE_ORIENTATION)
     , m_imageOrientation(o.m_imageOrientation)
@@ -174,6 +179,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
 #endif
 #if ENABLE(CSS3_TEXT)
     , m_textAlignLast(o.m_textAlignLast)
+    , m_textUnderlinePosition(o.m_textUnderlinePosition)
 #endif // CSS3_TEXT
     , m_rubyPosition(o.m_rubyPosition)
     , hyphenationString(o.hyphenationString)
@@ -239,7 +245,6 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
 #if ENABLE(ACCELERATED_OVERFLOW_SCROLLING)
         && useTouchOverflowScrolling == o.useTouchOverflowScrolling
 #endif
-        && textSizeAdjust == o.textSizeAdjust
         && resize == o.resize
         && userSelect == o.userSelect
         && colorSpace == o.colorSpace
@@ -252,6 +257,9 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && textEmphasisMark == o.textEmphasisMark
         && textEmphasisPosition == o.textEmphasisPosition
         && m_textOrientation == o.m_textOrientation
+#if ENABLE(CSS3_TEXT)
+        && m_textIndentLine == o.m_textIndentLine
+#endif
         && m_lineBoxContain == o.m_lineBoxContain
         && hyphenationString == o.hyphenationString
         && locale == o.locale
@@ -270,6 +278,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
 #endif
 #if ENABLE(CSS3_TEXT)
         && m_textAlignLast == o.m_textAlignLast
+        && m_textUnderlinePosition == o.m_textUnderlinePosition
 #endif // CSS3_TEXT
         && m_rubyPosition == o.m_rubyPosition
         && m_lineSnap == o.m_lineSnap

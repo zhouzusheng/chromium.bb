@@ -59,6 +59,10 @@
 #include "TextTrackList.h"
 #endif
 
+#if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
+#include "RenderPart.h"
+#endif
+
 namespace WebCore {
 
 using namespace HTMLNames;
@@ -742,9 +746,6 @@ void MediaControlClosedCaptionsTrackListElement::defaultEventHandler(Event* even
 {
 #if ENABLE(VIDEO_TRACK)
     if (event->type() == eventNames().clickEvent) {
-        // FIXME: Add modifier key for exclusivity override.
-        // http://webkit.org/b/103361
-
         Node* target = event->target()->toNode();
         if (!target || !target->isElementNode())
             return;
@@ -754,6 +755,13 @@ void MediaControlClosedCaptionsTrackListElement::defaultEventHandler(Event* even
         // Check if the event target has such a custom element and, if so,
         // tell the HTMLMediaElement to enable that track.
 
+        RefPtr<TextTrack> textTrack;
+        MenuItemToTrackMap::iterator iter = m_menuToTrackMap.find(toElement(target));
+        if (iter != m_menuToTrackMap.end())
+            textTrack = iter->value;
+        m_menuToTrackMap.clear();
+        m_controls->toggleClosedCaptionTrackList();
+
         int trackIndex = trackListIndexForElement(toElement(target));
         if (trackIndex == HTMLMediaElement::textTracksIndexNotFound())
             return;
@@ -762,10 +770,11 @@ void MediaControlClosedCaptionsTrackListElement::defaultEventHandler(Event* even
         if (!mediaElement)
             return;
 
-        mediaElement->toggleTrackAtIndex(trackIndex);
+        if (textTrack)
+            mediaElement->setSelectedTextTrack(textTrack.get());
+        else if (trackIndex == HTMLMediaElement::textTracksOffIndex())
+            mediaElement->setSelectedTextTrack(0);
 
-        // We've selected a track to display, so we can now close the menu.
-        m_controls->toggleClosedCaptionTrackList();
         updateDisplay();
     }
 
@@ -798,53 +807,37 @@ void MediaControlClosedCaptionsTrackListElement::updateDisplay()
 
     if (m_trackListHasChanged)
         rebuildTrackListMenu();
-    
+
     bool captionsVisible = mediaElement->closedCaptionsVisible();
     for (unsigned i = 0, length = m_menuItems.size(); i < length; ++i) {
         RefPtr<Element> trackItem = m_menuItems[i];
+
         int trackIndex = trackListIndexForElement(trackItem.get());
-        if (trackIndex != HTMLMediaElement::textTracksIndexNotFound()) {
-            if (trackIndex == HTMLMediaElement::textTracksOffIndex()) {
-                if (captionsVisible)
-                    trackItem->classList()->remove(selectedClassValue, ASSERT_NO_EXCEPTION);
-                else
-                    trackItem->classList()->add(selectedClassValue, ASSERT_NO_EXCEPTION);
-            } else {
-                TextTrack* track = trackList->item(trackIndex);
-                if (!track)
-                    continue;
-                if (track->mode() == TextTrack::showingKeyword())
-                    trackItem->classList()->add(selectedClassValue, ASSERT_NO_EXCEPTION);
-                else
-                    trackItem->classList()->remove(selectedClassValue, ASSERT_NO_EXCEPTION);
-            }
+        if (trackIndex == HTMLMediaElement::textTracksIndexNotFound())
+            continue;
+
+        if (trackIndex == HTMLMediaElement::textTracksOffIndex()) {
+            if (captionsVisible)
+                trackItem->classList()->remove(selectedClassValue, ASSERT_NO_EXCEPTION);
+            else
+                trackItem->classList()->add(selectedClassValue, ASSERT_NO_EXCEPTION);
+            continue;
         }
+
+        RefPtr<TextTrack> textTrack;
+        MenuItemToTrackMap::iterator iter = m_menuToTrackMap.find(trackItem.get());
+        if (iter == m_menuToTrackMap.end())
+            continue;
+        textTrack = iter->value;
+        if (!textTrack)
+            continue;
+        if (textTrack->mode() == TextTrack::showingKeyword())
+            trackItem->classList()->add(selectedClassValue, ASSERT_NO_EXCEPTION);
+        else
+            trackItem->classList()->remove(selectedClassValue, ASSERT_NO_EXCEPTION);
     }
 #endif
 }
-
-#if ENABLE(VIDEO_TRACK)
-static void insertTextTrackMenuItemIntoSortedContainer(RefPtr<Element>& item, RefPtr<Element>& container)
-{
-    // The container will always have the "Off" entry already present and it
-    // should remain at the start of the list.
-    ASSERT(container->childNodeCount() > 0);
-    ASSERT(item->childNodeCount() == 1); // Each item should have a single text node child for the label.
-    String itemLabel = toText(item->firstChild())->wholeText();
-
-    // This is an insertion sort :( However, there shouldn't be a horrible number of text track items.
-    for (int i = 1, numChildNodes = container->childNodeCount(); i < numChildNodes; ++i) {
-        Node* child = container->childNode(i);
-        ASSERT(child->childNodeCount() == 1); // Each item should have a single text node child for the label.
-        String childLabel = toText(child->firstChild())->wholeText();
-        if (codePointCompareLessThan(itemLabel, childLabel)) {
-            container->insertBefore(item, child);
-            return;
-        }
-    }
-    container->appendChild(item);
-}
-#endif
 
 void MediaControlClosedCaptionsTrackListElement::rebuildTrackListMenu()
 {
@@ -854,6 +847,7 @@ void MediaControlClosedCaptionsTrackListElement::rebuildTrackListMenu()
     m_menuItems.clear();
 
     m_trackListHasChanged = false;
+    m_menuToTrackMap.clear();
 
     if (!mediaController()->hasClosedCaptions())
         return;
@@ -863,43 +857,40 @@ void MediaControlClosedCaptionsTrackListElement::rebuildTrackListMenu()
         return;
 
     TextTrackList* trackList = mediaElement->textTracks();
-
     if (!trackList || !trackList->length())
         return;
 
     Document* doc = document();
     CaptionUserPreferences* captionsUserPreferences = doc->page()->group().captionPreferences();
+    Vector<RefPtr<TextTrack> > tracksForMenu = captionsUserPreferences->sortedTrackListForMenu(trackList);
 
     RefPtr<Element> captionsHeader = doc->createElement(h3Tag, ASSERT_NO_EXCEPTION);
     captionsHeader->appendChild(doc->createTextNode(textTrackSubtitlesText()));
     appendChild(captionsHeader);
     RefPtr<Element> captionsMenuList = doc->createElement(ulTag, ASSERT_NO_EXCEPTION);
 
-    RefPtr<Element> trackItem;
+    RefPtr<Element> menuItem;
+    menuItem = doc->createElement(liTag, ASSERT_NO_EXCEPTION);
+    menuItem->appendChild(doc->createTextNode(textTrackOffText()));
+    menuItem->setAttribute(trackIndexAttributeName(), textTracksOffAttrValue, ASSERT_NO_EXCEPTION);
+    captionsMenuList->appendChild(menuItem);
+    m_menuItems.append(menuItem);
 
-    trackItem = doc->createElement(liTag, ASSERT_NO_EXCEPTION);
-    trackItem->appendChild(doc->createTextNode(textTrackOffText()));
-    trackItem->setAttribute(trackIndexAttributeName(), textTracksOffAttrValue, ASSERT_NO_EXCEPTION);
-    captionsMenuList->appendChild(trackItem);
-    m_menuItems.append(trackItem);
-
-    for (unsigned i = 0, length = trackList->length(); i < length; ++i) {
-        TextTrack* track = trackList->item(i);
-        trackItem = doc->createElement(liTag, ASSERT_NO_EXCEPTION);
+    for (unsigned i = 0, length = tracksForMenu.size(); i < length; ++i) {
+        RefPtr<TextTrack> textTrack = tracksForMenu[i];
+        menuItem = doc->createElement(liTag, ASSERT_NO_EXCEPTION);
 
         // Add a custom attribute to the <li> element which will allow
         // us to easily associate the user tapping here with the
         // track. Since this list is rebuilt if the tracks change, we
         // should always be in sync.
-        trackItem->setAttribute(trackIndexAttributeName(), String::number(i), ASSERT_NO_EXCEPTION);
+        menuItem->setAttribute(trackIndexAttributeName(), String::number(i), ASSERT_NO_EXCEPTION);
 
-        if (captionsUserPreferences)
-            trackItem->appendChild(doc->createTextNode(captionsUserPreferences->displayNameForTrack(track)));
-        else
-            trackItem->appendChild(doc->createTextNode(track->label()));
+        menuItem->appendChild(doc->createTextNode(captionsUserPreferences->displayNameForTrack(textTrack.get())));
 
-        insertTextTrackMenuItemIntoSortedContainer(trackItem, captionsMenuList);
-        m_menuItems.append(trackItem);
+        captionsMenuList->appendChild(menuItem);
+        m_menuItems.append(menuItem);
+        m_menuToTrackMap.add(menuItem, textTrack);
     }
 
     appendChild(captionsMenuList);
@@ -971,7 +962,7 @@ void MediaControlTimelineElement::setPosition(float currentTime)
 
 void MediaControlTimelineElement::setDuration(float duration)
 {
-    setAttribute(maxAttr, String::number(isfinite(duration) ? duration : 0));
+    setAttribute(maxAttr, String::number(std::isfinite(duration) ? duration : 0));
 }
 
 
@@ -1184,13 +1175,6 @@ MediaControlTextTrackContainerElement::MediaControlTextTrackContainerElement(Doc
 {
 }
 
-void MediaControlTextTrackContainerElement::createSubtrees(Document* document)
-{
-    m_cueContainer = HTMLElement::create(spanTag, document);
-    m_cueContainer->setPseudo(TextTrackCue::cueShadowPseudoId());
-    appendChild(m_cueContainer, ASSERT_NO_EXCEPTION, false);
-}
-
 PassRefPtr<MediaControlTextTrackContainerElement> MediaControlTextTrackContainerElement::create(Document* document)
 {
     RefPtr<MediaControlTextTrackContainerElement> element = adoptRef(new MediaControlTextTrackContainerElement(document));
@@ -1203,16 +1187,21 @@ RenderObject* MediaControlTextTrackContainerElement::createRenderer(RenderArena*
     return new (arena) RenderTextTrackContainerElement(this);
 }
 
-const AtomicString& MediaControlTextTrackContainerElement::shadowPseudoId() const
+const AtomicString& MediaControlTextTrackContainerElement::textTrackContainerElementShadowPseudoId()
 {
     DEFINE_STATIC_LOCAL(AtomicString, id, ("-webkit-media-text-track-container", AtomicString::ConstructFromLiteral));
     return id;
+}
+    
+const AtomicString& MediaControlTextTrackContainerElement::shadowPseudoId() const
+{
+    return textTrackContainerElementShadowPseudoId();
 }
 
 void MediaControlTextTrackContainerElement::updateDisplay()
 {
     if (!mediaController()->closedCaptionsVisible()) {
-        m_cueContainer->removeChildren();
+        removeChildren();
         return;
     }
 
@@ -1265,13 +1254,13 @@ void MediaControlTextTrackContainerElement::updateDisplay()
         TextTrackCue* cue = activeCues[i].data();
 
         ASSERT(cue->isActive());
-        if (!cue->track() || !cue->track()->isRendered())
+        if (!cue->track() || !cue->track()->isRendered() || !cue->isActive())
             continue;
 
         RefPtr<TextTrackCueBox> displayBox = cue->getDisplayTree(m_videoDisplaySize.size());
         if (displayBox->hasChildNodes() && !contains(static_cast<Node*>(displayBox.get())))
             // Note: the display tree of a cue is removed when the active flag of the cue is unset.
-            m_cueContainer->appendChild(displayBox, ASSERT_NO_EXCEPTION, false);
+            appendChild(displayBox, ASSERT_NO_EXCEPTION, AttachNow);
     }
 
     // 11. Return output.
@@ -1312,9 +1301,15 @@ void MediaControlTextTrackContainerElement::updateSizes(bool forceUpdate)
     if (m_textTrackRepresentation)
         videoBox = m_textTrackRepresentation->bounds();
     else {
+#if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
+        if (!mediaElement->renderer() || !mediaElement->renderer()->isRenderPart())
+            return;
+        videoBox = pixelSnappedIntRect(toRenderPart(mediaElement->renderer())->contentBoxRect());
+#else
         if (!mediaElement->renderer() || !mediaElement->renderer()->isVideo())
             return;
         videoBox = toRenderVideo(mediaElement->renderer())->videoBox();
+#endif
     }
 
     if (!forceUpdate && m_videoDisplaySize == videoBox)
@@ -1329,10 +1324,16 @@ void MediaControlTextTrackContainerElement::updateSizes(bool forceUpdate)
     float smallestDimension = std::min(m_videoDisplaySize.size().height(), m_videoDisplaySize.size().width());
 
     bool important;
-    float fontSize = smallestDimension * (document()->page()->group().captionFontSizeScale(important));
+    float fontSize = smallestDimension * (document()->page()->group().captionPreferences()->captionFontSizeScale(important));
     if (fontSize != m_fontSize) {
         m_fontSize = fontSize;
         setInlineStyleProperty(CSSPropertyFontSize, String::number(fontSize) + "px", important);
+    }
+
+    CueList activeCues = mediaElement->currentlyActiveCues();
+    for (size_t i = 0; i < activeCues.size(); ++i) {
+        TextTrackCue* cue = activeCues[i].data();
+        cue->videoSizeDidChange(m_videoDisplaySize.size());
     }
 }
 

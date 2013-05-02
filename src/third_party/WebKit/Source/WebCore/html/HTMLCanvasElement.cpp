@@ -193,10 +193,16 @@ CanvasRenderingContext* HTMLCanvasElement::getContext(const String& type, Canvas
         && settings->acceleratedCompositingEnabled()
 #endif
         ) {
+
         // Accept the legacy "webkit-3d" name as well as the provisional "experimental-webgl" name.
-        // Once ratified, we will also accept "webgl" as the context name.
-        if ((type == "webkit-3d") ||
-            (type == "experimental-webgl")) {
+        bool is3dContext = (type == "webkit-3d") || (type == "experimental-webgl");
+
+#if PLATFORM(CHROMIUM) && !OS(ANDROID)
+        // Now that WebGL is ratified, we will also accept "webgl" as the context name in Chrome.
+        is3dContext |= (type == "webgl");
+#endif
+
+        if (is3dContext) {
             if (m_context && !m_context->is3d())
                 return 0;
             if (!m_context) {
@@ -520,22 +526,6 @@ bool HTMLCanvasElement::shouldAccelerate(const IntSize& size) const
 #endif
 }
 
-bool HTMLCanvasElement::shouldDefer() const
-{
-#if USE(SKIA)
-    if (m_context && !m_context->is2d())
-        return false;
-
-    Settings* settings = document()->settings();
-    if (!settings || !settings->deferred2dCanvasEnabled())
-        return false;
-
-    return true;
-#else
-    return false;
-#endif
-}
-
 void HTMLCanvasElement::createImageBuffer() const
 {
     ASSERT(!m_imageBuffer);
@@ -565,8 +555,7 @@ void HTMLCanvasElement::createImageBuffer() const
 #else
         Unaccelerated;
 #endif
-    DeferralMode deferralMode = shouldDefer() ? Deferred : NonDeferred;
-    m_imageBuffer = ImageBuffer::create(size(), m_deviceScaleFactor, ColorSpaceDeviceRGB, renderingMode, deferralMode);
+    m_imageBuffer = ImageBuffer::create(size(), m_deviceScaleFactor, ColorSpaceDeviceRGB, renderingMode);
     if (!m_imageBuffer)
         return;
     m_imageBuffer->context()->setShadowsIgnoreTransforms(true);

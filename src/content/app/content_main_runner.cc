@@ -11,7 +11,7 @@
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
 #include "base/debug/trace_event.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/i18n/icu_util.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -20,9 +20,9 @@
 #include "base/path_service.h"
 #include "base/process_util.h"
 #include "base/profiler/alternate_timer.h"
+#include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/string_number_conversions.h"
 #include "content/browser/browser_main.h"
 #include "content/common/set_process_title.h"
 #include "content/common/url_schemes.h"
@@ -39,8 +39,8 @@
 #include "ipc/ipc_switches.h"
 #include "media/base/media.h"
 #include "sandbox/win/src/sandbox_types.h"
-#include "ui/base/ui_base_switches.h"
 #include "ui/base/ui_base_paths.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/base/win/dpi.h"
 #include "webkit/user_agent/user_agent.h"
 
@@ -59,10 +59,10 @@
 #endif
 
 #if defined(OS_WIN)
-#include <cstring>
 #include <atlbase.h>
 #include <atlapp.h>
 #include <malloc.h>
+#include <cstring>
 #elif defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
 #if !defined(OS_IOS)
@@ -93,9 +93,11 @@ int tc_set_new_mode(int mode);
 
 namespace content {
 extern int GpuMain(const content::MainFunctionParams&);
+#if defined(ENABLE_PLUGINS)
 extern int PluginMain(const content::MainFunctionParams&);
 extern int PpapiPluginMain(const MainFunctionParams&);
 extern int PpapiBrokerMain(const MainFunctionParams&);
+#endif
 extern int RendererMain(const content::MainFunctionParams&);
 extern int UtilityMain(const MainFunctionParams&);
 extern int WorkerMain(const MainFunctionParams&);
@@ -194,8 +196,9 @@ void SendTaskPortToParentProcess() {
   base::MachPortSender child_sender(mach_port_name.c_str());
   kern_return_t err = child_sender.SendMessage(child_message, kTimeoutMs);
   if (err != KERN_SUCCESS) {
-    LOG(ERROR) << StringPrintf("child SendMessage() failed: 0x%x %s", err,
-                               mach_error_string(err));
+    LOG(ERROR) <<
+        base::StringPrintf("child SendMessage() failed: 0x%x %s", err,
+                           mach_error_string(err));
   }
 }
 
@@ -354,7 +357,9 @@ int RunZygote(const MainFunctionParams& main_function_params,
   static const MainFunction kMainFunctions[] = {
     { switches::kRendererProcess,    RendererMain },
     { switches::kWorkerProcess,      WorkerMain },
+#if defined(ENABLE_PLUGINS)
     { switches::kPpapiPluginProcess, PpapiPluginMain },
+#endif
     { switches::kUtilityProcess,     UtilityMain },
   };
 
@@ -636,7 +641,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // ignored.
     if (command_line.HasSwitch(switches::kTraceStartup)) {
       base::debug::TraceLog::GetInstance()->SetEnabled(
-          command_line.GetSwitchValueASCII(switches::kTraceStartup));
+          command_line.GetSwitchValueASCII(switches::kTraceStartup),
+          base::debug::TraceLog::RECORD_UNTIL_FULL);
     }
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)

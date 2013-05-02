@@ -47,7 +47,6 @@
 #include "HTTPParsers.h"
 #include "HistoryItem.h"
 #include "HitTestResult.h"
-#include "IntentRequest.h"
 #include "MIMETypeRegistry.h"
 #include "MessageEvent.h"
 #include "MouseEvent.h"
@@ -62,6 +61,7 @@
 #endif
 #include "Settings.h"
 #include "SocketStreamHandleInternal.h"
+#include "UserGestureIndicator.h"
 #if ENABLE(REQUEST_AUTOCOMPLETE)
 #include "WebAutofillClient.h"
 #endif
@@ -73,8 +73,6 @@
 #include "WebFormElement.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
-#include "WebIntentRequest.h"
-#include "WebIntentServiceInfo.h"
 #include "WebNode.h"
 #include "WebPermissionClient.h"
 #include "WebPlugin.h"
@@ -441,6 +439,13 @@ void FrameLoaderClientImpl::dispatchDidReceiveContentLength(
 {
 }
 
+void FrameLoaderClientImpl::dispatchDidChangeResourcePriority(unsigned long identifier,
+                                                              ResourceLoadPriority priority)
+{
+    if (m_webFrame->client())
+        m_webFrame->client()->didChangeResourcePriority(m_webFrame, identifier, static_cast<WebKit::WebURLRequest::Priority>(priority));
+}
+
 // Called when a particular resource load completes
 void FrameLoaderClientImpl::dispatchDidFinishLoading(DocumentLoader* loader,
                                                     unsigned long identifier)
@@ -685,11 +690,11 @@ void FrameLoaderClientImpl::dispatchDidNavigateWithinPage()
             // proper fix for this bug is identified and applied the following
             // block may no longer be required.
             //
-            // FIXME: Why do we call isProcessingUserGesture here but none of
+            // FIXME: Why do we call processingUserGesture here but none of
             // the other ports do?
             bool wasClientRedirect =
                 (url == m_expectedClientRedirectDest && chainEnd == m_expectedClientRedirectSrc)
-                || !m_webFrame->isProcessingUserGesture();
+                || !UserGestureIndicator::processingUserGesture();
 
             if (wasClientRedirect) {
                 if (m_webFrame->client())
@@ -1011,8 +1016,7 @@ void FrameLoaderClientImpl::dispatchDecidePolicyForNavigationAction(
                 if (event->isMouseEvent()) {
                     const MouseEvent* mouseEvent =
                         static_cast<const MouseEvent*>(event);
-                    node = m_webFrame->frame()->eventHandler()->hitTestResultAtPoint(
-                        mouseEvent->absoluteLocation(), false).innerNonSharedNode();
+                    node = m_webFrame->frame()->eventHandler()->hitTestResultAtPoint(mouseEvent->absoluteLocation()).innerNonSharedNode();
                     break;
                 }
             }
@@ -1214,6 +1218,12 @@ bool FrameLoaderClientImpl::shouldStopLoadingForHistoryItem(HistoryItem* targetI
     // translated and then pass through again.
     const KURL& url = targetItem->url();
     return !url.protocolIs(backForwardNavigationScheme);
+}
+
+void FrameLoaderClientImpl::didAccessInitialDocument()
+{
+    if (m_webFrame->client())
+        m_webFrame->client()->didAccessInitialDocument(m_webFrame);
 }
 
 void FrameLoaderClientImpl::didDisownOpener()
@@ -1456,7 +1466,7 @@ bool FrameLoaderClientImpl::canCachePage() const
 
 // Downloading is handled in the browser process, not WebKit. If we get to this
 // point, our download detection code in the ResourceDispatcherHost is broken!
-void FrameLoaderClientImpl::convertMainResourceLoadToDownload(MainResourceLoader* mainResourceLoader,
+void FrameLoaderClientImpl::convertMainResourceLoadToDownload(DocumentLoader* documentLoader,
                                      const ResourceRequest& request,
                                      const ResourceResponse& response)
 {
@@ -1518,7 +1528,7 @@ PassRefPtr<Widget> FrameLoaderClientImpl::createPlugin(
 // (e.g., acrobat reader).
 void FrameLoaderClientImpl::redirectDataToPlugin(Widget* pluginWidget)
 {
-    ASSERT(!pluginWidget || pluginWidget->isPluginContainer());
+    ASSERT_WITH_SECURITY_IMPLICATION(!pluginWidget || pluginWidget->isPluginContainer());
     m_pluginWidget = static_cast<WebPluginContainerImpl*>(pluginWidget);
 }
 
@@ -1641,28 +1651,6 @@ void FrameLoaderClientImpl::didChangeName(const String& name)
         return;
     m_webFrame->client()->didChangeName(m_webFrame, name);
 }
-
-#if ENABLE(WEB_INTENTS_TAG)
-void FrameLoaderClientImpl::registerIntentService(
-        const String& action,
-        const String& type,
-        const KURL& href,
-        const String& title,
-        const String& disposition) {
-    if (!m_webFrame->client())
-        return;
-
-    WebIntentServiceInfo service(action, type, href, title, disposition);
-    m_webFrame->client()->registerIntentService(m_webFrame, service);
-}
-#endif
-
-#if ENABLE(WEB_INTENTS)
-void FrameLoaderClientImpl::dispatchIntent(PassRefPtr<WebCore::IntentRequest> intentRequest)
-{
-    m_webFrame->client()->dispatchIntent(webFrame(), intentRequest);
-}
-#endif
 
 void FrameLoaderClientImpl::dispatchWillOpenSocketStream(SocketStreamHandle* handle)
 {

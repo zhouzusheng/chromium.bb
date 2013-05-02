@@ -315,6 +315,10 @@ private:
 
     typedef Vector<RefPtr<Element> > TrackMenuItems;
     TrackMenuItems m_menuItems;
+#if ENABLE(VIDEO_TRACK)
+    typedef HashMap<RefPtr<Element>, RefPtr<TextTrack> > MenuItemToTrackMap;
+    MenuItemToTrackMap m_menuToTrackMap;
+#endif
     MediaControls* m_controls;
     bool m_trackListHasChanged;
 };
@@ -439,7 +443,7 @@ public:
 
     void updateDisplay();
     void updateSizes(bool forceUpdate = false);
-    void createSubtrees(Document*);
+    static const AtomicString& textTrackContainerElementShadowPseudoId();
 
 private:
     explicit MediaControlTextTrackContainerElement(Document*);
@@ -453,7 +457,6 @@ private:
 
     IntRect m_videoDisplaySize;
     float m_fontSize;
-    RefPtr<HTMLElement> m_cueContainer;
 };
 
 #endif

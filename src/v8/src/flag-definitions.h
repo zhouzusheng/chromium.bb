@@ -213,6 +213,7 @@ DEFINE_bool(array_bounds_checks_elimination, true,
 DEFINE_bool(array_index_dehoisting, true,
             "perform array index dehoisting")
 DEFINE_bool(dead_code_elimination, true, "use dead code elimination")
+DEFINE_bool(fold_constants, true, "use constant folding")
 DEFINE_bool(trace_dead_code_elimination, false, "trace dead code elimination")
 DEFINE_bool(unreachable_code_elimination, false,
             "eliminate unreachable code (hidden behind soft deopts)")
@@ -245,6 +246,9 @@ DEFINE_int(parallel_recompilation_queue_length, 2,
 DEFINE_bool(manual_parallel_recompilation, false,
             "disable automatic optimization")
 DEFINE_implication(manual_parallel_recompilation, parallel_recompilation)
+DEFINE_bool(omit_prototype_checks_for_leaf_maps, true,
+            "do not emit prototype checks if all prototypes have leaf maps, "
+            "deoptimize the optimized code if the layout of the maps changes.")
 
 // Experimental profiler changes.
 DEFINE_bool(experimental_profiler, true, "enable all profiler experiments")
@@ -363,6 +367,14 @@ DEFINE_bool(cache_prototype_transitions, true, "cache prototype transitions")
 
 // debug.cc
 DEFINE_bool(trace_debug_json, false, "trace debugging JSON request/response")
+DEFINE_bool(trace_js_array_abuse, false,
+            "trace out-of-bounds accesses to JS arrays")
+DEFINE_bool(trace_external_array_abuse, false,
+            "trace out-of-bounds-accesses to external arrays")
+DEFINE_bool(trace_array_abuse, false,
+            "trace out-of-bounds accesses to all arrays")
+DEFINE_implication(trace_array_abuse, trace_js_array_abuse)
+DEFINE_implication(trace_array_abuse, trace_external_array_abuse)
 DEFINE_bool(debugger_auto_break, true,
             "automatically set the debug break flag when debugger commands are "
             "in the queue")
@@ -422,12 +434,12 @@ DEFINE_bool(trace_incremental_marking, false,
             "trace progress of the incremental marking")
 DEFINE_bool(track_gc_object_stats, false,
             "track object counts and memory usage")
-DEFINE_bool(parallel_sweeping, false, "enable parallel sweeping")
+DEFINE_bool(parallel_sweeping, true, "enable parallel sweeping")
 DEFINE_bool(concurrent_sweeping, false, "enable concurrent sweeping")
-DEFINE_int(sweeper_threads, 1,
+DEFINE_int(sweeper_threads, 0,
            "number of parallel and concurrent sweeping threads")
 DEFINE_bool(parallel_marking, false, "enable parallel marking")
-DEFINE_int(marking_threads, 1, "number of parallel marking threads")
+DEFINE_int(marking_threads, 0, "number of parallel marking threads")
 #ifdef VERIFY_HEAP
 DEFINE_bool(verify_heap, false, "verify heap pointers before and after GC")
 #endif

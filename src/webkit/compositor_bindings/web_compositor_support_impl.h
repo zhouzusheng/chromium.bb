@@ -6,16 +6,12 @@
 #define WEBKIT_COMPOSITOR_BINDINGS_WEB_COMPOSITOR_SUPPORT_IMPL_H_
 
 #include "base/memory/ref_counted.h"
+#include "base/message_loop_proxy.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebLayer.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebCompositorSupport.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebTransformOperations.h"
 
-namespace base {
-class MessageLoopProxy;
-}
-
 namespace WebKit {
-class WebCompositorOutputSurface;
 class WebGraphicsContext3D;
 }
 
@@ -26,24 +22,15 @@ class WebCompositorSupportImpl : public WebKit::WebCompositorSupport {
   WebCompositorSupportImpl();
   virtual ~WebCompositorSupportImpl();
 
-  virtual void initialize(WebKit::WebThread* implThread);
-  virtual bool isThreadingEnabled();
-  virtual void shutdown();
-  virtual WebKit::WebCompositorOutputSurface* createOutputSurfaceFor3D(
-      WebKit::WebGraphicsContext3D* context);
-  virtual WebKit::WebCompositorOutputSurface* createOutputSurfaceForSoftware();
   virtual WebKit::WebLayer* createLayer();
   virtual WebKit::WebContentLayer* createContentLayer(
       WebKit::WebContentLayerClient* client);
-  virtual WebKit::WebExternalTextureLayer*
-    createExternalTextureLayer(WebKit::WebExternalTextureLayerClient* client);
-  virtual WebKit::WebIOSurfaceLayer*
-    createIOSurfaceLayer();
+  virtual WebKit::WebExternalTextureLayer* createExternalTextureLayer(
+      WebKit::WebExternalTextureLayerClient* client);
   virtual WebKit::WebImageLayer* createImageLayer();
-  virtual WebKit::WebSolidColorLayer*
-    createSolidColorLayer();
-  virtual WebKit::WebVideoLayer*
-    createVideoLayer(WebKit::WebVideoFrameProvider*);
+  virtual WebKit::WebSolidColorLayer* createSolidColorLayer();
+  virtual WebKit::WebVideoLayer* createVideoLayer(
+      WebKit::WebVideoFrameProvider*);
   virtual WebKit::WebScrollbarLayer* createScrollbarLayer(
       WebKit::WebScrollbar* scrollbar,
       WebKit::WebScrollbarThemePainter painter,
@@ -51,20 +38,13 @@ class WebCompositorSupportImpl : public WebKit::WebCompositorSupport {
   virtual WebKit::WebAnimation* createAnimation(
       const WebKit::WebAnimationCurve& curve,
       WebKit::WebAnimation::TargetProperty target,
-      int animationId);
-  virtual WebKit::WebFloatAnimationCurve*
-    createFloatAnimationCurve();
-  virtual WebKit::WebTransformAnimationCurve*
-    createTransformAnimationCurve();
-  virtual WebKit::WebTransformOperations*
-    createTransformOperations();
+      int animation_id);
+  virtual WebKit::WebFloatAnimationCurve* createFloatAnimationCurve();
+  virtual WebKit::WebTransformAnimationCurve* createTransformAnimationCurve();
+  virtual WebKit::WebTransformOperations* createTransformOperations();
 
-  virtual WebKit::WebLayerTreeView* createLayerTreeView(
-      WebKit::WebLayerTreeViewClient* client, const WebKit::WebLayer& root,
-      const WebKit::WebLayerTreeView::Settings& settings);
  private:
-  scoped_refptr<base::MessageLoopProxy> impl_thread_message_loop_proxy_;
-  bool initialized_;
+  DISALLOW_COPY_AND_ASSIGN(WebCompositorSupportImpl);
 };
 
 }  // namespace webkit

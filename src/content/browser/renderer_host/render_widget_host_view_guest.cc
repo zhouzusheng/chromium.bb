@@ -3,31 +3,54 @@
 // found in the LICENSE file.
 
 #include "base/bind_helpers.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_guest.h"
-#include "content/browser/web_contents/web_contents_impl.h"
-#include "content/common/browser_plugin_messages.h"
+#if defined(OS_WIN) || defined(USE_AURA)
+#include "content/browser/renderer_host/ui_events_helper.h"
+#endif
+#include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
+#include "content/public/common/content_switches.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
 #include "webkit/plugins/npapi/webplugin.h"
 
 namespace content {
 
+namespace {
+
+bool ShouldSendPinchGesture() {
+  static bool pinch_allowed =
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnablePinch);
+  return pinch_allowed;
+}
+
+WebKit::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
+  WebKit::WebGestureEvent gesture_event;
+  gesture_event.timeStampSeconds = time_stamp;
+  gesture_event.type = WebKit::WebGestureEvent::GestureFlingCancel;
+  gesture_event.sourceDevice = WebKit::WebGestureEvent::Touchscreen;
+  return gesture_event;
+}
+
+}  // namespace
+
 RenderWidgetHostViewGuest::RenderWidgetHostViewGuest(
     RenderWidgetHost* widget_host,
     BrowserPluginGuest* guest,
-    bool enable_compositing,
     RenderWidgetHostView* platform_view)
     : host_(RenderWidgetHostImpl::From(widget_host)),
       guest_(guest),
-      enable_compositing_(enable_compositing),
       is_hidden_(false),
       platform_view_(static_cast<RenderWidgetHostViewPort*>(platform_view)) {
+#if defined(OS_WIN) || defined(USE_AURA)
+  gesture_recognizer_.reset(ui::GestureRecognizer::Create(this));
+#endif  // defined(OS_WIN) || defined(USE_AURA)
   host_->SetView(this);
 }
 
@@ -61,8 +84,32 @@ gfx::Rect RenderWidgetHostViewGuest::GetBoundsInRootWindow() {
 }
 
 gfx::GLSurfaceHandle RenderWidgetHostViewGuest::GetCompositingSurface() {
-  return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, true);
+  return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::TEXTURE_TRANSPORT);
 }
+
+#if defined(OS_WIN) || defined(USE_AURA)
+void RenderWidgetHostViewGuest::ProcessAckedTouchEvent(
+    const WebKit::WebTouchEvent& touch, InputEventAckState ack_result) {
+  // TODO(fsamuel): Currently we will only take this codepath if the guest has
+  // requested touch events. A better solution is to always forward touchpresses
+  // to the embedder process to target a BrowserPlugin, and then route all
+  // subsequent touch points of that touchdown to the appropriate guest until
+  // that touch point is released.
+  ScopedVector<ui::TouchEvent> events;
+  if (!MakeUITouchEventsFromWebTouchEvents(touch, &events, LOCAL_COORDINATES))
+    return;
+
+  ui::EventResult result = (ack_result ==
+      INPUT_EVENT_ACK_STATE_CONSUMED) ? ui::ER_HANDLED : ui::ER_UNHANDLED;
+  for (ScopedVector<ui::TouchEvent>::iterator iter = events.begin(),
+      end = events.end(); iter != end; ++iter)  {
+    scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
+    gestures.reset(gesture_recognizer_->ProcessTouchEventForGesture(
+        *(*iter), result, this));
+    ProcessGestures(gestures.get());
+  }
+}
+#endif
 
 void RenderWidgetHostViewGuest::Show() {
   WasShown();
@@ -83,13 +130,15 @@ gfx::Rect RenderWidgetHostViewGuest::GetViewBounds() const {
 void RenderWidgetHostViewGuest::RenderViewGone(base::TerminationStatus status,
                                                int error_code) {
   platform_view_->RenderViewGone(status, error_code);
-  Destroy();
+  // Destroy the guest view instance only, so we don't end up calling
+  // platform_view_->Destroy().
+  DestroyGuestView();
 }
 
 void RenderWidgetHostViewGuest::Destroy() {
+  platform_view_->Destroy();
   // The RenderWidgetHost's destruction led here, so don't call it.
-  host_ = NULL;
-  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+  DestroyGuestView();
 }
 
 void RenderWidgetHostViewGuest::SetTooltipText(const string16& tooltip_text) {
@@ -99,40 +148,30 @@ void RenderWidgetHostViewGuest::SetTooltipText(const string16& tooltip_text) {
 void RenderWidgetHostViewGuest::AcceleratedSurfaceBuffersSwapped(
     const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
     int gpu_host_id) {
-  DCHECK(enable_compositing_);
   // If accelerated surface buffers are getting swapped then we're not using
   // the software path.
   guest_->clear_damage_buffer();
-  if (enable_compositing_) {
-    guest_->SendMessageToEmbedder(
-        new BrowserPluginMsg_BuffersSwapped(
-            guest_->embedder_routing_id(),
-            guest_->instance_id(),
-            params.size,
-            params.mailbox_name,
-            params.route_id,
-            gpu_host_id));
-  }
+  guest_->SendMessageToEmbedder(
+      new BrowserPluginMsg_BuffersSwapped(
+          guest_->instance_id(),
+          params.size,
+          params.mailbox_name,
+          params.route_id,
+          gpu_host_id));
 }
 
 void RenderWidgetHostViewGuest::AcceleratedSurfacePostSubBuffer(
     const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params,
     int gpu_host_id) {
-  DCHECK(enable_compositing_);
-  if (enable_compositing_) {
-    guest_->SendMessageToEmbedder(
-        new BrowserPluginMsg_BuffersSwapped(
-            guest_->embedder_routing_id(),
-            guest_->instance_id(),
-            params.surface_size,
-            params.mailbox_name,
-            params.route_id,
-            gpu_host_id));
-  }
+  NOTREACHED();
 }
 
 void RenderWidgetHostViewGuest::SetBounds(const gfx::Rect& rect) {
   platform_view_->SetBounds(rect);
+}
+
+bool RenderWidgetHostViewGuest::OnMessageReceived(const IPC::Message& msg) {
+  return platform_view_->OnMessageReceived(msg);
 }
 
 void RenderWidgetHostViewGuest::InitAsChild(
@@ -153,18 +192,15 @@ void RenderWidgetHostViewGuest::InitAsFullscreen(
 }
 
 gfx::NativeView RenderWidgetHostViewGuest::GetNativeView() const {
-  return guest_->embedder_web_contents()->GetRenderWidgetHostView()->
-      GetNativeView();
+  return guest_->GetEmbedderRenderWidgetHostView()->GetNativeView();
 }
 
 gfx::NativeViewId RenderWidgetHostViewGuest::GetNativeViewId() const {
-  return guest_->embedder_web_contents()->GetRenderWidgetHostView()->
-      GetNativeViewId();
+  return guest_->GetEmbedderRenderWidgetHostView()->GetNativeViewId();
 }
 
 gfx::NativeViewAccessible RenderWidgetHostViewGuest::GetNativeViewAccessible() {
-  return guest_->embedder_web_contents()->GetRenderWidgetHostView()->
-      GetNativeViewAccessible();
+  return guest_->GetEmbedderRenderWidgetHostView()->GetNativeViewAccessible();
 }
 
 void RenderWidgetHostViewGuest::MovePluginWindows(
@@ -184,11 +220,8 @@ bool RenderWidgetHostViewGuest::HasFocus() const {
 }
 
 bool RenderWidgetHostViewGuest::IsSurfaceAvailableForCopy() const {
-  DCHECK(enable_compositing_);
-  if (enable_compositing_)
-    return true;
-  else
-    return platform_view_->IsSurfaceAvailableForCopy();
+  NOTIMPLEMENTED();
+  return false;
 }
 
 void RenderWidgetHostViewGuest::UpdateCursor(const WebCursor& cursor) {
@@ -208,6 +241,11 @@ void RenderWidgetHostViewGuest::ImeCancelComposition() {
   platform_view_->ImeCancelComposition();
 }
 
+void RenderWidgetHostViewGuest::ImeCompositionRangeChanged(
+    const ui::Range& range,
+    const std::vector<gfx::Rect>& character_bounds) {
+}
+
 void RenderWidgetHostViewGuest::DidUpdateBackingStore(
     const gfx::Rect& scroll_rect,
     const gfx::Vector2d& scroll_delta,
@@ -218,6 +256,9 @@ void RenderWidgetHostViewGuest::DidUpdateBackingStore(
 void RenderWidgetHostViewGuest::SelectionBoundsChanged(
     const ViewHostMsg_SelectionBounds_Params& params) {
   platform_view_->SelectionBoundsChanged(params);
+}
+
+void RenderWidgetHostViewGuest::ScrollOffsetChanged() {
 }
 
 BackingStore* RenderWidgetHostViewGuest::AllocBackingStore(
@@ -249,18 +290,28 @@ void RenderWidgetHostViewGuest::AcceleratedSurfaceSuspend() {
   NOTREACHED();
 }
 
+void RenderWidgetHostViewGuest::AcceleratedSurfaceRelease() {
+}
+
 bool RenderWidgetHostViewGuest::HasAcceleratedSurface(
       const gfx::Size& desired_size) {
-  DCHECK(enable_compositing_);
-  if (enable_compositing_)
-    return false;
-  else
-    return platform_view_->HasAcceleratedSurface(desired_size);
+  return false;
 }
 
 void RenderWidgetHostViewGuest::SetBackground(const SkBitmap& background) {
   platform_view_->SetBackground(background);
 }
+
+#if defined(OS_WIN) && !defined(USE_AURA)
+void RenderWidgetHostViewGuest::SetClickthroughRegion(SkRegion* region) {
+}
+#endif
+
+#if defined(OS_WIN) && defined(USE_AURA)
+void RenderWidgetHostViewGuest::SetParentNativeViewAccessible(
+    gfx::NativeViewAccessible accessible_parent) {
+}
+#endif
 
 void RenderWidgetHostViewGuest::SetHasHorizontalScrollbar(
     bool has_horizontal_scrollbar) {
@@ -282,6 +333,14 @@ bool RenderWidgetHostViewGuest::LockMouse() {
 
 void RenderWidgetHostViewGuest::UnlockMouse() {
   return platform_view_->UnlockMouse();
+}
+
+void RenderWidgetHostViewGuest::GetScreenInfo(WebKit::WebScreenInfo* results) {
+  platform_view_->GetScreenInfo(results);
+}
+
+void RenderWidgetHostViewGuest::OnAccessibilityNotifications(
+    const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
 }
 
 #if defined(OS_MACOSX)
@@ -325,73 +384,28 @@ void RenderWidgetHostViewGuest::AboutToWaitForBackingStoreMsg() {
   NOTREACHED();
 }
 
-void RenderWidgetHostViewGuest::PluginFocusChanged(bool focused,
-                                                   int plugin_id) {
-  platform_view_->PluginFocusChanged(focused, plugin_id);
-}
-
-void RenderWidgetHostViewGuest::StartPluginIme() {
-  platform_view_->StartPluginIme();
-}
-
 bool RenderWidgetHostViewGuest::PostProcessEventForPluginIme(
     const NativeWebKeyboardEvent& event) {
   return false;
 }
 
-gfx::PluginWindowHandle
-RenderWidgetHostViewGuest::AllocateFakePluginWindowHandle(
-    bool opaque, bool root) {
-  return platform_view_->AllocateFakePluginWindowHandle(opaque, root);
-}
-
-void RenderWidgetHostViewGuest::DestroyFakePluginWindowHandle(
-    gfx::PluginWindowHandle window) {
-  return platform_view_->DestroyFakePluginWindowHandle(window);
-}
-
-void RenderWidgetHostViewGuest::AcceleratedSurfaceSetIOSurface(
-    gfx::PluginWindowHandle window,
-    int32 width,
-    int32 height,
-    uint64 io_surface_identifier) {
-  NOTREACHED();
-}
-
-void RenderWidgetHostViewGuest::AcceleratedSurfaceSetTransportDIB(
-    gfx::PluginWindowHandle window,
-    int32 width,
-    int32 height,
-    TransportDIB::Handle transport_dib) {
-  NOTREACHED();
-}
 #endif  // defined(OS_MACOSX)
 
 #if defined(OS_ANDROID)
-void RenderWidgetHostViewGuest::StartContentIntent(const GURL& content_url) {
-}
-
-void RenderWidgetHostViewGuest::SetCachedBackgroundColor(SkColor color) {
-}
-
 void RenderWidgetHostViewGuest::ShowDisambiguationPopup(
     const gfx::Rect& target_rect,
     const SkBitmap& zoomed_bitmap) {
 }
 
-void RenderWidgetHostViewGuest::SetCachedPageScaleFactorLimits(
-    float minimum_scale,
-    float maximum_scale) {
-}
-
 void RenderWidgetHostViewGuest::UpdateFrameInfo(
-    const gfx::Vector2d& scroll_offset,
+    const gfx::Vector2dF& scroll_offset,
     float page_scale_factor,
-    float min_page_scale_factor,
-    float max_page_scale_factor,
-    const gfx::Size& content_size,
+    const gfx::Vector2dF& page_scale_factor_limits,
+    const gfx::SizeF& content_size,
+    const gfx::SizeF& viewport_size,
     const gfx::Vector2dF& controls_offset,
-    const gfx::Vector2dF& content_offset) {
+    const gfx::Vector2dF& content_offset,
+    float overdraw_bottom_height) {
 }
 
 void RenderWidgetHostViewGuest::HasTouchEventHandlers(bool need_touch_events) {
@@ -406,14 +420,6 @@ GdkEventButton* RenderWidgetHostViewGuest::GetLastMouseDown() {
 gfx::NativeView RenderWidgetHostViewGuest::BuildInputMethodsGtkMenu() {
   return gfx::NativeView();
 }
-
-void RenderWidgetHostViewGuest::CreatePluginContainer(
-    gfx::PluginWindowHandle id) {
-}
-
-void RenderWidgetHostViewGuest::DestroyPluginContainer(
-    gfx::PluginWindowHandle id) {
-}
 #endif  // defined(TOOLKIT_GTK)
 
 #if defined(OS_WIN) && !defined(USE_AURA)
@@ -421,8 +427,76 @@ void RenderWidgetHostViewGuest::WillWmDestroy() {
 }
 #endif
 
-void RenderWidgetHostViewGuest::GetScreenInfo(WebKit::WebScreenInfo* results) {
-  platform_view_->GetScreenInfo(results);
+void RenderWidgetHostViewGuest::DestroyGuestView() {
+  host_ = NULL;
+  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
+
+bool RenderWidgetHostViewGuest::DispatchLongPressGestureEvent(
+    ui::GestureEvent* event) {
+  return ForwardGestureEventToRenderer(event);
+}
+
+bool RenderWidgetHostViewGuest::DispatchCancelTouchEvent(
+    ui::TouchEvent* event) {
+  if (!host_)
+    return false;
+
+  WebKit::WebTouchEvent cancel_event;
+  cancel_event.type = WebKit::WebInputEvent::TouchCancel;
+  cancel_event.timeStampSeconds = event->time_stamp().InSecondsF();
+  host_->ForwardTouchEvent(cancel_event);
+  return true;
+}
+
+bool RenderWidgetHostViewGuest::ForwardGestureEventToRenderer(
+    ui::GestureEvent* gesture) {
+#if defined(OS_WIN) || defined(USE_AURA)
+  if (!host_)
+    return false;
+
+  // Pinch gestures are disabled by default on windows desktop. See
+  // crbug.com/128477 and crbug.com/148816
+  if ((gesture->type() == ui::ET_GESTURE_PINCH_BEGIN ||
+      gesture->type() == ui::ET_GESTURE_PINCH_UPDATE ||
+      gesture->type() == ui::ET_GESTURE_PINCH_END) &&
+      !ShouldSendPinchGesture()) {
+    return true;
+  }
+
+  WebKit::WebGestureEvent web_gesture =
+      MakeWebGestureEventFromUIEvent(*gesture);
+  const gfx::Point& client_point = gesture->location();
+  const gfx::Point& screen_point = gesture->location();
+
+  web_gesture.x = client_point.x();
+  web_gesture.y = client_point.y();
+  web_gesture.globalX = screen_point.x();
+  web_gesture.globalY = screen_point.y();
+
+  if (web_gesture.type == WebKit::WebGestureEvent::Undefined)
+    return false;
+  if (web_gesture.type == WebKit::WebGestureEvent::GestureTapDown) {
+    host_->ForwardGestureEvent(
+        CreateFlingCancelEvent(gesture->time_stamp().InSecondsF()));
+  }
+  host_->ForwardGestureEvent(web_gesture);
+  return true;
+#else
+  return false;
+#endif
+}
+
+void RenderWidgetHostViewGuest::ProcessGestures(
+    ui::GestureRecognizer::Gestures* gestures) {
+  if ((gestures == NULL) || gestures->empty())
+    return;
+  for (ui::GestureRecognizer::Gestures::iterator g_it = gestures->begin();
+      g_it != gestures->end();
+      ++g_it) {
+    ForwardGestureEventToRenderer(*g_it);
+  }
+}
+
 
 }  // namespace content

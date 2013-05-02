@@ -266,13 +266,13 @@ void AesDecryptor::CancelDecrypt(StreamType stream_type) {
   // Decrypt() calls the DecryptCB synchronously so there's nothing to cancel.
 }
 
-void AesDecryptor::InitializeAudioDecoder(scoped_ptr<AudioDecoderConfig> config,
+void AesDecryptor::InitializeAudioDecoder(const AudioDecoderConfig& config,
                                           const DecoderInitCB& init_cb) {
   // AesDecryptor does not support audio decoding.
   init_cb.Run(false);
 }
 
-void AesDecryptor::InitializeVideoDecoder(scoped_ptr<VideoDecoderConfig> config,
+void AesDecryptor::InitializeVideoDecoder(const VideoDecoderConfig& config,
                                           const DecoderInitCB& init_cb) {
   // AesDecryptor does not support video decoding.
   init_cb.Run(false);

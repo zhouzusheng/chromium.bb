@@ -16,7 +16,13 @@ const int kTimerResetIntervalSeconds = 1;
 // audio has faded away.
 const int kTimerInitialIntervalSeconds = 4;
 #else
-const int kTimerInitialIntervalSeconds = 1;
+// We have received reports that the timer can be too trigger happy on some
+// Mac devices and the initial timer interval has therefore been increased
+// from 1 second to 5 seconds.
+// TODO(henrika): remove usage of timers and add support for proper
+// notification of when the input device is removed.
+// See http://crbug.com/226327 for details.
+const int kTimerInitialIntervalSeconds = 5;
 #endif  // defined(OS_IOS)
 }
 
@@ -165,16 +171,14 @@ void AudioInputController::DoCreateForStream(
   stream_ = stream_to_control;
 
   if (!stream_) {
-    // TODO(satish): Define error types.
-    handler_->OnError(this, 0);
+    handler_->OnError(this);
     return;
   }
 
   if (stream_ && !stream_->Open()) {
     stream_->Close();
     stream_ = NULL;
-    // TODO(satish): Define error types.
-    handler_->OnError(this, 0);
+    handler_->OnError(this);
     return;
   }
 
@@ -226,9 +230,9 @@ void AudioInputController::DoClose() {
   }
 }
 
-void AudioInputController::DoReportError(int code) {
+void AudioInputController::DoReportError() {
   DCHECK(message_loop_->BelongsToCurrentThread());
-  handler_->OnError(this, code);
+  handler_->OnError(this);
 }
 
 void AudioInputController::DoSetVolume(double volume) {
@@ -272,7 +276,7 @@ void AudioInputController::DoCheckForNoData() {
     // The data-is-active marker will be false only if it has been more than
     // one second since a data packet was recorded. This can happen if a
     // capture device has been removed or disabled.
-    handler_->OnError(this, 0);
+    handler_->OnError(this);
     return;
   }
 
@@ -319,10 +323,10 @@ void AudioInputController::OnClose(AudioInputStream* stream) {
   // such cases here.
 }
 
-void AudioInputController::OnError(AudioInputStream* stream, int code) {
+void AudioInputController::OnError(AudioInputStream* stream) {
   // Handle error on the audio-manager thread.
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &AudioInputController::DoReportError, this, code));
+      &AudioInputController::DoReportError, this));
 }
 
 void AudioInputController::DoStopCloseAndClearStream(

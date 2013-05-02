@@ -39,8 +39,6 @@ WebPreferences::WebPreferences()
       default_encoding("ISO-8859-1"),
       apply_default_device_scale_factor_in_compositor(false),
       apply_page_scale_factor_in_compositor(false),
-      per_tile_painting_enabled(false),
-      accelerated_animation_enabled(false),
       javascript_enabled(true),
       web_security_enabled(true),
       javascript_can_open_windows_automatically(true),
@@ -81,15 +79,12 @@ WebPreferences::WebPreferences()
       gl_multisampling_enabled(true),
       privileged_webgl_extensions_enabled(false),
       webgl_errors_to_console_enabled(true),
-      show_composited_layer_borders(false),
-      show_composited_layer_tree(false),
-      show_fps_counter(false),
       accelerated_compositing_for_overflow_scroll_enabled(false),
       accelerated_compositing_for_scrollable_frames_enabled(false),
       composited_scrolling_for_frames_enabled(false),
       mock_scrollbars_enabled(false),
+      threaded_html_parser(true),
       show_paint_rects(false),
-      render_vsync_enabled(true),
       asynchronous_spell_checking_enabled(true),
       unified_textchecker_enabled(false),
       accelerated_compositing_enabled(false),
@@ -98,9 +93,8 @@ WebPreferences::WebPreferences()
       accelerated_compositing_for_animation_enabled(false),
       accelerated_compositing_for_video_enabled(false),
       accelerated_2d_canvas_enabled(false),
-      deferred_2d_canvas_enabled(false),
+      minimum_accelerated_2d_canvas_size(257 * 256),
       antialiased_2d_canvas_disabled(false),
-      accelerated_painting_enabled(false),
       accelerated_filters_enabled(false),
       gesture_tap_highlight_enabled(false),
       accelerated_compositing_for_plugins_enabled(false),
@@ -120,10 +114,7 @@ WebPreferences::WebPreferences()
       device_supports_touch(false),
       device_supports_mouse(true),
       touch_adjustment_enabled(true),
-      default_tile_width(256),
-      default_tile_height(256),
-      max_untiled_layer_width(512),
-      max_untiled_layer_height(512),
+      touch_drag_drop_enabled(false),
       fixed_position_creates_stacking_context(false),
       sync_xhr_in_documents_enabled(true),
       deferred_image_decoding_enabled(false),
@@ -142,13 +133,19 @@ WebPreferences::WebPreferences()
 #endif
       supports_multiple_windows(true),
       viewport_enabled(false),
-      record_rendering_stats(false),
+      initialize_at_minimum_page_scale(true),
+#if defined(OS_MACOSX)
+      smart_insert_delete_enabled(true),
+#else
+      smart_insert_delete_enabled(false),
+#endif
       cookie_enabled(true)
 #if defined(OS_ANDROID)
       ,
       text_autosizing_enabled(true),
       font_scale_factor(1.0f),
       force_enable_zoom(false),
+      double_tap_to_zoom_enabled(true),
       user_gesture_required_for_media_playback(true)
 #endif
 {
@@ -278,8 +275,6 @@ void WebPreferences::Apply(WebView* web_view) const {
       apply_default_device_scale_factor_in_compositor);
   settings->setApplyPageScaleFactorInCompositor(
       apply_page_scale_factor_in_compositor);
-  settings->setPerTilePaintingEnabled(per_tile_painting_enabled);
-  settings->setAcceleratedAnimationEnabled(accelerated_animation_enabled);
   settings->setJavaScriptEnabled(javascript_enabled);
   settings->setWebSecurityEnabled(web_security_enabled);
   settings->setJavaScriptCanOpenWindowsAutomatically(
@@ -354,13 +349,6 @@ void WebPreferences::Apply(WebView* web_view) const {
   // Enable WebGL errors to the JS console if requested.
   settings->setWebGLErrorsToConsoleEnabled(webgl_errors_to_console_enabled);
 
-  // Display colored borders around composited render layers if requested
-  // on command line.
-  settings->setShowDebugBorders(show_composited_layer_borders);
-
-  // Display an FPS indicator if requested on the command line.
-  settings->setShowFPSCounter(show_fps_counter);
-
   // Enables accelerated compositing for overflow scroll.
   settings->setAcceleratedCompositingForOverflowScrollEnabled(
       accelerated_compositing_for_overflow_scroll_enabled);
@@ -377,19 +365,11 @@ void WebPreferences::Apply(WebView* web_view) const {
   // Uses the mock theme engine for scrollbars.
   settings->setMockScrollbarsEnabled(mock_scrollbars_enabled);
 
-  // Display the current compositor tree as overlay if requested on
-  // the command line
-  settings->setShowPlatformLayerTree(show_composited_layer_tree);
+  settings->setThreadedHTMLParser(threaded_html_parser);
 
   // Display visualization of what has changed on the screen using an
   // overlay of rects, if requested on the command line.
   settings->setShowPaintRects(show_paint_rects);
-
-  // Record rendering stats for benchmarks.
-  settings->setRecordRenderingStats(record_rendering_stats);
-
-  // Set whether to throttle framerate to Vsync.
-  settings->setRenderVSyncEnabled(render_vsync_enabled);
 
   // Enable gpu-accelerated compositing if requested on the command line.
   settings->setAcceleratedCompositingEnabled(accelerated_compositing_enabled);
@@ -397,14 +377,11 @@ void WebPreferences::Apply(WebView* web_view) const {
   // Enable gpu-accelerated 2d canvas if requested on the command line.
   settings->setAccelerated2dCanvasEnabled(accelerated_2d_canvas_enabled);
 
-  // Enable deferred 2d canvas if requested on the command line.
-  settings->setDeferred2dCanvasEnabled(deferred_2d_canvas_enabled);
+  settings->setMinimumAccelerated2dCanvasSize(
+      minimum_accelerated_2d_canvas_size);
 
   // Disable antialiasing for 2d canvas if requested on the command line.
   settings->setAntialiased2dCanvasEnabled(!antialiased_2d_canvas_disabled);
-
-  // Enable gpu-accelerated painting if requested on the command line.
-  settings->setAcceleratedPaintingEnabled(accelerated_painting_enabled);
 
   // Enable gpu-accelerated filters if requested on the command line.
   settings->setAcceleratedFiltersEnabled(accelerated_filters_enabled);
@@ -464,11 +441,7 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setDeviceSupportsTouch(device_supports_touch);
   settings->setDeviceSupportsMouse(device_supports_mouse);
   settings->setEnableTouchAdjustment(touch_adjustment_enabled);
-
-  settings->setDefaultTileSize(
-      WebSize(default_tile_width, default_tile_height));
-  settings->setMaxUntiledLayerSize(
-      WebSize(max_untiled_layer_width, max_untiled_layer_height));
+  settings->setTouchDragDropEnabled(touch_drag_drop_enabled);
 
   settings->setFixedPositionCreatesStackingContext(
       fixed_position_creates_stacking_context);
@@ -483,6 +456,9 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setSupportsMultipleWindows(supports_multiple_windows);
 
   settings->setViewportEnabled(viewport_enabled);
+  settings->setInitializeAtMinimumPageScale(initialize_at_minimum_page_scale);
+
+  settings->setSmartInsertDeleteEnabled(smart_insert_delete_enabled);
 
 #if defined(OS_ANDROID)
   settings->setAllowCustomScrollbarInMainFrame(false);
@@ -490,9 +466,11 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setTextAutosizingFontScaleFactor(font_scale_factor);
   web_view->setIgnoreViewportTagMaximumScale(force_enable_zoom);
   settings->setAutoZoomFocusedNodeToLegibleScale(true);
-  settings->setDoubleTapToZoomEnabled(true);
+  settings->setDoubleTapToZoomEnabled(double_tap_to_zoom_enabled);
   settings->setMediaPlaybackRequiresUserGesture(
       user_gesture_required_for_media_playback);
+  settings->setDefaultVideoPosterURL(
+        ASCIIToUTF16(default_video_poster_url.spec()));
 #endif
 
   WebNetworkStateNotifier::setOnLine(is_online);

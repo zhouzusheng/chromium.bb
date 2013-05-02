@@ -14,8 +14,10 @@
 #if defined(OS_WIN)
 #include "base/shared_memory.h"
 #endif
+#include "content/common/browser_plugin/browser_plugin_message_enums.h"
 #include "content/renderer/browser_plugin/browser_plugin_backing_store.h"
 #include "content/renderer/browser_plugin/browser_plugin_bindings.h"
+#include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/render_view_impl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDragStatus.h"
 
@@ -31,10 +33,14 @@ class BrowserPluginManager;
 class MockBrowserPlugin;
 
 class CONTENT_EXPORT BrowserPlugin :
-    NON_EXPORTED_BASE(public WebKit::WebPlugin) {
+    NON_EXPORTED_BASE(public WebKit::WebPlugin),
+    public MouseLockDispatcher::LockTarget {
  public:
   RenderViewImpl* render_view() const { return render_view_.get(); }
   int render_view_routing_id() const { return render_view_routing_id_; }
+  int instance_id() const { return instance_id_; }
+
+  static BrowserPlugin* FromContainer(WebKit::WebPluginContainer* container);
 
   bool OnMessageReceived(const IPC::Message& msg);
 
@@ -89,6 +95,14 @@ class CONTENT_EXPORT BrowserPlugin :
   int guest_process_id() const { return guest_process_id_; }
   // Returns Chrome's route ID for the current guest.
   int guest_route_id() const { return guest_route_id_; }
+  // Returns whether the guest process has crashed.
+  bool guest_crashed() const { return guest_crashed_; }
+  bool HasGuest() const;
+
+  // Attaches the window identified by |window_id| to the the given node
+  // encapsulating a BrowserPlugin.
+  static bool AttachWindowTo(const WebKit::WebNode& node,
+                             int window_id);
 
   // Query whether the guest can navigate back to the previous entry.
   bool CanGoBack() const;
@@ -112,12 +126,18 @@ class CONTENT_EXPORT BrowserPlugin :
   // Tells the BrowserPlugin to terminate the guest process.
   void TerminateGuest();
 
-  // A request from Javascript has been made to stop the loading of the page.
+  // A request from JavaScript has been made to stop the loading of the page.
   void Stop();
-  // A request from Javascript has been made to reload the page.
+  // A request from JavaScript has been made to reload the page.
   void Reload();
   // A request to enable hardware compositing.
   void EnableCompositing(bool enable);
+  // A request from content client to track lifetime of a JavaScript object
+  // related to a permission request object.
+  // This is used to clean up hanging permission request objects.
+  void PersistRequestObject(const NPVariant* request,
+                            const std::string& type,
+                            int id);
 
   // Returns true if |point| lies within the bounds of the plugin rectangle.
   // Not OK to use this function for making security-sensitive decision since it
@@ -126,6 +146,15 @@ class CONTENT_EXPORT BrowserPlugin :
   bool InBounds(const gfx::Point& point) const;
 
   gfx::Point ToLocalCoordinates(const gfx::Point& point) const;
+  // Called by browser plugin binding.
+  void OnEmbedderDecidedPermission(int request_id, bool allow);
+
+  // Sets the instance ID of the BrowserPlugin and requests a guest from the
+  // browser process.
+  void SetInstanceID(int instance_id, bool new_guest);
+
+  // Returns whether a message should be forwarded to BrowserPlugin.
+  static bool ShouldForwardToBrowserPlugin(const IPC::Message& message);
 
   // WebKit::WebPlugin implementation.
   virtual WebKit::WebPluginContainer* container() const OVERRIDE;
@@ -165,6 +194,13 @@ class CONTENT_EXPORT BrowserPlugin :
       const WebKit::WebURL& url,
       void* notify_data,
       const WebKit::WebURLError& error) OVERRIDE;
+
+  // MouseLockDispatcher::LockTarget implementation.
+  virtual void OnLockMouseACK(bool succeeded) OVERRIDE;
+  virtual void OnMouseLockLost() OVERRIDE;
+  virtual bool HandleMouseLockedInputEvent(
+          const WebKit::WebMouseEvent& event) OVERRIDE;
+
  private:
   friend class base::DeleteHelper<BrowserPlugin>;
   // Only the manager is allowed to create a BrowserPlugin.
@@ -189,7 +225,6 @@ class CONTENT_EXPORT BrowserPlugin :
 
   int width() const { return plugin_rect_.width(); }
   int height() const { return plugin_rect_.height(); }
-  int instance_id() const { return instance_id_; }
   // Gets the Max Height value used for auto size.
   int GetAdjustedMaxHeight() const;
   // Gets the Max Width value used for auto size.
@@ -257,6 +292,30 @@ class CONTENT_EXPORT BrowserPlugin :
   // browser process.
   void SetInstanceID(int instance_id);
 
+  void AddPermissionRequestToMap(int request_id,
+                                 BrowserPluginPermissionType type);
+
+  // Informs the BrowserPlugin that the guest's permission request has been
+  // allowed or denied by the embedder.
+  void RespondPermission(BrowserPluginPermissionType permission_type,
+                         int request_id,
+                         bool allow);
+
+  // Handles the response to the pointerLock permission request.
+  void RespondPermissionPointerLock(bool allow);
+
+  // If the request with id |request_id| is pending then informs the
+  // BrowserPlugin that the guest's permission request has been allowed or
+  // denied by the embedder.
+  void RespondPermissionIfRequestIsPending(int request_id, bool allow);
+  // Cleans up pending permission request once the associated event.request
+  // object goes out of scope in JavaScript.
+  void OnRequestObjectGarbageCollected(int request_id);
+  // V8 garbage collection callback for |object|.
+  static void WeakCallbackForPersistObject(v8::Isolate* isolate,
+                                           v8::Persistent<v8::Value> object,
+                                           void* param);
+
   // IPC message handlers.
   // Please keep in alphabetical order.
   void OnAdvanceFocus(int instance_id, bool reverse);
@@ -282,8 +341,14 @@ class CONTENT_EXPORT BrowserPlugin :
                       bool is_top_level);
   void OnLoadStart(int instance_id, const GURL& url, bool is_top_level);
   void OnLoadStop(int instance_id);
+  // Requests permission from the embedder.
+  void OnRequestPermission(int instance_id,
+                           BrowserPluginPermissionType permission_type,
+                           int request_id,
+                           const base::DictionaryValue& request_info);
   void OnSetCursor(int instance_id, const WebCursor& cursor);
   void OnShouldAcceptTouchEvents(int instance_id, bool accept);
+  void OnUnlockMouse(int instance_id);
   void OnUpdatedName(int instance_id, const std::string& name);
   void OnUpdateRect(int instance_id,
                     const BrowserPluginMsg_UpdateRect_Params& params);
@@ -306,8 +371,6 @@ class CONTENT_EXPORT BrowserPlugin :
   SkBitmap* sad_guest_;
   bool guest_crashed_;
   scoped_ptr<BrowserPluginHostMsg_ResizeGuest_Params> pending_resize_params_;
-  // True if we have ever sent a NavigateGuest message to the embedder.
-  bool navigate_src_sent_;
   bool auto_size_ack_pending_;
   int guest_process_id_;
   int guest_route_id_;
@@ -325,6 +388,16 @@ class CONTENT_EXPORT BrowserPlugin :
   gfx::Size last_view_size_;
   bool size_changed_in_flight_;
   bool allocate_instance_id_sent_;
+
+  // Each permission request item in the map is a pair of request id and
+  // permission type.
+  typedef std::map<int, BrowserPluginPermissionType> PendingPermissionRequests;
+  PendingPermissionRequests pending_permission_requests_;
+
+  typedef std::pair<int, base::WeakPtr<BrowserPlugin> >
+      AliveV8PermissionRequestItem;
+  std::map<int, AliveV8PermissionRequestItem*>
+      alive_v8_permission_request_objects_;
 
   // BrowserPlugin outlives RenderViewImpl in Chrome Apps and so we need to
   // store the BrowserPlugin's BrowserPluginManager in a member variable to
@@ -347,6 +420,10 @@ class CONTENT_EXPORT BrowserPlugin :
   // Used for HW compositing.
   bool compositing_enabled_;
   scoped_refptr<BrowserPluginCompositingHelper> compositing_helper_;
+
+  // Weak factory used in v8 |MakeWeak| callback, since the v8 callback might
+  // get called after BrowserPlugin has been destroyed.
+  base::WeakPtrFactory<BrowserPlugin> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPlugin);
 };

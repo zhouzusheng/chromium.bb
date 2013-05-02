@@ -39,6 +39,7 @@
 #include "MouseEvent.h"
 #include "RenderMedia.h"
 #include "RenderMediaControlElements.h"
+#include "StylePropertySet.h"
 
 namespace WebCore {
 
@@ -59,7 +60,7 @@ HTMLMediaElement* toParentMediaElement(Node* node)
     Node* mediaNode = node->shadowHost();
     if (!mediaNode)
         mediaNode = node;
-    if (!mediaNode || !mediaNode->isElementNode() || !static_cast<Element*>(mediaNode)->isMediaElement())
+    if (!mediaNode || !mediaNode->isElementNode() || !toElement(mediaNode)->isMediaElement())
         return 0;
 
     return static_cast<HTMLMediaElement*>(mediaNode);

@@ -47,13 +47,15 @@ public:
         const char* const name;
         v8::AccessorGetter getter;
         v8::AccessorSetter setter;
+        v8::AccessorGetter getterForMainWorld;
+        v8::AccessorSetter setterForMainWorld;
         WrapperTypeInfo* data;
         v8::AccessControl settings;
         v8::PropertyAttribute attribute;
         bool onPrototype;
     };
 
-    static void batchConfigureAttributes(v8::Handle<v8::ObjectTemplate>, v8::Handle<v8::ObjectTemplate>, const BatchedAttribute*, size_t attributeCount, v8::Isolate*);
+    static void batchConfigureAttributes(v8::Handle<v8::ObjectTemplate>, v8::Handle<v8::ObjectTemplate>, const BatchedAttribute*, size_t attributeCount, v8::Isolate*, WrapperWorldType currentWorldType);
 
     template<class ObjectOrTemplate>
     static inline void configureAttribute(v8::Handle<ObjectOrTemplate> instance, v8::Handle<ObjectOrTemplate> prototype, const BatchedAttribute& attribute, v8::Isolate*)
@@ -66,6 +68,25 @@ public:
                                                                     attribute.attribute);
     }
 
+    template<class ObjectOrTemplate>
+    static inline void configureAttribute(v8::Handle<ObjectOrTemplate> instance, v8::Handle<ObjectOrTemplate> prototype, const BatchedAttribute& attribute, v8::Isolate*, WrapperWorldType currentWorldType)
+    {
+        v8::AccessorGetter getter = attribute.getter;
+        v8::AccessorSetter setter = attribute.setter;
+        if (currentWorldType == MainWorld) {
+            if (attribute.getterForMainWorld)
+                getter = attribute.getterForMainWorld;
+            if (attribute.setterForMainWorld)
+                setter = attribute.setterForMainWorld;
+        }
+        (attribute.onPrototype ? prototype : instance)->SetAccessor(v8::String::NewSymbol(attribute.name),
+            getter,
+            setter,
+            v8::External::New(attribute.data),
+            attribute.settings,
+            attribute.attribute);
+    }
+
     // BatchedConstant translates into calls to Set() for setting up an object's
     // constants. It sets the constant on both the FunctionTemplate and the
     // ObjectTemplate. PropertyAttributes is always ReadOnly.
@@ -76,15 +97,16 @@ public:
 
     static void batchConfigureConstants(v8::Handle<v8::FunctionTemplate>, v8::Handle<v8::ObjectTemplate>, const BatchedConstant*, size_t constantCount, v8::Isolate*);
 
-    // BatchedCallback translates into calls to Set() on the prototype ObjectTemplate.
-    struct BatchedCallback {
+    // BatchedMethod translates into calls to Set() on the prototype ObjectTemplate.
+    struct BatchedMethod {
         const char* const name;
         v8::InvocationCallback callback;
+        v8::InvocationCallback callbackForMainWorld;
     };
 
-    static void batchConfigureCallbacks(v8::Handle<v8::ObjectTemplate>, v8::Handle<v8::Signature>, v8::PropertyAttribute, const BatchedCallback*, size_t callbackCount, v8::Isolate*);
+    static void batchConfigureCallbacks(v8::Handle<v8::ObjectTemplate>, v8::Handle<v8::Signature>, v8::PropertyAttribute, const BatchedMethod*, size_t callbackCount, v8::Isolate*, WrapperWorldType);
 
-    static v8::Local<v8::Signature> configureTemplate(v8::Persistent<v8::FunctionTemplate>, const char* interfaceName, v8::Persistent<v8::FunctionTemplate> parentClass, size_t fieldCount, const BatchedAttribute*, size_t attributeCount, const BatchedCallback*, size_t callbackCount, v8::Isolate*);
+    static v8::Local<v8::Signature> configureTemplate(v8::Persistent<v8::FunctionTemplate>, const char* interfaceName, v8::Persistent<v8::FunctionTemplate> parentClass, size_t fieldCount, const BatchedAttribute*, size_t attributeCount, const BatchedMethod*, size_t callbackCount, v8::Isolate*, WrapperWorldType);
 };
 
 } // namespace WebCore

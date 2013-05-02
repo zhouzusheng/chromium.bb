@@ -118,7 +118,7 @@ ModuleRtpRtcpImpl::ModuleRtpRtcpImpl(const Configuration& configuration)
       dead_or_alive_timeout_ms_(0),
       dead_or_alive_last_timer_(0),
       nack_method_(kNackOff),
-      nack_last_time_sent_(0),
+      nack_last_time_sent_full_(0),
       nack_last_seq_number_sent_(0),
       simulcast_(false),
       key_frame_req_method_(kKeyFrameReqFirRtp),
@@ -519,16 +519,16 @@ WebRtc_Word32 ModuleRtpRtcpImpl::RemoteCSRCs(
 }
 
 WebRtc_Word32 ModuleRtpRtcpImpl::SetRTXSendStatus(
-    const bool enable,
+    const RtxMode mode,
     const bool set_ssrc,
     const WebRtc_UWord32 ssrc) {
-  rtp_sender_.SetRTXStatus(enable, set_ssrc, ssrc);
+  rtp_sender_.SetRTXStatus(mode, set_ssrc, ssrc);
   return 0;
 }
 
-WebRtc_Word32 ModuleRtpRtcpImpl::RTXSendStatus(bool* enable,
+WebRtc_Word32 ModuleRtpRtcpImpl::RTXSendStatus(RtxMode* mode,
                                                WebRtc_UWord32* ssrc) const {
-  rtp_sender_.RTXStatus(enable, ssrc);
+  rtp_sender_.RTXStatus(mode, ssrc);
   return 0;
 }
 
@@ -939,29 +939,30 @@ WebRtc_Word32 ModuleRtpRtcpImpl::SendOutgoingData(
 
     std::list<ModuleRtpRtcpImpl*>::iterator it = child_modules_.begin();
     if (it != child_modules_.end()) {
-      ret_val = (*it)->SendOutgoingData(frame_type,
-                                        payload_type,
-                                        time_stamp,
-                                        capture_time_ms,
-                                        payload_data,
-                                        payload_size,
-                                        fragmentation,
-                                        rtp_video_hdr);
-
+      if ((*it)->SendingMedia()) {
+        ret_val = (*it)->SendOutgoingData(frame_type,
+                                          payload_type,
+                                          time_stamp,
+                                          capture_time_ms,
+                                          payload_data,
+                                          payload_size,
+                                          fragmentation,
+                                          rtp_video_hdr);
+      }
       it++;
     }
-
     // Send to all remaining "child" modules
     while (it != child_modules_.end()) {
-      ret_val = (*it)->SendOutgoingData(frame_type,
-                                        payload_type,
-                                        time_stamp,
-                                        capture_time_ms,
-                                        payload_data,
-                                        payload_size,
-                                        fragmentation,
-                                        rtp_video_hdr);
-
+      if ((*it)->SendingMedia()) {
+        ret_val = (*it)->SendOutgoingData(frame_type,
+                                          payload_type,
+                                          time_stamp,
+                                          capture_time_ms,
+                                          payload_data,
+                                          payload_size,
+                                          fragmentation,
+                                          rtp_video_hdr);
+      }
       it++;
     }
   }
@@ -1527,8 +1528,10 @@ WebRtc_Word32 ModuleRtpRtcpImpl::SendNACK(const WebRtc_UWord16* nack_list,
   WebRtc_UWord16 nackLength = size;
   WebRtc_UWord16 start_id = 0;
 
-  if (nack_last_time_sent_ < time_limit) {
-    // Send list.
+  if (nack_last_time_sent_full_ < time_limit) {
+    // Send list. Set the timer to make sure we only send a full NACK list once
+    // within every time_limit.
+    nack_last_time_sent_full_ = now;
   } else {
     // Only send if extended list.
     if (nack_last_seq_number_sent_ == nack_list[size - 1]) {
@@ -1546,8 +1549,12 @@ WebRtc_Word32 ModuleRtpRtcpImpl::SendNACK(const WebRtc_UWord16* nack_list,
       nackLength = size - start_id;
     }
   }
-  nack_last_time_sent_ =  now;
-  nack_last_seq_number_sent_ = nack_list[size - 1];
+  // Our RTCP NACK implementation is limited to kRtcpMaxNackFields sequence
+  // numbers per RTCP packet.
+  if (nackLength > kRtcpMaxNackFields) {
+    nackLength = kRtcpMaxNackFields;
+  }
+  nack_last_seq_number_sent_ = nack_list[start_id + nackLength - 1];
 
   switch (nack_method_) {
     case kNackRtcp:
@@ -1575,29 +1582,17 @@ WebRtc_Word32 ModuleRtpRtcpImpl::SetStorePacketsStatus(
   return 0;  // TODO(pwestin): change to void.
 }
 
-// Out-band TelephoneEvent detection.
-WebRtc_Word32 ModuleRtpRtcpImpl::SetTelephoneEventStatus(
-    const bool enable,
-    const bool forward_to_decoder,
-    const bool detect_end_of_tone) {
+// Forward DTMFs to decoder for playout.
+int ModuleRtpRtcpImpl::SetTelephoneEventForwardToDecoder(
+    bool forward_to_decoder) {
   WEBRTC_TRACE(kTraceModuleCall, kTraceRtpRtcp, id_,
-               "SetTelephoneEventStatus(enable:%d forward_to_decoder:%d"
-               " detect_end_of_tone:%d)", enable, forward_to_decoder,
-               detect_end_of_tone);
+               "SetTelephoneEventForwardToDecoder(forward_to_decoder:%d)",
+               forward_to_decoder);
 
   assert(audio_);
   assert(rtp_telephone_event_handler_);
-  return rtp_telephone_event_handler_->SetTelephoneEventStatus(
-           enable, forward_to_decoder, detect_end_of_tone);
-}
-
-// Is out-band TelephoneEvent turned on/off?
-bool ModuleRtpRtcpImpl::TelephoneEvent() const {
-  WEBRTC_TRACE(kTraceModuleCall, kTraceRtpRtcp, id_, "TelephoneEvent()");
-
-  assert(audio_);
-  assert(rtp_telephone_event_handler_);
-  return rtp_telephone_event_handler_->TelephoneEvent();
+  return rtp_telephone_event_handler_->SetTelephoneEventForwardToDecoder(
+      forward_to_decoder);
 }
 
 // Is forwarding of out-band telephone events turned on/off?

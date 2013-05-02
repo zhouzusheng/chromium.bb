@@ -22,4 +22,6 @@
  */
 var Intl = (function() {
 
+'use strict';
+
 var Intl = {};

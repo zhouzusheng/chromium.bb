@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -16,7 +16,7 @@ namespace libyuv {
 extern "C" {
 #endif
 
-#if !defined(YUV_DISABLE_ASM) && defined(_M_IX86)
+#if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86)
 
 __declspec(naked) __declspec(align(16))
 uint32 SumSquareError_SSE2(const uint8* src_a, const uint8* src_b, int count) {
@@ -47,14 +47,57 @@ uint32 SumSquareError_SSE2(const uint8* src_a, const uint8* src_b, int count) {
     paddd      xmm0, xmm2
     jg         wloop
 
-    pshufd     xmm1, xmm0, 0EEh
+    pshufd     xmm1, xmm0, 0xee
     paddd      xmm0, xmm1
-    pshufd     xmm1, xmm0, 01h
+    pshufd     xmm1, xmm0, 0x01
     paddd      xmm0, xmm1
     movd       eax, xmm0
     ret
   }
 }
+
+// Visual C 2012 required for AVX2.
+#if _MSC_VER >= 1700
+// C4752: found Intel(R) Advanced Vector Extensions; consider using /arch:AVX.
+#pragma warning(disable: 4752)
+__declspec(naked) __declspec(align(16))
+uint32 SumSquareError_AVX2(const uint8* src_a, const uint8* src_b, int count) {
+  __asm {
+    mov        eax, [esp + 4]    // src_a
+    mov        edx, [esp + 8]    // src_b
+    mov        ecx, [esp + 12]   // count
+    vpxor      ymm0, ymm0, ymm0  // sum
+    vpxor      ymm5, ymm5, ymm5  // constant 0 for unpck
+    sub        edx, eax
+
+    align      16
+  wloop:
+    vmovdqu    ymm1, [eax]
+    vmovdqu    ymm2, [eax + edx]
+    lea        eax,  [eax + 32]
+    sub        ecx, 32
+    vpsubusb   ymm3, ymm1, ymm2  // abs difference trick
+    vpsubusb   ymm2, ymm2, ymm1
+    vpor       ymm1, ymm2, ymm3
+    vpunpcklbw ymm2, ymm1, ymm5  // u16.  mutates order.
+    vpunpckhbw ymm1, ymm1, ymm5
+    vpmaddwd   ymm2, ymm2, ymm2  // square + hadd to u32.
+    vpmaddwd   ymm1, ymm1, ymm1
+    vpaddd     ymm0, ymm0, ymm1
+    vpaddd     ymm0, ymm0, ymm2
+    jg         wloop
+
+    vpshufd    ymm1, ymm0, 0xee  // 3, 2 + 1, 0 both lanes.
+    vpaddd     ymm0, ymm0, ymm1
+    vpshufd    ymm1, ymm0, 0x01  // 1 + 0 both lanes.
+    vpaddd     ymm0, ymm0, ymm1
+    vpermq     ymm1, ymm0, 0x02  // high + low lane.
+    vpaddd     ymm0, ymm0, ymm1
+    vmovd      eax, xmm0
+    ret
+  }
+}
+#endif  // _MSC_VER >= 1700
 
 #define HAS_HASHDJB2_SSE41
 static const uvec32 kHash16x33 = { 0x92d9e201, 0, 0, 0 };  // 33 ^ 16
@@ -129,19 +172,18 @@ uint32 HashDjb2_SSE41(const uint8* src, int count, uint32 seed) {
     sub        ecx, 16
     paddd      xmm1, xmm3
 
-    pshufd     xmm2, xmm1, 14    // upper 2 dwords
+    pshufd     xmm2, xmm1, 0x0e  // upper 2 dwords
     paddd      xmm1, xmm2
-    pshufd     xmm2, xmm1, 1
+    pshufd     xmm2, xmm1, 0x01
     paddd      xmm1, xmm2
     paddd      xmm0, xmm1
     jg         wloop
 
-    movd       eax, xmm0        // return hash
+    movd       eax, xmm0         // return hash
     ret
   }
 }
-
-#endif  // _M_IX86
+#endif  // !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86)
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -45,11 +45,11 @@ AudioOutputDevice::AudioOutputDevice(
     : ScopedLoopObserver(io_loop),
       callback_(NULL),
       ipc_(ipc),
+      stream_id_(0),
       state_(IDLE),
       play_on_start_(true),
       stopping_hack_(false) {
   CHECK(ipc_);
-  stream_id_ = ipc_->AddDelegate(this);
 }
 
 void AudioOutputDevice::Initialize(const AudioParameters& params,
@@ -64,9 +64,6 @@ AudioOutputDevice::~AudioOutputDevice() {
   // The current design requires that the user calls Stop() before deleting
   // this class.
   DCHECK(audio_thread_.IsStopped());
-
-  if (ipc_)
-    ipc_->RemoveDelegate(stream_id_);
 }
 
 void AudioOutputDevice::Start() {
@@ -112,6 +109,7 @@ bool AudioOutputDevice::SetVolume(double volume) {
 void AudioOutputDevice::CreateStreamOnIOThread(const AudioParameters& params) {
   DCHECK(message_loop()->BelongsToCurrentThread());
   if (state_ == IDLE) {
+    stream_id_ = ipc_->AddDelegate(this);
     state_ = CREATING_STREAM;
     ipc_->CreateStream(stream_id_, params);
   }
@@ -148,7 +146,9 @@ void AudioOutputDevice::ShutDownOnIOThread() {
   // Make sure we don't call shutdown more than once.
   if (state_ >= CREATING_STREAM) {
     ipc_->CloseStream(stream_id_);
+    ipc_->RemoveDelegate(stream_id_);
     state_ = IDLE;
+    stream_id_ = 0;
   }
 
   // We can run into an issue where ShutDownOnIOThread is called right after
@@ -257,7 +257,8 @@ AudioOutputDevice::AudioThreadCallback::AudioThreadCallback(
     AudioRendererSink::RenderCallback* render_callback)
     : AudioDeviceThread::Callback(audio_parameters,
                                   memory,
-                                  memory_length),
+                                  memory_length,
+                                  1),
       render_callback_(render_callback) {
 }
 
@@ -265,6 +266,7 @@ AudioOutputDevice::AudioThreadCallback::~AudioThreadCallback() {
 }
 
 void AudioOutputDevice::AudioThreadCallback::MapSharedMemory() {
+  CHECK_EQ(total_segments_, 1);
   CHECK(shared_memory_.Map(TotalSharedMemorySizeInBytes(memory_length_)));
 
   // Calculate output and input memory size.

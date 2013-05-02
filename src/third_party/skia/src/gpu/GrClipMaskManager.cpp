@@ -7,18 +7,18 @@
  */
 
 #include "GrClipMaskManager.h"
-#include "effects/GrTextureDomainEffect.h"
-#include "GrGpu.h"
-#include "GrRenderTarget.h"
-#include "GrStencilBuffer.h"
-#include "GrPathRenderer.h"
-#include "GrPaint.h"
-#include "SkRasterClip.h"
-#include "SkStrokeRec.h"
 #include "GrAAConvexPathRenderer.h"
 #include "GrAAHairLinePathRenderer.h"
+#include "GrDrawTargetCaps.h"
+#include "GrGpu.h"
+#include "GrPaint.h"
+#include "GrPathRenderer.h"
+#include "GrRenderTarget.h"
+#include "GrStencilBuffer.h"
 #include "GrSWMaskHelper.h"
-
+#include "effects/GrTextureDomainEffect.h"
+#include "SkRasterClip.h"
+#include "SkStrokeRec.h"
 #include "SkTLazy.h"
 
 #define GR_AA_CLIP 1
@@ -40,6 +40,9 @@ void setup_drawstate_aaclip(GrGpu* gpu,
     static const int kMaskStage = GrPaint::kTotalStages+1;
 
     SkMatrix mat;
+    // We want to use device coords to compute the texture coordinates. We set our matrix to be
+    // equal to the view matrix followed by an offset to the devBound, and then a scaling matrix to
+    // normalized coords. We apply this matrix to the vertex positions rather than local coords.
     mat.setIDiv(result->width(), result->height());
     mat.preTranslate(SkIntToScalar(-devBound.fLeft),
                      SkIntToScalar(-devBound.fTop));
@@ -51,7 +54,9 @@ void setup_drawstate_aaclip(GrGpu* gpu,
                          GrTextureDomainEffect::Create(result,
                                       mat,
                                       GrTextureDomainEffect::MakeTexelDomain(result, domainTexels),
-                                      GrTextureDomainEffect::kDecal_WrapMode))->unref();
+                                      GrTextureDomainEffect::kDecal_WrapMode,
+                                      false,
+                                      GrEffect::kPosition_CoordsType))->unref();
 }
 
 bool path_needs_SW_renderer(GrContext* context,
@@ -354,7 +359,8 @@ void GrClipMaskManager::mergeMask(GrTexture* dstMask,
         GrTextureDomainEffect::Create(srcMask,
                                       sampleM,
                                       GrTextureDomainEffect::MakeTexelDomain(srcMask, srcBound),
-                                      GrTextureDomainEffect::kDecal_WrapMode))->unref();
+                                      GrTextureDomainEffect::kDecal_WrapMode,
+                                      false))->unref();
     fGpu->drawSimpleRect(SkRect::MakeFromIRect(dstBound), NULL);
 
     drawState->disableStage(0);
@@ -397,7 +403,11 @@ bool GrClipMaskManager::getMaskTexture(int32_t clipStackGenID,
         desc.fFlags = kRenderTarget_GrTextureFlagBit;
         desc.fWidth = clipSpaceIBounds.width();
         desc.fHeight = clipSpaceIBounds.height();
-        desc.fConfig = kAlpha_8_GrPixelConfig;
+        desc.fConfig = kRGBA_8888_GrPixelConfig;
+        if (this->getContext()->isConfigRenderable(kAlpha_8_GrPixelConfig)) {
+            // We would always like A8 but it isn't supported on all platforms
+            desc.fConfig = kAlpha_8_GrPixelConfig;
+        }
 
         fAACache.acquireMask(clipStackGenID, desc, clipSpaceIBounds);
     }
@@ -814,8 +824,8 @@ void GrClipMaskManager::setGpuStencil() {
         stencilBits = stencilBuffer->bits();
     }
 
-    GrAssert(fGpu->getCaps().stencilWrapOpsSupport() || !settings.usesWrapOp());
-    GrAssert(fGpu->getCaps().twoSidedStencilSupport() || !settings.isTwoSided());
+    GrAssert(fGpu->caps()->stencilWrapOpsSupport() || !settings.usesWrapOp());
+    GrAssert(fGpu->caps()->twoSidedStencilSupport() || !settings.isTwoSided());
     this->adjustStencilParams(&settings, clipMode, stencilBits);
     fGpu->setStencilSettings(settings);
 }
@@ -835,7 +845,7 @@ void GrClipMaskManager::adjustStencilParams(GrStencilSettings* settings,
     unsigned int userBits = clipBit - 1;
 
     GrStencilSettings::Face face = GrStencilSettings::kFront_Face;
-    bool twoSided = fGpu->getCaps().twoSidedStencilSupport();
+    bool twoSided = fGpu->caps()->twoSidedStencilSupport();
 
     bool finished = false;
     while (!finished) {
@@ -990,4 +1000,9 @@ GrTexture* GrClipMaskManager::createSoftwareClipMask(int32_t clipStackGenID,
 ////////////////////////////////////////////////////////////////////////////////
 void GrClipMaskManager::releaseResources() {
     fAACache.releaseResources();
+}
+
+void GrClipMaskManager::setGpu(GrGpu* gpu) {
+    fGpu = gpu;
+    fAACache.setContext(gpu->getContext());
 }

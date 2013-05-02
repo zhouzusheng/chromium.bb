@@ -47,7 +47,7 @@ SpdySessionPool::SpdySessionPool(
     bool enable_compression,
     bool enable_ping_based_connection_checking,
     NextProto default_protocol,
-    size_t initial_recv_window_size,
+    size_t stream_initial_recv_window_size,
     size_t initial_max_concurrent_streams,
     size_t max_concurrent_streams_limit,
     SpdySessionPool::TimeFunc time_func,
@@ -67,7 +67,7 @@ SpdySessionPool::SpdySessionPool(
       enable_ping_based_connection_checking_(
           enable_ping_based_connection_checking),
       default_protocol_(default_protocol),
-      initial_recv_window_size_(initial_recv_window_size),
+      stream_initial_recv_window_size_(stream_initial_recv_window_size),
       initial_max_concurrent_streams_(initial_max_concurrent_streams),
       max_concurrent_streams_limit_(max_concurrent_streams_limit),
       time_func_(time_func),
@@ -149,7 +149,7 @@ scoped_refptr<SpdySession> SpdySessionPool::GetInternal(
                                  enable_compression_,
                                  enable_ping_based_connection_checking_,
                                  default_protocol_,
-                                 initial_recv_window_size_,
+                                 stream_initial_recv_window_size_,
                                  initial_max_concurrent_streams_,
                                  max_concurrent_streams_limit_,
                                  time_func_,
@@ -185,7 +185,7 @@ net::Error SpdySessionPool::GetSpdySessionFromSocket(
                                   enable_compression_,
                                   enable_ping_based_connection_checking_,
                                   default_protocol_,
-                                  initial_recv_window_size_,
+                                  stream_initial_recv_window_size_,
                                   initial_max_concurrent_streams_,
                                   max_concurrent_streams_limit_,
                                   time_func_,
@@ -480,17 +480,22 @@ void SpdySessionPool::CloseIdleSessions() {
   SpdySessionsMap::const_iterator map_it = sessions_.begin();
   while (map_it != sessions_.end()) {
     SpdySessionList* list = map_it->second;
-    ++map_it;
     CHECK(list);
 
-    // Assumes there is only 1 element in the list
+    // Assumes there is only 1 element in the list.
     SpdySessionList::iterator session_it = list->begin();
     const scoped_refptr<SpdySession>& session = *session_it;
     CHECK(session);
-    if (!session->is_active()) {
-      session->CloseSessionOnError(
-          net::ERR_ABORTED, true, "Closing idle sessions.");
+    if (session->is_active()) {
+      ++map_it;
+      continue;
     }
+
+    HostPortProxyPair key = map_it->first;
+    session->CloseSessionOnError(
+        net::ERR_ABORTED, true, "Closing idle sessions.");
+    // CloseSessionOnError can invalidate the iterator.
+    map_it = sessions_.lower_bound(key);
   }
 }
 

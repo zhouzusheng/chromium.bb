@@ -35,13 +35,13 @@
 
 namespace WebCore {
 
-v8::Handle<v8::Value> V8Crypto::getRandomValuesCallback(const v8::Arguments& args)
+v8::Handle<v8::Value> V8Crypto::getRandomValuesMethodCustom(const v8::Arguments& args)
 {
     if (args.Length() < 1)
         return throwNotEnoughArgumentsError(args.GetIsolate());
 
     v8::Handle<v8::Value> buffer = args[0];
-    if (!V8ArrayBufferView::HasInstance(buffer, args.GetIsolate()))
+    if (!V8ArrayBufferView::HasInstance(buffer, args.GetIsolate(), worldType(args.GetIsolate())))
         return throwTypeError("First argument is not an ArrayBufferView", args.GetIsolate());
 
     ArrayBufferView* arrayBufferView = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(buffer));

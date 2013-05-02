@@ -46,6 +46,7 @@
 
 #if PLATFORM(CHROMIUM)
 #include <env_idb.h>
+#include <public/Platform.h>
 #endif
 
 #if !PLATFORM(CHROMIUM)
@@ -74,13 +75,6 @@ static leveldb::Slice makeSlice(const LevelDBSlice& s)
 static LevelDBSlice makeLevelDBSlice(const leveldb::Slice& s)
 {
     return LevelDBSlice(s.data(), s.data() + s.size());
-}
-
-static Vector<char> makeVector(const std::string& s)
-{
-    Vector<char> res;
-    res.append(s.c_str(), s.length());
-    return res;
 }
 
 class ComparatorAdapter : public leveldb::Comparator {
@@ -149,6 +143,42 @@ bool LevelDBDatabase::destroy(const String& fileName)
     return s.ok();
 }
 
+static void histogramFreeSpace(const char* type, String fileName)
+{
+#if PLATFORM(CHROMIUM)
+    String name = "WebCore.IndexedDB.LevelDB.Open" + String(type) + "FreeDiskSpace";
+    long long freeDiskSpaceInKBytes = WebKit::Platform::current()->availableDiskSpaceInBytes(fileName) / 1024;
+    if (freeDiskSpaceInKBytes < 0) {
+        HistogramSupport::histogramEnumeration("WebCore.IndexedDB.LevelDB.FreeDiskSpaceFailure", 1/*sample*/, 2/*boundary*/);
+        return;
+    }
+    int clampedDiskSpaceKBytes = freeDiskSpaceInKBytes > INT_MAX ? INT_MAX : freeDiskSpaceInKBytes;
+    const uint64_t histogramMax = static_cast<uint64_t>(1e9);
+    COMPILE_ASSERT(histogramMax <= INT_MAX, histogramMaxTooBig);
+    HistogramSupport::histogramCustomCounts(name.utf8().data(), clampedDiskSpaceKBytes, 1, histogramMax, 11/*buckets*/);
+#endif
+}
+
+static void histogramLevelDBError(const char* histogramName, const leveldb::Status& s)
+{
+    ASSERT(!s.ok());
+    enum {
+        LevelDBNotFound,
+        LevelDBCorruption,
+        LevelDBIOError,
+        LevelDBOther,
+        LevelDBMaxError
+    };
+    int levelDBError = LevelDBOther;
+    if (s.IsNotFound())
+        levelDBError = LevelDBNotFound;
+    else if (s.IsCorruption())
+        levelDBError = LevelDBCorruption;
+    else if (s.IsIOError())
+        levelDBError = LevelDBIOError;
+    HistogramSupport::histogramEnumeration(histogramName, levelDBError, LevelDBMaxError);
+}
+
 PassOwnPtr<LevelDBDatabase> LevelDBDatabase::open(const String& fileName, const LevelDBComparator* comparator)
 {
     OwnPtr<ComparatorAdapter> comparatorAdapter = adoptPtr(new ComparatorAdapter(comparator));
@@ -157,25 +187,14 @@ PassOwnPtr<LevelDBDatabase> LevelDBDatabase::open(const String& fileName, const 
     const leveldb::Status s = openDB(comparatorAdapter.get(), leveldb::IDBEnv(), fileName, &db);
 
     if (!s.ok()) {
-        enum {
-            LevelDBNotFound,
-            LevelDBCorruption,
-            LevelDBIOError,
-            LevelDBOther,
-            LevelDBMaxError
-        };
-        int levelDBError = LevelDBOther;
-        if (s.IsNotFound())
-            levelDBError = LevelDBNotFound;
-        else if (s.IsCorruption())
-            levelDBError = LevelDBCorruption;
-        else if (s.IsIOError())
-            levelDBError = LevelDBIOError;
-        HistogramSupport::histogramEnumeration("WebCore.IndexedDB.LevelDBOpenErrors", levelDBError, LevelDBMaxError);
+        histogramLevelDBError("WebCore.IndexedDB.LevelDBOpenErrors", s);
+        histogramFreeSpace("Failure", fileName);
 
         LOG_ERROR("Failed to open LevelDB database from %s: %s", fileName.ascii().data(), s.ToString().c_str());
         return nullptr;
     }
+
+    histogramFreeSpace("Success", fileName);
 
     OwnPtr<LevelDBDatabase> result = adoptPtr(new LevelDBDatabase);
     result->m_db = adoptPtr(db);
@@ -244,7 +263,8 @@ bool LevelDBDatabase::safeGet(const LevelDBSlice& key, Vector<char>& value, bool
     const leveldb::Status s = m_db->Get(readOptions, makeSlice(key), &result);
     if (s.ok()) {
         found = true;
-        value = makeVector(result);
+        value.clear();
+        value.append(result.c_str(), result.length());
         return true;
     }
     if (s.IsNotFound())
@@ -261,6 +281,7 @@ bool LevelDBDatabase::write(LevelDBWriteBatch& writeBatch)
     const leveldb::Status s = m_db->Write(writeOptions, writeBatch.m_writeBatch.get());
     if (s.ok())
         return true;
+    histogramLevelDBError("WebCore.IndexedDB.LevelDBWriteErrors", s);
     LOG_ERROR("LevelDB write failed: %s", s.ToString().c_str());
     return false;
 }

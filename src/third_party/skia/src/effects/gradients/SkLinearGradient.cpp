@@ -94,11 +94,7 @@ bool SkLinearGradient::setContext(const SkBitmap& device, const SkPaint& paint,
 
     unsigned mask = SkMatrix::kTranslate_Mask | SkMatrix::kScale_Mask;
     if ((fDstToIndex.getType() & ~mask) == 0) {
-#ifdef SK_IGNORE_GRADIENT_DITHER_FIX
-        fFlags |= SkShader::kConstInY32_Flag;
-#else
         // when we dither, we are (usually) not const-in-Y
-#endif
         if ((fFlags & SkShader::kHasSpan16_Flag) && !paint.isDither()) {
             // only claim this if we do have a 16bit mode (i.e. none of our
             // colors have alpha), and if we are not dithering (which obviously
@@ -457,21 +453,20 @@ void SkLinearGradient::shadeSpan16(int x, int y,
 class GrGLLinearGradient : public GrGLGradientEffect {
 public:
 
-    GrGLLinearGradient(const GrBackendEffectFactory& factory, const GrEffectRef&)
+    GrGLLinearGradient(const GrBackendEffectFactory& factory, const GrDrawEffect&)
                        : INHERITED (factory) { }
 
     virtual ~GrGLLinearGradient() { }
 
     virtual void emitCode(GrGLShaderBuilder*,
-                          const GrEffectStage&,
+                          const GrDrawEffect&,
                           EffectKey,
-                          const char* vertexCoords,
                           const char* outputColor,
                           const char* inputColor,
                           const TextureSamplerArray&) SK_OVERRIDE;
 
-    static EffectKey GenKey(const GrEffectStage& stage, const GrGLCaps&) {
-        return GenMatrixKey(stage);
+    static EffectKey GenKey(const GrDrawEffect& drawEffect, const GrGLCaps&) {
+        return GenMatrixKey(drawEffect);
     }
 
 private:
@@ -516,8 +511,9 @@ private:
 
 GR_DEFINE_EFFECT_TEST(GrLinearGradient);
 
-GrEffectRef* GrLinearGradient::TestCreate(SkRandom* random,
+GrEffectRef* GrLinearGradient::TestCreate(SkMWCRandom* random,
                                           GrContext* context,
+                                          const GrDrawTargetCaps&,
                                           GrTexture**) {
     SkPoint points[] = {{random->nextUScalar1(), random->nextUScalar1()},
                         {random->nextUScalar1(), random->nextUScalar1()}};
@@ -537,15 +533,14 @@ GrEffectRef* GrLinearGradient::TestCreate(SkRandom* random,
 /////////////////////////////////////////////////////////////////////
 
 void GrGLLinearGradient::emitCode(GrGLShaderBuilder* builder,
-                                  const GrEffectStage& stage,
+                                  const GrDrawEffect&,
                                   EffectKey key,
-                                  const char* vertexCoords,
                                   const char* outputColor,
                                   const char* inputColor,
                                   const TextureSamplerArray& samplers) {
     this->emitYCoordUniform(builder);
     const char* coords;
-    this->setupMatrix(builder, key, vertexCoords, &coords);
+    this->setupMatrix(builder, key, &coords);
     SkString t;
     t.append(coords);
     t.append(".x");

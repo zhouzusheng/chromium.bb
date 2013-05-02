@@ -32,6 +32,7 @@
 #include "EventNames.h"
 #include "ExceptionCodePlaceholder.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "HTMLEmbedElement.h"
 #include "HTMLHtmlElement.h"
@@ -39,7 +40,6 @@
 #include "HTMLSourceElement.h"
 #include "HTMLVideoElement.h"
 #include "KeyboardEvent.h"
-#include "MainResourceLoader.h"
 #include "NodeList.h"
 #include "RawDataDocumentParser.h"
 #include "ScriptController.h"
@@ -105,7 +105,7 @@ void MediaDocumentParser::createDocumentStructure()
     if (!frame)
         return;
 
-    frame->loader()->activeDocumentLoader()->mainResourceLoader()->setDataBufferingPolicy(DoNotBufferData);
+    frame->loader()->activeDocumentLoader()->setMainResourceDataBufferingPolicy(DoNotBufferData);
 }
 
 void MediaDocumentParser::appendBytes(DocumentWriter*, const char*, size_t)

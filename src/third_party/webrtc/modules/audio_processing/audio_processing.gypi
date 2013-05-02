@@ -41,6 +41,7 @@
         'aec/echo_cancellation_internal.h',
         'aec/aec_core.h',
         'aec/aec_core.c',
+        'aec/aec_core_internal.h',
         'aec/aec_rdft.h',
         'aec/aec_rdft.c',
         'aec/aec_resampler.h',
@@ -173,11 +174,10 @@
           'ns/nsx_core_neon.c',
         ],
         'conditions': [
-          ['OS=="android"', {
+          ['OS=="android" or OS=="ios"', {
             'dependencies': [
               'audio_processing_offsets',
             ],
-            # TODO(kma): port this block from Android into other build systems.
             'sources': [
               'aecm/aecm_core_neon.S',
               'ns/nsx_core_neon.S',
@@ -191,7 +191,7 @@
         ],
       }],
       'conditions': [
-        ['OS=="android"', {
+        ['OS=="android" or OS=="ios"', {
           'targets': [{
             'target_name': 'audio_processing_offsets',
             'type': 'none',

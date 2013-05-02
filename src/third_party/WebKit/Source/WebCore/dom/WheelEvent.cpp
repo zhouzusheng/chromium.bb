@@ -23,6 +23,7 @@
 #include "config.h"
 #include "WheelEvent.h"
 
+#include "Clipboard.h"
 #include "EventDispatcher.h"
 #include "EventNames.h"
 #include "PlatformWheelEvent.h"
@@ -138,9 +139,7 @@ WheelEvent* WheelEventDispatchMediator::event() const
 
 bool WheelEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
 {
-    if (!event())
-        return true;
-
+    ASSERT(event());
     return EventDispatchMediator::dispatchEvent(dispatcher) && !event()->defaultHandled();
 }
 

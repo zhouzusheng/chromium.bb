@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+<include src="stats_graph_helper.js"/>
+
 var peerConnectionsListElem = null;
 
 function initialize() {
@@ -62,29 +64,23 @@ function addToPeerConnectionLog(logElement, update) {
   logElement.appendChild(row);
 
   var expandable = (update.value.length > 0);
-  row.innerHTML = '<td>' + (new Date()).toLocaleString() + '</td>' +
-                  '<td><span>' + update.type + '</span>' +
-                  (expandable ? '<button>Expand/Collapse</button>' : '') +
-                  '</td>';
+  // details.open is true initially so that we can get the real scrollHeight
+  // of the textareas.
+  row.innerHTML =
+      '<td>' + (new Date()).toLocaleString() + '</td>' +
+      (expandable ?
+          '<td><details open><summary>' + update.type + '</summary>' +
+              '</details></td>' :
+          '<td>' + update.type + '</td>');
   if (!expandable)
     return;
 
   var valueContainer = document.createElement('textarea');
-  row.cells[1].appendChild(valueContainer);
+  var details = row.cells[1].childNodes[0];
+  details.appendChild(valueContainer);
   valueContainer.value = update.value;
   valueContainer.style.height = valueContainer.scrollHeight + 'px';
-  valueContainer.style.display = 'none';
-
-  // Hide or reveal the update details on clicking the button.
-  row.cells[1].childNodes[1].addEventListener('click', function(event) {
-      var element = event.target.nextSibling;
-      if (element.style.display == 'none') {
-        element.style.display = 'block';
-      }
-      else {
-        element.style.display = 'none';
-      }
-  });
+  details.open = false;
 }
 
 // Ensure the DIV container for the stats tables is created as a child of
@@ -175,13 +171,14 @@ function updatePeerConnection(data) {
   addToPeerConnectionLog(logElement, data);
 }
 
-// data is an array and each entry is in the same format as the input of
-// updatePeerConnection.
+// data is an array and each entry is
+// {pid:|integer|, lid:|integer|,
+//  url:|string|, servers:|string|, constraints:|string|, log:|array|},
+// each entry of log is {type:|string|, value:|string|}.
 function updateAllPeerConnections(data) {
   for (var i = 0; i < data.length; ++i) {
     var peerConnection = addPeerConnection(data[i]);
     var logElement = ensurePeerConnectionLog(peerConnection);
-    logElement.value = '';
 
     var log = data[i].log;
     for (var j = 0; j < log.length; ++j) {
@@ -192,7 +189,7 @@ function updateAllPeerConnections(data) {
 
 // data = {pid:|integer|, lid:|integer|, reports:|array|}.
 // Each entry of reports =
-// {id:|string|, type:|string|, local:|array|, remote:|array|}.
+// {id:|string|, type:|string|, local:|object|, remote:|object|}.
 // reports.local or reports.remote =
 // {timestamp: |double|, values: |array|},
 // where values is an array of strings, whose even index entry represents
@@ -203,11 +200,13 @@ function addStats(data) {
       getPeerConnectionId(data));
   for (var i = 0; i < data.reports.length; ++i) {
     var report = data.reports[i];
-    var statsTable = ensureStatsTable(peerConnectionElement,
-                                      report.type + '-' + report.id);
+    var reportName = report.type + '-' + report.id;
+    var statsTable = ensureStatsTable(peerConnectionElement, reportName);
 
     addSingleReportToTable(statsTable, report.local);
+    drawSingleReport(peerConnectionElement, reportName, report.local);
     addSingleReportToTable(statsTable, report.remote);
+    drawSingleReport(peerConnectionElement, reportName, report.remote);
   }
 }
 

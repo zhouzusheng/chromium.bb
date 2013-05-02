@@ -8,7 +8,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/scoped_native_library.h"
@@ -362,6 +362,11 @@ void ScreenCapturerWin::CaptureRegion(
       current_buffer->dimensions()));
   data->mutable_dirty_region() = region;
   data->set_shared_buffer(current_buffer->shared_buffer());
+
+  SkIPoint dpi = SkIPoint::Make(
+      GetDeviceCaps(*desktop_dc_, LOGPIXELSX),
+      GetDeviceCaps(*desktop_dc_, LOGPIXELSY));
+  data->set_dpi(dpi);
 
   helper_.set_size_most_recent(data->size());
 

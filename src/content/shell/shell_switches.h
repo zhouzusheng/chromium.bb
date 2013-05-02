@@ -12,6 +12,7 @@ namespace switches {
 // SHEZ: Remove upstream code here, used only for testing.
 
 extern const char kContentShellDataPath[];
+extern const char kEnableAccelerated2DCanvas[];
 extern const char kEnableSoftwareCompositing[];
 
 }  // namespace switches

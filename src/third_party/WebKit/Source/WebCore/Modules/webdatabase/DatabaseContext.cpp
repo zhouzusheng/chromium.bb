@@ -98,7 +98,7 @@ namespace WebCore {
 
 
 DatabaseContext::DatabaseContext(ScriptExecutionContext* context)
-    : ActiveDOMObject(context, this)
+    : ActiveDOMObject(context)
     , m_hasOpenDatabases(false)
     , m_isRegistered(true) // will register on construction below.
     , m_hasRequestedTermination(false)
@@ -205,7 +205,7 @@ bool DatabaseContext::stopDatabases(DatabaseTaskSynchronizer* cleanupSync)
 bool DatabaseContext::allowDatabaseAccess() const
 {
     if (m_scriptExecutionContext->isDocument()) {
-        Document* document = static_cast<Document*>(m_scriptExecutionContext);
+        Document* document = toDocument(m_scriptExecutionContext);
         if (!document->page() || (document->page()->settings()->privateBrowsingEnabled() && !SchemeRegistry::allowsDatabaseAccessInPrivateBrowsing(document->securityOrigin()->protocol())))
             return false;
         return true;
@@ -218,7 +218,7 @@ bool DatabaseContext::allowDatabaseAccess() const
 void DatabaseContext::databaseExceededQuota(const String& name, DatabaseDetails details)
 {
     if (m_scriptExecutionContext->isDocument()) {
-        Document* document = static_cast<Document*>(m_scriptExecutionContext);
+        Document* document = toDocument(m_scriptExecutionContext);
         if (Page* page = document->page())
             page->chrome()->client()->exceededDatabaseQuota(document->frame(), name, details);
         return;

@@ -58,9 +58,10 @@ public:
     // Called from the front-end.
     virtual void enable(ErrorString*);
     virtual void disable(ErrorString*);
-    virtual void requestDatabaseNamesForFrame(ErrorString*, const String& frameId, PassRefPtr<RequestDatabaseNamesForFrameCallback>);
-    virtual void requestDatabase(ErrorString*, const String& frameId, const String& databaseName, PassRefPtr<RequestDatabaseCallback>);
-    virtual void requestData(ErrorString*, const String& frameId, const String& databaseName, const String& objectStoreName, const String& indexName, int skipCount, int pageSize, const RefPtr<InspectorObject>* keyRange, PassRefPtr<RequestDataCallback>);
+    virtual void requestDatabaseNames(ErrorString*, const String& securityOrigin, PassRefPtr<RequestDatabaseNamesCallback>);
+    virtual void requestDatabase(ErrorString*, const String& securityOrigin, const String& databaseName, PassRefPtr<RequestDatabaseCallback>);
+    virtual void requestData(ErrorString*, const String& securityOrigin, const String& databaseName, const String& objectStoreName, const String& indexName, int skipCount, int pageSize, const RefPtr<InspectorObject>* keyRange, PassRefPtr<RequestDataCallback>);
+    virtual void clearObjectStore(ErrorString*, const String& in_securityOrigin, const String& in_databaseName, const String& in_objectStoreName, PassRefPtr<ClearObjectStoreCallback>);
 
 private:
     InspectorIndexedDBAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*, InspectorPageAgent*);

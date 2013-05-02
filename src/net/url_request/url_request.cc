@@ -23,10 +23,10 @@
 #include "net/base/net_log.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/network_delegate.h"
-#include "net/base/ssl_cert_request_info.h"
 #include "net/base/upload_data_stream.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/ssl/ssl_cert_request_info.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_error_job.h"
 #include "net/url_request/url_request_job.h"
@@ -151,7 +151,7 @@ URLRequest::URLRequest(const GURL& url,
       is_pending_(false),
       is_redirecting_(false),
       redirect_limit_(kMaxRedirects),
-      priority_(LOWEST),
+      priority_(DEFAULT_PRIORITY),
       identifier_(GenerateURLRequestIdentifier()),
       blocked_on_delegate_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(before_request_callback_(
@@ -190,7 +190,7 @@ URLRequest::URLRequest(const GURL& url,
       is_pending_(false),
       is_redirecting_(false),
       redirect_limit_(kMaxRedirects),
-      priority_(LOWEST),
+      priority_(DEFAULT_PRIORITY),
       identifier_(GenerateURLRequestIdentifier()),
       blocked_on_delegate_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(before_request_callback_(
@@ -526,6 +526,7 @@ void URLRequest::StartJob(URLRequestJob* job) {
 
   job_ = job;
   job_->SetExtraRequestHeaders(extra_request_headers_);
+  job_->SetPriority(priority_);
 
   if (upload_data_stream_.get())
     job_->SetUpload(upload_data_stream_.get());
@@ -826,6 +827,20 @@ int64 URLRequest::GetExpectedContentSize() const {
     expected_content_size = job_->expected_content_size();
 
   return expected_content_size;
+}
+
+void URLRequest::SetPriority(RequestPriority priority) {
+  DCHECK_GE(priority, MINIMUM_PRIORITY);
+  DCHECK_LT(priority, NUM_PRIORITIES);
+  if (priority_ == priority)
+    return;
+
+  priority_ = priority;
+  if (job_) {
+    net_log_.AddEvent(NetLog::TYPE_URL_REQUEST_SET_PRIORITY,
+                      NetLog::IntegerCallback("priority", priority_));
+    job_->SetPriority(priority_);
+  }
 }
 
 bool URLRequest::GetHSTSRedirect(GURL* redirect_url) const {

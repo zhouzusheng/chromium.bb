@@ -141,6 +141,10 @@ class CONTENT_EXPORT RenderViewHostManager
                                    pending_and_current_web_ui_.get();
   }
 
+  // Sets the pending Web UI for the pending navigation, ensuring that the
+  // bindings are appropriate for the given NavigationEntry.
+  void SetPendingWebUI(const NavigationEntryImpl& entry);
+
   // Called when we want to instruct the renderer to navigate to the given
   // navigation entry. It may create a new RenderViewHost or re-use an existing
   // one. The RenderViewHost to navigate will be returned. Returns NULL if one
@@ -176,11 +180,6 @@ class CONTENT_EXPORT RenderViewHostManager
   int CreateRenderView(SiteInstance* instance,
                        int opener_route_id,
                        bool swapped_out);
-
-  // Set the WebUI after committing a page load. This is useful for navigations
-  // initiated from a renderer, where we want to give the new renderer WebUI
-  // privileges from the originating renderer.
-  void SetWebUIPostCommit(WebUIImpl* web_ui);
 
   // Called when a provisional load on the given renderer is aborted.
   void RendererAbortedProvisionalLoad(RenderViewHost* render_view_host);

@@ -40,6 +40,7 @@
 #include "talk/media/base/videocommon.h"
 #include "talk/media/devices/devicemanager.h"
 
+
 namespace cricket {
 
 class VideoProcessor;

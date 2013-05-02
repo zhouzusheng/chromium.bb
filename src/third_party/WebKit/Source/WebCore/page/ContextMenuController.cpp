@@ -152,7 +152,7 @@ PassOwnPtr<ContextMenu> ContextMenuController::createContextMenu(Event* event)
     HitTestResult result(mouseEvent->absoluteLocation());
 
     if (Frame* frame = event->target()->toNode()->document()->frame())
-        result = frame->eventHandler()->hitTestResultAtPoint(mouseEvent->absoluteLocation(), false);
+        result = frame->eventHandler()->hitTestResultAtPoint(mouseEvent->absoluteLocation());
 
     if (!result.innerNonSharedNode())
         return nullptr;
@@ -799,7 +799,7 @@ void ContextMenuController::populate()
     if (!node)
         return;
 #if PLATFORM(GTK)
-    if (!m_hitTestResult.isContentEditable() && (node->isElementNode() && static_cast<Element*>(node)->isFormControlElement()))
+    if (!m_hitTestResult.isContentEditable() && (node->isElementNode() && toElement(node)->isFormControlElement()))
         return;
 #endif
     Frame* frame = node->document()->frame();

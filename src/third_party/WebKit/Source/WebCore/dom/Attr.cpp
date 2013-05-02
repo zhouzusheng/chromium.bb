@@ -26,6 +26,7 @@
 #include "ExceptionCode.h"
 #include "HTMLNames.h"
 #include "ScopedEventQueue.h"
+#include "StylePropertySet.h"
 #include "StyledElement.h"
 #include "Text.h"
 #include "XMLNSNames.h"
@@ -196,7 +197,7 @@ CSSStyleDeclaration* Attr::style()
     if (!m_element || !m_element->isStyledElement())
         return 0;
     m_style = StylePropertySet::create();
-    static_cast<StyledElement*>(m_element)->collectStyleForPresentationAttribute(elementAttribute(), m_style.get());
+    static_cast<StyledElement*>(m_element)->collectStyleForPresentationAttribute(qualifiedName(), value(), static_cast<MutableStylePropertySet*>(m_style.get()));
     return m_style->ensureCSSStyleDeclaration();
 }
 
@@ -210,8 +211,8 @@ const AtomicString& Attr::value() const
 Attribute& Attr::elementAttribute()
 {
     ASSERT(m_element);
-    ASSERT(m_element->attributeData());
-    return *m_element->getAttributeItem(qualifiedName());
+    ASSERT(m_element->elementData());
+    return *m_element->ensureUniqueElementData()->getAttributeItem(qualifiedName());
 }
 
 void Attr::detachFromElementWithValue(const AtomicString& value)

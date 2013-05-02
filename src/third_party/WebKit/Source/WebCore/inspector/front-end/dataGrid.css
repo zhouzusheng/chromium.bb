@@ -16,8 +16,6 @@
     border-spacing: 0;
     border-collapse: collapse;
     width: 100%;
-    font-size: 10px;
-    font-family: Lucida Grande, sans-serif;
 }
 
 .data-grid .data-container {
@@ -30,8 +28,17 @@
     overflow-y: overlay;
 }
 
+.data-grid.inline {
+    border-right: none;
+}
+
 .data-grid.inline .data-container {
     position: static;
+}
+
+.data-grid.inline th.corner,
+.data-grid.inline td.corner {
+    display: none;
 }
 
 .data-grid th {
@@ -92,9 +99,9 @@
 
 .data-grid td {
     vertical-align: top;
-    height: 12px;
-    line-height: 12px;
-    padding: 2px 4px;
+    height: 16px; /* Keep in sync with .data-grid table.data @ -webkit-background-size */
+    line-height: 13px;
+    padding: 1px 4px;
     white-space: nowrap;
     overflow: hidden;
     border-right: 1px solid #aaa;
@@ -111,7 +118,7 @@
     text-overflow: clip;
 }
 
-.data-grid .centered div {
+.data-grid .center div {
     text-align: center;
 }
 

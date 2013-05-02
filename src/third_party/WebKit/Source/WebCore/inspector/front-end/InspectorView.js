@@ -91,6 +91,9 @@ WebInspector.InspectorView.prototype = {
         return panel;
     },
 
+    /**
+     * @return {WebInspector.Panel}
+     */
     currentPanel: function()
     {
         return this._currentPanel;
@@ -122,6 +125,14 @@ WebInspector.InspectorView.prototype = {
                 WebInspector.userMetrics.panelShown(panelName);
             }
         }
+    },
+
+    /**
+     * @return {Element}
+     */
+    defaultFocusedElement: function()
+    {
+        return this._currentPanel ? this._currentPanel.defaultFocusedElement() : null;
     },
 
     _keyPress: function(event)

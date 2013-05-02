@@ -1136,6 +1136,9 @@
                 'NSS_USE_64',
                 'NSS_X86_OR_X64',
                 'NSS_X64',
+                '_AMD64_',
+                'MP_CHAR_STORE_SLOW',
+                'MP_IS_LITTLE_ENDIAN',
                 'WIN64',
               ],
               'sources!': [

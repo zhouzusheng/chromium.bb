@@ -3,7 +3,7 @@
 # Use of this source code is governed by a BSD-style license
 # that can be found in the LICENSE file in the root of the source
 # tree. An additional intellectual property rights grant can be found
-# in the file PATENTS.  All contributing project authors may
+# in the file PATENTS. All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
 {
@@ -30,7 +30,12 @@
       ],
       'defines': [
         'HAVE_JPEG',
-        # 'LIBYUV_BUILDING_SHARED_LIBRARY',
+        # Enable the following 3 macros to turn off assembly for specified CPU.
+        # 'LIBYUV_DISABLE_X86',
+        # 'LIBYUV_DISABLE_NEON',
+        # 'LIBYUV_DISABLE_MIPS',
+        # Enable the following macro to build libyuv as a shared library (dll).
+        # 'LIBYUV_USING_SHARED_LIBRARY',
       ],
       'include_dirs': [
         'include',
@@ -75,7 +80,6 @@
         'source/convert_from_argb.cc',
         'source/cpu_id.cc',
         'source/format_conversion.cc',
-        'source/memcpy_mips.S',  # TODO(fbarchard): Move into row_mips.cc
         'source/mjpeg_decoder.cc',
         'source/planar_functions.cc',
         'source/rotate.cc',

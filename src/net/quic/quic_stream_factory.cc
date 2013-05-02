@@ -11,14 +11,15 @@
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/values.h"
-#include "net/base/host_resolver.h"
 #include "net/base/net_errors.h"
-#include "net/base/single_request_host_resolver.h"
+#include "net/dns/host_resolver.h"
+#include "net/dns/single_request_host_resolver.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_client_session.h"
 #include "net/quic/quic_clock.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_connection_helper.h"
+#include "net/quic/quic_crypto_client_stream_factory.h"
 #include "net/quic/quic_http_stream.h"
 #include "net/quic/quic_protocol.h"
 #include "net/socket/client_socket_factory.h"
@@ -219,14 +220,14 @@ int QuicStreamFactory::Job::DoConnectComplete(int rv) {
 QuicStreamFactory::QuicStreamFactory(
     HostResolver* host_resolver,
     ClientSocketFactory* client_socket_factory,
+    QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
     QuicRandom* random_generator,
-    QuicClock* clock,
-    bool use_spdy_over_quic)
+    QuicClock* clock)
     : host_resolver_(host_resolver),
       client_socket_factory_(client_socket_factory),
+      quic_crypto_client_stream_factory_(quic_crypto_client_stream_factory),
       random_generator_(random_generator),
       clock_(clock),
-      use_spdy_over_quic_(use_spdy_over_quic),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
 }
 
@@ -303,8 +304,7 @@ scoped_ptr<QuicHttpStream> QuicStreamFactory::CreateIfSessionExists(
   QuicClientSession* session = active_sessions_[host_port_proxy_pair];
   DCHECK(session);
   return scoped_ptr<QuicHttpStream>(
-      new QuicHttpStream(session->CreateOutgoingReliableStream(),
-                         use_spdy_over_quic_));
+      new QuicHttpStream(session->CreateOutgoingReliableStream()));
 }
 
 void QuicStreamFactory::OnIdleSession(QuicClientSession* session) {
@@ -376,9 +376,11 @@ QuicClientSession* QuicStreamFactory::CreateSession(
       MessageLoop::current()->message_loop_proxy(),
       clock_.get(), random_generator_, socket);
 
-  QuicConnection* connection = new QuicConnection(guid, addr, helper);
-  QuicClientSession* session = new QuicClientSession(connection, helper, this,
-                                                     host);
+  QuicConnection* connection = new QuicConnection(guid, addr, helper, false);
+  QuicClientSession* session =
+      new QuicClientSession(connection, socket, this,
+                            quic_crypto_client_stream_factory_, host,
+                            net_log.net_log());
   all_sessions_.insert(session);  // owning pointer
   return session;
 }

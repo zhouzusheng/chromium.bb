@@ -8,23 +8,23 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "channel.h"
+#include "webrtc/voice_engine/channel.h"
 
-#include "audio_device.h"
-#include "audio_frame_operations.h"
-#include "audio_processing.h"
-#include "critical_section_wrapper.h"
-#include "logging.h"
-#include "output_mixer.h"
-#include "process_thread.h"
-#include "rtp_dump.h"
-#include "statistics.h"
-#include "trace.h"
-#include "transmit_mixer.h"
-#include "utility.h"
-#include "voe_base.h"
-#include "voe_external_media.h"
-#include "voe_rtp_rtcp.h"
+#include "webrtc/modules/audio_device/include/audio_device.h"
+#include "webrtc/modules/audio_processing/include/audio_processing.h"
+#include "webrtc/modules/utility/interface/audio_frame_operations.h"
+#include "webrtc/modules/utility/interface/process_thread.h"
+#include "webrtc/modules/utility/interface/rtp_dump.h"
+#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/voice_engine/include/voe_base.h"
+#include "webrtc/voice_engine/include/voe_external_media.h"
+#include "webrtc/voice_engine/include/voe_rtp_rtcp.h"
+#include "webrtc/voice_engine/output_mixer.h"
+#include "webrtc/voice_engine/statistics.h"
+#include "webrtc/voice_engine/transmit_mixer.h"
+#include "webrtc/voice_engine/utility.h"
 
 #if defined(_WIN32)
 #include <Qos.h>
@@ -92,28 +92,6 @@ Channel::InFrameType(WebRtc_Word16 frameType)
     _sendFrameType = (frameType == 1) ? 1 : 0;
     return 0;
 }
-
-#ifdef WEBRTC_DTMF_DETECTION
-int
-Channel::IncomingDtmf(const WebRtc_UWord8 digitDtmf, const bool end)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-               "Channel::IncomingDtmf(digitDtmf=%u, end=%d)",
-               digitDtmf, end);
-
-    if (digitDtmf != 999)
-    {
-        CriticalSectionScoped cs(&_callbackCritSect);
-        if (_telephoneEventDetectionPtr)
-        {
-            _telephoneEventDetectionPtr->OnReceivedTelephoneEventInband(
-                _channelId, digitDtmf, end);
-        }
-    }
-
-    return 0;
-}
-#endif
 
 WebRtc_Word32
 Channel::OnRxVadDetected(const int vadDecision)
@@ -511,29 +489,6 @@ Channel::IncomingRTCPPacket(const WebRtc_Word8* incomingRtcpPacket,
 }
 
 void
-Channel::OnReceivedTelephoneEvent(const WebRtc_Word32 id,
-                                  const WebRtc_UWord8 event,
-                                  const bool endOfEvent)
-{
-    WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::OnReceivedTelephoneEvent(id=%d, event=%u,"
-                 " endOfEvent=%d)", id, event, endOfEvent);
-
-#ifdef WEBRTC_DTMF_DETECTION
-    if (_outOfBandTelephoneEventDetecion)
-    {
-        CriticalSectionScoped cs(&_callbackCritSect);
-
-        if (_telephoneEventDetectionPtr)
-        {
-            _telephoneEventDetectionPtr->OnReceivedTelephoneEventOutOfBand(
-                _channelId, event, endOfEvent);
-        }
-    }
-#endif
-}
-
-void
 Channel::OnPlayTelephoneEvent(const WebRtc_Word32 id,
                               const WebRtc_UWord8 event,
                               const WebRtc_UWord16 lengthMs,
@@ -661,7 +616,7 @@ Channel::OnInitializeDecoder(
     receiveCodec.rate = rate;
     strncpy(receiveCodec.plname, payloadName, RTP_PAYLOAD_NAME_SIZE - 1);
 
-    _audioCodingModule.Codec(payloadName, dummyCodec, frequency, channels);
+    _audioCodingModule.Codec(payloadName, &dummyCodec, frequency, channels);
     receiveCodec.pacsize = dummyCodec.pacsize;
 
     // Register the new codec to the ACM
@@ -839,7 +794,7 @@ WebRtc_Word32 Channel::GetAudioFrame(const WebRtc_Word32 id,
 
     // Get 10ms raw PCM data from the ACM (mixer limits output frequency)
     if (_audioCodingModule.PlayoutData10Ms(audioFrame.sample_rate_hz_,
-                                           audioFrame) == -1)
+                                           &audioFrame) == -1)
     {
         WEBRTC_TRACE(kTraceError, kTraceVoice,
                      VoEId(_instanceId,_channelId),
@@ -1123,9 +1078,6 @@ Channel::Channel(const WebRtc_Word32 channelId,
     _encryptionPtr(NULL),
     _rtpAudioProc(NULL),
     _rxAudioProcessingModulePtr(NULL),
-#ifdef WEBRTC_DTMF_DETECTION
-    _telephoneEventDetectionPtr(NULL),
-#endif
     _rxVadObserverPtr(NULL),
     _oldVadDecision(-1),
     _sendFrameType(0),
@@ -1149,8 +1101,6 @@ Channel::Channel(const WebRtc_Word32 channelId,
     _decrypting(false),
     _playOutbandDtmfEvent(false),
     _playInbandDtmfEvent(false),
-    _inbandTelephoneEventDetection(false),
-    _outOfBandTelephoneEventDetecion(false),
     _extraPayloadType(0),
     _insertExtraRTPPacket(false),
     _extraMarkerBit(false),
@@ -1268,15 +1218,6 @@ Channel::~Channel()
                      "~Channel() failed to de-register VAD callback"
                      " (Audio coding module)");
     }
-#ifdef WEBRTC_DTMF_DETECTION
-    if (_audioCodingModule.RegisterIncomingMessagesCallback(NULL) == -1)
-    {
-        WEBRTC_TRACE(kTraceWarning, kTraceVoice,
-                     VoEId(_instanceId,_channelId),
-                     "~Channel() failed to de-register incoming messages "
-                     "callback (Audio coding module)");
-    }
-#endif
     // De-register modules in process thread
 #ifndef WEBRTC_EXTERNAL_TRANSPORT
     if (_moduleProcessThreadPtr->DeRegisterModule(&_socketTransportModule)
@@ -1380,7 +1321,7 @@ Channel::Init()
     // be transmitted since the Transport object will then be invalid.
 
     const bool rtpRtcpFail =
-        ((_rtpRtcpModule->SetTelephoneEventStatus(false, true, true) == -1) ||
+        ((_rtpRtcpModule->SetTelephoneEventForwardToDecoder(true) == -1) ||
         // RTCP is enabled by default
         (_rtpRtcpModule->SetRTCPStatus(kRtcpCompound) == -1));
     if (rtpRtcpFail)
@@ -1413,7 +1354,7 @@ Channel::Init()
     for (int idx = 0; idx < nSupportedCodecs; idx++)
     {
         // Open up the RTP/RTCP receiver for all supported codecs
-        if ((_audioCodingModule.Codec(idx, codec) == -1) ||
+        if ((_audioCodingModule.Codec(idx, &codec) == -1) ||
             (_rtpRtcpModule->RegisterReceivePayload(codec) == -1))
         {
             WEBRTC_TRACE(kTraceWarning, kTraceVoice,
@@ -1768,10 +1709,8 @@ Channel::StopReceiving()
         }
     }
 #endif
-    bool dtmfDetection = _rtpRtcpModule->TelephoneEvent();
     // Recover DTMF detection status.
-    WebRtc_Word32 ret = _rtpRtcpModule->SetTelephoneEventStatus(dtmfDetection,
-                                                               true, true);
+    WebRtc_Word32 ret = _rtpRtcpModule->SetTelephoneEventForwardToDecoder(true);
     if (ret != 0) {
         _engineStatisticsPtr->SetLastError(
             VE_INVALID_OPERATION, kTraceWarning,
@@ -2142,34 +2081,6 @@ Channel::GetNetEQPlayoutMode(NetEqModes& mode)
 }
 
 WebRtc_Word32
-Channel::SetNetEQBGNMode(NetEqBgnModes mode)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::SetNetEQPlayoutMode()");
-    ACMBackgroundNoiseMode noiseMode(On);
-    switch (mode)
-    {
-        case kBgnOn:
-            noiseMode = On;
-            break;
-        case kBgnFade:
-            noiseMode = Fade;
-            break;
-        case kBgnOff:
-            noiseMode = Off;
-            break;
-    }
-    if (_audioCodingModule.SetBackgroundNoiseMode(noiseMode) != 0)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_AUDIO_CODING_MODULE_ERROR, kTraceError,
-            "SetBackgroundNoiseMode() failed to set noise mode");
-        return -1;
-    }
-    return 0;
-}
-
-WebRtc_Word32
 Channel::SetOnHoldStatus(bool enable, OnHoldModes mode)
 {
     WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
@@ -2251,37 +2162,15 @@ Channel::DeRegisterVoiceEngineObserver()
 }
 
 WebRtc_Word32
-Channel::GetNetEQBGNMode(NetEqBgnModes& mode)
-{
-  ACMBackgroundNoiseMode noiseMode(On);
-    _audioCodingModule.BackgroundNoiseMode(noiseMode);
-    switch (noiseMode)
-    {
-        case On:
-            mode = kBgnOn;
-            break;
-        case Fade:
-            mode = kBgnFade;
-            break;
-        case Off:
-            mode = kBgnOff;
-            break;
-    }
-    WEBRTC_TRACE(kTraceStateInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::GetNetEQBGNMode() => mode=%u", mode);
-    return 0;
-}
-
-WebRtc_Word32
 Channel::GetSendCodec(CodecInst& codec)
 {
-    return (_audioCodingModule.SendCodec(codec));
+    return (_audioCodingModule.SendCodec(&codec));
 }
 
 WebRtc_Word32
 Channel::GetRecCodec(CodecInst& codec)
 {
-    return (_audioCodingModule.ReceiveCodec(codec));
+    return (_audioCodingModule.ReceiveCodec(&codec));
 }
 
 WebRtc_Word32
@@ -2342,7 +2231,7 @@ Channel::GetVADStatus(bool& enabledVAD, ACMVADMode& mode, bool& disabledDTX)
 {
     WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
                  "Channel::GetVADStatus");
-    if (_audioCodingModule.VAD(disabledDTX, enabledVAD, mode) != 0)
+    if (_audioCodingModule.VAD(&disabledDTX, &enabledVAD, &mode) != 0)
     {
         _engineStatisticsPtr->SetLastError(
             VE_AUDIO_CODING_MODULE_ERROR, kTraceError,
@@ -2504,7 +2393,7 @@ Channel::SetSendCNPayloadType(int type, PayloadFrequencies frequency)
     else if (frequency == kFreq16000Hz)
         samplingFreqHz = 16000;
 
-    if (_audioCodingModule.Codec("CN", codec, samplingFreqHz, kMono) == -1)
+    if (_audioCodingModule.Codec("CN", &codec, samplingFreqHz, kMono) == -1)
     {
         _engineStatisticsPtr->SetLastError(
             VE_AUDIO_CODING_MODULE_ERROR, kTraceError,
@@ -2546,7 +2435,7 @@ Channel::SetISACInitTargetRate(int rateBps, bool useFixedFrameSize)
                  "Channel::SetISACInitTargetRate()");
 
     CodecInst sendCodec;
-    if (_audioCodingModule.SendCodec(sendCodec) == -1)
+    if (_audioCodingModule.SendCodec(&sendCodec) == -1)
     {
         _engineStatisticsPtr->SetLastError(
             VE_CODEC_ERROR, kTraceError,
@@ -2614,7 +2503,7 @@ Channel::SetISACMaxRate(int rateBps)
                  "Channel::SetISACMaxRate()");
 
     CodecInst sendCodec;
-    if (_audioCodingModule.SendCodec(sendCodec) == -1)
+    if (_audioCodingModule.SendCodec(&sendCodec) == -1)
     {
         _engineStatisticsPtr->SetLastError(
             VE_CODEC_ERROR, kTraceError,
@@ -2678,7 +2567,7 @@ Channel::SetISACMaxPayloadSize(int sizeBytes)
     WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
                  "Channel::SetISACMaxPayloadSize()");
     CodecInst sendCodec;
-    if (_audioCodingModule.SendCodec(sendCodec) == -1)
+    if (_audioCodingModule.SendCodec(&sendCodec) == -1)
     {
         _engineStatisticsPtr->SetLastError(
             VE_CODEC_ERROR, kTraceError,
@@ -4505,144 +4394,6 @@ Channel::GetSendTelephoneEventPayloadType(unsigned char& type)
     return 0;
 }
 
-#ifdef WEBRTC_DTMF_DETECTION
-
-WebRtc_Word32
-Channel::RegisterTelephoneEventDetection(
-    TelephoneEventDetectionMethods detectionMethod,
-    VoETelephoneEventObserver& observer)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-                 "Channel::RegisterTelephoneEventDetection()");
-    CriticalSectionScoped cs(&_callbackCritSect);
-
-    if (_telephoneEventDetectionPtr)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_INVALID_OPERATION, kTraceError,
-            "RegisterTelephoneEventDetection() detection already enabled");
-        return -1;
-    }
-
-    _telephoneEventDetectionPtr = &observer;
-
-    switch (detectionMethod)
-    {
-        case kInBand:
-            _inbandTelephoneEventDetection = true;
-            _outOfBandTelephoneEventDetecion = false;
-            break;
-        case kOutOfBand:
-            _inbandTelephoneEventDetection = false;
-            _outOfBandTelephoneEventDetecion = true;
-            break;
-        case kInAndOutOfBand:
-            _inbandTelephoneEventDetection = true;
-            _outOfBandTelephoneEventDetecion = true;
-            break;
-        default:
-            _engineStatisticsPtr->SetLastError(
-                VE_INVALID_ARGUMENT, kTraceError,
-                "RegisterTelephoneEventDetection() invalid detection method");
-            return -1;
-    }
-
-    if (_inbandTelephoneEventDetection)
-    {
-        // Enable in-band Dtmf detectin in the ACM.
-        if (_audioCodingModule.RegisterIncomingMessagesCallback(this) != 0)
-        {
-            _engineStatisticsPtr->SetLastError(
-                VE_AUDIO_CODING_MODULE_ERROR, kTraceError,
-                "RegisterTelephoneEventDetection() failed to enable Dtmf "
-                "detection");
-        }
-    }
-
-    // Enable/disable out-of-band detection of received telephone-events.
-    // When enabled, RtpAudioFeedback::OnReceivedTelephoneEvent() will be
-    // called two times by the RTP/RTCP module (start & end).
-    const bool forwardToDecoder =
-        _rtpRtcpModule->TelephoneEventForwardToDecoder();
-    const bool detectEndOfTone = true;
-    _rtpRtcpModule->SetTelephoneEventStatus(_outOfBandTelephoneEventDetecion,
-                                           forwardToDecoder,
-                                           detectEndOfTone);
-
-    return 0;
-}
-
-int
-Channel::DeRegisterTelephoneEventDetection()
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId, _channelId),
-                 "Channel::DeRegisterTelephoneEventDetection()");
-
-    CriticalSectionScoped cs(&_callbackCritSect);
-
-    if (!_telephoneEventDetectionPtr)
-    {
-        _engineStatisticsPtr->SetLastError(
-            VE_INVALID_OPERATION,
-            kTraceWarning,
-            "DeRegisterTelephoneEventDetection() detection already disabled");
-        return 0;
-    }
-
-    // Disable out-of-band event detection
-    const bool forwardToDecoder =
-        _rtpRtcpModule->TelephoneEventForwardToDecoder();
-    _rtpRtcpModule->SetTelephoneEventStatus(false, forwardToDecoder);
-
-    // Disable in-band Dtmf detection
-    _audioCodingModule.RegisterIncomingMessagesCallback(NULL);
-
-    _inbandTelephoneEventDetection = false;
-    _outOfBandTelephoneEventDetecion = false;
-    _telephoneEventDetectionPtr = NULL;
-
-    return 0;
-}
-
-int
-Channel::GetTelephoneEventDetectionStatus(
-    bool& enabled,
-    TelephoneEventDetectionMethods& detectionMethod)
-{
-    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId, _channelId),
-                 "Channel::GetTelephoneEventDetectionStatus()");
-
-    {
-        CriticalSectionScoped cs(&_callbackCritSect);
-        enabled = (_telephoneEventDetectionPtr != NULL);
-    }
-
-    if (enabled)
-    {
-        if (_inbandTelephoneEventDetection && !_outOfBandTelephoneEventDetecion)
-            detectionMethod = kInBand;
-        else if (!_inbandTelephoneEventDetection
-            && _outOfBandTelephoneEventDetecion)
-            detectionMethod = kOutOfBand;
-        else if (_inbandTelephoneEventDetection
-            && _outOfBandTelephoneEventDetecion)
-            detectionMethod = kInAndOutOfBand;
-        else
-        {
-            assert(false);
-            return -1;
-        }
-    }
-
-    WEBRTC_TRACE(kTraceStateInfo, kTraceVoice,
-               VoEId(_instanceId, _channelId),
-               "GetTelephoneEventDetectionStatus() => enabled=%d,"
-               "detectionMethod=%d", enabled, detectionMethod);
-    return 0;
-}
-
-#endif  // #ifdef WEBRTC_DTMF_DETECTION
-
 int
 Channel::UpdateRxVadDetection(AudioFrame& audioFrame)
 {
@@ -6082,8 +5833,12 @@ Channel::GetNetworkStatistics(NetworkStatistics& stats)
 {
     WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
                  "Channel::GetNetworkStatistics()");
-    return _audioCodingModule.NetworkStatistics(
-        (ACMNetworkStatistics &)stats);
+    ACMNetworkStatistics acm_stats;
+    int return_value = _audioCodingModule.NetworkStatistics(&acm_stats);
+    if (return_value >= 0) {
+      memcpy(&stats, &acm_stats, sizeof(NetworkStatistics));
+    }
+    return return_value;
 }
 
 int
@@ -6094,6 +5849,29 @@ Channel::GetDelayEstimate(int& delayMs) const
     delayMs = (_averageDelayMs + 5) / 10 + _recPacketDelayMs;
     return 0;
 }
+
+int Channel::SetInitialPlayoutDelay(int delay_ms)
+{
+  WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
+               "Channel::SetInitialPlayoutDelay()");
+  if ((delay_ms < kVoiceEngineMinMinPlayoutDelayMs) ||
+      (delay_ms > kVoiceEngineMaxMinPlayoutDelayMs))
+  {
+    _engineStatisticsPtr->SetLastError(
+        VE_INVALID_ARGUMENT, kTraceError,
+        "SetInitialPlayoutDelay() invalid min delay");
+    return -1;
+  }
+  if (_audioCodingModule.SetInitialPlayoutDelay(delay_ms) != 0)
+  {
+    _engineStatisticsPtr->SetLastError(
+        VE_AUDIO_CODING_MODULE_ERROR, kTraceError,
+        "SetInitialPlayoutDelay() failed to set min playout delay");
+    return -1;
+  }
+  return 0;
+}
+
 
 int
 Channel::SetMinimumPlayoutDelay(int delayMs)
@@ -6393,7 +6171,7 @@ Channel::GetPlayoutTimeStamp(WebRtc_UWord32& playoutTimestamp)
     WebRtc_UWord32 timestamp(0);
     CodecInst currRecCodec;
 
-    if (_audioCodingModule.PlayoutTimestamp(timestamp) == -1)
+    if (_audioCodingModule.PlayoutTimestamp(&timestamp) == -1)
     {
         WEBRTC_TRACE(kTraceWarning, kTraceVoice, VoEId(_instanceId,_channelId),
                      "Channel::GetPlayoutTimeStamp() failed to read playout"
@@ -6411,7 +6189,7 @@ Channel::GetPlayoutTimeStamp(WebRtc_UWord32& playoutTimestamp)
     }
 
     WebRtc_Word32 playoutFrequency = _audioCodingModule.PlayoutFrequency();
-    if (_audioCodingModule.ReceiveCodec(currRecCodec) == 0) {
+    if (_audioCodingModule.ReceiveCodec(&currRecCodec) == 0) {
       if (STR_CASE_CMP("G722", currRecCodec.plname) == 0) {
         playoutFrequency = 8000;
       } else if (STR_CASE_CMP("opus", currRecCodec.plname) == 0) {
@@ -6490,7 +6268,7 @@ Channel::UpdatePacketDelay(const WebRtc_UWord32 timestamp,
     rtpReceiveFrequency = _audioCodingModule.ReceiveFrequency();
 
     CodecInst currRecCodec;
-    if (_audioCodingModule.ReceiveCodec(currRecCodec) == 0) {
+    if (_audioCodingModule.ReceiveCodec(&currRecCodec) == 0) {
       if (STR_CASE_CMP("G722", currRecCodec.plname) == 0) {
         // Even though the actual sampling rate for G.722 audio is
         // 16,000 Hz, the RTP clock rate for the G722 payload format is
@@ -6595,7 +6373,7 @@ Channel::RegisterReceiveCodecsToRTPModule()
     for (int idx = 0; idx < nSupportedCodecs; idx++)
     {
         // Open up the RTP/RTCP receiver for all supported codecs
-        if ((_audioCodingModule.Codec(idx, codec) == -1) ||
+        if ((_audioCodingModule.Codec(idx, &codec) == -1) ||
             (_rtpRtcpModule->RegisterReceivePayload(codec) == -1))
         {
             WEBRTC_TRACE(
@@ -6687,7 +6465,7 @@ int Channel::SetRedPayloadType(int red_payload_type) {
   // Get default RED settings from the ACM database
   const int num_codecs = AudioCodingModule::NumberOfCodecs();
   for (int idx = 0; idx < num_codecs; idx++) {
-    _audioCodingModule.Codec(idx, codec);
+    _audioCodingModule.Codec(idx, &codec);
     if (!STR_CASE_CMP(codec.plname, "RED")) {
       found_red = true;
       break;

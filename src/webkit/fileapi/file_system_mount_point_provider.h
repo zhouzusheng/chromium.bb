@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "base/callback_forward.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/platform_file.h"
 #include "webkit/fileapi/file_permission_policy.h"
 #include "webkit/fileapi/file_system_types.h"
@@ -59,13 +59,6 @@ class WEBKIT_STORAGE_EXPORT FileSystemMountPointProvider {
   virtual base::FilePath GetFileSystemRootPathOnFileThread(
       const FileSystemURL& url,
       bool create) = 0;
-
-  // Checks if access to |virtual_path| is allowed from |origin_url|.
-  virtual bool IsAccessAllowed(const FileSystemURL& url) = 0;
-
-  // Checks if a given |name| contains any restricted names/chars in it.
-  // Callable on any thread.
-  virtual bool IsRestrictedFileName(const base::FilePath& filename) const = 0;
 
   // Returns the specialized FileSystemFileUtil for this mount point.
   // It is ok to return NULL if the filesystem doesn't support synchronous
@@ -132,6 +125,13 @@ class WEBKIT_STORAGE_EXPORT FileSystemMountPointProvider {
 class ExternalFileSystemMountPointProvider
     : public FileSystemMountPointProvider {
  public:
+  // Returns true if |url| is allowed to be accessed.
+  // This is supposed to perform ExternalFileSystem-specific security
+  // checks. This method is also likely to be called by
+  // FileSystemMountPointProvider::GetPermissionPolicy as
+  // GetPermissionPolicy is supposed to perform fileapi-generic security
+  // checks (which likely need to include ExternalFileSystem-specific checks).
+  virtual bool IsAccessAllowed(const fileapi::FileSystemURL& url) const = 0;
   // Returns the list of top level directories that are exposed by this
   // provider. This list is used to set appropriate child process file access
   // permissions.

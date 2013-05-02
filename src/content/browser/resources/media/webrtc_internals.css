@@ -2,20 +2,38 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
-li {
-  clear: both;
-}
-
-textarea {
-  width: 100%;
-}
-
 .log-container {
   float: left;
 }
 
-.log-header-event {
-  min-width: 600px;
+.stats-graph-container,
+.stats-graph-container-collapsed {
+  clear: both;
+  margin: 0.5em 0 0.5em 0;
+}
+
+.stats-graph-container button,
+.stats-graph-container-collapsed button {
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+.stats-graph-container-collapsed .stats-graph-sub-container {
+  display: none;
+}
+
+.stats-graph-sub-container {
+  float: left;
+  margin: 0.5em;
+}
+
+.stats-graph-sub-container > div {
+  float: left;
+}
+
+.stats-graph-sub-container > div:first-child {
+  float: none;
 }
 
 .stats-table-container {
@@ -28,8 +46,8 @@ body {
   padding: 20px;
 }
 
-button {
-  margin-left: 1em;
+details {
+  width: 30em;
 }
 
 h3 + div {
@@ -48,18 +66,14 @@ h2 {
 h3 {
   color: #666;
   font-size: 0.9em;
-  margin: 0 0 0.5em 0;
+  margin: 1em 0 0.5em 0;
 }
 
 li {
+  clear: both;
   list-style-type: none;
   margin: none;
   padding: none;
-}
-
-span {
-  width: 17em;
-  display: inline-block;
 }
 
 table {
@@ -80,6 +94,7 @@ td:first-child {
 textarea {
   border: none;
   outline: none;
+  width: 100%;
 }
 
 table > tr {

@@ -4,18 +4,20 @@
 
 #include "base/path_service.h"
 
-#ifdef OS_WIN
+#if defined(OS_WIN)
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #endif
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/synchronization/lock.h"
+
+using base::FilePath;
 
 namespace base {
   bool PathProvider(int key, FilePath* result);

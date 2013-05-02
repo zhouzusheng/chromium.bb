@@ -274,7 +274,7 @@ PlatformFileError ObfuscatedFileUtil::CreateOrOpen(
         base::PLATFORM_FILE_CREATE_ALWAYS | base::PLATFORM_FILE_OPEN_ALWAYS)))
       return base::PLATFORM_FILE_ERROR_NOT_FOUND;
     FileId parent_id;
-    if (!db->GetFileWithPath(url.path().DirName(),
+    if (!db->GetFileWithPath(VirtualPath::DirName(url.path()),
                              &parent_id))
       return base::PLATFORM_FILE_ERROR_NOT_FOUND;
     FileInfo file_info;
@@ -367,7 +367,7 @@ PlatformFileError ObfuscatedFileUtil::EnsureFileExists(
     return base::PLATFORM_FILE_OK;
   }
   FileId parent_id;
-  if (!db->GetFileWithPath(url.path().DirName(), &parent_id))
+  if (!db->GetFileWithPath(VirtualPath::DirName(url.path()), &parent_id))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
 
   FileInfo file_info;
@@ -621,7 +621,7 @@ PlatformFileError ObfuscatedFileUtil::CopyOrMoveFile(
   }
   if (!overwrite) {
     FileId dest_parent_id;
-    if (!db->GetFileWithPath(dest_url.path().DirName(),
+    if (!db->GetFileWithPath(VirtualPath::DirName(dest_url.path()),
                              &dest_parent_id)) {
       return base::PLATFORM_FILE_ERROR_NOT_FOUND;
     }
@@ -746,7 +746,7 @@ PlatformFileError ObfuscatedFileUtil::CopyInForeignFile(
   }
   if (!overwrite) {
     FileId dest_parent_id;
-    if (!db->GetFileWithPath(dest_url.path().DirName(),
+    if (!db->GetFileWithPath(VirtualPath::DirName(dest_url.path()),
                              &dest_parent_id)) {
       return base::PLATFORM_FILE_ERROR_NOT_FOUND;
     }
@@ -958,7 +958,7 @@ bool ObfuscatedFileUtil::DeleteDirectoryForOriginAndType(
       return false;
   }
 
-  base::FilePath origin_path = origin_type_path.DirName();
+  base::FilePath origin_path = VirtualPath::DirName(origin_type_path);
   DCHECK_EQ(origin_path.value(),
             GetDirectoryForOrigin(origin, false, NULL).value());
 
@@ -1323,14 +1323,15 @@ PlatformFileError ObfuscatedFileUtil::GenerateNewLocalPath(
   // We use the third- and fourth-to-last digits as the directory.
   int64 directory_number = number % 10000 / 100;
   new_local_path = new_local_path.AppendASCII(
-      StringPrintf("%02" PRId64, directory_number));
+      base::StringPrintf("%02" PRId64, directory_number));
 
   error = NativeFileUtil::CreateDirectory(
       new_local_path, false /* exclusive */, false /* recursive */);
   if (error != base::PLATFORM_FILE_OK)
     return error;
 
-  *local_path = new_local_path.AppendASCII(StringPrintf("%08" PRId64, number));
+  *local_path =
+      new_local_path.AppendASCII(base::StringPrintf("%08" PRId64, number));
   return base::PLATFORM_FILE_OK;
 }
 

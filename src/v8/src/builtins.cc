@@ -150,7 +150,7 @@ static inline bool CalledAsConstructor(Isolate* isolate) {
   // Calculate the result using a full stack frame iterator and check
   // that the state of the stack is as we assume it to be in the
   // code below.
-  StackFrameIterator it;
+  StackFrameIterator it(isolate);
   ASSERT(it.frame()->is_exit());
   it.Advance();
   StackFrame* frame = it.frame();
@@ -525,12 +525,9 @@ BUILTIN(ArrayPush) {
   }
   if (!maybe_elms_obj->To(&elms_obj)) return maybe_elms_obj;
 
-  if (FLAG_harmony_observation &&
-      JSObject::cast(receiver)->map()->is_observed()) {
-    return CallJsBuiltin(isolate, "ArrayPush", args);
-  }
-
   JSArray* array = JSArray::cast(receiver);
+  ASSERT(!array->map()->is_observed());
+
   ElementsKind kind = array->GetElementsKind();
 
   if (IsFastSmiOrObjectElementsKind(kind)) {
@@ -642,10 +639,7 @@ BUILTIN(ArrayPop) {
   if (!maybe_elms->To(&elms_obj)) return maybe_elms;
 
   JSArray* array = JSArray::cast(receiver);
-
-  if (FLAG_harmony_observation && array->map()->is_observed()) {
-    return CallJsBuiltin(isolate, "ArrayPop", args);
-  }
+  ASSERT(!array->map()->is_observed());
 
   int len = Smi::cast(array->length())->value();
   if (len == 0) return heap->undefined_value();
@@ -680,10 +674,7 @@ BUILTIN(ArrayShift) {
     return CallJsBuiltin(isolate, "ArrayShift", args);
   }
   JSArray* array = JSArray::cast(receiver);
-
-  if (FLAG_harmony_observation && array->map()->is_observed()) {
-    return CallJsBuiltin(isolate, "ArrayShift", args);
-  }
+  ASSERT(!array->map()->is_observed());
 
   int len = Smi::cast(array->length())->value();
   if (len == 0) return heap->undefined_value();
@@ -734,14 +725,11 @@ BUILTIN(ArrayUnshift) {
     return CallJsBuiltin(isolate, "ArrayUnshift", args);
   }
   JSArray* array = JSArray::cast(receiver);
+  ASSERT(!array->map()->is_observed());
   if (!array->HasFastSmiOrObjectElements()) {
     return CallJsBuiltin(isolate, "ArrayUnshift", args);
   }
   FixedArray* elms = FixedArray::cast(elms_obj);
-
-  if (FLAG_harmony_observation && array->map()->is_observed()) {
-    return CallJsBuiltin(isolate, "ArrayUnshift", args);
-  }
 
   int len = Smi::cast(array->length())->value();
   int to_add = args.length() - 1;
@@ -938,10 +926,7 @@ BUILTIN(ArraySplice) {
     return CallJsBuiltin(isolate, "ArraySplice", args);
   }
   JSArray* array = JSArray::cast(receiver);
-
-  if (FLAG_harmony_observation && array->map()->is_observed()) {
-    return CallJsBuiltin(isolate, "ArraySplice", args);
-  }
+  ASSERT(!array->map()->is_observed());
 
   int len = Smi::cast(array->length())->value();
 
@@ -1221,7 +1206,7 @@ BUILTIN(ArrayConcat) {
 
 
 BUILTIN(StrictModePoisonPill) {
-  HandleScope scope;
+  HandleScope scope(isolate);
   return isolate->Throw(*isolate->factory()->NewTypeError(
       "strict_poison_pill", HandleVector<Object>(NULL, 0)));
 }
@@ -1237,7 +1222,7 @@ static inline Object* FindHidden(Heap* heap,
                                  Object* object,
                                  FunctionTemplateInfo* type) {
   if (object->IsInstanceOf(type)) return object;
-  Object* proto = object->GetPrototype();
+  Object* proto = object->GetPrototype(heap->isolate());
   if (proto->IsJSObject() &&
       JSObject::cast(proto)->map()->is_hidden_prototype()) {
     return FindHidden(heap, proto, type);

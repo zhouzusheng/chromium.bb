@@ -171,6 +171,8 @@ COMPILE_ASSERT(offsetof(ProgramInfoHeader, num_attribs) == 4,
 COMPILE_ASSERT(offsetof(ProgramInfoHeader, num_uniforms) == 8,
                OffsetOf_ProgramInfoHeader_num_uniforms_not_8);
 
+namespace cmds {
+
 #include "../common/gles2_cmd_format_autogen.h"
 
 // These are hand written commands.
@@ -538,8 +540,16 @@ COMPILE_ASSERT(offsetof(GetUniformLocationBucket, location_shm_id) == 12,
 COMPILE_ASSERT(offsetof(GetUniformLocationBucket, location_shm_offset) == 16,
                OffsetOf_GetUniformLocationBucket_location_shm_offset_not_16);
 
+struct InsertSyncPointCHROMIUM {
+  typedef InsertSyncPointCHROMIUM ValueType;
+  static const CommandId kCmdId = kInsertSyncPointCHROMIUM;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  CommandHeader header;
+};
+
 #pragma pack(pop)
 
+}  // namespace cmd
 }  // namespace gles2
 }  // namespace gpu
 

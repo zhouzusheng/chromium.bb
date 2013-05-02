@@ -59,16 +59,18 @@
 #include "SkMatrix44.h"
 #include "SkiaImageFilterBuilder.h"
 #include "SystemTime.h"
+#include "TransformSkMatrix44Conversions.h"
 #include <public/Platform.h>
 #include <public/WebAnimation.h>
 #include <public/WebCompositorSupport.h>
+#include <public/WebContentLayer.h>
 #include <public/WebFilterOperation.h>
 #include <public/WebFilterOperations.h>
 #include <public/WebFloatPoint.h>
 #include <public/WebFloatRect.h>
 #include <public/WebImageLayer.h>
 #include <public/WebSize.h>
-#include <public/WebTransformationMatrix.h>
+#include <public/WebSolidColorLayer.h>
 #include <wtf/CurrentTime.h>
 #include <wtf/HashSet.h>
 #include <wtf/MemoryInstrumentationHashMap.h>
@@ -513,6 +515,10 @@ void GraphicsLayerChromium::setContentsToImage(Image* image)
         updateChildList();
 }
 
+void GraphicsLayerChromium::setContentsToSolidColor(const Color& color)
+{
+}
+
 static HashSet<int>* s_registeredLayerSet;
 
 void GraphicsLayerChromium::registerContentsLayer(WebLayer* layer)
@@ -704,12 +710,12 @@ void GraphicsLayerChromium::updateAnchorPoint()
 
 void GraphicsLayerChromium::updateTransform()
 {
-    platformLayer()->setTransform(WebTransformationMatrix(m_transform));
+    platformLayer()->setTransform(TransformSkMatrix44Conversions::convert(m_transform));
 }
 
 void GraphicsLayerChromium::updateChildrenTransform()
 {
-    platformLayer()->setSublayerTransform(WebTransformationMatrix(m_childrenTransform));
+    platformLayer()->setSublayerTransform(TransformSkMatrix44Conversions::convert(m_childrenTransform));
 }
 
 void GraphicsLayerChromium::updateMasksToBounds()
@@ -831,14 +837,13 @@ void GraphicsLayerChromium::setupContentsLayer(WebLayer* contentsLayer)
     updateNames();
 }
 
-void GraphicsLayerChromium::setAppliesPageScale(bool appliesScale)
+void GraphicsLayerChromium::setAppliesPageScale(bool)
 {
-    m_layer->setBoundsContainPageScale(appliesScale);
 }
 
 bool GraphicsLayerChromium::appliesPageScale() const
 {
-    return m_layer->boundsContainPageScale();
+    return false;
 }
 
 void GraphicsLayerChromium::paint(GraphicsContext& context, const IntRect& clip)

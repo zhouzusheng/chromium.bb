@@ -94,15 +94,6 @@ class CONTENT_EXPORT MediaStreamManager
                              const StreamOptions& components,
                              const GURL& security_origin);
 
-  // Like GenerateStream above, except the user is only able to allow/deny the
-  // request for the device specified by |device_id|.
-  std::string GenerateStreamForDevice(MediaStreamRequester* requester,
-                                      int render_process_id,
-                                      int render_view_id,
-                                      const StreamOptions& components,
-                                      const std::string& device_id,
-                                      const GURL& security_origin);
-
   void CancelRequest(const std::string& label);
 
   // Closes generated stream.
@@ -134,7 +125,8 @@ class CONTENT_EXPORT MediaStreamManager
   // Signals the UI that the devices are opened.
   // Users are responsible for calling NotifyUIDevicesClosed when the devices
   // are not used anymore, otherwise UI will leak.
-  void NotifyUIDevicesOpened(int render_process_id,
+  void NotifyUIDevicesOpened(const std::string& label,
+                             int render_process_id,
                              int render_view_id,
                              const MediaStreamDevices& devices);
 
@@ -158,6 +150,7 @@ class CONTENT_EXPORT MediaStreamManager
   virtual void DevicesAccepted(const std::string& label,
                                const StreamDeviceInfoArray& devices) OVERRIDE;
   virtual void SettingsError(const std::string& label) OVERRIDE;
+  virtual void StopStreamFromUI(const std::string& label) OVERRIDE;
   virtual void GetAvailableDevices(MediaStreamDevices* devices) OVERRIDE;
 
   // Implements base::SystemMonitor::DevicesChangedObserver.
@@ -186,13 +179,16 @@ class CONTENT_EXPORT MediaStreamManager
     StreamDeviceInfoArray devices;
   };
 
+  typedef std::map<std::string, DeviceRequest*> DeviceRequests;
+
   // Initializes the device managers on IO thread.  Auto-starts the device
   // thread and registers this as a listener with the device managers.
   void InitializeDeviceManagersOnIOThread();
 
   // Helpers for signaling the media observer that new capture devices are
   // opened/closed.
-  void NotifyDevicesOpened(const DeviceRequest& request);
+  void NotifyDevicesOpened(const std::string& label,
+                           const DeviceRequest& request);
   void NotifyDevicesClosed(const DeviceRequest& request);
   void DevicesFromRequest(const DeviceRequest& request,
                           MediaStreamDevices* devices);
@@ -207,6 +203,7 @@ class CONTENT_EXPORT MediaStreamManager
   MediaStreamProvider* GetDeviceManager(MediaStreamType stream_type);
   void StartEnumeration(DeviceRequest* request);
   std::string AddRequest(DeviceRequest* request);
+  void RemoveRequest(DeviceRequests::iterator it);
   void ClearEnumerationCache(EnumerationCache* cache);
   void PostRequestToUI(const std::string& label);
   void HandleRequest(const std::string& label);
@@ -221,6 +218,10 @@ class CONTENT_EXPORT MediaStreamManager
   // Helpers to start and stop monitoring devices.
   void StartMonitoring();
   void StopMonitoring();
+
+  // Callback for UI called when the user requests stream with the specified
+  // |label| to be stopped.
+  void OnStopStreamRequested(const std::string& label);
 
   // Device thread shared by VideoCaptureManager and AudioInputDeviceManager.
   scoped_ptr<base::Thread> device_thread_;
@@ -244,12 +245,13 @@ class CONTENT_EXPORT MediaStreamManager
   int active_enumeration_ref_count_[NUM_MEDIA_TYPES];
 
   // All non-closed request.
-  typedef std::map<std::string, DeviceRequest*> DeviceRequests;
   DeviceRequests requests_;
 
   // Hold a pointer to the IO loop to check we delete the device thread and
   // managers on the right thread.
   MessageLoop* io_loop_;
+
+  bool screen_capture_active_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaStreamManager);
 };

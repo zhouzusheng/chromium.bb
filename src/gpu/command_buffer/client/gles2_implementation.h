@@ -582,6 +582,13 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
 
   scoped_ptr<MappedMemoryManager> mapped_memory_;
 
+  // Cache results of GetShaderPrecisionFormat
+  typedef std::pair<GLenum,GLenum> ShaderPrecisionCacheKey;
+  typedef std::map<ShaderPrecisionCacheKey,
+                   cmds::GetShaderPrecisionFormat::Result>
+      ShaderPrecisionCacheMap;
+  ShaderPrecisionCacheMap shader_precision_cache_;
+
   scoped_refptr<ShareGroup> share_group_;
 
   scoped_ptr<QueryTracker> query_tracker_;
@@ -590,6 +597,8 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
   scoped_ptr<BufferTracker> buffer_tracker_;
 
   ErrorMessageCallback* error_message_callback_;
+
+  scoped_ptr<std::string> current_trace_name_;
 
   DISALLOW_COPY_AND_ASSIGN(GLES2Implementation);
 };

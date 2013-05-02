@@ -150,6 +150,7 @@ FileSystemMountPointProvider* FileSystemContext::GetMountPointProvider(
     case kFileSystemTypeDeviceMedia:
       return isolated_provider_.get();
     case kFileSystemTypeNativeLocal:
+    case kFileSystemTypeNativeForPlatformApp:
 #if defined(OS_CHROMEOS)
       return external_provider_.get();
 #else
@@ -224,7 +225,8 @@ void FileSystemContext::OpenSyncableFileSystem(
 
   DCHECK(type == kFileSystemTypeSyncable);
 
-  GURL root_url = GetSyncableFileSystemRootURI(origin_url, mount_name);
+  GURL root_url = sync_file_system::GetSyncableFileSystemRootURI(
+      origin_url, mount_name);
   std::string name = GetFileSystemName(origin_url, kFileSystemTypeSyncable);
 
   FileSystemMountPointProvider* mount_point_provider =
@@ -298,7 +300,7 @@ void FileSystemContext::RegisterMountPointProvider(
 }
 
 void FileSystemContext::SetLocalFileChangeTracker(
-    scoped_ptr<LocalFileChangeTracker> tracker) {
+    scoped_ptr<sync_file_system::LocalFileChangeTracker> tracker) {
   DCHECK(!change_tracker_.get());
   DCHECK(tracker.get());
   change_tracker_ = tracker.Pass();
@@ -311,7 +313,7 @@ void FileSystemContext::SetLocalFileChangeTracker(
 }
 
 void FileSystemContext::set_sync_context(
-    LocalFileSyncContext* sync_context) {
+    sync_file_system::LocalFileSyncContext* sync_context) {
   sync_context_ = sync_context;
 }
 
@@ -348,20 +350,24 @@ FileSystemURL FileSystemContext::CrackFileSystemURL(
 
   // The returned value in case there is no crackers which can crack the url.
   // This is valid situation for non isolated/external file systems.
-  FileSystemURL result = url;
+  FileSystemURL current = url;
 
-  for (size_t i = 0; i < url_crackers_.size(); ++i) {
-    if (!url_crackers_[i]->HandlesFileSystemMountType(url.type()))
-      continue;
-
-    result = url_crackers_[i]->CreateCrackedFileSystemURL(url.origin(),
-                                                          url.type(),
-                                                          url.path());
-    if (result.is_valid())
-      return result;
+  // File system may be mounted multiple times (e.g., an isolated filesystem on
+  // top of an external filesystem). Hence cracking needs to be iterated.
+  for (;;) {
+    FileSystemURL cracked = current;
+    for (size_t i = 0; i < url_crackers_.size(); ++i) {
+      if (!url_crackers_[i]->HandlesFileSystemMountType(current.type()))
+        continue;
+      cracked = url_crackers_[i]->CrackFileSystemURL(current);
+      if (cracked.is_valid())
+        break;
+    }
+    if (cracked == current)
+      break;
+    current = cracked;
   }
-
-  return result;
+  return current;
 }
 
 FileSystemFileUtil* FileSystemContext::GetFileUtil(

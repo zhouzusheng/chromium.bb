@@ -14,7 +14,7 @@ namespace leveldb {
 class Status;
 }
 
-namespace fileapi {
+namespace sync_file_system {
 
 enum SyncStatusCode {
   SYNC_STATUS_OK = 0,
@@ -69,6 +69,6 @@ WEBKIT_STORAGE_EXPORT SyncStatusCode LevelDBStatusToSyncStatusCode(
 WEBKIT_STORAGE_EXPORT SyncStatusCode PlatformFileErrorToSyncStatusCode(
     base::PlatformFileError file_error);
 
-}  // namespace fileapi
+}  // namespace sync_file_system
 
 #endif  // WEBKIT_FILEAPI_SYNCABLE_SYNC_STATUS_CODE_H_

@@ -30,6 +30,7 @@
 #include "MediaControls.h"
 
 #include "ExceptionCodePlaceholder.h"
+#include "Settings.h"
 
 namespace WebCore {
 
@@ -92,7 +93,7 @@ void MediaControls::reset()
     updateCurrentTimeDisplay();
 
     float duration = m_mediaController->duration();
-    if (isfinite(duration) || page->theme()->hasOwnDisabledStateHandlingFor(MediaSliderPart)) {
+    if (std::isfinite(duration) || page->theme()->hasOwnDisabledStateHandlingFor(MediaSliderPart)) {
         m_timeline->setDuration(duration);
         m_timeline->setPosition(m_mediaController->currentTime());
     }
@@ -344,7 +345,7 @@ void MediaControls::startHideFullscreenControlsTimer()
     if (!page)
         return;
 
-    m_hideFullscreenControlsTimer.startOneShot(page->theme()->timeWithoutMouseMovementBeforeHidingControls());
+    m_hideFullscreenControlsTimer.startOneShot(page->settings()->timeWithoutMouseMovementBeforeHidingControls());
 }
 
 void MediaControls::stopHideFullscreenControlsTimer()
@@ -381,9 +382,7 @@ void MediaControls::createTextTrackDisplay()
         m_textDisplayContainer->setMediaController(m_mediaController);
 
     // Insert it before the first controller element so it always displays behind the controls.
-    insertBefore(textDisplayContainer, m_panel, IGNORE_EXCEPTION, true);
-    textDisplayContainer->createSubtrees(document());
-    textDisplayContainer.release();
+    insertBefore(textDisplayContainer.release(), m_panel, IGNORE_EXCEPTION, AttachLazily);
 }
 
 void MediaControls::showTextTrackDisplay()
@@ -412,6 +411,7 @@ void MediaControls::textTrackPreferencesChanged()
 {
     if (m_textDisplayContainer)
         m_textDisplayContainer->updateSizes(true);
+    closedCaptionTracksChanged();
 }
 #endif
 

@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -16,7 +16,7 @@ extern "C" {
 #endif
 
 // This module is for GCC Neon
-#if !defined(YUV_DISABLE_ASM) && defined(__ARM_NEON__)
+#if !defined(LIBYUV_DISABLE_NEON) && defined(__ARM_NEON__)
 
 // Read 8 Y, 4 U and 4 V from 422
 #define READYUV422                                                             \
@@ -860,58 +860,6 @@ void ARGBMirrorRow_NEON(const uint8* src, uint8* dst, int width) {
   );
 }
 
-void BGRAToARGBRow_NEON(const uint8* src_bgra, uint8* dst_argb, int pix) {
-  asm volatile (
-    ".p2align  2                               \n"
-  "1:                                          \n"
-    "vld4.8     {d0, d1, d2, d3}, [%0]!        \n"  // load 8 pixels of BGRA.
-    "subs       %2, %2, #8                     \n"  // 8 processed per loop.
-    "vswp.u8    d1, d2                         \n"  // swap G, R
-    "vswp.u8    d0, d3                         \n"  // swap B, A
-    "vst4.8     {d0, d1, d2, d3}, [%1]!        \n"  // store 8 pixels of ARGB.
-    "bgt        1b                             \n"
-  : "+r"(src_bgra),  // %0
-    "+r"(dst_argb),  // %1
-    "+r"(pix)        // %2
-  :
-  : "cc", "memory", "d0", "d1", "d2", "d3"  // Clobber List
-  );
-}
-
-void ABGRToARGBRow_NEON(const uint8* src_abgr, uint8* dst_argb, int pix) {
-  asm volatile (
-    ".p2align  2                               \n"
-  "1:                                          \n"
-    "vld4.8     {d0, d1, d2, d3}, [%0]!        \n"  // load 8 pixels of ABGR.
-    "subs       %2, %2, #8                     \n"  // 8 processed per loop.
-    "vswp.u8    d0, d2                         \n"  // swap R, B
-    "vst4.8     {d0, d1, d2, d3}, [%1]!        \n"  // store 8 pixels of ARGB.
-    "bgt        1b                             \n"
-  : "+r"(src_abgr),  // %0
-    "+r"(dst_argb),  // %1
-    "+r"(pix)        // %2
-  :
-  : "cc", "memory", "d0", "d1", "d2", "d3"  // Clobber List
-  );
-}
-
-void RGBAToARGBRow_NEON(const uint8* src_rgba, uint8* dst_argb, int pix) {
-  asm volatile (
-    ".p2align  2                                \n"
-  "1:                                           \n"
-    "vld4.8     {d0, d1, d2, d3}, [%0]!         \n"  // load 8 pixels of RGBA.
-    "subs       %2, %2, #8                      \n"  // 8 processed per loop.
-    "vmov.u8    d4, d0                          \n"  // move A after RGB
-    "vst4.8     {d1, d2, d3, d4}, [%1]!         \n"  // store 8 pixels of ARGB.
-    "bgt        1b                              \n"
-  : "+r"(src_rgba),  // %0
-    "+r"(dst_argb),  // %1
-    "+r"(pix)        // %2
-  :
-  : "cc", "memory", "d0", "d1", "d2", "d3", "d4"  // Clobber List
-  );
-}
-
 void RGB24ToARGBRow_NEON(const uint8* src_rgb24, uint8* dst_argb, int pix) {
   asm volatile (
     "vmov.u8    d4, #255                       \n"  // Alpha
@@ -1049,23 +997,6 @@ void ARGB4444ToARGBRow_NEON(const uint8* src_argb4444, uint8* dst_argb,
     "+r"(pix)          // %2
   :
   : "cc", "memory", "q0", "q1", "q2"  // Clobber List
-  );
-}
-
-void ARGBToRGBARow_NEON(const uint8* src_argb, uint8* dst_rgba, int pix) {
-  asm volatile (
-    ".p2align  2                               \n"
-  "1:                                          \n"
-    "vld4.8     {d1, d2, d3, d4}, [%0]!        \n"  // load 8 pixels of ARGB.
-    "subs       %2, %2, #8                     \n"  // 8 processed per loop.
-    "vmov.u8    d0, d4                         \n"  // move A before RGB.
-    "vst4.8     {d0, d1, d2, d3}, [%1]!        \n"  // store 8 pixels of RGBA.
-    "bgt        1b                             \n"
-  : "+r"(src_argb),  // %0
-    "+r"(dst_rgba),  // %1
-    "+r"(pix)        // %2
-  :
-  : "cc", "memory", "d0", "d1", "d2", "d3", "d4"  // Clobber List
   );
 }
 
@@ -1242,22 +1173,41 @@ void HalfRow_NEON(const uint8* src_uv, int src_uv_stride,
 }
 
 // Select 2 channels from ARGB on alternating pixels.  e.g.  BGBGBGBG
-void ARGBToBayerRow_NEON(const uint8* src_argb,
-                         uint8* dst_bayer, uint32 selector, int pix) {
+void ARGBToBayerRow_NEON(const uint8* src_argb, uint8* dst_bayer,
+                         uint32 selector, int pix) {
   asm volatile (
-    "vmov.u32   d2[0], %2                      \n"  // selector
+    "vmov.u32   d2[0], %3                      \n"  // selector
   "1:                                          \n"
     "vld1.u8    {q0}, [%0]!                    \n"  // load row 4 pixels.
-    "subs       %3, %3, #4                     \n"  // 4 processed per loop
+    "subs       %2, %2, #4                     \n"  // 4 processed per loop
     "vtbl.8     d3, {d0, d1}, d2               \n"  // look up 4 pixels
     "vst1.u32   {d3[0]}, [%1]!                 \n"  // store 4.
     "bgt        1b                             \n"
-  : "+r"(src_argb),         // %0
-    "+r"(dst_bayer),        // %1
-    "+r"(selector),         // %2
-    "+r"(pix)               // %3
-  :
+  : "+r"(src_argb),   // %0
+    "+r"(dst_bayer),  // %1
+    "+r"(pix)         // %2
+  : "r"(selector)     // %3
   : "cc", "memory", "q0", "q1"  // Clobber List
+  );
+}
+
+// For BGRAToARGB, ABGRToARGB, RGBAToARGB, and ARGBToRGBA.
+void ARGBShuffleRow_NEON(const uint8* src_argb, uint8* dst_argb,
+                         const uint8* shuffler, int pix) {
+  asm volatile (
+    "vld1.u8    {q2}, [%3]                     \n"  // shuffler
+  "1:                                          \n"
+    "vld1.u8    {q0}, [%0]!                    \n"  // load 4 pixels.
+    "subs       %2, %2, #4                     \n"  // 4 processed per loop
+    "vtbl.8     d2, {d0, d1}, d4               \n"  // look up 2 first pixels
+    "vtbl.8     d3, {d0, d1}, d5               \n"  // look up 2 next pixels
+    "vst1.u8    {q1}, [%1]!                    \n"  // store 4.
+    "bgt        1b                             \n"
+  : "+r"(src_argb),  // %0
+    "+r"(dst_argb),  // %1
+    "+r"(pix)        // %2
+  : "r"(shuffler)    // %3
+  : "cc", "memory", "q0", "q1", "q2"  // Clobber List
   );
 }
 
@@ -2499,6 +2449,91 @@ void ARGBColorMatrixRow_NEON(uint8* dst_argb, const int8* matrix_argb,
   : "r"(matrix_argb)  // %2
   : "cc", "memory", "q0", "q1", "q2", "q3", "q8", "q9",
     "q10", "q11", "q12", "q13", "q14"
+  );
+}
+
+// TODO(fbarchard): fix vqshrun in ARGBMultiplyRow_NEON and reenable.
+#ifdef HAS_ARGBMULTIPLYROW_NEON
+// Multiply 2 rows of ARGB pixels together, 8 pixels at a time.
+void ARGBMultiplyRow_NEON(const uint8* src_argb0, const uint8* src_argb1,
+                          uint8* dst_argb, int width) {
+  asm volatile (
+    // 8 pixel loop.
+    ".p2align  2                               \n"
+  "1:                                          \n"
+    "vld4.8     {d0, d2, d4, d6}, [%0]!        \n"  // load 8 ARGB pixels.
+    "vld4.8     {d1, d3, d5, d7}, [%1]!        \n"  // load 8 more ARGB pixels.
+    "subs       %3, %3, #8                     \n"  // 8 processed per loop.
+    "vmull.u8   q0, d0, d1                     \n"  // multiply B
+    "vmull.u8   q1, d2, d3                     \n"  // multiply G
+    "vmull.u8   q2, d4, d5                     \n"  // multiply R
+    "vmull.u8   q3, d6, d7                     \n"  // multiply A
+    "vrshr.u16  q0, q0, #8                     \n"  // low 8 bits B
+    "vrshr.u16  q1, q1, #8                     \n"  // low 8 bits G
+    "vrshr.u16  q2, q2, #8                     \n"  // low 8 bits R
+    "vrshr.u16  q3, q3, #8                     \n"  // low 8 bits A
+    "vmovn.u16  d0, q0                         \n"  // 16 bit to 8 bit B
+    "vmovn.u16  d1, q1                         \n"  // 16 bit to 8 bit G
+    "vmovn.u16  d2, q2                         \n"  // 16 bit to 8 bit R
+    "vmovn.u16  d3, q3                         \n"  // 16 bit to 8 bit A
+    "vst4.8     {d0, d1, d2, d3}, [%2]!        \n"  // store 8 ARGB pixels.
+    "bgt        1b                             \n"
+
+  : "+r"(src_argb0),  // %0
+    "+r"(src_argb1),  // %1
+    "+r"(dst_argb),   // %2
+    "+r"(width)       // %3
+  :
+  : "cc", "memory", "q0", "q1", "q2", "q3"
+  );
+}
+#endif  // HAS_ARGBMULTIPLYROW_NEON
+
+// Add 2 rows of ARGB pixels together, 8 pixels at a time.
+void ARGBAddRow_NEON(const uint8* src_argb0, const uint8* src_argb1,
+                     uint8* dst_argb, int width) {
+  asm volatile (
+    // 8 pixel loop.
+    ".p2align  2                               \n"
+  "1:                                          \n"
+    "vld4.8     {d0, d1, d2, d3}, [%0]!        \n"  // load 8 ARGB pixels.
+    "vld4.8     {d4, d5, d6, d7}, [%1]!        \n"  // load 8 more ARGB pixels.
+    "subs       %3, %3, #8                     \n"  // 8 processed per loop.
+    "vqadd.u8   q0, q0, q2                     \n"  // add B, G
+    "vqadd.u8   q1, q1, q3                     \n"  // add R, A
+    "vst4.8     {d0, d1, d2, d3}, [%2]!        \n"  // store 8 ARGB pixels.
+    "bgt        1b                             \n"
+
+  : "+r"(src_argb0),  // %0
+    "+r"(src_argb1),  // %1
+    "+r"(dst_argb),   // %2
+    "+r"(width)       // %3
+  :
+  : "cc", "memory", "q0", "q1", "q2", "q3"
+  );
+}
+
+// Subtract 2 rows of ARGB pixels, 8 pixels at a time.
+void ARGBSubtractRow_NEON(const uint8* src_argb0, const uint8* src_argb1,
+                          uint8* dst_argb, int width) {
+  asm volatile (
+    // 8 pixel loop.
+    ".p2align  2                               \n"
+  "1:                                          \n"
+    "vld4.8     {d0, d1, d2, d3}, [%0]!        \n"  // load 8 ARGB pixels.
+    "vld4.8     {d4, d5, d6, d7}, [%1]!        \n"  // load 8 more ARGB pixels.
+    "subs       %3, %3, #8                     \n"  // 8 processed per loop.
+    "vqsub.u8   q0, q0, q2                     \n"  // subtract B, G
+    "vqsub.u8   q1, q1, q3                     \n"  // subtract R, A
+    "vst4.8     {d0, d1, d2, d3}, [%2]!        \n"  // store 8 ARGB pixels.
+    "bgt        1b                             \n"
+
+  : "+r"(src_argb0),  // %0
+    "+r"(src_argb1),  // %1
+    "+r"(dst_argb),   // %2
+    "+r"(width)       // %3
+  :
+  : "cc", "memory", "q0", "q1", "q2", "q3"
   );
 }
 

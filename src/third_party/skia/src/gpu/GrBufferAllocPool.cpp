@@ -8,15 +8,16 @@
 
 
 #include "GrBufferAllocPool.h"
+#include "GrDrawTargetCaps.h"
+#include "GrGpu.h"
+#include "GrIndexBuffer.h"
 #include "GrTypes.h"
 #include "GrVertexBuffer.h"
-#include "GrIndexBuffer.h"
-#include "GrGpu.h"
 
 #if GR_DEBUG
     #define VALIDATE validate
 #else
-    static void VALIDATE(bool x = false) {}
+    static void VALIDATE(bool = false) {}
 #endif
 
 // page size
@@ -296,9 +297,21 @@ bool GrBufferAllocPool::createBlock(size_t requestSize) {
 
     GrAssert(NULL == fBufferPtr);
 
-    if (fGpu->getCaps().bufferLockSupport() &&
-        size > GR_GEOM_BUFFER_LOCK_THRESHOLD &&
-        (!fFrequentResetHint || requestSize > GR_GEOM_BUFFER_LOCK_THRESHOLD)) {
+    // If the buffer is CPU-backed we lock it because it is free to do so and saves a copy.
+    // Otherwise when buffer locking is supported:
+    //      a) If the frequently reset hint is set we only lock when the requested size meets a
+    //      threshold (since we don't expect it is likely that we will see more vertex data)
+    //      b) If the hint is not set we lock if the buffer size is greater than the threshold.
+    bool attemptLock = block.fBuffer->isCPUBacked();
+    if (!attemptLock && fGpu->caps()->bufferLockSupport()) {
+        if (fFrequentResetHint) {
+            attemptLock = requestSize > GR_GEOM_BUFFER_LOCK_THRESHOLD;
+        } else {
+            attemptLock = size > GR_GEOM_BUFFER_LOCK_THRESHOLD;
+        }
+    }
+
+    if (attemptLock) {
         fBufferPtr = block.fBuffer->lock();
     }
 
@@ -338,7 +351,7 @@ void GrBufferAllocPool::flushCpuData(GrGeometryBuffer* buffer,
     GrAssert(flushSize <= buffer->sizeInBytes());
     VALIDATE(true);
 
-    if (fGpu->getCaps().bufferLockSupport() &&
+    if (fGpu->caps()->bufferLockSupport() &&
         flushSize > GR_GEOM_BUFFER_LOCK_THRESHOLD) {
         void* data = buffer->lock();
         if (NULL != data) {

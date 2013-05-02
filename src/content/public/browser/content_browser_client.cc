@@ -4,7 +4,7 @@
 
 #include "content/public/browser/content_browser_client.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/image/image_skia.h"
 
@@ -15,7 +15,7 @@ BrowserMainParts* ContentBrowserClient::CreateBrowserMainParts(
   return NULL;
 }
 
-WebContentsView* ContentBrowserClient::OverrideCreateWebContentsView(
+WebContentsViewPort* ContentBrowserClient::OverrideCreateWebContentsView(
     WebContents* web_contents,
     RenderViewHostDelegateView** render_view_host_delegate_view) {
   return NULL;
@@ -36,36 +36,22 @@ bool ContentBrowserClient::ShouldUseProcessPerSite(
   return false;
 }
 
+std::vector<std::string> ContentBrowserClient::GetAdditionalWebUISchemes() {
+  return std::vector<std::string>();
+}
+
 net::URLRequestContextGetter* ContentBrowserClient::CreateRequestContext(
     BrowserContext* browser_context,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        blob_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        file_system_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        developer_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        chrome_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        chrome_devtools_protocol_handler) {
+    ProtocolHandlerMap* protocol_handlers) {
   return NULL;
 }
 
 net::URLRequestContextGetter*
 ContentBrowserClient::CreateRequestContextForStoragePartition(
     BrowserContext* browser_context,
-    const FilePath& partition_path,
+    const base::FilePath& partition_path,
     bool in_memory,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        blob_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        file_system_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        developer_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        chrome_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        chrome_devtools_protocol_handler) {
+    ProtocolHandlerMap* protocol_handlers) {
   return NULL;
 }
 
@@ -247,8 +233,8 @@ bool ContentBrowserClient::IsFastShutdownPossible() {
   return true;
 }
 
-FilePath ContentBrowserClient::GetDefaultDownloadDirectory() {
-  return FilePath();
+base::FilePath ContentBrowserClient::GetDefaultDownloadDirectory() {
+  return base::FilePath();
 }
 
 std::string ContentBrowserClient::GetDefaultDownloadName() {
@@ -260,6 +246,11 @@ BrowserPpapiHost*
   return NULL;
 }
 
+bool ContentBrowserClient::SupportsBrowserPlugin(
+    BrowserContext* browser_context, const GURL& site_url) {
+  return false;
+}
+
 bool ContentBrowserClient::AllowPepperSocketAPI(
     BrowserContext* browser_context,
     const GURL& url,
@@ -267,8 +258,8 @@ bool ContentBrowserClient::AllowPepperSocketAPI(
   return false;
 }
 
-FilePath ContentBrowserClient::GetHyphenDictionaryDirectory() {
-  return FilePath();
+base::FilePath ContentBrowserClient::GetHyphenDictionaryDirectory() {
+  return base::FilePath();
 }
 
 ui::SelectFilePolicy* ContentBrowserClient::CreateSelectFilePolicy(

@@ -14,9 +14,9 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
 #include "net/base/address_list.h"
-#include "net/base/host_resolver.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
+#include "net/dns/host_resolver.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_resolver_error_observer.h"
 #include "net/proxy/proxy_resolver_v8.h"
@@ -155,7 +155,8 @@ class ProxyResolverV8Tracing::Job
   // Implementation of ProxyResolverv8::JSBindings
   virtual bool ResolveDns(const std::string& host,
                           ResolveDnsOperation op,
-                          std::string* output) OVERRIDE;
+                          std::string* output,
+                          bool* terminate) OVERRIDE;
   virtual void Alert(const string16& message) OVERRIDE;
   virtual void OnError(int line_number, const string16& error) OVERRIDE;
 
@@ -165,7 +166,8 @@ class ProxyResolverV8Tracing::Job
 
   bool ResolveDnsNonBlocking(const std::string& host,
                              ResolveDnsOperation op,
-                             std::string* output);
+                             std::string* output,
+                             bool* terminate);
 
   bool PostDnsOperationAndWait(const std::string& host,
                                ResolveDnsOperation op,
@@ -307,6 +309,10 @@ class ProxyResolverV8Tracing::Job
   // origin thread.
   base::TimeTicks metrics_start_time_;
 
+  // The time when the proxy resolve request completes on the worker thread.
+  // Written on the worker thread, read on the origin thread.
+  base::TimeTicks metrics_end_time_;
+
   // The time when PostDnsOperationAndWait() was called. Written on the worker
   // thread, read by the origin thread.
   base::TimeTicks metrics_pending_dns_start_;
@@ -327,6 +333,21 @@ class ProxyResolverV8Tracing::Job
   uint8 metrics_num_unique_dns_;
   uint8 metrics_num_alerts_;
   uint8 metrics_num_errors_;
+
+  // The time that the latest execution took (time spent inside of
+  // ExecuteProxyResolver(), which includes time spent in bindings too).
+  // Written on the worker thread, read on the origin thread.
+  base::TimeDelta metrics_execution_time_;
+
+  // The cumulative time spent in ExecuteProxyResolver() that was ultimately
+  // discarded work.
+  // Written on the worker thread, read on the origin thread.
+  base::TimeDelta metrics_abandoned_execution_total_time_;
+
+  // The duration that the worker thread was blocked waiting on DNS results from
+  // the origin thread, when operating in nonblocking mode.
+  // Written on the worker thread, read on the origin thread.
+  base::TimeDelta metrics_nonblocking_dns_wait_total_time_;
 };
 
 ProxyResolverV8Tracing::Job::Job(ProxyResolverV8Tracing* parent)
@@ -469,6 +490,8 @@ NetLog* ProxyResolverV8Tracing::Job::net_log() {
 void ProxyResolverV8Tracing::Job::NotifyCaller(int result) {
   CheckIsOnWorkerThread();
 
+  metrics_end_time_ = base::TimeTicks::Now();
+
   origin_loop_->PostTask(
       FROM_HERE,
       base::Bind(&Job::NotifyCallerOnOriginLoop, this, result));
@@ -515,37 +538,21 @@ void ProxyResolverV8Tracing::Job::RecordMetrics() const {
   // expectation is for requests to complete in non-blocking mode each time.
   // If they don't then something strange is happening, and the purpose of the
   // seprate statistics is to better understand that trend.
-  //
-  // The names of the non-blocking histograms and their meanings (the blocking
-  // mode versions additionally contain "BlockingDNSMode" in their name).
-  //
-  // * Net.ProxyResolver.TotalTime:
-  //   The total time that the proxy resolution took. This includes all the time
-  //   spent waiting for DNS, PAC script execution, and restarts.
-  //
-  // * Net.ProxyResolver.TotalTimeDNS:
-  //   The total time that proxy resolution spent waiting for DNS. This also
-  //   includes any queuing delays on the origin thread waiting for the DNS
-  //   result to be processed.
-  //
-  // * Net.ProxyResolver.NumRestarts:
-  //   The number of times that the PAC script execution was restarted.
-  //
-  // * Net.ProxyResolver.UniqueDNS:
-  //   The number of unique DNS hostnames that the PAC script tried to resolve.
-  //   The *Ex() versions of the bindings count separately.
-  //
-  // * Net.ProxyResolver.NumAlerts:
-  //   The number of times that alert() was called in the final execution of the
-  //   script.
-  //
-  // * Net.ProxyResolver.NumErrors:
-  //   The number of errors that were seen in the final execution of the script.
 #define UPDATE_HISTOGRAMS(base_name) \
   do {\
   UMA_HISTOGRAM_MEDIUM_TIMES(base_name "TotalTime", now - metrics_start_time_);\
+  UMA_HISTOGRAM_MEDIUM_TIMES(base_name "TotalTimeWorkerThread",\
+                             metrics_end_time_ - metrics_start_time_);\
+  UMA_HISTOGRAM_TIMES(base_name "OriginThreadLatency",\
+                      now - metrics_end_time_);\
   UMA_HISTOGRAM_MEDIUM_TIMES(base_name "TotalTimeDNS",\
                              metrics_dns_total_time_);\
+  UMA_HISTOGRAM_MEDIUM_TIMES(base_name "ExecutionTime",\
+                             metrics_execution_time_);\
+  UMA_HISTOGRAM_MEDIUM_TIMES(base_name "AbandonedExecutionTotalTime",\
+                             metrics_abandoned_execution_total_time_);\
+  UMA_HISTOGRAM_MEDIUM_TIMES(base_name "DnsWaitTotalTime",\
+                             metrics_nonblocking_dns_wait_total_time_);\
   UMA_HISTOGRAM_CUSTOM_COUNTS(\
       base_name "NumRestarts", metrics_num_executions_ - 1,\
       1, kMaxUniqueResolveDnsPerExec, kMaxUniqueResolveDnsPerExec);\
@@ -608,6 +615,9 @@ void ProxyResolverV8Tracing::Job::ExecuteNonBlocking() {
 
   int result = ExecuteProxyResolver();
 
+  if (abandoned_)
+    metrics_abandoned_execution_total_time_ += metrics_execution_time_;
+
   if (should_restart_with_blocking_dns_) {
     DCHECK(!blocking_dns_);
     DCHECK(abandoned_);
@@ -625,6 +635,8 @@ void ProxyResolverV8Tracing::Job::ExecuteNonBlocking() {
 
 int ProxyResolverV8Tracing::Job::ExecuteProxyResolver() {
   IncrementWithoutOverflow(&metrics_num_executions_);
+
+  base::TimeTicks start = base::TimeTicks::Now();
 
   JSBindings* prev_bindings = v8_resolver()->js_bindings();
   v8_resolver()->set_js_bindings(this);
@@ -650,14 +662,20 @@ int ProxyResolverV8Tracing::Job::ExecuteProxyResolver() {
   }
 
   v8_resolver()->set_js_bindings(prev_bindings);
+
+  metrics_execution_time_ = base::TimeTicks::Now() - start;
+
   return result;
 }
 
 bool ProxyResolverV8Tracing::Job::ResolveDns(const std::string& host,
                                              ResolveDnsOperation op,
-                                             std::string* output) {
-  if (cancelled_.IsSet())
+                                             std::string* output,
+                                             bool* terminate) {
+  if (cancelled_.IsSet()) {
+    *terminate = true;
     return false;
+  }
 
   if ((op == DNS_RESOLVE || op == DNS_RESOLVE_EX) && host.empty()) {
     // a DNS resolve with an empty hostname is considered an error.
@@ -666,7 +684,7 @@ bool ProxyResolverV8Tracing::Job::ResolveDns(const std::string& host,
 
   return blocking_dns_ ?
       ResolveDnsBlocking(host, op, output) :
-      ResolveDnsNonBlocking(host, op, output);
+      ResolveDnsNonBlocking(host, op, output, terminate);
 }
 
 void ProxyResolverV8Tracing::Job::Alert(const string16& message) {
@@ -709,7 +727,8 @@ bool ProxyResolverV8Tracing::Job::ResolveDnsBlocking(const std::string& host,
 
 bool ProxyResolverV8Tracing::Job::ResolveDnsNonBlocking(const std::string& host,
                                                         ResolveDnsOperation op,
-                                                        std::string* output) {
+                                                        std::string* output,
+                                                        bool* terminate) {
   CheckIsOnWorkerThread();
 
   if (abandoned_) {
@@ -733,6 +752,7 @@ bool ProxyResolverV8Tracing::Job::ResolveDnsNonBlocking(const std::string& host,
   if (num_dns_ <= last_num_dns_) {
     // The sequence of DNS operations is different from last time!
     ScheduleRestartWithBlockingDns();
+    *terminate = true;
     return false;
   }
 
@@ -756,6 +776,7 @@ bool ProxyResolverV8Tracing::Job::ResolveDnsNonBlocking(const std::string& host,
   // been started. Abandon this invocation of FindProxyForURL(), it will be
   // restarted once the DNS request completes.
   abandoned_ = true;
+  *terminate = true;
   last_num_dns_ = num_dns_;
   return false;
 }
@@ -763,6 +784,8 @@ bool ProxyResolverV8Tracing::Job::ResolveDnsNonBlocking(const std::string& host,
 bool ProxyResolverV8Tracing::Job::PostDnsOperationAndWait(
     const std::string& host, ResolveDnsOperation op,
     bool* completed_synchronously) {
+
+  base::TimeTicks start = base::TimeTicks::Now();
 
   // Post the DNS request to the origin thread.
   DCHECK(!pending_dns_);
@@ -779,6 +802,9 @@ bool ProxyResolverV8Tracing::Job::PostDnsOperationAndWait(
 
   if (completed_synchronously)
     *completed_synchronously = pending_dns_completed_synchronously_;
+
+  if (!blocking_dns_)
+    metrics_nonblocking_dns_wait_total_time_ += base::TimeTicks::Now() - start;
 
   return true;
 }
@@ -927,7 +953,7 @@ HostResolver::RequestInfo ProxyResolverV8Tracing::Job::MakeDnsRequestInfo(
 
 std::string ProxyResolverV8Tracing::Job::MakeDnsCacheKey(
     const std::string& host, ResolveDnsOperation op) {
-  return StringPrintf("%d:%s", op, host.c_str());
+  return base::StringPrintf("%d:%s", op, host.c_str());
 }
 
 void ProxyResolverV8Tracing::Job::HandleAlertOrError(bool is_alert,
@@ -1053,10 +1079,11 @@ ProxyResolverV8Tracing::~ProxyResolverV8Tracing() {
   CHECK(!set_pac_script_job_);
   CHECK_EQ(0, num_outstanding_callbacks_);
 
-  // Join the worker thread.
-  // See http://crbug.com/69710.
+  // Join the worker thread. See http://crbug.com/69710. Note that we call
+  // Stop() here instead of simply clearing thread_ since there may be pending
+  // callbacks on the worker thread which want to dereference thread_.
   base::ThreadRestrictions::ScopedAllowIO allow_io;
-  thread_.reset();
+  thread_->Stop();
 }
 
 int ProxyResolverV8Tracing::GetProxyForURL(const GURL& url,

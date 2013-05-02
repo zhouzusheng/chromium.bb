@@ -43,7 +43,7 @@
 
 namespace WebCore {
 
-v8::Handle<v8::Value> V8Clipboard::typesAccessorGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
+v8::Handle<v8::Value> V8Clipboard::typesAttrGetterCustom(v8::Local<v8::String> name, const v8::AccessorInfo& info)
 {
     Clipboard* clipboard = V8Clipboard::toNative(info.Holder());
 
@@ -60,7 +60,7 @@ v8::Handle<v8::Value> V8Clipboard::typesAccessorGetter(v8::Local<v8::String> nam
     return result;
 }
 
-v8::Handle<v8::Value> V8Clipboard::clearDataCallback(const v8::Arguments& args)
+v8::Handle<v8::Value> V8Clipboard::clearDataMethodCustom(const v8::Arguments& args)
 {
     Clipboard* clipboard = V8Clipboard::toNative(args.Holder());
 
@@ -77,7 +77,7 @@ v8::Handle<v8::Value> V8Clipboard::clearDataCallback(const v8::Arguments& args)
     return v8::Undefined();
 }
 
-v8::Handle<v8::Value> V8Clipboard::setDragImageCallback(const v8::Arguments& args)
+v8::Handle<v8::Value> V8Clipboard::setDragImageMethodCustom(const v8::Arguments& args)
 {
     Clipboard* clipboard = V8Clipboard::toNative(args.Holder());
 
@@ -91,13 +91,13 @@ v8::Handle<v8::Value> V8Clipboard::setDragImageCallback(const v8::Arguments& arg
     int y = toInt32(args[2]);
 
     Node* node = 0;
-    if (V8Node::HasInstance(args[0], args.GetIsolate()))
+    if (V8Node::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate())))
         node = V8Node::toNative(v8::Handle<v8::Object>::Cast(args[0]));
 
     if (!node || !node->isElementNode())
         return throwTypeError("setDragImageFromElement: Invalid first argument", args.GetIsolate());
 
-    if (static_cast<Element*>(node)->hasLocalName(HTMLNames::imgTag) && !node->inDocument())
+    if (toElement(node)->hasTagName(HTMLNames::imgTag) && !node->inDocument())
         clipboard->setDragImage(static_cast<HTMLImageElement*>(node)->cachedImage(), IntPoint(x, y));
     else
         clipboard->setDragImageElement(node, IntPoint(x, y));

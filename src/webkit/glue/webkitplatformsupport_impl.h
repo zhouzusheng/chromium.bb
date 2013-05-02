@@ -6,10 +6,11 @@
 #define WEBKIT_PLATFORM_SUPPORT_IMPL_H_
 
 #include "base/compiler_specific.h"
+#include "base/debug/trace_event.h"
 #include "base/platform_file.h"
 #include "base/threading/thread_local_storage.h"
 #include "base/timer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebKitPlatformSupport.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
 #include "ui/base/layout.h"
 #include "webkit/glue/resource_loader_bridge.h"
 #include "webkit/glue/webkit_glue_export.h"
@@ -42,7 +43,7 @@ class WebSocketStreamHandleDelegate;
 class WebSocketStreamHandleBridge;
 
 class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
-    NON_EXPORTED_BASE(public WebKit::WebKitPlatformSupport) {
+    NON_EXPORTED_BASE(public WebKit::Platform) {
  public:
   WebKitPlatformSupportImpl();
   virtual ~WebKitPlatformSupportImpl();
@@ -51,7 +52,7 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
     const std::vector<float>& new_touchpad,
     const std::vector<float>& new_touchscreen);
 
-  // WebKitPlatformSupport methods (partial implementation):
+  // Platform methods (partial implementation):
   virtual WebKit::WebThemeEngine* themeEngine();
 
   virtual base::PlatformFile databaseOpenFile(
@@ -88,6 +89,7 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
     const char* name, int sample, int boundary_value);
   virtual const unsigned char* getTraceCategoryEnabledFlag(
       const char* category_name);
+  virtual long* getTraceSamplingState(const unsigned thread_bucket);
   virtual void addTraceEvent(
       char phase,
       const unsigned char* category_enabled,
@@ -163,6 +165,10 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
       int device_source,
       const WebKit::WebFloatPoint& velocity,
       const WebKit::WebSize& cumulative_scroll) OVERRIDE;
+
+  webkit::WebCompositorSupportImpl* compositor_support_impl() const {
+    return compositor_support_.get();
+  }
 
  private:
   void DoTimeout() {

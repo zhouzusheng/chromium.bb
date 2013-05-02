@@ -70,6 +70,7 @@ public:
     LayoutSize stickyPositionLogicalOffset() const { return style()->isHorizontalWritingMode() ? stickyPositionOffset() : stickyPositionOffset().transposedSize(); }
 
     LayoutSize offsetForInFlowPosition() const;
+    LayoutSize paintOffset() const;
 
     // IE extensions. Used to calculate offsetWidth/Height.  Overridden by inlines (RenderFlow)
     // to return the remaining width on a given line (and the height of a single line).
@@ -130,6 +131,9 @@ public:
     LayoutUnit borderLogicalLeft() const { return style()->isHorizontalWritingMode() ? borderLeft() : borderTop(); }
     LayoutUnit borderLogicalRight() const { return style()->isHorizontalWritingMode() ? borderRight() : borderBottom(); }
 
+    LayoutUnit paddingLogicalLeft() const { return style()->isHorizontalWritingMode() ? paddingLeft() : paddingTop(); }
+    LayoutUnit paddingLogicalRight() const { return style()->isHorizontalWritingMode() ? paddingRight() : paddingBottom(); }
+    
     virtual LayoutUnit marginTop() const = 0;
     virtual LayoutUnit marginBottom() const = 0;
     virtual LayoutUnit marginLeft() const = 0;
@@ -140,6 +144,8 @@ public:
     virtual LayoutUnit marginEnd(const RenderStyle* otherStyle = 0) const = 0;
     LayoutUnit marginHeight() const { return marginTop() + marginBottom(); }
     LayoutUnit marginWidth() const { return marginLeft() + marginRight(); }
+    LayoutUnit marginLogicalHeight() const { return marginBefore() + marginAfter(); }
+    LayoutUnit marginLogicalWidth() const { return marginStart() + marginEnd(); }
 
     bool hasInlineDirectionBordersPaddingOrMargin() const { return hasInlineDirectionBordersOrPadding() || marginStart()|| marginEnd(); }
     bool hasInlineDirectionBordersOrPadding() const { return borderStart() || borderEnd() || paddingStart()|| paddingEnd(); }
@@ -164,6 +170,8 @@ public:
     void highQualityRepaintTimerFired(Timer<RenderBoxModelObject>*);
 
     virtual void setSelectionState(SelectionState s);
+
+    bool canHaveBoxInfoInRegion() const { return !isFloating() && !isReplaced() && !isInline() && !hasColumns() && !isTableCell() && isBlockFlow(); }
 
 #if USE(ACCELERATED_COMPOSITING)
     void contentChanged(ContentChangeType);
@@ -247,6 +255,8 @@ protected:
     static bool shouldAntialiasLines(GraphicsContext*);
 
     static void clipRoundedInnerRect(GraphicsContext*, const LayoutRect&, const RoundedRect& clipRect);
+
+    bool hasAutoHeightOrContainingBlockWithAutoHeight() const;
 
 public:
     // For RenderBlocks and RenderInlines with m_style->styleType() == FIRST_LETTER, this tracks their remaining text fragments

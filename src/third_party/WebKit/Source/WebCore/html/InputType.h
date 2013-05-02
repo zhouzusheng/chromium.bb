@@ -204,7 +204,7 @@ public:
     virtual bool isKeyboardFocusable(KeyboardEvent*) const;
     virtual bool isMouseFocusable() const;
     virtual bool shouldUseInputMethod() const;
-    virtual void handleFocusEvent(FocusDirection);
+    virtual void handleFocusEvent(Node* oldFocusedNode, FocusDirection);
     virtual void handleBlurEvent();
     virtual void accessKeyAction(bool sendMouseEvents);
     virtual bool canBeSuccessfulSubmitButton();
@@ -214,7 +214,6 @@ public:
 #endif
 
     virtual void blur();
-    virtual bool willCancelFocus(bool restorePreviousSelection, FocusDirection);
 
     // Shadow tree handling
 
@@ -272,14 +271,18 @@ public:
     virtual bool supportsReadOnly() const;
     virtual void updateInnerTextValue();
     virtual void updatePlaceholderText();
+    virtual void attributeChanged();
     virtual void multipleAttributeChanged();
     virtual void disabledAttributeChanged();
     virtual void readonlyAttributeChanged();
+    virtual void requiredAttributeChanged();
+    virtual void valueAttributeChanged();
     virtual String defaultToolTip() const;
 #if ENABLE(DATALIST_ELEMENT)
     virtual void listAttributeTargetChanged();
     virtual Decimal findClosestTickMarkValue(const Decimal&);
 #endif
+    virtual void updateClearButtonVisibility();
 
     // Parses the specified string for the type, and return
     // the Decimal value for the parsing result if the parsing

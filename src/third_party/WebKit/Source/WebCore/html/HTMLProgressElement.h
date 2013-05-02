@@ -56,8 +56,6 @@ private:
 
     virtual bool supportLabels() const OVERRIDE { return true; }
 
-    virtual bool supportsFocus() const;
-
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
     RenderProgress* renderProgress() const;
@@ -80,7 +78,7 @@ inline bool isHTMLProgressElement(Node* node)
 
 inline HTMLProgressElement* toHTMLProgressElement(Node* node)
 {
-    ASSERT(!node || isHTMLProgressElement(node));
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLProgressElement(node));
     return static_cast<HTMLProgressElement*>(node);
 }
 

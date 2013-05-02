@@ -9,6 +9,13 @@
     # something reasonably current; the "77.34.5" is a hint that this isn't a
     # standard Chrome.
     'content_shell_version': '19.77.34.5',
+    'conditions': [
+      ['OS=="linux"', {
+       'use_custom_freetype%': 1,
+      }, {
+       'use_custom_freetype%': 0,
+      }],
+    ],
   },
   'targets': [
     {
@@ -106,14 +113,19 @@
         'shell/shell_messages.h',
         'shell/shell_network_delegate.cc',
         'shell/shell_network_delegate.h',
+        'shell/shell_quota_permission_context.cc',
+        'shell/shell_quota_permission_context.h',
         'shell/shell_render_process_observer.cc',
         'shell/shell_render_process_observer.h',
         'shell/shell_resource_dispatcher_host_delegate.cc',
         'shell/shell_resource_dispatcher_host_delegate.h',
         'shell/shell_switches.cc',
         'shell/shell_switches.h',
+        'shell/shell_test_configuration.cc',
+        'shell/shell_test_configuration.h',
         'shell/shell_url_request_context_getter.cc',
         'shell/shell_url_request_context_getter.h',
+        'shell/shell_web_contents_view_delegate_android.cc',
         'shell/shell_web_contents_view_delegate_creator.h',
         'shell/shell_web_contents_view_delegate_gtk.cc',
         'shell/shell_web_contents_view_delegate_mac.mm',
@@ -147,6 +159,8 @@
               },
             },
           },
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         }],  # OS=="win"
         ['OS=="linux"', {
           'dependencies': [
@@ -189,6 +203,11 @@
             '../chromeos/chromeos.gyp:chromeos',
            ],
         }], # chromeos==1
+        ['use_custom_freetype==1', {
+          'dependencies': [
+             '../third_party/freetype2/freetype2.gyp:freetype2',
+          ],
+        }],
       ],
     },
     {
@@ -548,7 +567,7 @@
             ],
           },
           'variables': {
-            'jni_gen_dir': 'content/shell',
+            'jni_gen_package': 'content/shell',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -569,7 +588,7 @@
             'shell/android/shell_library_loader.h',
           ],
           'conditions': [
-            ['android_build_type==1', {
+            ['android_webview_build==1', {
               'ldflags': [
                 '-lgabi++',  # For rtti
               ],
@@ -583,7 +602,6 @@
             'content_java',
           ],
           'variables': {
-            'package_name': 'content_shell',
             'java_in_dir': '../content/shell/android/java',
             'has_java_resources': 1,
             'R_package': 'org.chromium.content_shell',
@@ -634,7 +652,6 @@
             '../ui/ui.gyp:ui_java',
           ],
           'variables': {
-            'package_name': 'content_shell_apk',
             'apk_name': 'ContentShell',
             'manifest_package_name': 'org.chromium.content_shell_apk',
             'java_in_dir': 'shell/android/shell_apk',

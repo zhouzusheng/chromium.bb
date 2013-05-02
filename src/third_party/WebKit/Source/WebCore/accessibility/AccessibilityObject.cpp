@@ -57,8 +57,8 @@
 #include "TextCheckingHelper.h"
 #include "TextIterator.h"
 #include "UserGestureIndicator.h"
+#include "VisibleUnits.h"
 #include "htmlediting.h"
-#include "visible_units.h"
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/StringBuilder.h>
 #include <wtf/text/WTFString.h>
@@ -90,6 +90,10 @@ AccessibilityObject::~AccessibilityObject()
 
 void AccessibilityObject::detach()
 {
+    // Clear any children and call detachFromParent on them so that
+    // no children are left with dangling pointers to their parent.
+    clearChildren();
+
 #if HAVE(ACCESSIBILITY) && PLATFORM(CHROMIUM)
     m_detached = true;
 #elif HAVE(ACCESSIBILITY)
@@ -395,7 +399,7 @@ static void appendAccessibilityObject(AccessibilityObject* object, Accessibility
         if (!widget || !widget->isFrameView())
             return;
         
-        Document* doc = static_cast<FrameView*>(widget)->frame()->document();
+        Document* doc = toFrameView(widget)->frame()->document();
         if (!doc || !doc->renderer())
             return;
         
@@ -1316,7 +1320,7 @@ bool AccessibilityObject::hasAttribute(const QualifiedName& attribute) const
     if (!elementNode->isElementNode())
         return false;
     
-    Element* element = static_cast<Element*>(elementNode);
+    Element* element = toElement(elementNode);
     return element->fastHasAttribute(attribute);
 }
     
@@ -1329,7 +1333,7 @@ const AtomicString& AccessibilityObject::getAttribute(const QualifiedName& attri
     if (!elementNode->isElementNode())
         return nullAtom;
     
-    Element* element = static_cast<Element*>(elementNode);
+    Element* element = toElement(elementNode);
     return element->fastGetAttribute(attribute);
 }
     
@@ -1580,6 +1584,26 @@ bool AccessibilityObject::supportsRangeValue() const
         || isSlider()
         || isScrollbar()
         || isSpinButton();
+}
+    
+bool AccessibilityObject::supportsARIASetSize() const
+{
+    return hasAttribute(aria_setsizeAttr);
+}
+
+bool AccessibilityObject::supportsARIAPosInSet() const
+{
+    return hasAttribute(aria_posinsetAttr);
+}
+    
+int AccessibilityObject::ariaSetSize() const
+{
+    return getAttribute(aria_setsizeAttr).toInt();
+}
+
+int AccessibilityObject::ariaPosInSet() const
+{
+    return getAttribute(aria_posinsetAttr).toInt();
 }
     
 bool AccessibilityObject::supportsARIAExpanded() const
@@ -1843,6 +1867,35 @@ bool AccessibilityObject::isButton() const
     return role == ButtonRole || role == PopUpButtonRole || role == ToggleButtonRole;
 }
 
+bool AccessibilityObject::accessibilityIsIgnoredByDefault() const
+{
+    return defaultObjectInclusion() == IgnoreObject;
+}
+
+bool AccessibilityObject::ariaIsHidden() const
+{
+    if (equalIgnoringCase(getAttribute(aria_hiddenAttr), "true"))
+        return true;
+    
+    for (AccessibilityObject* object = parentObject(); object; object = object->parentObject()) {
+        if (equalIgnoringCase(object->getAttribute(aria_hiddenAttr), "true"))
+            return true;
+    }
+    
+    return false;
+}
+
+AccessibilityObjectInclusion AccessibilityObject::defaultObjectInclusion() const
+{
+    if (ariaIsHidden())
+        return IgnoreObject;
+    
+    if (isPresentationalChildOfAriaRole())
+        return IgnoreObject;
+    
+    return accessibilityPlatformIncludesObject();
+}
+    
 bool AccessibilityObject::accessibilityIsIgnored() const
 {
     AXComputedObjectAttributeCache* attributeCache = axObjectCache()->computedObjectAttributeCache();

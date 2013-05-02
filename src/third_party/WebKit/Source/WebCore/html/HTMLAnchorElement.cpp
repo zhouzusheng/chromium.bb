@@ -28,6 +28,7 @@
 #include "DNS.h"
 #include "EventNames.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "FrameLoaderTypes.h"
 #include "HTMLImageElement.h"
@@ -37,6 +38,7 @@
 #include "MouseEvent.h"
 #include "PingLoader.h"
 #include "RenderImage.h"
+#include "ResourceRequest.h"
 #include "SecurityOrigin.h"
 #include "SecurityPolicy.h"
 #include "Settings.h"
@@ -243,7 +245,7 @@ void HTMLAnchorElement::accessKeyAction(bool sendMouseEvents)
 
 bool HTMLAnchorElement::isURLAttribute(const Attribute& attribute) const
 {
-    return attribute.name() == hrefAttr || HTMLElement::isURLAttribute(attribute);
+    return attribute.name().localName() == hrefAttr || HTMLElement::isURLAttribute(attribute);
 }
 
 bool HTMLAnchorElement::canStartSelection() const

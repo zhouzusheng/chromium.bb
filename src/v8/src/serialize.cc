@@ -444,15 +444,15 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
       UNCLASSIFIED,
       30,
       "TranscendentalCache::caches()");
-  Add(ExternalReference::handle_scope_next_address().address(),
+  Add(ExternalReference::handle_scope_next_address(isolate).address(),
       UNCLASSIFIED,
       31,
       "HandleScope::next");
-  Add(ExternalReference::handle_scope_limit_address().address(),
+  Add(ExternalReference::handle_scope_limit_address(isolate).address(),
       UNCLASSIFIED,
       32,
       "HandleScope::limit");
-  Add(ExternalReference::handle_scope_level_address().address(),
+  Add(ExternalReference::handle_scope_level_address(isolate).address(),
       UNCLASSIFIED,
       33,
       "HandleScope::level");
@@ -547,9 +547,10 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
 
   // Add a small set of deopt entry addresses to encoder without generating the
   // deopt table code, which isn't possible at deserialization time.
-  HandleScope scope(Isolate::Current());
+  HandleScope scope(isolate);
   for (int entry = 0; entry < kDeoptTableSerializeEntryCount; ++entry) {
     Address address = Deoptimizer::GetDeoptimizationEntry(
+        isolate,
         entry,
         Deoptimizer::LAZY,
         Deoptimizer::CALCULATE_ENTRY_ADDRESS);

@@ -87,8 +87,6 @@ public:
 
     virtual ~TextTrackCue();
 
-    static const AtomicString& allNodesShadowPseudoId();
-
     TextTrack* track() const;
     void setTrack(TextTrack*);
 
@@ -140,8 +138,9 @@ public:
     bool isActive();
     void setIsActive(bool);
 
+    bool hasDisplayTree() const { return m_displayTree; }
     PassRefPtr<TextTrackCueBox> getDisplayTree(const IntSize& videoSize);
-    PassRefPtr<HTMLDivElement> element() const { return m_allDocumentNodes; }
+    PassRefPtr<HTMLDivElement> element() const { return m_cueBackgroundBox; }
 
     void updateDisplayTree(float);
     void removeDisplayTree();
@@ -153,7 +152,9 @@ public:
     virtual ScriptExecutionContext* scriptExecutionContext() const;
 
     std::pair<double, double> getCSSPosition() const;
+
     int getCSSSize() const;
+    int getCSSWritingDirection() const;
     int getCSSWritingMode() const;
 
     enum WritingDirection {
@@ -170,6 +171,8 @@ public:
         End
     };
     CueAlignment getAlignment() const { return m_cueAlignment; }
+
+    virtual void videoSizeDidChange(const IntSize&) { }
 
     virtual bool operator==(const TextTrackCue&) const;
     virtual bool operator!=(const TextTrackCue& cue) const
@@ -195,7 +198,7 @@ protected:
 
     TextTrackCue(ScriptExecutionContext*, double start, double end, const String& content);
 
-    Document* ownerDocument() { return static_cast<Document*>(m_scriptExecutionContext); }
+    Document* ownerDocument() { return toDocument(m_scriptExecutionContext); }
 
     virtual PassRefPtr<TextTrackCueBox> createDisplayTree();
     PassRefPtr<TextTrackCueBox> displayTreeInternal();
@@ -204,6 +207,7 @@ private:
     std::pair<double, double> getPositionCoordinates() const;
     void parseSettings(const String&);
 
+    void determineTextDirection();
     void calculateDisplayParameters();
 
     void cueWillChange();
@@ -240,7 +244,7 @@ private:
     bool m_pauseOnExit;
     bool m_snapToLines;
 
-    RefPtr<HTMLDivElement> m_allDocumentNodes;
+    RefPtr<HTMLDivElement> m_cueBackgroundBox;
 
     bool m_displayTreeShouldChange;
     RefPtr<TextTrackCueBox> m_displayTree;

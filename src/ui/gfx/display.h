@@ -18,6 +18,14 @@ namespace gfx {
 // system, not in backing pixels.
 class UI_EXPORT Display {
  public:
+  // Screen Rotation in clock-wise degrees.
+  enum Rotation {
+    ROTATE_0 = 0,
+    ROTATE_90,
+    ROTATE_180,
+    ROTATE_270,
+  };
+
   // Creates a display with kInvalidDisplayID as default.
   Display();
   explicit Display(int64 id);
@@ -63,6 +71,9 @@ class UI_EXPORT Display {
   float device_scale_factor() const { return device_scale_factor_; }
   void set_device_scale_factor(float scale) { device_scale_factor_ = scale; }
 
+  Rotation rotation() const { return rotation_; }
+  void set_rotation(Rotation rotation) { rotation_ = rotation; }
+
   // Utility functions that just return the size of display and
   // work area.
   const Size& size() const { return bounds_.size(); }
@@ -88,18 +99,18 @@ class UI_EXPORT Display {
   // Returns the display's size in pixel coordinates.
   gfx::Size GetSizeInPixel() const;
 
-#if defined(USE_AURA)
-  // TODO(oshima|skuhne): Eliminate the use of bounds_in_pixel in events_x.cc
-  // and remove bounds_in_pixel from gfx::Display.
-  // Returns the display's bounds in pixel coordinates.
-  const Rect& bounds_in_pixel() const { return bounds_in_pixel_; }
-#endif
-
   // Returns a string representation of the display;
   std::string ToString() const;
 
   // True if the display contains valid display id.
   bool is_valid() const { return id_ != kInvalidDisplayID; }
+
+  // True if the display corresponds to internal panel.
+  bool IsInternal() const;
+
+  // Gets/Sets an id of display corresponding to internal panel.
+  static int64 InternalDisplayId();
+  static void SetInternalDisplayId(int64 internal_display_id);
 
   static const int64 kInvalidDisplayID;
 
@@ -107,10 +118,8 @@ class UI_EXPORT Display {
   int64 id_;
   Rect bounds_;
   Rect work_area_;
-#if defined(USE_AURA)
-  Rect bounds_in_pixel_;
-#endif
   float device_scale_factor_;
+  Rotation rotation_;
 };
 
 }  // namespace gfx

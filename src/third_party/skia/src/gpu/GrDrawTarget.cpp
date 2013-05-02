@@ -9,6 +9,8 @@
 
 
 #include "GrDrawTarget.h"
+#include "GrContext.h"
+#include "GrDrawTargetCaps.h"
 #include "GrRenderTarget.h"
 #include "GrTexture.h"
 #include "GrVertexBuffer.h"
@@ -37,6 +39,9 @@ GrDrawTarget::DrawInfo& GrDrawTarget::DrawInfo::operator =(const DrawInfo& di) {
     } else {
         fDevBounds = NULL;
     }
+
+    fDstCopy = di.fDstCopy;
+
     return *this;
 }
 
@@ -82,7 +87,11 @@ void GrDrawTarget::DrawInfo::adjustStartIndex(int indexOffset) {
 #define DEBUG_INVAL_BUFFER 0xdeadcafe
 #define DEBUG_INVAL_START_IDX -1
 
-GrDrawTarget::GrDrawTarget() : fClip(NULL) {
+GrDrawTarget::GrDrawTarget(GrContext* context)
+    : fClip(NULL)
+    , fContext(context) {
+    GrAssert(NULL != context);
+
     fDrawState = &fDefaultDrawState;
     // We assume that fDrawState always owns a ref to the object it points at.
     fDefaultDrawState.ref();
@@ -388,10 +397,79 @@ bool GrDrawTarget::checkDraw(GrPrimitiveType type, int startVertex,
             }
         }
     }
+
+    GrAssert(drawState.validateVertexAttribs());
 #endif
     if (NULL == drawState.getRenderTarget()) {
         return false;
     }
+    return true;
+}
+
+bool GrDrawTarget::setupDstReadIfNecessary(DrawInfo* info) {
+    if (!this->getDrawState().willEffectReadDst()) {
+        return true;
+    }
+    GrRenderTarget* rt = this->drawState()->getRenderTarget();
+    // If the dst is not a texture then we don't currently have a way of copying the
+    // texture. TODO: make copying RT->Tex (or Surface->Surface) a GrDrawTarget operation that can
+    // be built on top of GL/D3D APIs.
+    if (NULL == rt->asTexture()) {
+        GrPrintf("Reading Dst of non-texture render target is not currently supported.\n");
+        return false;
+    }
+
+    const GrClipData* clip = this->getClip();
+    GrIRect copyRect;
+    clip->getConservativeBounds(this->getDrawState().getRenderTarget(), &copyRect);
+    SkIRect drawIBounds;
+    if (info->getDevIBounds(&drawIBounds)) {
+        if (!copyRect.intersect(drawIBounds)) {
+#if GR_DEBUG
+            GrPrintf("Missed an early reject. Bailing on draw from setupDstReadIfNecessary.\n");
+#endif
+            return false;
+        }
+    } else {
+#if GR_DEBUG
+        //GrPrintf("No dev bounds when dst copy is made.\n");
+#endif
+    }
+    
+    GrDrawTarget::AutoGeometryAndStatePush agasp(this, kReset_ASRInit);
+
+    // The draw will resolve dst if it has MSAA. Two things to consider in the future:
+    // 1) to make the dst values be pre-resolve we'd need to be able to copy to MSAA
+    // texture and sample it correctly in the shader. 2) If 1 isn't available then we
+    // should just resolve and use the resolved texture directly rather than making a
+    // copy of it.
+    GrTextureDesc desc;
+    desc.fFlags = kRenderTarget_GrTextureFlagBit | kNoStencil_GrTextureFlagBit;
+    desc.fWidth = copyRect.width();
+    desc.fHeight = copyRect.height();
+    desc.fSampleCnt = 0;
+    desc.fConfig = rt->config();
+
+    GrAutoScratchTexture ast(fContext, desc, GrContext::kApprox_ScratchTexMatch);
+
+    if (NULL == ast.texture()) {
+        GrPrintf("Failed to create temporary copy of destination texture.\n");
+        return false;
+    }
+    this->drawState()->disableState(GrDrawState::kClip_StateBit);
+    this->drawState()->setRenderTarget(ast.texture()->asRenderTarget());
+    static const int kTextureStage = 0;
+    SkMatrix matrix;
+    matrix.setIDiv(rt->width(), rt->height());
+    this->drawState()->createTextureEffect(kTextureStage, rt->asTexture(), matrix);
+    
+    SkRect srcRect = SkRect::MakeFromIRect(copyRect);
+    SkRect dstRect = SkRect::MakeWH(SkIntToScalar(copyRect.width()),
+                                    SkIntToScalar(copyRect.height()));
+    this->drawRect(dstRect, NULL, &srcRect, NULL);
+    
+    info->fDstCopy.setTexture(ast.texture());
+    info->fDstCopy.setOffset(copyRect.fLeft, copyRect.fTop);
     return true;
 }
 
@@ -416,6 +494,10 @@ void GrDrawTarget::drawIndexed(GrPrimitiveType type,
         if (NULL != devBounds) {
             info.setDevBounds(*devBounds);
         }
+        // TODO: We should continue with incorrect blending.
+        if (!this->setupDstReadIfNecessary(&info)) {
+            return;
+        }
         this->onDraw(info);
     }
 }
@@ -439,6 +521,10 @@ void GrDrawTarget::drawNonIndexed(GrPrimitiveType type,
         if (NULL != devBounds) {
             info.setDevBounds(*devBounds);
         }
+        // TODO: We should continue with incorrect blending.
+        if (!this->setupDstReadIfNecessary(&info)) {
+            return;
+        }
         this->onDraw(info);
     }
 }
@@ -446,7 +532,7 @@ void GrDrawTarget::drawNonIndexed(GrPrimitiveType type,
 void GrDrawTarget::stencilPath(const GrPath* path, const SkStrokeRec& stroke, SkPath::FillType fill) {
     // TODO: extract portions of checkDraw that are relevant to path stenciling.
     GrAssert(NULL != path);
-    GrAssert(fCaps.pathStencilingSupport());
+    GrAssert(this->caps()->pathStencilingSupport());
     GrAssert(!stroke.isHairlineStyle());
     GrAssert(!SkPath::IsInverseFillType(fill));
     this->onStencilPath(path, stroke, fill);
@@ -454,168 +540,24 @@ void GrDrawTarget::stencilPath(const GrPath* path, const SkStrokeRec& stroke, Sk
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Some blend modes allow folding a partial coverage value into the color's
-// alpha channel, while others will blend incorrectly.
-bool GrDrawTarget::canTweakAlphaForCoverage() const {
-    /**
-     * The fractional coverage is f
-     * The src and dst coeffs are Cs and Cd
-     * The dst and src colors are S and D
-     * We want the blend to compute: f*Cs*S + (f*Cd + (1-f))D
-     * By tweaking the source color's alpha we're replacing S with S'=fS. It's
-     * obvious that that first term will always be ok. The second term can be
-     * rearranged as [1-(1-Cd)f]D. By substituting in the various possibilities
-     * for Cd we find that only 1, ISA, and ISC produce the correct depth
-     * coefficient in terms of S' and D.
-     */
-    GrBlendCoeff dstCoeff = this->getDrawState().getDstBlendCoeff();
-    return kOne_GrBlendCoeff == dstCoeff ||
-           kISA_GrBlendCoeff == dstCoeff ||
-           kISC_GrBlendCoeff == dstCoeff ||
-           this->getDrawState().isCoverageDrawing();
-}
-
-namespace {
-GrVertexLayout default_blend_opts_vertex_layout() {
-    GrVertexLayout layout = 0;
-    return layout;
-}
-}
-
-GrDrawTarget::BlendOptFlags
-GrDrawTarget::getBlendOpts(bool forceCoverage,
-                           GrBlendCoeff* srcCoeff,
-                           GrBlendCoeff* dstCoeff) const {
-
-    const GrDrawState& drawState = this->getDrawState();
-
-    GrVertexLayout layout;
-    if (kNone_GeometrySrcType == this->getGeomSrc().fVertexSrc) {
-        layout = default_blend_opts_vertex_layout();
-    } else {
-        layout = drawState.getVertexLayout();
-    }
-
-    GrBlendCoeff bogusSrcCoeff, bogusDstCoeff;
-    if (NULL == srcCoeff) {
-        srcCoeff = &bogusSrcCoeff;
-    }
-    *srcCoeff = drawState.getSrcBlendCoeff();
-
-    if (NULL == dstCoeff) {
-        dstCoeff = &bogusDstCoeff;
-    }
-    *dstCoeff = drawState.getDstBlendCoeff();
-
-    if (drawState.isColorWriteDisabled()) {
-        *srcCoeff = kZero_GrBlendCoeff;
-        *dstCoeff = kOne_GrBlendCoeff;
-    }
-
-    bool srcAIsOne = drawState.srcAlphaWillBeOne(layout);
-    bool dstCoeffIsOne = kOne_GrBlendCoeff == *dstCoeff ||
-                         (kSA_GrBlendCoeff == *dstCoeff && srcAIsOne);
-    bool dstCoeffIsZero = kZero_GrBlendCoeff == *dstCoeff ||
-                         (kISA_GrBlendCoeff == *dstCoeff && srcAIsOne);
-
-    bool covIsZero = !drawState.isCoverageDrawing() &&
-                     !(layout & GrDrawState::kCoverage_VertexLayoutBit) &&
-                     0 == drawState.getCoverage();
-    // When coeffs are (0,1) there is no reason to draw at all, unless
-    // stenciling is enabled. Having color writes disabled is effectively
-    // (0,1). The same applies when coverage is known to be 0.
-    if ((kZero_GrBlendCoeff == *srcCoeff && dstCoeffIsOne) || covIsZero) {
-        if (drawState.getStencil().doesWrite()) {
-            return kDisableBlend_BlendOptFlag |
-                   kEmitTransBlack_BlendOptFlag;
-        } else {
-            return kSkipDraw_BlendOptFlag;
-        }
-    }
-
-    // check for coverage due to constant coverage, per-vertex coverage,
-    // edge aa or coverage stage
-    bool hasCoverage = forceCoverage ||
-                       0xffffffff != drawState.getCoverage() ||
-                       (layout & GrDrawState::kCoverage_VertexLayoutBit) ||
-                       (layout & GrDrawState::kEdge_VertexLayoutBit);
-    for (int s = drawState.getFirstCoverageStage();
-         !hasCoverage && s < GrDrawState::kNumStages;
-         ++s) {
-        if (drawState.isStageEnabled(s)) {
-            hasCoverage = true;
-        }
-    }
-
-    // if we don't have coverage we can check whether the dst
-    // has to read at all. If not, we'll disable blending.
-    if (!hasCoverage) {
-        if (dstCoeffIsZero) {
-            if (kOne_GrBlendCoeff == *srcCoeff) {
-                // if there is no coverage and coeffs are (1,0) then we
-                // won't need to read the dst at all, it gets replaced by src
-                return kDisableBlend_BlendOptFlag;
-            } else if (kZero_GrBlendCoeff == *srcCoeff) {
-                // if the op is "clear" then we don't need to emit a color
-                // or blend, just write transparent black into the dst.
-                *srcCoeff = kOne_GrBlendCoeff;
-                *dstCoeff = kZero_GrBlendCoeff;
-                return kDisableBlend_BlendOptFlag | kEmitTransBlack_BlendOptFlag;
-            }
-        }
-    } else if (drawState.isCoverageDrawing()) {
-        // we have coverage but we aren't distinguishing it from alpha by request.
-        return kCoverageAsAlpha_BlendOptFlag;
-    } else {
-        // check whether coverage can be safely rolled into alpha
-        // of if we can skip color computation and just emit coverage
-        if (this->canTweakAlphaForCoverage()) {
-            return kCoverageAsAlpha_BlendOptFlag;
-        }
-        if (dstCoeffIsZero) {
-            if (kZero_GrBlendCoeff == *srcCoeff) {
-                // the source color is not included in the blend
-                // the dst coeff is effectively zero so blend works out to:
-                // (c)(0)D + (1-c)D = (1-c)D.
-                *dstCoeff = kISA_GrBlendCoeff;
-                return  kEmitCoverage_BlendOptFlag;
-            } else if (srcAIsOne) {
-                // the dst coeff is effectively zero so blend works out to:
-                // cS + (c)(0)D + (1-c)D = cS + (1-c)D.
-                // If Sa is 1 then we can replace Sa with c
-                // and set dst coeff to 1-Sa.
-                *dstCoeff = kISA_GrBlendCoeff;
-                return  kCoverageAsAlpha_BlendOptFlag;
-            }
-        } else if (dstCoeffIsOne) {
-            // the dst coeff is effectively one so blend works out to:
-            // cS + (c)(1)D + (1-c)D = cS + D.
-            *dstCoeff = kOne_GrBlendCoeff;
-            return  kCoverageAsAlpha_BlendOptFlag;
-        }
-    }
-    return kNone_BlendOpt;
-}
-
 bool GrDrawTarget::willUseHWAALines() const {
-    // there is a conflict between using smooth lines and our use of
-    // premultiplied alpha. Smooth lines tweak the incoming alpha value
-    // but not in a premul-alpha way. So we only use them when our alpha
-    // is 0xff and tweaking the color for partial coverage is OK
-    if (!fCaps.hwAALineSupport() ||
+    // There is a conflict between using smooth lines and our use of premultiplied alpha. Smooth
+    // lines tweak the incoming alpha value but not in a premul-alpha way. So we only use them when
+    // our alpha is 0xff and tweaking the color for partial coverage is OK
+    if (!this->caps()->hwAALineSupport() ||
         !this->getDrawState().isHWAntialiasState()) {
         return false;
     }
-    BlendOptFlags opts = this->getBlendOpts();
-    return (kDisableBlend_BlendOptFlag & opts) &&
-           (kCoverageAsAlpha_BlendOptFlag & opts);
+    GrDrawState::BlendOptFlags opts = this->getDrawState().getBlendOpts();
+    return (GrDrawState::kDisableBlend_BlendOptFlag & opts) &&
+           (GrDrawState::kCoverageAsAlpha_BlendOptFlag & opts);
 }
 
 bool GrDrawTarget::canApplyCoverage() const {
     // we can correctly apply coverage if a) we have dual source blending
     // or b) one of our blend optimizations applies.
-    return this->getCaps().dualSourceBlendingSupport() ||
-           kNone_BlendOpt != this->getBlendOpts(true);
+    return this->caps()->dualSourceBlendingSupport() ||
+           GrDrawState::kNone_BlendOpt != this->getDrawState().getBlendOpts(true);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -645,6 +587,10 @@ void GrDrawTarget::drawIndexedInstances(GrPrimitiveType type,
     if (NULL != devBounds) {
         info.setDevBounds(*devBounds);
     }
+    // TODO: We should continue with incorrect blending.
+    if (!this->setupDstReadIfNecessary(&info)) {
+        return;
+    }
 
     while (instanceCount) {
         info.fInstanceCount = GrMin(instanceCount, maxInstancesPerDraw);
@@ -667,55 +613,56 @@ void GrDrawTarget::drawIndexedInstances(GrPrimitiveType type,
 
 void GrDrawTarget::drawRect(const GrRect& rect,
                             const SkMatrix* matrix,
-                            const GrRect* srcRects[],
-                            const SkMatrix* srcMatrices[]) {
-    GrVertexLayout layout = 0;
-    uint32_t explicitCoordMask = 0;
+                            const GrRect* localRect,
+                            const SkMatrix* localMatrix) {
+    GrAttribBindings bindings = 0;
+    // position + (optional) texture coord
+    static const GrVertexAttrib kAttribs[] = {
+        {kVec2f_GrVertexAttribType, 0},
+        {kVec2f_GrVertexAttribType, sizeof(GrPoint)}
+    };
+    int attribCount = 1;
 
-    if (NULL != srcRects) {
-        for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-            int numTC = 0;
-            if (NULL != srcRects[s]) {
-                layout |= GrDrawState::StageTexCoordVertexLayoutBit(s, numTC);
-                explicitCoordMask |= (1 << s);
-                ++numTC;
-            }
-        }
+    if (NULL != localRect) {
+        bindings |= GrDrawState::kLocalCoords_AttribBindingsBit;
+        attribCount = 2;
+        this->drawState()->setAttribIndex(GrDrawState::kLocalCoords_AttribIndex, 1);
     }
 
     GrDrawState::AutoViewMatrixRestore avmr;
     if (NULL != matrix) {
-        avmr.set(this->drawState(), *matrix, explicitCoordMask);
+        avmr.set(this->drawState(), *matrix);
     }
 
-    this->drawState()->setVertexLayout(layout);
+    this->drawState()->setVertexAttribs(kAttribs, attribCount);
+    this->drawState()->setAttribIndex(GrDrawState::kPosition_AttribIndex, 0);
+    this->drawState()->setAttribBindings(bindings);
     AutoReleaseGeometry geo(this, 4, 0);
     if (!geo.succeeded()) {
         GrPrintf("Failed to get space for vertices!\n");
         return;
     }
 
-    int stageOffsets[GrDrawState::kNumStages];
-    int vsize = GrDrawState::VertexSizeAndOffsetsByStage(layout, stageOffsets,  NULL, NULL, NULL);
+    size_t vsize = this->drawState()->getVertexSize();
     geo.positions()->setRectFan(rect.fLeft, rect.fTop, rect.fRight, rect.fBottom, vsize);
-
-    for (int i = 0; i < GrDrawState::kNumStages; ++i) {
-        if (explicitCoordMask & (1 << i)) {
-            GrAssert(0 != stageOffsets[i]);
-            GrPoint* coords = GrTCast<GrPoint*>(GrTCast<intptr_t>(geo.vertices()) +
-                                                stageOffsets[i]);
-            coords->setRectFan(srcRects[i]->fLeft, srcRects[i]->fTop,
-                               srcRects[i]->fRight, srcRects[i]->fBottom,
-                               vsize);
-            if (NULL != srcMatrices && NULL != srcMatrices[i]) {
-                srcMatrices[i]->mapPointsWithStride(coords, vsize, 4);
-            }
-        } else {
-            GrAssert(0 == stageOffsets[i]);
+    if (NULL != localRect) {
+        GrAssert(attribCount == 2);
+        GrPoint* coords = GrTCast<GrPoint*>(GrTCast<intptr_t>(geo.vertices()) +
+                                            kAttribs[1].fOffset);
+        coords->setRectFan(localRect->fLeft, localRect->fTop,
+                           localRect->fRight, localRect->fBottom,
+                           vsize);
+        if (NULL != localMatrix) {
+            localMatrix->mapPointsWithStride(coords, vsize, 4);
         }
     }
+    SkTLazy<SkRect> bounds;
+    if (this->getDrawState().willEffectReadDst()) {
+        bounds.init();
+        this->getDrawState().getViewMatrix().mapRect(bounds.get(), rect);
+    }
 
-    this->drawNonIndexed(kTriangleFan_GrPrimitiveType, 0, 4);
+    this->drawNonIndexed(kTriangleFan_GrPrimitiveType, 0, 4, bounds.getMaybeNull());
 }
 
 void GrDrawTarget::clipWillBeSet(const GrClipData* clipData) {
@@ -819,19 +766,59 @@ GrDrawTarget::AutoClipRestore::AutoClipRestore(GrDrawTarget* target, const SkIRe
     target->setClip(&fReplacementClip);
 }
 
-void GrDrawTarget::Caps::print() const {
+///////////////////////////////////////////////////////////////////////////////
+
+SK_DEFINE_INST_COUNT(GrDrawTargetCaps)
+
+void GrDrawTargetCaps::reset() {
+    f8BitPaletteSupport = false;
+    fNPOTTextureTileSupport = false;
+    fTwoSidedStencilSupport = false;
+    fStencilWrapOpsSupport = false;
+    fHWAALineSupport = false;
+    fShaderDerivativeSupport = false;
+    fGeometryShaderSupport = false;
+    fDualSourceBlendingSupport = false; 
+    fBufferLockSupport = false;
+    fPathStencilingSupport = false;
+
+    fMaxRenderTargetSize = 0;
+    fMaxTextureSize = 0;
+    fMaxSampleCount = 0;
+}
+
+GrDrawTargetCaps& GrDrawTargetCaps::operator=(const GrDrawTargetCaps& other) {
+    f8BitPaletteSupport = other.f8BitPaletteSupport;
+    fNPOTTextureTileSupport = other.fNPOTTextureTileSupport;
+    fTwoSidedStencilSupport = other.fTwoSidedStencilSupport;
+    fStencilWrapOpsSupport = other.fStencilWrapOpsSupport;
+    fHWAALineSupport = other.fHWAALineSupport;
+    fShaderDerivativeSupport = other.fShaderDerivativeSupport;
+    fGeometryShaderSupport = other.fGeometryShaderSupport;
+    fDualSourceBlendingSupport = other.fDualSourceBlendingSupport;
+    fBufferLockSupport = other.fBufferLockSupport;
+    fPathStencilingSupport = other.fPathStencilingSupport;
+
+    fMaxRenderTargetSize = other.fMaxRenderTargetSize;
+    fMaxTextureSize = other.fMaxTextureSize;
+    fMaxSampleCount = other.fMaxSampleCount;
+
+    return *this;
+}
+
+void GrDrawTargetCaps::print() const {
     static const char* gNY[] = {"NO", "YES"};
-    GrPrintf("8 Bit Palette Support       : %s\n", gNY[fInternals.f8BitPaletteSupport]);
-    GrPrintf("NPOT Texture Tile Support   : %s\n", gNY[fInternals.fNPOTTextureTileSupport]);
-    GrPrintf("Two Sided Stencil Support   : %s\n", gNY[fInternals.fTwoSidedStencilSupport]);
-    GrPrintf("Stencil Wrap Ops  Support   : %s\n", gNY[fInternals.fStencilWrapOpsSupport]);
-    GrPrintf("HW AA Lines Support         : %s\n", gNY[fInternals.fHWAALineSupport]);
-    GrPrintf("Shader Derivative Support   : %s\n", gNY[fInternals.fShaderDerivativeSupport]);
-    GrPrintf("Geometry Shader Support     : %s\n", gNY[fInternals.fGeometryShaderSupport]);
-    GrPrintf("FSAA Support                : %s\n", gNY[fInternals.fFSAASupport]);
-    GrPrintf("Dual Source Blending Support: %s\n", gNY[fInternals.fDualSourceBlendingSupport]);
-    GrPrintf("Buffer Lock Support         : %s\n", gNY[fInternals.fBufferLockSupport]);
-    GrPrintf("Path Stenciling Support     : %s\n", gNY[fInternals.fPathStencilingSupport]);
-    GrPrintf("Max Texture Size            : %d\n", fInternals.fMaxTextureSize);
-    GrPrintf("Max Render Target Size      : %d\n", fInternals.fMaxRenderTargetSize);
+    GrPrintf("8 Bit Palette Support       : %s\n", gNY[f8BitPaletteSupport]);
+    GrPrintf("NPOT Texture Tile Support   : %s\n", gNY[fNPOTTextureTileSupport]);
+    GrPrintf("Two Sided Stencil Support   : %s\n", gNY[fTwoSidedStencilSupport]);
+    GrPrintf("Stencil Wrap Ops  Support   : %s\n", gNY[fStencilWrapOpsSupport]);
+    GrPrintf("HW AA Lines Support         : %s\n", gNY[fHWAALineSupport]);
+    GrPrintf("Shader Derivative Support   : %s\n", gNY[fShaderDerivativeSupport]);
+    GrPrintf("Geometry Shader Support     : %s\n", gNY[fGeometryShaderSupport]);
+    GrPrintf("Dual Source Blending Support: %s\n", gNY[fDualSourceBlendingSupport]);
+    GrPrintf("Buffer Lock Support         : %s\n", gNY[fBufferLockSupport]);
+    GrPrintf("Path Stenciling Support     : %s\n", gNY[fPathStencilingSupport]);
+    GrPrintf("Max Texture Size            : %d\n", fMaxTextureSize);
+    GrPrintf("Max Render Target Size      : %d\n", fMaxRenderTargetSize);
+    GrPrintf("Max Sample Count            : %d\n", fMaxSampleCount);
 }

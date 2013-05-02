@@ -46,6 +46,10 @@
 #include "talk/media/base/voiceprocessor.h"
 #include "talk/media/devices/devicemanager.h"
 
+#if defined(GOOGLE_CHROME_BUILD) || defined(CHROMIUM_BUILD)
+#define DISABLE_MEDIA_ENGINE_FACTORY
+#endif
+
 namespace cricket {
 
 class VideoCapturer;
@@ -145,7 +149,11 @@ class MediaEngineInterface {
   virtual bool SetVideoCapture(bool capture) = 0;
 
   virtual const std::vector<AudioCodec>& audio_codecs() = 0;
+  virtual const std::vector<RtpHeaderExtension>&
+      audio_rtp_header_extensions() = 0;
   virtual const std::vector<VideoCodec>& video_codecs() = 0;
+  virtual const std::vector<RtpHeaderExtension>&
+      video_rtp_header_extensions() = 0;
 
   // Logging control
   virtual void SetVoiceLogging(int min_sev, const char* filter) = 0;
@@ -164,15 +172,17 @@ class MediaEngineInterface {
 
   virtual VideoFormat GetStartCaptureFormat() const = 0;
 
-  sigslot::repeater2<VideoCapturer*, CaptureState>
-      SignalVideoCaptureStateChange;
+  virtual sigslot::repeater2<VideoCapturer*, CaptureState>&
+      SignalVideoCaptureStateChange() = 0;
 };
 
 
+#if !defined(DISABLE_MEDIA_ENGINE_FACTORY)
 class MediaEngineFactory {
  public:
   static MediaEngineInterface* Create();
 };
+#endif
 
 // CompositeMediaEngine constructs a MediaEngine from separate
 // voice and video engine classes.
@@ -188,7 +198,7 @@ class CompositeMediaEngine : public MediaEngineInterface {
       voice_.Terminate();
       return false;
     }
-    SignalVideoCaptureStateChange.repeat(video_.SignalCaptureStateChange);
+    SignalVideoCaptureStateChange().repeat(video_.SignalCaptureStateChange);
     return true;
   }
   virtual void Terminate() {
@@ -256,8 +266,14 @@ class CompositeMediaEngine : public MediaEngineInterface {
   virtual const std::vector<AudioCodec>& audio_codecs() {
     return voice_.codecs();
   }
+  virtual const std::vector<RtpHeaderExtension>& audio_rtp_header_extensions() {
+    return voice_.rtp_header_extensions();
+  }
   virtual const std::vector<VideoCodec>& video_codecs() {
     return video_.codecs();
+  }
+  virtual const std::vector<RtpHeaderExtension>& video_rtp_header_extensions() {
+    return video_.rtp_header_extensions();
   }
 
   virtual void SetVoiceLogging(int min_sev, const char* filter) {
@@ -286,10 +302,15 @@ class CompositeMediaEngine : public MediaEngineInterface {
   virtual VideoFormat GetStartCaptureFormat() const {
     return video_.GetStartCaptureFormat();
   }
+  virtual sigslot::repeater2<VideoCapturer*, CaptureState>&
+      SignalVideoCaptureStateChange() {
+    return signal_state_change_;
+  }
 
  protected:
   VOICE voice_;
   VIDEO video_;
+  sigslot::repeater2<VideoCapturer*, CaptureState> signal_state_change_;
 };
 
 // NullVoiceEngine can be used with CompositeMediaEngine in the case where only
@@ -319,6 +340,9 @@ class NullVoiceEngine {
   int GetInputLevel() { return 0; }
   bool SetLocalMonitor(bool enable) { return true; }
   const std::vector<AudioCodec>& codecs() { return codecs_; }
+  const std::vector<RtpHeaderExtension>& rtp_header_extensions() {
+    return rtp_header_extensions_;
+  }
   void SetLogging(int min_sev, const char* filter) {}
   bool RegisterProcessor(uint32 ssrc,
                          VoiceProcessor* voice_processor,
@@ -329,6 +353,7 @@ class NullVoiceEngine {
 
  private:
   std::vector<AudioCodec> codecs_;
+  std::vector<RtpHeaderExtension> rtp_header_extensions_;
 };
 
 // NullVideoEngine can be used with CompositeMediaEngine in the case where only
@@ -350,6 +375,9 @@ class NullVideoEngine {
   bool SetLocalRenderer(VideoRenderer* renderer) { return true; }
   bool SetCapture(bool capture) { return true;  }
   const std::vector<VideoCodec>& codecs() { return codecs_; }
+  const std::vector<RtpHeaderExtension>& rtp_header_extensions() {
+    return rtp_header_extensions_;
+  }
   void SetLogging(int min_sev, const char* filter) {}
   bool RegisterProcessor(VideoProcessor* video_processor) { return true; }
   bool UnregisterProcessor(VideoProcessor* video_processor) { return true; }
@@ -360,6 +388,7 @@ class NullVideoEngine {
   sigslot::signal2<VideoCapturer*, CaptureState> SignalCaptureStateChange;
  private:
   std::vector<VideoCodec> codecs_;
+  std::vector<RtpHeaderExtension> rtp_header_extensions_;
 };
 
 typedef CompositeMediaEngine<NullVoiceEngine, NullVideoEngine> NullMediaEngine;

@@ -68,7 +68,7 @@ static inline bool createMaskAndSwapContextForTextGradient(GraphicsContext*& con
     ASSERT(textRootBlock);
 
     AffineTransform absoluteTransform;
-    SVGRenderingContext::calculateTransformationToOutermostSVGCoordinateSystem(textRootBlock, absoluteTransform);
+    SVGRenderingContext::calculateTransformationToOutermostCoordinateSystem(textRootBlock, absoluteTransform);
 
     FloatRect repaintRect = textRootBlock->repaintRectInLocalCoordinates();
     OwnPtr<ImageBuffer> maskImage;
@@ -95,7 +95,7 @@ static inline AffineTransform clipToTextMask(GraphicsContext* context,
     ASSERT(textRootBlock);
 
     AffineTransform absoluteTransform;
-    SVGRenderingContext::calculateTransformationToOutermostSVGCoordinateSystem(textRootBlock, absoluteTransform);
+    SVGRenderingContext::calculateTransformationToOutermostCoordinateSystem(textRootBlock, absoluteTransform);
 
     targetRect = textRootBlock->repaintRectInLocalCoordinates();
     SVGRenderingContext::clipToImageBuffer(context, absoluteTransform, targetRect, imageBuffer, false);
@@ -127,7 +127,7 @@ bool RenderSVGResourceGradient::applyResource(RenderObject* object, RenderStyle*
         return false;
 
     if (m_shouldCollectGradientAttributes) {
-        gradientElement->updateAnimatedSVGAttribute(anyQName());
+        gradientElement->synchronizeAnimatedSVGAttribute(anyQName());
         if (!collectGradientAttributes(gradientElement))
             return false;
 

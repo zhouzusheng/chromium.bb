@@ -111,7 +111,10 @@
 //       - Foreign
 //       - SharedFunctionInfo
 //       - Struct
+//         - DeclaredAccessorDescriptor
 //         - AccessorInfo
+//           - DeclaredAccessorInfo
+//           - ExecutableAccessorInfo
 //         - AccessorPair
 //         - AccessCheckInfo
 //         - InterceptorInfo
@@ -288,7 +291,9 @@ const int kStubMinorKeyBits = kBitsPerInt - kSmiTagSize - kStubMajorKeyBits;
   V(EXTERNAL_PIXEL_ARRAY_TYPE)                                                 \
   V(FILLER_TYPE)                                                               \
                                                                                \
-  V(ACCESSOR_INFO_TYPE)                                                        \
+  V(DECLARED_ACCESSOR_DESCRIPTOR_TYPE)                                         \
+  V(DECLARED_ACCESSOR_INFO_TYPE)                                               \
+  V(EXECUTABLE_ACCESSOR_INFO_TYPE)                                             \
   V(ACCESSOR_PAIR_TYPE)                                                        \
   V(ACCESS_CHECK_INFO_TYPE)                                                    \
   V(INTERCEPTOR_INFO_TYPE)                                                     \
@@ -441,7 +446,11 @@ const int kStubMinorKeyBits = kBitsPerInt - kSmiTagSize - kStubMajorKeyBits;
 // type tags, elements in this list have to be added to the INSTANCE_TYPE_LIST
 // manually.
 #define STRUCT_LIST_ALL(V)                                                     \
-  V(ACCESSOR_INFO, AccessorInfo, accessor_info)                                \
+  V(DECLARED_ACCESSOR_DESCRIPTOR,                                              \
+    DeclaredAccessorDescriptor,                                                \
+    declared_accessor_descriptor)                                              \
+  V(DECLARED_ACCESSOR_INFO, DeclaredAccessorInfo, declared_accessor_info)      \
+  V(EXECUTABLE_ACCESSOR_INFO, ExecutableAccessorInfo, executable_accessor_info)\
   V(ACCESSOR_PAIR, AccessorPair, accessor_pair)                                \
   V(ACCESS_CHECK_INFO, AccessCheckInfo, access_check_info)                     \
   V(INTERCEPTOR_INFO, InterceptorInfo, interceptor_info)                       \
@@ -598,7 +607,9 @@ enum InstanceType {
   FILLER_TYPE,  // LAST_DATA_TYPE
 
   // Structs.
-  ACCESSOR_INFO_TYPE,
+  DECLARED_ACCESSOR_DESCRIPTOR_TYPE,
+  DECLARED_ACCESSOR_INFO_TYPE,
+  EXECUTABLE_ACCESSOR_INFO_TYPE,
   ACCESSOR_PAIR_TYPE,
   ACCESS_CHECK_INFO_TYPE,
   INTERCEPTOR_INFO_TYPE,
@@ -862,7 +873,7 @@ class MaybeObject BASE_EMBEDDED {
   V(TransitionArray)                           \
   V(DeoptimizationInputData)                   \
   V(DeoptimizationOutputData)                  \
-  V(DependentCodes)                            \
+  V(DependentCode)                            \
   V(TypeFeedbackCells)                         \
   V(FixedArray)                                \
   V(FixedDoubleArray)                          \
@@ -926,6 +937,7 @@ class Object : public MaybeObject {
 
   inline bool IsFixedArrayBase();
   inline bool IsExternal();
+  inline bool IsAccessorInfo();
 
   // Returns true if this object is an instance of the specified
   // function template.
@@ -1007,7 +1019,7 @@ class Object : public MaybeObject {
                                                       uint32_t index);
 
   // Return the object's prototype (might be Heap::null_value()).
-  Object* GetPrototype();
+  Object* GetPrototype(Isolate* isolate);
 
   // Returns the permanent hash code associated with this object depending on
   // the actual object type.  Might return a failure in case no hash was
@@ -3547,10 +3559,17 @@ class ScopeInfo : public FixedArray {
   // must be a symbol (canonicalized).
   int FunctionContextSlotIndex(String* name, VariableMode* mode);
 
+
+  // Copies all the context locals into an object used to materialize a scope.
+  bool CopyContextLocalsToScopeObject(Isolate* isolate,
+                                      Handle<Context> context,
+                                      Handle<JSObject> scope_object);
+
+
   static Handle<ScopeInfo> Create(Scope* scope, Zone* zone);
 
   // Serializes empty scope info.
-  static ScopeInfo* Empty();
+  static ScopeInfo* Empty(Isolate* isolate);
 
 #ifdef DEBUG
   void Print();
@@ -4449,10 +4468,10 @@ class Code: public HeapObject {
 
   static inline Flags ComputeMonomorphicFlags(
       Kind kind,
-      StubType type,
       ExtraICState extra_ic_state = kNoExtraICState,
-      InlineCacheHolderFlag holder = OWN_MAP,
-      int argc = -1);
+      StubType type = NORMAL,
+      int argc = -1,
+      InlineCacheHolderFlag holder = OWN_MAP);
 
   static inline InlineCacheState ExtractICStateFromFlags(Flags flags);
   static inline StubType ExtractTypeFromFlags(Flags flags);
@@ -4683,24 +4702,71 @@ class Code: public HeapObject {
 
 
 // This class describes the layout of dependent codes array of a map. The
-// first element contains the number of codes as a Smi. The subsequent
-// elements contain code objects. The suffix of the array can be filled with the
-// undefined value if the number of codes is less than the length of the array.
-class DependentCodes: public FixedArray {
+// array is partitioned into several groups of dependent codes. Each group
+// contains codes with the same dependency on the map. The array has the
+// following layout for n dependency groups:
+//
+// +----+----+-----+----+---------+----------+-----+---------+-----------+
+// | C1 | C2 | ... | Cn | group 1 |  group 2 | ... | group n | undefined |
+// +----+----+-----+----+---------+----------+-----+---------+-----------+
+//
+// The first n elements are Smis, each of them specifies the number of codes
+// in the corresponding group. The subsequent elements contain grouped code
+// objects. The suffix of the array can be filled with the undefined value if
+// the number of codes is less than the length of the array. The order of the
+// code objects within a group is not preserved.
+//
+// All code indexes used in the class are counted starting from the first
+// code object of the first group. In other words, code index 0 corresponds
+// to array index n = kCodesStartIndex.
+
+class DependentCode: public FixedArray {
  public:
-  inline int number_of_codes();
-  inline void set_number_of_codes(int value);
+  enum DependencyGroup {
+    // Group of code that weakly embed this map and depend on being
+    // deoptimized when the map is garbage collected.
+    kWeaklyEmbeddedGroup,
+    // Group of code that omit run-time prototype checks for prototypes
+    // described by this map. The group is deoptimized whenever an object
+    // described by this map changes shape (and transitions to a new map),
+    // possibly invalidating the assumptions embedded in the code.
+    kPrototypeCheckGroup,
+    kGroupCount = kPrototypeCheckGroup + 1
+  };
+
+  // Array for holding the index of the first code object of each group.
+  // The last element stores the total number of code objects.
+  class GroupStartIndexes {
+   public:
+    explicit GroupStartIndexes(DependentCode* entries);
+    void Recompute(DependentCode* entries);
+    int at(int i) { return start_indexes_[i]; }
+    int number_of_entries() { return start_indexes_[kGroupCount]; }
+   private:
+    int start_indexes_[kGroupCount + 1];
+  };
+
+  bool Contains(DependencyGroup group, Code* code);
+  static Handle<DependentCode> Insert(Handle<DependentCode> entries,
+                                       DependencyGroup group,
+                                       Handle<Code> value);
+  void DeoptimizeDependentCodeGroup(DependentCode::DependencyGroup group);
+
+  // The following low-level accessors should only be used by this class
+  // and the mark compact collector.
+  inline int number_of_entries(DependencyGroup group);
+  inline void set_number_of_entries(DependencyGroup group, int value);
   inline Code* code_at(int i);
   inline void set_code_at(int i, Code* value);
   inline Object** code_slot_at(int i);
   inline void clear_code_at(int i);
-  static Handle<DependentCodes> Append(Handle<DependentCodes> codes,
-                                       Handle<Code> value);
-  static inline DependentCodes* cast(Object* object);
-  bool Contains(Code* code);
+  static inline DependentCode* cast(Object* object);
+
  private:
-  static const int kNumberOfCodesIndex = 0;
-  static const int kCodesIndex = 1;
+  // Make a room at the end of the given group by moving out the first
+  // code objects of the subsequent groups.
+  inline void ExtendGroup(DependencyGroup group);
+  static const int kCodesStartIndex = kGroupCount;
 };
 
 
@@ -4933,8 +4999,8 @@ class Map: public HeapObject {
   // [stub cache]: contains stubs compiled for this map.
   DECL_ACCESSORS(code_cache, Object)
 
-  // [dependent codes]: list of optimized codes that have this map embedded.
-  DECL_ACCESSORS(dependent_codes, DependentCodes)
+  // [dependent code]: list of optimized codes that have this map embedded.
+  DECL_ACCESSORS(dependent_code, DependentCode)
 
   // [back pointer]: points back to the parent map from which a transition
   // leads to this map. The field overlaps with prototype transitions and the
@@ -5151,7 +5217,15 @@ class Map: public HeapObject {
     return instance_type() >= FIRST_JS_OBJECT_TYPE;
   }
 
-  inline void AddDependentCode(Handle<Code> code);
+  // Fires when the layout of an object with a leaf map changes.
+  // This includes adding transitions to the leaf map or changing
+  // the descriptor array.
+  inline void NotifyLeafMapLayoutChange();
+
+  inline bool CanOmitPrototypeChecks();
+
+  inline void AddDependentCode(DependentCode::DependencyGroup group,
+                               Handle<Code> code);
 
   // Dispatched behavior.
   DECLARE_PRINTER(Map)
@@ -5159,6 +5233,7 @@ class Map: public HeapObject {
 
 #ifdef VERIFY_HEAP
   void SharedMapVerify();
+  void VerifyOmittedPrototypeChecks();
 #endif
 
   inline int visitor_id();
@@ -5201,8 +5276,8 @@ class Map: public HeapObject {
   static const int kDescriptorsOffset =
       kTransitionsOrBackPointerOffset + kPointerSize;
   static const int kCodeCacheOffset = kDescriptorsOffset + kPointerSize;
-  static const int kDependentCodesOffset = kCodeCacheOffset + kPointerSize;
-  static const int kBitField3Offset = kDependentCodesOffset + kPointerSize;
+  static const int kDependentCodeOffset = kCodeCacheOffset + kPointerSize;
+  static const int kBitField3Offset = kDependentCodeOffset + kPointerSize;
   static const int kSize = kBitField3Offset + kPointerSize;
 
   // Layout of pointer fields. Heap iteration code relies on them
@@ -7709,6 +7784,9 @@ class ExternalString: public String {
   static const int kResourceDataOffset = kResourceOffset + kPointerSize;
   static const int kSize = kResourceDataOffset + kPointerSize;
 
+  static const int kMaxShortLength =
+      (kShortSize - SeqString::kHeaderSize) / kCharSize;
+
   // Return whether external string is short (data pointer is not cached).
   inline bool is_short();
 
@@ -8324,20 +8402,8 @@ class JSRegExpResult: public JSArray {
 };
 
 
-// An accessor must have a getter, but can have no setter.
-//
-// When setting a property, V8 searches accessors in prototypes.
-// If an accessor was found and it does not have a setter,
-// the request is ignored.
-//
-// If the accessor in the prototype has the READ_ONLY property attribute, then
-// a new value is added to the local object when the property is set.
-// This shadows the accessor in the prototype.
 class AccessorInfo: public Struct {
  public:
-  DECL_ACCESSORS(getter, Object)
-  DECL_ACCESSORS(setter, Object)
-  DECL_ACCESSORS(data, Object)
   DECL_ACCESSORS(name, Object)
   DECL_ACCESSORS(flag, Smi)
   DECL_ACCESSORS(expected_receiver_type, Object)
@@ -8360,13 +8426,10 @@ class AccessorInfo: public Struct {
   static inline AccessorInfo* cast(Object* obj);
 
   // Dispatched behavior.
-  DECLARE_PRINTER(AccessorInfo)
   DECLARE_VERIFIER(AccessorInfo)
 
-  static const int kGetterOffset = HeapObject::kHeaderSize;
-  static const int kSetterOffset = kGetterOffset + kPointerSize;
-  static const int kDataOffset = kSetterOffset + kPointerSize;
-  static const int kNameOffset = kDataOffset + kPointerSize;
+
+  static const int kNameOffset = HeapObject::kHeaderSize;
   static const int kFlagOffset = kNameOffset + kPointerSize;
   static const int kExpectedReceiverTypeOffset = kFlagOffset + kPointerSize;
   static const int kSize = kExpectedReceiverTypeOffset + kPointerSize;
@@ -8379,6 +8442,74 @@ class AccessorInfo: public Struct {
   class AttributesField: public BitField<PropertyAttributes, 3, 3> {};
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(AccessorInfo);
+};
+
+
+class DeclaredAccessorDescriptor: public Struct {
+ public:
+  // TODO(dcarney): Fill out this class.
+  DECL_ACCESSORS(internal_field, Smi)
+
+  static inline DeclaredAccessorDescriptor* cast(Object* obj);
+
+  // Dispatched behavior.
+  DECLARE_PRINTER(DeclaredAccessorDescriptor)
+  DECLARE_VERIFIER(DeclaredAccessorDescriptor)
+
+  static const int kInternalFieldOffset = HeapObject::kHeaderSize;
+  static const int kSize = kInternalFieldOffset + kPointerSize;
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(DeclaredAccessorDescriptor);
+};
+
+
+class DeclaredAccessorInfo: public AccessorInfo {
+ public:
+  DECL_ACCESSORS(descriptor, DeclaredAccessorDescriptor)
+
+  static inline DeclaredAccessorInfo* cast(Object* obj);
+
+  // Dispatched behavior.
+  DECLARE_PRINTER(DeclaredAccessorInfo)
+  DECLARE_VERIFIER(DeclaredAccessorInfo)
+
+  static const int kDescriptorOffset = AccessorInfo::kSize;
+  static const int kSize = kDescriptorOffset + kPointerSize;
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(DeclaredAccessorInfo);
+};
+
+
+// An accessor must have a getter, but can have no setter.
+//
+// When setting a property, V8 searches accessors in prototypes.
+// If an accessor was found and it does not have a setter,
+// the request is ignored.
+//
+// If the accessor in the prototype has the READ_ONLY property attribute, then
+// a new value is added to the local object when the property is set.
+// This shadows the accessor in the prototype.
+class ExecutableAccessorInfo: public AccessorInfo {
+ public:
+  DECL_ACCESSORS(getter, Object)
+  DECL_ACCESSORS(setter, Object)
+  DECL_ACCESSORS(data, Object)
+
+  static inline ExecutableAccessorInfo* cast(Object* obj);
+
+  // Dispatched behavior.
+  DECLARE_PRINTER(ExecutableAccessorInfo)
+  DECLARE_VERIFIER(ExecutableAccessorInfo)
+
+  static const int kGetterOffset = AccessorInfo::kSize;
+  static const int kSetterOffset = kGetterOffset + kPointerSize;
+  static const int kDataOffset = kSetterOffset + kPointerSize;
+  static const int kSize = kDataOffset + kPointerSize;
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(ExecutableAccessorInfo);
 };
 
 

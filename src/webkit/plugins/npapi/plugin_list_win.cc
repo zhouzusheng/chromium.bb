@@ -9,19 +9,20 @@
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/memory_mapped_file.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "base/win/pe_image.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
+#include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
 #include "webkit/plugins/npapi/plugin_lib.h"
 #include "webkit/plugins/plugin_switches.h"
-#include "webkit/glue/webkit_glue.h"
 
 namespace {
 
@@ -205,7 +206,7 @@ void GetJavaDirectory(std::set<base::FilePath>* plugin_dirs) {
 }
 
 bool IsValid32BitImage(const base::FilePath& path) {
-  file_util::MemoryMappedFile plugin_image;
+  base::MemoryMappedFile plugin_image;
 
   if (!plugin_image.InitializeAsImageSection(path))
     return false;

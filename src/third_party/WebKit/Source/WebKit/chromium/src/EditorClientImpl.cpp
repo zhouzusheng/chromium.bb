@@ -36,6 +36,8 @@
 #include "HTMLNames.h"
 #include "KeyboardCodes.h"
 #include "KeyboardEvent.h"
+#include "NotImplemented.h"
+#include "Page.h"
 #include "PlatformKeyboardEvent.h"
 #include "RenderObject.h"
 #include "Settings.h"
@@ -92,31 +94,18 @@ void EditorClientImpl::frameWillDetachPage(WebCore::Frame* frame)
 {
 }
 
-bool EditorClientImpl::shouldShowDeleteInterface(HTMLElement* elem)
-{
-    // Normally, we don't care to show WebCore's deletion UI, so we only enable
-    // it if in testing mode and the test specifically requests it by using this
-    // magic class name.
-    return layoutTestMode()
-           && elem->getAttribute(HTMLNames::classAttr) == "needsDeletionUI";
-}
-
 bool EditorClientImpl::smartInsertDeleteEnabled()
 {
-    if (m_webView->client())
-        return m_webView->client()->isSmartInsertDeleteEnabled();
-    return true;
+    if (m_webView->page())
+        return m_webView->page()->settings()->smartInsertDeleteEnabled();
+    return false;
 }
 
 bool EditorClientImpl::isSelectTrailingWhitespaceEnabled()
 {
-    if (m_webView->client())
-        return m_webView->client()->isSelectTrailingWhitespaceEnabled();
-#if OS(WINDOWS)
-    return true;
-#else
+    if (m_webView->page())
+        return m_webView->page()->settings()->selectTrailingWhitespaceEnabled();
     return false;
-#endif
 }
 
 bool EditorClientImpl::shouldSpellcheckByDefault()
@@ -755,7 +744,7 @@ void EditorClientImpl::checkSpellingOfString(const UChar* text, int length,
 void EditorClientImpl::requestCheckingOfString(WTF::PassRefPtr<WebCore::TextCheckingRequest> request)
 {
     if (m_webView->spellCheckClient()) {
-        String text = request->text();
+        String text = request->data().text();
         m_webView->spellCheckClient()->requestCheckingOfText(text, new WebTextCheckingCompletionImpl(request));
     }
 }

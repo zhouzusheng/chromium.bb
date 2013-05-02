@@ -23,6 +23,7 @@ class HostResolver;
 class ClientSocketFactory;
 class QuicClock;
 class QuicClientSession;
+class QuicCryptoClientStreamFactory;
 class QuicRandom;
 class QuicStreamFactory;
 
@@ -62,11 +63,12 @@ class NET_EXPORT_PRIVATE QuicStreamRequest {
 // QuicClientSessions.
 class NET_EXPORT_PRIVATE QuicStreamFactory {
  public:
-  QuicStreamFactory(HostResolver* host_resolver,
-                    ClientSocketFactory* client_socket_factory,
-                    QuicRandom* random_generator,
-                    QuicClock* clock,
-                    bool use_spdy_over_quic);
+  QuicStreamFactory(
+      HostResolver* host_resolver,
+      ClientSocketFactory* client_socket_factory,
+      QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
+      QuicRandom* random_generator,
+      QuicClock* clock);
   virtual ~QuicStreamFactory();
 
   // Creates a new QuicHttpStream to |host_port_proxy_pair| which will be
@@ -120,6 +122,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory {
 
   HostResolver* host_resolver_;
   ClientSocketFactory* client_socket_factory_;
+  QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory_;
   QuicRandom* random_generator_;
   scoped_ptr<QuicClock> clock_;
 
@@ -133,9 +136,6 @@ class NET_EXPORT_PRIVATE QuicStreamFactory {
   JobMap active_jobs_;
   JobRequestsMap job_requests_map_;
   RequestMap active_requests_;
-
-  // True of request should be encoded using SPDY header blocks.
-  bool use_spdy_over_quic_;
 
   base::WeakPtrFactory<QuicStreamFactory> weak_factory_;
 

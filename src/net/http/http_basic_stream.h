@@ -38,6 +38,7 @@ class HttpBasicStream : public HttpStream {
 
   // HttpStream methods:
   virtual int InitializeStream(const HttpRequestInfo* request_info,
+                               RequestPriority priority,
                                const BoundNetLog& net_log,
                                const CompletionCallback& callback) OVERRIDE;
 
@@ -61,8 +62,6 @@ class HttpBasicStream : public HttpStream {
   virtual bool IsResponseBodyComplete() const OVERRIDE;
 
   virtual bool CanFindEndOfResponse() const OVERRIDE;
-
-  virtual bool IsMoreDataBuffered() const OVERRIDE;
 
   virtual bool IsConnectionReused() const OVERRIDE;
 

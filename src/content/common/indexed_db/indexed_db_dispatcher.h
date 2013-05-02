@@ -8,6 +8,7 @@
 #include <map>
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/id_map.h"
 #include "base/nullable_string16.h"
 #include "content/common/content_export.h"
@@ -19,14 +20,15 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBDatabaseCallbacks.h"
 #include "webkit/glue/worker_task_runner.h"
 
+struct IndexedDBDatabaseMetadata;
 struct IndexedDBMsg_CallbacksSuccessCursorContinue_Params;
 struct IndexedDBMsg_CallbacksSuccessCursorPrefetch_Params;
 struct IndexedDBMsg_CallbacksSuccessIDBCursor_Params;
-struct IndexedDBDatabaseMetadata;
+struct IndexedDBMsg_CallbacksUpgradeNeeded_Params;
 
 namespace WebKit {
+class WebData;
 class WebFrame;
-class WebIDBKeyRange;
 }
 
 namespace content {
@@ -35,7 +37,6 @@ class IndexedDBKeyPath;
 class IndexedDBKeyRange;
 class RendererWebIDBCursorImpl;
 class RendererWebIDBDatabaseImpl;
-class SerializedScriptValue;
 
 CONTENT_EXPORT extern const size_t kMaxIDBValueSizeInBytes;
 
@@ -95,13 +96,13 @@ class CONTENT_EXPORT IndexedDBDispatcher
       int32 ipc_cursor_id,
       WebKit::WebExceptionCode* ec);
 
-  void RequestIDBCursorContinue(
+  virtual void RequestIDBCursorContinue(
       const IndexedDBKey& key,
       WebKit::WebIDBCallbacks* callbacks_ptr,
       int32 ipc_cursor_id,
       WebKit::WebExceptionCode* ec);
 
-  void RequestIDBCursorPrefetch(
+  virtual void RequestIDBCursorPrefetch(
       int n,
       WebKit::WebIDBCallbacks* callbacks_ptr,
       int32 ipc_cursor_id,
@@ -116,7 +117,8 @@ class CONTENT_EXPORT IndexedDBDispatcher
       WebKit::WebExceptionCode* ec);
 
   void RequestIDBDatabaseClose(
-      int32 ipc_database_id);
+      int32 ipc_database_id,
+      int32 ipc_database_callbacks_id);
 
   void RequestIDBDatabaseCreateTransaction(
       int32 ipc_database_id,
@@ -138,7 +140,7 @@ class CONTENT_EXPORT IndexedDBDispatcher
       int32 ipc_database_id,
       int64 transaction_id,
       int64 object_store_id,
-      WebKit::WebVector<unsigned char>* value,
+      const WebKit::WebData& value,
       const IndexedDBKey& key,
       WebKit::WebIDBDatabase::PutMode put_mode,
       WebKit::WebIDBCallbacks* callbacks,
@@ -178,7 +180,7 @@ class CONTENT_EXPORT IndexedDBDispatcher
       int64 object_store_id,
       WebKit::WebIDBCallbacks* callbacks);
 
-  void CursorDestroyed(int32 ipc_cursor_id);
+  virtual void CursorDestroyed(int32 ipc_cursor_id);
   void DatabaseDestroyed(int32 ipc_database_id);
 
  private:
@@ -192,17 +194,19 @@ class CONTENT_EXPORT IndexedDBDispatcher
   void init_params(T& params, WebKit::WebIDBCallbacks* callbacks_ptr) {
     scoped_ptr<WebKit::WebIDBCallbacks> callbacks(callbacks_ptr);
     params.ipc_thread_id = CurrentWorkerId();
-    params.ipc_response_id = pending_callbacks_.Add(callbacks.release());
+    params.ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
   }
 
   // IDBCallback message handlers.
   void OnSuccessIDBDatabase(int32 ipc_thread_id,
-                            int32 ipc_response_id,
+                            int32 ipc_callbacks_id,
+                            int32 ipc_database_callbacks_id,
                             int32 ipc_object_id,
                             const IndexedDBDatabaseMetadata& idb_metadata);
   void OnSuccessIndexedDBKey(int32 ipc_thread_id,
-                             int32 ipc_response_id,
+                             int32 ipc_callbacks_id,
                              const IndexedDBKey& key);
+
   void OnSuccessOpenCursor(
       const IndexedDBMsg_CallbacksSuccessIDBCursor_Params& p);
   void OnSuccessCursorContinue(
@@ -210,53 +214,42 @@ class CONTENT_EXPORT IndexedDBDispatcher
   void OnSuccessCursorPrefetch(
       const IndexedDBMsg_CallbacksSuccessCursorPrefetch_Params& p);
   void OnSuccessStringList(int32 ipc_thread_id,
-                           int32 ipc_response_id,
+                           int32 ipc_callbacks_id,
                            const std::vector<string16>& value);
-  void OnSuccessSerializedScriptValue(
+  void OnSuccessValue(
       int32 ipc_thread_id,
-      int32 ipc_response_id,
-      const SerializedScriptValue& value);
-  void OnSuccessSerializedScriptValueWithKey(
+      int32 ipc_callbacks_id,
+      const std::vector<char>& value);
+  void OnSuccessValueWithKey(
       int32 ipc_thread_id,
-      int32 ipc_response_id,
-      const SerializedScriptValue& value,
+      int32 ipc_callbacks_id,
+      const std::vector<char>& value,
       const IndexedDBKey& primary_key,
       const IndexedDBKeyPath& key_path);
   void OnSuccessInteger(
       int32 ipc_thread_id,
-      int32 ipc_response_id,
+      int32 ipc_callbacks_id,
       int64 value);
   void OnSuccessUndefined(
       int32 ipc_thread_id,
-      int32 ipc_response_id);
+      int32 ipc_callbacks_id);
   void OnError(int32 ipc_thread_id,
-               int32 ipc_response_id,
+               int32 ipc_callbacks_id,
                int code,
                const string16& message);
-  void OnIntBlocked(int32 ipc_thread_id, int32 ipc_response_id,
+  void OnIntBlocked(int32 ipc_thread_id,
+                    int32 ipc_callbacks_id,
                     int64 existing_version);
-  void OnUpgradeNeeded(int32 ipc_thread_id,
-                       int32 ipc_response_id,
-                       int32 ipc_database_id,
-                       int64 old_version,
-                       const IndexedDBDatabaseMetadata& metdata);
-  void OnAbortOld(int32 ipc_thread_id,
-                  int32 ipc_transaction_id,
-                  int code,
-                  const string16& message);
+  void OnUpgradeNeeded(const IndexedDBMsg_CallbacksUpgradeNeeded_Params& p);
   void OnAbort(int32 ipc_thread_id,
                int32 ipc_database_id,
                int64 transaction_id,
                int code,
                const string16& message);
-  void OnCompleteOld(int32 ipc_thread_id, int32 ipc_transaction_id);
   void OnComplete(int32 ipc_thread_id,
                   int32 ipc_database_id,
                   int64 transaction_id);
   void OnForcedClose(int32 ipc_thread_id, int32 ipc_database_id);
-  void OnVersionChange(int32 ipc_thread_id,
-                       int32 ipc_database_id,
-                       const string16& newVersion);
   void OnIntVersionChange(int32 ipc_thread_id,
                           int32 ipc_database_id,
                           int64 old_version,

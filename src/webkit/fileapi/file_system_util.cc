@@ -6,7 +6,7 @@
 
 #include "build/build_config.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
@@ -15,7 +15,7 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "webkit/fileapi/file_system_types.h"
+#include "webkit/fileapi/file_system_url.h"
 
 namespace fileapi {
 
@@ -25,8 +25,8 @@ const char kIsolatedDir[] = "/isolated";
 const char kExternalDir[] = "/external";
 const char kTestDir[] = "/test";
 
-const FilePath::CharType VirtualPath::kRoot[] = FILE_PATH_LITERAL("/");
-const FilePath::CharType VirtualPath::kSeparator = FILE_PATH_LITERAL('/');
+const base::FilePath::CharType VirtualPath::kRoot[] = FILE_PATH_LITERAL("/");
+const base::FilePath::CharType VirtualPath::kSeparator = FILE_PATH_LITERAL('/');
 
 // TODO(ericu): Consider removing support for '\', even on Windows, if possible.
 // There's a lot of test code that will need reworking, and we may have trouble
@@ -48,8 +48,45 @@ base::FilePath VirtualPath::BaseName(const base::FilePath& virtual_path) {
   return base::FilePath(path);
 }
 
+base::FilePath VirtualPath::DirName(const base::FilePath& virtual_path) {
+  typedef base::FilePath::StringType StringType;
+  StringType  path = virtual_path.value();
+
+  // The logic below is taken from that of base::FilePath::DirName, except
+  // that this version never cares about '//' or drive-letters even on win32.
+
+  // Strip trailing separators.
+  while (path.size() > 1 && base::FilePath::IsSeparator(path[path.size() - 1]))
+    path.resize(path.size() - 1);
+
+  StringType::size_type last_separator =
+      path.find_last_of(base::FilePath::kSeparators);
+  if (last_separator == StringType::npos) {
+    // path_ is in the current directory.
+    return base::FilePath(base::FilePath::kCurrentDirectory);
+  }
+  if (last_separator == 0) {
+    // path_ is in the root directory.
+    return base::FilePath(path.substr(0, 1));
+  }
+  // path_ is somewhere else, trim the basename.
+  path.resize(last_separator);
+
+  // Strip trailing separators.
+  while (path.size() > 1 && base::FilePath::IsSeparator(path[path.size() - 1]))
+    path.resize(path.size() - 1);
+
+  if (path.empty())
+    return base::FilePath(base::FilePath::kCurrentDirectory);
+
+  return base::FilePath(path);
+}
+
 void VirtualPath::GetComponents(
-    const base::FilePath& path, std::vector<base::FilePath::StringType>* components) {
+    const base::FilePath& path,
+    std::vector<base::FilePath::StringType>* components) {
+  typedef base::FilePath::StringType StringType;
+
   DCHECK(components);
   if (!components)
     return;
@@ -57,36 +94,32 @@ void VirtualPath::GetComponents(
   if (path.value().empty())
     return;
 
-  std::vector<base::FilePath::StringType> ret_val;
-  base::FilePath current = path;
-  base::FilePath base;
-
-  // Due to the way things are implemented, base::FilePath::DirName works here,
-  // whereas base::FilePath::BaseName doesn't.
-  while (current != current.DirName()) {
-    base = BaseName(current);
-    ret_val.push_back(base.value());
-    current = current.DirName();
+  StringType::size_type begin = 0, end = 0;
+  while (begin < path.value().length() && end != StringType::npos) {
+    end = path.value().find_first_of(base::FilePath::kSeparators, begin);
+    StringType component = path.value().substr(
+        begin, end == StringType::npos ? StringType::npos : end - begin);
+    if (!component.empty() && component != base::FilePath::kCurrentDirectory)
+      components->push_back(component);
+    begin = end + 1;
   }
-
-  *components =
-      std::vector<base::FilePath::StringType>(ret_val.rbegin(), ret_val.rend());
 }
 
-FilePath::StringType VirtualPath::GetNormalizedFilePath(const FilePath& path) {
-  FilePath::StringType normalized_path = path.value();
-  const size_t num_separators = FilePath::StringType(
-      FilePath::kSeparators).length();
+base::FilePath::StringType VirtualPath::GetNormalizedFilePath(
+    const base::FilePath& path) {
+  base::FilePath::StringType normalized_path = path.value();
+  const size_t num_separators = base::FilePath::StringType(
+      base::FilePath::kSeparators).length();
   for (size_t i = 1; i < num_separators; ++i) {
     std::replace(normalized_path.begin(), normalized_path.end(),
-                 FilePath::kSeparators[i], kSeparator);
+                 base::FilePath::kSeparators[i], kSeparator);
   }
 
   return (IsAbsolute(normalized_path)) ?
-      normalized_path : FilePath::StringType(kRoot) + normalized_path;
+      normalized_path : base::FilePath::StringType(kRoot) + normalized_path;
 }
 
-bool VirtualPath::IsAbsolute(const FilePath::StringType& path) {
+bool VirtualPath::IsAbsolute(const base::FilePath::StringType& path) {
   return path.find(kRoot) == 0;
 }
 
@@ -206,6 +239,8 @@ std::string GetFileSystemTypeString(FileSystemType type) {
       return "Drive";
     case kFileSystemTypeSyncable:
       return "Syncable";
+    case kFileSystemTypeNativeForPlatformApp:
+      return "NativeForPlatformApp";
     case kFileSystemTypeUnknown:
       return "Unknown";
   }
@@ -258,22 +293,23 @@ WebKit::WebFileError PlatformFileErrorToWebFileError(
 
 bool GetFileSystemPublicType(
     const std::string type_string,
-    WebKit::WebFileSystem::Type* type) {
+    WebKit::WebFileSystemType* type
+) {
   DCHECK(type);
   if (type_string == "Temporary") {
-    *type = WebKit::WebFileSystem::TypeTemporary;
+    *type = WebKit::WebFileSystemTypeTemporary;
     return true;
   }
   if (type_string == "Persistent") {
-    *type = WebKit::WebFileSystem::TypePersistent;
+    *type = WebKit::WebFileSystemTypePersistent;
     return true;
   }
   if (type_string == "Isolated") {
-    *type = WebKit::WebFileSystem::TypeIsolated;
+    *type = WebKit::WebFileSystemTypeIsolated;
     return true;
   }
   if (type_string == "External") {
-    *type = WebKit::WebFileSystem::TypeExternal;
+    *type = WebKit::WebFileSystemTypeExternal;
     return true;
   }
   NOTREACHED();
@@ -331,6 +367,10 @@ std::string GetIsolatedFileSystemRootURIString(
     root.append("/");
   }
   return root;
+}
+
+bool AreSameFileSystem(const FileSystemURL& url1, const FileSystemURL& url2) {
+  return url1.origin() == url2.origin() && url1.type() == url2.type();
 }
 
 }  // namespace fileapi

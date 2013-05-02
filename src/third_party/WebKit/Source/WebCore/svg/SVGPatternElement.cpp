@@ -204,7 +204,7 @@ void SVGPatternElement::collectPatternAttributes(PatternAttributes& attributes) 
         if (!attributes.hasHeight() && current->hasAttribute(SVGNames::heightAttr))
             attributes.setHeight(current->height());
 
-        if (!attributes.hasViewBox() && current->hasAttribute(SVGNames::viewBoxAttr))
+        if (!attributes.hasViewBox() && current->hasAttribute(SVGNames::viewBoxAttr) && current->viewBoxIsValid())
             attributes.setViewBox(current->viewBox());
 
         if (!attributes.hasPreserveAspectRatio() && current->hasAttribute(SVGNames::preserveAspectRatioAttr))
@@ -222,7 +222,7 @@ void SVGPatternElement::collectPatternAttributes(PatternAttributes& attributes) 
             attributes.setPatternTransform(transform);
         }
 
-        if (!attributes.hasPatternContentElement() && current->hasChildNodes())
+        if (!attributes.hasPatternContentElement() && current->childElementCount())
             attributes.setPatternContentElement(current);
 
         processedPatterns.add(current);

@@ -50,6 +50,7 @@ FloatRect SVGRenderSupport::repaintRectForRendererInLocalCoordinatesExcludingSVG
 {
     // FIXME: Add support for RenderSVGBlock.
 
+    // FIXME: This should use a safer cast such as toRenderSVGModelObject().
     if (object->isSVGShape() || object->isSVGImage() || object->isSVGContainer())
         return static_cast<const RenderSVGModelObject*>(object)->repaintRectInLocalCoordinatesExcludingSVGShadow();
 
@@ -253,8 +254,8 @@ void SVGRenderSupport::layoutChildren(RenderObject* start, bool selfNeedsLayout)
 
         if (layoutSizeChanged) {
             // When selfNeedsLayout is false and the layout size changed, we have to check whether this child uses relative lengths
-            if (SVGElement* element = child->node()->isSVGElement() ? static_cast<SVGElement*>(child->node()) : 0) {
-                if (element->isStyled() && static_cast<SVGStyledElement*>(element)->hasRelativeLengths()) {
+            if (SVGElement* element = child->node()->isSVGElement() ? toSVGElement(child->node()) : 0) {
+                if (element->isSVGStyledElement() && toSVGStyledElement(element)->hasRelativeLengths()) {
                     // When the layout size changed and when using relative values tell the RenderSVGShape to update its shape object
                     if (child->isSVGShape())
                         toRenderSVGShape(child)->setNeedsShapeUpdate();
@@ -314,11 +315,12 @@ bool SVGRenderSupport::rendererHasSVGShadow(const RenderObject* object)
 {
     // FIXME: Add support for RenderSVGBlock.
 
+    // FIXME: This should use a safer cast such as toRenderSVGModelObject().
     if (object->isSVGShape() || object->isSVGImage() || object->isSVGContainer())
         return static_cast<const RenderSVGModelObject*>(object)->hasSVGShadow();
 
     if (object->isSVGRoot())
-        return static_cast<const RenderSVGRoot*>(object)->hasSVGShadow();
+        return toRenderSVGRoot(object)->hasSVGShadow();
 
     return false;
 }
@@ -327,6 +329,7 @@ void SVGRenderSupport::setRendererHasSVGShadow(RenderObject* object, bool hasSha
 {
     // FIXME: Add support for RenderSVGBlock.
 
+    // FIXME: This should use a safer cast such as toRenderSVGModelObject().
     if (object->isSVGShape() || object->isSVGImage() || object->isSVGContainer())
         return static_cast<RenderSVGModelObject*>(object)->setHasSVGShadow(hasShadow);
 
@@ -431,7 +434,7 @@ void SVGRenderSupport::applyStrokeStyleToContext(GraphicsContext* context, const
     const SVGRenderStyle* svgStyle = style->svgStyle();
     ASSERT(svgStyle);
 
-    SVGLengthContext lengthContext(static_cast<SVGElement*>(object->node()));
+    SVGLengthContext lengthContext(toSVGElement(object->node()));
     context->setStrokeThickness(svgStyle->strokeWidth().value(lengthContext));
     context->setLineCap(svgStyle->capStyle());
     context->setLineJoin(svgStyle->joinStyle());

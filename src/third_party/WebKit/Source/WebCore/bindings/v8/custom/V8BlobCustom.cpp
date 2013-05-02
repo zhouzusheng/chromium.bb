@@ -51,10 +51,8 @@ v8::Handle<v8::Object> wrap(Blob* impl, v8::Handle<v8::Object> creationContext, 
     return V8Blob::createWrapper(impl, creationContext, isolate);
 }
 
-v8::Handle<v8::Value> V8Blob::constructorCallbackCustom(const v8::Arguments& args)
+v8::Handle<v8::Value> V8Blob::constructorCustom(const v8::Arguments& args)
 {
-    ScriptExecutionContext* context = getScriptExecutionContext();
-
     if (!args.Length()) {
         RefPtr<Blob> blob = Blob::create();
         return toV8(blob.get(), args.Holder(), args.GetIsolate());
@@ -97,17 +95,17 @@ v8::Handle<v8::Value> V8Blob::constructorCallbackCustom(const v8::Arguments& arg
         v8::Local<v8::Value> item = blobParts->Get(v8::Uint32::New(i));
         ASSERT(!item.IsEmpty());
 #if ENABLE(BLOB)
-        if (V8ArrayBuffer::HasInstance(item, args.GetIsolate())) {
+        if (V8ArrayBuffer::HasInstance(item, args.GetIsolate(), worldType(args.GetIsolate()))) {
             ArrayBuffer* arrayBuffer = V8ArrayBuffer::toNative(v8::Handle<v8::Object>::Cast(item));
             ASSERT(arrayBuffer);
-            blobBuilder.append(context, arrayBuffer);
-        } else if (V8ArrayBufferView::HasInstance(item, args.GetIsolate())) {
+            blobBuilder.append(arrayBuffer);
+        } else if (V8ArrayBufferView::HasInstance(item, args.GetIsolate(), worldType(args.GetIsolate()))) {
             ArrayBufferView* arrayBufferView = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(item));
             ASSERT(arrayBufferView);
             blobBuilder.append(arrayBufferView);
         } else
 #endif
-        if (V8Blob::HasInstance(item, args.GetIsolate())) {
+        if (V8Blob::HasInstance(item, args.GetIsolate(), worldType(args.GetIsolate()))) {
             Blob* blob = V8Blob::toNative(v8::Handle<v8::Object>::Cast(item));
             ASSERT(blob);
             blobBuilder.append(blob);

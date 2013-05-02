@@ -166,13 +166,17 @@ void RenderRubyRun::removeChild(RenderObject* child)
             // Ruby run without a base can happen only at the first run.
             RenderRubyRun* rightRun = toRenderRubyRun(rightNeighbour);
             if (rightRun->hasRubyBase()) {
-                RenderRubyBase* rightBase = rightRun->rubyBaseSafe();
-                // Collect all children in a single base, then swap the bases.
-                rightBase->moveChildren(base);
-                moveChildTo(rightRun, base);
-                rightRun->moveChildTo(this, rightBase);
+                RenderRubyBase* rightBase = rightRun->rubyBase();
+                if (!rightBase)
+                    moveChildTo(rightRun, base);
+                else {
+                    // We need to preserve child order, so we have to append the
+                    // rightBase's children to base, and then put them back.
+                    rightBase->moveChildren(base);
+                    base->moveChildren(rightBase);
+                }
                 // The now empty ruby base will be removed below.
-                ASSERT(!rubyBase()->firstChild());
+                ASSERT(!rubyBase() || !rubyBase()->firstChild());
             }
         }
     }
@@ -233,11 +237,13 @@ void RenderRubyRun::layout()
 {
     RenderBlock::layout();
     
-    // Place the RenderRubyText such that its bottom is flush with the lineTop of the first line of the RenderRubyBase.
     RenderRubyText* rt = rubyText();
     if (!rt)
         return;
+
+    rt->setLogicalLeft(0);
     
+    // Place the RenderRubyText such that its bottom is flush with the lineTop of the first line of the RenderRubyBase.
     LayoutUnit lastLineRubyTextBottom = rt->logicalHeight();
     LayoutUnit firstLineRubyTextTop = 0;
     RootInlineBox* rootBox = rt->lastRootBox();
@@ -270,7 +276,6 @@ void RenderRubyRun::layout()
     }
 
     // Update our overflow to account for the new RenderRubyText position.
-    m_overflow.clear();
     computeOverflow(clientLogicalBottom());
 }
 

@@ -10,11 +10,10 @@
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
-#include "ui/base/linux_ui.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/shell_dialogs/base_shell_dialog.h"
 #include "ui/shell_dialogs/shell_dialogs_export.h"
@@ -89,11 +88,11 @@ class SHELL_DIALOGS_EXPORT SelectFileDialog
   // a dependency on chrome's extension system.)
   static void SetFactory(ui::SelectFileDialogFactory* factory);
 
-  // Creates a dialog box helper. The returned object is ref-counted, starts
-  // with a ref-count of 0, and should be stored in a scoped_refptr<>.
-  // |policy| is an optional class that can prevent showing a dialog.
-  static SelectFileDialog* Create(Listener* listener,
-                                  ui::SelectFilePolicy* policy);
+  // Creates a dialog box helper. This is an inexpensive wrapper around the
+  // platform-native file selection dialog. |policy| is an optional class that
+  // can prevent showing a dialog.
+  static scoped_refptr<SelectFileDialog> Create(Listener* listener,
+                                                ui::SelectFilePolicy* policy);
 
   // Holds information about allowed extensions on a file save dialog.
   struct SHELL_DIALOGS_EXPORT FileTypeInfo {
@@ -117,7 +116,7 @@ class SHELL_DIALOGS_EXPORT SelectFileDialog
     bool include_all_files;
 
     // Specifies whether the caller can support files/folders that are on Drive.
-    bool support_gdata;
+    bool support_drive;
   };
 
   // Selects a File.

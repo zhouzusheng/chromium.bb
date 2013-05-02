@@ -29,8 +29,6 @@
 #include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "net/base/ssl_cert_request_info.h"
-#include "net/base/ssl_connection_status_flags.h"
 #include "net/base/upload_data_stream.h"
 #include "net/http/http_auth.h"
 #include "net/http/http_auth_handler.h"
@@ -58,6 +56,8 @@
 #include "net/spdy/spdy_http_stream.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_session_pool.h"
+#include "net/ssl/ssl_cert_request_info.h"
+#include "net/ssl/ssl_connection_status_flags.h"
 
 using base::Time;
 
@@ -112,13 +112,15 @@ Value* NetLogSSLVersionFallbackCallback(const GURL* url,
 
 //-----------------------------------------------------------------------------
 
-HttpNetworkTransaction::HttpNetworkTransaction(HttpNetworkSession* session)
+HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
+                                               HttpNetworkSession* session)
     : pending_auth_target_(HttpAuth::AUTH_NONE),
       ALLOW_THIS_IN_INITIALIZER_LIST(io_callback_(
           base::Bind(&HttpNetworkTransaction::OnIOComplete,
                      base::Unretained(this)))),
       session_(session),
       request_(NULL),
+      priority_(priority),
       headers_valid_(false),
       logged_response_time_(false),
       request_headers_(),
@@ -385,6 +387,26 @@ UploadProgress HttpNetworkTransaction::GetUploadProgress() const {
   return static_cast<HttpStream*>(stream_.get())->GetUploadProgress();
 }
 
+bool HttpNetworkTransaction::GetLoadTimingInfo(
+    LoadTimingInfo* load_timing_info) const {
+  if (!stream_ || !stream_->GetLoadTimingInfo(load_timing_info))
+    return false;
+
+  load_timing_info->proxy_resolve_start =
+      proxy_info_.proxy_resolve_start_time();
+  load_timing_info->proxy_resolve_end = proxy_info_.proxy_resolve_end_time();
+  load_timing_info->send_start = send_start_time_;
+  load_timing_info->send_end = send_end_time_;
+  load_timing_info->receive_headers_end = receive_headers_end_;
+  return true;
+}
+
+void HttpNetworkTransaction::SetPriority(RequestPriority priority) {
+  priority_ = priority;
+  // TODO(akalin): Plumb this through to |stream_request_| and
+  // |stream_|.
+}
+
 void HttpNetworkTransaction::OnStreamReady(const SSLConfig& used_ssl_config,
                                            const ProxyInfo& used_proxy_info,
                                            HttpStreamBase* stream) {
@@ -480,20 +502,6 @@ void HttpNetworkTransaction::OnHttpsProxyTunnelResponse(
   stream_.reset(stream);
   stream_request_.reset();  // we're done with the stream request
   OnIOComplete(ERR_HTTPS_PROXY_TUNNEL_RESPONSE);
-}
-
-bool HttpNetworkTransaction::GetLoadTimingInfo(
-    LoadTimingInfo* load_timing_info) const {
-  if (!stream_ || !stream_->GetLoadTimingInfo(load_timing_info))
-    return false;
-
-  load_timing_info->proxy_resolve_start =
-      proxy_info_.proxy_resolve_start_time();
-  load_timing_info->proxy_resolve_end = proxy_info_.proxy_resolve_end_time();
-  load_timing_info->send_start = send_start_time_;
-  load_timing_info->send_end = send_end_time_;
-  load_timing_info->receive_headers_end = receive_headers_end_;
-  return true;
 }
 
 bool HttpNetworkTransaction::is_https_request() const {
@@ -623,6 +631,7 @@ int HttpNetworkTransaction::DoCreateStream() {
   stream_request_.reset(
       session_->http_stream_factory()->RequestStream(
           *request_,
+          priority_,
           server_ssl_config_,
           proxy_ssl_config_,
           this,
@@ -655,7 +664,7 @@ int HttpNetworkTransaction::DoCreateStreamComplete(int result) {
 int HttpNetworkTransaction::DoInitStream() {
   DCHECK(stream_.get());
   next_state_ = STATE_INIT_STREAM_COMPLETE;
-  return stream_->InitializeStream(request_, net_log_, io_callback_);
+  return stream_->InitializeStream(request_, priority_, net_log_, io_callback_);
 }
 
 int HttpNetworkTransaction::DoInitStreamComplete(int result) {
@@ -1078,7 +1087,7 @@ void HttpNetworkTransaction::LogTransactionConnectedMetrics() {
   // Currently, non-HIGHEST priority requests are frame or sub-frame resource
   // types.  This will change when we also prioritize certain subresources like
   // css, js, etc.
-  if (request_->priority != HIGHEST) {
+  if (priority_ != HIGHEST) {
     UMA_HISTOGRAM_CUSTOM_TIMES(
         "Net.Priority_High_Latency_b",
         total_duration,

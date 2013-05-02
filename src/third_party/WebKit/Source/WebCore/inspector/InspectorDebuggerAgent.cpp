@@ -32,6 +32,7 @@
 #if ENABLE(JAVASCRIPT_DEBUGGER) && ENABLE(INSPECTOR)
 #include "InspectorDebuggerAgent.h"
 
+#include "CachedResource.h"
 #include "ContentSearchUtils.h"
 #include "InjectedScript.h"
 #include "InjectedScriptManager.h"
@@ -465,7 +466,8 @@ void InspectorDebuggerAgent::stepInto(ErrorString* errorString)
         return;
     m_injectedScriptManager->releaseObjectGroup(InspectorDebuggerAgent::backtraceObjectGroup);
     scriptDebugServer().stepIntoStatement();
-    m_listener->stepInto();
+    if (m_listener)
+        m_listener->stepInto();
 }
 
 void InspectorDebuggerAgent::stepOut(ErrorString* errorString)
@@ -583,7 +585,7 @@ void InspectorDebuggerAgent::setOverlayMessage(ErrorString*, const String*)
 {
 }
 
-void InspectorDebuggerAgent::setVariableValue(ErrorString* errorString, const String* callFrameId, const String* functionObjectId, int scopeNumber, const String& variableName, const RefPtr<InspectorObject>& newValue)
+void InspectorDebuggerAgent::setVariableValue(ErrorString* errorString, int scopeNumber, const String& variableName, const RefPtr<InspectorObject>& newValue, const String* callFrameId, const String* functionObjectId)
 {
     InjectedScript injectedScript;
     if (callFrameId) {

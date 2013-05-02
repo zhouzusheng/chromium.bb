@@ -9,10 +9,13 @@ namespace switches {
 // Disables new menu UI.
 const char kDisableNewMenuStyle[] = "disable-new-menu-style";
 
-// Disable touch adjustment.
+// Disables touch adjustment.
 const char kDisableTouchAdjustment[] = "disable-touch-adjustment";
 
-// Enable support for bezel touch.
+// Disables the Views textfield on Windows.
+const char kDisableViewsTextfield[] = "disable-views-textfield";
+
+// Enables support for bezel touch.
 const char kEnableBezelTouch[] = "enable-bezel-touch";
 
 // Enables the new dialog style wherever it is available.
@@ -20,11 +23,13 @@ const char kEnableNewDialogStyle[] = "enable-new-dialog-style";
 
 const char kEnableTouchDragDrop[] = "enable-touch-drag-drop";
 
+// Enables controls that support touch base text editing.
+const char kEnableTouchEditing[] = "enable-touch-editing";
+
 // Enables the Views textfield on Windows.
 const char kEnableViewsTextfield[] = "enable-views-textfield";
 
-// Overrides the device scale factor for the browser UI and the
-// contents.
+// Overrides the device scale factor for the browser UI and the contents.
 const char kForceDeviceScaleFactor[] = "force-device-scale-factor";
 
 // If a resource is requested at a scale factor at which it is not available
@@ -42,9 +47,6 @@ const char kLang[] = "lang";
 // Load the locale resources from the given path. When running on Mac/Unix the
 // path should point to a locale.pak file.
 const char kLocalePak[] = "locale_pak";
-
-// Disables the new appearance for checkboxes and radio buttons.
-const char kOldCheckboxStyle[] = "old-checkbox-style";
 
 // Disable ui::MessageBox. This is useful when running as part of scripts that
 // do not have a user interface.
@@ -81,10 +83,8 @@ const char kTouchCalibration[] = "touch-calibration";
 #endif
 
 #if defined(OS_MACOSX)
-const char kDisableCompositedCoreAnimationPlugins[] =
-    "disable-composited-core-animation-plugins";
-// Disables using core animation in plugins. This is triggered when accelerated
-// compositing is disabled. See http://crbug.com/122430
+// Disables support for Core Animation plugins. This is triggered when
+// accelerated compositing is disabled. See http://crbug.com/122430 .
 const char kDisableCoreAnimationPlugins[] =
     "disable-core-animation-plugins";
 #endif

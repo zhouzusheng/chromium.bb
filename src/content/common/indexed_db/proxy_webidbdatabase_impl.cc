@@ -28,8 +28,10 @@ using webkit_glue::WorkerTaskRunner;
 
 namespace content {
 
-RendererWebIDBDatabaseImpl::RendererWebIDBDatabaseImpl(int32 ipc_database_id)
-    : ipc_database_id_(ipc_database_id) {
+RendererWebIDBDatabaseImpl::RendererWebIDBDatabaseImpl(
+    int32 ipc_database_id, int32 ipc_database_callbacks_id)
+    : ipc_database_id_(ipc_database_id),
+      ipc_database_callbacks_id_(ipc_database_callbacks_id) {
 }
 
 RendererWebIDBDatabaseImpl::~RendererWebIDBDatabaseImpl() {
@@ -90,7 +92,8 @@ void RendererWebIDBDatabaseImpl::createTransaction(
 void RendererWebIDBDatabaseImpl::close() {
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance();
-  dispatcher->RequestIDBDatabaseClose(ipc_database_id_);
+  dispatcher->RequestIDBDatabaseClose(ipc_database_id_,
+                                      ipc_database_callbacks_id_);
 }
 
 void RendererWebIDBDatabaseImpl::get(
@@ -110,7 +113,7 @@ void RendererWebIDBDatabaseImpl::get(
 void RendererWebIDBDatabaseImpl::put(
     long long transaction_id,
     long long object_store_id,
-    WebVector<unsigned char>* value,
+    const WebKit::WebData& value,
     const WebKit::WebIDBKey& key,
     PutMode put_mode,
     WebIDBCallbacks* callbacks,

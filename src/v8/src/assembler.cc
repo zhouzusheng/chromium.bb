@@ -91,6 +91,7 @@ namespace internal {
 struct DoubleConstant BASE_EMBEDDED {
   double min_int;
   double one_half;
+  double minus_one_half;
   double minus_zero;
   double zero;
   double uint8_max_value;
@@ -689,6 +690,21 @@ RelocIterator::RelocIterator(const CodeDesc& desc, int mode_mask) {
 // Implementation of RelocInfo
 
 
+#ifdef DEBUG
+bool RelocInfo::RequiresRelocation(const CodeDesc& desc) {
+  // Ensure there are no code targets or embedded objects present in the
+  // deoptimization entries, they would require relocation after code
+  // generation.
+  int mode_mask = RelocInfo::kCodeTargetMask |
+                  RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT) |
+                  RelocInfo::ModeMask(RelocInfo::GLOBAL_PROPERTY_CELL) |
+                  RelocInfo::kApplyMask;
+  RelocIterator it(desc, mode_mask);
+  return !it.done();
+}
+#endif
+
+
 #ifdef ENABLE_DISASSEMBLER
 const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
   switch (rmode) {
@@ -838,6 +854,7 @@ void RelocInfo::Verify() {
 void ExternalReference::SetUp() {
   double_constants.min_int = kMinInt;
   double_constants.one_half = 0.5;
+  double_constants.minus_one_half = -0.5;
   double_constants.minus_zero = -0.0;
   double_constants.uint8_max_value = 255;
   double_constants.zero = 0.0;
@@ -1142,18 +1159,21 @@ ExternalReference ExternalReference::new_space_allocation_limit_address(
 }
 
 
-ExternalReference ExternalReference::handle_scope_level_address() {
-  return ExternalReference(HandleScope::current_level_address());
+ExternalReference ExternalReference::handle_scope_level_address(
+    Isolate* isolate) {
+  return ExternalReference(HandleScope::current_level_address(isolate));
 }
 
 
-ExternalReference ExternalReference::handle_scope_next_address() {
-  return ExternalReference(HandleScope::current_next_address());
+ExternalReference ExternalReference::handle_scope_next_address(
+    Isolate* isolate) {
+  return ExternalReference(HandleScope::current_next_address(isolate));
 }
 
 
-ExternalReference ExternalReference::handle_scope_limit_address() {
-  return ExternalReference(HandleScope::current_limit_address());
+ExternalReference ExternalReference::handle_scope_limit_address(
+    Isolate* isolate) {
+  return ExternalReference(HandleScope::current_limit_address(isolate));
 }
 
 
@@ -1188,6 +1208,12 @@ ExternalReference ExternalReference::address_of_min_int() {
 
 ExternalReference ExternalReference::address_of_one_half() {
   return ExternalReference(reinterpret_cast<void*>(&double_constants.one_half));
+}
+
+
+ExternalReference ExternalReference::address_of_minus_one_half() {
+  return ExternalReference(
+      reinterpret_cast<void*>(&double_constants.minus_one_half));
 }
 
 
@@ -1383,6 +1409,21 @@ ExternalReference ExternalReference::ForDeoptEntry(Address entry) {
 }
 
 
+double power_helper(double x, double y) {
+  int y_int = static_cast<int>(y);
+  if (y == y_int) {
+    return power_double_int(x, y_int);  // Returns 1 if exponent is 0.
+  }
+  if (y == 0.5) {
+    return (isinf(x)) ? V8_INFINITY : fast_sqrt(x + 0.0);  // Convert -0 to +0.
+  }
+  if (y == -0.5) {
+    return (isinf(x)) ? 0 : 1.0 / fast_sqrt(x + 0.0);  // Convert -0 to +0.
+  }
+  return power_double_double(x, y);
+}
+
+
 // Helper function to compute x^y, where y is known to be an
 // integer. Uses binary decomposition to limit the number of
 // multiplications; see the discussion in "Hacker's Delight" by Henry
@@ -1522,6 +1563,10 @@ void PositionsRecorder::RecordPosition(int pos) {
     gdbjit_lineinfo_->SetPosition(assembler_->pc_offset(), pos, false);
   }
 #endif
+  LOG_CODE_EVENT(assembler_->isolate(),
+                 CodeLinePosInfoAddPositionEvent(jit_handler_data_,
+                                                 assembler_->pc_offset(),
+                                                 pos));
 }
 
 
@@ -1534,6 +1579,11 @@ void PositionsRecorder::RecordStatementPosition(int pos) {
     gdbjit_lineinfo_->SetPosition(assembler_->pc_offset(), pos, true);
   }
 #endif
+  LOG_CODE_EVENT(assembler_->isolate(),
+                 CodeLinePosInfoAddStatementPositionEvent(
+                     jit_handler_data_,
+                     assembler_->pc_offset(),
+                     pos));
 }
 
 

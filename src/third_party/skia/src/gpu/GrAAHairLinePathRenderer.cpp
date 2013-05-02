@@ -10,12 +10,15 @@
 
 #include "GrContext.h"
 #include "GrDrawState.h"
+#include "GrDrawTargetCaps.h"
 #include "GrGpu.h"
 #include "GrIndexBuffer.h"
 #include "GrPathUtils.h"
 #include "SkGeometry.h"
 #include "SkStroke.h"
 #include "SkTemplates.h"
+
+#include "effects/GrEdgeEffect.h"
 
 namespace {
 // quadratics are rendered as 5-sided polys in order to bound the
@@ -495,15 +498,19 @@ bool GrAAHairLinePathRenderer::createGeom(
             int* lineCnt,
             int* quadCnt,
             GrDrawTarget::AutoReleaseGeometry* arg) {
-    const GrDrawState& drawState = target->getDrawState();
-    int rtHeight = drawState.getRenderTarget()->height();
+    GrDrawState* drawState = target->drawState();
+    int rtHeight = drawState->getRenderTarget()->height();
 
     GrIRect devClipBounds;
-    target->getClip()->getConservativeBounds(drawState.getRenderTarget(),
+    target->getClip()->getConservativeBounds(drawState->getRenderTarget(),
                                              &devClipBounds);
 
-    GrVertexLayout layout = GrDrawState::kEdge_VertexLayoutBit;
-    SkMatrix viewM = drawState.getViewMatrix();
+    // position + edge
+    static const GrVertexAttrib kAttribs[] = {
+        {kVec2f_GrVertexAttribType, 0},
+        {kVec4f_GrVertexAttribType, sizeof(GrPoint)}
+    };
+    SkMatrix viewM = drawState->getViewMatrix();
 
     PREALLOC_PTARRAY(128) lines;
     PREALLOC_PTARRAY(128) quads;
@@ -514,7 +521,9 @@ bool GrAAHairLinePathRenderer::createGeom(
     *lineCnt = lines.count() / 2;
     int vertCnt = kVertsPerLineSeg * *lineCnt + kVertsPerQuad * *quadCnt;
 
-    target->drawState()->setVertexLayout(layout);
+    target->drawState()->setVertexAttribs(kAttribs, SK_ARRAY_COUNT(kAttribs));
+    target->drawState()->setAttribIndex(GrDrawState::kPosition_AttribIndex, 0);
+    target->drawState()->setAttribBindings(GrDrawState::kDefault_AttribBindings);
     GrAssert(sizeof(Vertex) == target->getDrawState().getVertexSize());
 
     if (!arg->set(target, vertCnt, 0)) {
@@ -557,7 +566,7 @@ bool GrAAHairLinePathRenderer::canDrawPath(const SkPath& path,
 
     static const uint32_t gReqDerivMask = SkPath::kCubic_SegmentMask |
                                           SkPath::kQuad_SegmentMask;
-    if (!target->getCaps().shaderDerivativeSupport() &&
+    if (!target->caps()->shaderDerivativeSupport() &&
         (gReqDerivMask & path.getSegmentMasks())) {
         return false;
     }
@@ -580,8 +589,10 @@ bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
         return false;
     }
 
-    GrDrawState::AutoDeviceCoordDraw adcd;
+    GrDrawTarget::AutoStateRestore asr(target, GrDrawTarget::kPreserve_ASRInit);
     GrDrawState* drawState = target->drawState();
+
+    GrDrawState::AutoDeviceCoordDraw adcd;
     // createGeom transforms the geometry to device space when the matrix does not have
     // perspective.
     if (!drawState->getViewMatrix().hasPerspective()) {
@@ -594,12 +605,21 @@ bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
     // TODO: See whether rendering lines as degenerate quads improves perf
     // when we have a mix
 
-    GrDrawState::VertexEdgeType oldEdgeType = drawState->getVertexEdgeType();
+    enum {
+        // the edge effects share this stage with glyph rendering
+        // (kGlyphMaskStage in GrTextContext) && SW path rendering
+        // (kPathMaskStage in GrSWMaskHelper)
+        kEdgeEffectStage = GrPaint::kTotalStages,
+    };
+    static const int kEdgeAttrIndex = 1;
 
+    GrEffectRef* hairLineEffect = GrEdgeEffect::Create(GrEdgeEffect::kHairLine_EdgeType);
+    GrEffectRef* hairQuadEffect = GrEdgeEffect::Create(GrEdgeEffect::kHairQuad_EdgeType);
+ 
     target->setIndexSourceToBuffer(fLinesIndexBuffer);
     int lines = 0;
     int nBufLines = fLinesIndexBuffer->maxQuads();
-    drawState->setVertexEdgeType(GrDrawState::kHairLine_EdgeType);
+    drawState->setEffect(kEdgeEffectStage, hairLineEffect, kEdgeAttrIndex)->unref();
     while (lines < lineCnt) {
         int n = GrMin(lineCnt - lines, nBufLines);
         target->drawIndexed(kTriangles_GrPrimitiveType,
@@ -612,7 +632,7 @@ bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
 
     target->setIndexSourceToBuffer(fQuadsIndexBuffer);
     int quads = 0;
-    drawState->setVertexEdgeType(GrDrawState::kHairQuad_EdgeType);
+    drawState->setEffect(kEdgeEffectStage, hairQuadEffect, kEdgeAttrIndex)->unref();
     while (quads < quadCnt) {
         int n = GrMin(quadCnt - quads, kNumQuadsInIdxBuffer);
         target->drawIndexed(kTriangles_GrPrimitiveType,
@@ -622,6 +642,6 @@ bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
                             kIdxsPerQuad*n);                   // iCount
         quads += n;
     }
-    drawState->setVertexEdgeType(oldEdgeType);
+
     return true;
 }

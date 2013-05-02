@@ -11,7 +11,7 @@
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
-#include "content/public/browser/web_contents_view.h"
+#include "content/port/browser/web_contents_view_port.h"
 
 namespace content {
 
@@ -20,7 +20,7 @@ class WebContentsImpl;
 class BrowserPluginGuest;
 
 class CONTENT_EXPORT WebContentsViewGuest
-    : public WebContentsView,
+    : public WebContentsViewPort,
       public RenderViewHostDelegateView {
  public:
   // The corresponding WebContentsImpl is passed in the constructor, and manages
@@ -30,39 +30,44 @@ class CONTENT_EXPORT WebContentsViewGuest
   // |platform_view|.
   WebContentsViewGuest(WebContentsImpl* web_contents,
                        BrowserPluginGuest* guest,
-                       bool enable_compositing,
-                       WebContentsView* platform_view);
+                       WebContentsViewPort* platform_view);
   virtual ~WebContentsViewGuest();
 
   WebContents* web_contents();
 
   // WebContentsView implementation --------------------------------------------
 
+  virtual gfx::NativeView GetNativeView() const OVERRIDE;
+  virtual gfx::NativeView GetContentNativeView() const OVERRIDE;
+  virtual gfx::NativeWindow GetTopLevelNativeWindow() const OVERRIDE;
+  virtual void GetContainerBounds(gfx::Rect* out) const OVERRIDE;
+  virtual void OnTabCrashed(base::TerminationStatus status,
+                            int error_code) OVERRIDE;
+  virtual void SizeContents(const gfx::Size& size) OVERRIDE;
+  virtual void Focus() OVERRIDE;
+  virtual void SetInitialFocus() OVERRIDE;
+  virtual void StoreFocus() OVERRIDE;
+  virtual void RestoreFocus() OVERRIDE;
+  virtual WebDropData* GetDropData() const OVERRIDE;
+  virtual gfx::Rect GetViewBounds() const OVERRIDE;
+#if defined(OS_MACOSX)
+  virtual void SetAllowOverlappingViews(bool overlapping) OVERRIDE;
+#endif
+
+  // WebContentsViewPort implementation ----------------------------------------
   virtual void CreateView(const gfx::Size& initial_size,
                           gfx::NativeView context) OVERRIDE;
   virtual RenderWidgetHostView* CreateViewForWidget(
       RenderWidgetHost* render_widget_host) OVERRIDE;
   virtual RenderWidgetHostView* CreateViewForPopupWidget(
       RenderWidgetHost* render_widget_host) OVERRIDE;
-  virtual gfx::NativeView GetNativeView() const OVERRIDE;
-  virtual gfx::NativeView GetContentNativeView() const OVERRIDE;
-  virtual gfx::NativeWindow GetTopLevelNativeWindow() const OVERRIDE;
-  virtual void GetContainerBounds(gfx::Rect* out) const OVERRIDE;
   virtual void SetPageTitle(const string16& title) OVERRIDE;
-  virtual void OnTabCrashed(base::TerminationStatus status,
-                            int error_code) OVERRIDE;
-  virtual void SizeContents(const gfx::Size& size) OVERRIDE;
   virtual void RenderViewCreated(RenderViewHost* host) OVERRIDE;
-  virtual void Focus() OVERRIDE;
-  virtual void SetInitialFocus() OVERRIDE;
-  virtual void StoreFocus() OVERRIDE;
-  virtual void RestoreFocus() OVERRIDE;
-  virtual WebDropData* GetDropData() const OVERRIDE;
+  virtual void RenderViewSwappedIn(RenderViewHost* host) OVERRIDE;
+  virtual void SetOverscrollControllerEnabled(bool enabled) OVERRIDE;
+#if defined(OS_MACOSX)
   virtual bool IsEventTracking() const OVERRIDE;
   virtual void CloseTabAfterEventTracking() OVERRIDE;
-  virtual gfx::Rect GetViewBounds() const OVERRIDE;
-#if defined(OS_MACOSX)
-  virtual void SetAllowOverlappingViews(bool overlapping) OVERRIDE;
 #endif
 
   // Backend implementation of RenderViewHostDelegateView.
@@ -89,10 +94,9 @@ class CONTENT_EXPORT WebContentsViewGuest
   // The WebContentsImpl whose contents we display.
   WebContentsImpl* web_contents_;
   BrowserPluginGuest* guest_;
-  bool enable_compositing_;
   // The platform dependent view backing this WebContentsView.
   // Calls to this WebContentsViewGuest are forwarded to |platform_view_|.
-  WebContentsView* platform_view_;
+  WebContentsViewPort* platform_view_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsViewGuest);
 };

@@ -34,7 +34,9 @@ HttpBasicStream::HttpBasicStream(ClientSocketHandle* connection,
 HttpBasicStream::~HttpBasicStream() {}
 
 int HttpBasicStream::InitializeStream(
-    const HttpRequestInfo* request_info, const BoundNetLog& net_log,
+    const HttpRequestInfo* request_info,
+    RequestPriority priority,
+    const BoundNetLog& net_log,
     const CompletionCallback& callback) {
   DCHECK(!parser_.get());
   request_info_ = request_info;
@@ -83,7 +85,7 @@ void HttpBasicStream::Close(bool not_reusable) {
 
 HttpStream* HttpBasicStream::RenewStreamForAuth() {
   DCHECK(IsResponseBodyComplete());
-  DCHECK(!IsMoreDataBuffered());
+  DCHECK(!parser_->IsMoreDataBuffered());
   parser_.reset();
   return new HttpBasicStream(connection_.release(), NULL, using_proxy_);
 }
@@ -94,10 +96,6 @@ bool HttpBasicStream::IsResponseBodyComplete() const {
 
 bool HttpBasicStream::CanFindEndOfResponse() const {
   return parser_->CanFindEndOfResponse();
-}
-
-bool HttpBasicStream::IsMoreDataBuffered() const {
-  return parser_->IsMoreDataBuffered();
 }
 
 bool HttpBasicStream::IsConnectionReused() const {

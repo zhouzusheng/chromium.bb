@@ -7,35 +7,27 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_vector.h"
+// TODO(fgalligan): Remove the dependency on FFmpeg.
+#include "media/filters/ffmpeg_demuxer.h"
 
 namespace base {
 class MessageLoopProxy;
 }
 
 namespace media {
+class AudioDecoder;
 class ChunkDemuxer;
 class DataSource;
-class FFmpegVideoDecoder;
 class FilterCollection;
-}
-
-namespace WebKit {
-class WebURL;
 }
 
 namespace webkit_media {
 
-class MediaStreamClient;
-
-// Builds the required filters for handling media stream URLs and adds them to
-// |filter_collection| returning true if successful.
-//
-// |filter_collection| is not modified if this method returns false.
-bool BuildMediaStreamCollection(
-    const WebKit::WebURL& url,
-    MediaStreamClient* client,
+// Creates and adds the default set of audio decoders to |audio_decoders|.
+void AddDefaultAudioDecoders(
     const scoped_refptr<base::MessageLoopProxy>& message_loop,
-    media::FilterCollection* filter_collection);
+    ScopedVector<media::AudioDecoder>* audio_decoders);
 
 // Builds the required filters for handling media source URLs, adds them to
 // |filter_collection|.
@@ -49,7 +41,8 @@ void BuildMediaSourceCollection(
 void BuildDefaultCollection(
     const scoped_refptr<media::DataSource>& data_source,
     const scoped_refptr<base::MessageLoopProxy>& message_loop,
-    media::FilterCollection* filter_collection);
+    media::FilterCollection* filter_collection,
+    const media::FFmpegNeedKeyCB& need_key_cb);
 
 }  // webkit_media
 

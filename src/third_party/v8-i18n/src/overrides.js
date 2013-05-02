@@ -59,7 +59,13 @@ function cachedOrNewService(service, locales, options, defaults) {
  * Overrides the built-in method.
  */
 Object.defineProperty(String.prototype, 'localeCompare', {
-  value: function(that, locales, options) {
+  value: function(that) {
+    if (this === undefined || this === null) {
+      throw new TypeError('Method invoked on undefined or null value.');
+    }
+
+    var locales = arguments[1];
+    var options = arguments[2];
     var collator = cachedOrNewService('collator', locales, options);
     return compare(collator, this, that);
   },
@@ -74,7 +80,13 @@ Object.defineProperty(String.prototype, 'localeCompare', {
  * If locale or options are omitted, defaults are used.
  */
 Object.defineProperty(Number.prototype, 'toLocaleString', {
-  value: function(locales, options) {
+  value: function() {
+    if (!(this instanceof Number) && typeof(this) !== 'number') {
+      throw new TypeError('Method invoked on an object that is not Number.');
+    }
+
+    var locales = arguments[0];
+    var options = arguments[1];
     var numberFormat = cachedOrNewService('numberformat', locales, options);
     return formatNumber(numberFormat, this);
   },
@@ -111,7 +123,9 @@ function toLocaleDateTime(date, locales, options, required, defaults, service) {
  * present in the output.
  */
 Object.defineProperty(Date.prototype, 'toLocaleString', {
-  value: function(locales, options) {
+  value: function() {
+    var locales = arguments[0];
+    var options = arguments[1];
     return toLocaleDateTime(
         this, locales, options, 'any', 'all', 'dateformatall');
   },
@@ -127,7 +141,9 @@ Object.defineProperty(Date.prototype, 'toLocaleString', {
  * in the output.
  */
 Object.defineProperty(Date.prototype, 'toLocaleDateString', {
-  value: function(locales, options) {
+  value: function() {
+    var locales = arguments[0];
+    var options = arguments[1];
     return toLocaleDateTime(
         this, locales, options, 'date', 'date', 'dateformatdate');
   },
@@ -143,7 +159,9 @@ Object.defineProperty(Date.prototype, 'toLocaleDateString', {
  * in the output.
  */
 Object.defineProperty(Date.prototype, 'toLocaleTimeString', {
-  value: function(locales, options) {
+  value: function() {
+    var locales = arguments[0];
+    var options = arguments[1];
     return toLocaleDateTime(
         this, locales, options, 'time', 'time', 'dateformattime');
   },

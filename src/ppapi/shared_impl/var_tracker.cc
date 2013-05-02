@@ -9,6 +9,8 @@
 #include <limits>
 
 #include "base/logging.h"
+#include "base/shared_memory.h"
+#include "ppapi/shared_impl/host_resource.h"
 #include "ppapi/shared_impl/id_assignment.h"
 #include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/var.h"
@@ -90,7 +92,7 @@ bool VarTracker::AddRefVar(const PP_Var& var) {
   ProxyLock::AssertAcquired();
 
   if (!IsVarTypeRefcounted(var.type))
-    return false;
+    return true;
   return AddRefVar(static_cast<int32>(var.value.as_id));
 }
 
@@ -214,6 +216,17 @@ ArrayBufferVar* VarTracker::MakeArrayBufferVar(uint32 size_in_bytes,
     return NULL;
   memcpy(array_buffer->Map(), data, size_in_bytes);
   return array_buffer;
+}
+
+PP_Var VarTracker::MakeArrayBufferPPVar(uint32 size_in_bytes,
+                                        base::SharedMemoryHandle handle) {
+  DCHECK(CalledOnValidThread());
+
+  scoped_refptr<ArrayBufferVar> array_buffer(
+      CreateShmArrayBuffer(size_in_bytes, handle));
+  if (!array_buffer)
+    return PP_MakeNull();
+  return array_buffer->GetPPVar();
 }
 
 std::vector<PP_Var> VarTracker::GetLiveVars() {

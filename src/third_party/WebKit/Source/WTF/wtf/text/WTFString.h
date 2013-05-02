@@ -1,6 +1,6 @@
 /*
  * (C) 1999 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2012, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -110,6 +110,12 @@ public:
 
     // Construct a string by copying the contents of a vector.  To avoid
     // copying, consider using String::adopt instead.
+    // This method will never create a null string. Vectors with size() == 0
+    // will return the empty string.
+    // NOTE: This is different from String(vector.data(), vector.size())
+    // which will sometimes return a null string when vector.data() is null
+    // which can only occur for vectors without inline capacity.
+    // See: https://bugs.webkit.org/show_bug.cgi?id=109792
     template<size_t inlineCapacity>
     explicit String(const Vector<UChar, inlineCapacity>&);
 
@@ -161,6 +167,7 @@ public:
     bool isEmpty() const { return !m_impl || !m_impl->length(); }
 
     StringImpl* impl() const { return m_impl.get(); }
+    PassRefPtr<StringImpl> releaseImpl() { return m_impl.release(); }
 
     unsigned length() const
     {
@@ -253,6 +260,9 @@ public:
         { return m_impl ? m_impl->find(matchFunction, start) : notFound; }
     size_t find(const LChar* str, unsigned start = 0) const
         { return m_impl ? m_impl->find(str, start) : notFound; }
+
+    size_t findNextLineStart(unsigned start = 0) const
+        { return m_impl ? m_impl->findNextLineStart(start) : notFound; }
 
     // Find the last instance of a single character or string.
     size_t reverseFind(UChar c, unsigned start = UINT_MAX) const
@@ -433,6 +443,12 @@ public:
 #endif
 
     WTF_EXPORT_STRING_API static String make8BitFrom16BitSource(const UChar*, size_t);
+    template<size_t inlineCapacity>
+    static String make8BitFrom16BitSource(const Vector<UChar, inlineCapacity>& buffer)
+    {
+        return make8BitFrom16BitSource(buffer.data(), buffer.size());
+    }
+
     WTF_EXPORT_STRING_API static String make16BitFrom8BitSource(const LChar*, size_t);
 
     // String::fromUTF8 will return a null string if
@@ -529,7 +545,7 @@ inline void swap(String& a, String& b) { a.swap(b); }
 
 template<size_t inlineCapacity>
 String::String(const Vector<UChar, inlineCapacity>& vector)
-    : m_impl(vector.size() ? StringImpl::create(vector.data(), vector.size()) : 0)
+    : m_impl(vector.size() ? StringImpl::create(vector.data(), vector.size()) : StringImpl::empty())
 {
 }
 
@@ -601,7 +617,8 @@ inline bool codePointCompareLessThan(const String& a, const String& b)
     return codePointCompare(a.impl(), b.impl()) < 0;
 }
 
-inline void append(Vector<UChar>& vector, const String& string)
+template<size_t inlineCapacity>
+inline void append(Vector<UChar, inlineCapacity>& vector, const String& string)
 {
     vector.append(string.characters(), string.length());
 }

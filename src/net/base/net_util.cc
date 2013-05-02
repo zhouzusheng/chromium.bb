@@ -26,8 +26,8 @@
 #endif
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/i18n/icu_string_conversions.h"
 #include "base/i18n/time_formatting.h"
@@ -41,9 +41,9 @@
 #include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_piece.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/utf_offset_string_conversions.h"
 #include "base/synchronization/lock.h"
@@ -1877,6 +1877,9 @@ IPv6SupportResult TestIPv6SupportInternal() {
           unicast_address->Address.lpSockaddr);
       struct in6_addr* sin6_addr = &addr_in6->sin6_addr;
       if (IN6_IS_ADDR_LOOPBACK(sin6_addr) || IN6_IS_ADDR_LINKLOCAL(sin6_addr))
+        continue;
+      const uint8 kTeredoPrefix[] = { 0x20, 0x01, 0, 0 };
+      if (!memcmp(sin6_addr->s6_addr, kTeredoPrefix, arraysize(kTeredoPrefix)))
         continue;
       return IPv6SupportResult(true, IPV6_GLOBAL_ADDRESS_PRESENT, 0);
     }

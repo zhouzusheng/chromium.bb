@@ -634,9 +634,9 @@ bool WebGraphicsContext3DInProcessCommandBufferImpl::Initialize(
     GLint stencil_bits = 0;
     getIntegerv(GL_STENCIL_BITS, &stencil_bits);
     attributes_.stencil = stencil_bits > 0;
-    GLint samples = 0;
-    getIntegerv(GL_SAMPLES, &samples);
-    attributes_.antialias = samples > 0;
+    GLint sample_buffers = 0;
+    getIntegerv(GL_SAMPLE_BUFFERS, &sample_buffers);
+    attributes_.antialias = sample_buffers > 0;
   }
   makeContextCurrent();
 
@@ -706,10 +706,6 @@ void WebGraphicsContext3DInProcessCommandBufferImpl::reshape(
   // ClearContext();
 
   gl_->ResizeCHROMIUM(width, height);
-
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
-  scanline_.reset(new uint8[width * 4]);
-#endif  // FLIP_FRAMEBUFFER_VERTICALLY
 }
 
 WebGLId WebGraphicsContext3DInProcessCommandBufferImpl::createCompositorTexture(
@@ -726,14 +722,14 @@ void WebGraphicsContext3DInProcessCommandBufferImpl::deleteCompositorTexture(
   context_->DeleteParentTexture(parent_texture);
 }
 
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
 void WebGraphicsContext3DInProcessCommandBufferImpl::FlipVertically(
     uint8* framebuffer,
     unsigned int width,
     unsigned int height) {
-  uint8* scanline = scanline_.get();
-  if (!scanline)
+  if (width == 0)
     return;
+  scanline_.resize(width * 4);
+  uint8* scanline = &scanline_[0];
   unsigned int row_bytes = width * 4;
   unsigned int count = height / 2;
   for (unsigned int i = 0; i < count; i++) {
@@ -748,7 +744,6 @@ void WebGraphicsContext3DInProcessCommandBufferImpl::FlipVertically(
     memcpy(row_a, scanline, row_bytes);
   }
 }
-#endif
 
 bool WebGraphicsContext3DInProcessCommandBufferImpl::readBackFramebuffer(
     unsigned char* pixels,
@@ -785,11 +780,9 @@ bool WebGraphicsContext3DInProcessCommandBufferImpl::readBackFramebuffer(
     gl_->BindFramebuffer(GL_FRAMEBUFFER, bound_fbo_);
   }
 
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
   if (pixels) {
     FlipVertically(pixels, width, height);
   }
-#endif
 
   return true;
 }
@@ -1689,6 +1682,20 @@ DELEGATE_TO_GL_2(produceTextureCHROMIUM, ProduceTextureCHROMIUM,
                  WGC3Denum, const WGC3Dbyte*)
 DELEGATE_TO_GL_2(consumeTextureCHROMIUM, ConsumeTextureCHROMIUM,
                  WGC3Denum, const WGC3Dbyte*)
+
+DELEGATE_TO_GL_2(drawBuffersEXT, DrawBuffersEXT,
+                 WGC3Dsizei, const WGC3Denum*)
+
+DELEGATE_TO_GL_9(asyncTexImage2DCHROMIUM, AsyncTexImage2DCHROMIUM,
+    WGC3Denum, WGC3Dint, WGC3Denum, WGC3Dsizei, WGC3Dsizei, WGC3Dint,
+    WGC3Denum, WGC3Denum, const void*)
+
+DELEGATE_TO_GL_9(asyncTexSubImage2DCHROMIUM, AsyncTexSubImage2DCHROMIUM,
+    WGC3Denum, WGC3Dint, WGC3Dint, WGC3Dint, WGC3Dsizei, WGC3Dsizei,
+    WGC3Denum, WGC3Denum, const void*)
+
+DELEGATE_TO_GL_1(waitAsyncTexImage2DCHROMIUM, WaitAsyncTexImage2DCHROMIUM,
+    WGC3Denum)
 
 }  // namespace gpu
 }  // namespace webkit

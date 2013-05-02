@@ -28,9 +28,9 @@
 
 #include "Cursor.h"
 #include "DragActions.h"
-#include "DragState.h"
 #include "FocusDirection.h"
 #include "HitTestRequest.h"
+#include "LayoutPoint.h"
 #include "PlatformMouseEvent.h"
 #include "PlatformWheelEvent.h"
 #include "ScrollTypes.h"
@@ -54,6 +54,8 @@ namespace WebCore {
 
 class AutoscrollController;
 class Clipboard;
+class Document;
+class Element;
 class Event;
 class EventTarget;
 class FloatPoint;
@@ -80,6 +82,8 @@ class VisibleSelection;
 class WheelEvent;
 class Widget;
 
+struct DragState;
+
 #if ENABLE(GESTURE_EVENTS)
 class PlatformGestureEvent;
 #endif
@@ -91,7 +95,6 @@ extern const int TextDragHysteresis;
 extern const int GeneralDragHysteresis;
 #endif // ENABLE(DRAG_SUPPORT)
 
-enum HitTestScrollbars { ShouldHitTestScrollbars, DontHitTestScrollbars };
 enum AppendTrailingWhitespace { ShouldAppendTrailingWhitespace, DontAppendTrailingWhitespace };
 enum CheckDragHysteresis { ShouldCheckDragHysteresis, DontCheckDragHysteresis };
 
@@ -127,8 +130,7 @@ public:
     void dispatchFakeMouseMoveEventSoon();
     void dispatchFakeMouseMoveEventSoonInQuad(const FloatQuad&);
 
-    HitTestResult hitTestResultAtPoint(const LayoutPoint&, bool allowShadowContent, bool ignoreClipping = false,
-                                       HitTestScrollbars scrollbars = DontHitTestScrollbars,
+    HitTestResult hitTestResultAtPoint(const LayoutPoint&,
                                        HitTestRequest::HitTestRequestType hitType = HitTestRequest::ReadOnly | HitTestRequest::Active,
                                        const LayoutSize& padding = LayoutSize());
 
@@ -386,6 +388,12 @@ private:
 
     void setLastKnownMousePosition(const PlatformMouseEvent&);
 
+#if ENABLE(CURSOR_VISIBILITY)
+    void startAutoHideCursorTimer();
+    void cancelAutoHideCursorTimer();
+    void autoHideCursorTimerFired(Timer<EventHandler>*);
+#endif
+
     Frame* m_frame;
 
     bool m_mousePressed;
@@ -450,7 +458,7 @@ private:
     IntPoint m_mouseDownPos; // In our view's coords.
     double m_mouseDownTimestamp;
     PlatformMouseEvent m_mouseDown;
-    RefPtr<UserGestureIndicator::Token> m_lastMouseDownUserGestureToken;
+    RefPtr<UserGestureToken> m_lastMouseDownUserGestureToken;
 
     RefPtr<Node> m_latchedWheelEventNode;
     bool m_widgetIsLatched;
@@ -481,6 +489,10 @@ private:
     PlatformEvent::Type m_baseEventType;
     bool m_didStartDrag;
     bool m_didLongPressInvokeContextMenu;
+
+#if ENABLE(CURSOR_VISIBILITY)
+    Timer<EventHandler> m_autoHideCursorTimer;
+#endif
 };
 
 } // namespace WebCore

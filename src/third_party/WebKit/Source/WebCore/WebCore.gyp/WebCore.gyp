@@ -56,7 +56,6 @@
       '../Modules/filesystem/chromium',
       '../Modules/gamepad',
       '../Modules/geolocation',
-      '../Modules/intents',
       '../Modules/indexeddb',
       '../Modules/indexeddb/chromium',
       '../Modules/mediasource',
@@ -82,6 +81,7 @@
       '../css',
       '../dom',
       '../dom/default',
+      '../dom/default/chromium',
       '../editing',
       '../fileapi',
       '../history',
@@ -746,6 +746,8 @@
         {
           'action_name': 'HTMLNames',
           'inputs': [
+            '../bindings/scripts/Hasher.pm',
+            '../bindings/scripts/StaticString.pm',
             '../dom/make_names.pl',
             '../html/HTMLTagNames.in',
             '../html/HTMLAttributeNames.in',
@@ -773,6 +775,8 @@
         {
           'action_name': 'WebKitFontFamilyNames',
           'inputs': [
+            '../bindings/scripts/Hasher.pm',
+            '../bindings/scripts/StaticString.pm',
             '../dom/make_names.pl',
             '../css/WebKitFontFamilyNames.in',
           ],
@@ -794,6 +798,8 @@
         {
           'action_name': 'SVGNames',
           'inputs': [
+            '../bindings/scripts/Hasher.pm',
+            '../bindings/scripts/StaticString.pm',
             '../dom/make_names.pl',
             '../svg/svgtags.in',
             '../svg/svgattrs.in',
@@ -882,6 +888,8 @@
         {
           'action_name': 'MathMLNames',
           'inputs': [
+            '../bindings/scripts/Hasher.pm',
+            '../bindings/scripts/StaticString.pm',
             '../dom/make_names.pl',
             '../mathml/mathtags.in',
             '../mathml/mathattrs.in',
@@ -1016,6 +1024,8 @@
         {
           'action_name': 'XLinkNames',
           'inputs': [
+            '../bindings/scripts/Hasher.pm',
+            '../bindings/scripts/StaticString.pm',
             '../dom/make_names.pl',
             '../svg/xlinkattrs.in',
           ],
@@ -1037,6 +1047,8 @@
         {
           'action_name': 'XMLNSNames',
           'inputs': [
+            '../bindings/scripts/Hasher.pm',
+            '../bindings/scripts/StaticString.pm',
             '../dom/make_names.pl',
             '../xml/xmlnsattrs.in',
           ],
@@ -1058,6 +1070,8 @@
         {
           'action_name': 'XMLNames',
           'inputs': [
+            '../bindings/scripts/Hasher.pm',
+            '../bindings/scripts/StaticString.pm',
             '../dom/make_names.pl',
             '../xml/xmlattrs.in',
           ],
@@ -1180,7 +1194,6 @@
             'generator_include_dirs': [
               '--include', '../Modules/filesystem',
               '--include', '../Modules/indexeddb',
-              '--include', '../Modules/intents',
               '--include', '../Modules/mediasource',
               '--include', '../Modules/mediastream',
               '--include', '../Modules/navigatorcontentutils',
@@ -1993,6 +2006,11 @@
         ['exclude', 'AllInOne\\.cpp$'],
       ],
       'conditions': [
+        # Shard this taret into parts to work around linker limitations.
+        # on link time code generation builds.
+        ['OS=="win" and buildtype=="Official"', {
+          'msvs_shard': 3,
+        }],
         ['use_default_render_theme==0', {
           'sources/': [
             ['exclude', 'rendering/RenderThemeChromiumDefault.*'],
@@ -2099,8 +2117,7 @@
         ['exclude', 'Modules/indexeddb/IDBFactoryBackendInterface\\.cpp$'],
         ['exclude', 'Modules/webdatabase/DatabaseManagerClient\\.h$'],
         ['exclude', 'Modules/webdatabase/DatabaseTracker\\.cpp$'],
-        ['exclude', 'Modules/webdatabase/OriginQuotaManager\\.(cpp|h)$'],
-        ['exclude', 'Modules/webdatabase/OriginUsageRecord\\.(cpp|h)$'],
+        ['exclude', 'Modules/webdatabase/OriginLock\\.cpp$'],
         ['exclude', 'Modules/webdatabase/SQLTransactionClient\\.cpp$'],
         ['exclude', 'inspector/InspectorFrontendClientLocal\\.cpp$'],
         ['exclude', 'inspector/JavaScript[^/]*\\.cpp$'],
@@ -2128,16 +2145,17 @@
         ['exclude', 'storage/StorageThread\\.(cpp|h)$'],
         ['exclude', 'storage/StorageTracker\\.(cpp|h)$'],
         ['exclude', 'storage/StorageTrackerClient\\.h$'],
+        ['exclude', 'workers/SharedWorkerRepository\\.cpp$'],
         ['exclude', 'workers/DefaultSharedWorkerRepository\\.(cpp|h)$'],
 
         ['include', 'loader/appcache/ApplicationCacheHost\.h$'],
         ['include', 'loader/appcache/DOMApplicationCache\.(cpp|h)$'],
       ],
       'conditions': [
-        # Shard this taret into ten parts to work around linker limitations.
+        # Shard this taret into parts to work around linker limitations.
         # on link time code generation builds.
         ['OS=="win" and buildtype=="Official"', {
-          'msvs_shard': 10,
+          'msvs_shard': 15,
         }],
         ['os_posix == 1 and OS != "mac" and gcc_version == 42', {
           # Due to a bug in gcc 4.2.1 (the current version on hardy), we get
@@ -2165,17 +2183,6 @@
         }],
         ['OS!="mac"', {
           'sources/': [['exclude', 'Mac\\.(cpp|mm?)$']]
-        }],
-        ['clang==1', {
-          # FIXME: Remove once this warning has been tweaked in Clang.
-          'cflags': [
-            '-Wno-return-type-c-linkage',
-          ],
-          'xcode_settings': {
-            'WARNING_CFLAGS': [
-              '-Wno-return-type-c-linkage',
-            ],
-          }
         }],
       ],
       # Disable c4267 warnings until we fix size_t to int truncations.

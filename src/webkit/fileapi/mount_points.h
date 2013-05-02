@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/storage/webkit_storage_export.h"
 
@@ -87,6 +87,14 @@ class WEBKIT_STORAGE_EXPORT MountPoints {
                                 std::string* mount_name,
                                 FileSystemType* type,
                                 base::FilePath* path) const = 0;
+
+ protected:
+  friend class FileSystemContext;
+
+  // Same as CrackURL and CreateCrackedFileSystemURL, but cracks the url already
+  // instantiated as the FileSystemURL class. This is internally used for nested
+  // URL cracking in FileSystemContext.
+  virtual FileSystemURL CrackFileSystemURL(const FileSystemURL& url) const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MountPoints);

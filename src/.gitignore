@@ -4,10 +4,15 @@
 *.rules
 *_rules.mk
 *.user
+*.vcxproj
+*.vcxproj.filters
 
 # VS generated files
 *.ncb
 *.suo
+*.sdf
+*.opensdf
+ipch/
 
 # Generated python
 *.pyc
@@ -15,6 +20,7 @@
 # Build output directories
 /build/Debug/
 /build/Release/
+/out/
 
 # Special cases
 /build/util/LASTCHANGE

@@ -61,7 +61,7 @@ public:
 
     bool Init(const ShBuiltInResources& resources);
     bool compile(const char* const shaderStrings[],
-                 const int numStrings,
+                 size_t numStrings,
                  int compileOptions);
 
     // Get results of the last compilation.
@@ -122,6 +122,7 @@ private:
     TSymbolTable symbolTable;
     // Built-in extensions with default behavior.
     TExtensionBehavior extensionBehavior;
+    bool fragmentPrecisionHigh;
 
     ArrayBoundsClamper arrayBoundsClamper;
     ShArrayIndexClampingStrategy clampingStrategy;

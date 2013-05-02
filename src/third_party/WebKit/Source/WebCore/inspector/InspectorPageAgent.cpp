@@ -49,6 +49,7 @@
 #include "Document.h"
 #include "DocumentLoader.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "FrameView.h"
 #include "GeolocationController.h"
 #include "GeolocationError.h"
@@ -267,8 +268,14 @@ void InspectorPageAgent::resourceContent(ErrorString* errorString, Frame* frame,
 CachedResource* InspectorPageAgent::cachedResource(Frame* frame, const KURL& url)
 {
     CachedResource* cachedResource = frame->document()->cachedResourceLoader()->cachedResource(url);
-    if (!cachedResource)
-        cachedResource = memoryCache()->resourceForURL(url);
+    if (!cachedResource) {
+        ResourceRequest request(url);
+#if ENABLE(CACHE_PARTITIONING)
+        request.setCachePartition(frame->document()->topOrigin()->cachePartition());
+#endif
+        cachedResource = memoryCache()->resourceForRequest(request);
+    }
+
     return cachedResource;
 }
 
@@ -337,6 +344,7 @@ InspectorPageAgent::InspectorPageAgent(InstrumentingAgents* instrumentingAgents,
     , m_enabled(false)
     , m_isFirstLayoutAfterOnLoad(false)
     , m_geolocationOverridden(false)
+    , m_ignoreScriptsEnabledNotification(false)
 {
 }
 
@@ -401,6 +409,7 @@ void InspectorPageAgent::disable(ErrorString*)
 {
     m_enabled = false;
     m_state->setBoolean(PageAgentState::pageAgentEnabled, false);
+    m_state->remove(PageAgentState::pageAgentScriptsToEvaluateOnLoad);
     m_instrumentingAgents->setInspectorPageAgent(0);
 
     setScriptExecutionDisabled(0, false);
@@ -410,13 +419,15 @@ void InspectorPageAgent::disable(ErrorString*)
     setEmulatedMedia(0, "");
     setContinuousPaintingEnabled(0, false);
 
-    // When disabling the agent, reset the override values.
+    if (!deviceMetricsChanged(0, 0, 1, false))
+        return;
+
+    // When disabling the agent, reset the override values if necessary.
+    updateViewMetrics(0, 0, 1, false);
     m_state->setLong(PageAgentState::pageAgentScreenWidthOverride, 0);
     m_state->setLong(PageAgentState::pageAgentScreenHeightOverride, 0);
     m_state->setDouble(PageAgentState::pageAgentFontScaleFactorOverride, 1);
     m_state->setBoolean(PageAgentState::pageAgentFitWindow, false);
-    m_state->remove(PageAgentState::pageAgentScriptsToEvaluateOnLoad);
-    updateViewMetrics(0, 0, 1, false);
 }
 
 void InspectorPageAgent::addScriptToEvaluateOnLoad(ErrorString*, const String& source, String* identifier)
@@ -716,13 +727,7 @@ void InspectorPageAgent::setDeviceMetricsOverride(ErrorString* errorString, int 
         return;
     }
 
-    // These two always fit an int.
-    int currentWidth = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenWidthOverride));
-    int currentHeight = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenHeightOverride));
-    double currentFontScaleFactor = m_state->getDouble(PageAgentState::pageAgentFontScaleFactorOverride);
-    bool currentFitWindow = m_state->getBoolean(PageAgentState::pageAgentFitWindow);
-
-    if (width == currentWidth && height == currentHeight && fontScaleFactor == currentFontScaleFactor && fitWindow == currentFitWindow)
+    if (!deviceMetricsChanged(width, height, fontScaleFactor, fitWindow))
         return;
 
     m_state->setLong(PageAgentState::pageAgentScreenWidthOverride, width);
@@ -731,6 +736,17 @@ void InspectorPageAgent::setDeviceMetricsOverride(ErrorString* errorString, int 
     m_state->setBoolean(PageAgentState::pageAgentFitWindow, fitWindow);
 
     updateViewMetrics(width, height, fontScaleFactor, fitWindow);
+}
+
+bool InspectorPageAgent::deviceMetricsChanged(int width, int height, double fontScaleFactor, bool fitWindow)
+{
+    // These two always fit an int.
+    int currentWidth = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenWidthOverride));
+    int currentHeight = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenHeightOverride));
+    double currentFontScaleFactor = m_state->getDouble(PageAgentState::pageAgentFontScaleFactorOverride);
+    bool currentFitWindow = m_state->getBoolean(PageAgentState::pageAgentFitWindow);
+
+    return width != currentWidth || height != currentHeight || fontScaleFactor != currentFontScaleFactor || fitWindow != currentFitWindow;
 }
 
 void InspectorPageAgent::setShowPaintRects(ErrorString*, bool show)
@@ -812,8 +828,11 @@ void InspectorPageAgent::setScriptExecutionDisabled(ErrorString*, bool value)
         return;
 
     Settings* settings = mainFrame()->settings();
-    if (settings)
+    if (settings) {
+        m_ignoreScriptsEnabledNotification = true;
         settings->setScriptEnabled(!value);
+        m_ignoreScriptsEnabledNotification = false;
+    }
 }
 
 void InspectorPageAgent::didClearWindowObjectInWorld(Frame* frame, DOMWrapperWorld* world)
@@ -833,11 +852,11 @@ void InspectorPageAgent::didClearWindowObjectInWorld(Frame* frame, DOMWrapperWor
         for (InspectorObject::const_iterator it = scripts->begin(); it != end; ++it) {
             String scriptText;
             if (it->value->asString(&scriptText))
-                m_injectedScriptManager->injectScript(scriptText, mainWorldScriptState(frame));
+                frame->script()->executeScript(scriptText);
         }
     }
     if (!m_scriptToEvaluateOnLoadOnce.isEmpty())
-        m_injectedScriptManager->injectScript(m_scriptToEvaluateOnLoadOnce, mainWorldScriptState(frame));
+        frame->script()->executeScript(m_scriptToEvaluateOnLoadOnce);
 }
 
 void InspectorPageAgent::domContentEventFired()
@@ -910,6 +929,16 @@ String InspectorPageAgent::loaderId(DocumentLoader* loader)
         m_loaderToIdentifier.set(loader, identifier);
     }
     return identifier;
+}
+
+Frame* InspectorPageAgent::findFrameWithSecurityOrigin(const String& originRawString)
+{
+    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
+        RefPtr<SecurityOrigin> documentOrigin = frame->document()->securityOrigin();
+        if (documentOrigin->toRawString() == originRawString)
+            return frame;
+    }
+    return 0;
 }
 
 Frame* InspectorPageAgent::assertFrame(ErrorString* errorString, const String& frameId)
@@ -1029,13 +1058,22 @@ void InspectorPageAgent::didRecalculateStyle()
         m_overlay->update();
 }
 
+void InspectorPageAgent::scriptsEnabled(bool isEnabled)
+{
+    if (m_ignoreScriptsEnabledNotification)
+        return;
+
+    m_frontend->scriptsEnabled(isEnabled);
+}
+
 PassRefPtr<TypeBuilder::Page::Frame> InspectorPageAgent::buildObjectForFrame(Frame* frame)
 {
     RefPtr<TypeBuilder::Page::Frame> frameObject = TypeBuilder::Page::Frame::create()
-         .setId(frameId(frame))
-         .setLoaderId(loaderId(frame->loader()->documentLoader()))
-         .setUrl(frame->document()->url().string())
-         .setMimeType(frame->loader()->documentLoader()->responseMIMEType());
+        .setId(frameId(frame))
+        .setLoaderId(loaderId(frame->loader()->documentLoader()))
+        .setUrl(frame->document()->url().string())
+        .setMimeType(frame->loader()->documentLoader()->responseMIMEType())
+        .setSecurityOrigin(frame->document()->securityOrigin()->toRawString());
     if (frame->tree()->parent())
         frameObject->setParentId(frameId(frame->tree()->parent()));
     if (frame->ownerElement()) {
@@ -1044,8 +1082,6 @@ PassRefPtr<TypeBuilder::Page::Frame> InspectorPageAgent::buildObjectForFrame(Fra
             name = frame->ownerElement()->getAttribute(HTMLNames::idAttr);
         frameObject->setName(name);
     }
-    // FIXME: Make this field non-optional. https://bugs.webkit.org/show_bug.cgi?id=80857
-    frameObject->setSecurityOrigin(frame->document()->securityOrigin()->toString());
 
     return frameObject;
 }
@@ -1266,9 +1302,9 @@ void InspectorPageAgent::captureScreenshot(ErrorString* errorString, String* dat
         *errorString = "Could not capture screenshot";
 }
 
-void InspectorPageAgent::handleJavaScriptDialog(ErrorString* errorString, bool accept)
+void InspectorPageAgent::handleJavaScriptDialog(ErrorString* errorString, bool accept, const String* promptText)
 {
-    if (!m_client->handleJavaScriptDialog(accept))
+    if (!m_client->handleJavaScriptDialog(accept, promptText))
         *errorString = "Could not handle JavaScript dialog";
 }
 

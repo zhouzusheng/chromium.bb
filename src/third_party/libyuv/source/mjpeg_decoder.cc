@@ -4,28 +4,23 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
 #include "libyuv/mjpeg_decoder.h"
 
 #ifdef HAVE_JPEG
-// Must be included before jpeglib
 #include <assert.h>
 #ifndef __CLR_VER
+// Must be included before jpeglib.
 #include <setjmp.h>
 #define HAVE_SETJMP
 #endif
-#include <stdio.h>
-#include <stdlib.h>
-
-extern "C" {
+struct FILE;  // For jpeglib.h.
 #include <jpeglib.h>
-}
 
-#include <climits>
-#include <cstring>
+#include "libyuv/planar_functions.h"  // For CopyPlane().
 
 namespace libyuv {
 
@@ -254,15 +249,6 @@ bool MJpegDecoder::UnloadFrame() {
   return true;
 }
 
-static void CopyRows(uint8* source, int source_stride,
-                     uint8* dest, int pixels, int numrows) {
-  for (int i = 0; i < numrows; ++i) {
-    memcpy(dest, source, pixels);
-    dest += pixels;
-    source += source_stride;
-  }
-}
-
 // TODO(fbarchard): Allow rectangle to be specified: x, y, width, height.
 bool MJpegDecoder::DecodeToBuffers(
     uint8** planes, int dst_width, int dst_height) {
@@ -313,8 +299,9 @@ bool MJpegDecoder::DecodeToBuffers(
         int scanlines_to_copy = GetComponentScanlinesPerImcuRow(i) -
                                 rows_to_skip;
         int data_to_skip = rows_to_skip * GetComponentStride(i);
-        CopyRows(databuf_[i] + data_to_skip, GetComponentStride(i),
-                 planes[i], GetComponentWidth(i), scanlines_to_copy);
+        CopyPlane(databuf_[i] + data_to_skip, GetComponentStride(i),
+                  planes[i], GetComponentWidth(i),
+                  GetComponentWidth(i), scanlines_to_copy);
         planes[i] += scanlines_to_copy * GetComponentWidth(i);
       }
       lines_left -= (GetImageScanlinesPerImcuRow() - skip);
@@ -330,8 +317,9 @@ bool MJpegDecoder::DecodeToBuffers(
     }
     for (int i = 0; i < num_outbufs_; ++i) {
       int scanlines_to_copy = GetComponentScanlinesPerImcuRow(i);
-      CopyRows(databuf_[i], GetComponentStride(i),
-               planes[i], GetComponentWidth(i), scanlines_to_copy);
+      CopyPlane(databuf_[i], GetComponentStride(i),
+                planes[i], GetComponentWidth(i),
+                GetComponentWidth(i), scanlines_to_copy);
       planes[i] += scanlines_to_copy * GetComponentWidth(i);
     }
   }
@@ -345,8 +333,9 @@ bool MJpegDecoder::DecodeToBuffers(
     for (int i = 0; i < num_outbufs_; ++i) {
       int scanlines_to_copy =
           DivideAndRoundUp(lines_left, GetVertSubSampFactor(i));
-      CopyRows(databuf_[i], GetComponentStride(i),
-               planes[i], GetComponentWidth(i), scanlines_to_copy);
+      CopyPlane(databuf_[i], GetComponentStride(i),
+                planes[i], GetComponentWidth(i),
+                GetComponentWidth(i), scanlines_to_copy);
       planes[i] += scanlines_to_copy * GetComponentWidth(i);
     }
   }

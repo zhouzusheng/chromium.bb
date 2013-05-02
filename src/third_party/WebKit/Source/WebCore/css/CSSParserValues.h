@@ -186,6 +186,13 @@ public:
 
     void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& selectorVector);
 
+#if ENABLE(SHADOW_DOM)
+    CSSParserSelector* functionArgumentSelector() const { return m_functionArgumentSelector; }
+    void setFunctionArgumentSelector(CSSParserSelector* selector) { m_functionArgumentSelector = selector; }
+    bool isDistributedPseudoElement() const { return m_selector->isDistributedPseudoElement(); }
+    CSSParserSelector* findDistributedPseudoElementSelector() const;
+#endif
+
     CSSSelector::PseudoType pseudoType() const { return m_selector->pseudoType(); }
     bool isCustomPseudoElement() const { return m_selector->isCustomPseudoElement(); }
 
@@ -194,6 +201,7 @@ public:
 
     CSSParserSelector* tagHistory() const { return m_tagHistory.get(); }
     void setTagHistory(PassOwnPtr<CSSParserSelector> selector) { m_tagHistory = selector; }
+    void clearTagHistory() { m_tagHistory.clear(); }
     void insertTagHistory(CSSSelector::Relation before, PassOwnPtr<CSSParserSelector>, CSSSelector::Relation after);
     void appendTagHistory(CSSSelector::Relation, PassOwnPtr<CSSParserSelector>);
     void prependTagSelector(const QualifiedName&, bool tagIsForNamespaceRule = false);
@@ -201,6 +209,9 @@ public:
 private:
     OwnPtr<CSSSelector> m_selector;
     OwnPtr<CSSParserSelector> m_tagHistory;
+#if ENABLE(SHADOW_DOM)
+    CSSParserSelector* m_functionArgumentSelector;
+#endif
 };
 
 inline bool CSSParserSelector::hasShadowDescendant() const

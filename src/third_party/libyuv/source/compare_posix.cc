@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -16,7 +16,7 @@ namespace libyuv {
 extern "C" {
 #endif
 
-#if !defined(YUV_DISABLE_ASM) && (defined(__x86_64__) || defined(__i386__))
+#if !defined(LIBYUV_DISABLE_X86) && (defined(__x86_64__) || defined(__i386__))
 
 uint32 SumSquareError_SSE2(const uint8* src_a, const uint8* src_b, int count) {
   uint32 sse;
@@ -64,7 +64,7 @@ uint32 SumSquareError_SSE2(const uint8* src_a, const uint8* src_b, int count) {
 
 #endif  // defined(__x86_64__) || defined(__i386__)
 
-#if !defined(YUV_DISABLE_ASM) && \
+#if !defined(LIBYUV_DISABLE_X86) && \
     (defined(__x86_64__) || (defined(__i386__) && !defined(__pic__)))
 // GCC 4.2 on OSX has link error when passing static or const to inline.
 // TODO(fbarchard): Use static const when gcc 4.2 support is dropped.

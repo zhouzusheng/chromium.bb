@@ -40,6 +40,7 @@
 #include "DOMWindow.h"
 #include "ExceptionCodePlaceholder.h"
 #include "HTMLHeadElement.h"
+#include "HTMLStyleElement.h"
 #include "InspectorDOMAgent.h"
 #include "InspectorHistory.h"
 #include "InspectorState.h"
@@ -50,6 +51,7 @@
 #include "Node.h"
 #include "NodeList.h"
 #include "RenderRegion.h"
+#include "SVGStyleElement.h"
 #include "StylePropertySet.h"
 #include "StylePropertyShorthand.h"
 #include "StyleResolver.h"
@@ -318,18 +320,18 @@ public:
         return redo(ec);
     }
 
-    virtual bool undo(ExceptionCode&)
+    virtual bool undo(ExceptionCode& ec)
     {
-        if (m_styleSheet->setText(m_oldText)) {
+        if (m_styleSheet->setText(m_oldText, ec)) {
             m_styleSheet->reparseStyleSheet(m_oldText);
             return true;
         }
         return false;
     }
 
-    virtual bool redo(ExceptionCode&)
+    virtual bool redo(ExceptionCode& ec)
     {
-        if (m_styleSheet->setText(m_text)) {
+        if (m_styleSheet->setText(m_text, ec)) {
             m_styleSheet->reparseStyleSheet(m_text);
             return true;
         }
@@ -957,10 +959,11 @@ PassRefPtr<TypeBuilder::CSS::SelectorProfile> InspectorCSSAgent::stopSelectorPro
     return result.release();
 }
 
-void InspectorCSSAgent::willMatchRule(StyleRule* rule, StyleResolver* styleResolver)
+void InspectorCSSAgent::willMatchRule(StyleRule* rule, InspectorCSSOMWrappers& inspectorCSSOMWrappers, DocumentStyleSheetCollection* styleSheetCollection)
 {
+//    printf("InspectorCSSAgent::willMatchRule %s\n", rule->selectorList().selectorsText().utf8().data());
     if (m_currentSelectorProfile)
-        m_currentSelectorProfile->startSelector(styleResolver->inspectorCSSOMWrappers().getWrapperForRuleInSheets(rule, styleResolver->document()->styleSheetCollection()));
+        m_currentSelectorProfile->startSelector(inspectorCSSOMWrappers.getWrapperForRuleInSheets(rule, styleSheetCollection));
 }
 
 void InspectorCSSAgent::didMatchRule(bool matched)
@@ -1056,6 +1059,9 @@ InspectorStyleSheet* InspectorCSSAgent::viaInspectorStyleSheet(Document* documen
         return 0;
     }
 
+    if (!document->isHTMLDocument() && !document->isSVGDocument())
+        return 0;
+
     RefPtr<InspectorStyleSheet> inspectorStyleSheet = m_documentToInspectorStyleSheet.get(document);
     if (inspectorStyleSheet || !createIfAbsent)
         return inspectorStyleSheet.get();
@@ -1079,11 +1085,18 @@ InspectorStyleSheet* InspectorCSSAgent::viaInspectorStyleSheet(Document* documen
     }
     if (ec)
         return 0;
-    StyleSheetList* styleSheets = document->styleSheets();
-    StyleSheet* styleSheet = styleSheets->item(styleSheets->length() - 1);
-    if (!styleSheet || !styleSheet->isCSSStyleSheet())
+
+    CSSStyleSheet* cssStyleSheet = 0;
+    if (styleElement->isHTMLElement())
+        cssStyleSheet = static_cast<HTMLStyleElement*>(styleElement.get())->sheet();
+#if ENABLE(SVG)
+    else if (styleElement->isSVGElement())
+        cssStyleSheet = static_cast<SVGStyleElement*>(styleElement.get())->sheet();
+#endif
+
+    if (!cssStyleSheet)
         return 0;
-    CSSStyleSheet* cssStyleSheet = static_cast<CSSStyleSheet*>(styleSheet);
+
     String id = String::number(m_lastStyleSheetId++);
     inspectorStyleSheet = InspectorStyleSheet::create(m_domAgent->pageAgent(), id, cssStyleSheet, TypeBuilder::CSS::StyleSheetOrigin::Inspector, InspectorDOMAgent::documentURLString(document), this);
     m_idToInspectorStyleSheet.set(id, inspectorStyleSheet);

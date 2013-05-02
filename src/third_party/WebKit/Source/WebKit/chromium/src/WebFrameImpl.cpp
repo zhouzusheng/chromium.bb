@@ -81,7 +81,6 @@
 #include "DOMFileSystem.h"
 #include "DOMUtilitiesPrivate.h"
 #include "DOMWindow.h"
-#include "DOMWindowIntents.h"
 #include "DOMWrapperWorld.h"
 #include "DirectoryEntry.h"
 #include "Document.h"
@@ -120,7 +119,7 @@
 #include "Page.h"
 #include "PageOverlay.h"
 #include "Performance.h"
-#include "PlatformMessagePortChannel.h"
+#include "PlatformMessagePortChannelChromium.h"
 #include "PluginDocument.h"
 #include "PrintContext.h"
 #include "RenderBox.h"
@@ -153,12 +152,10 @@
 #include "V8DirectoryEntry.h"
 #include "V8FileEntry.h"
 #include "V8GCController.h"
-#include "WebAnimationControllerImpl.h"
 #include "WebConsoleMessage.h"
 #include "WebDOMEvent.h"
 #include "WebDOMEventListener.h"
 #include "WebDataSourceImpl.h"
-#include "WebDeliveredIntentClient.h"
 #include "WebDevToolsAgentPrivate.h"
 #include "WebDocument.h"
 #include "WebFindOptions.h"
@@ -167,7 +164,6 @@
 #include "WebHistoryItem.h"
 #include "WebIconURL.h"
 #include "WebInputElement.h"
-#include "WebIntent.h"
 #include "WebNode.h"
 #include "WebPerformance.h"
 #include "WebPlugin.h"
@@ -185,6 +181,7 @@
 #include <algorithm>
 #include <public/Platform.h>
 #include <public/WebFileSystem.h>
+#include <public/WebFileSystemType.h>
 #include <public/WebFloatPoint.h>
 #include <public/WebFloatRect.h>
 #include <public/WebPoint.h>
@@ -194,11 +191,6 @@
 #include <public/WebVector.h>
 #include <wtf/CurrentTime.h>
 #include <wtf/HashMap.h>
-
-#if ENABLE(WEB_INTENTS)
-#include "DeliveredIntent.h"
-#include "DeliveredIntentClientImpl.h"
-#endif
 
 using namespace WebCore;
 
@@ -551,12 +543,10 @@ WebFrame* WebFrame::frameForCurrentContext()
     return frameForContext(context);
 }
 
-#if WEBKIT_USING_V8
 WebFrame* WebFrame::frameForContext(v8::Handle<v8::Context> context)
 { 
    return WebFrameImpl::fromFrame(toFrameIfNotDetached(context));
 }
-#endif
 
 WebFrame* WebFrame::fromFrameOwnerElement(const WebElement& element)
 {
@@ -583,12 +573,12 @@ long long WebFrameImpl::identifier() const
     return m_identifier;
 }
 
-WebVector<WebIconURL> WebFrameImpl::iconURLs(int iconTypes) const
+WebVector<WebIconURL> WebFrameImpl::iconURLs(int iconTypesMask) const
 {
     // The URL to the icon may be in the header. As such, only
     // ask the loader for the icon if it's finished loading.
     if (frame()->loader()->state() == FrameStateComplete)
-        return frame()->loader()->icon()->urlsForTypes(iconTypes);
+        return frame()->loader()->icon()->urlsForTypes(iconTypesMask);
     return WebVector<WebIconURL>();
 }
 
@@ -758,7 +748,7 @@ WebFrame* WebFrameImpl::findChildByExpression(const WebString& xpath) const
     Node* node = xpathResult->iterateNext(ec);
     if (!node || !node->isFrameOwnerElement())
         return 0;
-    HTMLFrameOwnerElement* frameElement = static_cast<HTMLFrameOwnerElement*>(node);
+    HTMLFrameOwnerElement* frameElement = toFrameOwnerElement(node);
     return fromFrame(frameElement->contentFrame());
 }
 
@@ -767,11 +757,6 @@ WebDocument WebFrameImpl::document() const
     if (!frame() || !frame()->document())
         return WebDocument();
     return WebDocument(frame()->document());
-}
-
-WebAnimationController* WebFrameImpl::animationController()
-{
-    return &m_animationController;
 }
 
 WebPerformance WebFrameImpl::performance() const
@@ -833,8 +818,8 @@ void WebFrameImpl::addMessageToConsole(const WebConsoleMessage& message)
 
     MessageLevel webCoreMessageLevel;
     switch (message.level) {
-    case WebConsoleMessage::LevelTip:
-        webCoreMessageLevel = TipMessageLevel;
+    case WebConsoleMessage::LevelDebug:
+        webCoreMessageLevel = DebugMessageLevel;
         break;
     case WebConsoleMessage::LevelLog:
         webCoreMessageLevel = LogMessageLevel;
@@ -844,9 +829,6 @@ void WebFrameImpl::addMessageToConsole(const WebConsoleMessage& message)
         break;
     case WebConsoleMessage::LevelError:
         webCoreMessageLevel = ErrorMessageLevel;
-        break;
-    case WebConsoleMessage::LevelDebug:
-        webCoreMessageLevel = DebugMessageLevel;
         break;
     default:
         ASSERT_NOT_REACHED();
@@ -920,13 +902,13 @@ v8::Local<v8::Context> WebFrameImpl::mainWorldScriptContext() const
     return ScriptController::mainWorldContext(frame());
 }
 
-v8::Handle<v8::Value> WebFrameImpl::createFileSystem(WebFileSystem::Type type, const WebString& name, const WebString& path)
+v8::Handle<v8::Value> WebFrameImpl::createFileSystem(WebFileSystemType type, const WebString& name, const WebString& path)
 {
     ASSERT(frame());
     return toV8(DOMFileSystem::create(frame()->document(), name, static_cast<WebCore::FileSystemType>(type), KURL(ParsedURLString, path.utf8().data()), AsyncFileSystemChromium::create()), v8::Handle<v8::Object>(), frame()->script()->currentWorldContext()->GetIsolate());
 }
 
-v8::Handle<v8::Value> WebFrameImpl::createSerializableFileSystem(WebFileSystem::Type type, const WebString& name, const WebString& path)
+v8::Handle<v8::Value> WebFrameImpl::createSerializableFileSystem(WebFileSystemType type, const WebString& name, const WebString& path)
 {
     ASSERT(frame());
     RefPtr<DOMFileSystem> fileSystem = DOMFileSystem::create(frame()->document(), name, static_cast<WebCore::FileSystemType>(type), KURL(ParsedURLString, path.utf8().data()), AsyncFileSystemChromium::create());
@@ -934,7 +916,7 @@ v8::Handle<v8::Value> WebFrameImpl::createSerializableFileSystem(WebFileSystem::
     return toV8(fileSystem.release(), v8::Handle<v8::Object>(), frame()->script()->currentWorldContext()->GetIsolate());
 }
 
-v8::Handle<v8::Value> WebFrameImpl::createFileEntry(WebFileSystem::Type type, const WebString& fileSystemName, const WebString& fileSystemPath, const WebString& filePath, bool isDirectory)
+v8::Handle<v8::Value> WebFrameImpl::createFileEntry(WebFileSystemType type, const WebString& fileSystemName, const WebString& fileSystemPath, const WebString& filePath, bool isDirectory)
 {
     ASSERT(frame());
 
@@ -1124,16 +1106,6 @@ unsigned WebFrameImpl::unloadListenerCount() const
     return frame()->document()->domWindow()->pendingUnloadEventListeners();
 }
 
-bool WebFrameImpl::isProcessingUserGesture() const
-{
-    return ScriptController::processingUserGesture();
-}
-
-bool WebFrameImpl::consumeUserGesture() const
-{
-    return UserGestureIndicator::consumeUserGesture();
-}
-
 bool WebFrameImpl::willSuppressOpenerInNewFrame() const
 {
     return frame()->loader()->suppressOpenerInNewFrame();
@@ -1195,7 +1167,7 @@ size_t WebFrameImpl::characterIndexForPoint(const WebPoint& webPoint) const
         return notFound;
 
     IntPoint point = frame()->view()->windowToContents(webPoint);
-    HitTestResult result = frame()->eventHandler()->hitTestResultAtPoint(point, false);
+    HitTestResult result = frame()->eventHandler()->hitTestResultAtPoint(point);
     RefPtr<Range> range = frame()->rangeForPoint(result.roundedPointInInnerNodeFrame());
     if (!range)
         return notFound;
@@ -1310,11 +1282,13 @@ void WebFrameImpl::replaceMisspelledRange(const WebString& text)
     Vector<DocumentMarker*> markers = frame()->document()->markers()->markersInRange(caretRange.get(), DocumentMarker::Spelling | DocumentMarker::Grammar);
     if (markers.size() < 1 || markers[0]->startOffset() >= markers[0]->endOffset())
         return;
-    RefPtr<Range> markerRange = TextIterator::rangeFromLocationAndLength(frame()->selection()->rootEditableElementOrDocumentElement(), markers[0]->startOffset(), markers[0]->endOffset() - markers[0]->startOffset());
-    if (!markerRange.get() || !frame()->selection()->shouldChangeSelection(markerRange.get()))
+    RefPtr<Range> markerRange = Range::create(caretRange->ownerDocument(), caretRange->startContainer(), markers[0]->startOffset(), caretRange->endContainer(), markers[0]->endOffset());
+    if (!markerRange)
+        return;
+    if (!frame()->selection()->shouldChangeSelection(markerRange.get()))
         return;
     frame()->selection()->setSelection(markerRange.get(), CharacterGranularity);
-    frame()->editor()->replaceSelectionWithText(text, false, true);
+    frame()->editor()->replaceSelectionWithText(text, false, false);
 }
 
 bool WebFrameImpl::hasSelection() const
@@ -1875,26 +1849,6 @@ void WebFrameImpl::sendOrientationChangeEvent(int orientation)
 #endif
 }
 
-void WebFrameImpl::addEventListener(const WebString& eventType, WebDOMEventListener* listener, bool useCapture)
-{
-    DOMWindow* window = frame()->document()->domWindow();
-    EventListenerWrapper* listenerWrapper = listener->createEventListenerWrapper(eventType, useCapture, window);
-    window->addEventListener(eventType, adoptRef(listenerWrapper), useCapture);
-}
-
-void WebFrameImpl::removeEventListener(const WebString& eventType, WebDOMEventListener* listener, bool useCapture)
-{
-    DOMWindow* window = frame()->document()->domWindow();
-    EventListenerWrapper* listenerWrapper = listener->getEventListenerWrapper(eventType, useCapture, window);
-    window->removeEventListener(eventType, listenerWrapper, useCapture);
-}
-
-bool WebFrameImpl::dispatchEvent(const WebDOMEvent& event)
-{
-    ASSERT(!event.isNull());
-    return frame()->document()->domWindow()->dispatchEvent(event);
-}
-
 void WebFrameImpl::dispatchMessageEventWithOriginCheck(const WebSecurityOrigin& intendedTargetOrigin, const WebDOMEvent& event)
 {
     ASSERT(!event.isNull());
@@ -2086,32 +2040,6 @@ int WebFrameImpl::selectFindMatch(unsigned index, WebRect* selectionRect)
     return ordinalOfFirstMatchForFrame(this) + m_activeMatchIndexInCurrentFrame + 1;
 }
 
-void WebFrameImpl::deliverIntent(const WebIntent& intent, WebMessagePortChannelArray* ports, WebDeliveredIntentClient* intentClient)
-{
-#if ENABLE(WEB_INTENTS)
-    OwnPtr<WebCore::DeliveredIntentClient> client(adoptPtr(new DeliveredIntentClientImpl(intentClient)));
-
-    WebSerializedScriptValue intentData = WebSerializedScriptValue::fromString(intent.data());
-    const WebCore::Intent* webcoreIntent = intent;
-
-    // See PlatformMessagePortChannel.cpp
-    OwnPtr<MessagePortChannelArray> channels;
-    if (ports && ports->size()) {
-        channels = adoptPtr(new MessagePortChannelArray(ports->size()));
-        for (size_t i = 0; i < ports->size(); ++i) {
-            RefPtr<PlatformMessagePortChannel> platformChannel = PlatformMessagePortChannel::create((*ports)[i]);
-            (*ports)[i]->setClient(platformChannel.get());
-            (*channels)[i] = MessagePortChannel::create(platformChannel);
-        }
-    }
-    OwnPtr<MessagePortArray> portArray = WebCore::MessagePort::entanglePorts(*(frame()->document()), channels.release());
-
-    RefPtr<DeliveredIntent> deliveredIntent = DeliveredIntent::create(frame(), client.release(), intent.action(), intent.type(), intentData, portArray.release(), webcoreIntent->extras());
-
-    DOMWindowIntents::from(frame()->document()->domWindow())->deliver(deliveredIntent.release());
-#endif
-}
-
 WebString WebFrameImpl::contentAsText(size_t maxChars) const
 {
     if (!frame())
@@ -2202,7 +2130,6 @@ WebFrameImpl::WebFrameImpl(WebFrameClient* client)
     , m_nextInvalidateAfter(0)
     , m_findMatchMarkersVersion(0)
     , m_findMatchRectsAreValid(false)
-    , m_animationController(this)
     , m_identifier(generateFrameIdentifier())
     , m_inSameDocumentHistoryLoad(false)
 {
@@ -2324,7 +2251,7 @@ WebFrameImpl* WebFrameImpl::fromFrameOwnerElement(Element* element)
     // FIXME: Why do we check specifically for <iframe> and <frame> here? Why can't we get the WebFrameImpl from an <object> element, for example.
     if (!element || !element->isFrameOwnerElement() || (!element->hasTagName(HTMLNames::iframeTag) && !element->hasTagName(HTMLNames::frameTag)))
         return 0;
-    HTMLFrameOwnerElement* frameElement = static_cast<HTMLFrameOwnerElement*>(element);
+    HTMLFrameOwnerElement* frameElement = toFrameOwnerElement(element);
     return fromFrame(frameElement->contentFrame());
 }
 

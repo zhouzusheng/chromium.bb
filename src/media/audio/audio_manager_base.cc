@@ -9,14 +9,15 @@
 #include "base/command_line.h"
 #include "base/message_loop_proxy.h"
 #include "base/threading/thread.h"
+#if defined(OS_ANDROID)
+#include "jni/AudioManagerAndroid_jni.h"
+#endif
 #include "media/audio/audio_output_dispatcher_impl.h"
 #include "media/audio/audio_output_proxy.h"
 #include "media/audio/audio_output_resampler.h"
 #include "media/audio/audio_util.h"
 #include "media/audio/fake_audio_input_stream.h"
 #include "media/audio/fake_audio_output_stream.h"
-#include "media/audio/virtual_audio_input_stream.h"
-#include "media/audio/virtual_audio_output_stream.h"
 #include "media/base/media_switches.h"
 
 namespace media {
@@ -33,6 +34,11 @@ static const int kDefaultMaxInputStreams = 16;
 
 static const int kMaxInputChannels = 2;
 
+#if defined(OS_ANDROID)
+static const int kAudioModeNormal = 0x00000000;
+static const int kAudioModeInCommunication = 0x00000003;
+#endif
+
 const char AudioManagerBase::kDefaultDeviceName[] = "Default";
 const char AudioManagerBase::kDefaultDeviceId[] = "default";
 
@@ -44,8 +50,7 @@ AudioManagerBase::AudioManagerBase()
       num_input_streams_(0),
       output_listeners_(
           ObserverList<AudioDeviceListener>::NOTIFY_EXISTING_ONLY),
-      audio_thread_(new base::Thread("AudioThread")),
-      virtual_audio_input_stream_(NULL) {
+      audio_thread_(new base::Thread("AudioThread")) {
 #if defined(OS_WIN)
   audio_thread_->init_com_with_mta(true);
 #endif
@@ -58,6 +63,13 @@ AudioManagerBase::AudioManagerBase()
   CHECK(audio_thread_->Start());
 #endif
   message_loop_ = audio_thread_->message_loop_proxy();
+
+#if defined(OS_ANDROID)
+  JNIEnv* env = base::android::AttachCurrentThread();
+  jobject context = base::android::GetApplicationContext();
+  j_audio_manager_.Reset(
+      Java_AudioManagerAndroid_createAudioManagerAndroid(env, context));
+#endif
 }
 
 AudioManagerBase::~AudioManagerBase() {
@@ -104,28 +116,29 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStream(
     return NULL;
   }
 
-  AudioOutputStream* stream = NULL;
-  if (virtual_audio_input_stream_) {
-#if defined(OS_IOS)
-    // We do not currently support iOS. It does not link.
-    NOTIMPLEMENTED();
-    return NULL;
-#else
-    stream = new VirtualAudioOutputStream(
-        params, message_loop_, virtual_audio_input_stream_,
-        base::Bind(&AudioManagerBase::ReleaseVirtualOutputStream,
-                   base::Unretained(this)));
-#endif
-  } else if (params.format() == AudioParameters::AUDIO_FAKE) {
-    stream = FakeAudioOutputStream::MakeFakeStream(this, params);
-  } else if (params.format() == AudioParameters::AUDIO_PCM_LINEAR) {
-    stream = MakeLinearOutputStream(params);
-  } else if (params.format() == AudioParameters::AUDIO_PCM_LOW_LATENCY) {
-    stream = MakeLowLatencyOutputStream(params);
+  AudioOutputStream* stream;
+  switch (params.format()) {
+    case AudioParameters::AUDIO_PCM_LINEAR:
+      stream = MakeLinearOutputStream(params);
+      break;
+    case AudioParameters::AUDIO_PCM_LOW_LATENCY:
+      stream = MakeLowLatencyOutputStream(params);
+      break;
+    case AudioParameters::AUDIO_FAKE:
+      stream = FakeAudioOutputStream::MakeFakeStream(this, params);
+      break;
+    default:
+      stream = NULL;
+      break;
   }
 
-  if (stream)
+  if (stream) {
     ++num_output_streams_;
+#if defined(OS_ANDROID)
+    if (num_output_streams_ == 1)
+      RegisterHeadsetReceiver();
+#endif
+  }
 
   return stream;
 }
@@ -149,49 +162,29 @@ AudioInputStream* AudioManagerBase::MakeAudioInputStream(
     return NULL;
   }
 
-  AudioInputStream* stream = NULL;
-  bool use_virtual_audio_input_stream = false;
-#if !defined(OS_IOS)
-  use_virtual_audio_input_stream =
-      params.format() == AudioParameters::AUDIO_VIRTUAL ||
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kForceAudioMirroring);
-#endif
-
-  if (use_virtual_audio_input_stream) {
-#if defined(OS_IOS)
-    // We do not currently support iOS.
-    NOTIMPLEMENTED();
-    return NULL;
-#else
-    // TODO(justinlin): Currently, audio mirroring will only work for the first
-    // request. Subsequent requests will not get audio.
-    if (!virtual_audio_input_stream_) {
-      virtual_audio_input_stream_ = new VirtualAudioInputStream(
-          params, message_loop_,
-          base::Bind(&AudioManagerBase::ReleaseVirtualInputStream,
-                     base::Unretained(this)));
-      stream = virtual_audio_input_stream_;
-      DVLOG(1) << "Virtual audio input stream created.";
-
-      // Make all current output streams recreate themselves as
-      // VirtualAudioOutputStreams that will attach to the above
-      // VirtualAudioInputStream.
-      NotifyAllOutputDeviceChangeListeners();
-    } else {
+  AudioInputStream* stream;
+  switch (params.format()) {
+    case AudioParameters::AUDIO_PCM_LINEAR:
+      stream = MakeLinearInputStream(params, device_id);
+      break;
+    case AudioParameters::AUDIO_PCM_LOW_LATENCY:
+      stream = MakeLowLatencyInputStream(params, device_id);
+      break;
+    case AudioParameters::AUDIO_FAKE:
+      stream = FakeAudioInputStream::MakeFakeStream(this, params);
+      break;
+    default:
       stream = NULL;
-    }
-#endif
-  } else if (params.format() == AudioParameters::AUDIO_FAKE) {
-    stream = FakeAudioInputStream::MakeFakeStream(this, params);
-  } else if (params.format() == AudioParameters::AUDIO_PCM_LINEAR) {
-    stream = MakeLinearInputStream(params, device_id);
-  } else if (params.format() == AudioParameters::AUDIO_PCM_LOW_LATENCY) {
-    stream = MakeLowLatencyInputStream(params, device_id);
+      break;
   }
 
-  if (stream)
+  if (stream) {
     ++num_input_streams_;
+#if defined(OS_ANDROID)
+    if (num_input_streams_ == 1)
+      SetAudioMode(kAudioModeInCommunication);
+#endif
+  }
 
   return stream;
 }
@@ -205,12 +198,6 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
 #else
   DCHECK(message_loop_->BelongsToCurrentThread());
 
-  if (virtual_audio_input_stream_) {
-    // Do not attempt to resample, nor cache via AudioOutputDispatcher, when
-    // opening output streams for browser-wide audio mirroring.
-    return MakeAudioOutputStream(params);
-  }
-
   bool use_audio_output_resampler =
       !CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableAudioOutputResampler) &&
@@ -220,7 +207,7 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
   // as our input parameters.
   AudioParameters output_params = params;
   if (use_audio_output_resampler) {
-    output_params = GetPreferredLowLatencyOutputStreamParameters(params);
+    output_params = GetPreferredOutputStreamParameters(params);
 
     // Ensure we only pass on valid output parameters.
     if (!output_params.IsValid()) {
@@ -267,10 +254,6 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
 #endif  // defined(OS_IOS)
 }
 
-bool AudioManagerBase::CanShowAudioInputSettings() {
-  return false;
-}
-
 void AudioManagerBase::ShowAudioInputSettings() {
 }
 
@@ -285,6 +268,10 @@ void AudioManagerBase::ReleaseOutputStream(AudioOutputStream* stream) {
   // streams.
   --num_output_streams_;
   delete stream;
+#if defined(OS_ANDROID)
+  if (!num_output_streams_)
+    UnregisterHeadsetReceiver();
+#endif
 }
 
 void AudioManagerBase::ReleaseInputStream(AudioInputStream* stream) {
@@ -292,27 +279,10 @@ void AudioManagerBase::ReleaseInputStream(AudioInputStream* stream) {
   // TODO(xians) : Have a clearer destruction path for the AudioInputStream.
   --num_input_streams_;
   delete stream;
-}
-
-void AudioManagerBase::ReleaseVirtualInputStream(
-    VirtualAudioInputStream* stream) {
-  DCHECK_EQ(virtual_audio_input_stream_, stream);
-
-  virtual_audio_input_stream_ = NULL;
-
-  // Notify listeners to re-create output streams.  This will cause all
-  // outstanding VirtualAudioOutputStreams pointing at the
-  // VirtualAudioInputStream to be closed and destroyed.  Once this has
-  // happened, there will be no other references to the input stream, and it
-  // will then be safe to delete it.
-  NotifyAllOutputDeviceChangeListeners();
-
-  ReleaseInputStream(stream);
-}
-
-void AudioManagerBase::ReleaseVirtualOutputStream(
-    VirtualAudioOutputStream* stream) {
-  ReleaseOutputStream(stream);
+#if defined(OS_ANDROID)
+  if (!num_input_streams_)
+    SetAudioMode(kAudioModeNormal);
+#endif
 }
 
 void AudioManagerBase::IncreaseActiveInputStreamCount() {
@@ -380,21 +350,12 @@ void AudioManagerBase::ShutdownOnAudioThread() {
 #endif  // defined(OS_IOS)
 }
 
-AudioParameters AudioManagerBase::GetPreferredLowLatencyOutputStreamParameters(
-    const AudioParameters& input_params) {
-#if defined(OS_IOS)
-  // IOS implements audio input only.
-  NOTIMPLEMENTED();
-  return AudioParameters();
-#else
-  // TODO(dalecurtis): This should include bits per channel and channel layout
-  // eventually.
-  return AudioParameters(
-      AudioParameters::AUDIO_PCM_LOW_LATENCY,
-      input_params.channel_layout(), input_params.input_channels(),
-      GetAudioHardwareSampleRate(), 16, GetAudioHardwareBufferSize());
-#endif  // defined(OS_IOS)
+#if defined(OS_ANDROID)
+// static
+bool AudioManagerBase::RegisterAudioManager(JNIEnv* env) {
+  return RegisterNativesImpl(env);
 }
+#endif
 
 void AudioManagerBase::AddOutputDeviceChangeListener(
     AudioDeviceListener* listener) {
@@ -413,5 +374,35 @@ void AudioManagerBase::NotifyAllOutputDeviceChangeListeners() {
   DVLOG(1) << "Firing OnDeviceChange() notifications.";
   FOR_EACH_OBSERVER(AudioDeviceListener, output_listeners_, OnDeviceChange());
 }
+
+AudioParameters AudioManagerBase::GetDefaultOutputStreamParameters() {
+  return GetPreferredOutputStreamParameters(AudioParameters());
+}
+
+AudioParameters AudioManagerBase::GetInputStreamParameters(
+    const std::string& device_id) {
+  NOTREACHED();
+  return AudioParameters();
+}
+
+#if defined(OS_ANDROID)
+void AudioManagerBase::SetAudioMode(int mode) {
+  Java_AudioManagerAndroid_setMode(
+      base::android::AttachCurrentThread(),
+      j_audio_manager_.obj(), mode);
+}
+
+void AudioManagerBase::RegisterHeadsetReceiver() {
+  Java_AudioManagerAndroid_registerHeadsetReceiver(
+      base::android::AttachCurrentThread(),
+      j_audio_manager_.obj());
+}
+
+void AudioManagerBase::UnregisterHeadsetReceiver() {
+  Java_AudioManagerAndroid_unregisterHeadsetReceiver(
+      base::android::AttachCurrentThread(),
+      j_audio_manager_.obj());
+}
+#endif  // defined(OS_ANDROID)
 
 }  // namespace media

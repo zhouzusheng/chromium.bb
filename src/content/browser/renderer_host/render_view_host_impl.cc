@@ -21,7 +21,6 @@
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/cross_site_request_manager.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
@@ -31,7 +30,7 @@
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/common/accessibility_messages.h"
-#include "content/common/browser_plugin_messages.h"
+#include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/drag_messages.h"
@@ -129,6 +128,7 @@ RenderViewHost* RenderViewHost::FromID(int render_process_id,
 
 // static
 RenderViewHost* RenderViewHost::From(RenderWidgetHost* rwh) {
+  DCHECK(rwh->IsRenderView());
   return static_cast<RenderViewHostImpl*>(RenderWidgetHostImpl::From(rwh));
 }
 
@@ -174,6 +174,9 @@ RenderViewHostImpl::RenderViewHostImpl(
       has_timed_out_on_unload_(false),
       unload_ack_is_for_cross_site_transition_(false),
       are_javascript_messages_suppressed_(false),
+      accessibility_layout_callback_(base::Bind(&base::DoNothing)),
+      accessibility_load_callback_(base::Bind(&base::DoNothing)),
+      accessibility_other_callback_(base::Bind(&base::DoNothing)),
       sudden_termination_allowed_(false),
       session_storage_namespace_(
           static_cast<SessionStorageNamespaceImpl*>(session_storage)),
@@ -200,11 +203,6 @@ RenderViewHostImpl::RenderViewHostImpl(
 RenderViewHostImpl::~RenderViewHostImpl() {
   FOR_EACH_OBSERVER(
       RenderViewHostObserver, observers_, RenderViewHostDestruction());
-
-  NotificationService::current()->Notify(
-      NOTIFICATION_RENDER_VIEW_HOST_DELETED,
-      Source<RenderViewHost>(this),
-      NotificationService::NoDetails());
 
   ClearPowerSaveBlockers();
 
@@ -262,9 +260,8 @@ bool RenderViewHostImpl::CreateRenderView(
   params.swapped_out = is_swapped_out_;
   params.next_page_id = next_page_id;
   GetWebScreenInfo(&params.screen_info);
-
-  params.accessibility_mode =
-      BrowserAccessibilityStateImpl::GetInstance()->GetAccessibilityMode();
+  params.accessibility_mode = accessibility_mode();
+  params.allow_partial_swap = !GetProcess()->IsGuest();
 
   Send(new ViewMsg_New(params));
 
@@ -573,20 +570,6 @@ void RenderViewHostImpl::ActivateNearestFindResult(int request_id,
 
 void RenderViewHostImpl::RequestFindMatchRects(int current_version) {
   Send(new ViewMsg_FindMatchRects(GetRoutingID(), current_version));
-}
-
-void RenderViewHostImpl::SynchronousFind(int request_id,
-                                         const string16& search_text,
-                                         const WebKit::WebFindOptions& options,
-                                         int* match_count,
-                                         int* active_ordinal) {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableWebViewSynchronousAPIs)) {
-    return;
-  }
-
-  Send(new ViewMsg_SynchronousFind(GetRoutingID(), request_id, search_text,
-                                   options, match_count, active_ordinal));
 }
 #endif
 
@@ -998,11 +981,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidZoomURL, OnDidZoomURL)
     IPC_MESSAGE_HANDLER(ViewHostMsg_MediaNotification, OnMediaNotification)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetWindowSnapshot, OnGetWindowSnapshot)
-#if defined(OS_ANDROID)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_StartContentIntent, OnStartContentIntent)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeBodyBackgroundColor,
-                        OnDidChangeBodyBackgroundColor)
-#endif
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_RequestPermission,
                         OnRequestDesktopNotificationPermission)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Show,
@@ -1528,8 +1506,7 @@ void RenderViewHostImpl::OnAddMessageToConsole(
   if (delegate_->AddMessageToConsole(level, message, line_no, source_id))
     return;
   // Pass through log level only on WebUI pages to limit console spew.
-  int32 resolved_level =
-      (enabled_bindings_ & BINDINGS_POLICY_WEB_UI) ? level : 0;
+  int32 resolved_level = HasWebUIScheme(delegate_->GetURL()) ? level : 0;
 
   if (resolved_level >= ::logging::GetMinLogLevel()) {
     logging::LogMessage("CONSOLE", line_no, resolved_level).stream() << "\"" <<
@@ -1786,6 +1763,21 @@ void RenderViewHostImpl::UpdateFrameTree(
                                    frame_tree_));
 }
 
+void RenderViewHostImpl::SetAccessibilityLayoutCompleteCallbackForTesting(
+    const base::Closure& callback) {
+  accessibility_layout_callback_ = callback;
+}
+
+void RenderViewHostImpl::SetAccessibilityLoadCompleteCallbackForTesting(
+    const base::Closure& callback) {
+  accessibility_load_callback_ = callback;
+}
+
+void RenderViewHostImpl::SetAccessibilityOtherCallbackForTesting(
+    const base::Closure& callback) {
+  accessibility_other_callback_ = callback;
+}
+
 void RenderViewHostImpl::UpdateWebkitPreferences(
     const webkit_glue::WebPreferences& prefs) {
   Send(new ViewMsg_UpdateWebPreferences(GetRoutingID(), prefs));
@@ -1889,20 +1881,16 @@ void RenderViewHostImpl::OnAccessibilityNotifications(
     if ((src_type == AccessibilityNotificationLayoutComplete ||
          src_type == AccessibilityNotificationLoadComplete) &&
         save_accessibility_tree_for_testing_) {
-      accessibility_tree_ = param.acc_tree;
+      MakeAccessibilityNodeDataTree(param.nodes, &accessibility_tree_);
     }
 
-    NotificationType dst_type;
-    if (src_type == AccessibilityNotificationLoadComplete)
-      dst_type = NOTIFICATION_ACCESSIBILITY_LOAD_COMPLETE;
-    else if (src_type == AccessibilityNotificationLayoutComplete)
-      dst_type = NOTIFICATION_ACCESSIBILITY_LAYOUT_COMPLETE;
-    else
-      dst_type = NOTIFICATION_ACCESSIBILITY_OTHER;
-    NotificationService::current()->Notify(
-          dst_type,
-          Source<RenderViewHost>(this),
-          NotificationService::NoDetails());
+    if (src_type == AccessibilityNotificationLayoutComplete) {
+      accessibility_layout_callback_.Run();
+    } else if (src_type == AccessibilityNotificationLoadComplete) {
+      accessibility_load_callback_.Run();
+    } else {
+      accessibility_other_callback_.Run();
+    }
   }
 
   Send(new AccessibilityMsg_Notifications_ACK(GetRoutingID()));
@@ -1934,7 +1922,8 @@ void RenderViewHostImpl::OnDidZoomURL(double zoom_level,
   HostZoomMapImpl* host_zoom_map = static_cast<HostZoomMapImpl*>(
       HostZoomMap::GetForBrowserContext(GetProcess()->GetBrowserContext()));
   if (remember) {
-    host_zoom_map->SetZoomLevel(net::GetHostOrSpecFromURL(url), zoom_level);
+    host_zoom_map->
+        SetZoomLevelForHost(net::GetHostOrSpecFromURL(url), zoom_level);
   } else {
     host_zoom_map->SetTemporaryZoomLevel(
         GetProcess()->GetID(), GetRoutingID(), zoom_level);
@@ -1945,6 +1934,8 @@ void RenderViewHostImpl::OnMediaNotification(int64 player_cookie,
                                              bool has_video,
                                              bool has_audio,
                                              bool is_playing) {
+  // Chrome OS does its own detection of audio and video.
+#if !defined(OS_CHROMEOS)
   if (is_playing) {
     scoped_ptr<PowerSaveBlocker> blocker;
     if (has_video) {
@@ -1963,19 +1954,8 @@ void RenderViewHostImpl::OnMediaNotification(int64 player_cookie,
     delete power_save_blockers_[player_cookie];
     power_save_blockers_.erase(player_cookie);
   }
-}
-
-#if defined(OS_ANDROID)
-void RenderViewHostImpl::OnDidChangeBodyBackgroundColor(SkColor color) {
-  if (GetView())
-    GetView()->SetCachedBackgroundColor(color);
-}
-
-void RenderViewHostImpl::OnStartContentIntent(const GURL& content_url) {
-  if (GetView())
-    GetView()->StartContentIntent(content_url);
-}
 #endif
+}
 
 void RenderViewHostImpl::OnRequestDesktopNotificationPermission(
     const GURL& source_origin, int callback_context) {

@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -29,9 +29,15 @@ namespace quota {
 class QuotaManagerProxy;
 }
 
+namespace sync_file_system {
+class CannedSyncableFileSystem;
+class SyncableFileSystemOperation;
+}
+
 namespace fileapi {
 
 class AsyncFileUtilAdapter;
+class FileSystemUsageCache;
 class LocalFileSystemOperation;
 class ObfuscatedFileUtil;
 class SandboxQuotaObserver;
@@ -81,8 +87,6 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
   virtual base::FilePath GetFileSystemRootPathOnFileThread(
       const FileSystemURL& url,
       bool create) OVERRIDE;
-  virtual bool IsAccessAllowed(const FileSystemURL& url) OVERRIDE;
-  virtual bool IsRestrictedFileName(const base::FilePath& filename) const OVERRIDE;
   virtual FileSystemFileUtil* GetFileUtil(FileSystemType type) OVERRIDE;
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
   virtual FilePermissionPolicy GetPermissionPolicy(
@@ -169,9 +173,9 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
   friend class SandboxMountPointProviderOriginEnumeratorTest;
 
   // Temporarily allowing them to access enable_sync_directory_operation_
-  friend class CannedSyncableFileSystem;
   friend class ObfuscatedFileUtil;
-  friend class SyncableFileSystemOperation;
+  friend class sync_file_system::CannedSyncableFileSystem;
+  friend class sync_file_system::SyncableFileSystemOperation;
 
   // Returns a path to the usage cache file.
   base::FilePath GetUsageCachePathForOriginAndType(
@@ -200,6 +204,10 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
 
   ObfuscatedFileUtil* sandbox_sync_file_util();
 
+  FileSystemUsageCache* usage_cache() {
+    return file_system_usage_cache_.get();
+  }
+
   scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
 
   const base::FilePath profile_path_;
@@ -207,6 +215,8 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
   FileSystemOptions file_system_options_;
 
   scoped_ptr<AsyncFileUtilAdapter> sandbox_file_util_;
+
+  scoped_ptr<FileSystemUsageCache> file_system_usage_cache_;
 
   scoped_ptr<SandboxQuotaObserver> quota_observer_;
 

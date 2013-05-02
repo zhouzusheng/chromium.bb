@@ -14,6 +14,7 @@
 #include "GrRefCnt.h"
 #include "GrTexture.h"
 #include "GrTextureAccess.h"
+#include "GrTypesPriv.h"
 
 class GrBackendEffectFactory;
 class GrContext;
@@ -69,27 +70,28 @@ class GrEffect : private GrRefCnt {
 public:
     SK_DECLARE_INST_COUNT(GrEffect)
 
+    /**
+     * The types of vertex coordinates available to an effect in the vertex shader. Effects can
+     * require their own vertex attribute but these coordinates are made available by the framework
+     * in all programs. kCustom_CoordsType is provided to signify that an alternative set of coords
+     * is used (usually an explicit vertex attribute) but its meaning is determined by the effect
+     * subclass.
+     */
+    enum CoordsType {
+        kLocal_CoordsType,
+        kPosition_CoordsType,
+
+        kCustom_CoordsType,
+    };
+
     virtual ~GrEffect();
 
     /**
-     * Flags for getConstantColorComponents. They are defined so that the bit order reflects the
-     * GrColor shift order.
-     */
-    enum ValidComponentFlags {
-        kR_ValidComponentFlag = 1 << (GrColor_SHIFT_R / 8),
-        kG_ValidComponentFlag = 1 << (GrColor_SHIFT_G / 8),
-        kB_ValidComponentFlag = 1 << (GrColor_SHIFT_B / 8),
-        kA_ValidComponentFlag = 1 << (GrColor_SHIFT_A / 8),
-
-        kAll_ValidComponentFlags = (kR_ValidComponentFlag | kG_ValidComponentFlag |
-                                    kB_ValidComponentFlag | kA_ValidComponentFlag)
-    };
-
-    /**
      * This function is used to perform optimizations. When called the color and validFlags params
-     * indicate whether the input components to this effect in the FS will have known values. The
-     * function updates both params to indicate known values of its output. A component of the color
-     * param only has meaning if the corresponding bit in validFlags is set.
+     * indicate whether the input components to this effect in the FS will have known values.
+     * validFlags is a bitfield of GrColorComponentFlags. The function updates both params to
+     * indicate known values of its output. A component of the color param only has meaning if the
+     * corresponding bit in validFlags is set.
      */
     virtual void getConstantColorComponents(GrColor* color, uint32_t* validFlags) const = 0;
 
@@ -136,6 +138,15 @@ public:
     /** Shortcut for textureAccess(index).texture(); */
     GrTexture* texture(int index) const { return this->textureAccess(index).getTexture(); }
 
+    /** Will this effect read the destination pixel value? */
+    bool willReadDst() const { return fWillReadDst; }
+
+    int numVertexAttribs() const { return fVertexAttribTypes.count(); }
+
+    GrSLType vertexAttribType(int index) const { return fVertexAttribTypes[index]; }
+
+    static const int kMaxVertexAttribs = 2;
+
     /** Useful for effects that want to insert a texture matrix that is implied by the texture
         dimensions */
     static inline SkMatrix MakeDivByTextureWHMatrix(const GrTexture* texture) {
@@ -168,13 +179,20 @@ public:
 
 protected:
     /**
-     * Subclasses call this from their constructor to register GrTextureAcceses. The effect subclass
-     * manages the lifetime of the accesses (this function only stores a pointer). This must only be
-     * called from the constructor because GrEffects are supposed to be immutable.
+     * Subclasses call this from their constructor to register GrTextureAccesses. The effect
+     * subclass manages the lifetime of the accesses (this function only stores a pointer). This
+     * must only be called from the constructor because GrEffects are immutable.
      */
     void addTextureAccess(const GrTextureAccess* textureAccess);
 
-    GrEffect() : fEffectRef(NULL) {};
+    /**
+     * Subclasses call this from their constructor to register vertex attributes (at most
+     * kMaxVertexAttribs). This must only be called from the constructor because GrEffects are
+     * immutable.
+     */
+    void addVertexAttrib(GrSLType type);
+
+    GrEffect() : fWillReadDst(false), fEffectRef(NULL) {}
 
     /** This should be called by GrEffect subclass factories. See the comment on AutoEffectUnref for
         an example factory function. */
@@ -217,6 +235,13 @@ protected:
         return *static_cast<const T*>(&effectRef);
     }
 
+    /**
+     * If the effect subclass will read the destination pixel value then it must call this function
+     * from its constructor. Otherwise, when its generated backend-specific effect class attempts
+     * to generate code that reads the destination pixel it will fail.
+     */
+    void setWillReadDst() { fWillReadDst = true; }
+
 private:
     bool isEqual(const GrEffect& other) const {
         if (&this->getFactory() != &other.getFactory()) {
@@ -246,8 +271,10 @@ private:
                                 // from deferred state, to call isEqual on naked GrEffects, and
                                 // to inc/dec deferred ref counts.
 
-    SkSTArray<4, const GrTextureAccess*, true>  fTextureAccesses;
-    GrEffectRef*                                fEffectRef;
+    SkSTArray<4, const GrTextureAccess*, true>   fTextureAccesses;
+    SkSTArray<kMaxVertexAttribs, GrSLType, true> fVertexAttribTypes;
+    bool                                         fWillReadDst;
+    GrEffectRef*                                 fEffectRef;
 
     typedef GrRefCnt INHERITED;
 };

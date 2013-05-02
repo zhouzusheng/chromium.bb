@@ -94,21 +94,6 @@ namespace WebCore {
         void setPictographFontFamily(const AtomicString&, UScriptCode = USCRIPT_COMMON);
         const AtomicString& pictographFontFamily(UScriptCode = USCRIPT_COMMON) const;
 
-        void setMinimumFontSize(int);
-        int minimumFontSize() const { return m_minimumFontSize; }
-
-        void setMinimumLogicalFontSize(int);
-        int minimumLogicalFontSize() const { return m_minimumLogicalFontSize; }
-
-        void setDefaultFontSize(int);
-        int defaultFontSize() const { return m_defaultFontSize; }
-
-        void setDefaultFixedFontSize(int);
-        int defaultFixedFontSize() const { return m_defaultFixedFontSize; }
-
-        void setScreenFontSubstitutionEnabled(bool);
-        bool screenFontSubstitutionEnabled() const { return m_screenFontSubstitutionEnabled; }
-
 #if ENABLE(TEXT_AUTOSIZING)
         void setTextAutosizingEnabled(bool);
         bool textAutosizingEnabled() const { return m_textAutosizingEnabled; }
@@ -134,11 +119,11 @@ namespace WebCore {
         void setLoadsImagesAutomatically(bool);
         bool loadsImagesAutomatically() const { return m_loadsImagesAutomatically; }
 
-        void setScriptEnabled(bool);
-        // Instead of calling isScriptEnabled directly, please consider calling
-        // ScriptController::canExecuteScripts, which takes things like the
-        // HTML sandbox attribute into account.
+        // Clients that execute script should call ScriptController::canExecuteScripts()
+        // instead of this function. ScriptController::canExecuteScripts() checks the
+        // HTML sandbox, plug-in sandboxing, and other important details.
         bool isScriptEnabled() const { return m_isScriptEnabled; }
+        void setScriptEnabled(bool);
 
         SETTINGS_GETTERS_AND_SETTERS
 
@@ -151,9 +136,6 @@ namespace WebCore {
 
         void setImagesEnabled(bool);
         bool areImagesEnabled() const { return m_areImagesEnabled; }
-
-        void setMediaEnabled(bool);
-        bool isMediaEnabled() const { return m_isMediaEnabled; }
 
         void setPluginsEnabled(bool);
         bool arePluginsEnabled() const { return m_arePluginsEnabled; }
@@ -180,15 +162,9 @@ namespace WebCore {
         void setUserStyleSheetLocation(const KURL&);
         const KURL& userStyleSheetLocation() const { return m_userStyleSheetLocation; }
 
-        void setTextAreasAreResizable(bool);
-        bool textAreasAreResizable() const { return m_textAreasAreResizable; }
-
         void setNeedsAdobeFrameReloadingQuirk(bool);
         bool needsAcrobatFrameReloadingQuirk() const { return m_needsAdobeFrameReloadingQuirk; }
 
-        void setDOMPasteAllowed(bool);
-        bool isDOMPasteAllowed() const { return m_isDOMPasteAllowed; }
-        
         static void setDefaultMinDOMTimerInterval(double); // Interval specified in seconds.
         static double defaultMinDOMTimerInterval();
         
@@ -204,17 +180,16 @@ namespace WebCore {
         void setDOMTimerAlignmentInterval(double);
         double domTimerAlignmentInterval() const;
 
+#if ENABLE(HIDDEN_PAGE_DOM_TIMER_THROTTLING)
+        bool hiddenPageDOMTimerThrottlingEnabled() const { return m_hiddenPageDOMTimerThrottlingEnabled; }
+        void setHiddenPageDOMTimerThrottlingEnabled(bool);
+#endif
+
         void setUsesPageCache(bool);
         bool usesPageCache() const { return m_usesPageCache; }
         
-        void setAuthorAndUserStylesEnabled(bool);
-        bool authorAndUserStylesEnabled() const { return m_authorAndUserStylesEnabled; }
-        
         void setFontRenderingMode(FontRenderingMode mode);
         FontRenderingMode fontRenderingMode() const;
-
-        void setApplicationChromeMode(bool);
-        bool inApplicationChromeMode() const { return m_inApplicationChromeMode; }
 
         void setCSSCustomFilterEnabled(bool enabled) { m_isCSSCustomFilterEnabled = enabled; }
         bool isCSSCustomFilterEnabled() const { return m_isCSSCustomFilterEnabled; }
@@ -234,15 +209,6 @@ namespace WebCore {
         void setCSSVariablesEnabled(bool) { }
         bool cssVariablesEnabled() const { return false; }
 #endif
-
-        void setAcceleratedCompositingEnabled(bool);
-        bool acceleratedCompositingEnabled() const { return m_acceleratedCompositingEnabled; }
-
-        void setShowDebugBorders(bool);
-        bool showDebugBorders() const { return m_showDebugBorders; }
-
-        void setShowRepaintCounter(bool);
-        bool showRepaintCounter() const { return m_showRepaintCounter; }
 
         void setShowTiledScrollingIndicator(bool);
         bool showTiledScrollingIndicator() const { return m_showTiledScrollingIndicator; }
@@ -303,6 +269,14 @@ namespace WebCore {
         static bool shouldRespectPriorityInCSSAttributeSetters();
 #endif
 
+        void setTimeWithoutMouseMovementBeforeHidingControls(double time) { m_timeWithoutMouseMovementBeforeHidingControls = time; }
+        double timeWithoutMouseMovementBeforeHidingControls() const { return m_timeWithoutMouseMovementBeforeHidingControls; }
+
+#if ENABLE(PAGE_VISIBILITY_API)
+        bool hiddenPageCSSAnimationSuspensionEnabled() const { return m_hiddenPageCSSAnimationSuspensionEnabled; }
+        void setHiddenPageCSSAnimationSuspensionEnabled(bool);
+#endif
+
     private:
         explicit Settings(Page*);
 
@@ -319,11 +293,6 @@ namespace WebCore {
         ScriptFontFamilyMap m_cursiveFontFamilyMap;
         ScriptFontFamilyMap m_fantasyFontFamilyMap;
         ScriptFontFamilyMap m_pictographFontFamilyMap;
-        int m_minimumFontSize;
-        int m_minimumLogicalFontSize;
-        int m_defaultFontSize;
-        int m_defaultFixedFontSize;
-        bool m_screenFontSubstitutionEnabled;
         SecurityOrigin::StorageBlockingPolicy m_storageBlockingPolicy;
 #if ENABLE(TEXT_AUTOSIZING)
         float m_textAutosizingFontScaleFactor;
@@ -339,16 +308,11 @@ namespace WebCore {
         bool m_loadsImagesAutomatically : 1;
         bool m_privateBrowsingEnabled : 1;
         bool m_areImagesEnabled : 1;
-        bool m_isMediaEnabled : 1;
         bool m_arePluginsEnabled : 1;
         bool m_isScriptEnabled : 1;
-        bool m_textAreasAreResizable : 1;
         bool m_needsAdobeFrameReloadingQuirk : 1;
-        bool m_isDOMPasteAllowed : 1;
         bool m_usesPageCache : 1;
-        bool m_authorAndUserStylesEnabled : 1;
         unsigned m_fontRenderingMode : 1;
-        bool m_inApplicationChromeMode : 1;
         bool m_isCSSCustomFilterEnabled : 1;
 #if ENABLE(CSS_STICKY_POSITION)
         bool m_cssStickyPositionEnabled : 1;
@@ -356,9 +320,6 @@ namespace WebCore {
 #if ENABLE(CSS_VARIABLES)
         bool m_cssVariablesEnabled : 1;
 #endif
-        bool m_acceleratedCompositingEnabled : 1;
-        bool m_showDebugBorders : 1;
-        bool m_showRepaintCounter : 1;
         bool m_showTiledScrollingIndicator : 1;
         bool m_tiledBackingStoreEnabled : 1;
         bool m_dnsPrefetchingEnabled : 1;
@@ -372,8 +333,17 @@ namespace WebCore {
         bool m_scrollingPerformanceLoggingEnabled : 1;
         bool m_aggressiveTileRetentionEnabled : 1;
 
+        double m_timeWithoutMouseMovementBeforeHidingControls;
+
         Timer<Settings> m_setImageLoadingSettingsTimer;
         void imageLoadingSettingsTimerFired(Timer<Settings>*);
+
+#if ENABLE(HIDDEN_PAGE_DOM_TIMER_THROTTLING)
+        bool m_hiddenPageDOMTimerThrottlingEnabled : 1;
+#endif
+#if ENABLE(PAGE_VISIBILITY_API)
+        bool m_hiddenPageCSSAnimationSuspensionEnabled : 1;
+#endif
 
         static double gDefaultMinDOMTimerInterval;
         static double gDefaultDOMTimerAlignmentInterval;

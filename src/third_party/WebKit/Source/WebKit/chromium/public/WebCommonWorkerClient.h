@@ -33,6 +33,10 @@
 
 #include "../../../Platform/chromium/public/WebCommon.h"
 #include "../../../Platform/chromium/public/WebFileSystem.h"
+#include "../../../Platform/chromium/public/WebFileSystemType.h"
+// FIXME: need to move this to Platform
+#include "WebStorageQuotaCallbacks.h"
+#include "WebStorageQuotaType.h"
 
 namespace WebKit {
 
@@ -59,7 +63,7 @@ public:
     }
 
     // Called on the main webkit thread before opening a file system.
-    virtual void openFileSystem(WebFileSystem::Type, long long size, bool create, WebFileSystemCallbacks*)
+    virtual void openFileSystem(WebFileSystemType, long long size, bool create, WebFileSystemCallbacks*)
     {
         WEBKIT_ASSERT_NOT_REACHED();
     }
@@ -68,6 +72,10 @@ public:
     virtual bool allowIndexedDB(const WebString& name)
     {
         return true;
+    }
+    virtual void queryUsageAndQuota(WebStorageQuotaType, WebStorageQuotaCallbacks*)
+    {
+        WEBKIT_ASSERT_NOT_REACHED();
     }
 };
 

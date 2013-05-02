@@ -42,10 +42,12 @@ void ResourceRequestInfo::AllocateForTesting(
           resource_type,                     // resource_type
           PAGE_TRANSITION_LINK,              // transition_type
           false,                             // is_download
+          false,                             // is_stream
           true,                              // allow_download
           false,                             // has_user_gesture
           WebKit::WebReferrerPolicyDefault,  // referrer_policy
-          context);                          // context
+          context,                           // context
+          false);                            // is_async
   info->AssociateWithRequest(request);
 }
 
@@ -79,7 +81,7 @@ const ResourceRequestInfoImpl* ResourceRequestInfoImpl::ForRequest(
 }
 
 ResourceRequestInfoImpl::ResourceRequestInfoImpl(
-    ProcessType process_type,
+    int process_type,
     int child_id,
     int route_id,
     int origin_pid,
@@ -91,12 +93,13 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
     ResourceType::Type resource_type,
     PageTransition transition_type,
     bool is_download,
+    bool is_stream,
     bool allow_download,
     bool has_user_gesture,
     WebKit::WebReferrerPolicy referrer_policy,
-    ResourceContext* context)
+    ResourceContext* context,
+    bool is_async)
     : cross_site_handler_(NULL),
-      async_handler_(NULL),
       process_type_(process_type),
       child_id_(child_id),
       route_id_(route_id),
@@ -107,6 +110,7 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
       parent_is_main_frame_(parent_is_main_frame),
       parent_frame_id_(parent_frame_id),
       is_download_(is_download),
+      is_stream_(is_stream),
       allow_download_(allow_download),
       has_user_gesture_(has_user_gesture),
       was_ignored_by_handler_(false),
@@ -114,7 +118,8 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
       transition_type_(transition_type),
       memory_cost_(0),
       referrer_policy_(referrer_policy),
-      context_(context) {
+      context_(context),
+      is_async_(is_async) {
 }
 
 ResourceRequestInfoImpl::~ResourceRequestInfoImpl() {
@@ -198,7 +203,7 @@ bool ResourceRequestInfoImpl::GetAssociatedRenderView(
 }
 
 bool ResourceRequestInfoImpl::IsAsync() const {
-  return async_handler_ != NULL;
+  return is_async_;
 }
 
 void ResourceRequestInfoImpl::AssociateWithRequest(net::URLRequest* request) {

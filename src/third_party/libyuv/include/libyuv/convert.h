@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -243,7 +243,7 @@ int ConvertToI420(const uint8* src_frame, size_t src_size,
                   int crop_x, int crop_y,
                   int src_width, int src_height,
                   int dst_width, int dst_height,
-                  RotationMode rotation,
+                  enum RotationMode rotation,
                   uint32 format);
 
 #ifdef __cplusplus

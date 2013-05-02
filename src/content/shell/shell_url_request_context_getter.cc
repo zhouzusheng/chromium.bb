@@ -7,8 +7,8 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "base/threading/worker_pool.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
@@ -16,17 +16,18 @@
 #include "content/shell/shell_network_delegate.h"
 #include "content/shell/shell_switches.h"
 #include "net/base/cert_verifier.h"
-#include "net/base/default_server_bound_cert_store.h"
-#include "net/base/host_resolver.h"
-#include "net/base/mapped_host_resolver.h"
-#include "net/base/server_bound_cert_service.h"
-#include "net/base/ssl_config_service_defaults.h"
 #include "net/cookies/cookie_monster.h"
+#include "net/dns/host_resolver.h"
+#include "net/dns/mapped_host_resolver.h"
+#include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/proxy/proxy_service.h"
+#include "net/ssl/default_server_bound_cert_store.h"
+#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/protocol_intercept_job_factory.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
@@ -35,33 +36,37 @@
 
 namespace content {
 
+namespace {
+
+void InstallProtocolHandlers(net::URLRequestJobFactoryImpl* job_factory,
+                             ProtocolHandlerMap* protocol_handlers) {
+  for (ProtocolHandlerMap::iterator it =
+           protocol_handlers->begin();
+       it != protocol_handlers->end();
+       ++it) {
+    bool set_protocol = job_factory->SetProtocolHandler(
+        it->first, it->second.release());
+    DCHECK(set_protocol);
+  }
+  protocol_handlers->clear();
+}
+
+}  // namespace
+
 ShellURLRequestContextGetter::ShellURLRequestContextGetter(
     bool ignore_certificate_errors,
     const base::FilePath& base_path,
     MessageLoop* io_loop,
     MessageLoop* file_loop,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        blob_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        file_system_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        developer_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        chrome_protocol_handler,
-    scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
-        chrome_devtools_protocol_handler)
+    ProtocolHandlerMap* protocol_handlers)
     : ignore_certificate_errors_(ignore_certificate_errors),
       base_path_(base_path),
       io_loop_(io_loop),
-      file_loop_(file_loop),
-      blob_protocol_handler_(blob_protocol_handler.Pass()),
-      file_system_protocol_handler_(file_system_protocol_handler.Pass()),
-      developer_protocol_handler_(developer_protocol_handler.Pass()),
-      chrome_protocol_handler_(chrome_protocol_handler.Pass()),
-      chrome_devtools_protocol_handler_(
-          chrome_devtools_protocol_handler.Pass()) {
+      file_loop_(file_loop) {
   // Must first be created on the UI thread.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  std::swap(protocol_handlers_, *protocol_handlers);
 
   // We must create the proxy config service on the UI loop on Linux because it
   // must synchronously run on the glib message loop. This will be passed to
@@ -85,6 +90,7 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
 
     url_request_context_.reset(new net::URLRequestContext());
     network_delegate_.reset(new ShellNetworkDelegate);
+    // SHEZ: remove upstream code here, used only for testing
     url_request_context_->set_network_delegate(network_delegate_.get());
     storage_.reset(
         new net::URLRequestContextStorage(url_request_context_.get()));
@@ -93,8 +99,7 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
         new net::DefaultServerBoundCertStore(NULL),
         base::WorkerPool::GetTaskRunner(true)));
     storage_->set_http_user_agent_settings(
-        new net::StaticHttpUserAgentSettings(
-            "en-us,en", "iso-8859-1,*,utf-8", EmptyString()));
+        new net::StaticHttpUserAgentSettings("en-us,en", EmptyString()));
 
     scoped_ptr<net::HostResolver> host_resolver(
         net::HostResolver::CreateDefaultResolver(NULL));
@@ -135,7 +140,7 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
     network_session_params.http_auth_handler_factory =
         url_request_context_->http_auth_handler_factory();
     network_session_params.network_delegate =
-        url_request_context_->network_delegate();
+        network_delegate_.get();
     network_session_params.http_server_properties =
         url_request_context_->http_server_properties();
     network_session_params.ignore_certificate_errors =
@@ -169,24 +174,15 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
         network_session_params, main_backend);
     storage_->set_http_transaction_factory(main_cache);
 
+#if !defined(DISABLE_FTP_SUPPORT)
+    storage_->set_ftp_transaction_factory(
+        new net::FtpNetworkLayer(network_session_params.host_resolver));
+#endif
+
     scoped_ptr<net::URLRequestJobFactoryImpl> job_factory(
         new net::URLRequestJobFactoryImpl());
-    bool set_protocol = job_factory->SetProtocolHandler(
-        chrome::kBlobScheme, blob_protocol_handler_.release());
-    DCHECK(set_protocol);
-    set_protocol = job_factory->SetProtocolHandler(
-        chrome::kFileSystemScheme, file_system_protocol_handler_.release());
-    DCHECK(set_protocol);
-    set_protocol = job_factory->SetProtocolHandler(
-            chrome::kChromeUIScheme, chrome_protocol_handler_.release());
-    DCHECK(set_protocol);
-    set_protocol = job_factory->SetProtocolHandler(
-        chrome::kChromeDevToolsScheme,
-        chrome_devtools_protocol_handler_.release());
-    DCHECK(set_protocol);
-    storage_->set_job_factory(new net::ProtocolInterceptJobFactory(
-        job_factory.PassAs<net::URLRequestJobFactory>(),
-        developer_protocol_handler_.Pass()));
+    InstallProtocolHandlers(job_factory.get(), &protocol_handlers_);
+    storage_->set_job_factory(job_factory.release());
   }
 
   return url_request_context_.get();

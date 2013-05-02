@@ -137,119 +137,17 @@ WebInspector.GlassPane = function()
     this.element.style.cssText = "position:absolute;top:0;bottom:0;left:0;right:0;background-color:transparent;z-index:1000;";
     this.element.id = "glass-pane-for-drag";
     document.body.appendChild(this.element);
+    WebInspector._glassPane = this;
 }
 
 WebInspector.GlassPane.prototype = {
     dispose: function()
     {
+        delete WebInspector._glassPane;
+        WebInspector.inspectorView.focus();
         if (this.element.parentElement)
             this.element.parentElement.removeChild(this.element);
     }
-}
-
-WebInspector.animateStyle = function(animations, duration, callback)
-{
-    var interval;
-    var complete = 0;
-    var hasCompleted = false;
-
-    const intervalDuration = (1000 / 30); // 30 frames per second.
-    const animationsLength = animations.length;
-    const propertyUnit = {opacity: ""};
-    const defaultUnit = "px";
-
-    function cubicInOut(t, b, c, d)
-    {
-        if ((t/=d/2) < 1) return c/2*t*t*t + b;
-        return c/2*((t-=2)*t*t + 2) + b;
-    }
-
-    // Pre-process animations.
-    for (var i = 0; i < animationsLength; ++i) {
-        var animation = animations[i];
-        var element = null, start = null, end = null, key = null;
-        for (key in animation) {
-            if (key === "element")
-                element = animation[key];
-            else if (key === "start")
-                start = animation[key];
-            else if (key === "end")
-                end = animation[key];
-        }
-
-        if (!element || !end)
-            continue;
-
-        if (!start) {
-            var computedStyle = element.ownerDocument.defaultView.getComputedStyle(element);
-            start = {};
-            for (key in end)
-                start[key] = parseInt(computedStyle.getPropertyValue(key), 10);
-            animation.start = start;
-        } else
-            for (key in start)
-                element.style.setProperty(key, start[key] + (key in propertyUnit ? propertyUnit[key] : defaultUnit));
-    }
-
-    function animateLoop()
-    {
-        if (hasCompleted)
-            return;
-        
-        // Advance forward.
-        complete += intervalDuration;
-        var next = complete + intervalDuration;
-
-        // Make style changes.
-        for (var i = 0; i < animationsLength; ++i) {
-            var animation = animations[i];
-            var element = animation.element;
-            var start = animation.start;
-            var end = animation.end;
-            if (!element || !end)
-                continue;
-
-            var style = element.style;
-            for (key in end) {
-                var endValue = end[key];
-                if (next < duration) {
-                    var startValue = start[key];
-                    var newValue = cubicInOut(complete, startValue, endValue - startValue, duration);
-                    style.setProperty(key, newValue + (key in propertyUnit ? propertyUnit[key] : defaultUnit));
-                } else
-                    style.setProperty(key, endValue + (key in propertyUnit ? propertyUnit[key] : defaultUnit));
-            }
-        }
-
-        // End condition.
-        if (complete >= duration) {
-            hasCompleted = true;
-            clearInterval(interval);
-            if (callback)
-                callback();
-        }
-    }
-
-    function forceComplete()
-    {
-        if (hasCompleted)
-            return;
-
-        complete = duration;
-        animateLoop();
-    }
-
-    function cancel()
-    {
-        hasCompleted = true;
-        clearInterval(interval);
-    }
-
-    interval = setInterval(animateLoop, intervalDuration);
-    return {
-        cancel: cancel,
-        forceComplete: forceComplete
-    };
 }
 
 WebInspector.isBeingEdited = function(element)
@@ -861,6 +759,8 @@ WebInspector._isTextEditingElement = function(element)
 
 WebInspector.setCurrentFocusElement = function(x)
 {
+    if (WebInspector._glassPane && x && !WebInspector._glassPane.element.isAncestor(x))
+        return;
     if (WebInspector._currentFocusElement !== x)
         WebInspector._previousFocusElement = WebInspector._currentFocusElement;
     WebInspector._currentFocusElement = x;

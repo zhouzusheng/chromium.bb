@@ -57,7 +57,7 @@ input[type="search"]:focus, input[type="text"]:focus {
     padding-top: 1px;
     padding-left: 5px;
     border-bottom: 1px solid rgb(80, 80, 80);
-    -webkit-box-orient: horizontal;
+    -webkit-flex-direction: row;
     -webkit-background-origin: padding;
     -webkit-background-clip: padding;
 }
@@ -163,14 +163,14 @@ body.dock-to-bottom .toolbar-item:active .toolbar-icon {
 }
 
 .toolbar-label {
-    line-height: 22px;
+    line-height: 24px;
     font-size: 11px;
-    font-family: Lucida Grande, sans-serif;
+    font-family: 'Lucida Grande', sans-serif;
     text-shadow: rgba(255, 255, 255, 0.5) 0 1px 0;
 }
 
 body.show-toolbar-icons .toolbar-label {
-    line-height: 15px;
+    line-height: 16px;
 }
 .toolbar-item.toggleable:active .toolbar-label {
     text-shadow: none;
@@ -188,8 +188,8 @@ body.dock-to-bottom #search-toolbar-label {
 
 #toolbar-controls {
     float: right;
-    display: -webkit-box;
-    -webkit-box-align: center;
+    display: -webkit-flex;
+    -webkit-align-items: center;
     height: 100%;
 }
 
@@ -238,15 +238,15 @@ body.undocked.platform-mac-snowleopard #toolbar-dropdown {
 }
 
 #toolbar-dropdown .scrollable-content {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-box-align: start;
+    display: -webkit-flex;
+    -webkit-flex-direction: column;
+    -webkit-align-items: flex-start;
     padding-right: 0;
 }
 
 #toolbar-dropdown .toolbar-item {
-    display: -webkit-box;
-    -webkit-box-orient: horizontal;
+    display: -webkit-flex;
+    -webkit-flex-direction: row;
     width: 100%;
     border: 1px solid rgba(0, 0, 0, 0);
 }
@@ -279,6 +279,28 @@ body.show-toolbar-icons #toolbar-dropdown .toolbar-item {
 
 body.show-toolbar-icons #toolbar-dropdown .toolbar-label {
     line-height: 32px;
+}
+
+#toolbar-panels-menu {
+    font-size: 17px;
+    font-weight: bold;
+    border: 0;
+    background-color: transparent;
+    -webkit-border-radius: 5px;
+    text-shadow: none;
+    cursor: default;
+    margin: 0;
+    /* A line height of 0 allows precise text positioning using padding. */
+    line-height: 0;
+    padding: 13px 6px 11px;
+}
+
+#toolbar-panels-menu:hover {
+    background-image: -webkit-gradient(linear, left top, left bottom, from(rgba(191, 191, 191, 0.7)), to(rgba(171, 171, 171, 0.5)));
+}
+
+#toolbar-panels-menu:active {
+    background-image: -webkit-gradient(linear, left top, left bottom, from(rgba(111, 111, 111, 0.8)), to(rgba(91, 91, 91, 0.8)));
 }
 
 .scrollable-content {
@@ -475,6 +497,30 @@ body.dock-to-bottom .toolbar-item.timeline .toolbar-icon {
     background-position-x: -160px;
 }
 
+.toolbar-item.cpu-profiler .toolbar-icon {
+    background-position-x: -160px;
+}
+
+.toolbar-item.css-profiler .toolbar-icon {
+    background-position-x: -160px;
+}
+
+.toolbar-item.heap-profiler .toolbar-icon {
+    background-position-x: -160px;
+}
+
+.toolbar-item.canvas-profiler .toolbar-icon {
+    background-position-x: -160px;
+}
+
+.toolbar-item.memory-chart-profiler .toolbar-icon {
+    background-position-x: -160px;
+}
+
+.toolbar-item.memory-snapshot-profiler .toolbar-icon {
+    background-position-x: -160px;
+}
+
 body.dock-to-bottom .toolbar-item.profiles .toolbar-icon {
     background-position-x: -120px;
 }
@@ -535,8 +581,8 @@ body:not(.platform-mac) .toolbar-item.close-left {
 }
 
 .toolbar-item.close-left, .toolbar-item.close-right {
-  display: -webkit-box;
-  -webkit-box-align: center;
+  display: -webkit-flex;
+  -webkit-align-items: center;
   height: 100%;
   cursor: default;
 }
@@ -550,6 +596,14 @@ body:not(.platform-mac) .toolbar-item.close-left {
     bottom: 0;
     overflow: hidden;
     background-color: white;
+}
+
+.animate-slow * {
+    -webkit-transition-duration: 2.5s !important;
+}
+
+.animate #main {
+    -webkit-transition: bottom 100ms linear;
 }
 
 body.show-toolbar-icons #main {
@@ -600,7 +654,7 @@ body.drawer-visible #main-panels {
     display: inline-block;
     pointer-events: auto;
     cursor: default;
-    height: 24px;
+    height: 22px;
     padding: 0;
     margin-left: -1px;
     margin-right: 0;
@@ -620,6 +674,10 @@ body.drawer-visible #main-panels {
     height: 24px;
 }
 
+.animate #floating-status-bar-container {
+    -webkit-transition: padding 100ms linear;
+}
+
 body.drawer-visible #floating-status-bar-container {
     display: -webkit-flex;
 }
@@ -637,8 +695,8 @@ body.drawer-visible #floating-status-bar-container {
     pointer-events: none;
 }
 
-#panel-status-bar > div {
-    width: 100%;
+#drawer-view-anchor {
+    display: inline-block;
 }
 
 .status-bar-item:active {
@@ -745,7 +803,6 @@ select.status-bar-item {
     margin-right: -15px;
     position: relative;
     top: -1px;
-    height: 23px;
 }
 
 select.status-bar-item, select.status-bar-item:hover {
@@ -865,6 +922,10 @@ body.port-qt .dock-status-bar-item {
     background-color: white;
 }
 
+.animate #drawer {
+    -webkit-transition: height 100ms linear;
+}
+
 #drawer-contents {
     position: absolute;
     top: 0;
@@ -918,7 +979,6 @@ body.platform-linux .monospace, body.platform-linux .source-code {
     overflow-y: overlay;
     word-wrap: break-word;
     -webkit-user-select: text;
-    -webkit-text-size-adjust: auto;
 }
 
 #console-prompt {
@@ -986,7 +1046,6 @@ body.platform-linux .monospace, body.platform-linux .source-code {
     text-align: left;
     font-size: 11px;
     line-height: normal;
-    font-family: Helvetica, Arial, sans-serif;
     font-weight: bold;
     text-shadow: none;
     color: white;
@@ -1560,7 +1619,7 @@ iframe.panel.extension {
     display: block;
 }
 
-.sidebar-pane .section .properties, .event-bar .event-properties {
+.event-bar .event-properties {
     padding-left: 16px;
 }
 
@@ -1622,26 +1681,6 @@ iframe.panel.extension {
 
 .properties-tree ol.expanded {
     display: block;
-}
-
-.event-listener-breakpoints .event-category {
-    font-size: 11px;
-    font-weight: bold;
-    color: rgb(96, 96, 96);
-    padding-top: 2px;
-}
-
-.event-listener-breakpoints.properties-tree .children li {
-    margin-left: 12px;
-    height: 16px;
-}
-
-.event-listener-breakpoints .checkbox-elem {
-    font-size: 10px;
-    float: left;
-    top: -2px;
-    position: relative;
-    left: -1px;
 }
 
 .editing {
@@ -1785,206 +1824,6 @@ li.editing .swatch, li.editing .enabled-button,  li.editing-sub-part .delete-but
     border: 1px solid rgba(64, 64, 64, 0.8);
 }
 
-.pane-title + .pane-title, .pane:not(.visible) + .pane-title, .pane-title:first-of-type {
-    margin-top: -1px;
-}
-
-.pane-title {
-    position: relative;
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(243, 243, 243)), color-stop(0.05, rgb(243, 243, 243)), color-stop(0.05, rgb(230, 230, 230)), to(rgb(209, 209, 209)));
-    height: 20px;
-    padding: 0 5px;
-    border-top: 1px solid rgb(189, 189, 189);
-    border-bottom: 1px solid rgb(189, 189, 189);
-    font-weight: bold;
-    font-size: 12px;
-    line-height: 18px;
-    color: rgb(110, 110, 110);
-    text-shadow: white 0 1px 0;
-    -webkit-background-origin: padding;
-    -webkit-background-clip: padding;
-}
-
-.pane-title:active {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(231, 231, 231)), color-stop(0.05, rgb(231, 231, 231)), color-stop(0.05, rgb(207, 207, 207)), to(rgb(186, 186, 186)));
-    border-top: 1px solid rgb(178, 178, 178);
-    border-bottom: 1px solid rgb(178, 178, 178);
-}
-
-.pane-title::before {
-    content: url(Images/disclosureTriangleSmallRightBlack.png);
-    float: left;
-    width: 11px;
-    height: 12px;
-    margin-right: 2px;
-    margin-top: 1px;
-}
-
-.pane-title.expanded::before {
-    content: url(Images/disclosureTriangleSmallDownBlack.png);
-}
-
-.sidebar-pane-toolbar {
-    font-weight: bold;
-    font-size: 12px;
-    line-height: 18px;
-    color: rgb(110, 110, 110);
-    text-shadow: white 0 1px 0;
-    left: 0;
-    right: 0;
-    top: 0;
-    height: 20px;
-    position: absolute;
-    pointer-events: none;
-}
-
-.sidebar-pane-toolbar > * {
-    pointer-events: auto;
-}
-
-.sidebar-pane-toolbar > select {
-    float: right;
-    width: 23px;
-    height: 17px;
-    color: transparent;
-    background-color: transparent;
-    border: none;
-    background-repeat: no-repeat;
-    margin: 1px 0 0 0;
-    padding: 0;
-    -webkit-border-radius: 0;
-    -webkit-appearance: none;
-}
-
-.sidebar-pane-toolbar > select:hover {
-    background-position: -23px 0px;
-}
-
-.sidebar-pane-toolbar > select:active {
-    background-position: -46px 0px;
-}
-
-.sidebar-pane-toolbar > select.select-settings {
-    background-image: url(Images/paneSettingsButtons.png);
-}
-
-.sidebar-pane-toolbar > select.select-filter {
-    background-image: url(Images/paneFilterButtons.png);
-}
-
-.sidebar-pane-toolbar > select > option, .sidebar-pane-toolbar > select > hr {
-    color: black;
-}
-
-.sidebar-pane-toolbar > .pane-title-button {
-    float: right;
-    width: 23px;
-    height: 17px;
-    color: transparent;
-    background-color: transparent;
-    border: none;
-    background-repeat: no-repeat;
-    margin: 1px 0 0 0;
-    padding: 0;
-    -webkit-border-radius: 0;
-    -webkit-appearance: none;
-}
-
-.sidebar-pane-toolbar > .pane-title-button:hover {
-    background-position: -23px 0px;
-}
-
-.sidebar-pane-toolbar > .pane-title-button:active, .sidebar-pane-toolbar > .pane-title-button.toggled {
-    background-position: -46px 0px;
-}
-
-.sidebar-pane-toolbar > .pane-title-button.add {
-    background-image: url(Images/paneAddButtons.png);
-}
-
-.sidebar-pane-toolbar > .pane-title-button.element-state {
-    background-image: url(Images/paneElementStateButtons.png);
-}
-
-.sidebar-pane-toolbar > .pane-title-button.refresh {
-    background-image: url(Images/paneRefreshButtons.png);
-}
-
-.sidebar-pane {
-    position: relative;
-}
-
-.sidebar-pane > .body {
-    position: relative;
-    display: none;
-    overflow-y: auto;
-    overflow-x: hidden;
-}
-
-.sidebar-pane > .body .info {
-    text-align: center;
-    font-style: italic;
-    font-size: 10px;
-    padding: 6px;
-    color: black;
-}
-
-.sidebar-pane > .body .placard + .info {
-    border-top: 1px solid rgb(189, 189, 189);
-    background-color: rgb(255, 255, 194);
-}
-
-.sidebar-pane.visible > .body {
-    display: block;
-}
-
-.sidebar-pane > .body .breakpoint-condition {
-    display: block;
-    margin-top: 4px;
-    margin-bottom: 4px;
-    margin-left: 23px;
-    margin-right: 8px;
-}
-
-.sidebar-tabbed-pane .tabbed-pane-header {
-    background-image: -webkit-linear-gradient(rgb(243,243,243), rgb(235,235,235));
-    border-bottom: 1px solid rgb(202, 202, 202);
-}
-
-
-#breakpoint-condition-input {
-    display: block;
-    margin-left: 0;
-    margin-right: 0;
-    outline: none !important;
-    border: 1px solid rgb(66%, 66%, 66%);
-}
-
-.sidebar-pane-stack > .sidebar-pane.visible:nth-last-of-type(1) {
-    border-bottom: 1px solid rgb(189, 189, 189);
-}
-
-.sidebar-pane-subtitle {
-    position: absolute;
-    right: 0;
-    /*height: 20px;*/
-    font-weight: normal;
-}
-
-body.platform-windows .sidebar-pane-subtitle {
-    padding-top: 1px;
-}
-
-.sidebar-pane-subtitle input, .section .header input[type=checkbox] {
-    font-size: inherit;
-    height: 1em;
-    width: 1em;
-    margin-left: 0;
-    margin-top: 0;
-    margin-bottom: 0.25em;
-    vertical-align: bottom;
-}
-
 .sidebar {
     overflow-x: hidden;
     background-color: rgb(214, 221, 229);
@@ -1994,7 +1833,7 @@ body.inactive .sidebar {
     background-color: rgb(232, 232, 232);
 }
 
-.panel-enabler-view button:not(.status-bar-item), .pane-title-button, button.show-all-nodes {
+.pane-title-button {
     color: rgb(6, 6, 6);
     background-color: transparent;
     border: 1px solid rgb(165, 165, 165);
@@ -2004,23 +1843,35 @@ body.inactive .sidebar {
     -webkit-appearance: none;
 }
 
+.pane-title-button:active {
+    background-color: rgb(215, 215, 215);
+    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(194, 194, 194)), to(rgb(239, 239, 239)));
+}
+
 button.show-all-nodes {
     font-size: 13px;
     margin: 0;
     padding: 0 20px;
     height: 20px;
+    color: rgb(6, 6, 6);
+    background-color: transparent;
+    border: 1px solid rgb(165, 165, 165);
+    background-color: rgb(237, 237, 237);
+    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(252, 252, 252)), to(rgb(223, 223, 223)));
+    -webkit-border-radius: 12px;
+    -webkit-appearance: none;
 }
 
-.panel-enabler-view button:active:not(.status-bar-item), .pane-title-button:active, button.show-all-nodes:active {
-    background-color: rgb(215, 215, 215);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(194, 194, 194)), to(rgb(239, 239, 239)));
-}
-
-body.inactive .panel-enabler-view button:not(.status-bar-item), .panel-enabler-view button:disabled:not(.status-bar-item), body.inactive button.show-all-nodes {
+body.inactive button.show-all-nodes {
     color: rgb(130, 130, 130);
     border-color: rgb(212, 212, 212);
     background-color: rgb(239, 239, 239);
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(250, 250, 250)), to(rgb(235, 235, 235)));
+}
+
+button.show-all-nodes:active {
+    background-color: rgb(215, 215, 215);
+    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(194, 194, 194)), to(rgb(239, 239, 239)));
 }
 
 button.enable-toggle-status-bar-item .glyph {
@@ -2269,7 +2120,6 @@ li .status .bubble {
     text-align: center;
     font-size: 11px;
     line-height: normal;
-    font-family: Helvetica, Arial, sans-serif;
     font-weight: bold;
     text-shadow: none;
     color: white;
@@ -2428,60 +2278,12 @@ body.inactive li.selected .bubble.search-matches {
     -webkit-mask-position: -128px 0;
 }
 
+.clear-storage-status-bar-item .glyph {
+    -webkit-mask-position: -64px 0;
+}
+
 .refresh-storage-status-bar-item .glyph {
     -webkit-mask-position: 0 0;
-}
-
-ol.breakpoint-list {
-    -webkit-padding-start: 0;
-    list-style: none;
-    margin: 0;
-}
-
-.breakpoints-list-deactivated {
-    background-color: rgb(245, 245, 245);
-    opacity: 0.3;
-}
-
-.breakpoint-list li {
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
-    padding: 2px 0;
-    color: black;
-}
-
-.breakpoint-list li:hover {
-    background-color: rgba(56, 121, 217, 0.2);
-}
-
-.breakpoint-list .checkbox-elem {
-    font-size: 10px;
-    margin: 0 4px;
-    vertical-align: top;
-    position: relative;
-    z-index: 1;
-}
-
-.breakpoint-list .source-text {
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
-    margin: 2px 0 0px 20px;
-}
-
-.sidebar-pane .breakpoint-hit {
-    background-color: rgb(255, 255, 194);
-}
-
-li.breakpoint-hit .breakpoint-hit-marker {
-    background-color: rgb(255, 255, 194);
-    height: 18px;
-    left: 0px;
-    margin-top: -16px;
-    position: absolute;
-    right: 0px;
-    z-index: -1;
 }
 
 .webkit-html-js-node, .webkit-html-css-node {
@@ -2500,7 +2302,6 @@ li.breakpoint-hit .breakpoint-hit-marker {
 
 .source-frame-breakpoint-message {
     background-color: transparent;
-    font-family: Lucida Grande, sans-serif;
     font-weight: normal;
     font-size: 11px;
     text-align: left;
@@ -2547,24 +2348,6 @@ li.breakpoint-hit .breakpoint-hit-marker {
     list-style: none;
     margin: 0;
     padding: 0;
-}
-
-.workers-list > li {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    margin-left: 1em;
-    font-size: 12px;
-}
-
-a.worker-item {
-    color: rgb(33%, 33%, 33%);
-    cursor: pointer;
-    text-decoration: none;
-}
-
-a.worker-item:hover {
-    color: rgb(15%, 15%, 15%);
 }
 
 .resource-content-unavailable {
@@ -2623,7 +2406,6 @@ a.worker-item:hover {
 
 .soft-context-menu {
     position: absolute;
-    font-family: 'Lucida Grande', 'Helvetica', 'sans-serif';
     border: 1px solid rgba(196, 196, 196, 0.9);
     border-top: 1px solid rgba(196, 196, 196, 0.5);
     border-bottom: 1px solid rgba(150, 150, 150, 0.9);
@@ -2729,7 +2511,6 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
 }
 
 .drawer-header-close-button {
-    font-family: Arial, monospace;
     padding: 3px 8px;
     font-size: 14px;
     color:rgb(80, 80, 80);
@@ -2750,6 +2531,10 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
     -webkit-flex: 1 1 0;
     width: 0;
     overflow: hidden;
+}
+
+.animate #bottom-status-bar-container > * {
+    -webkit-transition: opacity 100ms linear;
 }
 
 .search-status-bar-item {
@@ -3081,4 +2866,5 @@ body.platform-mac .progress-bar-container progress {
     pointer-events: auto;
     -webkit-user-select: text;
     font-size: 11px;
+    cursor: text;
 }

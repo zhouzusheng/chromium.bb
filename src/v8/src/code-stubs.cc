@@ -105,8 +105,7 @@ Handle<Code> PlatformCodeStub::GenerateCode() {
 }
 
 
-Handle<Code> CodeStub::GetCode() {
-  Isolate* isolate = Isolate::Current();
+Handle<Code> CodeStub::GetCode(Isolate* isolate) {
   Factory* factory = isolate->factory();
   Heap* heap = isolate->heap();
   Code* code;
@@ -194,8 +193,8 @@ void BinaryOpStub::Generate(MacroAssembler* masm) {
     case BinaryOpIC::INT32:
       GenerateInt32Stub(masm);
       break;
-    case BinaryOpIC::HEAP_NUMBER:
-      GenerateHeapNumberStub(masm);
+    case BinaryOpIC::NUMBER:
+      GenerateNumberStub(masm);
       break;
     case BinaryOpIC::ODDBALL:
       GenerateOddballStub(masm);
@@ -308,12 +307,10 @@ bool ICCompareStub::FindCodeInSpecialCache(Code** code_out, Isolate* isolate) {
       static_cast<Code::Kind>(GetCodeKind()),
       UNINITIALIZED);
   ASSERT(op_ == Token::EQ || op_ == Token::EQ_STRICT);
-  Handle<Object> probe(
-      known_map_->FindInCodeCache(
-        strict() ?
-            *factory->strict_compare_ic_symbol() :
-            *factory->compare_ic_symbol(),
-        flags));
+  String* symbol = strict() ?
+      *factory->strict_compare_ic_symbol() :
+      *factory->compare_ic_symbol();
+  Handle<Object> probe(known_map_->FindInCodeCache(symbol, flags), isolate);
   if (probe->IsCode()) {
     *code_out = Code::cast(*probe);
 #ifdef DEBUG
@@ -367,8 +364,8 @@ void ICCompareStub::Generate(MacroAssembler* masm) {
     case CompareIC::SMI:
       GenerateSmis(masm);
       break;
-    case CompareIC::HEAP_NUMBER:
-      GenerateHeapNumbers(masm);
+    case CompareIC::NUMBER:
+      GenerateNumbers(masm);
       break;
     case CompareIC::STRING:
       GenerateStrings(masm);
@@ -379,7 +376,7 @@ void ICCompareStub::Generate(MacroAssembler* masm) {
     case CompareIC::OBJECT:
       GenerateObjects(masm);
       break;
-    case CompareIC::KNOWN_OBJECTS:
+    case CompareIC::KNOWN_OBJECT:
       ASSERT(*known_map_ != NULL);
       GenerateKnownObjects(masm);
       break;
@@ -606,10 +603,10 @@ void ElementsTransitionAndStoreStub::Generate(MacroAssembler* masm) {
 }
 
 
-void StubFailureTrampolineStub::GenerateAheadOfTime() {
+void StubFailureTrampolineStub::GenerateAheadOfTime(Isolate* isolate) {
   int i = 0;
   for (; i <= StubFailureTrampolineStub::kMaxExtraExpressionStackCount; ++i) {
-    StubFailureTrampolineStub(i).GetCode();
+    StubFailureTrampolineStub(i).GetCode(isolate);
   }
 }
 

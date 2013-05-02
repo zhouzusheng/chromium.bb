@@ -37,6 +37,7 @@
 #include "FrameView.h"
 #include "HTMLMediaElement.h"
 #include "HistoryItem.h"
+#include "InspectorInstrumentation.h"
 #include "Page.h"
 #include "PageCache.h"
 #include "ResourceHandle.h"
@@ -136,19 +137,29 @@ static EditingBehaviorType editingBehaviorTypeForPlatform()
 
 static const double defaultIncrementalRenderingSuppressionTimeoutInSeconds = 5;
 #if USE(UNIFIED_TEXT_CHECKING)
-static const double defaultUnifiedTextCheckerEnabled = true;
+static const bool defaultUnifiedTextCheckerEnabled = true;
 #else
-static const double defaultUnifiedTextCheckerEnabled = false;
+static const bool defaultUnifiedTextCheckerEnabled = false;
+#endif
+#if PLATFORM(CHROMIUM)
+#if OS(MAC_OS_X)
+static const bool defaultSmartInsertDeleteEnabled = true;
+#else
+static const bool defaultSmartInsertDeleteEnabled = false;
+#endif
+#if OS(WINDOWS)
+static const bool defaultSelectTrailingWhitespaceEnabled = true;
+#else
+static const bool defaultSelectTrailingWhitespaceEnabled = false;
+#endif
+#else
+static const bool defaultSmartInsertDeleteEnabled = true;
+static const bool defaultSelectTrailingWhitespaceEnabled = false;
 #endif
 
 Settings::Settings(Page* page)
     : m_page(0)
     , m_mediaTypeOverride("screen")
-    , m_minimumFontSize(0)
-    , m_minimumLogicalFontSize(0)
-    , m_defaultFontSize(0)
-    , m_defaultFixedFontSize(0)
-    , m_screenFontSubstitutionEnabled(true)
     , m_storageBlockingPolicy(SecurityOrigin::AllowAllStorage)
 #if ENABLE(TEXT_AUTOSIZING)
     , m_textAutosizingFontScaleFactor(1)
@@ -165,16 +176,11 @@ Settings::Settings(Page* page)
     , m_loadsImagesAutomatically(false)
     , m_privateBrowsingEnabled(false)
     , m_areImagesEnabled(true)
-    , m_isMediaEnabled(true)
     , m_arePluginsEnabled(false)
     , m_isScriptEnabled(false)
-    , m_textAreasAreResizable(false)
     , m_needsAdobeFrameReloadingQuirk(false)
-    , m_isDOMPasteAllowed(false)
     , m_usesPageCache(false)
-    , m_authorAndUserStylesEnabled(true)
     , m_fontRenderingMode(0)
-    , m_inApplicationChromeMode(false)
     , m_isCSSCustomFilterEnabled(false)
 #if ENABLE(CSS_STICKY_POSITION)
     , m_cssStickyPositionEnabled(true)
@@ -182,9 +188,6 @@ Settings::Settings(Page* page)
 #if ENABLE(CSS_VARIABLES)
     , m_cssVariablesEnabled(false)
 #endif
-    , m_acceleratedCompositingEnabled(true)
-    , m_showDebugBorders(false)
-    , m_showRepaintCounter(false)
     , m_showTiledScrollingIndicator(false)
     , m_tiledBackingStoreEnabled(false)
     , m_dnsPrefetchingEnabled(false)
@@ -196,7 +199,14 @@ Settings::Settings(Page* page)
 #endif
     , m_scrollingPerformanceLoggingEnabled(false)
     , m_aggressiveTileRetentionEnabled(false)
+    , m_timeWithoutMouseMovementBeforeHidingControls(3)
     , m_setImageLoadingSettingsTimer(this, &Settings::imageLoadingSettingsTimerFired)
+#if ENABLE(HIDDEN_PAGE_DOM_TIMER_THROTTLING)
+    , m_hiddenPageDOMTimerThrottlingEnabled(false)
+#endif
+#if ENABLE(PAGE_VISIBILITY_API)
+    , m_hiddenPageCSSAnimationSuspensionEnabled(false)
+#endif
 {
     // A Frame may not have been created yet, so we initialize the AtomicString
     // hash before trying to use it.
@@ -209,6 +219,8 @@ PassOwnPtr<Settings> Settings::create(Page* page)
 {
     return adoptPtr(new Settings(page));
 } 
+
+SETTINGS_SETTER_BODIES
 
 void Settings::setHiddenPageDOMTimerAlignmentInterval(double hiddenPageDOMTimerAlignmentinterval)
 {
@@ -297,51 +309,6 @@ void Settings::setPictographFontFamily(const AtomicString& family, UScriptCode s
     setGenericFontFamilyMap(m_pictographFontFamilyMap, family, script, m_page);
 }
 
-void Settings::setMinimumFontSize(int minimumFontSize)
-{
-    if (m_minimumFontSize == minimumFontSize)
-        return;
-
-    m_minimumFontSize = minimumFontSize;
-    m_page->setNeedsRecalcStyleInAllFrames();
-}
-
-void Settings::setMinimumLogicalFontSize(int minimumLogicalFontSize)
-{
-    if (m_minimumLogicalFontSize == minimumLogicalFontSize)
-        return;
-
-    m_minimumLogicalFontSize = minimumLogicalFontSize;
-    m_page->setNeedsRecalcStyleInAllFrames();
-}
-
-void Settings::setDefaultFontSize(int defaultFontSize)
-{
-    if (m_defaultFontSize == defaultFontSize)
-        return;
-
-    m_defaultFontSize = defaultFontSize;
-    m_page->setNeedsRecalcStyleInAllFrames();
-}
-
-void Settings::setDefaultFixedFontSize(int defaultFontSize)
-{
-    if (m_defaultFixedFontSize == defaultFontSize)
-        return;
-
-    m_defaultFixedFontSize = defaultFontSize;
-    m_page->setNeedsRecalcStyleInAllFrames();
-}
-
-void Settings::setScreenFontSubstitutionEnabled(bool screenFontSubstitutionEnabled)
-{
-    if (m_screenFontSubstitutionEnabled == screenFontSubstitutionEnabled)
-        return;
-
-    m_screenFontSubstitutionEnabled = screenFontSubstitutionEnabled;
-    m_page->setNeedsRecalcStyleInAllFrames();
-}
-
 #if ENABLE(TEXT_AUTOSIZING)
 void Settings::setTextAutosizingEnabled(bool textAutosizingEnabled)
 {
@@ -421,6 +388,7 @@ void Settings::imageLoadingSettingsTimerFired(Timer<Settings>*)
 void Settings::setScriptEnabled(bool isScriptEnabled)
 {
     m_isScriptEnabled = isScriptEnabled;
+    InspectorInstrumentation::scriptsEnabled(m_page, m_isScriptEnabled);
 }
 
 void Settings::setJavaEnabled(bool isJavaEnabled)
@@ -439,11 +407,6 @@ void Settings::setImagesEnabled(bool areImagesEnabled)
 
     // See comment in setLoadsImagesAutomatically.
     m_setImageLoadingSettingsTimer.startOneShot(0);
-}
-
-void Settings::setMediaEnabled(bool isMediaEnabled)
-{
-    m_isMediaEnabled = isMediaEnabled;
 }
 
 void Settings::setPluginsEnabled(bool arePluginsEnabled)
@@ -470,25 +433,11 @@ void Settings::setUserStyleSheetLocation(const KURL& userStyleSheetLocation)
     m_page->userStyleSheetLocationChanged();
 }
 
-void Settings::setTextAreasAreResizable(bool textAreasAreResizable)
-{
-    if (m_textAreasAreResizable == textAreasAreResizable)
-        return;
-
-    m_textAreasAreResizable = textAreasAreResizable;
-    m_page->setNeedsRecalcStyleInAllFrames();
-}
-
 // FIXME: This quirk is needed because of Radar 4674537 and 5211271. We need to phase it out once Adobe
 // can fix the bug from their end.
 void Settings::setNeedsAdobeFrameReloadingQuirk(bool shouldNotReloadIFramesForUnchangedSRC)
 {
     m_needsAdobeFrameReloadingQuirk = shouldNotReloadIFramesForUnchangedSRC;
-}
-
-void Settings::setDOMPasteAllowed(bool DOMPasteAllowed)
-{
-    m_isDOMPasteAllowed = DOMPasteAllowed;
 }
 
 void Settings::setDefaultMinDOMTimerInterval(double interval)
@@ -542,17 +491,7 @@ void Settings::setUsesPageCache(bool usesPageCache)
         int last = m_page->backForward()->forwardCount();
         for (int i = first; i <= last; i++)
             pageCache()->remove(m_page->backForward()->itemAtIndex(i));
-        pageCache()->releaseAutoreleasedPagesNow();
     }
-}
-
-void Settings::setAuthorAndUserStylesEnabled(bool authorAndUserStylesEnabled)
-{
-    if (m_authorAndUserStylesEnabled == authorAndUserStylesEnabled)
-        return;
-
-    m_authorAndUserStylesEnabled = authorAndUserStylesEnabled;
-    m_page->setNeedsRecalcStyleInAllFrames();
 }
 
 void Settings::setFontRenderingMode(FontRenderingMode mode)
@@ -566,11 +505,6 @@ void Settings::setFontRenderingMode(FontRenderingMode mode)
 FontRenderingMode Settings::fontRenderingMode() const
 {
     return static_cast<FontRenderingMode>(m_fontRenderingMode);
-}
-
-void Settings::setApplicationChromeMode(bool mode)
-{
-    m_inApplicationChromeMode = mode;
 }
 
 #if USE(SAFARI_THEME)
@@ -587,33 +521,6 @@ void Settings::setDNSPrefetchingEnabled(bool dnsPrefetchingEnabled)
 
     m_dnsPrefetchingEnabled = dnsPrefetchingEnabled;
     m_page->dnsPrefetchingStateChanged();
-}
-
-void Settings::setAcceleratedCompositingEnabled(bool enabled)
-{
-    if (m_acceleratedCompositingEnabled == enabled)
-        return;
-        
-    m_acceleratedCompositingEnabled = enabled;
-    m_page->setNeedsRecalcStyleInAllFrames();
-}
-
-void Settings::setShowDebugBorders(bool enabled)
-{
-    if (m_showDebugBorders == enabled)
-        return;
-        
-    m_showDebugBorders = enabled;
-    m_page->setNeedsRecalcStyleInAllFrames();
-}
-
-void Settings::setShowRepaintCounter(bool enabled)
-{
-    if (m_showRepaintCounter == enabled)
-        return;
-        
-    m_showRepaintCounter = enabled;
-    m_page->setNeedsRecalcStyleInAllFrames();
 }
 
 void Settings::setShowTiledScrollingIndicator(bool enabled)
@@ -656,7 +563,7 @@ void Settings::setAVFoundationEnabled(bool enabled)
         return;
 
     gAVFoundationEnabled = enabled;
-    HTMLMediaElement::requeryMediaEngines();
+    HTMLMediaElement::resetMediaEngines();
 }
 #endif
 
@@ -667,7 +574,7 @@ void Settings::setQTKitEnabled(bool enabled)
         return;
 
     gQTKitEnabled = enabled;
-    HTMLMediaElement::requeryMediaEngines();
+    HTMLMediaElement::resetMediaEngines();
 }
 #endif
 
@@ -713,6 +620,26 @@ void Settings::setShouldRespectPriorityInCSSAttributeSetters(bool flag)
 bool Settings::shouldRespectPriorityInCSSAttributeSetters()
 {
     return gShouldRespectPriorityInCSSAttributeSetters;
+}
+#endif
+
+#if ENABLE(HIDDEN_PAGE_DOM_TIMER_THROTTLING)
+void Settings::setHiddenPageDOMTimerThrottlingEnabled(bool flag)
+{
+    if (m_hiddenPageDOMTimerThrottlingEnabled == flag)
+        return;
+    m_hiddenPageDOMTimerThrottlingEnabled = flag;
+    m_page->hiddenPageDOMTimerThrottlingStateChanged();
+}
+#endif
+
+#if ENABLE(PAGE_VISIBILITY_API)
+void Settings::setHiddenPageCSSAnimationSuspensionEnabled(bool flag)
+{
+    if (m_hiddenPageCSSAnimationSuspensionEnabled == flag)
+        return;
+    m_hiddenPageCSSAnimationSuspensionEnabled = flag;
+    m_page->hiddenPageCSSAnimationSuspensionStateChanged();
 }
 #endif
 

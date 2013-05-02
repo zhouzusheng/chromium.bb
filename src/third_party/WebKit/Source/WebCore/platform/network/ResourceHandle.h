@@ -74,8 +74,11 @@ typedef struct OpaqueCFHTTPCookieStorage* CFHTTPCookieStorageRef;
 typedef const struct __CFURLStorageSession* CFURLStorageSessionRef;
 #endif
 
-namespace WebCore {
+namespace WTF {
+class SchedulePair;
+}
 
+namespace WebCore {
 class AuthenticationChallenge;
 class Credential;
 class Frame;
@@ -87,7 +90,6 @@ class ResourceHandleClient;
 class ResourceHandleInternal;
 class ResourceRequest;
 class ResourceResponse;
-class SchedulePair;
 class SharedBuffer;
 
 template <typename T> class Timer;
@@ -128,8 +130,8 @@ public:
     id releaseProxy();
 #endif
 
-    void schedule(SchedulePair*);
-    void unschedule(SchedulePair*);
+    void schedule(WTF::SchedulePair*);
+    void unschedule(WTF::SchedulePair*);
 #endif
 #if USE(CFNETWORK)
     CFURLStorageSessionRef storageSession() const;
@@ -215,6 +217,9 @@ public:
     typedef PassRefPtr<ResourceHandle> (*BuiltinConstructor)(const ResourceRequest& request, ResourceHandleClient* client);
     static void registerBuiltinConstructor(const AtomicString& protocol, BuiltinConstructor);
 
+    typedef void (*BuiltinSynchronousLoader)(NetworkingContext*, const ResourceRequest&, StoredCredentials, ResourceError&, ResourceResponse&, Vector<char>& data);
+    static void registerBuiltinSynchronousLoader(const AtomicString& protocol, BuiltinSynchronousLoader);
+
 protected:
     ResourceHandle(NetworkingContext*, const ResourceRequest&, ResourceHandleClient*, bool defersLoading, bool shouldContentSniff);
 
@@ -230,14 +235,15 @@ private:
     void scheduleFailure(FailureType);
 
     bool start();
+    static void platformLoadResourceSynchronously(NetworkingContext*, const ResourceRequest&, StoredCredentials, ResourceError&, ResourceResponse&, Vector<char>& data);
 
     virtual void refAuthenticationClient() { ref(); }
     virtual void derefAuthenticationClient() { deref(); }
 
 #if PLATFORM(MAC) && !USE(CFNETWORK)
-    void createNSURLConnection(id delegate, bool shouldUseCredentialStorage, bool shouldRelaxThirdPartyCookiePolicy, bool shouldContentSniff);
+    void createNSURLConnection(id delegate, bool shouldUseCredentialStorage, bool shouldContentSniff);
 #elif USE(CFNETWORK)
-    void createCFURLConnection(bool shouldUseCredentialStorage, bool shouldRelaxThirdPartyCookiePolicy, bool shouldContentSniff);
+    void createCFURLConnection(bool shouldUseCredentialStorage, bool shouldContentSniff);
 #endif
 
     friend class ResourceHandleInternal;

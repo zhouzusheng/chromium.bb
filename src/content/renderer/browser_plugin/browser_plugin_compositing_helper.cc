@@ -4,15 +4,17 @@
 
 #include "content/renderer/browser_plugin/browser_plugin_compositing_helper.h"
 
-#include "cc/solid_color_layer.h"
-#include "cc/texture_layer.h"
-#include "content/common/browser_plugin_messages.h"
+#include "cc/layers/solid_color_layer.h"
+#include "cc/layers/texture_layer.h"
+#include "cc/output/context_provider.h"
+#include "content/common/browser_plugin/browser_plugin_messages.h"
+#include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/render_thread_impl.h"
-#include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSharedGraphicsContext3D.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
+#include "third_party/khronos/GLES2/gl2.h"
+#include "ui/gfx/size_conversions.h"
 #include "webkit/compositor_bindings/web_layer_impl.h"
 
 namespace content {
@@ -38,16 +40,16 @@ BrowserPluginCompositingHelper::~BrowserPluginCompositingHelper() {
 
 void BrowserPluginCompositingHelper::EnableCompositing(bool enable) {
   if (enable && !texture_layer_) {
-    texture_layer_ = cc::TextureLayer::createForMailbox();
-    texture_layer_->setIsDrawable(true);
-    texture_layer_->setContentsOpaque(true);
+    texture_layer_ = cc::TextureLayer::CreateForMailbox();
+    texture_layer_->SetIsDrawable(true);
+    texture_layer_->SetContentsOpaque(true);
 
-    background_layer_ = cc::SolidColorLayer::create();
-    background_layer_->setMasksToBounds(true);
-    background_layer_->setBackgroundColor(
+    background_layer_ = cc::SolidColorLayer::Create();
+    background_layer_->SetMasksToBounds(true);
+    background_layer_->SetBackgroundColor(
         SkColorSetARGBInline(255, 255, 255, 255));
-    background_layer_->addChild(texture_layer_);
-    web_layer_.reset(new WebKit::WebLayerImpl(background_layer_));
+    background_layer_->AddChild(texture_layer_);
+    web_layer_.reset(new webkit::WebLayerImpl(background_layer_));
   }
 
   container_->setWebLayer(enable ? web_layer_.get() : NULL);
@@ -66,9 +68,12 @@ void BrowserPluginCompositingHelper::FreeMailboxMemory(
   if (mailbox_name.empty())
     return;
 
-  WebKit::WebGraphicsContext3D *context =
-     WebKit::WebSharedGraphicsContext3D::mainThreadContext();
-  DCHECK(context);
+  scoped_refptr<cc::ContextProvider> context_provider =
+      RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
+  if (!context_provider)
+    return;
+
+  WebKit::WebGraphicsContext3D *context = context_provider->Context3d();
   // When a buffer is released from the compositor, we also get a
   // sync point that specifies when in the command buffer
   // it's safe to use it again.
@@ -151,7 +156,8 @@ void BrowserPluginCompositingHelper::OnBuffersSwapped(
     const gfx::Size& size,
     const std::string& mailbox_name,
     int gpu_route_id,
-    int gpu_host_id) {
+    int gpu_host_id,
+    float device_scale_factor) {
   // If the guest crashed but the GPU process didn't, we may still have
   // a transport surface waiting on an ACK, which we must send to
   // avoid leaking.
@@ -187,7 +193,12 @@ void BrowserPluginCompositingHelper::OnBuffersSwapped(
   // or introduce a gutter around it.
   if (buffer_size_ != size) {
     buffer_size_ = size;
-    texture_layer_->setBounds(buffer_size_);
+    // The container size is in DIP, so is the layer size.
+    // Buffer size is in physical pixels, so we need to adjust
+    // it by the device scale factor.
+    gfx::Size device_scale_adjusted_size = gfx::ToFlooredSize(
+        gfx::ScaleSize(buffer_size_, 1.0f / device_scale_factor));
+    texture_layer_->SetBounds(device_scale_adjusted_size);
   }
 
   bool current_mailbox_valid = !mailbox_name.empty();
@@ -205,9 +216,15 @@ void BrowserPluginCompositingHelper::OnBuffersSwapped(
                           gpu_route_id,
                           gpu_host_id);
   }
-  texture_layer_->setTextureMailbox(cc::TextureMailbox(mailbox_name,
+  texture_layer_->SetTextureMailbox(cc::TextureMailbox(mailbox_name,
                                                        callback));
+  texture_layer_->SetNeedsDisplay();
   last_mailbox_valid_ = current_mailbox_valid;
+}
+
+void BrowserPluginCompositingHelper::UpdateVisibility(bool visible) {
+  if (texture_layer_)
+    texture_layer_->SetIsDrawable(visible);
 }
 
 }  // namespace content

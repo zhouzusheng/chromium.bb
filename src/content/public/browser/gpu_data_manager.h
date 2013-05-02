@@ -8,6 +8,7 @@
 #include <list>
 #include <string>
 
+#include "base/callback_forward.h"
 #include "base/process.h"
 #include "content/common/content_export.h"
 #include "content/public/common/gpu_feature_type.h"
@@ -72,11 +73,6 @@ class GpuDataManager {
   virtual void AddObserver(GpuDataManagerObserver* observer) = 0;
   virtual void RemoveObserver(GpuDataManagerObserver* observer) = 0;
 
-  // Notifies the gpu process about the number of browser windows, so
-  // they can be used to determine managed memory allocation.
-  virtual void SetWindowCount(uint32 count) = 0;
-  virtual uint32 GetWindowCount() const = 0;
-
   // Allows a given domain previously blocked from accessing 3D APIs
   // to access them again.
   virtual void UnblockDomainFrom3DAPIs(const GURL& url) = 0;
@@ -94,6 +90,9 @@ class GpuDataManager {
   virtual void GetGLStrings(std::string* gl_vendor,
                             std::string* gl_renderer,
                             std::string* gl_version) = 0;
+
+  // Turn off all hardware acceleration.
+  virtual void DisableHardwareAcceleration() = 0;
 
  protected:
   virtual ~GpuDataManager() {}

@@ -63,10 +63,8 @@ protected:
 
     virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const;
 
-#if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     const RenderObjectChildList* children() const { return &m_children; }
     RenderObjectChildList* children() { return &m_children; }
-#endif
 
 protected:
     virtual void layout() OVERRIDE;
@@ -74,6 +72,9 @@ protected:
 private:
     virtual const char* renderName() const { return "RenderEmbeddedObject"; }
     virtual bool isEmbeddedObject() const { return true; }
+
+    void paintSnapshotImage(PaintInfo&, const LayoutPoint&, Image*);
+    virtual void paintContents(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
 #if USE(ACCELERATED_COMPOSITING)
     virtual bool requiresLayer() const;
@@ -91,11 +92,11 @@ private:
     bool isInUnavailablePluginIndicator(const LayoutPoint&) const;
     bool getReplacementTextGeometry(const LayoutPoint& accumulatedOffset, FloatRect& contentRect, Path&, FloatRect& replacementTextRect, Font&, TextRun&, float& textWidth) const;
 
-#if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
-    virtual bool canHaveChildren() const { return node() && toElement(node())->isMediaElement(); }
+    virtual bool canHaveChildren() const;
     virtual RenderObjectChildList* virtualChildren() { return children(); }
     virtual const RenderObjectChildList* virtualChildren() const { return children(); }
-#endif
+    
+    virtual bool canHaveWidget() const { return true; }
 
     bool m_hasFallbackContent; // FIXME: This belongs on HTMLObjectElement.
 
@@ -104,9 +105,7 @@ private:
     String m_unavailablePluginReplacementText;
     bool m_unavailablePluginIndicatorIsPressed;
     bool m_mouseDownWasInUnavailablePluginIndicator;
-#if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     RenderObjectChildList m_children;
-#endif
 };
 
 inline RenderEmbeddedObject* toRenderEmbeddedObject(RenderObject* object)

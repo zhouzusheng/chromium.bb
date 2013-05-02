@@ -10,13 +10,13 @@
  */
 base.requireStylesheet('tracks.timeline_track');
 base.require('ui');
-base.exportTo('tracks', function() {
+base.exportTo('tracing.tracks', function() {
 
   /**
    * The base class for all tracks.
    * @constructor
    */
-  var TimelineTrack = base.ui.define('div');
+  var TimelineTrack = tracing.ui.define('div');
   TimelineTrack.prototype = {
     __proto__: HTMLDivElement.prototype,
 

@@ -197,7 +197,7 @@ class MFReaderCallback
       DWORD stream_flags, LONGLONG time_stamp, IMFSample* sample) {
     base::Time stamp(base::Time::Now());
     if (!sample) {
-      observer_->OnIncomingCapturedFrame(NULL, 0, stamp);
+      observer_->OnIncomingCapturedFrame(NULL, 0, stamp, 0, false, false);
       return S_OK;
     }
 
@@ -211,7 +211,8 @@ class MFReaderCallback
         DWORD length = 0, max_length = 0;
         BYTE* data = NULL;
         buffer->Lock(&data, &max_length, &length);
-        observer_->OnIncomingCapturedFrame(data, length, stamp);
+        observer_->OnIncomingCapturedFrame(data, length, stamp,
+                                           0, false, false);
         buffer->Unlock();
       }
     }
@@ -364,6 +365,7 @@ void VideoCaptureDeviceMFWin::Start() {
 void VideoCaptureDeviceMFWin::Stop() {
   DCHECK(CalledOnValidThread());
   base::WaitableEvent flushed(false, false);
+  const int kFlushTimeOutInMs = 1000;
   bool wait = false;
   {
     base::AutoLock lock(lock_);
@@ -379,8 +381,13 @@ void VideoCaptureDeviceMFWin::Stop() {
     }
   }
 
+  // If the device has been unplugged, the Flush() won't trigger the event
+  // and a timeout will happen.
+  // TODO(tommi): Hook up the IMFMediaEventGenerator notifications API and
+  // do not wait at all after getting MEVideoCaptureDeviceRemoved event.
+  // See issue/226396.
   if (wait)
-    flushed.Wait();
+    flushed.TimedWait(base::TimeDelta::FromMilliseconds(kFlushTimeOutInMs));
 }
 
 void VideoCaptureDeviceMFWin::DeAllocate() {
@@ -400,10 +407,14 @@ const VideoCaptureDevice::Name& VideoCaptureDeviceMFWin::device_name() {
 void VideoCaptureDeviceMFWin::OnIncomingCapturedFrame(
     const uint8* data,
     int length,
-    const base::Time& time_stamp) {
+    const base::Time& time_stamp,
+    int rotation,
+    bool flip_vert,
+    bool flip_horiz) {
   base::AutoLock lock(lock_);
   if (data && observer_)
-    observer_->OnIncomingCapturedFrame(data, length, time_stamp);
+    observer_->OnIncomingCapturedFrame(data, length, time_stamp,
+                                       rotation, flip_vert, flip_horiz);
 
   if (capture_) {
     HRESULT hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,

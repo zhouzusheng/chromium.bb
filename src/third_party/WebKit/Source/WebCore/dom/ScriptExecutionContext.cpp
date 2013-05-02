@@ -34,7 +34,6 @@
 #include "ErrorEvent.h"
 #include "EventListener.h"
 #include "EventTarget.h"
-#include "FileThread.h"
 #include "MessagePort.h"
 #include "PublicURLManager.h"
 #include "Settings.h"
@@ -103,7 +102,7 @@ void ScriptExecutionContext::AddConsoleMessageTask::performTask(ScriptExecutionC
 ScriptExecutionContext::ScriptExecutionContext()
     : m_iteratingActiveDOMObjects(false)
     , m_inDestructor(false)
-    , m_sequentialID(0)
+    , m_circularSequentialID(0)
     , m_inDispatchErrorEvent(false)
     , m_activeDOMObjectsAreSuspended(false)
     , m_reasonForSuspendingActiveDOMObjects(static_cast<ActiveDOMObject::ReasonForSuspension>(-1))
@@ -127,10 +126,6 @@ ScriptExecutionContext::~ScriptExecutionContext()
         (*iter)->contextDestroyed();
     }
 #if ENABLE(BLOB)
-    if (m_fileThread) {
-        m_fileThread->stop();
-        m_fileThread = 0;
-    }
     if (m_publicURLManager)
         m_publicURLManager->contextDestroyed();
 #endif
@@ -185,11 +180,11 @@ bool ScriptExecutionContext::canSuspendActiveDOMObjects()
 {
     // No protection against m_activeDOMObjects changing during iteration: canSuspend() shouldn't execute arbitrary JS.
     m_iteratingActiveDOMObjects = true;
-    HashMap<ActiveDOMObject*, void*>::iterator activeObjectsEnd = m_activeDOMObjects.end();
-    for (HashMap<ActiveDOMObject*, void*>::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
-        ASSERT(iter->key->scriptExecutionContext() == this);
-        ASSERT(iter->key->suspendIfNeededCalled());
-        if (!iter->key->canSuspend()) {
+    ActiveDOMObjectsSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
+    for (ActiveDOMObjectsSet::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
+        ASSERT((*iter)->scriptExecutionContext() == this);
+        ASSERT((*iter)->suspendIfNeededCalled());
+        if (!(*iter)->canSuspend()) {
             m_iteratingActiveDOMObjects = false;
             return false;
         }
@@ -202,11 +197,11 @@ void ScriptExecutionContext::suspendActiveDOMObjects(ActiveDOMObject::ReasonForS
 {
     // No protection against m_activeDOMObjects changing during iteration: suspend() shouldn't execute arbitrary JS.
     m_iteratingActiveDOMObjects = true;
-    HashMap<ActiveDOMObject*, void*>::iterator activeObjectsEnd = m_activeDOMObjects.end();
-    for (HashMap<ActiveDOMObject*, void*>::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
-        ASSERT(iter->key->scriptExecutionContext() == this);
-        ASSERT(iter->key->suspendIfNeededCalled());
-        iter->key->suspend(why);
+    ActiveDOMObjectsSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
+    for (ActiveDOMObjectsSet::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
+        ASSERT((*iter)->scriptExecutionContext() == this);
+        ASSERT((*iter)->suspendIfNeededCalled());
+        (*iter)->suspend(why);
     }
     m_iteratingActiveDOMObjects = false;
     m_activeDOMObjectsAreSuspended = true;
@@ -218,11 +213,11 @@ void ScriptExecutionContext::resumeActiveDOMObjects()
     m_activeDOMObjectsAreSuspended = false;
     // No protection against m_activeDOMObjects changing during iteration: resume() shouldn't execute arbitrary JS.
     m_iteratingActiveDOMObjects = true;
-    HashMap<ActiveDOMObject*, void*>::iterator activeObjectsEnd = m_activeDOMObjects.end();
-    for (HashMap<ActiveDOMObject*, void*>::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
-        ASSERT(iter->key->scriptExecutionContext() == this);
-        ASSERT(iter->key->suspendIfNeededCalled());
-        iter->key->resume();
+    ActiveDOMObjectsSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
+    for (ActiveDOMObjectsSet::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
+        ASSERT((*iter)->scriptExecutionContext() == this);
+        ASSERT((*iter)->suspendIfNeededCalled());
+        (*iter)->resume();
     }
     m_iteratingActiveDOMObjects = false;
 }
@@ -232,11 +227,11 @@ void ScriptExecutionContext::stopActiveDOMObjects()
     m_activeDOMObjectsAreStopped = true;
     // No protection against m_activeDOMObjects changing during iteration: stop() shouldn't execute arbitrary JS.
     m_iteratingActiveDOMObjects = true;
-    HashMap<ActiveDOMObject*, void*>::iterator activeObjectsEnd = m_activeDOMObjects.end();
-    for (HashMap<ActiveDOMObject*, void*>::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
-        ASSERT(iter->key->scriptExecutionContext() == this);
-        ASSERT(iter->key->suspendIfNeededCalled());
-        iter->key->stop();
+    ActiveDOMObjectsSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
+    for (ActiveDOMObjectsSet::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
+        ASSERT((*iter)->scriptExecutionContext() == this);
+        ASSERT((*iter)->suspendIfNeededCalled());
+        (*iter)->stop();
     }
     m_iteratingActiveDOMObjects = false;
 
@@ -252,14 +247,13 @@ void ScriptExecutionContext::suspendActiveDOMObjectIfNeeded(ActiveDOMObject* obj
         object->suspend(m_reasonForSuspendingActiveDOMObjects);
 }
 
-void ScriptExecutionContext::didCreateActiveDOMObject(ActiveDOMObject* object, void* upcastPointer)
+void ScriptExecutionContext::didCreateActiveDOMObject(ActiveDOMObject* object)
 {
     ASSERT(object);
-    ASSERT(upcastPointer);
     ASSERT(!m_inDestructor);
     if (m_iteratingActiveDOMObjects)
         CRASH();
-    m_activeDOMObjects.add(object, upcastPointer);
+    m_activeDOMObjects.add(object);
 }
 
 void ScriptExecutionContext::willDestroyActiveDOMObject(ActiveDOMObject* object)
@@ -349,27 +343,15 @@ bool ScriptExecutionContext::dispatchErrorEvent(const String& errorMessage, int 
     return errorEvent->defaultPrevented();
 }
 
-int ScriptExecutionContext::newUniqueID()
+int ScriptExecutionContext::circularSequentialID()
 {
-    ++m_sequentialID;
-    // FIXME: We prevent wraparound from becoming negative with a simple solution which
-    // ensures the result has a correct range, but without fully guaranteeing uniqueness.
-    if (m_sequentialID <= 0)
-        m_sequentialID = 1;
-    return m_sequentialID;
+    ++m_circularSequentialID;
+    if (m_circularSequentialID <= 0)
+        m_circularSequentialID = 1;
+    return m_circularSequentialID;
 }
 
 #if ENABLE(BLOB)
-FileThread* ScriptExecutionContext::fileThread()
-{
-    if (!m_fileThread) {
-        m_fileThread = FileThread::create();
-        if (!m_fileThread->start())
-            m_fileThread = 0;
-    }
-    return m_fileThread.get();
-}
-
 PublicURLManager& ScriptExecutionContext::publicURLManager()
 {
     if (!m_publicURLManager)
@@ -422,7 +404,6 @@ void ScriptExecutionContext::reportMemoryUsage(MemoryObjectInfo* memoryObjectInf
     info.addMember(m_pendingExceptions, "pendingExceptions");
 #if ENABLE(BLOB)
     info.addMember(m_publicURLManager, "publicURLManager");
-    info.addMember(m_fileThread, "fileThread");
 #endif
 }
 

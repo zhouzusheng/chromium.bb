@@ -14,16 +14,32 @@ namespace content {
 class BrowserAccessibilityWin;
 
 // Manages a tree of BrowserAccessibilityWin objects.
-class BrowserAccessibilityManagerWin : public BrowserAccessibilityManager {
+class CONTENT_EXPORT BrowserAccessibilityManagerWin
+    : public BrowserAccessibilityManager {
  public:
+  BrowserAccessibilityManagerWin(
+      HWND parent_hwnd,
+      IAccessible* parent_iaccessible,
+      const AccessibilityNodeData& src,
+      BrowserAccessibilityDelegate* delegate,
+      BrowserAccessibilityFactory* factory = new BrowserAccessibilityFactory());
+
   virtual ~BrowserAccessibilityManagerWin();
 
-  // Get a the default IAccessible for the parent window, does not make a
-  // new reference.
-  IAccessible* GetParentWindowIAccessible();
+  static AccessibilityNodeData GetEmptyDocument();
+
+  // Get the closest containing HWND.
+  HWND parent_hwnd() { return parent_hwnd_; }
+
+  // The IAccessible for the parent window.
+  IAccessible* parent_iaccessible() { return parent_iaccessible_; }
+  void set_parent_iaccessible(IAccessible* parent_iaccessible) {
+    parent_iaccessible_ = parent_iaccessible;
+  }
 
   // BrowserAccessibilityManager methods
   virtual void NotifyAccessibilityEvent(int type, BrowserAccessibility* node);
+  virtual void Remove(BrowserAccessibility* node) OVERRIDE;
 
   // Track this object and post a VISIBLE_DATA_CHANGED notification when
   // its container scrolls.
@@ -31,14 +47,11 @@ class BrowserAccessibilityManagerWin : public BrowserAccessibilityManager {
   void TrackScrollingObject(BrowserAccessibilityWin* node);
 
  private:
-  BrowserAccessibilityManagerWin(
-      HWND parent_window,
-      const AccessibilityNodeData& src,
-      BrowserAccessibilityDelegate* delegate,
-      BrowserAccessibilityFactory* factory);
+  // The closest ancestor HWND.
+  HWND parent_hwnd_;
 
-  // A default IAccessible instance for the parent window.
-  base::win::ScopedComPtr<IAccessible> window_iaccessible_;
+  // The accessibility instance for the parent window.
+  IAccessible* parent_iaccessible_;
 
   // Give BrowserAccessibilityManager::Create access to our constructor.
   friend class BrowserAccessibilityManager;

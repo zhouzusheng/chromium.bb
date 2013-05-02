@@ -38,7 +38,7 @@ class CONTENT_EXPORT MediaStreamUIController {
   virtual ~MediaStreamUIController();
 
   // Called when a new request for the capture device access is made.
-  // Users are responsbile for cancel the pending request if they don't wait
+  // Users are responsible for canceling the pending request if they don't wait
   // for the result from the UI.
   void MakeUIRequest(const std::string& label,
                      int render_process_id,
@@ -62,6 +62,7 @@ class CONTENT_EXPORT MediaStreamUIController {
 
   // Called to signal the UI indicator that the devices are opened.
   void NotifyUIIndicatorDevicesOpened(
+      const std::string& label,
       int render_process_id,
       int render_view_id,
       const MediaStreamDevices& devices);
@@ -93,6 +94,9 @@ class CONTENT_EXPORT MediaStreamUIController {
 
   // Posts a request to fake UI which is used for testing purpose.
   void PostRequestToFakeUI(const std::string& label);
+
+  // Callback for UI called when user requests a stream to be stopped.
+  void OnStopStreamFromUI(const std::string& label);
 
   SettingsRequester* requester_;
   UIRequests requests_;

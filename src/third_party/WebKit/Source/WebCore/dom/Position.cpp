@@ -39,8 +39,8 @@
 #include "Text.h"
 #include "TextIterator.h"
 #include "VisiblePosition.h"
+#include "VisibleUnits.h"
 #include "htmlediting.h"
-#include "visible_units.h"
 #include <stdio.h>
 #include <wtf/text/CString.h>
 #include <wtf/unicode/CharacterNames.h>
@@ -300,7 +300,7 @@ Element* Position::element() const
     Node* n = anchorNode();
     while (n && !n->isElementNode())
         n = n->parentNode();
-    return static_cast<Element*>(n);
+    return toElement(n);
 }
 
 PassRefPtr<CSSComputedStyleDeclaration> Position::computedStyle() const
@@ -933,7 +933,7 @@ bool Position::isCandidate() const
         return false;
         
     if (renderer->isBlockFlow()) {
-        if (toRenderBlock(renderer)->height() || m_anchorNode->hasTagName(bodyTag)) {
+        if (toRenderBlock(renderer)->logicalHeight() || m_anchorNode->hasTagName(bodyTag)) {
             if (!Position::hasRenderedNonAnonymousDescendantsWithHeight(renderer))
                 return atFirstEditingPositionForNode() && !Position::nodeIsUserSelectNone(deprecatedNode());
             return m_anchorNode->rendererIsEditable() && !Position::nodeIsUserSelectNone(deprecatedNode()) && atEditingBoundary();

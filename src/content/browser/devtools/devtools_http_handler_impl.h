@@ -15,12 +15,12 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/devtools_http_handler.h"
 #include "content/public/browser/devtools_http_handler_delegate.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/worker_service.h"
 #include "net/server/http_server.h"
 
 namespace base {
 class DictionaryValue;
+class ListValue;
 class Thread;
 class Value;
 }
@@ -37,16 +37,11 @@ class DevToolsClientHost;
 
 class DevToolsHttpHandlerImpl
     : public DevToolsHttpHandler,
-      public NotificationObserver,
       public base::RefCountedThreadSafe<DevToolsHttpHandlerImpl>,
       public net::HttpServer::Delegate {
  private:
-  struct PageInfo;
-  typedef std::vector<PageInfo> PageList;
   friend class base::RefCountedThreadSafe<DevToolsHttpHandlerImpl>;
   friend class DevToolsHttpHandler;
-
-  static bool SortPageListByTime(const PageInfo& info1, const PageInfo& info2);
 
   // Takes ownership over |socket_factory|.
   DevToolsHttpHandlerImpl(const net::StreamListenSocketFactory* socket_factory,
@@ -61,11 +56,6 @@ class DevToolsHttpHandlerImpl
       DevToolsAgentHostBinding* binding) OVERRIDE;
   virtual GURL GetFrontendURL(DevToolsAgentHost* agent_host) OVERRIDE;
 
-  // NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
-
   // net::HttpServer::Delegate implementation.
   virtual void OnHttpRequest(int connection_id,
                              const net::HttpServerRequestInfo& info) OVERRIDE;
@@ -78,8 +68,7 @@ class DevToolsHttpHandlerImpl
 
   void OnJsonRequestUI(int connection_id,
                        const net::HttpServerRequestInfo& info);
-  void OnThumbnailRequestUI(int connection_id,
-                            const net::HttpServerRequestInfo& info);
+  void OnThumbnailRequestUI(int connection_id, const GURL& page_url);
   void OnDiscoveryPageRequestUI(int connection_id);
 
   void OnWebSocketRequestUI(int connection_id,
@@ -90,6 +79,9 @@ class DevToolsHttpHandlerImpl
   void ResetHandlerThread();
   void ResetHandlerThreadAndRelease();
 
+  void CollectWorkerInfo(base::ListValue* target_list, std::string host);
+  void SendTargetList(int connection_id, base::ListValue* target_list);
+
   void Init();
   void Teardown();
 
@@ -99,8 +91,7 @@ class DevToolsHttpHandlerImpl
   void SendJson(int connection_id,
                 net::HttpStatusCode status_code,
                 base::Value* value,
-                const std::string& message,
-                const std::string& jsonp);
+                const std::string& message);
   void Send200(int connection_id,
                const std::string& data,
                const std::string& mime_type);
@@ -110,17 +101,20 @@ class DevToolsHttpHandlerImpl
   void AcceptWebSocket(int connection_id,
                        const net::HttpServerRequestInfo& request);
 
-  PageList GeneratePageList();
-
   // Returns the front end url without the host at the beginning.
   std::string GetFrontendURLInternal(const std::string rvh_id,
                                      const std::string& host);
 
-  PageInfo CreatePageInfo(RenderViewHost* rvh,
-                          DevToolsHttpHandlerDelegate::TargetType type);
-
-  base::DictionaryValue* SerializePageInfo(const PageInfo& page_info,
+  base::DictionaryValue* SerializePageInfo(RenderViewHost* rvh,
                                            const std::string& host);
+
+  base::DictionaryValue* SerializeWorkerInfo(
+      const WorkerService::WorkerInfo& worker,
+      const std::string& host);
+
+  void SerializeDebuggerURLs(base::DictionaryValue* dictionary,
+                             const std::string& id,
+                             const std::string& host);
 
   // The thread used by the devtools handler to run server socket.
   scoped_ptr<base::Thread> thread_;
@@ -133,7 +127,6 @@ class DevToolsHttpHandlerImpl
   scoped_ptr<DevToolsHttpHandlerDelegate> delegate_;
   DevToolsAgentHostBinding* binding_;
   scoped_ptr<DevToolsAgentHostBinding> default_binding_;
-  NotificationRegistrar registrar_;
   scoped_ptr<DevToolsBrowserTarget> browser_target_;
   DISALLOW_COPY_AND_ASSIGN(DevToolsHttpHandlerImpl);
 };

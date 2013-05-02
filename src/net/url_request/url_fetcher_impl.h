@@ -37,6 +37,10 @@ class NET_EXPORT_PRIVATE URLFetcherImpl : public URLFetcher {
   // URLFetcher implementation:
   virtual void SetUploadData(const std::string& upload_content_type,
                              const std::string& upload_content) OVERRIDE;
+  virtual void SetUploadFilePath(
+      const std::string& upload_content_type,
+      const base::FilePath& file_path,
+      scoped_refptr<base::TaskRunner> file_task_runner) OVERRIDE;
   virtual void SetChunkedUpload(
       const std::string& upload_content_type) OVERRIDE;
   virtual void AppendChunkToUpload(const std::string& data,
@@ -76,8 +80,7 @@ class NET_EXPORT_PRIVATE URLFetcherImpl : public URLFetcher {
   virtual const URLRequestStatus& GetStatus() const OVERRIDE;
   virtual int GetResponseCode() const OVERRIDE;
   virtual const ResponseCookies& GetCookies() const OVERRIDE;
-  virtual bool FileErrorOccurred(
-      base::PlatformFileError* out_error_code) const OVERRIDE;
+  virtual bool FileErrorOccurred(int* out_error_code) const OVERRIDE;
   virtual void ReceivedContentWasMalformed() OVERRIDE;
   virtual bool GetResponseAsString(
       std::string* out_response_string) const OVERRIDE;

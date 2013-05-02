@@ -52,6 +52,7 @@
 #include "Page.h"
 #include "StyleCachedImage.h"
 #include "StyleImage.h"
+#include "StylePropertySet.h"
 #include "StyleRule.h"
 #include "StyleSheetContents.h"
 #include "Text.h"
@@ -149,7 +150,7 @@ void SerializerMarkupAccumulator::appendCustomAttributes(StringBuilder& out, Ele
     if (!element->isFrameOwnerElement())
         return;
 
-    HTMLFrameOwnerElement* frameOwner = static_cast<HTMLFrameOwnerElement*>(element);
+    HTMLFrameOwnerElement* frameOwner = toFrameOwnerElement(element);
     Frame* frame = frameOwner->contentFrame();
     if (!frame)
         return;

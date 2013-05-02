@@ -55,7 +55,6 @@ public:
     virtual bool scrollAnimatorEnabled() const = 0;
     virtual bool viewportEnabled() const = 0;
     virtual void setAccelerated2dCanvasEnabled(bool) = 0;
-    virtual void setAcceleratedAnimationEnabled(bool) = 0;
     virtual void setAcceleratedCompositingEnabled(bool) = 0;
     virtual void setAcceleratedCompositingFor3DTransformsEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForAnimationEnabled(bool) = 0;
@@ -66,7 +65,6 @@ public:
     virtual void setAcceleratedCompositingForScrollableFramesEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForVideoEnabled(bool) = 0;
     virtual void setAcceleratedFiltersEnabled(bool) = 0;
-    virtual void setAcceleratedPaintingEnabled(bool) = 0;
     virtual void setAllowDisplayOfInsecureContent(bool) = 0;
     virtual void setAllowFileAccessFromFileURLs(bool) = 0;
     virtual void setAllowCustomScrollbarInMainFrame(bool) = 0;
@@ -88,8 +86,8 @@ public:
     virtual void setDefaultFixedFontSize(int) = 0;
     virtual void setDefaultFontSize(int) = 0;
     virtual void setDefaultTextEncodingName(const WebString&) = 0;
-    virtual void setDefaultTileSize(WebSize) = 0;
-    virtual void setDeferred2dCanvasEnabled(bool) = 0;
+    virtual void setDefaultVideoPosterURL(const WebString&) = 0;
+    void setDeferred2dCanvasEnabled(bool) { } // temporary stub
     virtual void setDeferredImageDecodingEnabled(bool) = 0;
     virtual void setDeveloperExtrasEnabled(bool) = 0;
     virtual void setDeviceSupportsMouse(bool) = 0;
@@ -116,6 +114,7 @@ public:
     virtual void setGestureTapHighlightEnabled(bool) = 0;
     virtual void setHyperlinkAuditingEnabled(bool) = 0;
     virtual void setImagesEnabled(bool) = 0;
+    virtual void setInitializeAtMinimumPageScale(bool) = 0;
     virtual void setInteractiveFormValidationEnabled(bool) = 0;
     virtual void setJavaEnabled(bool) = 0;
     virtual void setJavaScriptCanAccessClipboard(bool) = 0;
@@ -124,7 +123,6 @@ public:
     virtual void setLayoutFallbackWidth(int) = 0;
     virtual void setLoadsImagesAutomatically(bool) = 0;
     virtual void setLocalStorageEnabled(bool) = 0;
-    virtual void setMaxUntiledLayerSize(WebSize) = 0;
     virtual void setMediaPlaybackRequiresUserGesture(bool) = 0;
     virtual void setMemoryInfoEnabled(bool) = 0;
     virtual void setMinimumAccelerated2dCanvasSize(int) = 0;
@@ -142,18 +140,17 @@ public:
     virtual void setPictographFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setPluginsEnabled(bool) = 0;
     virtual void setPrivilegedWebGLExtensionsEnabled(bool) = 0;
-    virtual void setRecordRenderingStats(bool) = 0;
-    virtual void setRenderVSyncEnabled(bool) = 0;
     virtual void setRenderVSyncNotificationEnabled(bool) = 0;
     virtual void setSansSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
+    virtual void setSelectTrailingWhitespaceEnabled(bool) = 0;
     virtual void setSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setShouldPrintBackgrounds(bool) = 0;
     virtual void setShouldRespectImageOrientation(bool) = 0;
     virtual void setShowDebugBorders(bool) = 0;
     virtual void setShowFPSCounter(bool) = 0;
     virtual void setShowPaintRects(bool) = 0;
-    virtual void setShowPlatformLayerTree(bool) = 0;
     virtual void setShrinksStandaloneImagesToFit(bool) = 0;
+    virtual void setSmartInsertDeleteEnabled(bool) = 0;
     virtual void setStandardFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setSupportsMultipleWindows(bool) = 0;
     virtual void setSyncXHRInDocumentsEnabled(bool) = 0;

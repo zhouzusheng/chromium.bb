@@ -199,7 +199,7 @@ CString WebSocketHandshake::clientHandshakeMessage() const
 
     KURL url = httpURLForAuthenticationAndCookies();
     if (m_context->isDocument()) {
-        Document* document = static_cast<Document*>(m_context);
+        Document* document = toDocument(m_context);
         String cookie = cookieRequestHeaderFieldValue(document, url);
         if (!cookie.isEmpty())
             fields.append("Cookie: " + cookie);
@@ -218,6 +218,9 @@ CString WebSocketHandshake::clientHandshakeMessage() const
     const String extensionValue = m_extensionDispatcher.createHeaderValue();
     if (extensionValue.length())
         fields.append("Sec-WebSocket-Extensions: " + extensionValue);
+
+    // Add a User-Agent header.
+    fields.append("User-Agent: " + m_context->userAgent(m_context->url()));
 
     // Fields in the handshake are sent by the client in a random order; the
     // order is not meaningful.  Thus, it's ok to send the order we constructed
@@ -248,7 +251,7 @@ PassRefPtr<WebSocketHandshakeRequest> WebSocketHandshake::clientHandshakeRequest
 
     KURL url = httpURLForAuthenticationAndCookies();
     if (m_context->isDocument()) {
-        Document* document = static_cast<Document*>(m_context);
+        Document* document = toDocument(m_context);
         String cookie = cookieRequestHeaderFieldValue(document, url);
         if (!cookie.isEmpty())
             request->addHeaderField("Cookie", cookie);
@@ -263,6 +266,9 @@ PassRefPtr<WebSocketHandshakeRequest> WebSocketHandshake::clientHandshakeRequest
     const String extensionValue = m_extensionDispatcher.createHeaderValue();
     if (extensionValue.length())
         request->addHeaderField("Sec-WebSocket-Extensions", extensionValue);
+
+    // Add a User-Agent header.
+    request->addHeaderField("User-Agent", m_context->userAgent(m_context->url()));
 
     return request.release();
 }

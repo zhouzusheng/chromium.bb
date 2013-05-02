@@ -43,8 +43,6 @@ class Candidate;
 
 namespace webrtc {
 
-class MediaConstraintsInterface;
-
 struct SdpParseError {
  public:
   // The sdp line that causes the error.
@@ -77,6 +75,7 @@ class IceCandidateInterface {
 IceCandidateInterface* CreateIceCandidate(const std::string& sdp_mid,
                                           int sdp_mline_index,
                                           const std::string& sdp);
+
 // |error| can be NULL if doesn't care about the failure reason.
 IceCandidateInterface* CreateIceCandidate(const std::string& sdp_mid,
                                           int sdp_mline_index,
@@ -132,6 +131,7 @@ class SessionDescriptionInterface {
 // TODO(ronghuawu): Deprecated.
 SessionDescriptionInterface* CreateSessionDescription(const std::string& type,
                                                       const std::string& sdp);
+
 // |error| can be NULL if doesn't care about the failure reason.
 SessionDescriptionInterface* CreateSessionDescription(const std::string& type,
                                                       const std::string& sdp,

@@ -137,10 +137,12 @@ void SpdyProxyClientSocket::Disconnect() {
 
   next_state_ = STATE_DISCONNECTED;
 
-  if (spdy_stream_)
+  if (spdy_stream_) {
     // This will cause OnClose to be invoked, which takes care of
     // cleaning up all the internal state.
     spdy_stream_->Cancel();
+    DCHECK(!spdy_stream_.get());
+  }
 }
 
 bool SpdyProxyClientSocket::IsConnected() const {
@@ -254,21 +256,12 @@ int SpdyProxyClientSocket::Write(IOBuffer* buf, int buf_len,
   DCHECK(spdy_stream_);
   write_bytes_outstanding_= buf_len;
   if (buf_len <= kMaxSpdyFrameChunkSize) {
-    int rv = spdy_stream_->WriteStreamData(buf, buf_len, DATA_FLAG_NONE);
-
-    // If there's an error, log the error.  Otherwise, log the number of bytes
-    // regardless of whether or not they were actually written.
-    if (rv < 0 && rv != ERR_IO_PENDING) {
-      net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT, rv, NULL);
-    } else {
-      net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT,
-                                    buf_len, buf->data());
-    }
-    if (rv == ERR_IO_PENDING) {
-      write_callback_ = callback;
-      write_buffer_len_ = buf_len;
-    }
-    return rv;
+    spdy_stream_->QueueStreamData(buf, buf_len, DATA_FLAG_NONE);
+    net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT,
+                                  buf_len, buf->data());
+    write_callback_ = callback;
+    write_buffer_len_ = buf_len;
+    return ERR_IO_PENDING;
   }
 
   // Since a SPDY Data frame can only include kMaxSpdyFrameChunkSize bytes
@@ -277,22 +270,9 @@ int SpdyProxyClientSocket::Write(IOBuffer* buf, int buf_len,
     int len = std::min(kMaxSpdyFrameChunkSize, buf_len - i);
     scoped_refptr<DrainableIOBuffer> iobuf(new DrainableIOBuffer(buf, i + len));
     iobuf->SetOffset(i);
-    int rv = spdy_stream_->WriteStreamData(iobuf, len, DATA_FLAG_NONE);
-
-    // If there's an error, log the error.  Otherwise, log the number of bytes
-    // regardless of whether or not they were actually written.
-    if (rv < 0 && rv != ERR_IO_PENDING) {
-      net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT, rv, NULL);
-    } else {
-      net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT,
-                                    len, buf->data());
-    }
-
-    if (rv > 0) {
-      write_bytes_outstanding_ -= rv;
-    } else if (rv != ERR_IO_PENDING) {
-      return rv;
-    }
+    spdy_stream_->QueueStreamData(iobuf, len, DATA_FLAG_NONE);
+    net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT,
+                                  len, buf->data());
   }
   if (write_bytes_outstanding_ > 0) {
     write_callback_ = callback;
@@ -393,7 +373,8 @@ int SpdyProxyClientSocket::DoGenerateAuthToken() {
   next_state_ = STATE_GENERATE_AUTH_TOKEN_COMPLETE;
   return auth_->MaybeGenerateAuthToken(
       &request_,
-      base::Bind(&SpdyProxyClientSocket::OnIOComplete, base::Unretained(this)),
+      base::Bind(&SpdyProxyClientSocket::OnIOComplete,
+                 weak_factory_.GetWeakPtr()),
       net_log_);
 }
 

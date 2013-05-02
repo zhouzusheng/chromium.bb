@@ -27,14 +27,16 @@
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
+#include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/gles2_lib.h"
 #include "gpu/command_buffer/client/gles2_trace_implementation.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/common/constants.h"
-#include "gpu/GLES2/gl2extchromium.h"
+#include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/ipc/command_buffer_proxy.h"
+#include "third_party/skia/include/core/SkTypes.h"
 #include "webkit/gpu/gl_bindings_skia_cmd_buffer.h"
 
 namespace content {
@@ -263,9 +265,9 @@ bool WebGraphicsContext3DCommandBufferImpl::MaybeInitializeGL(
     GLint stencil_bits = 0;
     getIntegerv(GL_STENCIL_BITS, &stencil_bits);
     attributes_.stencil = stencil_bits > 0;
-    GLint samples = 0;
-    getIntegerv(GL_SAMPLES, &samples);
-    attributes_.antialias = samples > 0;
+    GLint sample_buffers = 0;
+    getIntegerv(GL_SAMPLE_BUFFERS, &sample_buffers);
+    attributes_.antialias = sample_buffers > 0;
   }
 
   if (attributes_.shareResources) {
@@ -420,14 +422,7 @@ bool WebGraphicsContext3DCommandBufferImpl::setParentContext(
 }
 
 unsigned int WebGraphicsContext3DCommandBufferImpl::insertSyncPoint() {
-  real_gl_->helper()->CommandBufferHelper::Flush();
-  return command_buffer_->InsertSyncPoint();
-}
-
-void WebGraphicsContext3DCommandBufferImpl::waitSyncPoint(
-    unsigned int sync_point) {
-  real_gl_->helper()->CommandBufferHelper::Flush();
-  command_buffer_->WaitSyncPoint(sync_point);
+  return gl_->InsertSyncPointCHROMIUM();
 }
 
 bool WebGraphicsContext3DCommandBufferImpl::SetParent(
@@ -582,7 +577,6 @@ void WebGraphicsContext3DCommandBufferImpl::reshape(int width, int height) {
   gl_->ResizeCHROMIUM(width, height);
 }
 
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
 void WebGraphicsContext3DCommandBufferImpl::FlipVertically(
     uint8* framebuffer,
     unsigned int width,
@@ -605,7 +599,6 @@ void WebGraphicsContext3DCommandBufferImpl::FlipVertically(
     memcpy(row_a, scanline, row_bytes);
   }
 }
-#endif
 
 bool WebGraphicsContext3DCommandBufferImpl::readBackFramebuffer(
     unsigned char* pixels,
@@ -630,21 +623,21 @@ bool WebGraphicsContext3DCommandBufferImpl::readBackFramebuffer(
   }
   gl_->ReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 
-  // Swizzle red and blue channels
-  // TODO(kbr): expose GL_BGRA as extension
+#if (SK_R32_SHIFT == 16) && !SK_B32_SHIFT
+  // Swizzle red and blue channels to match SkBitmap's byte ordering.
+  // TODO(kbr): expose GL_BGRA as extension.
   for (size_t i = 0; i < buffer_size; i += 4) {
     std::swap(pixels[i], pixels[i + 2]);
   }
+#endif
 
   if (mustRestoreFBO) {
     gl_->BindFramebuffer(GL_FRAMEBUFFER, bound_fbo_);
   }
 
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
   if (pixels) {
     FlipVertically(pixels, width, height);
   }
-#endif
 
   return true;
 }
@@ -1617,11 +1610,13 @@ DELEGATE_TO_GL_3(bindUniformLocationCHROMIUM, BindUniformLocationCHROMIUM,
 
 DELEGATE_TO_GL(shallowFlushCHROMIUM,ShallowFlushCHROMIUM);
 
+DELEGATE_TO_GL_1(waitSyncPoint, WaitSyncPointCHROMIUM, GLuint)
+
 void WebGraphicsContext3DCommandBufferImpl::genMailboxCHROMIUM(
     WGC3Dbyte* name) {
-  std::vector<std::string> names(1);
+  std::vector<gpu::Mailbox> names(1);
   if (command_buffer_->GenerateMailboxNames(1, &names))
-    memcpy(name, names[0].c_str(), GL_MAILBOX_SIZE_CHROMIUM);
+    memcpy(name, names[0].name, GL_MAILBOX_SIZE_CHROMIUM);
   else
     synthesizeGLError(GL_OUT_OF_MEMORY);
 }
@@ -1700,6 +1695,17 @@ void WebGraphicsContext3DCommandBufferImpl::asyncTexSubImage2DCHROMIUM(
   return gl_->AsyncTexSubImage2DCHROMIUM(
       target, level, xoffset, yoffset,
       width, height, format, type, pixels);
+}
+
+void WebGraphicsContext3DCommandBufferImpl::waitAsyncTexImage2DCHROMIUM(
+    WGC3Denum target) {
+  return gl_->WaitAsyncTexImage2DCHROMIUM(target);
+}
+
+void WebGraphicsContext3DCommandBufferImpl::drawBuffersEXT(
+    WGC3Dsizei n,
+    const WGC3Denum* bufs) {
+  gl_->DrawBuffersEXT(n, bufs);
 }
 
 GrGLInterface* WebGraphicsContext3DCommandBufferImpl::onCreateGrGLInterface() {

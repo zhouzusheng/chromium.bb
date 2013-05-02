@@ -20,8 +20,8 @@ const char kDisableGLSLTranslator[]         = "disable-glsl-translator";
 const char kDisableGpuDriverBugWorkarounds[] =
     "disable-gpu-driver-bug-workarounds";
 
-// Turn on user-defined name hashing in shaders.
-const char kEnableShaderNameHashing[]      = "enable-shader-name-hashing";
+// Turn off user-defined name hashing in shaders.
+const char kDisableShaderNameHashing[]      = "disable-shader-name-hashing";
 
 // Turn on Logging GPU commands.
 const char kEnableGPUCommandLogging[]       = "enable-gpu-command-logging";
@@ -45,11 +45,6 @@ const char kEnforceGLMinimums[]             = "enforce-gl-minimums";
 // affected systems.
 const char kForceGLFinishWorkaround[]       = "force-glfinish-workaround";
 
-// Disable the nonuniform GPU memory memory and instead use the scheme that
-// distributes memory uniformly to all visible renderers.
-const char kDisableNonuniformGpuMemPolicy[] =
-    "disable-nonuniform-gpu-mem-policy";
-
 // Sets the total amount of memory that may be allocated for GPU resources
 const char kForceGpuMemAvailableMb[]        = "force-gpu-mem-available-mb";
 
@@ -58,22 +53,25 @@ const char kGpuProgramCacheSizeKb[]         = "gpu-program-cache-size-kb";
 
 const char kTraceGL[]       = "trace-gl";
 
+// Disables the GPU shader on disk cache.
+const char kEnableGpuShaderDiskCache[]      = "enable-gpu-shader-disk-cache";
+
 const char* kGpuSwitches[] = {
   kCompileShaderAlwaysSucceeds,
   kDisableGLErrorLimit,
   kDisableGLSLTranslator,
   kDisableGpuDriverBugWorkarounds,
-  kEnableShaderNameHashing,
+  kDisableShaderNameHashing,
   kEnableGPUCommandLogging,
   kEnableGPUDebugging,
   kEnableGPUServiceLoggingGPU,
   kDisableGpuProgramCache,
   kEnforceGLMinimums,
   kForceGLFinishWorkaround,
-  kDisableNonuniformGpuMemPolicy,
   kForceGpuMemAvailableMb,
   kGpuProgramCacheSizeKb,
   kTraceGL,
+  kEnableGpuShaderDiskCache,
 };
 
 const int kNumGpuSwitches = arraysize(kGpuSwitches);

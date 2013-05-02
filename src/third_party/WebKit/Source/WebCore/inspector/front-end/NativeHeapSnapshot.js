@@ -35,7 +35,9 @@
 WebInspector.NativeHeapSnapshot = function(profile)
 {
     WebInspector.HeapSnapshot.call(this, profile);
-    this._nodeObjectType = 3;
+    this._nodeObjectType = this._metaNode.type_strings["object"];
+    this._edgeWeakType = this._metaNode.type_strings["weak"];
+    this._edgeElementType = this._metaNode.type_strings["property"];
 }
 
 WebInspector.NativeHeapSnapshot.prototype = {
@@ -65,6 +67,40 @@ WebInspector.NativeHeapSnapshot.prototype = {
     userObjectsMapAndFlag: function()
     {
         return null;
+    },
+
+    images: function()
+    {
+        var aggregatesByClassName = this.aggregates(false, "allObjects");
+        var result = [];
+        var cachedImages = aggregatesByClassName["WebCore::CachedImage"];
+        function getImageName(node)
+        {
+            return node.name();
+        }
+        this._addNodes(cachedImages, getImageName, result);
+
+        var canvases = aggregatesByClassName["WebCore::HTMLCanvasElement"];
+        function getCanvasName(node)
+        {
+            return "HTMLCanvasElement";
+        }
+        this._addNodes(canvases, getCanvasName, result);
+        return result;
+    },
+
+    _addNodes: function(classData, nameResolver, result)
+    {
+        if (!classData)
+            return;
+        var node = this.rootNode();
+        for (var i = 0; i < classData.idxs.length; i++) {
+            node.nodeIndex = classData.idxs[i];
+            result.push({
+                name: nameResolver(node),
+                size: node.retainedSize(),
+            });
+        }
     },
 
     __proto__: WebInspector.HeapSnapshot.prototype
@@ -107,6 +143,7 @@ WebInspector.NativeHeapSnapshotNode.prototype = {
         return {
             id: this.id(),
             name: this.className(),
+            displayName: this.name(),
             distance: this.distance(),
             nodeIndex: this.nodeIndex,
             retainedSize: this.retainedSize(),

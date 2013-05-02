@@ -25,6 +25,7 @@
 #include "config.h"
 #include "RenderDeprecatedFlexibleBox.h"
 
+#include "FeatureObserver.h"
 #include "Font.h"
 #include "LayoutRepainter.h"
 #include "RenderLayer.h"
@@ -124,6 +125,15 @@ RenderDeprecatedFlexibleBox::RenderDeprecatedFlexibleBox(Element* element)
 {
     setChildrenInline(false); // All of our children must be block-level
     m_stretchingChildren = false;
+    if (!isAnonymous()) {
+        const KURL& url = document()->url();
+        if (url.protocolIs("chrome"))
+            FeatureObserver::observe(document(), FeatureObserver::DeprecatedFlexboxChrome);
+        else if (url.protocolIs("chrome-extension"))
+            FeatureObserver::observe(document(), FeatureObserver::DeprecatedFlexboxChromeExtension);
+        else
+            FeatureObserver::observe(document(), FeatureObserver::DeprecatedFlexboxWebContent);
+    }
 }
 
 RenderDeprecatedFlexibleBox::~RenderDeprecatedFlexibleBox()
@@ -250,19 +260,17 @@ void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren, LayoutUnit)
     LayoutRepainter repainter(*this, checkForRepaintDuringLayout());
     LayoutStateMaintainer statePusher(view(), this, locationOffset(), hasTransform() || hasReflection() || style()->isFlippedBlocksWritingMode());
 
-    if (inRenderFlowThread()) {
-        // Regions changing widths can force us to relayout our children.
-        if (logicalWidthChangedInRegions())
-            relayoutChildren = true;
-    }
-    updateRegionsAndExclusionsLogicalSize();
+    // Regions changing widths can force us to relayout our children.
+    RenderFlowThread* flowThread = flowThreadContainingBlock();
+    if (logicalWidthChangedInRegions(flowThread))
+        relayoutChildren = true;
+    if (updateRegionsAndExclusionsLogicalSize(flowThread))
+        relayoutChildren = true;
 
     LayoutSize previousSize = size();
 
     updateLogicalWidth();
     updateLogicalHeight();
-
-    m_overflow.clear();
 
     if (previousSize != size()
         || (parent()->isDeprecatedFlexibleBox() && parent()->style()->boxOrient() == HORIZONTAL
@@ -288,7 +296,7 @@ void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren, LayoutUnit)
 
     layoutPositionedObjects(relayoutChildren || isRoot());
 
-    computeRegionRangeForBlock();
+    computeRegionRangeForBlock(flowThread);
 
     if (!isFloatingOrOutOfFlowPositioned() && height() == 0) {
         // We are a block with no border and padding and a computed height

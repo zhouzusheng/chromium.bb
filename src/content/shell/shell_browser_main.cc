@@ -7,8 +7,8 @@
 #include <iostream>
 
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -17,6 +17,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "content/public/browser/browser_main_runner.h"
+#include "content/shell/shell.h"
 #include "content/shell/shell_switches.h"
 #include "content/shell/webkit_test_controller.h"
 #include "net/base/net_util.h"

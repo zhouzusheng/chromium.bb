@@ -54,6 +54,7 @@ class Shell : public WebContentsDelegate,
   virtual ~Shell();
 
   void LoadURL(const GURL& url);
+  void LoadURLForFrame(const GURL& url, const std::string& frame_name);
   void GoBackOrForward(int offset);
   void Reload();
   void Stop();
@@ -61,6 +62,10 @@ class Shell : public WebContentsDelegate,
   void Close();
   void ShowDevTools();
   void CloseDevTools();
+#if (defined(OS_WIN) && !defined(USE_AURA)) || defined(TOOLKIT_GTK)
+  // Resizes the main window to the given dimensions.
+  void SizeTo(int width, int height);
+#endif
 
   // Do one time initialization at application startup.
   static void Initialize();
@@ -118,6 +123,7 @@ class Shell : public WebContentsDelegate,
   virtual bool CanOverscrollContent() const OVERRIDE;
   virtual void WebContentsCreated(WebContents* source_contents,
                                   int64 source_frame_id,
+                                  const string16& frame_name,
                                   const GURL& target_url,
                                   WebContents* new_contents) OVERRIDE;
   virtual void DidNavigateMainFramePostCommit(
@@ -134,6 +140,8 @@ class Shell : public WebContentsDelegate,
                                    int32 line_no,
                                    const string16& source_id) OVERRIDE;
   virtual void RendererUnresponsive(WebContents* source) OVERRIDE;
+  virtual void ActivateContents(WebContents* contents) OVERRIDE;
+  virtual void DeactivateContents(WebContents* contents) OVERRIDE;
 
  private:
   enum UIControl {
@@ -173,11 +181,6 @@ class Shell : public WebContentsDelegate,
                                           bool enter_fullscreen);
   bool PlatformIsFullscreenForTabOrPending(
       const WebContents* web_contents) const;
-#endif
-
-#if (defined(OS_WIN) && !defined(USE_AURA)) || defined(TOOLKIT_GTK)
-  // Resizes the main window to the given dimensions.
-  void SizeTo(int width, int height);
 #endif
 
   gfx::NativeView GetContentView();

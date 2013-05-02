@@ -32,14 +32,6 @@ const char kBrowserCrashTest[]              = "crash-test";
 // Path to the exe to run for the renderer and plugin subprocesses.
 const char kBrowserSubprocessPath[]         = "browser-subprocess-path";
 
-// Run Chrome in Chrome Frame mode. This means that Chrome expects to be run
-// as a dependent process of the Chrome Frame plugin.
-const char kChromeFrame[]                   = "chrome-frame";
-
-// Cause a GPU hang to cause a crash dump, allowing for easier debugging of
-// them.
-const char kCrashOnGpuHang[]                = "crash-on-gpu-hang";
-
 // Disables client-visible 3D APIs, in particular WebGL and Pepper 3D.
 // This is controlled by policy and is kept separate from the other
 // enable/disable switches to avoid accidentally regressing the policy
@@ -83,9 +75,6 @@ const char kDisableDatabases[]              = "disable-databases";
 
 // Disables data transfer items.
 const char kDisableDataTransferItems[]      = "disable-data-transfer-items";
-
-// Disable deferred 2d canvas rendering.
-const char kDisableDeferred2dCanvas[]        = "disable-deferred-2d-canvas";
 
 // Disables desktop notifications (default enabled on windows).
 const char kDisableDesktopNotifications[]   = "disable-desktop-notifications";
@@ -245,6 +234,11 @@ const char kDisableXSSAuditor[]             = "disable-xss-auditor";
 // |DOMAutomationController| to the |AutomationRenderViewHelper|.
 const char kDomAutomationController[]       = "dom-automation";
 
+// Loosen security. Needed for tests using some of the functionality of
+// |DOMAutomationController|.
+const char kReduceSecurityForDomAutomationTests[] =
+    "reduce-security-for-dom-automation-tests";
+
 // Enable hardware accelerated page painting.
 const char kEnableAcceleratedPainting[]     = "enable-accelerated-painting";
 
@@ -255,18 +249,12 @@ const char kEnableAcceleratedFilters[]      = "enable-accelerated-filters";
 const char kEnableAccessibilityLogging[]    = "enable-accessibility-logging";
 
 // Enables browser plugin compositing experiment.
-const char kEnableBrowserPluginCompositing[] =
-    "enable-browser-plugin-compositing";
+const char kDisableBrowserPluginCompositing[] =
+    "disable-browser-plugin-compositing";
 
 // Enables browser plugin for all types of pages.
 const char kEnableBrowserPluginForAllViewTypes[] =
     "enable-browser-plugin-for-all-view-types";
-
-// Enables using experimental 'guest' view classes for browser plugin.
-// Browser plugin would use WebContentsViewGuest and RenderWidgetHostViewGuest,
-// which wraps the actual *View implementations.
-const char kEnableBrowserPluginGuestViews[] =
-    "enable-browser-plugin-guest-views";
 
 // Enable/Disable the creation of compositing layers for fixed position
 // elements. Three options are needed to support four possible scenarios:
@@ -288,6 +276,9 @@ const char kEnableHighDpiCompositingForFixedPosition[] =
 // Enables CSS3 custom filters
 const char kEnableCssShaders[]              = "enable-css-shaders";
 
+// Enables delegated renderer.
+const char kEnableDelegatedRenderer[]       = "enable-delegated-renderer";
+
 // Enables device motion events.
 const char kEnableDeviceMotion[]            = "enable-device-motion";
 
@@ -297,6 +288,9 @@ const char kEnableDownloadResumption[]      = "enable-download-resumption";
 // Enables WebKit features that are in development.
 const char kEnableExperimentalWebKitFeatures[] =
     "enable-experimental-webkit-features";
+
+// Disables the threaded HTML parser in WebKit
+const char kDisableThreadedHTMLParser[]     = "disable-threaded-html-parser";
 
 // Enables the fastback page cache.
 const char kEnableFastback[]                = "enable-fastback";
@@ -315,6 +309,7 @@ const char kEnableTextServicesFramework[] = "enable-text-services-framework";
 
 // Enable Gesture Tap Highlight
 const char kEnableGestureTapHighlight[]    = "enable-gesture-tap-highlight";
+const char kDisableGestureTapHighlight[]   = "disable-gesture-tap-highlight";
 
 // Enables the GPU benchmarking extension
 const char kEnableGpuBenchmarking[]         = "enable-gpu-benchmarking";
@@ -331,10 +326,6 @@ const char kEnableLogging[]                 = "enable-logging";
 
 // Disable Media Source API on <audio>/<video> elements.
 const char kDisableMediaSource[]             = "disable-media-source";
-
-// Disables using WebMediaPlayerMS for src of <audio>/<video> derived from
-// media stream.
-const char kDisableWebMediaPlayerMS[]       = "disable-web-media-player-ms";
 
 // Use fake device for MediaStream to replace actual camera and microphone.
 const char kUseFakeDeviceForMediaStream[] = "use-fake-device-for-media-stream";
@@ -488,9 +479,6 @@ const char kInProcessGPU[]                  = "in-process-gpu";
 // Runs plugins inside the renderer process
 const char kInProcessPlugins[]              = "in-process-plugins";
 
-// Runs WebGL inside the renderer process.
-const char kInProcessWebGL[]                = "in-process-webgl";
-
 // Specifies the flags passed to JS engine
 const char kJavaScriptFlags[]               = "js-flags";
 
@@ -507,13 +495,6 @@ const char kLogPluginMessages[]             = "log-plugin-messages";
 // Sample memory usage with high frequency and store the results to the
 // Renderer.Memory histogram. Used in memory tests.
 const char kMemoryMetrics[]                 = "memory-metrics";
-
-// Causes the process to run as a NativeClient broker
-// (used for launching NaCl loader processes on 64-bit Windows).
-const char kNaClBrokerProcess[]             = "nacl-broker";
-
-// Causes the process to run as a NativeClient loader.
-const char kNaClLoaderProcess[]             = "nacl-loader";
 
 // Don't send HTTP-Referer headers.
 const char kNoReferrers[]                   = "no-referrers";
@@ -546,8 +527,8 @@ const char kPluginStartupDialog[]           = "plugin-startup-dialog";
 // Argument to the process type that indicates a PPAPI broker process type.
 const char kPpapiBrokerProcess[]            = "ppapi-broker";
 
-// Runs PPAPI (Pepper) plugins out-of-process.
-const char kPpapiOutOfProcess[]             = "ppapi-out-of-process";
+// Runs PPAPI (Pepper) plugins in-process.
+const char kPpapiInProcess[]                = "ppapi-in-process";
 
 // Like kPluginLauncher for PPAPI plugins.
 const char kPpapiPluginLauncher[]           = "ppapi-plugin-launcher";
@@ -598,20 +579,6 @@ const char kRendererProcessLimit[]          = "renderer-process-limit";
 
 // Causes the renderer process to display a dialog on launch.
 const char kRendererStartupDialog[]         = "renderer-startup-dialog";
-
-// Causes the process to run as a service process.
-const char kServiceProcess[]                = "service";
-
-// Renders a border around composited Render Layers to help debug and study
-// layer compositing.
-const char kShowCompositedLayerBorders[]    = "show-composited-layer-borders";
-
-// Draws a textual dump of the compositor layer tree to help debug and study
-// layer compositing.
-const char kShowCompositedLayerTree[]       = "show-composited-layer-tree";
-
-// Draws a FPS indicator
-const char kShowFPSCounter[]                = "show-fps-counter";
 
 // Enables accelerated compositing for overflow scroll. Promotes eligible
 // overflow:scroll elements to layers to enable accelerated scrolling for them.
@@ -745,8 +712,9 @@ const char kUseMobileUserAgent[] = "use-mobile-user-agent";
 // Disable history logging for media elements.
 const char kDisableMediaHistoryLogging[]    = "disable-media-history";
 
-// Whether to run media elements in the renderer process.
-const char kMediaPlayerInRenderProcess[]    = "media-player-in-render-process";
+// Disable user gesture requirement for media playback.
+const char kDisableGestureRequirementForMediaPlayback[] =
+    "disable-gesture-requirement-for-media-playback";
 
 // The telephony region (ISO country code) to use in phone number detection.
 const char kNetworkCountryIso[] = "network-country-iso";

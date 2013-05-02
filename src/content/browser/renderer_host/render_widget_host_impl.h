@@ -10,6 +10,7 @@
 #include <map>
 #include <queue>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/callback.h"
@@ -41,6 +42,7 @@ class TimeTicks;
 
 namespace cc {
 class CompositorFrame;
+class CompositorFrameAck;
 }
 
 namespace ui {
@@ -91,6 +93,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // uses RenderWidgetHost::AsRenderWidgetHostImpl().
   static RenderWidgetHostImpl* From(RenderWidgetHost* rwh);
 
+  void set_hung_renderer_delay_ms(const base::TimeDelta& timeout) {
+    hung_renderer_delay_ms_ = timeout.InMilliseconds();
+  }
+
   // RenderWidgetHost implementation.
   virtual void Undo() OVERRIDE;
   virtual void Redo() OVERRIDE;
@@ -136,6 +142,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
                            const gfx::Size& page_size,
                            const gfx::Size& desired_size) OVERRIDE;
   virtual void Replace(const string16& word) OVERRIDE;
+  virtual void ReplaceMisspelling(const string16& word) OVERRIDE;
   virtual void ResizeRectChanged(const gfx::Rect& new_rect) OVERRIDE;
   virtual void RestartHangMonitorTimeout() OVERRIDE;
   virtual void SetIgnoreInputEvents(bool ignore_input_events) OVERRIDE;
@@ -143,6 +150,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void WasResized() OVERRIDE;
   virtual void AddKeyboardListener(KeyboardListener* listener) OVERRIDE;
   virtual void RemoveKeyboardListener(KeyboardListener* listener) OVERRIDE;
+  virtual void GetWebScreenInfo(WebKit::WebScreenInfo* result) OVERRIDE;
+  virtual void GetSnapshotFromRenderer(
+      const gfx::Rect& src_subrect,
+      const base::Callback<void(bool, const SkBitmap&)>& callback) OVERRIDE;
 
   // Notification that the screen info has changed.
   void NotifyScreenInfoChanged();
@@ -309,9 +320,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
     return ignore_input_events_;
   }
 
-  // Activate deferred plugin handles.
-  void ActivateDeferredPluginHandles();
-
   bool ShouldForwardTouchEvent() const;
 
   bool has_touch_handler() const { return has_touch_handler_; }
@@ -327,6 +335,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // pre-defined edit commands
   void SetEditCommandsForNextKeyEvent(
       const std::vector<EditCommand>& commands);
+
+  // Gets the accessibility mode.
+  AccessibilityMode accessibility_mode() const {
+    return accessibility_mode_;
+  }
 
   // Send a message to the renderer process to change the accessibility mode.
   void SetAccessibilityMode(AccessibilityMode mode);
@@ -354,6 +367,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Relay a request from assistive technology to set text selection.
   void AccessibilitySetTextSelection(
       int acc_obj_id, int start_offset, int end_offset);
+
+  // Kill the renderer because we got a fatal accessibility error.
+  void FatalAccessibilityTreeError();
 
   // Executes the edit command on the RenderView.
   void ExecuteEditCommand(const std::string& command,
@@ -388,6 +404,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       int32 route_id,
       int gpu_host_id,
       const AcceleratedSurfaceMsg_BufferPresented_Params& params);
+
+  // Called by the view in response to OnSwapCompositorFrame.
+  static void SendSwapCompositorFrameAck(
+      int32 route_id, int renderer_host_id, const cc::CompositorFrameAck& ack);
 
   // Called by the view in response to AcceleratedSurfaceBuffersSwapped for
   // platforms that support deferred GPU process descheduling. This does
@@ -433,6 +453,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // Sets whether the overscroll controller should be enabled for this page.
   void SetOverscrollControllerEnabled(bool enabled);
+
+  // Suppreses future char events until a keydown. See
+  // suppress_next_char_events_.
+  void SuppressNextCharEvents();
 
  protected:
   virtual RenderWidgetHostImpl* AsRenderWidgetHostImpl() OVERRIDE;
@@ -506,8 +530,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Returns whether an overscroll gesture is in progress.
   bool IsInOverscrollGesture() const;
 
-  void GetWebScreenInfo(WebKit::WebScreenInfo* result);
-
   // The View associated with the RenderViewHost. The lifetime of this object
   // is associated with the lifetime of the Render process. If the Renderer
   // crashes, its View is destroyed and this pointer becomes NULL, even though
@@ -554,7 +576,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
                                          int32 route_id,
                                          const gfx::Size& size,
                                          int32 gpu_process_host_id);
-  void OnSwapCompositorFrame(const cc::CompositorFrame& frame);
+  bool OnSwapCompositorFrame(const IPC::Message& message);
   void OnUpdateRect(const ViewHostMsg_UpdateRect_Params& params);
   void OnUpdateIsDelayed();
   void OnInputEventAck(WebKit::WebInputEvent::Type event_type,
@@ -582,42 +604,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   void OnShowDisambiguationPopup(const gfx::Rect& rect,
                                  const gfx::Size& size,
                                  const TransportDIB::Id& id);
-
-#if defined(OS_MACOSX)
-  void OnPluginFocusChanged(bool focused, int plugin_id);
-  void OnStartPluginIme();
-  void OnAllocateFakePluginWindowHandle(bool opaque,
-                                        bool root,
-                                        gfx::PluginWindowHandle* id);
-  void OnDestroyFakePluginWindowHandle(gfx::PluginWindowHandle id);
-  void OnAcceleratedSurfaceSetIOSurface(gfx::PluginWindowHandle window,
-                                        int32 width,
-                                        int32 height,
-                                        uint64 mach_port);
-  void OnAcceleratedSurfaceSetTransportDIB(gfx::PluginWindowHandle window,
-                                           int32 width,
-                                           int32 height,
-                                           TransportDIB::Handle transport_dib);
-  void OnAcceleratedSurfaceBuffersSwapped(gfx::PluginWindowHandle window,
-                                          uint64 surface_handle);
-#endif
-#if defined(OS_ANDROID)
-  void OnUpdateFrameInfo(const gfx::Vector2d& scroll_offset,
-                         float page_scale_factor,
-                         float min_page_scale_factor,
-                         float max_page_scale_factor,
-                         const gfx::Size& content_size);
-#endif
-#if defined(TOOLKIT_GTK)
-  void OnCreatePluginContainer(gfx::PluginWindowHandle id);
-  void OnDestroyPluginContainer(gfx::PluginWindowHandle id);
-#endif
 #if defined(OS_WIN)
   void OnWindowlessPluginDummyWindowCreated(
       gfx::NativeViewId dummy_activation_window);
   void OnWindowlessPluginDummyWindowDestroyed(
       gfx::NativeViewId dummy_activation_window);
 #endif
+  void OnSnapshot(bool success, const SkBitmap& bitmap);
 
   // Called (either immediately or asynchronously) after we're done with our
   // BackingStore and can send an ACK to the renderer so it can paint onto it
@@ -714,6 +707,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // The current size of the RenderWidget.
   gfx::Size current_size_;
 
+  // The size of the view's backing surface in non-DPI-adjusted pixels.
+  gfx::Size physical_backing_size_;
+
+  // The height of the physical backing surface that is overdrawn opaquely in
+  // the browser, for example by an on-screen-keyboard (in DPI-adjusted pixels).
+  float overdraw_bottom_height_;
+
   // The size we last sent as requested size to the renderer. |current_size_|
   // is only updated once the resize message has been ack'd. This on the other
   // hand is updated when the resize message is sent. This is very similar to
@@ -755,6 +755,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // mechanism as for mouse moves (just dropping old events when multiple ones
   // would be queued) results in very slow scrolling.
   WheelEventQueue coalesced_mouse_wheel_events_;
+
+  AccessibilityMode accessibility_mode_;
 
   // (Similar to |mouse_move_pending_|.) True while waiting for SelectRange_ACK.
   bool select_range_pending_;
@@ -845,8 +847,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // changed.
   bool suppress_next_char_events_;
 
-  std::vector<gfx::PluginWindowHandle> deferred_plugin_handles_;
-
   // The last scroll offset of the render widget.
   gfx::Vector2d last_scroll_offset_;
 
@@ -870,14 +870,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   scoped_ptr<GestureEventFilter> gesture_event_filter_;
   scoped_ptr<OverscrollController> overscroll_controller_;
 
-  // This keeps track of the ACKs received for touch events from the renderer.
-  // If the ack for any event is NO_CONSUMER_EXISTS, then no subsequent touch
-  // events should reach the renderer until all the fingers have been lifted
-  InputEventAckState touch_event_state_;
-
 #if defined(OS_WIN)
   std::list<HWND> dummy_windows_for_activation_;
 #endif
+
+  // List of callbacks for pending snapshot requests to the renderer.
+  std::queue<base::Callback<void(bool, const SkBitmap&)> > pending_snapshots_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostImpl);
 };

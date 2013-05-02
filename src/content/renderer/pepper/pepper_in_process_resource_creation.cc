@@ -93,8 +93,9 @@ PP_Resource PepperInProcessResourceCreation::CreatePrinting(
       instance))->GetReference();
 }
 
-PP_Resource PepperInProcessResourceCreation::CreateUDPSocketPrivate(
-    PP_Instance instance) {
+PP_Resource PepperInProcessResourceCreation::CreateTrueTypeFont(
+    PP_Instance instance,
+    const PP_TrueTypeFontDesc_Dev& desc) {
   NOTIMPLEMENTED();
   return 0;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2006, 2009, 2011 Apple Inc.  All rights reserved.
+ * Copyright (C) 2003, 2006, 2009, 2011, 2012, 2013 Apple Inc.  All rights reserved.
  * Copyright (C) 2010 Igalia S.L
  *
  * Redistribution and use in source and binary forms, with or without
@@ -268,6 +268,13 @@ namespace WebCore {
     String textTrackSubtitlesText();
     String textTrackOffText();
     String textTrackNoLabelText();
+#if PLATFORM(MAC)
+    String textTrackCountryAndLanguageMenuItemText(const String& title, const String& country, const String& language);
+    String textTrackLanguageMenuItemText(const String& title, const String& language);
+    String closedCaptionTrackMenuItemText(const String&);
+    String sdhTrackMenuItemText(const String&);
+    String easyReaderTrackMenuItemText(const String&);
+#endif
 #endif
 
     String snapshottedPlugInLabelTitle();

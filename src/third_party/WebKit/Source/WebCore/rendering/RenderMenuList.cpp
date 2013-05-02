@@ -54,7 +54,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 RenderMenuList::RenderMenuList(Element* element)
-    : RenderDeprecatedFlexibleBox(element)
+    : RenderFlexibleBox(element)
     , m_buttonText(0)
     , m_innerBlock(0)
     , m_optionsChanged(true)
@@ -91,14 +91,26 @@ void RenderMenuList::createInnerBlock()
     ASSERT(!firstChild());
     m_innerBlock = createAnonymousBlock();
     adjustInnerStyle();
-    RenderDeprecatedFlexibleBox::addChild(m_innerBlock);
+    RenderFlexibleBox::addChild(m_innerBlock);
 }
 
 void RenderMenuList::adjustInnerStyle()
 {
     RenderStyle* innerStyle = m_innerBlock->style();
-    innerStyle->setBoxFlex(1);
-    
+    innerStyle->setFlexGrow(1);
+    innerStyle->setFlexShrink(1);
+    // min-width: 0; is needed for correct shrinking.
+    // FIXME: Remove this line when https://bugs.webkit.org/show_bug.cgi?id=111790 is fixed.
+    innerStyle->setMinWidth(Length(0, Fixed));
+    // Use margin:auto instead of align-items:center to get safe centering, i.e.
+    // when the content overflows, treat it the same as align-items: flex-start.
+    // But we only do that for the cases where html.css would otherwise use center.
+    if (style()->alignItems() == AlignCenter) {
+        innerStyle->setMarginTop(Length());
+        innerStyle->setMarginBottom(Length());
+        innerStyle->setAlignSelf(AlignFlexStart);
+    }
+
     innerStyle->setPaddingLeft(Length(theme()->popupInternalPaddingLeft(style()), Fixed));
     innerStyle->setPaddingRight(Length(theme()->popupInternalPaddingRight(style()), Fixed));
     innerStyle->setPaddingTop(Length(theme()->popupInternalPaddingTop(style()), Fixed));
@@ -137,7 +149,7 @@ void RenderMenuList::addChild(RenderObject* newChild, RenderObject* beforeChild)
 void RenderMenuList::removeChild(RenderObject* oldChild)
 {
     if (oldChild == m_innerBlock || !m_innerBlock) {
-        RenderDeprecatedFlexibleBox::removeChild(oldChild);
+        RenderFlexibleBox::removeChild(oldChild);
         m_innerBlock = 0;
     } else
         m_innerBlock->removeChild(oldChild);
@@ -341,7 +353,7 @@ void RenderMenuList::valueChanged(unsigned listIndex, bool fireOnChange)
 {
     // Check to ensure a page navigation has not occurred while
     // the popup was up.
-    Document* doc = static_cast<Element*>(node())->document();
+    Document* doc = toElement(node())->document();
     if (!doc || doc != doc->frame()->document())
         return;
     
@@ -463,33 +475,46 @@ PopupMenuStyle RenderMenuList::itemStyle(unsigned listIndex) const
         listIndex = 0;
     }
     HTMLElement* element = listItems[listIndex];
-    
+
+    Color itemBackgroundColor;
+    bool itemHasCustomBackgroundColor;
+    getItemBackgroundColor(listIndex, itemBackgroundColor, itemHasCustomBackgroundColor);
+
     RenderStyle* style = element->renderStyle() ? element->renderStyle() : element->computedStyle();
-    return style ? PopupMenuStyle(style->visitedDependentColor(CSSPropertyColor), itemBackgroundColor(listIndex), style->font(), style->visibility() == VISIBLE,
-        style->display() == NONE, style->textIndent(), style->direction(), isOverride(style->unicodeBidi())) : menuStyle();
+    return style ? PopupMenuStyle(style->visitedDependentColor(CSSPropertyColor), itemBackgroundColor, style->font(), style->visibility() == VISIBLE,
+        style->display() == NONE, style->textIndent(), style->direction(), isOverride(style->unicodeBidi()),
+        itemHasCustomBackgroundColor ? PopupMenuStyle::CustomBackgroundColor : PopupMenuStyle::DefaultBackgroundColor) : menuStyle();
 }
 
-Color RenderMenuList::itemBackgroundColor(unsigned listIndex) const
+void RenderMenuList::getItemBackgroundColor(unsigned listIndex, Color& itemBackgroundColor, bool& itemHasCustomBackgroundColor) const
 {
     const Vector<HTMLElement*>& listItems = selectElement()->listItems();
-    if (listIndex >= listItems.size())
-        return style()->visitedDependentColor(CSSPropertyBackgroundColor);
+    if (listIndex >= listItems.size()) {
+        itemBackgroundColor = style()->visitedDependentColor(CSSPropertyBackgroundColor);
+        itemHasCustomBackgroundColor = false;
+        return;
+    }
     HTMLElement* element = listItems[listIndex];
 
     Color backgroundColor;
     if (element->renderStyle())
         backgroundColor = element->renderStyle()->visitedDependentColor(CSSPropertyBackgroundColor);
+    itemHasCustomBackgroundColor = backgroundColor.isValid() && backgroundColor.alpha();
     // If the item has an opaque background color, return that.
-    if (!backgroundColor.hasAlpha())
-        return backgroundColor;
+    if (!backgroundColor.hasAlpha()) {
+        itemBackgroundColor = backgroundColor;
+        return;
+    }
 
     // Otherwise, the item's background is overlayed on top of the menu background.
     backgroundColor = style()->visitedDependentColor(CSSPropertyBackgroundColor).blend(backgroundColor);
-    if (!backgroundColor.hasAlpha())
-        return backgroundColor;
+    if (!backgroundColor.hasAlpha()) {
+        itemBackgroundColor = backgroundColor;
+        return;
+    }
 
     // If the menu background is not opaque, then add an opaque white background behind.
-    return Color(Color::white).blend(backgroundColor);
+    itemBackgroundColor = Color(Color::white).blend(backgroundColor);
 }
 
 PopupMenuStyle RenderMenuList::menuStyle() const

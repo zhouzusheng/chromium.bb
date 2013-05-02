@@ -189,7 +189,7 @@ GL_FUNCTIONS = [
   'names': ['glDrawBuffer'],
   'arguments': 'GLenum mode', },
 { 'return_type': 'void',
-  'names': ['glDrawBuffersARB'],
+  'names': ['glDrawBuffersARB', 'glDrawBuffersEXT'],
   'arguments': 'GLsizei n, const GLenum* bufs', },
 { 'return_type': 'void',
   'names': ['glDrawElements'],
@@ -482,7 +482,7 @@ GL_FUNCTIONS = [
 { 'return_type': 'void',
   'names': ['glShaderSource'],
   'arguments':
-      'GLuint shader, GLsizei count, const char** str, const GLint* length',
+      'GLuint shader, GLsizei count, const char* const* str, const GLint* length',
   'logging_code': """
   GL_SERVICE_LOG_CODE_BLOCK({
     for (GLsizei ii = 0; ii < count; ++ii) {
@@ -1549,7 +1549,8 @@ namespace gfx {
     if argument_names == 'void' or argument_names == '':
       argument_names = ''
     function_name = names[0]
-    file.write('  TRACE_EVENT0("gpu", "TraceGLAPI::%s")\n' % function_name)
+    file.write('  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceGLAPI::%s")\n' %
+               function_name)
     if return_type == 'void':
       file.write('  %s_api_->%sFn(%s);\n' %
           (set_name.lower(), function_name, argument_names))
@@ -1583,7 +1584,7 @@ namespace gfx {
     file.write('\n')
     file.write('%s GL_BINDING_CALL Mock_%s(%s) {\n' %
         (func['return_type'], func['names'][0], func['arguments']))
-    argument_names = re.sub(r'(const )?[a-zA-Z0-9]+\** ([a-zA-Z0-9]+)', r'\2',
+    argument_names = re.sub(r'(const )?[a-zA-Z0-9]+((\s*const\s*)?\*)* ([a-zA-Z0-9]+)', r'\4',
                               func['arguments'])
     if argument_names == 'void':
       argument_names = ''

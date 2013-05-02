@@ -57,7 +57,13 @@ class PlatformGeneralCallbackTranslator
   }
 
   virtual void DidReadMetadata(const base::PlatformFileInfo& file_info,
-                               const FilePath& platform_path) OVERRIDE {
+                               const base::FilePath& platform_path) OVERRIDE {
+    NOTREACHED();
+  }
+
+  virtual void DidCreateSnapshotFile(
+      const base::PlatformFileInfo& file_info,
+      const base::FilePath& platform_path) OVERRIDE {
     NOTREACHED();
   }
 

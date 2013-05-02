@@ -29,12 +29,12 @@
  */
 
 .memory-pie-chart-container {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
+    display: -webkit-flex;
+    -webkit-flex-direction: column;
 }
 
 .memory-pie-chart {
-    -webkit-box-flex: 1;
+    -webkit-flex: 1;
 }
 
 .memory-blocks-list .swatch {
@@ -48,42 +48,6 @@
 
 .memory-blocks-list .item {
     margin: 10px;
-}
-
-.memory-bar-chart-name {
-    text-align: right;
-    white-space: nowrap;
-}
-
-.memory-bar-chart-bar {
-    border: 0px;
-    border-radius: 2px;
-    float: left;
-    height: 18px;
-    overflow: hidden;
-    position: relative;
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgba(255, 255, 255, 0.5)), to(rgba(192, 192, 192, 0)));
-}
-
-.memory-bar-chart-unused {
-    background-color: rgba(255, 255, 255, 0.5);
-    float: right;
-    height: 100%;
-}
-
-.memory-bar-chart-percent {
-    position: absolute;
-    text-align: center;
-    width: 100%;
-}
-
-.memory-bar-chart-size {
-    text-indent: 6px;
-    white-space: nowrap;
-}
-
-.memory-bar-chart-total {
-    font-weight: bold;
 }
 
 .native-snapshot-view {
@@ -107,10 +71,6 @@
     right: 0;
     bottom: 0;
     border: none;
-}
-
-.native-snapshot-view .data-grid table {
-    font-size: 11px;
 }
 
 .native-snapshot-view .data-grid td {

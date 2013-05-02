@@ -48,7 +48,7 @@ struct( domInterface => {
     functions => '@',    # List of 'domFunction'
     attributes => '@',    # List of 'domAttribute'    
     extendedAttributes => '$', # Extended attributes
-    constructors => '@', # Constructor
+    constructors => '@', # Constructors, list of 'domFunction'
     isException => '$', # Used for exception interfaces
 });
 
@@ -97,6 +97,14 @@ struct( Token => {
     type => '$', # type of token
     value => '$' # value of token
 });
+
+struct( Typedef => {
+    extendedAttributes => '$', # Extended attributes
+    type => '$', # Type of data
+});
+
+# Maps 'typedef name' -> Typedef
+my %typedefs = ();
 
 sub new {
     my $class = shift;
@@ -149,6 +157,19 @@ sub assertUnexpectedToken
     die $msg;
 }
 
+sub assertNoExtendedAttributesInTypedef
+{
+    my $self = shift;
+    my $name = shift;
+    my $line = shift;
+    my $typedef = $typedefs{$name};
+    my $msg = "Unexpected extendedAttributeList in typedef \"$name\" at " . $self->{Line};
+    if (defined ($line)) {
+        $msg .= " IDLParser.pm:" . $line;
+    }
+    die $msg if %{$typedef->extendedAttributes};
+}
+
 sub Parse
 {
     my $self = shift;
@@ -171,8 +192,6 @@ sub Parse
         $self->assertTokenType($next, EmptyToken);
     };
     die $@ . " in $fileName" if $@;
-
-    die "No definitions founds" unless @definitions;
 
     my $document = idlDocument->new();
     $document->fileName($fileName);
@@ -272,6 +291,19 @@ sub unquoteString
     die "Failed to parse string (" . $quotedString . ") at " . $self->{Line};
 }
 
+sub typeHasNullableSuffix
+{
+    my $type = shift;
+    return $type =~ /\?$/;
+}
+
+sub typeRemoveNullableSuffix
+{
+    my $type = shift;
+    $type =~ s/\?//g;
+    return $type;
+}
+
 my $nextAttributeOld_1 = '^(attribute|inherit|readonly)$';
 my $nextPrimitiveType_1 = '^(int|long|short|unsigned)$';
 my $nextPrimitiveType_2 = '^(double|float|unrestricted)$';
@@ -322,7 +354,71 @@ sub parseDefinitions
             push(@definitions, $definition);
         }
     }
+    $self->applyTypedefs(\@definitions);
     return \@definitions;
+}
+
+sub applyTypedefs
+{
+    my $self = shift;
+    my $definitions = shift;
+   
+    if (!%typedefs) {
+        return;
+    }
+    foreach my $definition (@$definitions) {
+        if (ref($definition) eq "domInterface") {
+            foreach my $constant (@{$definition->constants}) {
+                if (exists $typedefs{$constant->type}) {
+                    my $typedef = $typedefs{$constant->type};
+                    $self->assertNoExtendedAttributesInTypedef($constant->type, __LINE__);
+                    $constant->type($typedef->type);
+                }
+            }
+            foreach my $attribute (@{$definition->attributes}) {
+                $self->applyTypedefsForSignature($attribute->signature);
+            }
+            foreach my $function (@{$definition->functions}, @{$definition->constructors}) {
+                $self->applyTypedefsForSignature($function->signature);
+                foreach my $signature (@{$function->parameters}) {
+                    $self->applyTypedefsForSignature($signature);
+                }
+            }
+        }
+    }
+}
+
+sub applyTypedefsForSignature
+{
+    my $self = shift;
+    my $signature = shift;
+
+    if (!defined ($signature->type)) {
+        return;
+    }
+
+    my $type = $signature->type;
+    $type =~ s/[\?\[\]]+$//g;
+    my $typeSuffix = $signature->type;
+    $typeSuffix =~ s/^[^\?\[\]]+//g;
+    if (exists $typedefs{$type}) {
+        my $typedef = $typedefs{$type};
+        $signature->type($typedef->type . $typeSuffix);
+        copyExtendedAttributes($signature->extendedAttributes, $typedef->extendedAttributes);
+    }
+
+    # Handle union types, sequences and etc.
+    foreach my $name (%typedefs) {
+        if (!exists $typedefs{$name}) {
+            next;
+        }
+        my $typedef = $typedefs{$name};
+        my $regex = '\\b' . $name . '\\b';
+        my $replacement = $typedef->type;
+        my $type = $signature->type;
+        $type =~ s/($regex)/$replacement/g;
+        $signature->type($type);
+    }
 }
 
 sub parseDefinition
@@ -726,14 +822,20 @@ sub parseTypedef
 {
     my $self = shift;
     my $extendedAttributeList = shift;
+    die "Extended attributes are not applicable to typedefs themselves: " . $self->{Line} if %{$extendedAttributeList};
 
     my $next = $self->nextToken();
     if ($next->value() eq "typedef") {
         $self->assertTokenValue($self->getToken(), "typedef", __LINE__);
-        $self->parseExtendedAttributeList();
-        $self->parseType();
-        $self->assertTokenType($self->getToken(), IdentifierToken);
+        my $typedef = Typedef->new();
+        $typedef->extendedAttributes($self->parseExtendedAttributeListAllowEmpty());
+        $typedef->type($self->parseType());
+        my $nameToken = $self->getToken();
+        $self->assertTokenType($nameToken, IdentifierToken);
         $self->assertTokenValue($self->getToken(), ";", __LINE__);
+        my $name = $nameToken->value();
+        die "typedef redefinition for " . $name . " at " . $self->{Line} if exists $typedefs{$name};
+        $typedefs{$name} = $typedef;
         return;
     }
     $self->assertUnexpectedToken($next->value(), __LINE__);
@@ -1038,7 +1140,14 @@ sub parseAttributeRest
         }
         $self->assertTokenValue($self->getToken(), "attribute", __LINE__);
         $newDataNode->signature(domSignature->new());
-        $newDataNode->signature->type($self->parseType());
+        my $type = $self->parseType();
+        if (typeHasNullableSuffix($type)) {
+            $newDataNode->signature->isNullable(1);
+        } else {
+            $newDataNode->signature->isNullable(0);
+        }
+        # Remove all "?" in the type declaration, e.g. "double?" -> "double".
+        $newDataNode->signature->type(typeRemoveNullableSuffix($type));
         my $token = $self->getToken();
         $self->assertTokenType($token, IdentifierToken);
         $newDataNode->signature->name($token->value());
@@ -1305,14 +1414,13 @@ sub parseOptionalOrRequiredArgument
         $self->assertTokenValue($self->getToken(), "optional", __LINE__);
         my $type = $self->parseType();
         # domDataNode can only consider last "?".
-        if ($type =~ /\?$/) {
+        if (typeHasNullableSuffix($type)) {
             $paramDataNode->isNullable(1);
         } else {
             $paramDataNode->isNullable(0);
         }
         # Remove all "?" if exists, e.g. "object?[]?" -> "object[]".
-        $type =~ s/\?//g;
-        $paramDataNode->type($type);
+        $paramDataNode->type(typeRemoveNullableSuffix($type));
         $paramDataNode->name($self->parseArgumentName());
         $self->parseDefault();
         return $paramDataNode;
@@ -1320,14 +1428,13 @@ sub parseOptionalOrRequiredArgument
     if ($next->type() == IdentifierToken || $next->value() =~ /$nextExceptionField_1/) {
         my $type = $self->parseType();
         # domDataNode can only consider last "?".
-        if ($type =~ /\?$/) {
+        if (typeHasNullableSuffix($type)) {
             $paramDataNode->isNullable(1);
         } else {
             $paramDataNode->isNullable(0);
         }
         # Remove all "?" if exists, e.g. "object?[]?" -> "object[]".
-        $type =~ s/\?//g;
-        $paramDataNode->type($type);
+        $paramDataNode->type(typeRemoveNullableSuffix($type));
         $paramDataNode->isVariadic($self->parseEllipsis());
         $paramDataNode->name($self->parseArgumentName());
         return $paramDataNode;
@@ -1803,7 +1910,7 @@ sub parseUnrestrictedFloatType
     my $next = $self->nextToken();
     if ($next->value() eq "unrestricted") {
         $self->assertTokenValue($self->getToken(), "unrestricted", __LINE__);
-        return "unrestricted" . $self->parseFloatType();
+        return "unrestricted " . $self->parseFloatType();
     }
     if ($next->value() =~ /$nextUnrestrictedFloatType_1/) {
         return $self->parseFloatType();
@@ -2305,7 +2412,14 @@ sub parseAttributeRestOld
         $self->assertTokenValue($self->getToken(), "attribute", __LINE__);
         my $extendedAttributeList = $self->parseExtendedAttributeListAllowEmpty();
         $newDataNode->signature(domSignature->new());
-        $newDataNode->signature->type($self->parseType());
+        my $type = $self->parseType();
+        if (typeHasNullableSuffix($type)) {
+            $newDataNode->signature->isNullable(1);
+        } else {
+            $newDataNode->signature->isNullable(0);
+        }
+        # Remove all "?" in the type declaration, e.g. "double?" -> "double".
+        $newDataNode->signature->type(typeRemoveNullableSuffix($type));
         $newDataNode->signature->extendedAttributes($extendedAttributeList);
         my $token = $self->getToken();
         $self->assertTokenType($token, IdentifierToken);

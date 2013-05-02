@@ -11,6 +11,7 @@
 #include "net/proxy/proxy_resolver.h"
 
 namespace v8 {
+class HeapStatistics;
 class Isolate;
 }  // namespace v8
 
@@ -44,17 +45,18 @@ class NET_EXPORT_PRIVATE ProxyResolverV8 : public ProxyResolver {
       DNS_RESOLVE_EX,
       MY_IP_ADDRESS,
       MY_IP_ADDRESS_EX,
-      NUM_DNS_OPERATIONS,
     };
 
     JSBindings() {}
 
     // Handler for "dnsResolve()", "dnsResolveEx()", "myIpAddress()",
     // "myIpAddressEx()". Returns true on success and fills |*output| with the
-    // result.
+    // result. If |*terminate| is set to true, then the script execution will
+    // be aborted. Note that termination may not happen right away.
     virtual bool ResolveDns(const std::string& host,
                             ResolveDnsOperation op,
-                            std::string* output) = 0;
+                            std::string* output,
+                            bool* terminate) = 0;
 
     // Handler for "alert(message)"
     virtual void Alert(const string16& message) = 0;
@@ -93,6 +95,11 @@ class NET_EXPORT_PRIVATE ProxyResolverV8 : public ProxyResolver {
   // hack can be removed when the "default Isolate" concept is gone.
   static void RememberDefaultIsolate();
   static v8::Isolate* GetDefaultIsolate();
+
+  // Get total/ued heap memory usage of all v8 instances used by the proxy
+  // resolver.
+  static size_t GetTotalHeapSize();
+  static size_t GetUsedHeapSize();
 
  private:
   static v8::Isolate* g_default_isolate_;

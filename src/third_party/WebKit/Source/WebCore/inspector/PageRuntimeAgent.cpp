@@ -34,7 +34,6 @@
 
 #include "PageRuntimeAgent.h"
 
-#include "Console.h"
 #include "Document.h"
 #include "InjectedScript.h"
 #include "InjectedScriptManager.h"
@@ -42,6 +41,7 @@
 #include "InspectorState.h"
 #include "InstrumentingAgents.h"
 #include "Page.h"
+#include "PageConsole.h"
 #include "SecurityOrigin.h"
 
 using WebCore::TypeBuilder::Runtime::ExecutionContextDescription;
@@ -148,12 +148,12 @@ InjectedScript PageRuntimeAgent::injectedScriptForEval(ErrorString* errorString,
 
 void PageRuntimeAgent::muteConsole()
 {
-    Console::mute();
+    PageConsole::mute();
 }
 
 void PageRuntimeAgent::unmuteConsole()
 {
-    Console::unmute();
+    PageConsole::unmute();
 }
 
 void PageRuntimeAgent::reportExecutionContextCreation()
@@ -179,7 +179,7 @@ void PageRuntimeAgent::notifyContextCreated(const String& frameId, ScriptState* 
 {
     ASSERT(securityOrigin || isPageContext);
     int executionContextId = injectedScriptManager()->injectedScriptIdFor(scriptState);
-    String name = securityOrigin ? securityOrigin->toString() : "";
+    String name = securityOrigin ? securityOrigin->toRawString() : "";
     m_frontend->executionContextCreated(ExecutionContextDescription::create()
         .setId(executionContextId)
         .setIsPageContext(isPageContext)

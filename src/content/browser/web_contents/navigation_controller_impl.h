@@ -55,6 +55,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   virtual NavigationEntry* GetPendingEntry() const OVERRIDE;
   virtual int GetPendingEntryIndex() const OVERRIDE;
   virtual NavigationEntry* GetTransientEntry() const OVERRIDE;
+  virtual void SetTransientEntry(NavigationEntry* entry) OVERRIDE;
   virtual void LoadURL(const GURL& url,
                        const Referrer& referrer,
                        PageTransition type,
@@ -78,7 +79,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   virtual bool NeedsReload() const OVERRIDE;
   virtual void CancelPendingReload() OVERRIDE;
   virtual void ContinuePendingReload() OVERRIDE;
-  virtual bool IsInitialNavigation() OVERRIDE;
+  virtual bool IsInitialNavigation() const OVERRIDE;
   virtual void Reload(bool check_for_repost) OVERRIDE;
   virtual void ReloadIgnoringCache(bool check_for_repost) OVERRIDE;
   virtual void ReloadOriginalRequestURL(bool check_for_repost) OVERRIDE;
@@ -111,25 +112,11 @@ class CONTENT_EXPORT NavigationControllerImpl
       SiteInstance* instance,
       int32 page_id) const;
 
-  // Transient entry -----------------------------------------------------------
-
-  // Adds an entry that is returned by GetActiveEntry().  The entry is
-  // transient: any navigation causes it to be removed and discarded.
-  // The NavigationController becomes the owner of |entry| and deletes it when
-  // it discards it.  This is useful with interstitial page that need to be
-  // represented as an entry, but should go away when the user navigates away
-  // from them.
-  // Note that adding a transient entry does not change the active contents.
-  void AddTransientEntry(NavigationEntryImpl* entry);
-
   // WebContentsImpl -----------------------------------------------------------
 
   WebContentsImpl* web_contents() const {
     return web_contents_;
   }
-
-  // Called when a document has been loaded in a frame.
-  void DocumentLoadedInFrame();
 
   // For use by WebContentsImpl ------------------------------------------------
 
@@ -302,6 +289,11 @@ class CONTENT_EXPORT NavigationControllerImpl
   // preparation to add another.
   void PruneOldestEntryIfFull();
 
+  // Removes all the entries except the active entry. If there is a new pending
+  // navigation it is preserved. In contrast to PruneAllButActive() this does
+  // not update the session history of the RenderView.
+  void PruneAllButActiveInternal();
+
   // Returns true if the navigation is redirect.
   bool IsRedirect(const ViewHostMsg_FrameNavigate_Params& params);
 
@@ -385,7 +377,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   bool needs_reload_;
 
   // Whether this is the initial navigation.
-  // Becomes false when initial navigation is loaded.
+  // Becomes false when initial navigation commits.
   bool is_initial_navigation_;
 
   // Used to find the appropriate SessionStorageNamespace for the storage

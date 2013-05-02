@@ -129,7 +129,6 @@ class UI_EXPORT Event {
       case ET_GESTURE_TAP_DOWN:
       case ET_GESTURE_BEGIN:
       case ET_GESTURE_END:
-      case ET_GESTURE_DOUBLE_TAP:
       case ET_GESTURE_TWO_FINGER_TAP:
       case ET_GESTURE_PINCH_BEGIN:
       case ET_GESTURE_PINCH_END:
@@ -179,7 +178,7 @@ class UI_EXPORT Event {
   // be in the list will not receive the event after this is called.
   // Note that StopPropagation() can be called only for cancelable events.
   void StopPropagation();
-  bool stopped_propagation() const { return !!(result_ & ui::ER_CONSUMED); }
+  bool stopped_propagation() const { return !!(result_ & ER_CONSUMED); }
 
   // Marks the event as having been handled. A handled event does not reach the
   // next event phase. For example, if an event is handled during the pre-target
@@ -187,7 +186,7 @@ class UI_EXPORT Event {
   // the target or post-target handlers.
   // Note that SetHandled() can be called only for cancelable events.
   void SetHandled();
-  bool handled() const { return result_ != ui::ER_UNHANDLED; }
+  bool handled() const { return result_ != ER_UNHANDLED; }
 
  protected:
   Event(EventType type, base::TimeDelta time_stamp, int flags);
@@ -226,6 +225,12 @@ class UI_EXPORT Event {
   EventTarget* target_;
   EventPhase phase_;
   EventResult result_;
+};
+
+class UI_EXPORT CancelModeEvent : public Event {
+ public:
+  CancelModeEvent();
+  virtual ~CancelModeEvent();
 };
 
 class UI_EXPORT LocatedEvent : public Event {
@@ -556,6 +561,10 @@ class UI_EXPORT KeyEvent : public Event {
   // called.
   void set_key_code(KeyboardCode key_code) { key_code_ = key_code; }
 
+  // Returns true for [Alt]+<num-pad digit> Unicode alt key codes used by Win.
+  // TODO(msw): Additional work may be needed for analogues on other platforms.
+  bool IsUnicodeKeyCode() const;
+
   // Normalizes flags_ to make it Windows/Mac compatible. Since the way
   // of setting modifier mask on X is very different than Windows/Mac as shown
   // in http://crbug.com/127142#c8, the normalization is necessary.
@@ -622,6 +631,8 @@ class UI_EXPORT ScrollEvent : public MouseEvent {
       : MouseEvent(model, source, target),
         x_offset_(model.x_offset_),
         y_offset_(model.y_offset_),
+        x_offset_ordinal_(model.x_offset_ordinal_),
+        y_offset_ordinal_(model.y_offset_ordinal_),
         finger_count_(model.finger_count_){
   }
 
@@ -632,6 +643,8 @@ class UI_EXPORT ScrollEvent : public MouseEvent {
               int flags,
               float x_offset,
               float y_offset,
+              float x_offset_ordinal,
+              float y_offset_ordinal,
               int finger_count);
 
   // Scale the scroll event's offset value.
@@ -641,11 +654,22 @@ class UI_EXPORT ScrollEvent : public MouseEvent {
 
   float x_offset() const { return x_offset_; }
   float y_offset() const { return y_offset_; }
+  float x_offset_ordinal() const { return x_offset_ordinal_; }
+  float y_offset_ordinal() const { return y_offset_ordinal_; }
   int finger_count() const { return finger_count_; }
 
+  // Overridden from LocatedEvent.
+  virtual void UpdateForRootTransform(
+      const gfx::Transform& root_transform) OVERRIDE;
+
  private:
+  // Potential accelerated offsets.
   float x_offset_;
   float y_offset_;
+  // Unaccelerated offsets.
+  float x_offset_ordinal_;
+  float y_offset_ordinal_;
+  // Number of fingers on the pad.
   int finger_count_;
 };
 

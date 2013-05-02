@@ -331,23 +331,27 @@ bool DismissVirtualKeyboard() {
 }  // namespace base
 
 #ifdef _MSC_VER
-//
-// If the ASSERT below fails, please install Visual Studio 2005 Service Pack 1.
-//
-extern char VisualStudio2005ServicePack1Detection[10];
-COMPILE_ASSERT(sizeof(&VisualStudio2005ServicePack1Detection) == sizeof(void*),
-               VS2005SP1Detect);
-//
-// Chrome requires at least Service Pack 1 for Visual Studio 2005.
-//
+
+// There are optimizer bugs in x86 VS2012 pre-Update 1.
+#if _MSC_VER == 1700 && defined _M_IX86 && _MSC_FULL_VER < 170051106
+
+#pragma message("Relevant defines:")
+#define __STR2__(x) #x
+#define __STR1__(x) __STR2__(x)
+#define __PPOUT__(x) "#define " #x " " __STR1__(x)
+#if defined(_M_IX86)
+  #pragma message(__PPOUT__(_M_IX86))
+#endif
+#if defined(_M_X64)
+  #pragma message(__PPOUT__(_M_X64))
+#endif
+#if defined(_MSC_FULL_VER)
+  #pragma message(__PPOUT__(_MSC_FULL_VER))
+#endif
+
+#pragma message("Visual Studio 2012 x86 must be updated to at least Update 1")
+#error Must install Update 1 to Visual Studio 2012.
+#endif
+
 #endif  // _MSC_VER
 
-#ifndef COPY_FILE_COPY_SYMLINK
-#error You must install the Windows 2008 or Vista Software Development Kit and \
-set it as your default include path to build this library. You can grab it by \
-searching for "download windows sdk 2008" in your favorite web search engine.  \
-Also make sure you register the SDK with Visual Studio, by selecting \
-"Integrate Windows SDK with Visual Studio 2005" from the Windows SDK \
-menu (see Start - All Programs - Microsoft Windows SDK - \
-Visual Studio Registration).
-#endif

@@ -29,9 +29,9 @@ static bool IsURLSameAsAnySiteInstance(const GURL& url) {
   if (url.SchemeIs(chrome::kJavaScriptScheme))
     return true;
 
-  return url == GURL(chrome::kChromeUICrashURL) ||
-         url == GURL(chrome::kChromeUIKillURL) ||
-         url == GURL(chrome::kChromeUIHangURL) ||
+  return url == GURL(kChromeUICrashURL) ||
+         url == GURL(kChromeUIKillURL) ||
+         url == GURL(kChromeUIHangURL) ||
          url == GURL(kChromeUIShorthangURL);
 }
 
@@ -118,8 +118,11 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
         StoragePartitionImpl* partition =
             static_cast<StoragePartitionImpl*>(
                 BrowserContext::GetStoragePartition(browser_context, this));
+        bool supports_browser_plugin = GetContentClient()->browser()->
+            SupportsBrowserPlugin(browser_context, site_);
         process_ =
             new RenderProcessHostImpl(browser_context, partition,
+                                      supports_browser_plugin,
                                       site_.SchemeIs(chrome::kGuestScheme));
       }
     }

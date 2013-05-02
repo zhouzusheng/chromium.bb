@@ -205,13 +205,11 @@ void HTMLFormElement::submitImplicitly(Event* event, bool fromImplicitSubmission
 
 static inline HTMLFormControlElement* submitElementFromEvent(const Event* event)
 {
-    Node* targetNode = event->target()->toNode();
-    if (!targetNode || !targetNode->isElementNode())
-        return 0;
-    Element* targetElement = static_cast<Element*>(targetNode);
-    if (!targetElement->isFormControlElement())
-        return 0;
-    return static_cast<HTMLFormControlElement*>(targetElement);
+    for (Node* node = event->target()->toNode(); node; node = node->parentNode()) {
+        if (node->isElementNode() && toElement(node)->isFormControlElement())
+            return static_cast<HTMLFormControlElement*>(node);
+    }
+    return 0;
 }
 
 bool HTMLFormElement::validateInteractively(Event* event)
@@ -261,7 +259,7 @@ bool HTMLFormElement::validateInteractively(Event* event)
                 continue;
             String message("An invalid form control with name='%name' is not focusable.");
             message.replace("%name", unhandledAssociatedElement->name());
-            document()->addConsoleMessage(HTMLMessageSource, ErrorMessageLevel, message);
+            document()->addConsoleMessage(RenderingMessageSource, ErrorMessageLevel, message);
         }
     }
     return false;

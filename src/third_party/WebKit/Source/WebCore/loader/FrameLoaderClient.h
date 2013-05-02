@@ -33,6 +33,7 @@
 #include "FrameLoaderTypes.h"
 #include "IconURL.h"
 #include "LayoutMilestones.h"
+#include "ResourceLoadPriority.h"
 #include <wtf/Forward.h>
 #include <wtf/Vector.h>
 
@@ -82,11 +83,7 @@ namespace WebCore {
 #endif
     class HTMLPlugInElement;
     class IntSize;
-#if ENABLE(WEB_INTENTS)
-    class IntentRequest;
-#endif
     class KURL;
-    class MainResourceLoader;
     class MessageEvent;
     class NavigationAction;
     class Page;
@@ -95,7 +92,6 @@ namespace WebCore {
     class PolicyChecker;
     class ResourceError;
     class ResourceHandle;
-    class ResourceLoader;
     class ResourceRequest;
     class ResourceResponse;
 #if ENABLE(MEDIA_STREAM)
@@ -213,6 +209,13 @@ namespace WebCore {
         virtual bool shouldStopLoadingForHistoryItem(HistoryItem*) const = 0;
         virtual void updateGlobalHistoryItemForPage() { }
 
+#if PLATFORM(CHROMIUM)
+        // Another page has accessed the initial empty document of this frame.
+        // It is no longer safe to display a provisional URL, since a URL spoof
+        // is now possible.
+        virtual void didAccessInitialDocument() { }
+#endif
+
         // This frame has set its opener to null, disowning it for the lifetime of the frame.
         // See http://html.spec.whatwg.org/#dom-opener.
         // FIXME: JSC should allow disowning opener. - <https://bugs.webkit.org/show_bug.cgi?id=103913>.
@@ -267,7 +270,7 @@ namespace WebCore {
         virtual void dispatchDidBecomeFrameset(bool) = 0; // Can change due to navigation or DOM modification.
 
         virtual bool canCachePage() const = 0;
-        virtual void convertMainResourceLoadToDownload(MainResourceLoader*, const ResourceRequest&, const ResourceResponse&) = 0;
+        virtual void convertMainResourceLoadToDownload(DocumentLoader*, const ResourceRequest&, const ResourceResponse&) = 0;
 
         virtual PassRefPtr<Frame> createFrame(const KURL& url, const String& name, HTMLFrameOwnerElement* ownerElement, const String& referrer, bool allowsScrolling, int marginWidth, int marginHeight) = 0;
         virtual PassRefPtr<Widget> createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool loadManually) = 0;
@@ -343,13 +346,6 @@ namespace WebCore {
 
         virtual void didChangeName(const String&) { }
 
-#if ENABLE(WEB_INTENTS)
-        virtual void dispatchIntent(PassRefPtr<IntentRequest>) = 0;
-#endif
-#if ENABLE(WEB_INTENTS_TAG)
-        virtual void registerIntentService(const String&, const String&, const KURL&, const String&, const String&) { }
-#endif
-
         virtual void dispatchWillOpenSocketStream(SocketStreamHandle*) { }
 
         virtual void dispatchGlobalObjectAvailable(DOMWrapperWorld*) { }
@@ -374,6 +370,8 @@ namespace WebCore {
 
         // If an HTML document is being loaded, informs the embedder that the document will have its <body> attached soon.
         virtual void dispatchWillInsertBody() { }
+
+        virtual void dispatchDidChangeResourcePriority(unsigned long /*identifier*/, ResourceLoadPriority) { }
     };
 
 } // namespace WebCore

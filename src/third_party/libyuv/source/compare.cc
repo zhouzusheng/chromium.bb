@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -30,7 +30,7 @@ extern "C" {
 uint32 HashDjb2_C(const uint8* src, int count, uint32 seed);
 
 // This module is for Visual C x86
-#if !defined(YUV_DISABLE_ASM) && (defined(_M_IX86) || \
+#if !defined(LIBYUV_DISABLE_X86) && (defined(_M_IX86) || \
     (defined(__x86_64__) || (defined(__i386__) && !defined(__pic__))))
 #define HAS_HASHDJB2_SSE41
 
@@ -68,15 +68,23 @@ uint32 HashDjb2(const uint8* src, uint64 count, uint32 seed) {
 }
 
 uint32 SumSquareError_C(const uint8* src_a, const uint8* src_b, int count);
-#if !defined(YUV_DISABLE_ASM) && (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
+#if !defined(LIBYUV_DISABLE_NEON) && \
+    (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
 #define HAS_SUMSQUAREERROR_NEON
 uint32 SumSquareError_NEON(const uint8* src_a, const uint8* src_b, int count);
-#elif !defined(YUV_DISABLE_ASM) && (defined(_M_IX86) || \
+#endif
+#if !defined(LIBYUV_DISABLE_X86) && (defined(_M_IX86) || \
     defined(__x86_64__) || defined(__i386__))
 #define HAS_SUMSQUAREERROR_SSE2
 uint32 SumSquareError_SSE2(const uint8* src_a, const uint8* src_b, int count);
 #endif
+// Visual C 2012 required for AVX2.
+#if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86) && _MSC_VER >= 1700
+#define HAS_SUMSQUAREERROR_AVX2
+uint32 SumSquareError_AVX2(const uint8* src_a, const uint8* src_b, int count);
+#endif
 
+// TODO(fbarchard): Refactor into row function.
 LIBYUV_API
 uint64 ComputeSumSquareError(const uint8* src_a, const uint8* src_b,
                              int count) {
@@ -86,16 +94,26 @@ uint64 ComputeSumSquareError(const uint8* src_a, const uint8* src_b,
   if (TestCpuFlag(kCpuHasNEON)) {
     SumSquareError = SumSquareError_NEON;
   }
-#elif defined(HAS_SUMSQUAREERROR_SSE2)
+#endif
+#if defined(HAS_SUMSQUAREERROR_SSE2)
   if (TestCpuFlag(kCpuHasSSE2) &&
       IS_ALIGNED(src_a, 16) && IS_ALIGNED(src_b, 16)) {
     // Note only used for multiples of 16 so count is not checked.
     SumSquareError = SumSquareError_SSE2;
   }
 #endif
-  // 32K values will fit a 32bit int return value from SumSquareError.
-  // After each block of 32K, accumulate into 64 bit int.
-  const int kBlockSize = 1 << 15;  // 32768;
+#if defined(HAS_SUMSQUAREERROR_AVX2)
+  bool clear = false;
+  if (TestCpuFlag(kCpuHasAVX2)) {
+    clear = true;
+    // Note only used for multiples of 32 so count is not checked.
+    SumSquareError = SumSquareError_AVX2;
+  }
+#endif
+  // SumSquareError returns values 0 to 65535 for each squared difference.
+  // Up to 65536 of those can be summed and remain within a uint32.
+  // After each block of 65536 pixels, accumulate into a uint64.
+  const int kBlockSize = 65536;
   uint64 sse = 0;
 #ifdef _OPENMP
 #pragma omp parallel for reduction(+: sse)
@@ -105,16 +123,22 @@ uint64 ComputeSumSquareError(const uint8* src_a, const uint8* src_b,
   }
   src_a += count & ~(kBlockSize - 1);
   src_b += count & ~(kBlockSize - 1);
-  int remainder = count & (kBlockSize - 1) & ~15;
+  int remainder = count & (kBlockSize - 1) & ~31;
   if (remainder) {
     sse += SumSquareError(src_a, src_b, remainder);
     src_a += remainder;
     src_b += remainder;
   }
-  remainder = count & 15;
+  remainder = count & 31;
   if (remainder) {
     sse += SumSquareError_C(src_a, src_b, remainder);
   }
+
+#if defined(HAS_SUMSQUAREERROR_AVX2)
+  if (clear) {
+    __asm vzeroupper;
+  }
+#endif
   return sse;
 }
 
@@ -122,20 +146,30 @@ LIBYUV_API
 uint64 ComputeSumSquareErrorPlane(const uint8* src_a, int stride_a,
                                   const uint8* src_b, int stride_b,
                                   int width, int height) {
+  if (stride_a == width && stride_b == width) {
+    return ComputeSumSquareError(src_a, src_b, width * height);
+  }
   uint32 (*SumSquareError)(const uint8* src_a, const uint8* src_b, int count) =
       SumSquareError_C;
 #if defined(HAS_SUMSQUAREERROR_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     SumSquareError = SumSquareError_NEON;
   }
-#elif defined(HAS_SUMSQUAREERROR_SSE2)
+#endif
+#if defined(HAS_SUMSQUAREERROR_SSE2)
   if (TestCpuFlag(kCpuHasSSE2) && IS_ALIGNED(width, 16) &&
       IS_ALIGNED(src_a, 16) && IS_ALIGNED(stride_a, 16) &&
       IS_ALIGNED(src_b, 16) && IS_ALIGNED(stride_b, 16)) {
     SumSquareError = SumSquareError_SSE2;
   }
 #endif
-
+#if defined(HAS_SUMSQUAREERROR_AVX2)
+  bool clear = false;
+  if (TestCpuFlag(kCpuHasAVX2) && IS_ALIGNED(width, 32)) {
+    clear = true;
+    SumSquareError = SumSquareError_AVX2;
+  }
+#endif
   uint64 sse = 0;
   for (int h = 0; h < height; ++h) {
     sse += SumSquareError(src_a, src_b, width);
@@ -143,6 +177,11 @@ uint64 ComputeSumSquareErrorPlane(const uint8* src_a, int stride_a,
     src_b += stride_b;
   }
 
+#if defined(HAS_SUMSQUAREERROR_AVX2)
+  if (clear) {
+    __asm vzeroupper;
+  }
+#endif
   return sse;
 }
 

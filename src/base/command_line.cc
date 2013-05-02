@@ -8,7 +8,7 @@
 #include <ostream>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/strings/string_split.h"
@@ -19,6 +19,8 @@
 #include <windows.h>
 #include <shellapi.h>
 #endif
+
+using base::FilePath;
 
 CommandLine* CommandLine::current_process_commandline_ = NULL;
 

@@ -6,11 +6,12 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "cc/base/switches.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/url_constants.h"
@@ -25,8 +26,8 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_ANDROID)
-#include "net/base/network_change_notifier.h"
 #include "net/android/network_change_notifier_factory_android.h"
+#include "net/base/network_change_notifier.h"
 #endif
 
 #if defined(USE_AURA) && defined(USE_X11)
@@ -98,6 +99,9 @@ void ShellBrowserMainParts::PreEarlyInitialization() {
 #if defined(OS_ANDROID)
   net::NetworkChangeNotifier::SetFactory(
       new net::NetworkChangeNotifierFactoryAndroid());
+
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      cc::switches::kCompositeToMailbox);
 #endif
 }
 

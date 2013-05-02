@@ -34,11 +34,13 @@
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(DEPTH)/cc/cc.gyp:cc',
         '<(DEPTH)/media/media.gyp:media',
         '<(DEPTH)/media/media.gyp:shared_memory_support',
         '<(DEPTH)/media/media.gyp:yuv_convert',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
+        '<(DEPTH)/webkit/compositor_bindings/compositor_bindings.gyp:webkit_compositor_bindings',
         '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
       ],
       'sources': [
@@ -50,8 +52,6 @@
         'android/webmediaplayer_android.h',
         'android/webmediaplayer_impl_android.cc',
         'android/webmediaplayer_impl_android.h',
-        'android/webmediaplayer_in_process_android.cc',
-        'android/webmediaplayer_in_process_android.h',
         'android/webmediaplayer_manager_android.cc',
         'android/webmediaplayer_manager_android.h',
         'android/webmediaplayer_proxy_android.cc',
@@ -77,6 +77,8 @@
         'media_stream_audio_renderer.cc',
         'media_stream_audio_renderer.h',
         'media_stream_client.h',
+        'media_switches.cc',
+        'media_switches.h',
         'preload.h',
         'simple_video_frame_provider.cc',
         'simple_video_frame_provider.h',
@@ -91,10 +93,10 @@
         'webmediaplayer_ms.h',
         'webmediaplayer_params.cc',
         'webmediaplayer_params.h',
-        'webmediaplayer_proxy.cc',
-        'webmediaplayer_proxy.h',
         'webmediaplayer_util.cc',
         'webmediaplayer_util.h',
+        'webmediasourceclient_impl.cc',
+        'webmediasourceclient_impl.h',
         'webvideoframe_impl.cc',
         'webvideoframe_impl.h',
       ],
@@ -191,10 +193,14 @@
         'crypto/ppapi/clear_key_cdm.cc',
         'crypto/ppapi/clear_key_cdm.h',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'clearkeycdmadapter',
       'type': 'none',
+      # Check whether the plugin's origin URL is valid.
+      'defines': ['CHECK_ORIGIN_URL'],
       'dependencies': [
         '<(DEPTH)/ppapi/ppapi.gyp:ppapi_cpp',
         'clearkeycdm',
@@ -217,6 +223,8 @@
         }],
         ['OS == "win"', {
           'type': 'shared_library',
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         }],
         ['OS == "mac"', {
           'type': 'loadable_module',

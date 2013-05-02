@@ -66,11 +66,9 @@ public:
 private:
     explicit WebHelperPluginImpl(WebWidgetClient*);
     bool initializePage(const String& pluginType, const WebDocument& hostDocument);
-    void destoryPage();
+    void destroyPage();
 
     // WebWidget methods:
-    virtual void setCompositorSurfaceReady() OVERRIDE;
-    virtual void composite(bool) OVERRIDE;
     virtual void layout() OVERRIDE;
     virtual void setFocus(bool) OVERRIDE;
     virtual void close() OVERRIDE;

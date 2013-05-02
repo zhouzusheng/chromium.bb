@@ -18,9 +18,7 @@
 #include "base/observer_list.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
-#include "content/renderer/pepper/pepper_parent_context_provider.h"
 #include "content/renderer/render_view_pepper_helper.h"
-#include "ppapi/shared_impl/private/ppb_host_resolver_shared.h"
 #include "ppapi/shared_impl/private/ppb_tcp_server_socket_shared.h"
 #include "ppapi/shared_impl/private/tcp_socket_private_impl.h"
 #include "ui/base/ime/text_input_type.h"
@@ -54,6 +52,7 @@ struct WebCompositionUnderline;
 }
 
 namespace content {
+class ContextProviderCommandBuffer;
 class GamepadSharedMemoryReader;
 class PepperBrokerImpl;
 class PepperDeviceEnumerationEventHandler;
@@ -63,7 +62,6 @@ class PepperPluginDelegateImpl
     : public webkit::ppapi::PluginDelegate,
       public RenderViewPepperHelper,
       public base::SupportsWeakPtr<PepperPluginDelegateImpl>,
-      public PepperParentContextProvider,
       public RenderViewObserver {
  public:
   explicit PepperPluginDelegateImpl(RenderViewImpl* render_view);
@@ -268,6 +266,9 @@ class PepperPluginDelegateImpl
   virtual void TCPSocketWrite(uint32 socket_id,
                               const std::string& buffer) OVERRIDE;
   virtual void TCPSocketDisconnect(uint32 socket_id) OVERRIDE;
+  virtual void TCPSocketSetBoolOption(uint32 socket_id,
+                                      PP_TCPSocketOption_Private name,
+                                      bool value) OVERRIDE;
   virtual void RegisterTCPSocket(
       webkit::ppapi::PPB_TCPSocket_Private_Impl* socket,
       uint32 socket_id) OVERRIDE;
@@ -279,14 +280,6 @@ class PepperPluginDelegateImpl
   virtual void TCPServerSocketStopListening(
       PP_Resource socket_resource,
       uint32 socket_id) OVERRIDE;
-  virtual void RegisterHostResolver(
-      ppapi::PPB_HostResolver_Shared* host_resolver,
-      uint32 host_resolver_id) OVERRIDE;
-  virtual void HostResolverResolve(
-      uint32 host_resolver_id,
-      const ::ppapi::HostPortPair& host_port,
-      const PP_HostResolver_Private_Hint* hint) OVERRIDE;
-  virtual void UnregisterHostResolver(uint32 host_resolver_id) OVERRIDE;
   virtual bool AddNetworkListObserver(
       webkit_glue::NetworkListObserver* observer) OVERRIDE;
   virtual void RemoveNetworkListObserver(
@@ -345,6 +338,9 @@ class PepperPluginDelegateImpl
                            uint32 socket_id,
                            bool succeeded,
                            int32_t bytes_written);
+  void OnTCPSocketSetBoolOptionACK(uint32 plugin_dispatcher_id,
+                                   uint32 socket_id,
+                                   bool succeeded);
   void OnTCPServerSocketListenACK(uint32 plugin_dispatcher_id,
                                   PP_Resource socket_resource,
                                   uint32 socket_id,
@@ -354,12 +350,6 @@ class PepperPluginDelegateImpl
                                   uint32 accepted_socket_id,
                                   const PP_NetAddress_Private& local_addr,
                                   const PP_NetAddress_Private& remote_addr);
-  void OnHostResolverResolveACK(
-      uint32 plugin_dispatcher_id,
-      uint32 host_resolver_id,
-      bool succeeded,
-      const std::string& canonical_name,
-      const std::vector<PP_NetAddress_Private>& net_address_list);
 
   // Attempts to create a PPAPI plugin for the given filepath. On success, it
   // will return the newly-created module.
@@ -390,16 +380,18 @@ class PepperPluginDelegateImpl
       int plugin_child_id,
       bool is_external);
 
-  // Implementation of PepperParentContextProvider.
-  virtual WebGraphicsContext3DCommandBufferImpl*
-      GetParentContextForPlatformContext3D() OVERRIDE;
-
   MouseLockDispatcher::LockTarget* GetOrCreateLockTargetAdapter(
       webkit::ppapi::PluginInstance* instance);
   void UnSetAndDeleteLockTargetAdapter(webkit::ppapi::PluginInstance* instance);
 
   MouseLockDispatcher* GetMouseLockDispatcher(
       webkit::ppapi::PluginInstance* instance);
+
+  // Share a given handle with the target process.
+  virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
+      base::PlatformFile handle,
+      base::ProcessId target_process_id,
+      bool should_close_source) const OVERRIDE;
 
   // Pointer to the RenderView that owns us.
   RenderViewImpl* render_view_;
@@ -414,8 +406,6 @@ class PepperPluginDelegateImpl
   IDMap<webkit::ppapi::PPB_TCPSocket_Private_Impl> tcp_sockets_;
 
   IDMap<ppapi::PPB_TCPServerSocket_Shared> tcp_server_sockets_;
-
-  IDMap<ppapi::PPB_HostResolver_Shared> host_resolvers_;
 
   typedef IDMap<scoped_refptr<PepperBrokerImpl>, IDMapOwnPointer> BrokerMap;
   BrokerMap pending_connect_broker_;
@@ -441,6 +431,8 @@ class PepperPluginDelegateImpl
 
   scoped_ptr<PepperDeviceEnumerationEventHandler>
       device_enumeration_event_handler_;
+
+  scoped_refptr<ContextProviderCommandBuffer> offscreen_context3d_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperPluginDelegateImpl);
 };

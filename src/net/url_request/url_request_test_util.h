@@ -26,7 +26,6 @@
 #include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate.h"
-#include "net/base/ssl_config_service_defaults.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/ftp/ftp_network_layer.h"
@@ -34,6 +33,7 @@
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
 #include "net/proxy/proxy_service.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -107,8 +107,12 @@ class TestURLRequestContextGetter : public URLRequestContextGetter {
 
 class TestURLRequest : public URLRequest {
  public:
+  // todo(tedv): Remove this interface in favor of the one below it.
   TestURLRequest(
       const GURL& url, Delegate* delegate, TestURLRequestContext* context);
+  TestURLRequest(
+      const GURL& url, Delegate* delegate,
+      TestURLRequestContext* context, NetworkDelegate* network_delegate);
   virtual ~TestURLRequest();
 };
 

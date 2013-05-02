@@ -19,12 +19,13 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/process_type.h"
 #include "content/public/common/resource_response.h"
 #include "content/public/common/url_constants.h"
-#include "net/base/client_cert_store.h"
-#include "net/base/client_cert_store_impl.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
+#include "net/ssl/client_cert_store.h"
+#include "net/ssl/client_cert_store_impl.h"
 #include "webkit/appcache/appcache_interceptor.h"
 
 using base::TimeDelta;
@@ -470,7 +471,7 @@ void ResourceLoader::CancelRequestInternal(int error, bool from_renderer) {
   // WebKit will send us a cancel for downloads since it no longer handles
   // them.  In this case, ignore the cancel since we handle downloads in the
   // browser.
-  if (from_renderer && info->is_download())
+  if (from_renderer && (info->is_download() || info->is_stream()))
     return;
 
   // TODO(darin): Perhaps we should really be looking to see if the status is

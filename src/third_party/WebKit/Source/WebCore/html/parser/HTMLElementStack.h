@@ -57,6 +57,7 @@ public:
     
         Element* element() const { return m_item->element(); }
         ContainerNode* node() const { return m_item->node(); }
+        const AtomicString& namespaceURI() const { return m_item->namespaceURI(); }
         PassRefPtr<HTMLStackItem> stackItem() const { return m_item; }
         void replaceElement(PassRefPtr<HTMLStackItem>);
 
@@ -115,6 +116,11 @@ public:
     void popUntil(const AtomicString& tagName);
     void popUntil(Element*);
     void popUntilPopped(const AtomicString& tagName);
+
+    // FIXME: These are fixes for https://www.w3.org/Bugs/Public/show_bug.cgi?id=21292
+    void popUntil(const QualifiedName&);
+    void popUntilPopped(const QualifiedName&);
+
     void popUntilPopped(Element*);
     void popUntilNumberedHeaderElementPopped();
     void popUntilTableScopeMarker(); // "clear the stack back to a table context" in the spec.

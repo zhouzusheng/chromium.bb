@@ -12,7 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/supports_user_data.h"
 #include "content/public/browser/resource_request_info.h"
-#include "content/public/common/process_type.h"
 #include "content/public/common/referrer.h"
 #include "net/base/load_states.h"
 #include "webkit/glue/resource_type.h"
@@ -22,7 +21,6 @@ class BlobData;
 }
 
 namespace content {
-class AsyncResourceHandler;
 class CrossSiteResourceHandler;
 class ResourceContext;
 struct GlobalRequestID;
@@ -37,11 +35,11 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
       net::URLRequest* request);
 
   // And, a const version for cases where you only need read access.
-  static const ResourceRequestInfoImpl* ForRequest(
+  CONTENT_EXPORT static const ResourceRequestInfoImpl* ForRequest(
       const net::URLRequest* request);
 
   CONTENT_EXPORT ResourceRequestInfoImpl(
-      ProcessType process_type,
+      int process_type,
       int child_id,
       int route_id,
       int origin_pid,
@@ -53,10 +51,12 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
       ResourceType::Type resource_type,
       PageTransition transition_type,
       bool is_download,
+      bool is_stream,
       bool allow_download,
       bool has_user_gesture,
       WebKit::WebReferrerPolicy referrer_policy,
-      ResourceContext* context);
+      ResourceContext* context,
+      bool is_async);
   virtual ~ResourceRequestInfoImpl();
 
   // ResourceRequestInfo implementation:
@@ -79,9 +79,9 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   virtual bool IsAsync() const OVERRIDE;
 
 
-  void AssociateWithRequest(net::URLRequest* request);
+  CONTENT_EXPORT void AssociateWithRequest(net::URLRequest* request);
 
-  GlobalRequestID GetGlobalRequestID() const;
+  CONTENT_EXPORT GlobalRequestID GetGlobalRequestID() const;
 
   // CrossSiteResourceHandler for this request.  May be null.
   CrossSiteResourceHandler* cross_site_handler() {
@@ -91,18 +91,8 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
     cross_site_handler_ = h;
   }
 
-  // AsyncResourceHandler for this request.  May be null.
-  AsyncResourceHandler* async_handler() {
-    return async_handler_;
-  }
-  void set_async_handler(AsyncResourceHandler* h) {
-    async_handler_ = h;
-  }
-
   // Identifies the type of process (renderer, plugin, etc.) making the request.
-  ProcessType process_type() const {
-    return process_type_;
-  }
+  int process_type() const { return process_type_; }
 
   // Downloads are allowed only as a top level request.
   bool allow_download() const { return allow_download_; }
@@ -110,6 +100,10 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   // Whether this is a download.
   bool is_download() const { return is_download_; }
   void set_is_download(bool download) { is_download_ = download; }
+
+  // Whether this is a stream.
+  bool is_stream() const { return is_stream_; }
+  void set_is_stream(bool stream) { is_stream_ = stream; }
 
   void set_was_ignored_by_handler(bool value) {
     was_ignored_by_handler_ = value;
@@ -130,9 +124,8 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
  private:
   // Non-owning, may be NULL.
   CrossSiteResourceHandler* cross_site_handler_;
-  AsyncResourceHandler* async_handler_;
 
-  ProcessType process_type_;
+  int process_type_;
   int child_id_;
   int route_id_;
   int origin_pid_;
@@ -142,6 +135,7 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   bool parent_is_main_frame_;
   int64 parent_frame_id_;
   bool is_download_;
+  bool is_stream_;
   bool allow_download_;
   bool has_user_gesture_;
   bool was_ignored_by_handler_;
@@ -151,6 +145,7 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   scoped_refptr<webkit_blob::BlobData> requested_blob_data_;
   WebKit::WebReferrerPolicy referrer_policy_;
   ResourceContext* context_;
+  bool is_async_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceRequestInfoImpl);
 };

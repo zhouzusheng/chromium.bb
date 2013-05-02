@@ -27,28 +27,106 @@
 
 #include "talk/media/base/codec.h"
 
+#include <algorithm>
 #include <sstream>
 
+#include "talk/base/common.h"
+#include "talk/base/stringencode.h"
 #include "talk/base/stringutils.h"
 
 namespace cricket {
 
 static const int kMaxStaticPayloadId = 95;
 
-bool Codec::Matches(int payload, const std::string& nm) const {
-  return (payload <= kMaxStaticPayloadId) ?
-      (id == payload) : (_stricmp(name.c_str(), nm.c_str()) == 0);
+bool FeedbackParam::operator==(const FeedbackParam& other) const {
+  return _stricmp(other.id().c_str(), id().c_str()) == 0 &&
+      _stricmp(other.param().c_str(), param().c_str()) == 0;
+}
+
+bool FeedbackParams::operator==(const FeedbackParams& other) const {
+  return params_ == other.params_;
+}
+
+bool FeedbackParams::Has(const FeedbackParam& param) const {
+  return std::find(params_.begin(), params_.end(), param) != params_.end();
+}
+
+void FeedbackParams::Add(const FeedbackParam& param) {
+  if (param.id().empty()) {
+    return;
+  }
+  if (Has(param)) {
+    // Param already in |this|.
+    return;
+  }
+  params_.push_back(param);
+  ASSERT(!HasDuplicateEntries());
+}
+
+void FeedbackParams::Intersect(const FeedbackParams& from) {
+  std::vector<FeedbackParam>::iterator iter_to = params_.begin();
+  while (iter_to != params_.end()) {
+    if (!from.Has(*iter_to)) {
+      iter_to = params_.erase(iter_to);
+    } else {
+      ++iter_to;
+    }
+  }
+}
+
+bool FeedbackParams::HasDuplicateEntries() const {
+  for (std::vector<FeedbackParam>::const_iterator iter = params_.begin();
+       iter != params_.end(); ++iter) {
+    for (std::vector<FeedbackParam>::const_iterator found = iter + 1;
+         found != params_.end(); ++found) {
+      if (*found == *iter) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 bool Codec::Matches(const Codec& codec) const {
-  return Matches(codec.id, codec.name);
-}
-
-bool AudioCodec::Matches(int payload, const std::string& nm) const {
   // Match the codec id/name based on the typical static/dynamic name rules.
   // Matching is case-insensitive.
-  return (payload <= kMaxStaticPayloadId) ?
-      (id == payload) : (_stricmp(name.c_str(), nm.c_str()) == 0);
+  return (codec.id <= kMaxStaticPayloadId) ?
+      (id == codec.id) : (_stricmp(name.c_str(), codec.name.c_str()) == 0);
+}
+
+bool Codec::GetParam(const std::string& name, std::string* out) const {
+  CodecParameterMap::const_iterator iter = params.find(name);
+  if (iter == params.end())
+    return false;
+  *out = iter->second;
+  return true;
+}
+
+bool Codec::GetParam(const std::string& name, int* out) const {
+  CodecParameterMap::const_iterator iter = params.find(name);
+  if (iter == params.end())
+    return false;
+  return talk_base::FromString(iter->second, out);
+}
+
+void Codec::SetParam(const std::string& name, const std::string& value) {
+  params[name] = value;
+}
+
+void Codec::SetParam(const std::string& name, int value)  {
+  params[name] = talk_base::ToString(value);
+}
+
+void Codec::AddFeedbackParam(const FeedbackParam& param) {
+  feedback_params.Add(param);
+}
+
+bool Codec::HasFeedbackParam(const FeedbackParam& param) const {
+  return feedback_params.Has(param);
+}
+
+void Codec::IntersectFeedbackParams(const Codec& other) {
+  feedback_params.Intersect(other.feedback_params);
 }
 
 bool AudioCodec::Matches(const AudioCodec& codec) const {
@@ -61,7 +139,7 @@ bool AudioCodec::Matches(const AudioCodec& codec) const {
   // omitted if the number of channels is one."
   // Preference is ignored.
   // TODO(juberti): Treat a zero clockrate as 8000Hz, the RTP default clockrate.
-  return Matches(codec.id, codec.name) &&
+  return Codec::Matches(codec) &&
       ((codec.clockrate == 0 /*&& clockrate == 8000*/) ||
           clockrate == codec.clockrate) &&
       (codec.bitrate == 0 || bitrate <= 0 || bitrate == codec.bitrate) &&

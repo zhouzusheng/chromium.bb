@@ -11,9 +11,9 @@
 
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_split.h"
 #include "base/values.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -306,9 +306,9 @@ std::string GaiaAuthFetcher::MakeGetAuthCodeBody() {
       GaiaUrls::GetInstance()->oauth1_login_scope(), true);
   std::string encoded_client_id = net::EscapeUrlEncodedData(
       GaiaUrls::GetInstance()->oauth2_chrome_client_id(), true);
-  return StringPrintf(kClientLoginToOAuth2BodyFormat,
-                      encoded_scope.c_str(),
-                      encoded_client_id.c_str());
+  return base::StringPrintf(kClientLoginToOAuth2BodyFormat,
+                            encoded_scope.c_str(),
+                            encoded_client_id.c_str());
 }
 
 // static
@@ -321,11 +321,11 @@ std::string GaiaAuthFetcher::MakeGetTokenPairBody(
   std::string encoded_client_secret = net::EscapeUrlEncodedData(
       GaiaUrls::GetInstance()->oauth2_chrome_client_secret(), true);
   std::string encoded_auth_code = net::EscapeUrlEncodedData(auth_code, true);
-  return StringPrintf(kOAuth2CodeToTokenPairBodyFormat,
-                      encoded_scope.c_str(),
-                      encoded_client_id.c_str(),
-                      encoded_client_secret.c_str(),
-                      encoded_auth_code.c_str());
+  return base::StringPrintf(kOAuth2CodeToTokenPairBodyFormat,
+                            encoded_scope.c_str(),
+                            encoded_client_id.c_str(),
+                            encoded_client_secret.c_str(),
+                            encoded_auth_code.c_str());
 }
 
 // static
@@ -352,7 +352,7 @@ std::string GaiaAuthFetcher::MakeMergeSessionBody(
 // static
 std::string GaiaAuthFetcher::MakeGetAuthCodeHeader(
     const std::string& auth_token) {
-  return StringPrintf(kAuthHeaderFormat, auth_token.c_str());
+  return base::StringPrintf(kAuthHeaderFormat, auth_token.c_str());
 }
 
 // Helper method that extracts tokens from a successful reply.
@@ -450,9 +450,9 @@ std::string GaiaAuthFetcher::MakeOAuthLoginBody(const std::string& service,
                                                 const std::string& source) {
   std::string encoded_service = net::EscapeUrlEncodedData(service, true);
   std::string encoded_source = net::EscapeUrlEncodedData(source, true);
-  return StringPrintf(kOAuthLoginFormat,
-                      encoded_service.c_str(),
-                      encoded_source.c_str());
+  return base::StringPrintf(kOAuthLoginFormat,
+                            encoded_service.c_str(),
+                            encoded_source.c_str());
 }
 
 // static
@@ -670,6 +670,22 @@ void GaiaAuthFetcher::StartCookieForOAuthLoginTokenExchange(
                                    "",
                                    client_login_to_oauth2_gurl_,
                                    net::LOAD_NORMAL,
+                                   this));
+  fetch_pending_ = true;
+  fetcher_->Start();
+}
+
+void GaiaAuthFetcher::StartAuthCodeForOAuth2TokenExchange(
+    const std::string& auth_code) {
+  DCHECK(!fetch_pending_) << "Tried to fetch two things at once!";
+
+  DVLOG(1) << "Starting OAuth token pair fetch";
+  request_body_ = MakeGetTokenPairBody(auth_code);
+  fetcher_.reset(CreateGaiaFetcher(getter_,
+                                   request_body_,
+                                   "",
+                                   oauth2_token_gurl_,
+                                   kLoadFlagsIgnoreCookies,
                                    this));
   fetch_pending_ = true;
   fetcher_->Start();
@@ -942,25 +958,10 @@ void GaiaAuthFetcher::OnClientLoginToOAuth2Fetched(
   if (status.is_success() && response_code == net::HTTP_OK) {
     std::string auth_code;
     ParseClientLoginToOAuth2Response(cookies, &auth_code);
-    StartOAuth2TokenPairFetch(auth_code);
+    StartAuthCodeForOAuth2TokenExchange(auth_code);
   } else {
     consumer_->OnClientOAuthFailure(GenerateAuthError(data, status));
   }
-}
-
-void GaiaAuthFetcher::StartOAuth2TokenPairFetch(const std::string& auth_code) {
-  DCHECK(!fetch_pending_) << "Tried to fetch two things at once!";
-
-  DVLOG(1) << "Starting OAuth token pair fetch";
-  request_body_ = MakeGetTokenPairBody(auth_code);
-  fetcher_.reset(CreateGaiaFetcher(getter_,
-                                   request_body_,
-                                   "",
-                                   oauth2_token_gurl_,
-                                   kLoadFlagsIgnoreCookies,
-                                   this));
-  fetch_pending_ = true;
-  fetcher_->Start();
 }
 
 void GaiaAuthFetcher::OnOAuth2TokenPairFetched(

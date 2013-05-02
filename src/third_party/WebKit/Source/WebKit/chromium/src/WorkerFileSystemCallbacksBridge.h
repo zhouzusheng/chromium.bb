@@ -34,8 +34,9 @@
 #if ENABLE(FILE_SYSTEM) && ENABLE(WORKERS)
 
 #include "ScriptExecutionContext.h"
-#include "WebFileError.h"
+#include <public/WebFileError.h>
 #include <public/WebFileSystem.h>
+#include <public/WebFileSystemType.h>
 #include <public/WebVector.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/PassRefPtr.h>
@@ -43,6 +44,7 @@
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
+class BlobDataHandle;
 class WorkerLoaderProxy;
 }
 
@@ -52,7 +54,7 @@ class AsyncFileSystem;
 class MainThreadFileSystemCallbacks;
 class WebCommonWorkerClient;
 class ThreadableCallbacksBridgeWrapper;
-class WebFileSystemCallbacks;
+class WebFileSystemCallbacksImpl;
 class WorkerFileSystemContextObserver;
 struct WebFileInfo;
 struct WebFileSystemEntry;
@@ -77,13 +79,13 @@ public:
 
     void stop();
 
-    static PassRefPtr<WorkerFileSystemCallbacksBridge> create(WebCore::WorkerLoaderProxy* workerLoaderProxy, WebCore::ScriptExecutionContext* workerContext, WebFileSystemCallbacks* callbacks)
+    static PassRefPtr<WorkerFileSystemCallbacksBridge> create(WebCore::WorkerLoaderProxy* workerLoaderProxy, WebCore::ScriptExecutionContext* workerContext, WebFileSystemCallbacksImpl* callbacks)
     {
         return adoptRef(new WorkerFileSystemCallbacksBridge(workerLoaderProxy, workerContext, callbacks));
     }
 
     // Methods that create an instance and post an initial request task to the main thread. They must be called on the worker thread.
-    void postOpenFileSystemToMainThread(WebCommonWorkerClient*, WebFileSystem::Type, long long size, bool create, const String& mode);
+    void postOpenFileSystemToMainThread(WebCommonWorkerClient*, WebFileSystemType, long long size, bool create, const String& mode);
     void postMoveToMainThread(WebFileSystem*, const WebCore::KURL& srcPath, const WebCore::KURL& destPath, const String& mode);
     void postCopyToMainThread(WebFileSystem*, const WebCore::KURL& srcPath, const WebCore::KURL& destPath, const String& mode);
     void postRemoveToMainThread(WebFileSystem*, const WebCore::KURL& path, const String& mode);
@@ -94,20 +96,21 @@ public:
     void postFileExistsToMainThread(WebFileSystem*, const WebCore::KURL& path, const String& mode);
     void postDirectoryExistsToMainThread(WebFileSystem*, const WebCore::KURL& path, const String& mode);
     void postReadDirectoryToMainThread(WebFileSystem*, const WebCore::KURL& path, const String& mode);
-    void postCreateSnapshotFileToMainThread(WebFileSystem*, const WebCore::KURL& internalBlobURL, const WebCore::KURL& path, const String& mode);
+    void postCreateSnapshotFileToMainThread(WebFileSystem*, const WebCore::KURL& path, const String& mode);
 
     // Callback methods that are called on the main thread.
     void didFailOnMainThread(WebFileError, const String& mode);
     void didOpenFileSystemOnMainThread(const String& name, const WebCore::KURL& rootURL, const String& mode);
     void didSucceedOnMainThread(const String& mode);
     void didReadMetadataOnMainThread(const WebFileInfo&, const String& mode);
+    void didCreateSnapshotFileOnMainThread(const WebFileInfo&, const String& mode, PassRefPtr<WebCore::BlobDataHandle> snapshotBlob);
     void didReadDirectoryOnMainThread(const WebVector<WebFileSystemEntry>&, bool hasMore, const String& mode);
 
 private:
-    WorkerFileSystemCallbacksBridge(WebCore::WorkerLoaderProxy*, WebCore::ScriptExecutionContext*, WebFileSystemCallbacks*);
+    WorkerFileSystemCallbacksBridge(WebCore::WorkerLoaderProxy*, WebCore::ScriptExecutionContext*, WebFileSystemCallbacksImpl*);
 
     // Methods that are to be called on the main thread.
-    static void openFileSystemOnMainThread(WebCore::ScriptExecutionContext*, WebCommonWorkerClient*, WebFileSystem::Type, long long size, bool create, PassRefPtr<WorkerFileSystemCallbacksBridge>, const String& mode);
+    static void openFileSystemOnMainThread(WebCore::ScriptExecutionContext*, WebCommonWorkerClient*, WebFileSystemType, long long size, bool create, PassRefPtr<WorkerFileSystemCallbacksBridge>, const String& mode);
     static void moveOnMainThread(WebCore::ScriptExecutionContext*, WebFileSystem*, const WebCore::KURL& srcPath, const WebCore::KURL& destPath, PassRefPtr<WorkerFileSystemCallbacksBridge>, const String& mode);
     static void copyOnMainThread(WebCore::ScriptExecutionContext*, WebFileSystem*, const WebCore::KURL& srcPath, const WebCore::KURL& destPath, PassRefPtr<WorkerFileSystemCallbacksBridge>, const String& mode);
     static void removeOnMainThread(WebCore::ScriptExecutionContext*, WebFileSystem*, const WebCore::KURL& path, PassRefPtr<WorkerFileSystemCallbacksBridge>, const String& mode);
@@ -118,7 +121,7 @@ private:
     static void fileExistsOnMainThread(WebCore::ScriptExecutionContext*, WebFileSystem*, const WebCore::KURL& path, PassRefPtr<WorkerFileSystemCallbacksBridge>, const String& mode);
     static void directoryExistsOnMainThread(WebCore::ScriptExecutionContext*, WebFileSystem*, const WebCore::KURL& path, PassRefPtr<WorkerFileSystemCallbacksBridge>, const String& mode);
     static void readDirectoryOnMainThread(WebCore::ScriptExecutionContext*, WebFileSystem*, const WebCore::KURL& path, PassRefPtr<WorkerFileSystemCallbacksBridge>, const String& mode);
-    static void createSnapshotFileOnMainThread(WebCore::ScriptExecutionContext*, WebFileSystem*, const WebCore::KURL& internalBlobURL, const WebCore::KURL& path, PassRefPtr<WorkerFileSystemCallbacksBridge>, const String& mode);
+    static void createSnapshotFileOnMainThread(WebCore::ScriptExecutionContext*, WebFileSystem*, const WebCore::KURL& path, PassRefPtr<WorkerFileSystemCallbacksBridge>, const String& mode);
 
     friend class MainThreadFileSystemCallbacks;
 
@@ -127,6 +130,7 @@ private:
     static void didOpenFileSystemOnWorkerThread(WebCore::ScriptExecutionContext*, PassRefPtr<WorkerFileSystemCallbacksBridge>, const String& name, const WebCore::KURL& rootPath);
     static void didSucceedOnWorkerThread(WebCore::ScriptExecutionContext*, PassRefPtr<WorkerFileSystemCallbacksBridge>);
     static void didReadMetadataOnWorkerThread(WebCore::ScriptExecutionContext*, PassRefPtr<WorkerFileSystemCallbacksBridge>, const WebFileInfo&);
+    static void didCreateSnapshotFileOnWorkerThread(WebCore::ScriptExecutionContext*, PassRefPtr<WorkerFileSystemCallbacksBridge>, const WebFileInfo&, PassRefPtr<WebCore::BlobDataHandle> snapshotBlob);
     static void didReadDirectoryOnWorkerThread(WebCore::ScriptExecutionContext*, PassRefPtr<WorkerFileSystemCallbacksBridge>, const WebVector<WebFileSystemEntry>&, bool hasMore);
 
     static void runTaskOnMainThread(WebCore::ScriptExecutionContext*, PassRefPtr<WorkerFileSystemCallbacksBridge>, PassOwnPtr<WebCore::ScriptExecutionContext::Task>);
@@ -146,7 +150,7 @@ private:
     WorkerFileSystemContextObserver* m_workerContextObserver;
 
     // This is self-destructed and must be fired on the worker thread.
-    WebFileSystemCallbacks* m_callbacksOnWorkerThread;
+    WebFileSystemCallbacksImpl* m_callbacksOnWorkerThread;
 };
 
 } // namespace WebCore

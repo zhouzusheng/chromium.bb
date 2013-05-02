@@ -6,7 +6,6 @@
 #define NET_QUIC_CRYPTO_CRYPTO_FRAMER_H_
 
 #include <map>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
@@ -21,6 +20,7 @@ namespace net {
 class CryptoFramer;
 class QuicDataReader;
 class QuicData;
+struct CryptoHandshakeMessage;
 
 class NET_EXPORT_PRIVATE CryptoFramerVisitorInterface {
  public:
@@ -41,6 +41,11 @@ class NET_EXPORT_PRIVATE CryptoFramer {
   CryptoFramer();
 
   virtual ~CryptoFramer();
+
+  // ParseMessage parses exactly one message from the given StringPiece. If
+  // there is an error, the message is truncated, or the message has trailing
+  // garbage then NULL will be returned.
+  static CryptoHandshakeMessage* ParseMessage(base::StringPiece in);
 
   // Set callbacks to be called from the framer.  A visitor must be set, or
   // else the framer will crash.  It is acceptable for the visitor to do
@@ -66,7 +71,8 @@ class NET_EXPORT_PRIVATE CryptoFramer {
 
   // Returns a new QuicData owned by the caller that contains a serialized
   // |message|, or NULL if there was an error.
-  QuicData* ConstructHandshakeMessage(const CryptoHandshakeMessage& message);
+  static QuicData* ConstructHandshakeMessage(
+      const CryptoHandshakeMessage& message);
 
  private:
   // Clears per-message state.  Does not clear the visitor.

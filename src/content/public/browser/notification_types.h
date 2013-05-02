@@ -102,40 +102,6 @@ enum NotificationType {
   // issued.  Details in the form of a ResourceRedirectDetails are provided.
   NOTIFICATION_RESOURCE_RECEIVED_REDIRECT,
 
-  // SSL ---------------------------------------------------------------------
-
-  // Updating the SSL security indicators (the lock icon and such) proceeds
-  // in two phases:
-  //
-  // 1) The internal SSL state for a host or tab changes.  When this happens,
-  //    the SSLManager broadcasts an SSL_INTERNAL_STATE_CHANGED notification.
-  //
-  // 2) The SSLManager for each tab receives this notification and might or
-  //    might not update the navigation entry for its tab, depending on
-  //    whether the change in state affects that tab.  If the SSLManager does
-  //    change the navigation entry, then the SSLManager broadcasts an
-  //    SSL_VISIBLE_STATE_CHANGED notification to the user interface can
-  //    redraw properly.
-
-  // The SSL state of a page has changed in some visible way.  For example,
-  // if an insecure resource is loaded on a secure page.  Note that a
-  // toplevel load commit will also update the SSL state (since the
-  // NavigationEntry is new) and this message won't always be sent in that
-  // case.  Listen to this notification if you need to refresh SSL-related UI
-  // elements.
-  //
-  // There is no source or details.
-  NOTIFICATION_SSL_VISIBLE_STATE_CHANGED,
-
-  // The SSL state of the browser has changed in some internal way.  For
-  // example, the user might have explicitly allowed some broken certificate
-  // or a secure origin might have included some insecure content.  Listen to
-  // this notifiation if you need to keep track of our internal SSL state.
-  //
-  // The source will be the browser context. The details will be the navigation
-  // controller associated with the state change.
-  NOTIFICATION_SSL_INTERNAL_STATE_CHANGED,
-
   // Devtools ------------------------------------------------------------------
 
   // Indicates that a devtools agent has attached to a client. The source is
@@ -188,14 +154,6 @@ enum NotificationType {
   // associated WebContents, and the details is the RenderViewHost
   // pointer.
   NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
-
-  // Notification than an interstitial has become associated with a tab. The
-  // source is the WebContents, the details not used.
-  NOTIFICATION_INTERSTITIAL_ATTACHED,
-
-  // Notification than an interstitial has become detached from a tab. The
-  // source is the WebContents, the details not used.
-  NOTIFICATION_INTERSTITIAL_DETACHED,
 
   // Indicates that a RenderProcessHost was created and its handle is now
   // available. The source will be the RenderProcessHost that corresponds to
@@ -252,10 +210,6 @@ enum NotificationType {
   // the details unused.
   NOTIFICATION_RENDER_VIEW_HOST_CREATED,
 
-  // Sent from ~RenderViewHost. The source is the RenderViewHost, the details
-  // unused.
-  NOTIFICATION_RENDER_VIEW_HOST_DELETED,
-
   // Sent from RenderViewHost::ClosePage.  The hosted RenderView has
   // processed the onbeforeunload handler and is about to be sent a
   // ViewMsg_ClosePage message to complete the tear-down process.  The source
@@ -283,58 +237,6 @@ enum NotificationType {
   // renderer in response to a dom automation controller action. The source is
   // the RenderViewHost, and the details is a DomOperationNotificationDetails.
   NOTIFICATION_DOM_OPERATION_RESPONSE,
-
-  // Indicates that the render view host has received a "load complete"
-  // accessibility notification. The source is the RenderViewHost,
-  // the details are not used.
-  NOTIFICATION_ACCESSIBILITY_LOAD_COMPLETE,
-
-  // Indicates that the render view host has received a "layout complete"
-  // accessibility notification. The source is the RenderViewHost,
-  // the details are not used.
-  NOTIFICATION_ACCESSIBILITY_LAYOUT_COMPLETE,
-
-  // Indicates that the render view host has received an accessibility
-  // notification. other than the ones covered above.
-  // The source is the RenderViewHost, the details are not used.
-  NOTIFICATION_ACCESSIBILITY_OTHER,
-
-  // Child Processes ---------------------------------------------------------
-
-  // This notification is sent when a child process host has connected to a
-  // child process.  There is no usable source, since it is sent from an
-  // ephemeral task; register for AllSources() to receive this notification.
-  // The details are in a Details<ChildProcessData>.
-  NOTIFICATION_CHILD_PROCESS_HOST_CONNECTED,
-
-  // This message is sent after a ChildProcessHost is disconnected from the
-  // child process.  There is no usable source, since it is sent from an
-  // ephemeral task; register for AllSources() to receive this notification.
-  // The details are in a Details<ChildProcessData>.
-  NOTIFICATION_CHILD_PROCESS_HOST_DISCONNECTED,
-
-  // This message is sent when a child process disappears
-  // unexpectedly as a result of a crash.  There is no usable
-  // source, since it is sent from an ephemeral task; register for
-  // AllSources() to receive this notification.  The details are in
-  // a Details<ChildProcessData>.
-  NOTIFICATION_CHILD_PROCESS_CRASHED,
-
-  // This message indicates that an instance of a particular child was
-  // created in a page.  (If one page contains several regions rendered by
-  // the same child, this notification will occur once for each region
-  // during the page load.)
-  //
-  // There is no usable source, since it is sent from an ephemeral task;
-  // register for AllSources() to receive this notification.  The details are
-  // in a Details<ChildProcessData>.
-  NOTIFICATION_CHILD_INSTANCE_CREATED,
-
-  // Miscellaneous -------------------------------------------------------------
-
-  // Sent before the repost form warning is brought up.
-  // The source is a NavigationController.
-  NOTIFICATION_REPOST_WARNING_SHOWN,
 
   // Custom notifications used by the embedder should start from here.
   NOTIFICATION_CONTENT_END,

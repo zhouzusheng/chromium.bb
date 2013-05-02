@@ -252,8 +252,7 @@ namespace WTF {
         void allocateBuffer(size_t newCapacity)
         {
             ASSERT(newCapacity);
-            if (newCapacity > std::numeric_limits<size_t>::max() / sizeof(T))
-                CRASH();
+            RELEASE_ASSERT(newCapacity <= std::numeric_limits<size_t>::max() / sizeof(T));
             size_t sizeToAllocate = fastMallocGoodSize(newCapacity * sizeof(T));
             m_capacity = sizeToAllocate / sizeof(T);
             m_buffer = static_cast<T*>(fastMalloc(sizeToAllocate));
@@ -283,8 +282,7 @@ namespace WTF {
         void reallocateBuffer(size_t newCapacity)
         {
             ASSERT(shouldReallocateBuffer(newCapacity));
-            if (newCapacity > std::numeric_limits<size_t>::max() / sizeof(T))
-                CRASH();
+            RELEASE_ASSERT(newCapacity <= std::numeric_limits<size_t>::max() / sizeof(T));
             size_t sizeToAllocate = fastMallocGoodSize(newCapacity * sizeof(T));
             m_capacity = sizeToAllocate / sizeof(T);
             m_buffer = static_cast<T*>(fastRealloc(m_buffer, sizeToAllocate));
@@ -550,12 +548,12 @@ namespace WTF {
 
         T& at(size_t i) 
         { 
-            ASSERT_WITH_SECURITY_IMPLICATION(i < size());
+            RELEASE_ASSERT(i < size());
             return m_buffer.buffer()[i]; 
         }
         const T& at(size_t i) const 
         {
-            ASSERT_WITH_SECURITY_IMPLICATION(i < size());
+            RELEASE_ASSERT(i < size());
             return m_buffer.buffer()[i]; 
         }
 
@@ -564,7 +562,6 @@ namespace WTF {
 
         T* data() { return m_buffer.buffer(); }
         const T* data() const { return m_buffer.buffer(); }
-        T** dataSlot() { return m_buffer.bufferSlot(); }
 
         iterator begin() { return data(); }
         iterator end() { return begin() + m_size; }
@@ -766,9 +763,11 @@ namespace WTF {
     template<typename U>
     size_t Vector<T, inlineCapacity>::find(const U& value) const
     {
-        for (size_t i = 0; i < size(); ++i) {
-            if (at(i) == value)
-                return i;
+        const T* b = begin();
+        const T* e = end();
+        for (const T* iter = b; iter < e; ++iter) {
+            if (*iter == value)
+                return iter - b;
         }
         return notFound;
     }
@@ -777,10 +776,12 @@ namespace WTF {
     template<typename U>
     size_t Vector<T, inlineCapacity>::reverseFind(const U& value) const
     {
-        for (size_t i = 1; i <= size(); ++i) {
-            const size_t index = size() - i;
-            if (at(index) == value)
-                return index;
+        const T* b = begin();
+        const T* iter = end();
+        while (iter > b) {
+            --iter;
+            if (*iter == value)
+                return iter - b;
         }
         return notFound;
     }
@@ -965,8 +966,7 @@ namespace WTF {
             if (!begin())
                 return;
         }
-        if (newSize < m_size)
-            CRASH();
+        RELEASE_ASSERT(newSize >= m_size);
         T* dest = end();
         for (size_t i = 0; i < dataSize; ++i)
             new (NotNull, &dest[i]) T(data[i]);
@@ -1048,15 +1048,14 @@ namespace WTF {
     template<typename T, size_t inlineCapacity> template<typename U>
     void Vector<T, inlineCapacity>::insert(size_t position, const U* data, size_t dataSize)
     {
-        ASSERT(position <= size());
+        ASSERT_WITH_SECURITY_IMPLICATION(position <= size());
         size_t newSize = m_size + dataSize;
         if (newSize > capacity()) {
             data = expandCapacity(newSize, data);
             if (!begin())
                 return;
         }
-        if (newSize < m_size)
-            CRASH();
+        RELEASE_ASSERT(newSize >= m_size);
         T* spot = begin() + position;
         TypeOperations::moveOverlapping(spot, end(), spot + dataSize);
         for (size_t i = 0; i < dataSize; ++i)
@@ -1067,7 +1066,7 @@ namespace WTF {
     template<typename T, size_t inlineCapacity> template<typename U>
     inline void Vector<T, inlineCapacity>::insert(size_t position, const U& val)
     {
-        ASSERT(position <= size());
+        ASSERT_WITH_SECURITY_IMPLICATION(position <= size());
         const U* data = &val;
         if (size() == capacity()) {
             data = expandCapacity(size() + 1, data);
@@ -1107,7 +1106,7 @@ namespace WTF {
     template<typename T, size_t inlineCapacity>
     inline void Vector<T, inlineCapacity>::remove(size_t position)
     {
-        ASSERT(position < size());
+        ASSERT_WITH_SECURITY_IMPLICATION(position < size());
         T* spot = begin() + position;
         spot->~T();
         TypeOperations::moveOverlapping(spot + 1, end(), spot);
@@ -1117,8 +1116,8 @@ namespace WTF {
     template<typename T, size_t inlineCapacity>
     inline void Vector<T, inlineCapacity>::remove(size_t position, size_t length)
     {
-        ASSERT(position <= size());
-        ASSERT(position + length <= size());
+        ASSERT_WITH_SECURITY_IMPLICATION(position <= size());
+        ASSERT_WITH_SECURITY_IMPLICATION(position + length <= size());
         T* beginSpot = begin() + position;
         T* endSpot = beginSpot + length;
         TypeOperations::destruct(beginSpot, endSpot); 

@@ -36,50 +36,12 @@
 namespace WebKit {
 class WebGraphicsContext3D;
 class WebLayer;
-class WebLayerTreeViewClient;
 struct WebPoint;
 struct WebRect;
 struct WebRenderingStats;
 
 class WebLayerTreeView {
 public:
-    struct Settings {
-        Settings()
-            : acceleratePainting(false)
-            , showDebugBorders(false)
-            , showFPSCounter(false)
-            , showPlatformLayerTree(false)
-            , showPaintRects(false)
-            , renderVSyncEnabled(true)
-            , renderVSyncNotificationEnabled(false)
-            , perTilePaintingEnabled(false)
-            , partialSwapEnabled(false)
-            , acceleratedAnimationEnabled(true)
-            , pageScalePinchZoomEnabled(false)
-            , recordRenderingStats(false)
-            , refreshRate(0)
-            , defaultTileSize(WebSize(256, 256))
-            , maxUntiledLayerSize(WebSize(512, 512))
-        {
-        }
-
-        bool acceleratePainting;
-        bool showDebugBorders;
-        bool showFPSCounter;
-        bool showPlatformLayerTree;
-        bool showPaintRects;
-        bool renderVSyncEnabled;
-        bool renderVSyncNotificationEnabled;
-        bool perTilePaintingEnabled;
-        bool partialSwapEnabled;
-        bool acceleratedAnimationEnabled;
-        bool pageScalePinchZoomEnabled;
-        bool recordRenderingStats;
-        double refreshRate;
-        WebSize defaultTileSize;
-        WebSize maxUntiledLayerSize;
-    };
-
     virtual ~WebLayerTreeView() { }
 
     // Initialization and lifecycle --------------------------------------
@@ -103,9 +65,6 @@ public:
     // from the above if there exists page scale, device scale or fixed layout
     // mode).
     virtual WebSize deviceViewportSize() const = 0;
-
-    // FIXME: remove this after WebKit roll
-    virtual WebFloatPoint adjustEventPointForPinchZoom(const WebFloatPoint& p) const { return p; }
 
     virtual void setDeviceScaleFactor(float) = 0;
     virtual float deviceScaleFactor() const = 0;
@@ -131,7 +90,7 @@ public:
 
     // Flow control and scheduling ---------------------------------------
 
-    // Requests an updateAnimations() call.
+    // Indicates that an animation needs to be updated.
     virtual void setNeedsAnimate() = 0;
 
     // Indicates that the view needs to be redrawn. This is typically used when the frontbuffer is damaged.
@@ -139,20 +98,6 @@ public:
 
     // Indicates whether a commit is pending.
     virtual bool commitRequested() const = 0;
-
-    // Triggers a compositing pass. If the compositor thread was not
-    // enabled via WebCompositorSupport::initialize, the compositing pass happens
-    // immediately. If it is enabled, the compositing pass will happen at a
-    // later time. Before the compositing pass happens (i.e. before composite()
-    // returns when the compositor thread is disabled), WebContentLayers will be
-    // asked to paint their dirty region, through
-    // WebContentLayerClient::paintContents.
-    virtual void composite() = 0;
-
-    // Immediately update animations. This should only be used when frame scheduling is handled by
-    // the WebLayerTreeView user and not internally by the compositor, meaning only in single-threaded
-    // mode.
-    virtual void updateAnimations(double frameBeginTime) = 0;
 
     // Relays the end of a fling animation.
     virtual void didStopFlinging() { }
@@ -172,11 +117,12 @@ public:
     // Prevents updates to layer tree from becoming visible.
     virtual void setDeferCommits(bool deferCommits) { }
 
-    // Debugging / dangerous ---------------------------------------------
+    // Take responsiblity for this layer's animations, even if this layer hasn't yet
+    // been added to the tree.
+    virtual void registerForAnimations(WebLayer* layer) { }
 
-    // Fills in a WebRenderingStats struct containing information about the state of the compositor.
-    // This call is relatively expensive in threaded mode as it blocks on the compositor thread.
-    virtual void renderingStats(WebRenderingStats&) const = 0;
+
+    // Debugging / dangerous ---------------------------------------------
 
     // Toggles the FPS counter in the HUD layer
     virtual void setShowFPSCounter(bool) { }
@@ -189,9 +135,6 @@ public:
 
     // Toggles continuous painting
     virtual void setContinuousPaintingEnabled(bool) { }
-
-    // FIXME: Remove this.
-    virtual void loseCompositorContext(int numTimes) { }
 };
 
 } // namespace WebKit

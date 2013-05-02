@@ -30,10 +30,6 @@
 #include "ui/gl/gpu_preference.h"
 #include "ui/surface/transport_dib.h"
 
-#if defined(OS_MACOSX)
-#include "ui/surface/accelerated_surface_mac.h"
-#endif
-
 namespace gpu {
 namespace gles2 {
 class ImageManager;
@@ -110,9 +106,7 @@ class GpuCommandBufferStub
   GpuChannel* channel() const { return channel_; }
 
   // Identifies the target surface.
-  int32 surface_id() const {
-    return surface_id_;
-  }
+  int32 surface_id() const { return surface_id_; }
 
   // Identifies the various GpuCommandBufferStubs in the GPU process belonging
   // to the same renderer process.
@@ -122,6 +116,8 @@ class GpuCommandBufferStub
 
   // Sends a message to the console.
   void SendConsoleMessage(int32 id, const std::string& message);
+
+  void SendCachedShader(const std::string& key, const std::string& shader);
 
   gfx::GLSurface* surface() const { return surface_; }
 
@@ -171,15 +167,13 @@ class GpuCommandBufferStub
   void OnEnsureBackbuffer();
 
   void OnRetireSyncPoint(uint32 sync_point);
-  void OnWaitSyncPoint(uint32 sync_point);
+  bool OnWaitSyncPoint(uint32 sync_point);
   void OnSyncPointRetired();
   void OnSignalSyncPoint(uint32 sync_point, uint32 id);
   void OnSignalSyncPointAck(uint32 id);
 
   void OnReceivedClientManagedMemoryStats(const GpuManagedMemoryStats& stats);
   void OnSetClientHasMemoryAllocationChangedCallback(bool has_callback);
-
-  void OnReschedule();
 
   void OnCommandProcessed();
   void OnParseError();
@@ -245,6 +239,8 @@ class GpuCommandBufferStub
   int sync_point_wait_count_;
 
   bool delayed_work_scheduled_;
+  uint64 previous_messages_processed_;
+  base::TimeTicks last_idle_time_;
 
   scoped_refptr<gpu::PreemptionFlag> preemption_flag_;
 

@@ -11,10 +11,11 @@
 #ifndef WEBRTC_MODULES_INTERFACE_VIDEO_CODING_H_
 #define WEBRTC_MODULES_INTERFACE_VIDEO_CODING_H_
 
-#include "common_video/interface/i420_video_frame.h"
-#include "modules/interface/module.h"
-#include "modules/interface/module_common_types.h"
-#include "modules/video_coding/main/interface/video_coding_defines.h"
+#include "webrtc/common_video/interface/i420_video_frame.h"
+#include "webrtc/modules/interface/module.h"
+#include "webrtc/modules/interface/module_common_types.h"
+#include "webrtc/modules/video_coding/main/interface/video_coding_defines.h"
+#include "webrtc/system_wrappers/interface/event_wrapper.h"
 
 namespace webrtc
 {
@@ -23,6 +24,22 @@ class Clock;
 class VideoEncoder;
 class VideoDecoder;
 struct CodecSpecificInfo;
+
+class EventFactory {
+ public:
+  virtual ~EventFactory() {}
+
+  virtual EventWrapper* CreateEvent() = 0;
+};
+
+class EventFactoryImpl : public EventFactory {
+ public:
+  virtual ~EventFactoryImpl() {}
+
+  virtual EventWrapper* CreateEvent() {
+    return EventWrapper::Create();
+  }
+};
 
 class VideoCodingModule : public Module
 {
@@ -49,7 +66,8 @@ public:
     static VideoCodingModule* Create(const WebRtc_Word32 id);
 
     static VideoCodingModule* Create(const WebRtc_Word32 id,
-                                     Clock* clock);
+                                     Clock* clock,
+                                     EventFactory* event_factory);
 
     static void Destroy(VideoCodingModule* module);
 
@@ -164,14 +182,14 @@ public:
     // encoder. Bit rate used by NACK should already be compensated for by the user.
     //
     // Input:
-    //      - availableBandWidth    : Band width available for the VCM in kbit/s.
+    //      - target_bitrate        : The target bitrate for VCM in bits/s.
     //      - lossRate              : Fractions of lost packets the past second.
     //                                (loss rate in percent = 100 * packetLoss / 255)
     //      - rtt                   : Current round-trip time in ms.
     //
     // Return value      : VCM_OK, on success.
     //                     < 0,         on error.
-    virtual WebRtc_Word32 SetChannelParameters(WebRtc_UWord32 availableBandWidth,
+    virtual WebRtc_Word32 SetChannelParameters(WebRtc_UWord32 target_bitrate,
                                                WebRtc_UWord8 lossRate,
                                                WebRtc_UWord32 rtt) = 0;
 
@@ -552,6 +570,10 @@ public:
     // a key frame will be requested.
     virtual void SetNackSettings(size_t max_nack_list_size,
                                  int max_packet_age_to_nack) = 0;
+
+    // Setting a desired delay to the VCM receiver. Video rendering will be
+    // delayed by at least desired_delay_ms.
+    virtual int SetMinReceiverDelay(int desired_delay_ms) = 0;
 
     // Enables recording of debugging information.
     virtual int StartDebugRecording(const char* file_name_utf8) = 0;

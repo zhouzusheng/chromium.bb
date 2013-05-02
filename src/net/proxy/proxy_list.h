@@ -12,6 +12,10 @@
 #include "net/base/net_log.h"
 #include "net/proxy/proxy_retry_info.h"
 
+namespace base {
+class ListValue;
+}
+
 namespace net {
 
 class ProxyServer;
@@ -30,6 +34,9 @@ class NET_EXPORT_PRIVATE ProxyList {
 
   // Set the proxy list to a single entry, |proxy_server|.
   void SetSingleProxyServer(const ProxyServer& proxy_server);
+
+  // Append a single proxy server to the end of the proxy list.
+  void AddProxyServer(const ProxyServer& proxy_server);
 
   // De-prioritizes the proxies that we have cached as not working, by moving
   // them to the end of the fallback list.
@@ -52,6 +59,9 @@ class NET_EXPORT_PRIVATE ProxyList {
   // Returns the number of proxy servers in this list.
   size_t size() const;
 
+  // Returns true if |*this| lists the same proxies as |other|.
+  bool Equals(const ProxyList& other) const;
+
   // Returns the first proxy server in the list. It is only valid to call
   // this if !IsEmpty().
   const ProxyServer& Get() const;
@@ -67,6 +77,9 @@ class NET_EXPORT_PRIVATE ProxyList {
   // Returns a PAC-style semicolon-separated list of valid proxy servers.
   // For example: "PROXY xxx.xxx.xxx.xxx:xx; SOCKS yyy.yyy.yyy:yy".
   std::string ToPacString() const;
+
+  // Returns a serialized value for the list. The caller takes ownership of it.
+  base::ListValue* ToValue() const;
 
   // Marks the current proxy server as bad and deletes it from the list.  The
   // list of known bad proxies is given by proxy_retry_info.  Returns true if

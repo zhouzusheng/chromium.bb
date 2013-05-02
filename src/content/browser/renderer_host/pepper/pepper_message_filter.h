@@ -10,7 +10,8 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
@@ -19,15 +20,14 @@
 #include "content/public/common/process_type.h"
 #include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
-#include "net/base/ssl_config_service.h"
 #include "net/socket/stream_socket.h"
+#include "net/ssl/ssl_config_service.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_stdint.h"
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 
-struct PP_HostResolver_Private_Hint;
 struct PP_NetAddress_Private;
 
 namespace base {
@@ -35,13 +35,11 @@ class ListValue;
 }
 
 namespace net {
-class AddressList;
 class CertVerifier;
 class HostResolver;
 }
 
 namespace ppapi {
-struct HostPortPair;
 class PPB_X509Certificate_Fields;
 }
 
@@ -60,22 +58,17 @@ class PepperMessageFilter
     : public BrowserMessageFilter,
       public net::NetworkChangeNotifier::IPAddressObserver {
  public:
-  // Constructor when used in the context of a render process (the argument is
-  // provided for sanity checking and must be PROCESS_TYPE_RENDERER).
-  PepperMessageFilter(ProcessType process_type,
-                      int process_id,
+  // Constructor when used in the context of a render process.
+  PepperMessageFilter(int process_id,
                       BrowserContext* browser_context);
 
-  // Constructor when used in the context of a PPAPI process (the argument is
-  // provided for sanity checking and must be PROCESS_TYPE_PPAPI_PLUGIN).
-  PepperMessageFilter(ProcessType process_type,
-                      const ppapi::PpapiPermissions& permissions,
+  // Constructor when used in the context of a PPAPI process..
+  PepperMessageFilter(const ppapi::PpapiPermissions& permissions,
                       net::HostResolver* host_resolver);
 
-  // Constructor when used in the context of a NaCl process (the argument is
-  // provided for sanity checking and must be PROCESS_TYPE_NACL_LOADER).
-  PepperMessageFilter(ProcessType process_type,
-                      const ppapi::PpapiPermissions& permissions,
+  // Constructor when used in the context of an external plugin, i.e. created by
+  // the embedder using BrowserPpapiHost::CreateExternalPluginProcess.
+  PepperMessageFilter(const ppapi::PpapiPermissions& permissions,
                       net::HostResolver* host_resolver,
                       int process_id,
                       int render_view_id);
@@ -116,12 +109,6 @@ class PepperMessageFilter
     int request_id;
   };
 
-  struct OnHostResolverResolveBoundInfo {
-    int32 routing_id;
-    uint32 plugin_dispatcher_id;
-    uint32 host_resolver_id;
-  };
-
   // Containers for sockets keyed by socked_id.
   typedef std::map<uint32, linked_ptr<PepperTCPSocket> > TCPSocketMap;
   typedef std::map<uint32,
@@ -152,6 +139,7 @@ class PepperMessageFilter
   void OnTCPRead(uint32 socket_id, int32_t bytes_to_read);
   void OnTCPWrite(uint32 socket_id, const std::string& data);
   void OnTCPDisconnect(uint32 socket_id);
+  void OnTCPSetBoolOption(uint32 socket_id, uint32_t name, bool value);
   void OnTCPServerListen(int32 routing_id,
                          uint32 plugin_dispatcher_id,
                          PP_Resource socket_resource,
@@ -159,20 +147,6 @@ class PepperMessageFilter
                          int32_t backlog);
   void OnTCPServerAccept(int32 tcp_client_socket_routing_id,
                          uint32 server_socket_id);
-
-  void OnHostResolverResolve(int32 routing_id,
-                             uint32 plugin_dispatcher_id,
-                             uint32 host_resolver_id,
-                             const ppapi::HostPortPair& host_port,
-                             const PP_HostResolver_Private_Hint& hint);
-  // Continuation of |OnHostResolverResolve()|.
-  void OnHostResolverResolveLookupFinished(
-      int result,
-      const net::AddressList& addresses,
-      const OnHostResolverResolveBoundInfo& bound_info);
-  bool SendHostResolverResolveACKError(int32 routing_id,
-                                       uint32 plugin_dispatcher_id,
-                                       uint32 host_resolver_id);
 
   void OnNetworkMonitorStart(uint32 plugin_dispatcher_id);
   void OnNetworkMonitorStop(uint32 plugin_dispatcher_id);
@@ -192,12 +166,6 @@ class PepperMessageFilter
                          PP_Resource socket_resource,
                          const PP_NetAddress_Private& addr,
                          int32_t backlog);
-  void DoHostResolverResolve(int32 routing_id,
-                             uint32 plugin_dispatcher_id,
-                             uint32 host_resolver_id,
-                             const ppapi::HostPortPair& host_port,
-                             const PP_HostResolver_Private_Hint& hint);
-
   void OnX509CertificateParseDER(const std::vector<char>& der,
                                  bool* succeeded,
                                  ppapi::PPB_X509Certificate_Fields* result);
@@ -213,7 +181,15 @@ class PepperMessageFilter
   void DoGetNetworkList();
   void SendNetworkList(scoped_ptr<net::NetworkInterfaceList> list);
 
-  ProcessType process_type_;
+  enum PluginType {
+    PLUGIN_TYPE_IN_PROCESS,
+    PLUGIN_TYPE_OUT_OF_PROCESS,
+    // External plugin means it was created through
+    // BrowserPpapiHost::CreateExternalPluginProcess.
+    PLUGIN_TYPE_EXTERNAL_PLUGIN,
+  };
+
+  PluginType plugin_type_;
 
   // When attached to an out-of-process plugin (be it native or NaCl) this
   // will have the Pepper permissions for the plugin. When attached to the
@@ -224,10 +200,10 @@ class PepperMessageFilter
   // Render process ID.
   int process_id_;
 
-  // NACL RenderView id to determine private API access. Normally, we handle
-  // messages coming from multiple RenderViews, but NaClProcessHost always
-  // creates a new PepperMessageFilter for each RenderView.
-  int nacl_render_view_id_;
+  // External plugin RenderView id to determine private API access. Normally, we
+  // handle messages coming from multiple RenderViews, but external plugins
+  // always creates a new PepperMessageFilter for each RenderView.
+  int external_plugin_render_view_id_;
 
   // When non-NULL, this should be used instead of the host_resolver_.
   ResourceContext* const resource_context_;

@@ -149,6 +149,8 @@ private:
     bool m_loadedSheet;
 
     PendingSheetType m_pendingSheetType;
+
+    int m_beforeLoadRecurseCount;
 };
 
 } //namespace

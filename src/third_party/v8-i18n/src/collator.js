@@ -109,7 +109,10 @@ function initializeCollator(collator, locales, options) {
  *
  * @constructor
  */
-Intl.Collator = function(locales, options) {
+Intl.Collator = function() {
+  var locales = arguments[0];
+  var options = arguments[1];
+
   if (!this || this === Intl) {
     // Constructor is called as a function.
     return new Intl.Collator(locales, options);
@@ -125,8 +128,8 @@ Intl.Collator = function(locales, options) {
 Intl.Collator.prototype.resolvedOptions = function() {
   if (!this || typeof this !== 'object' ||
       this.__initializedIntlObject !== 'collator') {
-    throw new TypeError(['resolvedOptions method called on a non-object',
-                         ' or on a object that is not Collator.'].join(''));
+    throw new TypeError('resolvedOptions method called on a non-object ' +
+        'or on a object that is not Intl.Collator.');
   }
 
   var coll = this;
@@ -149,9 +152,10 @@ Intl.Collator.prototype.resolvedOptions = function() {
  * Returns the subset of the given locale list for which this locale list
  * has a matching (possibly fallback) locale. Locales appear in the same
  * order in the returned list as in the input list.
+ * Options are optional parameter.
  */
-Intl.Collator.supportedLocalesOf = function(locales, options) {
-  return supportedLocalesOf('collator', locales, options);
+Intl.Collator.supportedLocalesOf = function(locales) {
+  return supportedLocalesOf('collator', locales, arguments[1]);
 };
 
 

@@ -21,11 +21,14 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "content/browser/download/download_resource_handler.h"
+#include "content/browser/loader/render_view_host_tracker.h"
 #include "content/browser/loader/resource_loader.h"
 #include "content/browser/loader/resource_loader_delegate.h"
+#include "content/browser/loader/resource_scheduler.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/download_id.h"
@@ -51,6 +54,7 @@ class ShareableFileReference;
 namespace content {
 class ResourceContext;
 class ResourceDispatcherHostDelegate;
+class ResourceMessageDelegate;
 class ResourceMessageFilter;
 class ResourceRequestInfoImpl;
 class SaveFileManager;
@@ -164,12 +168,14 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
                                         const std::string& mime_type,
                                         ResourceType::Type resource_type);
 
+  // Called when a RenderViewHost is created.
+  void OnRenderViewHostCreated(int child_id, int route_id);
+
+  // Called when a RenderViewHost is deleted.
+  void OnRenderViewHostDeleted(int child_id, int route_id);
+
   // Force cancels any pending requests for the given process.
   void CancelRequestsForProcess(int child_id);
-
-  // Force cancels any pending requests for the given route id.  This method
-  // acts like CancelRequestsForProcess when route_id is -1.
-  void CancelRequestsForRoute(int child_id, int route_id);
 
   void OnUserGesture(WebContentsImpl* contents);
 
@@ -213,7 +219,15 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       scoped_ptr<DownloadSaveInfo> save_info,
       const DownloadResourceHandler::OnStartedCallback& started_cb);
 
+  // Must be called after the ResourceRequestInfo has been created
+  // and associated with the request.
+  scoped_ptr<ResourceHandler> MaybeInterceptAsStream(
+      net::URLRequest* request,
+      ResourceResponse* response);
+
   void ClearSSLClientAuthHandlerForRequest(net::URLRequest* request);
+
+  ResourceScheduler* scheduler() { return scheduler_.get(); }
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest,
@@ -226,6 +240,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   class ShutdownTask;
 
   friend class ShutdownTask;
+  friend class ResourceMessageDelegate;
 
   // ResourceLoaderDelegate implementation:
   virtual ResourceDispatcherHostLoginDelegate* CreateLoginDelegate(
@@ -252,6 +267,9 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   static bool RenderViewForRequest(const net::URLRequest* request,
                                    int* render_process_host_id,
                                    int* render_view_host_id);
+
+  // An init helper that runs on the IO thread.
+  void OnInit();
 
   // A shutdown helper that runs on the IO thread.
   void OnShutdown();
@@ -280,6 +298,10 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // Estimate how much heap space |request| will consume to run.
   static int CalculateApproximateMemoryCost(net::URLRequest* request);
+
+  // Force cancels any pending requests for the given route id.  This method
+  // acts like CancelRequestsForProcess when route_id is -1.
+  void CancelRequestsForRoute(int child_id, int route_id);
 
   // The list of all requests that we have pending. This list is not really
   // optimized, and assumes that we have relatively few requests pending at once
@@ -314,13 +336,9 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
                     const ResourceHostMsg_Request& request_data,
                     IPC::Message* sync_result,  // only valid for sync
                     int route_id);  // only valid for async
-  void OnDataReceivedACK(int request_id);
   void OnDataDownloadedACK(int request_id);
   void OnUploadProgressACK(int request_id);
   void OnCancelRequest(int request_id);
-  void OnFollowRedirect(int request_id,
-                        bool has_new_first_party_for_cookies,
-                        const GURL& new_first_party_for_cookies);
   void OnReleaseDownloadedFile(int request_id);
 
   // Creates ResourceRequestInfoImpl for a download or page save.
@@ -351,6 +369,13 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   ResourceLoader* GetLoader(const GlobalRequestID& id) const;
   ResourceLoader* GetLoader(int child_id, int request_id) const;
+
+  // Registers |delegate| to receive resource IPC messages targeted to the
+  // specified |id|.
+  void RegisterResourceMessageDelegate(const GlobalRequestID& id,
+                                       ResourceMessageDelegate* delegate);
+  void UnregisterResourceMessageDelegate(const GlobalRequestID& id,
+                                         ResourceMessageDelegate* delegate);
 
   LoaderMap pending_loaders_;
 
@@ -418,6 +443,14 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // http://crbug.com/90971 - Assists in tracking down use-after-frees on
   // shutdown.
   std::set<const ResourceContext*> active_resource_contexts_;
+
+  typedef std::map<GlobalRequestID,
+                   ObserverList<ResourceMessageDelegate>*> DelegateMap;
+  DelegateMap delegate_map_;
+
+  scoped_ptr<ResourceScheduler> scheduler_;
+
+  RenderViewHostTracker tracker_;  // Lives on UI thread.
 
   DISALLOW_COPY_AND_ASSIGN(ResourceDispatcherHostImpl);
 };

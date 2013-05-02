@@ -23,6 +23,7 @@
 #include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/host_resource.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/resource.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/thunk.h"
@@ -236,6 +237,8 @@ class ImageDataCache {
   // Notification from the renderer that the given image data is usable.
   void ImageDataUsable(ImageData* image_data);
 
+  void DidDeleteInstance(PP_Instance instance);
+
  private:
   friend struct LeakySingletonTraits<ImageDataCache>;
 
@@ -275,9 +278,9 @@ void ImageDataCache::Add(ImageData* image_data) {
   // Schedule a timer to invalidate this entry.
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&ImageDataCache::OnTimer,
-                 weak_factory_.GetWeakPtr(),
-                 image_data->pp_instance()),
+      RunWhileLocked(base::Bind(&ImageDataCache::OnTimer,
+                     weak_factory_.GetWeakPtr(),
+                     image_data->pp_instance())),
       base::TimeDelta::FromSeconds(kMaxAgeSeconds));
 }
 
@@ -285,6 +288,10 @@ void ImageDataCache::ImageDataUsable(ImageData* image_data) {
   CacheMap::iterator found = cache_.find(image_data->pp_instance());
   if (found != cache_.end())
     found->second.ImageDataUsable(image_data);
+}
+
+void ImageDataCache::DidDeleteInstance(PP_Instance instance) {
+  cache_.erase(instance);
 }
 
 void ImageDataCache::OnTimer(PP_Instance instance) {
@@ -341,6 +348,10 @@ void ImageData::LastPluginRefWasDeleted() {
   // will send back ImageDataUsable messages for.
   if (used_in_replace_contents_)
     ImageDataCache::GetInstance()->Add(this);
+}
+
+void ImageData::InstanceWasDeleted() {
+  ImageDataCache::GetInstance()->DidDeleteInstance(pp_instance());
 }
 
 PP_Bool ImageData::Describe(PP_ImageDataDesc* desc) {

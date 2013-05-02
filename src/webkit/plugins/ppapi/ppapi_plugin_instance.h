@@ -15,11 +15,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/string16.h"
-#include "cc/texture_layer_client.h"
+#include "cc/layers/texture_layer_client.h"
 #include "googleurl/src/gurl.h"
 #include "ppapi/c/dev/pp_cursor_type_dev.h"
-#include "ppapi/c/dev/ppp_printing_dev.h"
 #include "ppapi/c/dev/ppp_find_dev.h"
+#include "ppapi/c/dev/ppp_printing_dev.h"
 #include "ppapi/c/dev/ppp_selection_dev.h"
 #include "ppapi/c/dev/ppp_text_input_dev.h"
 #include "ppapi/c/dev/ppp_zoom_dev.h"
@@ -29,8 +29,8 @@
 #include "ppapi/c/pp_time.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/c/ppb_audio_config.h"
-#include "ppapi/c/ppb_input_event.h"
 #include "ppapi/c/ppb_gamepad.h"
+#include "ppapi/c/ppb_input_event.h"
 #include "ppapi/c/ppp_graphics_3d.h"
 #include "ppapi/c/ppp_input_event.h"
 #include "ppapi/c/ppp_messaging.h"
@@ -47,6 +47,7 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebCanvas.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPlugin.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebUserGestureToken.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/rect.h"
@@ -247,7 +248,10 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   bool CanRotateView();
   void RotateView(WebKit::WebPlugin::RotationType type);
 
-  void Graphics3DContextLost();
+  // Sets the bound_graphics_2d_platform_ for testing purposes. This is instead
+  // of calling BindGraphics and allows any PlatformGraphics implementation to
+  // be used, not just a resource one.
+  void SetBoundGraphics2DForTest(PluginDelegate::PlatformGraphics2D* graphics);
 
   // There are 2 implementations of the fullscreen interface
   // PPB_FlashFullscreen is used by Pepper Flash.
@@ -326,6 +330,10 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
 
   // Returns true if the plugin is processing a user gesture.
   bool IsProcessingUserGesture();
+
+  // Returns the user gesture token to use for creating a WebScopedUserGesture,
+  // if IsProcessingUserGesture returned true.
+  WebKit::WebUserGestureToken CurrentUserGestureToken();
 
   // A mouse lock request was pending and this reports success or failure.
   void OnLockMouseACK(bool succeeded);
@@ -455,8 +463,8 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
                               const PP_DecryptedBlockInfo* block_info) OVERRIDE;
 
   // TextureLayerClient implementation.
-  virtual unsigned prepareTexture(cc::ResourceUpdateQueue&) OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* context() OVERRIDE;
+  virtual unsigned PrepareTexture(cc::ResourceUpdateQueue* queue) OVERRIDE;
+  virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
 
   // Reset this instance as proxied. Assigns the instance a new module, resets
   // cached interfaces to point to the out-of-process proxy and re-sends
@@ -483,7 +491,8 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
     explicit GamepadImpl(PluginDelegate* delegate);
     // Resource implementation.
     virtual ::ppapi::thunk::PPB_Gamepad_API* AsPPB_Gamepad_API() OVERRIDE;
-    virtual void Sample(PP_GamepadsSampleData* data) OVERRIDE;
+    virtual void Sample(PP_Instance instance,
+                        PP_GamepadsSampleData* data) OVERRIDE;
    private:
     PluginDelegate* delegate_;
   };
@@ -596,6 +605,7 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   WebKit::WebPluginContainer* container_;
   scoped_refptr<cc::TextureLayer> texture_layer_;
   scoped_ptr<WebKit::WebLayer> web_layer_;
+  bool layer_bound_to_fullscreen_;
 
   // Plugin URL.
   GURL plugin_url_;
@@ -667,7 +677,6 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // variable to hold on to the pixels.
   scoped_refptr<PPB_ImageData_Impl> last_printed_page_;
 #endif  // defined(OS_MACOSX)
-#if defined(USE_SKIA)
   // Always when printing to PDF on Linux and when printing for preview on Mac
   // and Win, the entire document goes into one metafile.  However, when users
   // print only a subset of all the pages, it is impossible to know if a call
@@ -680,7 +689,6 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   SkRefPtr<WebKit::WebCanvas> canvas_;
   // An array of page ranges.
   std::vector<PP_PrintPageNumberRange_Dev> ranges_;
-#endif  // OS_LINUX || OS_WIN
 
   scoped_refptr< ::ppapi::Resource> gamepad_impl_;
 
@@ -761,6 +769,7 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // Track pending user gestures so out-of-process plugins can respond to
   // a user gesture after it has been processed.
   PP_TimeTicks pending_user_gesture_;
+  WebKit::WebUserGestureToken pending_user_gesture_token_;
 
   // We store the arguments so we can re-send them if we are reset to talk to
   // NaCl via the IPC NaCl proxy.
@@ -775,6 +784,7 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // calls and handles PPB_ContentDecryptor_Private calls.
   scoped_ptr<ContentDecryptorDelegate> content_decryptor_delegate_;
 
+  friend class PpapiPluginInstanceTest;
   DISALLOW_COPY_AND_ASSIGN(PluginInstance);
 };
 

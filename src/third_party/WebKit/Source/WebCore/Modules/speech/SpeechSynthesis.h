@@ -30,7 +30,9 @@
 
 #include "PlatformSpeechSynthesisUtterance.h"
 #include "PlatformSpeechSynthesizer.h"
+#include "SpeechSynthesisUtterance.h"
 #include "SpeechSynthesisVoice.h"
+#include <wtf/Deque.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
@@ -38,7 +40,6 @@
 namespace WebCore {
     
 class PlatformSpeechSynthesizerClient;
-class SpeechSynthesisUtterance;
 class SpeechSynthesisVoice;
     
 class SpeechSynthesis : public PlatformSpeechSynthesizerClient, public RefCounted<SpeechSynthesis> {
@@ -56,16 +57,30 @@ public:
     
     const Vector<RefPtr<SpeechSynthesisVoice> >& getVoices();
     
+    // Used in testing to use a mock platform synthesizer
+    void setPlatformSynthesizer(PassOwnPtr<PlatformSpeechSynthesizer>);
+    
 private:
     SpeechSynthesis();
     
-    virtual void voicesDidChange();
-    virtual void didStartSpeaking(PlatformSpeechSynthesisUtterance*) { };
-    virtual void didFinishSpeaking(PlatformSpeechSynthesisUtterance*) { };
-    virtual void speakingErrorOccurred(PlatformSpeechSynthesisUtterance*) { };
+    // PlatformSpeechSynthesizerClient override methods.
+    virtual void voicesDidChange() OVERRIDE;
+    virtual void didStartSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance>) OVERRIDE;
+    virtual void didPauseSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance>) OVERRIDE;
+    virtual void didResumeSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance>) OVERRIDE;
+    virtual void didFinishSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance>) OVERRIDE;
+    virtual void speakingErrorOccurred(PassRefPtr<PlatformSpeechSynthesisUtterance>) OVERRIDE;
+    virtual void boundaryEventOccurred(PassRefPtr<PlatformSpeechSynthesisUtterance>, SpeechBoundary, unsigned charIndex) OVERRIDE;
 
-    PlatformSpeechSynthesizer m_platformSpeechSynthesizer;
+    void startSpeakingImmediately(SpeechSynthesisUtterance*);
+    void handleSpeakingCompleted(SpeechSynthesisUtterance*, bool errorOccurred);
+    void fireEvent(const AtomicString& type, SpeechSynthesisUtterance*, unsigned long charIndex, const String& name);
+    
+    OwnPtr<PlatformSpeechSynthesizer> m_platformSpeechSynthesizer;
     Vector<RefPtr<SpeechSynthesisVoice> > m_voiceList;
+    SpeechSynthesisUtterance* m_currentSpeechUtterance;
+    Deque<RefPtr<SpeechSynthesisUtterance> > m_utteranceQueue;
+    bool m_isPaused;
 };
     
 } // namespace WebCore

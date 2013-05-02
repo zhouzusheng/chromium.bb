@@ -40,6 +40,24 @@ function isWellFormedCurrencyCode(currency) {
 
 
 /**
+ * Returns the valid digit count for a property, or throws RangeError on
+ * a value out of the range.
+ */
+function getNumberOption(options, property, min, max, fallback) {
+  var value = options[property];
+  if (value !== undefined) {
+    value = Number(value);
+    if (isNaN(value) || value < min || value > max) {
+      throw new RangeError(property + ' value is out of range.');
+    }
+    return Math.floor(value);
+  }
+
+  return fallback;
+}
+
+
+/**
  * Initializes the given object so it's a valid NumberFormat instance.
  * Useful for subclassing.
  */
@@ -78,17 +96,27 @@ function initializeNumberFormat(numberFormat, locales, options) {
     defineWEProperty(internalOptions, 'currencyDisplay', currencyDisplay);
   }
 
-  var digitRanges = ['minimumIntegerDigits', 'minimumFractionDigits',
-                     'maximumFractionDigits', 'minimumSignificantDigits',
-                     'maximumSignificantDigits'];
-  for (var i = 0; i < digitRanges.length; i++) {
-    var range = digitRanges[i];
-    var digits = options[range];
-    if (digits !== undefined && (digits >= 0 && digits <= 21)) {
-      defineWEProperty(internalOptions, range, Number(digits));
-    }
+  // Digit ranges.
+  var mnid = getNumberOption(options, 'minimumIntegerDigits', 1, 21, 1);
+  defineWEProperty(internalOptions, 'minimumIntegerDigits', mnid);
+
+  var mnfd = getNumberOption(options, 'minimumFractionDigits', 0, 20, 0);
+  defineWEProperty(internalOptions, 'minimumFractionDigits', mnfd);
+
+  var mxfd = getNumberOption(options, 'maximumFractionDigits', mnfd, 20, 3);
+  defineWEProperty(internalOptions, 'maximumFractionDigits', mxfd);
+
+  if (options['minimumSignificantDigits'] !== undefined ||
+      options['maximumSignificantDigits'] !== undefined) {
+    var mnsd = getNumberOption(options, 'minimumSignificantDigits', 1, 21, 0);
+    defineWEProperty(internalOptions, 'minimumSignificantDigits', mnsd);
+
+    var mxsd =
+        getNumberOption(options, 'maximumSignificantDigits', mnsd, 21, 21);
+    defineWEProperty(internalOptions, 'maximumSignificantDigits', mxsd);
   }
 
+  // Grouping.
   defineWEProperty(internalOptions, 'useGrouping', getOption(
     'useGrouping', 'boolean', undefined, true));
 
@@ -143,7 +171,10 @@ function initializeNumberFormat(numberFormat, locales, options) {
  *
  * @constructor
  */
-Intl.NumberFormat = function(locales, options) {
+Intl.NumberFormat = function() {
+  var locales = arguments[0];
+  var options = arguments[1];
+
   if (!this || this === Intl) {
     // Constructor is called as a function.
     return new Intl.NumberFormat(locales, options);
@@ -159,8 +190,8 @@ Intl.NumberFormat = function(locales, options) {
 Intl.NumberFormat.prototype.resolvedOptions = function() {
   if (!this || typeof this !== 'object' ||
       this.__initializedIntlObject !== 'numberformat') {
-    throw new TypeError(['resolvedOptions method called on a non-object',
-                         ' or on a object that is not NumberFormat.'].join(''));
+    throw new TypeError('resolvedOptions method called on a non-object' +
+        ' or on a object that is not Intl.NumberFormat.');
   }
 
   var format = this;
@@ -201,9 +232,10 @@ Intl.NumberFormat.prototype.resolvedOptions = function() {
  * Returns the subset of the given locale list for which this locale list
  * has a matching (possibly fallback) locale. Locales appear in the same
  * order in the returned list as in the input list.
+ * Options are optional parameter.
  */
-Intl.NumberFormat.supportedLocalesOf = function(locales, options) {
-  return supportedLocalesOf('numberformat', locales, options);
+Intl.NumberFormat.supportedLocalesOf = function(locales) {
+  return supportedLocalesOf('numberformat', locales, arguments[1]);
 };
 
 

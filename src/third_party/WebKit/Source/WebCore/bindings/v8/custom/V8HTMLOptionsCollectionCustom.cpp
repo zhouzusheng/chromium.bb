@@ -71,27 +71,27 @@ v8::Handle<v8::Value> V8HTMLOptionsCollection::namedPropertyGetter(v8::Local<v8:
     return getNamedItems(imp, toWebCoreAtomicString(name), info);
 }
 
-v8::Handle<v8::Value> V8HTMLOptionsCollection::namedItemCallback(const v8::Arguments& args)
+v8::Handle<v8::Value> V8HTMLOptionsCollection::namedItemMethodCustom(const v8::Arguments& args)
 {
     HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(args.Holder());
     v8::Handle<v8::Value> result = getNamedItems(imp, toWebCoreString(args[0]), args);
 
     if (result.IsEmpty())
-        return v8::Undefined(args.GetIsolate());
+        return v8Null(args.GetIsolate());
 
     return result;
 }
 
-v8::Handle<v8::Value> V8HTMLOptionsCollection::removeCallback(const v8::Arguments& args)
+v8::Handle<v8::Value> V8HTMLOptionsCollection::removeMethodCustom(const v8::Arguments& args)
 {
     HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(args.Holder());
-    HTMLSelectElement* base = static_cast<HTMLSelectElement*>(imp->ownerNode());
+    HTMLSelectElement* base = toHTMLSelectElement(imp->ownerNode());
     return removeElement(base, args);
 }
 
-v8::Handle<v8::Value> V8HTMLOptionsCollection::addCallback(const v8::Arguments& args)
+v8::Handle<v8::Value> V8HTMLOptionsCollection::addMethodCustom(const v8::Arguments& args)
 {
-    if (!V8HTMLOptionElement::HasInstance(args[0], args.GetIsolate()))
+    if (!V8HTMLOptionElement::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate())))
         return setDOMException(TYPE_MISMATCH_ERR, args.GetIsolate());
     HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(args.Holder());
     HTMLOptionElement* option = V8HTMLOptionElement::toNative(v8::Handle<v8::Object>(v8::Handle<v8::Object>::Cast(args[0])));
@@ -114,13 +114,13 @@ v8::Handle<v8::Value> V8HTMLOptionsCollection::addCallback(const v8::Arguments& 
     return v8::Undefined();
 }
 
-void V8HTMLOptionsCollection::lengthAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
+void V8HTMLOptionsCollection::lengthAttrSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
 {
     HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(info.Holder());
     double v = value->NumberValue();
     unsigned newLength = 0;
     ExceptionCode ec = 0;
-    if (!isnan(v) && !isinf(v)) {
+    if (!std::isnan(v) && !std::isinf(v)) {
         if (v < 0.0)
             ec = INDEX_SIZE_ERR;
         else if (v > static_cast<double>(UINT_MAX))
@@ -148,7 +148,7 @@ v8::Handle<v8::Value> V8HTMLOptionsCollection::indexedPropertyGetter(uint32_t in
 v8::Handle<v8::Value> V8HTMLOptionsCollection::indexedPropertySetter(uint32_t index, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
 {
     HTMLOptionsCollection* collection = V8HTMLOptionsCollection::toNative(info.Holder());
-    HTMLSelectElement* base = static_cast<HTMLSelectElement*>(collection->ownerNode());
+    HTMLSelectElement* base = toHTMLSelectElement(collection->ownerNode());
     return toOptionsCollectionSetter(index, value, base, info.GetIsolate());
 }
 

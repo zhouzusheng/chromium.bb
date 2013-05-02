@@ -9,8 +9,52 @@ using base::StringPiece;
 using std::map;
 using std::numeric_limits;
 using std::ostream;
+using std::string;
 
 namespace net {
+
+size_t GetPacketHeaderSize(bool include_version) {
+  return kQuicGuidSize + kPublicFlagsSize +
+      (include_version ? kQuicVersionSize : 0) + kPrivateFlagsSize +
+      kSequenceNumberSize + kFecGroupSize;
+}
+
+size_t GetPublicResetPacketSize() {
+  return kQuicGuidSize + kPublicFlagsSize + kPublicResetNonceSize +
+      kSequenceNumberSize;
+}
+
+size_t GetStartOfFecProtectedData(bool include_version) {
+  return GetPacketHeaderSize(include_version);
+}
+
+size_t GetStartOfEncryptedData(bool include_version) {
+  return  GetPacketHeaderSize(include_version) - kPrivateFlagsSize -
+      kFecGroupSize;
+}
+
+QuicPacketPublicHeader::QuicPacketPublicHeader() {}
+
+QuicPacketPublicHeader::QuicPacketPublicHeader(
+    const QuicPacketPublicHeader& other)
+    : guid(other.guid),
+      reset_flag(other.reset_flag),
+      version_flag(other.version_flag),
+      versions(other.versions) {
+}
+
+QuicPacketPublicHeader::~QuicPacketPublicHeader() {}
+
+QuicPacketPublicHeader& QuicPacketPublicHeader::operator=(
+    const QuicPacketPublicHeader& other) {
+  guid = other.guid;
+  reset_flag = other.reset_flag;
+  version_flag = other.version_flag;
+  // Window's STL crashes when empty std::vectors are copied.
+  if (other.versions.size() > 0)
+    versions = other.versions;
+  return *this;
+}
 
 QuicStreamFrame::QuicStreamFrame() {}
 
@@ -24,43 +68,44 @@ QuicStreamFrame::QuicStreamFrame(QuicStreamId stream_id,
       data(data) {
 }
 
+ostream& operator<<(ostream& os, const QuicPacketHeader& header) {
+  os << "{ guid: " << header.public_header.guid
+     << ", reset_flag: " << header.public_header.reset_flag
+     << ", version_flag: " << header.public_header.version_flag;
+  if (header.public_header.version_flag) {
+    os << " version: ";
+    for (size_t i = 0; i < header.public_header.versions.size(); ++i) {
+      os << header.public_header.versions[0] << " ";
+    }
+  }
+  os << ", fec_flag: " << header.fec_flag
+     << ", entropy_flag: " << header.entropy_flag
+     << ", entropy hash: " << static_cast<int>(header.entropy_hash)
+     << ", sequence_number: " << header.packet_sequence_number
+     << ", fec_group: " << header.fec_group<< "}\n";
+  return os;
+}
+
 // TODO(ianswett): Initializing largest_observed to 0 should not be necessary.
-ReceivedPacketInfo::ReceivedPacketInfo() : largest_observed(0) {}
+ReceivedPacketInfo::ReceivedPacketInfo()
+    : largest_observed(0),
+      delta_time_largest_observed(QuicTime::Delta::Infinite()) {
+}
 
 ReceivedPacketInfo::~ReceivedPacketInfo() {}
 
-void ReceivedPacketInfo::RecordReceived(
-    QuicPacketSequenceNumber sequence_number) {
-  DCHECK(IsAwaitingPacket(sequence_number));
-  if (largest_observed < sequence_number) {
-    DCHECK_LT(sequence_number - largest_observed,
-              numeric_limits<uint16>::max());
-    // We've got a new high sequence number.  Note any new intermediate missing
-    // packets, and update the last_ack data.
-    for (QuicPacketSequenceNumber i = largest_observed + 1;
-         i < sequence_number; ++i) {
-      DVLOG(1) << "missing " << i;
-      missing_packets.insert(i);
-    }
-    largest_observed = sequence_number;
-  } else {
-    // We've gotten one of the out of order packets - remove it from our
-    // "missing packets" list.
-    DVLOG(1) << "Removing "  << sequence_number << " from missing list";
-    missing_packets.erase(sequence_number);
+bool IsAwaitingPacket(const ReceivedPacketInfo& received_info,
+                      QuicPacketSequenceNumber sequence_number) {
+  return sequence_number > received_info.largest_observed ||
+      ContainsKey(received_info.missing_packets, sequence_number);
+}
+
+void InsertMissingPacketsBetween(ReceivedPacketInfo* received_info,
+                                 QuicPacketSequenceNumber lower,
+                                 QuicPacketSequenceNumber higher) {
+  for (QuicPacketSequenceNumber i = lower; i < higher; ++i) {
+    received_info->missing_packets.insert(i);
   }
-}
-
-bool ReceivedPacketInfo::IsAwaitingPacket(
-    QuicPacketSequenceNumber sequence_number) const {
-  return sequence_number > largest_observed ||
-      ContainsKey(missing_packets, sequence_number);
-}
-
-void ReceivedPacketInfo::ClearMissingBefore(
-    QuicPacketSequenceNumber least_unacked) {
-  missing_packets.erase(missing_packets.begin(),
-                        missing_packets.lower_bound(least_unacked));
 }
 
 SentPacketInfo::SentPacketInfo() {}
@@ -69,25 +114,26 @@ SentPacketInfo::~SentPacketInfo() {}
 
 // Testing convenience method.
 QuicAckFrame::QuicAckFrame(QuicPacketSequenceNumber largest_observed,
+                           QuicTime largest_observed_receive_time,
                            QuicPacketSequenceNumber least_unacked) {
-  for (QuicPacketSequenceNumber seq_num = 1;
-       seq_num <= largest_observed; ++seq_num) {
-    received_info.RecordReceived(seq_num);
-  }
   received_info.largest_observed = largest_observed;
+  received_info.entropy_hash = 0;
   sent_info.least_unacked = least_unacked;
+  sent_info.entropy_hash = 0;
 }
 
 ostream& operator<<(ostream& os, const SentPacketInfo& sent_info) {
-  os << "least_unacked: " << sent_info.least_unacked;
+  os << "entropy_hash: " << static_cast<int>(sent_info.entropy_hash)
+     << " least_unacked: " << sent_info.least_unacked;
   return os;
 }
 
 ostream& operator<<(ostream& os, const ReceivedPacketInfo& received_info) {
-  os << "largest_observed: "
-     << received_info.largest_observed
+  os << "entropy_hash: " << static_cast<int>(received_info.entropy_hash)
+     << " largest_observed: " << received_info.largest_observed
      << " missing_packets: [ ";
-  for (SequenceSet::const_iterator it = received_info.missing_packets.begin();
+  for (SequenceNumberSet::const_iterator it =
+           received_info.missing_packets.begin();
        it != received_info.missing_packets.end(); ++it) {
     os << *it << " ";
   }
@@ -151,6 +197,15 @@ CongestionFeedbackMessageInterArrival() {}
 CongestionFeedbackMessageInterArrival::
 ~CongestionFeedbackMessageInterArrival() {}
 
+QuicGoAwayFrame::QuicGoAwayFrame(QuicErrorCode error_code,
+                                 QuicStreamId last_good_stream_id,
+                                 const string& reason)
+    : error_code(error_code),
+      last_good_stream_id(last_good_stream_id),
+      reason_phrase(reason) {
+  DCHECK_LE(error_code, numeric_limits<uint8>::max());
+}
+
 QuicFecData::QuicFecData() {}
 
 bool QuicFecData::operator==(const QuicFecData& other) const {
@@ -167,6 +222,80 @@ QuicData::~QuicData() {
   if (owns_buffer_) {
     delete [] const_cast<char*>(buffer_);
   }
+}
+
+StringPiece QuicPacket::FecProtectedData() const {
+  const size_t start_of_fec = GetStartOfFecProtectedData(includes_version_);
+  return StringPiece(data() + start_of_fec, length() - start_of_fec);
+}
+
+StringPiece QuicPacket::AssociatedData() const {
+  return StringPiece(data() + kStartOfHashData,
+                     GetStartOfEncryptedData(includes_version_) -
+                     kStartOfHashData);
+}
+
+StringPiece QuicPacket::BeforePlaintext() const {
+  return StringPiece(data(), GetStartOfEncryptedData(includes_version_));
+}
+
+StringPiece QuicPacket::Plaintext() const {
+  const size_t start_of_encrypted_data =
+      GetStartOfEncryptedData(includes_version_);
+  return StringPiece(data() + start_of_encrypted_data,
+                     length() - start_of_encrypted_data);
+}
+
+RetransmittableFrames::RetransmittableFrames() {}
+
+RetransmittableFrames::~RetransmittableFrames() {
+  for (QuicFrames::iterator it = frames_.begin(); it != frames_.end(); ++it) {
+    switch (it->type) {
+      case PADDING_FRAME:
+        delete it->padding_frame;
+        break;
+      case STREAM_FRAME:
+        delete it->stream_frame;
+        break;
+      case ACK_FRAME:
+        delete it->ack_frame;
+        break;
+      case CONGESTION_FEEDBACK_FRAME:
+        delete it->congestion_feedback_frame;
+        break;
+      case RST_STREAM_FRAME:
+        delete it->rst_stream_frame;
+        break;
+      case CONNECTION_CLOSE_FRAME:
+        delete it->connection_close_frame;
+        break;
+      case GOAWAY_FRAME:
+        delete it->goaway_frame;
+        break;
+      case NUM_FRAME_TYPES:
+        DCHECK(false) << "Cannot delete type: " << it->type;
+    }
+  }
+  STLDeleteElements(&stream_data_);
+}
+
+const QuicFrame& RetransmittableFrames::AddStreamFrame(
+    QuicStreamFrame* stream_frame) {
+  // Make an owned copy of the StringPiece.
+  string* stream_data = new string(stream_frame->data.data(),
+                                   stream_frame->data.size());
+  // Ensure the frame's StringPiece points to the owned copy of the data.
+  stream_frame->data = StringPiece(*stream_data);
+  stream_data_.push_back(stream_data);
+  frames_.push_back(QuicFrame(stream_frame));
+  return frames_.back();
+}
+
+const QuicFrame& RetransmittableFrames::AddNonStreamFrame(
+    const QuicFrame& frame) {
+  DCHECK_NE(frame.type, STREAM_FRAME);
+  frames_.push_back(frame);
+  return frames_.back();
 }
 
 ostream& operator<<(ostream& os, const QuicEncryptedPacket& s) {

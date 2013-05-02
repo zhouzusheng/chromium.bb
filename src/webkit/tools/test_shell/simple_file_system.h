@@ -11,6 +11,7 @@
 #include "base/id_map.h"
 #include "base/memory/weak_ptr.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystemType.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_types.h"
@@ -38,12 +39,12 @@ class SimpleFileSystem
   virtual ~SimpleFileSystem();
 
   void OpenFileSystem(WebKit::WebFrame* frame,
-                      WebKit::WebFileSystem::Type type,
+                      WebKit::WebFileSystemType type,
                       long long size,
                       bool create,
                       WebKit::WebFileSystemCallbacks* callbacks);
   void DeleteFileSystem(WebKit::WebFrame* frame,
-                        WebKit::WebFileSystem::Type type,
+                        WebKit::WebFileSystemType type,
                         WebKit::WebFileSystemCallbacks* callbacks);
 
   fileapi::FileSystemContext* file_system_context() {
@@ -88,24 +89,22 @@ class SimpleFileSystem
   virtual WebKit::WebFileWriter* createFileWriter(
       const WebKit::WebURL& path, WebKit::WebFileWriterClient*) OVERRIDE;
   virtual void createSnapshotFileAndReadMetadata(
+      const WebKit::WebURL& path,
+      WebKit::WebFileSystemCallbacks* callbacks);
+
+  // DEPRECATED
+  virtual void createSnapshotFileAndReadMetadata(
       const WebKit::WebURL& blobURL,
       const WebKit::WebURL& path,
-      WebKit::WebFileSystemCallbacks* callbacks) OVERRIDE;
+      WebKit::WebFileSystemCallbacks* callbacks);
 
   static void InitializeOnIOThread(
       webkit_blob::BlobStorageController* blob_storage_controller);
   static void CleanupOnIOThread();
 
  private:
-  enum FilePermission {
-    FILE_PERMISSION_READ,
-    FILE_PERMISSION_WRITE,
-    FILE_PERMISSION_CREATE,
-  };
-
   // Helpers.
-  bool HasFilePermission(const fileapi::FileSystemURL& url,
-                         FilePermission permission);
+  bool HasFilePermission(const fileapi::FileSystemURL& url, int permissions);
   fileapi::FileSystemOperation* GetNewOperation(
       const fileapi::FileSystemURL& url);
 
@@ -121,8 +120,11 @@ class SimpleFileSystem
   fileapi::FileSystemContext::DeleteFileSystemCallback DeleteFileSystemHandler(
       WebKit::WebFileSystemCallbacks* callbacks);
   fileapi::FileSystemOperation::SnapshotFileCallback
-      SnapshotFileHandler(const GURL& blob_url,
-                          WebKit::WebFileSystemCallbacks* callbacks);
+      SnapshotFileHandler(WebKit::WebFileSystemCallbacks* callbacks);
+  fileapi::FileSystemOperation::SnapshotFileCallback
+      SnapshotFileHandler_Deprecated(
+          const GURL& blob_url,
+          WebKit::WebFileSystemCallbacks* callbacks);
   void DidFinish(WebKit::WebFileSystemCallbacks* callbacks,
                  base::PlatformFileError result);
   void DidGetMetadata(WebKit::WebFileSystemCallbacks* callbacks,
@@ -140,6 +142,12 @@ class SimpleFileSystem
   void DidDeleteFileSystem(WebKit::WebFileSystemCallbacks* callbacks,
                            base::PlatformFileError result);
   void DidCreateSnapshotFile(
+      WebKit::WebFileSystemCallbacks* callbacks,
+      base::PlatformFileError result,
+      const base::PlatformFileInfo& info,
+      const base::FilePath& platform_path,
+      const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref);
+  void DidCreateSnapshotFile_Deprecated(
       const GURL& blob_url,
       WebKit::WebFileSystemCallbacks* callbacks,
       base::PlatformFileError result,

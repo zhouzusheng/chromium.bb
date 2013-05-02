@@ -291,7 +291,7 @@ void HTMLSelectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         String attrSize = String::number(size);
         if (attrSize != value) {
             // FIXME: This is horribly factored.
-            if (Attribute* sizeAttribute = getAttributeItem(sizeAttr))
+            if (Attribute* sizeAttribute = ensureUniqueElementData()->getAttributeItem(sizeAttr))
                 sizeAttribute->setValue(attrSize);
         }
         size = max(size, 1);
@@ -1059,7 +1059,7 @@ void HTMLSelectElement::reset()
     setNeedsValidityCheck();
 }
 
-#if !PLATFORM(WIN) || OS(WINCE)
+#if (!PLATFORM(WIN) && !(PLATFORM(CHROMIUM) && OS(WINDOWS))) || OS(WINCE)
 bool HTMLSelectElement::platformHandleKeydownEvent(KeyboardEvent* event)
 {
     const Page* page = document()->page();

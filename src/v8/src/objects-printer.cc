@@ -69,7 +69,7 @@ void HeapObject::PrintHeader(FILE* out, const char* id) {
 void HeapObject::HeapObjectPrint(FILE* out) {
   InstanceType instance_type = map()->instance_type();
 
-  HandleScope scope;
+  HandleScope scope(GetIsolate());
   if (instance_type < FIRST_NONSTRING_TYPE) {
     String::cast(this)->StringPrint(out);
     return;
@@ -874,18 +874,36 @@ void Foreign::ForeignPrint(FILE* out) {
 }
 
 
-void AccessorInfo::AccessorInfoPrint(FILE* out) {
-  HeapObject::PrintHeader(out, "AccessorInfo");
+void ExecutableAccessorInfo::ExecutableAccessorInfoPrint(FILE* out) {
+  HeapObject::PrintHeader(out, "ExecutableAccessorInfo");
+  PrintF(out, "\n - name: ");
+  name()->ShortPrint(out);
+  PrintF(out, "\n - flag: ");
+  flag()->ShortPrint(out);
   PrintF(out, "\n - getter: ");
   getter()->ShortPrint(out);
   PrintF(out, "\n - setter: ");
   setter()->ShortPrint(out);
-  PrintF(out, "\n - name: ");
-  name()->ShortPrint(out);
   PrintF(out, "\n - data: ");
   data()->ShortPrint(out);
+}
+
+
+void DeclaredAccessorInfo::DeclaredAccessorInfoPrint(FILE* out) {
+  HeapObject::PrintHeader(out, "DeclaredAccessorInfo");
+  PrintF(out, "\n - name: ");
+  name()->ShortPrint(out);
   PrintF(out, "\n - flag: ");
   flag()->ShortPrint(out);
+  PrintF(out, "\n - descriptor: ");
+  descriptor()->ShortPrint(out);
+}
+
+
+void DeclaredAccessorDescriptor::DeclaredAccessorDescriptorPrint(FILE* out) {
+  HeapObject::PrintHeader(out, "DeclaredAccessorDescriptor");
+  PrintF(out, "\n - internal field: ");
+  internal_field()->ShortPrint(out);
 }
 
 

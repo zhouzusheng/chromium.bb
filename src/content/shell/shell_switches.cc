@@ -11,6 +11,9 @@ namespace switches {
 // Makes Content Shell use the given path for its data directory.
 const char kContentShellDataPath[] = "data-path";
 
+// Enable accelerated 2D canvas.
+const char kEnableAccelerated2DCanvas[] = "enable-accelerated-2d-canvas";
+
 // Alias for kEnableSoftwareCompositingGLAdapter.
 const char kEnableSoftwareCompositing[] = "enable-software-compositing";
 

@@ -10,6 +10,7 @@
 #include "base/callback.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "cc/layers/video_layer.h"
 #include "media/base/media_log.h"
 #include "media/base/video_frame.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
@@ -19,6 +20,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayerClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "webkit/compositor_bindings/web_layer_impl.h"
 #include "webkit/media/media_stream_audio_renderer.h"
 #include "webkit/media/media_stream_client.h"
 #include "webkit/media/video_frame_provider.h"
@@ -49,12 +51,12 @@ WebMediaPlayerMS::WebMediaPlayerMS(
       paused_(true),
       current_frame_used_(false),
       pending_repaint_(false),
+      video_frame_provider_client_(NULL),
       received_first_frame_(false),
       sequence_started_(false),
       total_frame_count_(0),
       dropped_frame_count_(0),
-      media_log_(media_log),
-      volume_modified_(false) {
+      media_log_(media_log) {
   DVLOG(1) << "WebMediaPlayerMS::ctor";
   DCHECK(media_stream_client);
   media_log_->AddEvent(
@@ -64,6 +66,12 @@ WebMediaPlayerMS::WebMediaPlayerMS(
 WebMediaPlayerMS::~WebMediaPlayerMS() {
   DVLOG(1) << "WebMediaPlayerMS::dtor";
   DCHECK(thread_checker_.CalledOnValidThread());
+
+#ifdef REMOVE_WEBVIDEOFRAME
+  SetVideoFrameProviderClient(NULL);
+  GetClient()->setWebLayer(NULL);
+#endif
+
   if (video_frame_provider_) {
     video_frame_provider_->Stop();
   }
@@ -107,7 +115,6 @@ void WebMediaPlayerMS::load(const WebKit::WebURL& url, CORSMode cors_mode) {
   audio_renderer_ = media_stream_client_->GetAudioRenderer(url);
 
   if (video_frame_provider_ || audio_renderer_) {
-    GetClient()->sourceOpened();
     GetClient()->setOpaque(true);
     if (audio_renderer_)
       audio_renderer_->Start();
@@ -123,6 +130,12 @@ void WebMediaPlayerMS::load(const WebKit::WebURL& url, CORSMode cors_mode) {
   } else {
     SetNetworkState(WebMediaPlayer::NetworkStateNetworkError);
   }
+}
+
+void WebMediaPlayerMS::load(const WebKit::WebURL& url,
+                            WebKit::WebMediaSource* media_source,
+                            CORSMode cors_mode) {
+  NOTIMPLEMENTED();
 }
 
 void WebMediaPlayerMS::cancelLoad() {
@@ -191,21 +204,8 @@ void WebMediaPlayerMS::setVolume(float volume) {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (!audio_renderer_)
     return;
-
-  // The first time setVolume() is called, the call will come from WebKit's
-  // initialization code, not from javascript.  For local video streams we
-  // have this temporary workaround for WebRTC applications that automatically
-  // mutes the audio output of locally captured streams when the stream is
-  // assigned to a video or audio tag.
-  // So, when WebKit calls us, we set the volume to 0 (mute) for local
-  // audio streams only but subsequent calls will actually set the volume
-  // since those calls will be from the application.
-  // More details here: http://crbug.com/164811.
-  if (!volume_modified_ && audio_renderer_->IsLocalRenderer())
-    volume = 0.0f;
-
+  DVLOG(1) << "WebMediaPlayerMS::setVolume(volume=" << volume << ")";
   audio_renderer_->SetVolume(volume);
-  volume_modified_ = true;
 }
 
 void WebMediaPlayerMS::setVisible(bool visible) {
@@ -367,6 +367,7 @@ unsigned WebMediaPlayerMS::videoDecodedByteCount() const {
   return 0;
 }
 
+#ifndef REMOVE_WEBVIDEOFRAME
 WebKit::WebVideoFrame* WebMediaPlayerMS::getCurrentFrame() {
   DVLOG(3) << "WebMediaPlayerMS::getCurrentFrame";
   base::AutoLock auto_lock(current_frame_lock_);
@@ -389,6 +390,34 @@ void WebMediaPlayerMS::putCurrentFrame(
     delete web_video_frame;
   }
 }
+#else
+void WebMediaPlayerMS::SetVideoFrameProviderClient(
+    cc::VideoFrameProvider::Client* client) {
+  // This is called from both the main renderer thread and the compositor
+  // thread (when the main thread is blocked).
+  if (video_frame_provider_client_)
+    video_frame_provider_client_->StopUsingProvider();
+  video_frame_provider_client_ = client;
+}
+
+scoped_refptr<media::VideoFrame> WebMediaPlayerMS::GetCurrentFrame() {
+  DVLOG(3) << "WebMediaPlayerMS::GetCurrentFrame";
+  base::AutoLock auto_lock(current_frame_lock_);
+  DCHECK(!pending_repaint_);
+  if (!current_frame_)
+    return NULL;
+  pending_repaint_ = true;
+  current_frame_used_ = true;
+  return current_frame_;
+}
+
+void WebMediaPlayerMS::PutCurrentFrame(
+    const scoped_refptr<media::VideoFrame>& frame) {
+  DVLOG(3) << "WebMediaPlayerMS::PutCurrentFrame";
+  DCHECK(pending_repaint_);
+  pending_repaint_ = false;
+}
+#endif
 
 void WebMediaPlayerMS::OnFrameAvailable(
     const scoped_refptr<media::VideoFrame>& frame) {
@@ -406,6 +435,14 @@ void WebMediaPlayerMS::OnFrameAvailable(
     SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
     SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
     GetClient()->sizeChanged();
+
+#ifdef REMOVE_WEBVIDEOFRAME
+    if (video_frame_provider_ && GetClient()->needsWebLayerForVideo()) {
+      video_weblayer_.reset(
+          new webkit::WebLayerImpl(cc::VideoLayer::Create(this)));
+      GetClient()->setWebLayer(video_weblayer_.get());
+    }
+#endif
   }
 
   // Do not update |current_frame_| when paused.

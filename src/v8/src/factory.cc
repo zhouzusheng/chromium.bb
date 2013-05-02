@@ -363,9 +363,19 @@ Handle<Struct> Factory::NewStruct(InstanceType type) {
 }
 
 
-Handle<AccessorInfo> Factory::NewAccessorInfo() {
-  Handle<AccessorInfo> info =
-      Handle<AccessorInfo>::cast(NewStruct(ACCESSOR_INFO_TYPE));
+Handle<DeclaredAccessorInfo> Factory::NewDeclaredAccessorInfo() {
+  Handle<DeclaredAccessorInfo> info =
+      Handle<DeclaredAccessorInfo>::cast(
+          NewStruct(DECLARED_ACCESSOR_INFO_TYPE));
+  info->set_flag(0);  // Must clear the flag, it was initialized as undefined.
+  return info;
+}
+
+
+Handle<ExecutableAccessorInfo> Factory::NewExecutableAccessorInfo() {
+  Handle<ExecutableAccessorInfo> info =
+      Handle<ExecutableAccessorInfo>::cast(
+          NewStruct(EXECUTABLE_ACCESSOR_INFO_TYPE));
   info->set_flag(0);  // Must clear the flag, it was initialized as undefined.
   return info;
 }
@@ -743,7 +753,8 @@ Handle<Object> Factory::NewError(const char* maker,
                                  Handle<JSArray> args) {
   Handle<String> make_str = LookupUtf8Symbol(maker);
   Handle<Object> fun_obj(
-      isolate()->js_builtins_object()->GetPropertyNoExceptionThrown(*make_str));
+      isolate()->js_builtins_object()->GetPropertyNoExceptionThrown(*make_str),
+      isolate());
   // If the builtins haven't been properly configured yet this error
   // constructor may not have been defined.  Bail out.
   if (!fun_obj->IsJSFunction()) {
@@ -1265,7 +1276,7 @@ Handle<JSFunction> Factory::CreateApiFunction(
   result->shared()->set_length(obj->length());
 
   // Set class name.
-  Handle<Object> class_name = Handle<Object>(obj->class_name());
+  Handle<Object> class_name = Handle<Object>(obj->class_name(), isolate());
   if (class_name->IsString()) {
     result->shared()->set_instance_class_name(*class_name);
     result->shared()->set_name(*class_name);
@@ -1311,7 +1322,7 @@ Handle<JSFunction> Factory::CreateApiFunction(
   while (true) {
     Object* props = info->property_accessors();
     if (!props->IsUndefined()) {
-      Handle<Object> props_handle(props);
+      Handle<Object> props_handle(props, isolate());
       NeanderArray props_array(props_handle);
       max_number_of_additional_properties += props_array.length();
     }
@@ -1323,11 +1334,12 @@ Handle<JSFunction> Factory::CreateApiFunction(
   Map::EnsureDescriptorSlack(map, max_number_of_additional_properties);
 
   while (true) {
-    Handle<Object> props = Handle<Object>(obj->property_accessors());
+    Handle<Object> props = Handle<Object>(obj->property_accessors(),
+                                          isolate());
     if (!props->IsUndefined()) {
       Map::AppendCallbackDescriptors(map, props);
     }
-    Handle<Object> parent = Handle<Object>(obj->parent_template());
+    Handle<Object> parent = Handle<Object>(obj->parent_template(), isolate());
     if (parent->IsUndefined()) break;
     obj = Handle<FunctionTemplateInfo>::cast(parent);
   }
@@ -1447,9 +1459,7 @@ Handle<Object> Factory::GlobalConstantFor(Handle<String> name) {
 
 
 Handle<Object> Factory::ToBoolean(bool value) {
-  return Handle<Object>(value
-                        ? isolate()->heap()->true_value()
-                        : isolate()->heap()->false_value());
+  return value ? true_value() : false_value();
 }
 
 

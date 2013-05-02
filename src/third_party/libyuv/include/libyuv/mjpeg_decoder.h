@@ -4,12 +4,14 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
 #ifndef INCLUDE_LIBYUV_MJPEG_DECODER_H_  // NOLINT
 #define INCLUDE_LIBYUV_MJPEG_DECODER_H_
+
+#ifdef __cplusplus
 
 #include "libyuv/basic_types.h"
 
@@ -185,4 +187,5 @@ class MJpegDecoder {
 
 }  // namespace libyuv
 
+#endif  //  __cplusplus
 #endif  // INCLUDE_LIBYUV_MJPEG_DECODER_H_  NOLINT

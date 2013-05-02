@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -50,22 +50,33 @@ int I420ToI422(const uint8* src_y, int src_stride_y,
   }
   int halfwidth = (width + 1) >> 1;
   void (*CopyRow)(const uint8* src, uint8* dst, int width) = CopyRow_C;
+#if defined(HAS_COPYROW_X86)
+  if (IS_ALIGNED(halfwidth, 4)) {
+    CopyRow = CopyRow_X86;
+  }
+#endif
+#if defined(HAS_COPYROW_SSE2)
+  if (TestCpuFlag(kCpuHasSSE2) && IS_ALIGNED(halfwidth, 32) &&
+      IS_ALIGNED(src_u, 16) && IS_ALIGNED(src_stride_u, 16) &&
+      IS_ALIGNED(src_v, 16) && IS_ALIGNED(src_stride_v, 16) &&
+      IS_ALIGNED(dst_u, 16) && IS_ALIGNED(dst_stride_u, 16) &&
+      IS_ALIGNED(dst_v, 16) && IS_ALIGNED(dst_stride_v, 16)) {
+    CopyRow = CopyRow_SSE2;
+  }
+#endif
+#if defined(HAS_COPYROW_AVX2)
+  if (TestCpuFlag(kCpuHasAVX2)) {
+    CopyRow = CopyRow_AVX2;
+  }
+#endif
 #if defined(HAS_COPYROW_NEON)
   if (TestCpuFlag(kCpuHasNEON) && IS_ALIGNED(halfwidth, 32)) {
     CopyRow = CopyRow_NEON;
   }
-#elif defined(HAS_COPYROW_X86)
-  if (IS_ALIGNED(halfwidth, 4)) {
-    CopyRow = CopyRow_X86;
-#if defined(HAS_COPYROW_SSE2)
-    if (TestCpuFlag(kCpuHasSSE2) && IS_ALIGNED(halfwidth, 32) &&
-        IS_ALIGNED(src_u, 16) && IS_ALIGNED(src_stride_u, 16) &&
-        IS_ALIGNED(src_v, 16) && IS_ALIGNED(src_stride_v, 16) &&
-        IS_ALIGNED(dst_u, 16) && IS_ALIGNED(dst_stride_u, 16) &&
-        IS_ALIGNED(dst_v, 16) && IS_ALIGNED(dst_stride_v, 16)) {
-      CopyRow = CopyRow_SSE2;
-    }
 #endif
+#if defined(HAS_COPYROW_MIPS)
+  if (TestCpuFlag(kCpuHasMIPS)) {
+    CopyRow = CopyRow_MIPS;
   }
 #endif
 
@@ -226,6 +237,17 @@ int I422ToYUY2(const uint8* src_y, int src_stride_y,
     dst_yuy2 = dst_yuy2 + (height - 1) * dst_stride_yuy2;
     dst_stride_yuy2 = -dst_stride_yuy2;
   }
+  // Coalesce contiguous rows.
+  if (src_stride_y == width &&
+      src_stride_u * 2 == width &&
+      src_stride_v * 2 == width &&
+      dst_stride_yuy2 == width * 2) {
+    return I422ToYUY2(src_y, 0,
+                      src_u, 0,
+                      src_v, 0,
+                      dst_yuy2, 0,
+                      width * height, 1);
+  }
   void (*I422ToYUY2Row)(const uint8* src_y, const uint8* src_u,
                         const uint8* src_v, uint8* dst_yuy2, int width) =
       I422ToYUY2Row_C;
@@ -324,6 +346,17 @@ int I422ToUYVY(const uint8* src_y, int src_stride_y,
     height = -height;
     dst_uyvy = dst_uyvy + (height - 1) * dst_stride_uyvy;
     dst_stride_uyvy = -dst_stride_uyvy;
+  }
+  // Coalesce contiguous rows.
+  if (src_stride_y == width &&
+      src_stride_u * 2 == width &&
+      src_stride_v * 2 == width &&
+      dst_stride_uyvy == width * 2) {
+    return I422ToUYVY(src_y, 0,
+                      src_u, 0,
+                      src_v, 0,
+                      dst_uyvy, 0,
+                      width * height, 1);
   }
   void (*I422ToUYVYRow)(const uint8* src_y, const uint8* src_u,
                         const uint8* src_v, uint8* dst_uyvy, int width) =
@@ -428,8 +461,20 @@ int I420ToNV12(const uint8* src_y, int src_stride_y,
     dst_stride_y = -dst_stride_y;
     dst_stride_uv = -dst_stride_uv;
   }
-
+  // Coalesce contiguous rows.
   int halfwidth = (width + 1) >> 1;
+  int halfheight = (height + 1) >> 1;
+  if (src_stride_y == width &&
+      dst_stride_y == width) {
+    width = width * height;
+    height = 1;
+  }
+  if (src_stride_u * 2 == width &&
+      src_stride_v * 2 == width &&
+      dst_stride_uv == width) {
+    halfwidth = halfwidth * halfheight;
+    halfheight = 1;
+  }
   void (*MergeUVRow_)(const uint8* src_u, const uint8* src_v, uint8* dst_uv,
                       int width) = MergeUVRow_C;
 #if defined(HAS_MERGEUVROW_SSE2)
@@ -446,15 +491,12 @@ int I420ToNV12(const uint8* src_y, int src_stride_y,
   }
 #endif
 #if defined(HAS_MERGEUVROW_AVX2)
+  bool clear = false;
   if (TestCpuFlag(kCpuHasAVX2) && halfwidth >= 32) {
+    clear = true;
     MergeUVRow_ = MergeUVRow_Any_AVX2;
     if (IS_ALIGNED(halfwidth, 32)) {
-      MergeUVRow_ = MergeUVRow_Unaligned_AVX2;
-      if (IS_ALIGNED(src_u, 32) && IS_ALIGNED(src_stride_u, 32) &&
-          IS_ALIGNED(src_v, 32) && IS_ALIGNED(src_stride_v, 32) &&
-          IS_ALIGNED(dst_uv, 32) && IS_ALIGNED(dst_stride_uv, 32)) {
-        MergeUVRow_ = MergeUVRow_AVX2;
-      }
+      MergeUVRow_ = MergeUVRow_AVX2;
     }
   }
 #endif
@@ -468,7 +510,6 @@ int I420ToNV12(const uint8* src_y, int src_stride_y,
 #endif
 
   CopyPlane(src_y, src_stride_y, dst_y, dst_stride_y, width, height);
-  int halfheight = (height + 1) >> 1;
   for (int y = 0; y < halfheight; ++y) {
     // Merge a row of U and V into a row of UV.
     MergeUVRow_(src_u, src_v, dst_uv, halfwidth);
@@ -476,6 +517,12 @@ int I420ToNV12(const uint8* src_y, int src_stride_y,
     src_v += src_stride_v;
     dst_uv += dst_stride_uv;
   }
+#if defined(HAS_MERGEUVROW_AVX2)
+  if (clear) {
+    __asm vzeroupper;
+  }
+#endif
+
   return 0;
 }
 
@@ -1119,6 +1166,31 @@ int ConvertFromI420(const uint8* y, int y_stride,
                    dst_sample_stride ? dst_sample_stride : width,
                    width, height);
       break;
+    case FOURCC_NV12: {
+      uint8* dst_uv = dst_sample + width * height;
+      r = I420ToNV12(y, y_stride,
+                     u, u_stride,
+                     v, v_stride,
+                     dst_sample,
+                     dst_sample_stride ? dst_sample_stride : width,
+                     dst_uv,
+                     dst_sample_stride ? dst_sample_stride : width,
+                     width, height);
+      break;
+    }
+    case FOURCC_NV21: {
+      uint8* dst_vu = dst_sample + width * height;
+      r = I420ToNV21(y, y_stride,
+                     u, u_stride,
+                     v, v_stride,
+                     dst_sample,
+                     dst_sample_stride ? dst_sample_stride : width,
+                     dst_vu,
+                     dst_sample_stride ? dst_sample_stride : width,
+                     width, height);
+      break;
+    }
+    // TODO(fbarchard): Add M420 and Q420.
     // Triplanar formats
     // TODO(fbarchard): halfstride instead of halfwidth
     case FOURCC_I420:

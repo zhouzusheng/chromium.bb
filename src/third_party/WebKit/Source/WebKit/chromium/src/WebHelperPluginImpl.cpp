@@ -139,7 +139,7 @@ void WebHelperPluginImpl::closeHelperPlugin()
     // We must destroy the page now in case the host page is being destroyed, in
     // which case some of the objects the page depends on may have been
     // destroyed by the time this->close() is called asynchronously.
-    destoryPage();
+    destroyPage();
 
     // m_widgetClient might be 0 because this widget might be already closed.
     if (m_widgetClient) {
@@ -166,7 +166,7 @@ WebPlugin* WebHelperPluginImpl::getPlugin()
         return 0;
     Node* node = objectElements->item(0);
     ASSERT(node->hasTagName(WebCore::HTMLNames::objectTag));
-    WebCore::Widget* widget = static_cast<HTMLPlugInElement*>(node)->pluginWidget();
+    WebCore::Widget* widget = toHTMLPlugInElement(node)->pluginWidget();
     if (!widget)
         return 0;
     WebPlugin* plugin = static_cast<WebPluginContainerImpl*>(widget)->plugin();
@@ -209,7 +209,7 @@ bool WebHelperPluginImpl::initializePage(const String& pluginType, const WebDocu
     return true;
 }
 
-void WebHelperPluginImpl::destoryPage()
+void WebHelperPluginImpl::destroyPage()
 {
     if (!m_page)
         return;
@@ -218,14 +218,6 @@ void WebHelperPluginImpl::destoryPage()
         m_page->mainFrame()->loader()->frameDetached();
 
     m_page.clear();
-}
-
-void WebHelperPluginImpl::setCompositorSurfaceReady()
-{
-}
-
-void WebHelperPluginImpl::composite(bool)
-{
 }
 
 void WebHelperPluginImpl::layout()

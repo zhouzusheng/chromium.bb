@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -17,8 +17,7 @@ extern "C" {
 #endif
 
 // This module is for GCC Neon
-#if !defined(YUV_DISABLE_ASM) && defined(__ARM_NEON__)
-
+#if !defined(LIBYUV_DISABLE_NEON) && defined(__ARM_NEON__)
 
 void ScaleARGBRowDown2_NEON(const uint8* src_ptr, ptrdiff_t /* src_stride */,
                             uint8* dst, int dst_width) {

@@ -89,9 +89,7 @@ namespace webkit_glue {
 bool g_forcefully_terminate_plugin_process = false;
 
 void SetJavaScriptFlags(const std::string& str) {
-#if WEBKIT_USING_V8
   v8::V8::SetFlagsFromString(str.data(), static_cast<int>(str.size()));
-#endif
 }
 
 void EnableWebCoreLogChannels(const std::string& channels) {
@@ -269,11 +267,7 @@ bool DecodeImage(const std::string& image_data, SkBitmap* image) {
   if (web_image.isNull())
     return false;
 
-#if defined(OS_MACOSX) && !defined(USE_SKIA)
-  *image = gfx::CGImageToSkBitmap(web_image.getCGImageRef());
-#else
   *image = web_image.getSkBitmap();
-#endif
   return true;
 }
 
@@ -351,7 +345,9 @@ size_t MemoryUsageKB() {
       >> 10;
 
   v8::HeapStatistics stat;
-  v8::V8::GetHeapStatistics(&stat);
+  // TODO(svenpanne) The call below doesn't take web workers into account, this
+  // has to be done manually by iterating over all Isolates involved.
+  v8::Isolate::GetCurrent()->GetHeapStatistics(&stat);
   return mem_usage + (static_cast<uint64_t>(stat.total_heap_size()) >> 10);
 }
 #elif defined(OS_MACOSX)
@@ -371,5 +367,9 @@ size_t MemoryUsageKB() {
   return process_metrics->GetPagefileUsage() >> 10;
 }
 #endif
+
+double ZoomFactorToZoomLevel(double factor) {
+  return WebView::zoomFactorToZoomLevel(factor);
+}
 
 } // namespace webkit_glue

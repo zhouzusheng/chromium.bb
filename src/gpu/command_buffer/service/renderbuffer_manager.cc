@@ -23,27 +23,27 @@ RenderbufferManager::RenderbufferManager(
       max_renderbuffer_size_(max_renderbuffer_size),
       max_samples_(max_samples),
       num_uncleared_renderbuffers_(0),
-      renderbuffer_info_count_(0),
+      renderbuffer_count_(0),
       have_context_(true) {
 }
 
 RenderbufferManager::~RenderbufferManager() {
-  DCHECK(renderbuffer_infos_.empty());
+  DCHECK(renderbuffers_.empty());
   // If this triggers, that means something is keeping a reference to
-  // a RenderbufferInfo belonging to this.
-  CHECK_EQ(renderbuffer_info_count_, 0u);
+  // a Renderbuffer belonging to this.
+  CHECK_EQ(renderbuffer_count_, 0u);
 
   DCHECK_EQ(0, num_uncleared_renderbuffers_);
 }
 
-size_t RenderbufferManager::RenderbufferInfo::EstimatedSize() {
+size_t Renderbuffer::EstimatedSize() {
   uint32 size = 0;
   RenderbufferManager::ComputeEstimatedRenderbufferSize(
       width_, height_, samples_, internal_format_, &size);
   return size;
 }
 
-void RenderbufferManager::RenderbufferInfo::AddToSignature(
+void Renderbuffer::AddToSignature(
     std::string* signature) const {
   DCHECK(signature);
   *signature += base::StringPrintf(
@@ -51,7 +51,20 @@ void RenderbufferManager::RenderbufferInfo::AddToSignature(
       internal_format_, samples_, width_, height_);
 }
 
-RenderbufferManager::RenderbufferInfo::~RenderbufferInfo() {
+Renderbuffer::Renderbuffer(RenderbufferManager* manager, GLuint service_id)
+    : manager_(manager),
+      deleted_(false),
+      service_id_(service_id),
+      cleared_(true),
+      has_been_bound_(false),
+      samples_(0),
+      internal_format_(GL_RGBA4),
+      width_(0),
+      height_(0) {
+  manager_->StartTracking(this);
+}
+
+Renderbuffer::~Renderbuffer() {
   if (manager_) {
     if (manager_->have_context_) {
       GLuint id = service_id();
@@ -64,16 +77,16 @@ RenderbufferManager::RenderbufferInfo::~RenderbufferInfo() {
 
 void RenderbufferManager::Destroy(bool have_context) {
   have_context_ = have_context;
-  renderbuffer_infos_.clear();
+  renderbuffers_.clear();
   DCHECK_EQ(0u, memory_tracker_->GetMemRepresented());
 }
 
-void RenderbufferManager::StartTracking(RenderbufferInfo* /* renderbuffer */) {
-  ++renderbuffer_info_count_;
+void RenderbufferManager::StartTracking(Renderbuffer* /* renderbuffer */) {
+  ++renderbuffer_count_;
 }
 
-void RenderbufferManager::StopTracking(RenderbufferInfo* renderbuffer) {
-  --renderbuffer_info_count_;
+void RenderbufferManager::StopTracking(Renderbuffer* renderbuffer) {
+  --renderbuffer_count_;
   if (!renderbuffer->cleared()) {
     --num_uncleared_renderbuffers_;
   }
@@ -81,7 +94,7 @@ void RenderbufferManager::StopTracking(RenderbufferInfo* renderbuffer) {
 }
 
 void RenderbufferManager::SetInfo(
-    RenderbufferInfo* renderbuffer,
+    Renderbuffer* renderbuffer,
     GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height) {
   DCHECK(renderbuffer);
   if (!renderbuffer->cleared()) {
@@ -95,7 +108,7 @@ void RenderbufferManager::SetInfo(
   }
 }
 
-void RenderbufferManager::SetCleared(RenderbufferInfo* renderbuffer,
+void RenderbufferManager::SetCleared(Renderbuffer* renderbuffer,
                                      bool cleared) {
   DCHECK(renderbuffer);
   if (!renderbuffer->cleared()) {
@@ -107,37 +120,37 @@ void RenderbufferManager::SetCleared(RenderbufferInfo* renderbuffer,
   }
 }
 
-void RenderbufferManager::CreateRenderbufferInfo(
+void RenderbufferManager::CreateRenderbuffer(
     GLuint client_id, GLuint service_id) {
-  RenderbufferInfo::Ref info(new RenderbufferInfo(this, service_id));
-  std::pair<RenderbufferInfoMap::iterator, bool> result =
-      renderbuffer_infos_.insert(std::make_pair(client_id, info));
+  scoped_refptr<Renderbuffer> renderbuffer(new Renderbuffer(this, service_id));
+  std::pair<RenderbufferMap::iterator, bool> result =
+      renderbuffers_.insert(std::make_pair(client_id, renderbuffer));
   DCHECK(result.second);
-  if (!info->cleared()) {
+  if (!renderbuffer->cleared()) {
     ++num_uncleared_renderbuffers_;
   }
 }
 
-RenderbufferManager::RenderbufferInfo* RenderbufferManager::GetRenderbufferInfo(
+Renderbuffer* RenderbufferManager::GetRenderbuffer(
     GLuint client_id) {
-  RenderbufferInfoMap::iterator it = renderbuffer_infos_.find(client_id);
-  return it != renderbuffer_infos_.end() ? it->second : NULL;
+  RenderbufferMap::iterator it = renderbuffers_.find(client_id);
+  return it != renderbuffers_.end() ? it->second : NULL;
 }
 
-void RenderbufferManager::RemoveRenderbufferInfo(GLuint client_id) {
-  RenderbufferInfoMap::iterator it = renderbuffer_infos_.find(client_id);
-  if (it != renderbuffer_infos_.end()) {
-    RenderbufferInfo* info = it->second;
-    info->MarkAsDeleted();
-    renderbuffer_infos_.erase(it);
+void RenderbufferManager::RemoveRenderbuffer(GLuint client_id) {
+  RenderbufferMap::iterator it = renderbuffers_.find(client_id);
+  if (it != renderbuffers_.end()) {
+    Renderbuffer* renderbuffer = it->second;
+    renderbuffer->MarkAsDeleted();
+    renderbuffers_.erase(it);
   }
 }
 
 bool RenderbufferManager::GetClientId(
     GLuint service_id, GLuint* client_id) const {
   // This doesn't need to be fast. It's only used during slow queries.
-  for (RenderbufferInfoMap::const_iterator it = renderbuffer_infos_.begin();
-       it != renderbuffer_infos_.end(); ++it) {
+  for (RenderbufferMap::const_iterator it = renderbuffers_.begin();
+       it != renderbuffers_.end(); ++it) {
     if (it->second->service_id() == service_id) {
       *client_id = it->first;
       return true;

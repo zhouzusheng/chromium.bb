@@ -36,7 +36,7 @@
  */
 WebInspector.CSSMetadata = function(properties)
 {
-    this._values = [];
+    this._values = /** !Array.<string> */ ([]);
     this._longhands = {};
     this._shorthands = {};
     for (var i = 0; i < properties.length; ++i) {
@@ -67,9 +67,9 @@ WebInspector.CSSMetadata = function(properties)
 }
 
 /**
- * @type {WebInspector.CSSMetadata}
+ * @type {!WebInspector.CSSMetadata}
  */
-WebInspector.CSSMetadata.cssPropertiesMetainfo = null;
+WebInspector.CSSMetadata.cssPropertiesMetainfo = new WebInspector.CSSMetadata([]);
 
 WebInspector.CSSMetadata.isColorAwareProperty = function(propertyName)
 {
@@ -673,18 +673,16 @@ WebInspector.CSSMetadata._propertyDataMap = {
 
 /**
  * @param {string} propertyName
- * @return {WebInspector.CSSMetadata}
+ * @return {!WebInspector.CSSMetadata}
  */
 WebInspector.CSSMetadata.keywordsForProperty = function(propertyName)
 {
-    var acceptedKeywords = ["initial"];
+    var acceptedKeywords = ["inherit", "initial"];
     var descriptor = WebInspector.CSSMetadata.descriptor(propertyName);
     if (descriptor && descriptor.values)
         acceptedKeywords.push.apply(acceptedKeywords, descriptor.values);
     if (propertyName in WebInspector.CSSMetadata._colorAwareProperties)
         acceptedKeywords.push.apply(acceptedKeywords, WebInspector.CSSMetadata._colors);
-    if (propertyName in WebInspector.CSSMetadata.InheritedProperties)
-        acceptedKeywords.push("inherit");
     return new WebInspector.CSSMetadata(acceptedKeywords);
 }
 
@@ -841,6 +839,10 @@ WebInspector.CSSMetadata.Weight = {
 
 
 WebInspector.CSSMetadata.prototype = {
+    /**
+     * @param {string} prefix
+     * @return {!Array.<string>}
+     */
     startsWith: function(prefix)
     {
         var firstIndex = this._firstIndexOfPrefix(prefix);

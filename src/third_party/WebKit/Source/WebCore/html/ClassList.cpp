@@ -31,6 +31,8 @@
 
 namespace WebCore {
 
+using namespace HTMLNames;
+
 ClassList::ClassList(Element* element) : m_element(element) { }
 
 void ClassList::ref()
@@ -68,7 +70,7 @@ const SpaceSplitString& ClassList::classNames() const
             m_classNamesForQuirksMode = adoptPtr(new SpaceSplitString(value(), false));
         return *m_classNamesForQuirksMode.get();
     }
-    return m_element->attributeData()->classNames();
+    return m_element->elementData()->classNames();
 }
 
 } // namespace WebCore

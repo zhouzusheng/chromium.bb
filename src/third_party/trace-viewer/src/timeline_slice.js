@@ -13,6 +13,9 @@ base.exportTo('tracing', function() {
    * A TimelineSlice represents an interval of time plus parameters associated
    * with that interval.
    *
+   * NOTE: The TimelineSample class implements the same interface as
+   * TimelineSlice. These must be kept in sync.
+   *
    * All time units are stored in milliseconds.
    * @constructor
    */

@@ -336,33 +336,6 @@ class BASE_EXPORT DictionaryValue : public Value {
   // Swaps contents with the |other| dictionary.
   virtual void Swap(DictionaryValue* other);
 
-  // This class provides an iterator for the keys in the dictionary.
-  // It can't be used to modify the dictionary.
-  //
-  // YOU SHOULD ALWAYS USE THE XXXWithoutPathExpansion() APIs WITH THESE, NOT
-  // THE NORMAL XXX() APIs.  This makes sure things will work correctly if any
-  // keys have '.'s in them.
-  class BASE_EXPORT key_iterator
-      : private std::iterator<std::input_iterator_tag, const std::string> {
-   public:
-    explicit key_iterator(ValueMap::const_iterator itr);
-    // Not explicit, because this is a copy constructor.
-    key_iterator(const key_iterator& rhs);
-    key_iterator operator++() {
-      ++itr_;
-      return *this;
-    }
-    const std::string& operator*() { return itr_->first; }
-    bool operator!=(const key_iterator& other) { return itr_ != other.itr_; }
-    bool operator==(const key_iterator& other) { return itr_ == other.itr_; }
-
-   private:
-    ValueMap::const_iterator itr_;
-  };
-
-  key_iterator begin_keys() const { return key_iterator(dictionary_.begin()); }
-  key_iterator end_keys() const { return key_iterator(dictionary_.end()); }
-
   // This class provides an iterator over both keys and values in the
   // dictionary.  It can't be used to modify the dictionary.
   class BASE_EXPORT Iterator {
@@ -453,7 +426,9 @@ class BASE_EXPORT ListValue : public Value {
 
   // Removes the element at |iter|. If |out_value| is NULL, the value will be
   // deleted, otherwise ownership of the value is passed back to the caller.
-  void Erase(iterator iter, Value** out_value);
+  // Returns an iterator pointing to the location of the element that
+  // followed the erased element.
+  iterator Erase(iterator iter, Value** out_value);
 
   // Appends a Value to the end of the list.
   void Append(Value* in_value);

@@ -10,6 +10,7 @@
 #include "net/base/request_priority.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_header_block.h"
+#include "net/spdy/spdy_protocol.h"
 
 namespace net {
 
@@ -41,8 +42,16 @@ GURL GetUrlFromHeaderBlock(const SpdyHeaderBlock& headers,
                            int protocol_version,
                            bool pushed);
 
+// Returns true if the value of this header should be displayed.
+NET_EXPORT_PRIVATE bool ShouldShowHttpHeaderValue(
+    const std::string& header_name);
+
 NET_EXPORT_PRIVATE SpdyPriority ConvertRequestPriorityToSpdyPriority(
     RequestPriority priority,
+    int protocol_version);
+
+NET_EXPORT_PRIVATE RequestPriority ConvertSpdyPriorityToRequestPriority(
+    SpdyPriority priority,
     int protocol_version);
 
 }  // namespace net

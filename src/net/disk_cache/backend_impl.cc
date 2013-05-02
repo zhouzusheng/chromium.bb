@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/hash.h"
 #include "base/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -17,8 +17,8 @@
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/sys_info.h"
-#include "base/threading/worker_pool.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/threading/worker_pool.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "net/base/net_errors.h"
@@ -28,6 +28,7 @@
 #include "net/disk_cache/experiments.h"
 #include "net/disk_cache/file.h"
 #include "net/disk_cache/mem_backend_impl.h"
+#include "net/disk_cache/simple/simple_backend_impl.h"
 
 // This has to be defined before including histogram_macros.h from this file.
 #define NET_DISK_CACHE_BACKEND_IMPL_CC_
@@ -262,6 +263,7 @@ int CreateCacheBackend(net::CacheType type, const base::FilePath& path,
                        bool force, base::MessageLoopProxy* thread,
                        net::NetLog* net_log, Backend** backend,
                        const net::CompletionCallback& callback) {
+  // TODO(pasko): Separate out cache creation when landing cache tracer.
   DCHECK(!callback.is_null());
   if (type == net::MEMORY_CACHE) {
     *backend = MemBackendImpl::CreateBackend(max_bytes, net_log);
@@ -269,8 +271,17 @@ int CreateCacheBackend(net::CacheType type, const base::FilePath& path,
   }
   DCHECK(thread);
 
-  return BackendImpl::CreateBackend(path, force, max_bytes, type, kNone, thread,
-                                    net_log, backend, callback);
+#if defined(USE_SIMPLE_CACHE_BACKEND)
+  // TODO(gavinp,pasko): While simple backend development proceeds, we're only
+  // testing it against net::DISK_CACHE. Turn it on for more cache types as
+  // appropriate.
+  if (type == net::DISK_CACHE) {
+    return SimpleBackendImpl::CreateBackend(path, force, max_bytes, type, kNone,
+                                            thread, net_log, backend, callback);
+  }
+#endif
+  return BackendImpl::CreateBackend(path, force, max_bytes, type, kNone,
+                                    thread, net_log, backend, callback);
 }
 
 // Returns the preferred maximum number of bytes for the cache given the
@@ -478,6 +489,8 @@ int BackendImpl::SyncInit() {
   if (cache_type() == net::APP_CACHE) {
     DCHECK(!new_eviction_);
     read_only_ = true;
+  } else if (cache_type() == net::SHADER_CACHE) {
+    DCHECK(!new_eviction_);
   }
 
   eviction_.Init(this);
@@ -670,7 +683,7 @@ void BackendImpl::SyncOnExternalCacheHit(const std::string& key) {
   EntryImpl* cache_entry = MatchEntry(key, hash, false, Addr(), &error);
   if (cache_entry) {
     if (ENTRY_NORMAL == cache_entry->entry()->Data()->state) {
-      UpdateRank(cache_entry, false);
+      UpdateRank(cache_entry, cache_type() == net::SHADER_CACHE);
     }
     cache_entry->Release();
   }
@@ -922,9 +935,9 @@ LruData* BackendImpl::GetLruData() {
 }
 
 void BackendImpl::UpdateRank(EntryImpl* entry, bool modified) {
-  if (!read_only_) {
-    eviction_.UpdateRank(entry, modified);
-  }
+  if (read_only_ || (!modified && cache_type() == net::SHADER_CACHE))
+    return;
+  eviction_.UpdateRank(entry, modified);
 }
 
 void BackendImpl::RecoveredEntry(CacheRankingsBlock* rankings) {

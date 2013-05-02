@@ -7,6 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/platform_file.h"
 #include "content/public/renderer/content_renderer_client.h"
 
 namespace WebKit {
@@ -17,15 +18,25 @@ struct WebPluginParams;
 
 // SHEZ: Remove upstream test-related forward declaration here.
 
+namespace webkit_glue {
+class MockWebHyphenator;
+}
+
+class MockWebClipboardImpl;
+class TestShellWebMimeRegistryImpl;
+
 namespace content {
 
-class RenderView;
 class ShellRenderProcessObserver;
 
 class ShellContentRendererClient : public ContentRendererClient {
  public:
   ShellContentRendererClient();
   virtual ~ShellContentRendererClient();
+
+  void LoadHyphenDictionary(base::PlatformFile dict_file);
+
+  // ContentRendererClient implementation.
   virtual void RenderThreadStarted() OVERRIDE;
   virtual void RenderViewCreated(RenderView* render_view) OVERRIDE;
   virtual bool OverrideCreatePlugin(
@@ -33,14 +44,25 @@ class ShellContentRendererClient : public ContentRendererClient {
       WebKit::WebFrame* frame,
       const WebKit::WebPluginParams& params,
       WebKit::WebPlugin** plugin) OVERRIDE;
-  virtual bool WillSendRequest(WebKit::WebFrame* frame,
-                               PageTransition transition_type,
-                               const GURL& url,
-                               const GURL& first_party_for_cookies,
-                               GURL* new_url) OVERRIDE;
+  virtual WebKit::WebMediaStreamCenter* OverrideCreateWebMediaStreamCenter(
+      WebKit::WebMediaStreamCenterClient* client) OVERRIDE;
+  virtual WebKit::WebRTCPeerConnectionHandler*
+  OverrideCreateWebRTCPeerConnectionHandler(
+      WebKit::WebRTCPeerConnectionHandlerClient* client) OVERRIDE;
+  virtual WebKit::WebClipboard* OverrideWebClipboard() OVERRIDE;
+  virtual WebKit::WebMimeRegistry* OverrideWebMimeRegistry() OVERRIDE;
+  virtual WebKit::WebHyphenator* OverrideWebHyphenator() OVERRIDE;
+  virtual WebKit::WebThemeEngine* OverrideThemeEngine() OVERRIDE;
+  virtual bool AllowBrowserPlugin(
+      WebKit::WebPluginContainer* container) const OVERRIDE;
 
  private:
+   // SHEZ: remove upstream code here, used only for testing
+
   scoped_ptr<ShellRenderProcessObserver> shell_observer_;
+  scoped_ptr<MockWebClipboardImpl> clipboard_;
+  scoped_ptr<TestShellWebMimeRegistryImpl> mime_registry_;
+  scoped_ptr<webkit_glue::MockWebHyphenator> hyphenator_;
 };
 
 }  // namespace content

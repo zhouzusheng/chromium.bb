@@ -21,12 +21,13 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
       public QuicReliableClientStream::Delegate,
       public HttpStream {
  public:
-  QuicHttpStream(QuicReliableClientStream* stream, bool use_spdy);
+  explicit QuicHttpStream(QuicReliableClientStream* stream);
 
   virtual ~QuicHttpStream();
 
   // HttpStream implementation.
   virtual int InitializeStream(const HttpRequestInfo* request_info,
+                               RequestPriority priority,
                                const BoundNetLog& net_log,
                                const CompletionCallback& callback) OVERRIDE;
   virtual int SendRequest(const HttpRequestHeaders& request_headers,
@@ -42,7 +43,6 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   virtual HttpStream* RenewStreamForAuth() OVERRIDE;
   virtual bool IsResponseBodyComplete() const OVERRIDE;
   virtual bool CanFindEndOfResponse() const OVERRIDE;
-  virtual bool IsMoreDataBuffered() const OVERRIDE;
   virtual bool IsConnectionReused() const OVERRIDE;
   virtual void SetConnectionReused() OVERRIDE;
   virtual bool IsConnectionReusable() const OVERRIDE;
@@ -91,7 +91,7 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
 
   void BufferResponseBody(const char* data, int length);
 
-  State io_state_;
+  State next_state_;
 
   QuicReliableClientStream* stream_;  // Non-owning.
 
@@ -112,9 +112,6 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   int response_status_;
 
   bool response_headers_received_;
-
-  // True if the request and response bodies should be serialized via SPDY.
-  bool use_spdy_;
 
   // Serialized HTTP request.
   std::string request_;
@@ -137,6 +134,8 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   scoped_refptr<IOBufferWithSize> raw_request_body_buf_;
   // Wraps raw_request_body_buf_ to read the remaining data progressively.
   scoped_refptr<DrainableIOBuffer> request_body_buf_;
+
+  BoundNetLog stream_net_log_;
 
   base::WeakPtrFactory<QuicHttpStream> weak_factory_;
 };

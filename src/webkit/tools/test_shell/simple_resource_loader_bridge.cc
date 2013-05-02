@@ -34,8 +34,8 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
@@ -965,6 +965,10 @@ class ResourceLoaderBridgeImpl : public ResourceLoaderBridge {
     proxy_->Start(NULL, params_.release());
 
     static_cast<SyncRequestProxy*>(proxy_)->WaitForCompletion();
+  }
+
+  virtual void DidChangePriority(net::RequestPriority new_priority) OVERRIDE {
+    // Not really needed for DRT.
   }
 
  private:

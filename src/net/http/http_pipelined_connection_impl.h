@@ -16,11 +16,11 @@
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
-#include "net/base/ssl_config_service.h"
 #include "net/http/http_pipelined_connection.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_stream_parser.h"
 #include "net/proxy/proxy_info.h"
+#include "net/ssl/ssl_config_service.h"
 
 namespace net {
 
@@ -120,8 +120,6 @@ class NET_EXPORT_PRIVATE HttpPipelinedConnectionImpl
   bool IsResponseBodyComplete(int pipeline_id) const;
 
   bool CanFindEndOfResponse(int pipeline_id) const;
-
-  bool IsMoreDataBuffered(int pipeline_id) const;
 
   bool IsConnectionReused(int pipeline_id) const;
 

@@ -39,7 +39,9 @@
 #include "CSSValueKeywords.h"
 #include "ChildListMutationScope.h"
 #include "ContextFeatures.h"
+#if ENABLE(DELETION_UI)
 #include "DeleteButtonController.h"
+#endif
 #include "DocumentFragment.h"
 #include "DocumentType.h"
 #include "Editor.h"
@@ -54,15 +56,16 @@
 #include "MarkupAccumulator.h"
 #include "NodeTraversal.h"
 #include "Range.h"
+#include "RenderBlock.h"
 #include "RenderObject.h"
 #include "Settings.h"
 #include "StylePropertySet.h"
 #include "StyleResolver.h"
 #include "TextIterator.h"
 #include "VisibleSelection.h"
+#include "VisibleUnits.h"
 #include "XMLNSNames.h"
 #include "htmlediting.h"
-#include "visible_units.h"
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/StringBuilder.h>
 #include <wtf/unicode/CharacterNames.h>
@@ -168,7 +171,7 @@ void StyledMarkupAccumulator::wrapWithNode(Node* node, bool convertBlocksToInlin
 {
     StringBuilder markup;
     if (node->isElementNode())
-        appendElement(markup, static_cast<Element*>(node), convertBlocksToInlines && isBlock(const_cast<Node*>(node)), rangeFullySelectsNode);
+        appendElement(markup, toElement(node), convertBlocksToInlines && isBlock(const_cast<Node*>(node)), rangeFullySelectsNode);
     else
         appendStartMarkup(markup, node, 0);
     m_reversedPrecedingMarkup.append(markup.toString());
@@ -290,7 +293,7 @@ void StyledMarkupAccumulator::appendElement(StringBuilder& out, Element* element
     const unsigned length = element->hasAttributes() ? element->attributeCount() : 0;
     const bool shouldAnnotateOrForceInline = element->isHTMLElement() && (shouldAnnotate() || addDisplayInline);
     const bool shouldOverrideStyleAttr = shouldAnnotateOrForceInline || shouldApplyWrappingStyle(element);
-    for (unsigned int i = 0; i < length; i++) {
+    for (unsigned i = 0; i < length; ++i) {
         const Attribute* attribute = element->attributeItem(i);
         // We'll handle the style attribute separately, below.
         if (attribute->name() == styleAttr && shouldOverrideStyleAttr)
@@ -503,7 +506,7 @@ static bool isElementPresentational(const Node* node)
         || node->hasTagName(iTag) || node->hasTagName(emTag) || node->hasTagName(bTag) || node->hasTagName(strongTag);
 }
 
-static Node* highestAncestorToWrapMarkup(const Range* range, EAnnotateForInterchange shouldAnnotate)
+static Node* highestAncestorToWrapMarkup(const Range* range, EAnnotateForInterchange shouldAnnotate, Node* constrainingAncestor)
 {
     Node* commonAncestor = range->commonAncestorContainer(IGNORE_EXCEPTION);
     ASSERT(commonAncestor);
@@ -513,6 +516,14 @@ static Node* highestAncestorToWrapMarkup(const Range* range, EAnnotateForInterch
         // the structure and appearance of the copied markup.
         specialCommonAncestor = ancestorToRetainStructureAndAppearance(commonAncestor);
 
+        if (Node* parentListNode = enclosingNodeOfType(firstPositionInOrBeforeNode(range->firstNode()), isListItem)) {
+            if (WebCore::areRangesEqual(VisibleSelection::selectionFromContentsOfNode(parentListNode).toNormalizedRange().get(), range)) {
+                specialCommonAncestor = parentListNode->parentNode();
+                while (specialCommonAncestor && !isListElement(specialCommonAncestor))
+                    specialCommonAncestor = specialCommonAncestor->parentNode();
+            }
+        }
+
         // Retain the Mail quote level by including all ancestor mail block quotes.
         if (Node* highestMailBlockquote = highestEnclosingNodeOfType(firstPositionInOrBeforeNode(range->firstNode()), isMailBlockquote, CanCrossEditingBoundary))
             specialCommonAncestor = highestMailBlockquote;
@@ -520,7 +531,7 @@ static Node* highestAncestorToWrapMarkup(const Range* range, EAnnotateForInterch
 
     Node* checkAncestor = specialCommonAncestor ? specialCommonAncestor : commonAncestor;
     if (checkAncestor->renderer()) {
-        Node* newSpecialCommonAncestor = highestEnclosingNodeOfType(firstPositionInNode(checkAncestor), &isElementPresentational);
+        Node* newSpecialCommonAncestor = highestEnclosingNodeOfType(firstPositionInNode(checkAncestor), &isElementPresentational, CanCrossEditingBoundary, constrainingAncestor);
         if (newSpecialCommonAncestor)
             specialCommonAncestor = newSpecialCommonAncestor;
     }
@@ -542,34 +553,20 @@ static Node* highestAncestorToWrapMarkup(const Range* range, EAnnotateForInterch
 
 // FIXME: Shouldn't we omit style info when annotate == DoNotAnnotateForInterchange? 
 // FIXME: At least, annotation and style info should probably not be included in range.markupString()
-String createMarkup(const Range* range, Vector<Node*>* nodes, EAnnotateForInterchange shouldAnnotate, bool convertBlocksToInlines, EAbsoluteURLs shouldResolveURLs)
+static String createMarkupInternal(Document* document, const Range* range, const Range* updatedRange, Vector<Node*>* nodes,
+    EAnnotateForInterchange shouldAnnotate, bool convertBlocksToInlines, EAbsoluteURLs shouldResolveURLs, Node* constrainingAncestor)
 {
+    ASSERT(document);
+    ASSERT(range);
+    ASSERT(updatedRange);
     DEFINE_STATIC_LOCAL(const String, interchangeNewlineString, (ASCIILiteral("<br class=\"" AppleInterchangeNewline "\">")));
-
-    if (!range)
-        return "";
-
-    Document* document = range->ownerDocument();
-    if (!document)
-        return "";
-
-    // Disable the delete button so it's elements are not serialized into the markup,
-    // but make sure neither endpoint is inside the delete user interface.
-    Frame* frame = document->frame();
-    DeleteButtonController* deleteButton = frame ? frame->editor()->deleteButtonController() : 0;
-    RefPtr<Range> updatedRange = avoidIntersectionWithNode(range, deleteButton ? deleteButton->containerElement() : 0);
-    if (!updatedRange)
-        return "";
-
-    if (deleteButton)
-        deleteButton->disable();
 
     bool collapsed = updatedRange->collapsed(ASSERT_NO_EXCEPTION);
     if (collapsed)
-        return "";
+        return emptyString();
     Node* commonAncestor = updatedRange->commonAncestorContainer(ASSERT_NO_EXCEPTION);
     if (!commonAncestor)
-        return "";
+        return emptyString();
 
     document->updateLayoutIgnorePendingStylesheets();
 
@@ -578,28 +575,22 @@ String createMarkup(const Range* range, Vector<Node*>* nodes, EAnnotateForInterc
     // FIXME: Do this for all fully selected blocks, not just the body.
     if (body && areRangesEqual(VisibleSelection::selectionFromContentsOfNode(body).toNormalizedRange().get(), range))
         fullySelectedRoot = body;
-    Node* specialCommonAncestor = highestAncestorToWrapMarkup(updatedRange.get(), shouldAnnotate);
-    StyledMarkupAccumulator accumulator(nodes, shouldResolveURLs, shouldAnnotate, updatedRange.get(), specialCommonAncestor);
+    Node* specialCommonAncestor = highestAncestorToWrapMarkup(updatedRange, shouldAnnotate, constrainingAncestor);
+    StyledMarkupAccumulator accumulator(nodes, shouldResolveURLs, shouldAnnotate, updatedRange, specialCommonAncestor);
     Node* pastEnd = updatedRange->pastLastNode();
 
     Node* startNode = updatedRange->firstNode();
     VisiblePosition visibleStart(updatedRange->startPosition(), VP_DEFAULT_AFFINITY);
     VisiblePosition visibleEnd(updatedRange->endPosition(), VP_DEFAULT_AFFINITY);
     if (shouldAnnotate == AnnotateForInterchange && needInterchangeNewlineAfter(visibleStart)) {
-        if (visibleStart == visibleEnd.previous()) {
-            if (deleteButton)
-                deleteButton->enable();
+        if (visibleStart == visibleEnd.previous())
             return interchangeNewlineString;
-        }
 
         accumulator.appendString(interchangeNewlineString);
         startNode = visibleStart.next().deepEquivalent().deprecatedNode();
 
-        if (pastEnd && Range::compareBoundaryPoints(startNode, 0, pastEnd, 0, ASSERT_NO_EXCEPTION) >= 0) {
-            if (deleteButton)
-                deleteButton->enable();
+        if (pastEnd && Range::compareBoundaryPoints(startNode, 0, pastEnd, 0, ASSERT_NO_EXCEPTION) >= 0)
             return interchangeNewlineString;
-        }
     }
 
     Node* lastClosed = accumulator.serializeNodes(startNode, pastEnd);
@@ -613,8 +604,8 @@ String createMarkup(const Range* range, Vector<Node*>* nodes, EAnnotateForInterc
                 // Bring the background attribute over, but not as an attribute because a background attribute on a div
                 // appears to have no effect.
                 if ((!fullySelectedRootStyle || !fullySelectedRootStyle->style() || !fullySelectedRootStyle->style()->getPropertyCSSValue(CSSPropertyBackgroundImage))
-                    && static_cast<Element*>(fullySelectedRoot)->hasAttribute(backgroundAttr))
-                    fullySelectedRootStyle->style()->setProperty(CSSPropertyBackgroundImage, "url('" + static_cast<Element*>(fullySelectedRoot)->getAttribute(backgroundAttr) + "')");
+                    && toElement(fullySelectedRoot)->hasAttribute(backgroundAttr))
+                    fullySelectedRootStyle->style()->setProperty(CSSPropertyBackgroundImage, "url('" + toElement(fullySelectedRoot)->getAttribute(backgroundAttr) + "')");
 
                 if (fullySelectedRootStyle->style()) {
                     // Reset the CSS properties to avoid an assertion error in addStyleMarkup().
@@ -645,22 +636,45 @@ String createMarkup(const Range* range, Vector<Node*>* nodes, EAnnotateForInterc
     if (shouldAnnotate == AnnotateForInterchange && needInterchangeNewlineAfter(visibleEnd.previous()))
         accumulator.appendString(interchangeNewlineString);
 
-    if (deleteButton)
-        deleteButton->enable();
-
     return accumulator.takeResults();
 }
 
-PassRefPtr<DocumentFragment> createFragmentFromMarkup(Document* document, const String& markup, const String& baseURL, FragmentScriptingPermission scriptingPermission)
+String createMarkup(const Range* range, Vector<Node*>* nodes, EAnnotateForInterchange shouldAnnotate, bool convertBlocksToInlines, EAbsoluteURLs shouldResolveURLs, Node* constrainingAncestor)
+{
+    if (!range)
+        return emptyString();
+
+    Document* document = range->ownerDocument();
+    if (!document)
+        return emptyString();
+
+    const Range* updatedRange = range;
+
+#if ENABLE(DELETION_UI)
+    // Disable the delete button so it's elements are not serialized into the markup,
+    // but make sure neither endpoint is inside the delete user interface.
+    Frame* frame = document->frame();
+    DeleteButtonControllerDisableScope deleteButtonControllerDisableScope(frame);
+
+    RefPtr<Range> updatedRangeRef;
+    if (frame) {
+        updatedRangeRef = frame->editor()->avoidIntersectionWithDeleteButtonController(range);
+        updatedRange = updatedRangeRef.get();
+        if (!updatedRange)
+            return emptyString();
+    }
+#endif
+
+    return createMarkupInternal(document, range, updatedRange, nodes, shouldAnnotate, convertBlocksToInlines, shouldResolveURLs, constrainingAncestor);
+}
+
+PassRefPtr<DocumentFragment> createFragmentFromMarkup(Document* document, const String& markup, const String& baseURL, ParserContentPolicy parserContentPolicy)
 {
     // We use a fake body element here to trick the HTML parser to using the InBody insertion mode.
     RefPtr<HTMLBodyElement> fakeBody = HTMLBodyElement::create(document);
     RefPtr<DocumentFragment> fragment = DocumentFragment::create(document);
 
-    if (scriptingPermission == DisallowScriptingAndPluginContentIfNeeded && (!document->settings() || document->settings()->unsafePluginPastingEnabled()))
-        scriptingPermission = DisallowScriptingContent;
-
-    fragment->parseHTML(markup, fakeBody.get(), scriptingPermission);
+    fragment->parseHTML(markup, fakeBody.get(), parserContentPolicy);
 
     if (!baseURL.isEmpty() && baseURL != blankURL() && baseURL != document->baseURL())
         completeURLs(fragment.get(), baseURL);
@@ -708,7 +722,7 @@ static void trimFragment(DocumentFragment* fragment, Node* nodeBeforeContext, No
 }
 
 PassRefPtr<DocumentFragment> createFragmentFromMarkupWithContext(Document* document, const String& markup, unsigned fragmentStart, unsigned fragmentEnd,
-    const String& baseURL, FragmentScriptingPermission scriptingPermission)
+    const String& baseURL, ParserContentPolicy parserContentPolicy)
 {
     // FIXME: Need to handle the case where the markup already contains these markers.
 
@@ -719,7 +733,7 @@ PassRefPtr<DocumentFragment> createFragmentFromMarkupWithContext(Document* docum
     MarkupAccumulator::appendComment(taggedMarkup, fragmentMarkerTag);
     taggedMarkup.append(markup.substring(fragmentEnd));
 
-    RefPtr<DocumentFragment> taggedFragment = createFragmentFromMarkup(document, taggedMarkup.toString(), baseURL, scriptingPermission);
+    RefPtr<DocumentFragment> taggedFragment = createFragmentFromMarkup(document, taggedMarkup.toString(), baseURL, parserContentPolicy);
     RefPtr<Document> taggedDocument = Document::create(0, KURL());
     taggedDocument->setContextFeatures(document->contextFeatures());
     taggedDocument->takeAllChildrenFrom(taggedFragment.get());
@@ -743,7 +757,7 @@ PassRefPtr<DocumentFragment> createFragmentFromMarkupWithContext(Document* docum
     if (specialCommonAncestor)
         fragment->appendChild(specialCommonAncestor, ASSERT_NO_EXCEPTION);
     else
-        fragment->takeAllChildrenFrom(static_cast<ContainerNode*>(commonAncestor));
+        fragment->takeAllChildrenFrom(toContainerNode(commonAncestor));
 
     trimFragment(fragment.get(), nodeBeforeContext.get(), nodeAfterContext.get());
 
@@ -756,12 +770,13 @@ String createMarkup(const Node* node, EChildrenOnly childrenOnly, Vector<Node*>*
         return "";
 
     HTMLElement* deleteButtonContainerElement = 0;
+#if ENABLE(DELETION_UI)
     if (Frame* frame = node->document()->frame()) {
         deleteButtonContainerElement = frame->editor()->deleteButtonController()->containerElement();
         if (node->isDescendantOf(deleteButtonContainerElement))
             return "";
     }
-
+#endif
     MarkupAccumulator accumulator(nodes, shouldResolveURLs);
     return accumulator.serializeNodes(const_cast<Node*>(node), deleteButtonContainerElement, childrenOnly, tagNamesToSkip);
 }
@@ -808,7 +823,7 @@ static void fillContainerFromString(ContainerNode* paragraph, const String& stri
 
 bool isPlainTextMarkup(Node *node)
 {
-    if (!node->isElementNode() || !node->hasTagName(divTag) || static_cast<Element*>(node)->hasAttributes())
+    if (!node->isElementNode() || !node->hasTagName(divTag) || toElement(node)->hasAttributes())
         return false;
     
     if (node->childNodeCount() == 1 && (node->firstChild()->isTextNode() || (node->firstChild()->firstChild())))
@@ -858,7 +873,7 @@ PassRefPtr<DocumentFragment> createFragmentFromText(Range* context, const String
 
     // Break string into paragraphs. Extra line breaks turn into empty paragraphs.
     Node* blockNode = enclosingBlock(context->firstNode());
-    Element* block = static_cast<Element*>(blockNode);
+    Element* block = toElement(blockNode);
     bool useClonesOfEnclosingBlock = blockNode
         && blockNode->isElementNode()
         && !block->hasTagName(bodyTag)
@@ -897,9 +912,10 @@ PassRefPtr<DocumentFragment> createFragmentFromNodes(Document *document, const V
     if (!document)
         return 0;
 
+#if ENABLE(DELETION_UI)
     // disable the delete button so it's elements are not serialized into the markup
-    if (document->frame())
-        document->frame()->editor()->deleteButtonController()->disable();
+    DeleteButtonControllerDisableScope(document->frame());
+#endif
 
     RefPtr<DocumentFragment> fragment = document->createDocumentFragment();
 
@@ -909,9 +925,6 @@ PassRefPtr<DocumentFragment> createFragmentFromNodes(Document *document, const V
         element->appendChild(nodes[i], ASSERT_NO_EXCEPTION);
         fragment->appendChild(element.release(), ASSERT_NO_EXCEPTION);
     }
-
-    if (document->frame())
-        document->frame()->editor()->deleteButtonController()->enable();
 
     return fragment.release();
 }
@@ -970,7 +983,7 @@ String urlToMarkup(const KURL& url, const String& title)
     return markup.toString();
 }
 
-PassRefPtr<DocumentFragment> createFragmentForInnerOuterHTML(const String& markup, Element* contextElement, FragmentScriptingPermission scriptingPermission, ExceptionCode& ec)
+PassRefPtr<DocumentFragment> createFragmentForInnerOuterHTML(const String& markup, Element* contextElement, ParserContentPolicy parserContentPolicy, ExceptionCode& ec)
 {
     Document* document = contextElement->document();
 #if ENABLE(TEMPLATE_ELEMENT)
@@ -980,11 +993,11 @@ PassRefPtr<DocumentFragment> createFragmentForInnerOuterHTML(const String& marku
     RefPtr<DocumentFragment> fragment = DocumentFragment::create(document);
 
     if (document->isHTMLDocument()) {
-        fragment->parseHTML(markup, contextElement, scriptingPermission);
+        fragment->parseHTML(markup, contextElement, parserContentPolicy);
         return fragment;
     }
 
-    bool wasValid = fragment->parseXML(markup, contextElement, scriptingPermission);
+    bool wasValid = fragment->parseXML(markup, contextElement, parserContentPolicy);
     if (!wasValid) {
         ec = SYNTAX_ERR;
         return 0;
@@ -1027,7 +1040,7 @@ static inline void removeElementPreservingChildren(PassRefPtr<DocumentFragment> 
     fragment->removeChild(element, ASSERT_NO_EXCEPTION);
 }
 
-PassRefPtr<DocumentFragment> createContextualFragment(const String& markup, HTMLElement* element, FragmentScriptingPermission scriptingPermission, ExceptionCode& ec)
+PassRefPtr<DocumentFragment> createContextualFragment(const String& markup, HTMLElement* element, ParserContentPolicy parserContentPolicy, ExceptionCode& ec)
 {
     ASSERT(element);
     if (element->ieForbidsInsertHTML()) {
@@ -1041,7 +1054,7 @@ PassRefPtr<DocumentFragment> createContextualFragment(const String& markup, HTML
         return 0;
     }
 
-    RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, element, scriptingPermission, ec);
+    RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, element, parserContentPolicy, ec);
     if (!fragment)
         return 0;
 

@@ -31,6 +31,7 @@
 
 namespace WebKit {
 
+class WebLayerTreeView;
 class WebURL;
 class WebURLResponse;
 struct WebURLError;
@@ -52,6 +53,19 @@ public:
 
     // Returns the root directory of the WebKit code.
     virtual WebString webKitRootDir() { return WebString(); }
+
+    // Constructs a WebLayerTreeView set up with reasonable defaults for
+    // testing.
+
+    virtual WebLayerTreeView* createLayerTreeViewForTesting() { return 0; }
+
+    // DEPRECATED, use the version above.
+#define HAVE_CREATELAYERTREEVIEWFORTESTING 1
+    enum TestViewType {
+        TestViewTypeUnitTest,
+        TestViewTypeLayoutTest
+    };
+    virtual WebLayerTreeView* createLayerTreeViewForTesting(TestViewType) { return 0; }
 };
 
 }

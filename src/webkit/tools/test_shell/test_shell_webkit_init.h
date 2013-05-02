@@ -7,8 +7,8 @@
 
 #include "base/compiler_specific.h"
 #include "base/utf_string_conversions.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebStorageNamespace.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageNamespace.h"
 #include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkit_glue.h"
@@ -42,7 +42,7 @@ class TestShellWebKitInit : public webkit_glue::WebKitPlatformSupportImpl {
   virtual WebKit::WebBlobRegistry* blobRegistry() OVERRIDE;
   virtual WebKit::WebFileSystem* fileSystem() OVERRIDE;
   virtual bool sandboxEnabled() OVERRIDE;
-  virtual WebKit::WebKitPlatformSupport::FileHandle databaseOpenFile(
+  virtual WebKit::Platform::FileHandle databaseOpenFile(
       const WebKit::WebString& vfs_file_name, int desired_flags) OVERRIDE;
   virtual int databaseDeleteFile(const WebKit::WebString& vfs_file_name,
                                  bool sync_dir) OVERRIDE;
@@ -73,7 +73,7 @@ class TestShellWebKitInit : public webkit_glue::WebKitPlatformSupportImpl {
   virtual WebKit::WebStorageNamespace* createLocalStorageNamespace(
       const WebKit::WebString& path, unsigned quota) OVERRIDE;
 
-  virtual WebKit::WebIDBFactory* idbFactory() OVERRIDE;
+  virtual WebKit::WebIDBFactory* idbFactory();
 
 #if defined(OS_WIN)
   void SetThemeEngine(WebKit::WebThemeEngine* engine) {

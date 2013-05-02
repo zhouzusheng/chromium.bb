@@ -47,6 +47,34 @@ ContentRendererClient::OverrideCreateWebMediaPlayer(
   return NULL;
 }
 
+WebKit::WebMediaStreamCenter*
+ContentRendererClient::OverrideCreateWebMediaStreamCenter(
+    WebKit::WebMediaStreamCenterClient* client) {
+  return NULL;
+}
+
+WebKit::WebRTCPeerConnectionHandler*
+ContentRendererClient::OverrideCreateWebRTCPeerConnectionHandler(
+    WebKit::WebRTCPeerConnectionHandlerClient* client) {
+  return NULL;
+}
+
+WebKit::WebClipboard* ContentRendererClient::OverrideWebClipboard() {
+  return NULL;
+}
+
+WebKit::WebMimeRegistry* ContentRendererClient::OverrideWebMimeRegistry() {
+  return NULL;
+}
+
+WebKit::WebHyphenator* ContentRendererClient::OverrideWebHyphenator() {
+  return NULL;
+}
+
+WebKit::WebThemeEngine* ContentRendererClient::OverrideThemeEngine() {
+  return NULL;
+}
+
 bool ContentRendererClient::RunIdleHandlerWhenWidgetsHidden() {
   return true;
 }
@@ -114,6 +142,19 @@ bool ContentRendererClient::HandleSetCookieRequest(
     const GURL& first_party_for_cookies,
     const std::string& value) {
   return false;
+}
+
+bool ContentRendererClient::AllowBrowserPlugin(
+    WebKit::WebPluginContainer* container) const {
+  return false;
+}
+
+MessageLoop* ContentRendererClient::OverrideCompositorMessageLoop() const {
+  return NULL;
+}
+
+bool ContentRendererClient::ShouldCreateCompositorInputHandler() const {
+  return true;
 }
 
 }  // namespace content

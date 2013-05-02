@@ -45,6 +45,7 @@
 #include "talk/base/logging.h"
 #include "talk/base/stringencode.h"
 #include "talk/base/stringutils.h"
+#include "talk/media/base/constants.h"
 #include "talk/media/base/streamparams.h"
 #include "talk/media/base/voiceprocessor.h"
 #include "talk/media/webrtc/webrtcvoe.h"
@@ -64,9 +65,9 @@ struct CodecPref {
 };
 
 static const CodecPref kCodecPrefs[] = {
+  { "OPUS",   48000,  2, 111, true },
   { "ISAC",   16000,  1, 103, true },
   { "ISAC",   32000,  1, 104, true },
-  { "OPUS",   48000,  2, 111, true },
   { "CELT",   32000,  1, 109, true },
   { "CELT",   32000,  2, 110, true },
   { "G722",   16000,  1, 9,   false },
@@ -107,21 +108,13 @@ static const int kDefaultAudioDeviceId = 0;
 // http://tools.ietf.org/html/draft-ietf-avtext-client-to-mixer-audio-level-03
 static const char kRtpAudioLevelHeaderExtension[] =
     "urn:ietf:params:rtp-hdrext:ssrc-audio-level";
+static const int kRtpAudioLevelHeaderExtensionId = 1;
 
 static const char kIsacCodecName[] = "ISAC";
 static const char kL16CodecName[] = "L16";
-static const char kOpusCodecName[] = "OPUS";
+// Codec parameters for Opus.
 static const int kOpusMonoBitrate = 32000;
 static const int kOpusStereoBitrate = 64000;
-// Codec parameters for Opus.
-static const char kOpusStereo[] = "stereo";
-static const char kOpusTrue[] = "1";
-// Minimum amount of data in one packet.
-static const char kOpusMinPacketTime[] = "minptime";
-static const char kOpusRecommendedMinPacketTime[] = "10";
-// Maximum amount of data in one packet.
-static const char kOpusMaxPacketTime[] = "maxptime";
-static const char kOpusRecommendedMaxPacketTime[] = "60";
 
 // Dumps an AudioCodec in RFC 2327-ish format.
 static std::string ToString(const AudioCodec& codec) {
@@ -149,6 +142,21 @@ static bool IsCodecMultiRate(const webrtc::CodecInst& codec) {
     if (_stricmp(kCodecPrefs[i].name, codec.plname) == 0 &&
         kCodecPrefs[i].clockrate == codec.plfreq) {
       return kCodecPrefs[i].is_multi_rate;
+    }
+  }
+  return false;
+}
+
+static bool FindCodec(const std::vector<AudioCodec>& codecs,
+                      const AudioCodec& codec,
+                      AudioCodec* found_codec) {
+  for (std::vector<AudioCodec>::const_iterator it = codecs.begin();
+       it != codecs.end(); ++it) {
+    if (it->Matches(codec)) {
+      if (found_codec != NULL) {
+        *found_codec = *it;
+      }
+      return true;
     }
   }
   return false;
@@ -286,23 +294,29 @@ void WebRtcVoiceEngine::Construct() {
 
   // Load our audio codec list.
   ConstructCodecs();
+
+  // Load our RTP Header extensions.
+  rtp_header_extensions_.push_back(
+      RtpHeaderExtension(kRtpAudioLevelHeaderExtension,
+                         kRtpAudioLevelHeaderExtensionId));
 }
 
-bool IsOpus(const AudioCodec& codec) {
+static bool IsOpus(const AudioCodec& codec) {
   return (_stricmp(codec.name.c_str(), kOpusCodecName) == 0);
 }
 
-bool IsIsac(const AudioCodec& codec) {
+static bool IsIsac(const AudioCodec& codec) {
   return (_stricmp(codec.name.c_str(), kIsacCodecName) == 0);
 }
 
 // True if params["stereo"] == "1"
-bool IsOpusStereoEnabled(const AudioCodec& codec) {
-  CodecParameterMap::const_iterator param = codec.params.find(kOpusStereo);
+static bool IsOpusStereoEnabled(const AudioCodec& codec) {
+  CodecParameterMap::const_iterator param =
+      codec.params.find(kCodecParamStereo);
   if (param == codec.params.end()) {
     return false;
   }
-  return param->second == kOpusTrue;
+  return param->second == kParamValueTrue;
 }
 
 void WebRtcVoiceEngine::ConstructCodecs() {
@@ -338,8 +352,17 @@ void WebRtcVoiceEngine::ConstructCodecs() {
           codec.bitrate = 0;
         }
         if (IsOpus(codec)) {
-          codec.params[kOpusMinPacketTime] = kOpusRecommendedMinPacketTime;
-          codec.params[kOpusMaxPacketTime] = kOpusRecommendedMaxPacketTime;
+          // Only add fmtp parameters that differ from the spec.
+          if (kPreferredMinPTime != kOpusDefaultMinPTime) {
+            codec.params[kCodecParamMinPTime] =
+                talk_base::ToString(kPreferredMinPTime);
+          }
+          if (kPreferredMaxPTime != kOpusDefaultMaxPTime) {
+            codec.params[kCodecParamMaxPTime] =
+                talk_base::ToString(kPreferredMaxPTime);
+          }
+          // TODO(hellner): Add ptime, sprop-stereo, stereo and useinbandfec
+          // when they can be set to values other than the default.
         }
         codecs_.push_back(codec);
       } else {
@@ -608,8 +631,8 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
     }
 #endif
     if (options.ec_mode == webrtc::kEcAecm) {
-      if (voep->SetAecmMode(options.aecm_mode, true) != 0) {
-        LOG_RTCERR2(SetAecmMode, options.aecm_mode, true);
+      if (voep->SetAecmMode(options.aecm_mode, false) != 0) {
+        LOG_RTCERR2(SetAecmMode, options.aecm_mode, false);
         return false;
       }
     }
@@ -956,23 +979,6 @@ bool WebRtcVoiceEngine::FindWebRtcCodec(const AudioCodec& in,
             // If ISAC and an explicit bitrate is not specified,
             // enable auto bandwidth adjustment.
             voe_codec.rate = (in.bitrate > 0) ? in.bitrate : -1;
-          } else if (IsOpus(codec)) {
-            // If OPUS, change what we send according to the "stereo" codec
-            // parameter, and not the "channels" parameter.  We set
-            // voe_codec.channels to 2 if "stereo=1" and 1 otherwise.  If
-            // the bitrate is not specified, i.e. is zero, we set it to the
-            // appropriate default value for mono or stereo Opus.
-            if (IsOpusStereoEnabled(in)) {
-              voe_codec.channels = 2;
-              if (in.bitrate == 0) {
-                voe_codec.rate = kOpusStereoBitrate;
-              }
-            } else {
-              voe_codec.channels = 1;
-              if (in.bitrate == 0) {
-                voe_codec.rate = kOpusMonoBitrate;
-              }
-            }
           }
           *out = voe_codec;
         }
@@ -981,6 +987,10 @@ bool WebRtcVoiceEngine::FindWebRtcCodec(const AudioCodec& in,
     }
   }
   return false;
+}
+const std::vector<RtpHeaderExtension>&
+WebRtcVoiceEngine::rtp_header_extensions() const {
+  return rtp_header_extensions_;
 }
 
 void WebRtcVoiceEngine::SetLogging(int min_sev, const char* filter) {
@@ -1073,7 +1083,7 @@ bool WebRtcVoiceEngine::ShouldIgnoreTrace(const std::string& trace) {
     "GetRTPStatistics() failed to read RTP statistics from the RTP/RTCP module",
     "GetRTPStatistics() failed to retrieve RTT from the RTP/RTCP module",
     "SenderInfoReceived No received SR",
-    "StatisticsRTP() no statisitics availble",
+    "StatisticsRTP() no statistics available",
     "TransmitMixer::TypingDetection() VE_TYPING_NOISE_WARNING message has been posted",  // NOLINT
     "TransmitMixer::TypingDetection() pending noise-saturation warning exists",  // NOLINT
     "GetRecPayloadType() failed to retrieve RX payload type (error=10026)", // NOLINT
@@ -1530,17 +1540,40 @@ bool WebRtcVoiceMediaChannel::SetRecvCodecs(
   bool ret = true;
   LOG(LS_INFO) << "Setting receive voice codecs:";
 
-  if (recv_codecs_ == codecs) {
+  std::vector<AudioCodec> new_codecs;
+  // Find all new codecs. We allow adding new codecs but don't allow changing
+  // the payload type of codecs that is already configured since we might
+  // already be receiving packets with that payload type.
+  for (std::vector<AudioCodec>::const_iterator it = codecs.begin();
+       it != codecs.end() && ret; ++it) {
+    AudioCodec old_codec;
+    if (FindCodec(recv_codecs_, *it, &old_codec)) {
+      if (old_codec.id != it->id) {
+        LOG(LS_ERROR) << it->name << " payload type changed.";
+        return false;
+      }
+    } else {
+      new_codecs.push_back(*it);
+    }
+  }
+  if (new_codecs.empty()) {
+    // There are no new codecs to configure. Already configured codecs are
+    // never removed.
     return true;
   }
 
-  for (std::vector<AudioCodec>::const_iterator it = codecs.begin();
-       it != codecs.end() && ret; ++it) {
+  if (playout_) {
+    // Receive codecs can not be changed while playing. So we temporarily
+    // pause playout.
+    PausePlayout();
+  }
+
+  for (std::vector<AudioCodec>::const_iterator it = new_codecs.begin();
+       it != new_codecs.end() && ret; ++it) {
     webrtc::CodecInst voe_codec;
     if (engine()->FindWebRtcCodec(*it, &voe_codec)) {
       LOG(LS_INFO) << ToString(*it);
       voe_codec.pltype = it->id;
-
       if (engine()->voe()->codec()->SetRecPayloadType(
           voe_channel(), voe_codec) == -1) {
         LOG_RTCERR2(SetRecPayloadType, voe_channel(), ToString(voe_codec));
@@ -1563,6 +1596,10 @@ bool WebRtcVoiceMediaChannel::SetRecvCodecs(
   }
   if (ret) {
     recv_codecs_ = codecs;
+  }
+
+  if (desired_playout_ && !playout_) {
+    ResumePlayout();
   }
   return ret;
 }
@@ -1588,6 +1625,25 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
     if (!engine()->FindWebRtcCodec(*it, &voe_codec)) {
       LOG(LS_WARNING) << "Unknown codec " << ToString(voe_codec);
       continue;
+    }
+
+    // If OPUS, change what we send according to the "stereo" codec
+    // parameter, and not the "channels" parameter.  We set
+    // voe_codec.channels to 2 if "stereo=1" and 1 otherwise.  If
+    // the bitrate is not specified, i.e. is zero, we set it to the
+    // appropriate default value for mono or stereo Opus.
+    if (IsOpus(*it)) {
+      if (IsOpusStereoEnabled(*it)) {
+        voe_codec.channels = 2;
+        if (it->bitrate == 0) {
+          voe_codec.rate = kOpusStereoBitrate;
+        }
+      } else {
+        voe_codec.channels = 1;
+        if (it->bitrate == 0) {
+          voe_codec.rate = kOpusMonoBitrate;
+        }
+      }
     }
 
     // Find the DTMF telephone event "codec" and tell VoiceEngine about it.
@@ -1969,10 +2025,11 @@ bool WebRtcVoiceMediaChannel::AddRecvStream(const StreamParams& sp) {
   // Use the same recv payload types as our default channel.
   ResetRecvCodecs(channel);
   if (!recv_codecs_.empty()) {
-    int ncodecs = engine()->voe()->codec()->NumOfCodecs();
-    for (int i = 0; i < ncodecs; ++i) {
+    for (std::vector<AudioCodec>::const_iterator it = recv_codecs_.begin();
+        it != recv_codecs_.end(); ++it) {
       webrtc::CodecInst voe_codec;
-      if (engine()->voe()->codec()->GetCodec(i, voe_codec) != -1) {
+      if (engine()->FindWebRtcCodec(*it, &voe_codec)) {
+        voe_codec.pltype = it->id;
         voe_codec.rate = 0;  // Needed to make GetRecPayloadType work for ISAC
         if (engine()->voe()->codec()->GetRecPayloadType(
             voe_channel(), voe_codec) != -1) {

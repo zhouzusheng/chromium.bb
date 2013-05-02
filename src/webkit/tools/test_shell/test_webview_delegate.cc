@@ -25,6 +25,7 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebDragData.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebImage.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebPoint.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebStorageNamespace.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
@@ -49,7 +50,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenu.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRange.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageNamespace.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWindowFeatures.h"
 #include "ui/base/window_open_disposition.h"
@@ -300,14 +300,6 @@ bool TestWebViewDelegate::shouldApplyStyle(const WebString& style,
   return shell_->AcceptsEditing();
 }
 
-bool TestWebViewDelegate::isSmartInsertDeleteEnabled() {
-  return smart_insert_delete_enabled_;
-}
-
-bool TestWebViewDelegate::isSelectTrailingWhitespaceEnabled() {
-  return select_trailing_whitespace_enabled_;
-}
-
 void TestWebViewDelegate::didBeginEditing() {
 }
 
@@ -532,7 +524,7 @@ WebPlugin* TestWebViewDelegate::createPlugin(WebFrame* frame,
 WebMediaPlayer* TestWebViewDelegate::createMediaPlayer(
     WebFrame* frame, const WebKit::WebURL& url, WebMediaPlayerClient* client) {
   webkit_media::WebMediaPlayerParams params(
-      NULL, NULL, NULL, new media::MediaLog());
+      NULL, NULL, new media::MediaLog());
   return new webkit_media::WebMediaPlayerImpl(
       frame,
       client,
@@ -813,7 +805,9 @@ bool TestWebViewDelegate::allowScript(WebFrame* frame,
 }
 
 void TestWebViewDelegate::openFileSystem(
-    WebFrame* frame, WebFileSystem::Type type, long long size, bool create,
+    WebFrame* frame,
+    WebKit::WebFileSystemType type,
+    long long size, bool create,
     WebFileSystemCallbacks* callbacks) {
   SimpleFileSystem* fileSystem = static_cast<SimpleFileSystem*>(
       WebKit::Platform::current()->fileSystem());
@@ -845,12 +839,6 @@ TestWebViewDelegate::TestWebViewDelegate(TestShell* shell)
 #if defined(TOOLKIT_GTK)
       cursor_type_(GDK_X_CURSOR),
 #endif
-      smart_insert_delete_enabled_(true),
-#if defined(OS_WIN)
-      select_trailing_whitespace_enabled_(true),
-#else
-      select_trailing_whitespace_enabled_(false),
-#endif
       block_redirects_(false),
       request_return_null_(false) {
 }
@@ -863,20 +851,6 @@ void TestWebViewDelegate::Reset() {
   TestShell* shell = shell_;
   this->~TestWebViewDelegate();
   new (this) TestWebViewDelegate(shell);
-}
-
-void TestWebViewDelegate::SetSmartInsertDeleteEnabled(bool enabled) {
-  smart_insert_delete_enabled_ = enabled;
-  // In upstream WebKit, smart insert/delete is mutually exclusive with select
-  // trailing whitespace, however, we allow both because Chromium on Windows
-  // allows both.
-}
-
-void TestWebViewDelegate::SetSelectTrailingWhitespaceEnabled(bool enabled) {
-  select_trailing_whitespace_enabled_ = enabled;
-  // In upstream WebKit, smart insert/delete is mutually exclusive with select
-  // trailing whitespace, however, we allow both because Chromium on Windows
-  // allows both.
 }
 
 void TestWebViewDelegate::RegisterDragDrop() {

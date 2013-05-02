@@ -154,7 +154,7 @@ RenderText::RenderText(Node* node, PassRefPtr<StringImpl> str)
     // FIXME: Some clients of RenderText (and subclasses) pass Document as node to create anonymous renderer.
     // They should be switched to passing null and using setDocumentForAnonymous.
     if (node && node->isDocumentNode())
-        setDocumentForAnonymous(static_cast<Document*>(node));
+        setDocumentForAnonymous(toDocument(node));
 
     m_isAllASCII = m_text.containsOnlyASCII();
     m_canUseSimpleFontCodePath = computeCanUseSimpleFontCodePath();
@@ -1184,10 +1184,16 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
 
 bool RenderText::isAllCollapsibleWhitespace()
 {
-    int length = textLength();
-    const UChar* text = characters();
-    for (int i = 0; i < length; i++) {
-        if (!style()->isCollapsibleWhiteSpace(text[i]))
+    unsigned length = textLength();
+    if (is8Bit()) {
+        for (unsigned i = 0; i < length; ++i) {
+            if (!style()->isCollapsibleWhiteSpace(characters8()[i]))
+                return false;
+        }
+        return true;
+    }
+    for (unsigned i = 0; i < length; ++i) {
+        if (!style()->isCollapsibleWhiteSpace(characters16()[i]))
             return false;
     }
     return true;

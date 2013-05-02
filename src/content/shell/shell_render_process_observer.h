@@ -7,9 +7,10 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/public/renderer/render_process_observer.h"
+#include "ipc/ipc_platform_file.h"
 
 namespace WebKit {
 class WebFrame;
@@ -37,15 +38,13 @@ class ShellRenderProcessObserver : public RenderProcessObserver {
   virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // SHEZ: Remove upstream test-specific code here.
-  const FilePath& webkit_source_dir() const { return webkit_source_dir_; }
+  const base::FilePath& webkit_source_dir() const { return webkit_source_dir_; }
 
  private:
   // Message handlers.
+  void OnSetWebKitSourceDir(const base::FilePath& webkit_source_dir);
+  void OnLoadHyphenDictionary(const IPC::PlatformFileForTransit& dict_file);
   // SHEZ: Removed upstream test-specific code here.
-  void OnSetWebKitSourceDir(const FilePath& webkit_source_dir);
-
-  // SHEZ: Remove upstream test-specific data-members here.
-  RenderView* main_render_view_;
 
   base::FilePath webkit_source_dir_;
 

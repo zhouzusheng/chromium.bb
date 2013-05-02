@@ -84,15 +84,16 @@ bool GLSurface::Resize(const gfx::Size& size) {
   return false;
 }
 
+bool GLSurface::Recreate() {
+  NOTIMPLEMENTED();
+  return false;
+}
+
 bool GLSurface::DeferDraws() {
   return false;
 }
 
 std::string GLSurface::GetExtensions() {
-  // Use of GLSurfaceAdapter class means that we can't compare
-  // GetCurrent() and this directly.
-  DCHECK(GetCurrent()->GetHandle() == GetHandle() ||
-         GetBackingFrameBufferObject());
   return std::string("");
 }
 
@@ -187,6 +188,10 @@ void GLSurfaceAdapter::Destroy() {
 
 bool GLSurfaceAdapter::Resize(const gfx::Size& size) {
   return surface_->Resize(size);
+}
+
+bool GLSurfaceAdapter::Recreate() {
+  return surface_->Recreate();
 }
 
 bool GLSurfaceAdapter::DeferDraws() {

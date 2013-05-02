@@ -10,6 +10,8 @@
 
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/memory/weak_ptr.h"
+#include "content/public/common/content_constants.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "googleurl/src/gurl.h"
 
@@ -33,24 +35,36 @@ class FaviconHelper : public RenderViewObserver {
  public:
   explicit FaviconHelper(RenderView* render_view);
 
-  // Sund a message that the favicon has changed.
+  // Send a message that the favicon has changed.
   void DidChangeIcon(WebKit::WebFrame* frame,
                      WebKit::WebIconURL::Type icon_type);
 
  private:
   virtual ~FaviconHelper();
 
+  // Start processing the icon change. This done async from DidChangeIcon in
+  // case there are several calls to DidChangeIcon in a row.
+  void ProcessDidChangeIcon();
+
   // Message handler.
-  void OnDownloadFavicon(int id, const GURL& image_url, int image_size);
+  void OnDownloadFavicon(int id,
+                         const GURL& image_url,
+                         bool is_favicon,
+                         int image_size);
 
   // Requests to download a favicon image. When done, the RenderView
   // is notified by way of DidDownloadFavicon. Returns true if the
   // request was successfully started, false otherwise. id is used to
   // uniquely identify the request and passed back to the
-  // DidDownloadFavicon method. If the image has multiple frames, the
+  // DidDownloadFavicon method. If the image is a favicon, cookies are
+  // not sent and not accepted during download.
+  // If the image has multiple frames, the
   // frame whose size is image_size is returned. If the image doesn't
   // have a frame at the specified size, the first is returned.
-  bool DownloadFavicon(int id, const GURL& image_url, int image_size);
+  bool DownloadFavicon(int id,
+                       const GURL& image_url,
+                       bool is_favicon,
+                       int image_size);
 
   // This callback is triggered when DownloadFavicon completes, either
   // succesfully or with a failure. See DownloadFavicon for more
@@ -77,6 +91,12 @@ class FaviconHelper : public RenderViewObserver {
 
   // ImageResourceFetchers schedule via DownloadImage.
   ImageResourceFetcherList image_fetchers_;
+
+  // The set of flags which have been sent to DidChangeIcon but not yet
+  // processed.
+  WebKit::WebIconURL::Type icon_types_changed_;
+
+  base::WeakPtrFactory<FaviconHelper> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FaviconHelper);
 };

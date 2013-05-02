@@ -53,6 +53,9 @@ RootInlineBox::RootInlineBox(RenderBlock* block)
     , m_lineBottom(0)
     , m_lineTopWithLeading(0)
     , m_lineBottomWithLeading(0)
+#if ENABLE(CSS3_TEXT)
+    , m_maxLogicalTop(0)
+#endif // CSS3_TEXT
 {
     setIsHorizontal(block->isHorizontalWritingMode());
 }
@@ -256,7 +259,7 @@ RenderRegion* RootInlineBox::containingRegion() const
 
 #ifndef NDEBUG
     if (region) {
-        RenderFlowThread* flowThread = block()->enclosingRenderFlowThread();
+        RenderFlowThread* flowThread = block()->flowThreadContainingBlock();
         const RenderRegionList& regionList = flowThread->renderRegionList();
         ASSERT(regionList.contains(region));
     }
@@ -268,7 +271,7 @@ RenderRegion* RootInlineBox::containingRegion() const
 void RootInlineBox::setContainingRegion(RenderRegion* region)
 {
     ASSERT(!isDirty());
-    ASSERT(block()->inRenderFlowThread());
+    ASSERT(block()->flowThreadContainingBlock());
     LineFragmentationData* fragmentationData  = ensureLineFragmentationData();
     fragmentationData->m_containingRegion = region;
 }
@@ -279,6 +282,8 @@ LayoutUnit RootInlineBox::alignBoxesInBlockDirection(LayoutUnit heightOfBlock, G
     // SVG will handle vertical alignment on its own.
     if (isSVGRootInlineBox())
         return 0;
+
+    // FIXME: figure out how to call computeMaxLogicalTop() when SVG is enabled.
 #endif
 
     LayoutUnit maxPositionTop = 0;
@@ -330,6 +335,11 @@ LayoutUnit RootInlineBox::alignBoxesInBlockDirection(LayoutUnit heightOfBlock, G
         adjustBlockDirectionPosition(gridSnapAdjustment);
         heightOfBlock += gridSnapAdjustment;
     }
+
+#if ENABLE(CSS3_TEXT)
+    m_maxLogicalTop = 0;
+    computeMaxLogicalTop(m_maxLogicalTop);
+#endif // CSS3_TEXT
 
     return heightOfBlock + maxHeight;
 }

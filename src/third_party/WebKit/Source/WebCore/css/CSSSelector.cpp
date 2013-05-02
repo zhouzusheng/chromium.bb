@@ -215,6 +215,7 @@ PseudoId CSSSelector::pseudoId(PseudoType type)
     case PseudoLang:
     case PseudoNot:
     case PseudoRoot:
+    case PseudoScope:
     case PseudoScrollbarBack:
     case PseudoScrollbarForward:
     case PseudoWindowInactive:
@@ -242,6 +243,9 @@ PseudoId CSSSelector::pseudoId(PseudoType type)
 #endif
 #if ENABLE(IFRAME_SEAMLESS)
     case PseudoSeamlessDocument:
+#endif
+#if ENABLE(SHADOW_DOM)
+    case PseudoDistributed:
 #endif
         return NOPSEUDO;
     case PseudoNotParsed:
@@ -333,8 +337,12 @@ static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap(
 #if ENABLE(IFRAME_SEAMLESS)
     DEFINE_STATIC_LOCAL(AtomicString, seamlessDocument, ("-webkit-seamless-document", AtomicString::ConstructFromLiteral));
 #endif
+#if ENABLE(SHADOW_DOM)
+    DEFINE_STATIC_LOCAL(AtomicString, distributed, ("-webkit-distributed(", AtomicString::ConstructFromLiteral));
+#endif
     DEFINE_STATIC_LOCAL(AtomicString, inRange, ("in-range", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, outOfRange, ("out-of-range", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, scope, ("scope", AtomicString::ConstructFromLiteral));
 
     static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoType = 0;
     if (!nameToPseudoType) {
@@ -389,6 +397,7 @@ static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap(
         nameToPseudoType->set(optional.impl(), CSSSelector::PseudoOptional);
         nameToPseudoType->set(required.impl(), CSSSelector::PseudoRequired);
         nameToPseudoType->set(resizer.impl(), CSSSelector::PseudoResizer);
+        nameToPseudoType->set(scope.impl(), CSSSelector::PseudoScope);
         nameToPseudoType->set(scrollbar.impl(), CSSSelector::PseudoScrollbar);
         nameToPseudoType->set(scrollbarButton.impl(), CSSSelector::PseudoScrollbarButton);
         nameToPseudoType->set(scrollbarCorner.impl(), CSSSelector::PseudoScrollbarCorner);
@@ -415,6 +424,9 @@ static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap(
 #endif
 #if ENABLE(IFRAME_SEAMLESS)
         nameToPseudoType->set(seamlessDocument.impl(), CSSSelector::PseudoSeamlessDocument);
+#endif
+#if ENABLE(SHADOW_DOM)
+        nameToPseudoType->set(distributed.impl(), CSSSelector::PseudoDistributed);
 #endif
         nameToPseudoType->set(inRange.impl(), CSSSelector::PseudoInRange);
         nameToPseudoType->set(outOfRange.impl(), CSSSelector::PseudoOutOfRange);
@@ -466,6 +478,9 @@ void CSSSelector::extractPseudoType() const
     case PseudoFirstLetter:
     case PseudoFirstLine:
         compat = true;
+#if ENABLE(SHADOW_DOM)
+    case PseudoDistributed:
+#endif
     case PseudoResizer:
     case PseudoScrollbar:
     case PseudoScrollbarCorner:
@@ -508,6 +523,7 @@ void CSSSelector::extractPseudoType() const
     case PseudoRequired:
     case PseudoReadOnly:
     case PseudoReadWrite:
+    case PseudoScope:
     case PseudoValid:
     case PseudoInvalid:
     case PseudoIndeterminate:
@@ -707,6 +723,10 @@ String CSSSelector::selectorText() const
             ASSERT_NOT_REACHED();
         case CSSSelector::ShadowDescendant:
             return tagHistoryText + str.toString();
+#if ENABLE(SHADOW_DOM)
+        case CSSSelector::ShadowDistributed:
+            return tagHistoryText + "::-webkit-distributed(" + str.toString() + ")";
+#endif
         }
     }
 

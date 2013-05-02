@@ -67,6 +67,28 @@ WebInspector.TextRange.prototype = {
     },
 
     /**
+     * @param {WebInspector.TextRange} range
+     * @return {boolean}
+     */
+    immediatelyPrecedes: function(range)
+    {
+        if (!range)
+            return false;
+        return this.endLine === range.startLine && this.endColumn === range.startColumn;
+    },
+
+    /**
+     * @param {WebInspector.TextRange} range
+     * @return {boolean}
+     */
+    immediatelyFollows: function(range)
+    {
+        if (!range)
+            return false;
+        return range.immediatelyPrecedes(this);
+    },
+
+    /**
      * @return {number}
      */
     get linesCount()
@@ -147,11 +169,13 @@ WebInspector.TextRange.prototype = {
  * @constructor
  * @param {WebInspector.TextRange} newRange
  * @param {string} originalText
+ * @param {WebInspector.TextRange} originalSelection
  */
-WebInspector.TextEditorCommand = function(newRange, originalText)
+WebInspector.TextEditorCommand = function(newRange, originalText, originalSelection)
 {
     this.newRange = newRange;
     this.originalText = originalText;
+    this.originalSelection = originalSelection;
 }
 
 /**
@@ -166,13 +190,6 @@ WebInspector.TextEditorModel = function()
     this._undoStack = [];
     this._noPunctuationRegex = /[^ !%&()*+,-.:;<=>?\[\]\^{|}~]+/;
     this._lineBreak = "\n";
-}
-
-WebInspector.TextEditorModel.Indent = {
-    TwoSpaces: "  ",
-    FourSpaces: "    ",
-    EightSpaces: "        ",
-    TabCharacter: "\t"
 }
 
 WebInspector.TextEditorModel.Events = {
@@ -249,31 +266,76 @@ WebInspector.TextEditorModel.prototype = {
 
     /**
      * @param {WebInspector.TextRange} range
-     * @param {string} text
-     * @return {WebInspector.TextRange}
+     * @return {boolean}
      */
-    editRange: function(range, text)
-    {   
-        if (this._lastEditedRange && (!text || text.indexOf("\n") !== -1 || this._lastEditedRange.endLine !== range.startLine || this._lastEditedRange.endColumn !== range.startColumn))
-            this._markUndoableState();
-        return this._innerEditRange(range, text);
+    _rangeHasOneCharacter: function(range)
+    {
+        if (range.startLine === range.endLine && range.endColumn - range.startColumn === 1)
+            return true;
+        if (range.endLine - range.startLine === 1 && range.endColumn === 0 && range.startColumn === this.lineLength(range.startLine))
+            return true;
+        return false;
     },
 
     /**
      * @param {WebInspector.TextRange} range
      * @param {string} text
+     * @param {WebInspector.TextRange=} originalSelection
+     * @return {boolean}
+     */
+    _isEditRangeUndoBoundary: function(range, text, originalSelection)
+    {
+        if (originalSelection && !originalSelection.isEmpty())
+            return true;
+        if (text)
+            return text.length > 1 || !range.isEmpty();
+        return !this._rangeHasOneCharacter(range);
+    },
+
+    /**
+     * @param {WebInspector.TextRange} range
+     * @param {string} text
+     * @return {boolean}
+     */
+    _isEditRangeAdjacentToLastCommand: function(range, text)
+    {
+        if (!this._lastCommand)
+            return true;
+        if (!text) {
+            // FIXME: Distinguish backspace and delete in lastCommand.
+            return this._lastCommand.newRange.immediatelyPrecedes(range) || this._lastCommand.newRange.immediatelyFollows(range);
+        }
+        return text.indexOf("\n") === -1 && this._lastCommand.newRange.immediatelyPrecedes(range);
+    },
+
+    /**
+     * @param {WebInspector.TextRange} range
+     * @param {string} text
+     * @param {WebInspector.TextRange=} originalSelection
      * @return {WebInspector.TextRange}
      */
-    _innerEditRange: function(range, text)
+    editRange: function(range, text, originalSelection)
+    {
+        var undoBoundary = this._isEditRangeUndoBoundary(range, text, originalSelection);
+        if (undoBoundary || !this._isEditRangeAdjacentToLastCommand(range, text))
+            this._markUndoableState();
+        var newRange = this._innerEditRange(range, text, originalSelection);
+        if (undoBoundary)
+            this._markUndoableState();
+        return newRange;
+    },
+
+    /**
+     * @param {WebInspector.TextRange} range
+     * @param {string} text
+     * @param {WebInspector.TextRange=} originalSelection
+     * @return {WebInspector.TextRange}
+     */
+    _innerEditRange: function(range, text, originalSelection)
     {
         var originalText = this.copyRange(range);
-        this._lastEditedRange = range;
-        var newRange = range;
-        if (text !== originalText) {
-            newRange = this._innerSetText(range, text);
-            this._pushUndoableCommand(newRange, originalText);
-        }
-
+        var newRange = this._innerSetText(range, text);
+        this._lastCommand = this._pushUndoableCommand(newRange, originalText, originalSelection || range);
         this.dispatchEventToListeners(WebInspector.TextEditorModel.Events.TextChanged, { oldRange: range, newRange: newRange, editRange: true });
         return newRange;
     },
@@ -463,11 +525,12 @@ WebInspector.TextEditorModel.prototype = {
     /**
      * @param {WebInspector.TextRange} newRange
      * @param {string} originalText
+     * @param {WebInspector.TextRange} originalSelection
      * @return {WebInspector.TextEditorCommand}
      */
-    _pushUndoableCommand: function(newRange, originalText)
+    _pushUndoableCommand: function(newRange, originalText, originalSelection)
     {
-        var command = new WebInspector.TextEditorCommand(newRange.clone(), originalText);
+        var command = new WebInspector.TextEditorCommand(newRange.clone(), originalText, originalSelection);
         if (this._inUndo)
             this._redoStack.push(command);
         else {
@@ -508,7 +571,7 @@ WebInspector.TextEditorModel.prototype = {
         var range = this._doUndo(this._redoStack);
         delete this._inRedo;
 
-        return range;
+        return range ? range.collapseToEnd() : null;
     },
 
     /**
@@ -521,7 +584,8 @@ WebInspector.TextEditorModel.prototype = {
         for (var i = stack.length - 1; i >= 0; --i) {
             var command = stack[i];
             stack.length = i;
-            range = this._innerEditRange(command.newRange, command.originalText);
+            this._innerEditRange(command.newRange, command.originalText);
+            range = command.originalSelection;
             if (i > 0 && stack[i - 1].explicit)
                 return range;
         }
@@ -580,7 +644,7 @@ WebInspector.TextEditorModel.prototype = {
         this._markUndoableState();
 
         var indent = WebInspector.settings.textEditorIndent.get();
-        var indentLength = indent === WebInspector.TextEditorModel.Indent.TabCharacter ? 4 : indent.length;
+        var indentLength = indent === WebInspector.TextUtils.Indent.TabCharacter ? 4 : indent.length;
         var lineIndentRegex = new RegExp("^ {1," + indentLength + "}");
         var newRange = range.clone();
 

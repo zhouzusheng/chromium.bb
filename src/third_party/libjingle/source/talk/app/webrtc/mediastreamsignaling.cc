@@ -89,7 +89,7 @@ static bool FindConstraint(const MediaConstraintsInterface* constraints,
 
 static bool ParseConstraints(
     const MediaConstraintsInterface* constraints,
-    cricket::MediaSessionOptions* options) {
+    cricket::MediaSessionOptions* options, bool is_answer) {
   std::string value;
   size_t mandatory_constraints_satisfied = 0;
 
@@ -104,7 +104,7 @@ static bool ParseConstraints(
         (value == MediaConstraintsInterface::kValueTrue);
   } else {
     // kOfferToReceiveAudio is non mandatory true according to spec.
-    options->has_audio |= true;
+    options->has_audio = true;
   }
 
   if (FindConstraint(constraints,
@@ -117,7 +117,10 @@ static bool ParseConstraints(
     options->has_video |=
         (value == MediaConstraintsInterface::kValueTrue);
   } else {
-    // kOfferToReceiveVideo is non mandatory false according to spec.
+    // kOfferToReceiveVideo is non mandatory false according to spec. But
+    // if it is an answer and video is offered, we should still accept video
+    // per default.
+    options->has_video |= is_answer ? true : false;
   }
 
   if (FindConstraint(constraints,
@@ -165,11 +168,13 @@ class RemoteTracksInterface {
   // End all MediaStreamTracks that don't exist in |rtp_streams|.
   virtual void RemoveDisappearedTracks(
       const cricket::StreamParamsVec& rtp_streams) = 0;
+  // End all MediaStreamTracks.
+  virtual void RejectAllTracks() = 0;
   virtual bool GetSsrc(const std::string& track_id, uint32* ssrc) const = 0;
   virtual ~RemoteTracksInterface() {}
 };
 
-template <typename Track, typename TrackProxy>
+template <typename TrackInterface, typename Track, typename TrackProxy>
 class RemoteTracks : public RemoteTracksInterface {
  public:
   explicit RemoteTracks(talk_base::Thread* signaling_thread);
@@ -178,12 +183,13 @@ class RemoteTracks : public RemoteTracksInterface {
                               uint32 ssrc) OVERRIDE;
   virtual void RemoveDisappearedTracks(
       const cricket::StreamParamsVec& rtp_streams) OVERRIDE;
+  virtual void RejectAllTracks() OVERRIDE;
   virtual bool GetSsrc(const std::string& track_id,
                        uint32* ssrc) const OVERRIDE;
 
  private:
   struct TrackInfo {
-    talk_base::scoped_refptr<TrackProxy> track;
+    talk_base::scoped_refptr<TrackInterface> track;
     // The MediaStream |track| belongs to.
     talk_base::scoped_refptr<webrtc::MediaStreamInterface> stream;
     // The SSRC the track is identified by. Note that the track can use more
@@ -194,19 +200,19 @@ class RemoteTracks : public RemoteTracksInterface {
   std::map<std::string, TrackInfo> remote_tracks_;
 };
 
-typedef RemoteTracks<webrtc::AudioTrack, webrtc::AudioTrackProxy>
-    RemoteAudioTracks;
-typedef RemoteTracks<webrtc::VideoTrack, webrtc::VideoTrackProxy>
-    RemoteVideoTracks;
+typedef RemoteTracks<webrtc::AudioTrackInterface, webrtc::AudioTrack,
+    webrtc::AudioTrackProxy> RemoteAudioTracks;
+typedef RemoteTracks<webrtc::VideoTrackInterface, webrtc::VideoTrack,
+    webrtc::VideoTrackProxy> RemoteVideoTracks;
 
-template <typename T, typename TP>
-RemoteTracks<T, TP>::RemoteTracks(
+template <typename TI, typename T, typename TP>
+RemoteTracks<TI, T, TP>::RemoteTracks(
     talk_base::Thread* signaling_thread)
     : signaling_thread_(signaling_thread) {
 }
 
-template <typename T, typename TP>
-bool RemoteTracks<T, TP>::AddRemoteTrack(
+template <typename TI, typename T, typename TP>
+bool RemoteTracks<TI, T, TP>::AddRemoteTrack(
     const std::string& track_id,
     webrtc::MediaStreamInterface* stream,
     uint32 ssrc) {
@@ -217,7 +223,7 @@ bool RemoteTracks<T, TP>::AddRemoteTrack(
   }
 
   TrackInfo info;
-  info.track = TP::Create(T::Create(track_id, NULL), signaling_thread_);
+  info.track = TP::Create(signaling_thread_, T::Create(track_id, NULL));
   info.track->set_state(webrtc::MediaStreamTrackInterface::kLive);
   info.stream = stream;
   info.stream->AddTrack(info.track);
@@ -227,8 +233,8 @@ bool RemoteTracks<T, TP>::AddRemoteTrack(
   return true;
 }
 
-template <typename T, typename TP>
-bool RemoteTracks<T, TP>::GetSsrc(
+template <typename TI, typename T, typename TP>
+bool RemoteTracks<TI, T, TP>::GetSsrc(
     const std::string& track_id,
     uint32* ssrc) const {
   typename std::map<std::string, TrackInfo>::const_iterator it =
@@ -242,8 +248,8 @@ bool RemoteTracks<T, TP>::GetSsrc(
   return true;
 }
 
-template <typename T, typename TP>
-void RemoteTracks<T, TP>::RemoveDisappearedTracks(
+template <typename TI, typename T, typename TP>
+void RemoteTracks<TI, T, TP>::RemoveDisappearedTracks(
     const cricket::StreamParamsVec& rtp_streams) {
 
   std::vector<std::string> track_ids_to_remove;
@@ -258,15 +264,26 @@ void RemoteTracks<T, TP>::RemoveDisappearedTracks(
     }
   }
 
-  // End all tracks in |tracks_to_remove|.
+  // End all tracks in |tracks_to_remove| and remove them from the MediaStream.
   std::vector<std::string>::const_iterator track_id_it;
   for (track_id_it = track_ids_to_remove.begin();
-      track_id_it != track_ids_to_remove.end(); ++track_id_it) {
+       track_id_it != track_ids_to_remove.end(); ++track_id_it) {
     info_it = remote_tracks_.find(*track_id_it);
     TrackInfo& info = info_it->second;
     info.track->set_state(webrtc::MediaStreamTrackInterface::kEnded);
     info.stream->RemoveTrack(info.track);
     remote_tracks_.erase(info_it);
+  }
+}
+
+template <typename TI, typename T, typename TP>
+void RemoteTracks<TI, T, TP>::RejectAllTracks() {
+  // End all tracks in |remote_tracks_| but don't remove them from the
+  // MediaStream.
+  while (!remote_tracks_.empty()) {
+    TrackInfo& info = remote_tracks_.begin()->second;
+    info.track->set_state(webrtc::MediaStreamTrackInterface::kEnded);
+    remote_tracks_.erase(remote_tracks_.begin());
   }
 }
 
@@ -284,6 +301,9 @@ MediaStreamSignaling::MediaStreamSignaling(
 }
 
 MediaStreamSignaling::~MediaStreamSignaling() {
+  OnAudioChannelClose();
+  OnVideoChannelClose();
+  OnDataChannelClose();
 }
 
 void MediaStreamSignaling::SetLocalStreams(
@@ -306,7 +326,7 @@ bool MediaStreamSignaling::GetOptionsForOffer(
     const MediaConstraintsInterface* constraints,
     cricket::MediaSessionOptions* options) {
   UpdateSessionOptions();
-  if (!ParseConstraints(constraints, &options_)) {
+  if (!ParseConstraints(constraints, &options_, false)) {
     return false;
   }
   options_.bundle_enabled = EvaluateNeedForBundle(options_);
@@ -322,7 +342,7 @@ bool MediaStreamSignaling::GetOptionsForAnswer(
   // Copy the |options_| to not let the flag MediaSessionOptions::has_audio and
   // MediaSessionOptions::has_video affect subsequent offers.
   cricket::MediaSessionOptions current_options = options_;
-  if (!ParseConstraints(constraints, &current_options)) {
+  if (!ParseConstraints(constraints, &current_options, true)) {
     return false;
   }
   current_options.bundle_enabled = EvaluateNeedForBundle(current_options);
@@ -335,7 +355,7 @@ bool MediaStreamSignaling::GetOptionsForAnswer(
 // If the remote SessionDesription contains new remote MediaStreams
 // the observer OnAddStream method is called. If a remote MediaStream is missing
 // from the remote SessionDescription OnRemoveStream is called.
-void MediaStreamSignaling::UpdateRemoteStreams(
+void MediaStreamSignaling::OnRemoteDescriptionChanged(
     const SessionDescriptionInterface* desc) {
   const cricket::SessionDescription* remote_desc = desc->description();
   talk_base::scoped_refptr<StreamCollection> new_streams(
@@ -391,8 +411,19 @@ void MediaStreamSignaling::UpdateRemoteStreams(
   MaybeCreateDefaultStream();
 }
 
-void MediaStreamSignaling::UpdateLocalStreams(
+void MediaStreamSignaling::OnLocalDescriptionChanged(
     const SessionDescriptionInterface* desc) {
+  const cricket::ContentInfo* audio_content =
+      GetFirstAudioContent(desc->description());
+  if (audio_content && audio_content->rejected) {
+    remote_audio_tracks_->RejectAllTracks();
+  }
+  const cricket::ContentInfo* video_content =
+      GetFirstVideoContent(desc->description());
+  if (video_content && video_content->rejected) {
+    remote_video_tracks_->RejectAllTracks();
+  }
+
   const cricket::ContentInfo* data_content =
       GetFirstDataContent(desc->description());
   if (data_content) {
@@ -400,6 +431,22 @@ void MediaStreamSignaling::UpdateLocalStreams(
         static_cast<const cricket::DataContentDescription*>(
             data_content->description);
     UpdateLocalDataChannels(data_desc->streams());
+  }
+}
+
+void MediaStreamSignaling::OnAudioChannelClose() {
+  remote_audio_tracks_->RejectAllTracks();
+}
+
+void MediaStreamSignaling::OnVideoChannelClose() {
+  remote_video_tracks_->RejectAllTracks();
+}
+
+void MediaStreamSignaling::OnDataChannelClose() {
+  DataChannels::iterator it = data_channels_.begin();
+  for (; it != data_channels_.end(); ++it) {
+    DataChannel* data_channel = it->second;
+    data_channel->OnDataEngineClose();
   }
 }
 
@@ -419,25 +466,25 @@ void MediaStreamSignaling::UpdateSessionOptions() {
     for (size_t i = 0; i < local_streams_->count(); ++i) {
       MediaStreamInterface* stream = local_streams_->at(i);
 
-      scoped_refptr<AudioTracks> audio_tracks(stream->audio_tracks());
-      if (audio_tracks->count() > 0) {
+      AudioTrackVector audio_tracks(stream->GetAudioTracks());
+      if (!audio_tracks.empty()) {
         options_.has_audio = true;
       }
 
       // For each audio track in the stream, add it to the MediaSessionOptions.
-      for (size_t j = 0; j < audio_tracks->count(); ++j) {
-        scoped_refptr<MediaStreamTrackInterface> track(audio_tracks->at(j));
+      for (size_t j = 0; j < audio_tracks.size(); ++j) {
+        scoped_refptr<MediaStreamTrackInterface> track(audio_tracks[j]);
         options_.AddStream(cricket::MEDIA_TYPE_AUDIO, track->id(),
                            stream->label());
       }
 
-      scoped_refptr<VideoTracks> video_tracks(stream->video_tracks());
-      if (video_tracks->count() > 0) {
+      VideoTrackVector video_tracks(stream->GetVideoTracks());
+      if (!video_tracks.empty()) {
         options_.has_video = true;
       }
       // For each video track in the stream, add it to the MediaSessionOptions.
-      for (size_t j = 0; j < video_tracks->count(); ++j) {
-        scoped_refptr<MediaStreamTrackInterface> track(video_tracks->at(j));
+      for (size_t j = 0; j < video_tracks.size(); ++j) {
+        scoped_refptr<MediaStreamTrackInterface> track(video_tracks[j]);
         options_.AddStream(cricket::MEDIA_TYPE_VIDEO, track->id(),
                            stream->label());
       }
@@ -450,13 +497,13 @@ void MediaStreamSignaling::UpdateSessionOptions() {
     const DataChannel* channel = data_channel_it->second;
     if (channel->state() == DataChannel::kConnecting ||
         channel->state() == DataChannel::kOpen) {
-      // |stream_name| and |sync_label| are both set to the DataChannel label
+      // |streamid| and |sync_label| are both set to the DataChannel label
       // here so they can be signaled the same way as MediaStreams and Tracks.
       // For MediaStreams, the sync_label is the MediaStream label and the
-      // track label is the same as |stream_name|.
-      const std::string& stream_name = channel->label();
+      // track label is the same as |streamid|.
+      const std::string& streamid = channel->label();
       const std::string& sync_label = channel->label();
-      options_.AddStream(cricket::MEDIA_TYPE_DATA, stream_name, sync_label);
+      options_.AddStream(cricket::MEDIA_TYPE_DATA, streamid, sync_label);
     }
   }
 }
@@ -472,19 +519,20 @@ void MediaStreamSignaling::UpdateRemoteStreamsList(
   for (cricket::StreamParamsVec::const_iterator it = rtp_streams.begin();
        it != rtp_streams.end(); ++it) {
     const std::string mediastream_label = it->sync_label;
-    const std::string track_id = it->name;
+    const std::string track_id = it->id;
 
     talk_base::scoped_refptr<MediaStreamInterface> media_stream(
         remote_streams_->find(mediastream_label));
     if (media_stream == NULL) {
       // This is a new MediaStream. Create a new remote MediaStream.
-      media_stream =  MediaStreamProxy::Create(mediastream_label,
-                                               signaling_thread_);
+      media_stream = MediaStreamProxy::Create(
+          signaling_thread_,
+          MediaStream::Create(mediastream_label));
       new_streams->AddStream(media_stream);
       remote_streams_->AddStream(media_stream);
     }
     remote_tracks->AddRemoteTrack(track_id, media_stream,
-                                     it->first_ssrc());
+                                  it->first_ssrc());
   }
   // Find all ended MediaStream Tracks.
   remote_tracks->RemoveDisappearedTracks(rtp_streams);
@@ -516,17 +564,17 @@ void MediaStreamSignaling::MaybeCreateDefaultStream() {
       remote_streams_->find(kDefaultStreamLabel);
   if (default_remote_stream == NULL) {
     default_created = true;
-    default_remote_stream = MediaStreamProxy::Create(kDefaultStreamLabel,
-                                                      signaling_thread_);
+    default_remote_stream = MediaStreamProxy::Create(
+        signaling_thread_, MediaStream::Create(kDefaultStreamLabel));
   }
   if (remote_info_.default_audio_track_needed &&
-      default_remote_stream->audio_tracks()->count() == 0) {
+      default_remote_stream->GetAudioTracks().size() == 0) {
     remote_audio_tracks_->AddRemoteTrack(kDefaultAudioTrackLabel,
                                          default_remote_stream,
                                          0);
   }
   if (remote_info_.default_video_track_needed &&
-      default_remote_stream->video_tracks()->count() == 0) {
+      default_remote_stream->GetVideoTracks().size() == 0) {
     remote_video_tracks_->AddRemoteTrack(kDefaultVideoTrackLabel,
                                          default_remote_stream,
                                          0);
@@ -543,7 +591,7 @@ MediaStreamSignaling::GetRemoteTracks(cricket::MediaType type) {
     return remote_audio_tracks_.get();
   else if (type == cricket::MEDIA_TYPE_VIDEO)
     return remote_video_tracks_.get();
-  ASSERT(!"Unknown MediaType");
+  ASSERT(false && "Unknown MediaType");
   return NULL;
 }
 
@@ -558,7 +606,7 @@ void MediaStreamSignaling::UpdateLocalDataChannels(
     // we use the same naming of data channels as we do for
     // MediaStreams and Tracks.
     // For MediaStreams, the sync_label is the MediaStream label and the
-    // track label is the same as |stream_name|.
+    // track label is the same as |streamid|.
     const std::string& channel_label = it->sync_label;
     DataChannels::iterator data_channel_it = data_channels_.find(channel_label);
     if (!VERIFY(data_channel_it != data_channels_.end())) {

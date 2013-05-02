@@ -74,6 +74,12 @@ var LANGUAGE_VARIANT_RE = undefined;
 var LANGUAGE_SINGLETON_RE = undefined;
 
 /**
+ * Matches valid IANA time zone names.
+ */
+var TIMEZONE_NAME_CHECK_RE =
+    new RegExp('^([A-Za-z]+)/([A-Za-z]+)(?:_([A-Za-z]+))*$');
+
+/**
  * Maps ICU calendar names into LDML type.
  */
 var ICU_CALENDAR_MAP = {

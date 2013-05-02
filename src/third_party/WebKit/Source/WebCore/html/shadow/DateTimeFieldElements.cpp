@@ -71,15 +71,15 @@ void DateTimeAMPMFieldElement::setValueAsDateTimeFieldsState(const DateTimeField
 
 // ----------------------------
 
-DateTimeDayFieldElement::DateTimeDayFieldElement(Document* document, FieldOwner& fieldOwner, const String& placeholder, int minimum, int maximum)
-    : DateTimeNumericFieldElement(document, fieldOwner, minimum, maximum, placeholder)
+DateTimeDayFieldElement::DateTimeDayFieldElement(Document* document, FieldOwner& fieldOwner, const String& placeholder, const Range& range)
+    : DateTimeNumericFieldElement(document, fieldOwner, range, Range(1, 31), placeholder)
 {
 }
 
-PassRefPtr<DateTimeDayFieldElement> DateTimeDayFieldElement::create(Document* document, FieldOwner& fieldOwner, const String& placeholder, int minimum, int maximum)
+PassRefPtr<DateTimeDayFieldElement> DateTimeDayFieldElement::create(Document* document, FieldOwner& fieldOwner, const String& placeholder, const Range& range)
 {
     DEFINE_STATIC_LOCAL(AtomicString, dayPsuedoId, ("-webkit-datetime-edit-day-field", AtomicString::ConstructFromLiteral));
-    RefPtr<DateTimeDayFieldElement> field = adoptRef(new DateTimeDayFieldElement(document, fieldOwner, placeholder.isEmpty() ? ASCIILiteral("--") : placeholder, minimum, maximum));
+    RefPtr<DateTimeDayFieldElement> field = adoptRef(new DateTimeDayFieldElement(document, fieldOwner, placeholder.isEmpty() ? ASCIILiteral("--") : placeholder, range));
     field->initialize(dayPsuedoId, AXDayOfMonthFieldText());
     return field.release();
 }
@@ -110,29 +110,144 @@ void DateTimeDayFieldElement::setValueAsDateTimeFieldsState(const DateTimeFields
     setEmptyValue();
 }
 
-int DateTimeDayFieldElement::clampValueForHardLimits(int value) const
+// ----------------------------
+
+DateTimeHourFieldElementBase::DateTimeHourFieldElementBase(Document* document, FieldOwner& fieldOwner, const Range& range, const Range& hardLimits, const Step& step)
+    : DateTimeNumericFieldElement(document, fieldOwner, range, hardLimits, "--", step)
 {
-    return Range(1, 31).clampValue(value);
+}
+
+void DateTimeHourFieldElementBase::initialize()
+{
+    DEFINE_STATIC_LOCAL(AtomicString, hourPsuedoId, ("-webkit-datetime-edit-hour-field", AtomicString::ConstructFromLiteral));
+    DateTimeNumericFieldElement::initialize(hourPsuedoId, AXHourFieldText());
+}
+
+void DateTimeHourFieldElementBase::setValueAsDate(const DateComponents& date)
+{
+    setValueAsInteger(date.hour());
+}
+
+void DateTimeHourFieldElementBase::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState)
+{
+    if (!dateTimeFieldsState.hasHour()) {
+        setEmptyValue();
+        return;
+    }
+
+    const int hour12 = dateTimeFieldsState.hour();
+    if (hour12 < 1 || hour12 > 12) {
+        setEmptyValue();
+        return;
+    }
+
+    if (dateTimeFieldsState.ampm() == DateTimeFieldsState::AMPMValuePM)
+        setValueAsInteger((hour12 + 12) % 24);
+    else
+        setValueAsInteger(hour12 % 12);
+}
+// ----------------------------
+
+DateTimeHour11FieldElement::DateTimeHour11FieldElement(Document* document, FieldOwner& fieldOwner, const Range& range, const Step& step)
+    : DateTimeHourFieldElementBase(document, fieldOwner, range, Range(0, 11), step)
+{
+}
+
+PassRefPtr<DateTimeHour11FieldElement> DateTimeHour11FieldElement::create(Document* document, FieldOwner& fieldOwner, const Range& hour23Range, const Step& step)
+{
+    ASSERT(hour23Range.minimum >= 0);
+    ASSERT(hour23Range.maximum <= 23);
+    ASSERT(hour23Range.minimum <= hour23Range.maximum);
+    Range range(0, 11);
+    if (hour23Range.maximum < 12)
+        range = hour23Range;
+    else if (hour23Range.minimum >= 12) {
+        range.minimum = hour23Range.minimum - 12;
+        range.maximum = hour23Range.maximum - 12;
+    }
+
+    RefPtr<DateTimeHour11FieldElement> field = adoptRef(new DateTimeHour11FieldElement(document, fieldOwner, range, step));
+    field->initialize();
+    return field.release();
+}
+
+void DateTimeHour11FieldElement::populateDateTimeFieldsState(DateTimeFieldsState& dateTimeFieldsState)
+{
+    if (!hasValue()) {
+        dateTimeFieldsState.setHour(DateTimeFieldsState::emptyValue);
+        return;
+    }
+    const int value = valueAsInteger();
+    dateTimeFieldsState.setHour(value ? value : 12);
+}
+
+void DateTimeHour11FieldElement::setValueAsInteger(int value, EventBehavior eventBehavior)
+{
+    value = Range(0, 23).clampValue(value) % 12;
+    DateTimeNumericFieldElement::setValueAsInteger(value, eventBehavior);
 }
 
 // ----------------------------
 
-DateTimeHourFieldElement::DateTimeHourFieldElement(Document* document, FieldOwner& fieldOwner, int minimum, int maximum, const DateTimeNumericFieldElement::Parameters& parameters)
-    : DateTimeNumericFieldElement(document, fieldOwner, minimum, maximum, "--", parameters)
-    , m_alignment(maximum + maximum % 2)
+DateTimeHour12FieldElement::DateTimeHour12FieldElement(Document* document, FieldOwner& fieldOwner, const Range& range, const Step& step)
+    : DateTimeHourFieldElementBase(document, fieldOwner, range, Range(1, 12), step)
 {
-    ASSERT((!minimum && (maximum == 11 || maximum == 23)) || (minimum == 1 && (maximum == 12 || maximum == 24)));
 }
 
-PassRefPtr<DateTimeHourFieldElement> DateTimeHourFieldElement::create(Document* document, FieldOwner& fieldOwner, int minimum, int maximum, const DateTimeNumericFieldElement::Parameters& parameters)
+PassRefPtr<DateTimeHour12FieldElement> DateTimeHour12FieldElement::create(Document* document, FieldOwner& fieldOwner, const Range& hour23Range, const Step& step)
 {
-    DEFINE_STATIC_LOCAL(AtomicString, hourPsuedoId, ("-webkit-datetime-edit-hour-field", AtomicString::ConstructFromLiteral));
-    RefPtr<DateTimeHourFieldElement> field = adoptRef(new DateTimeHourFieldElement(document, fieldOwner, minimum, maximum, parameters));
-    field->initialize(hourPsuedoId, AXHourFieldText());
+    ASSERT(hour23Range.minimum >= 0);
+    ASSERT(hour23Range.maximum <= 23);
+    ASSERT(hour23Range.minimum <= hour23Range.maximum);
+    Range range(1, 12);
+    if (hour23Range.maximum < 12)
+        range = hour23Range;
+    else if (hour23Range.minimum >= 12) {
+        range.minimum = hour23Range.minimum - 12;
+        range.maximum = hour23Range.maximum - 12;
+    }
+    if (!range.minimum)
+        range.minimum = 12;
+    if (!range.maximum)
+        range.maximum = 12;
+    if (range.minimum > range.maximum) {
+        range.minimum = 1;
+        range.maximum = 12;
+    }
+    RefPtr<DateTimeHour12FieldElement> field = adoptRef(new DateTimeHour12FieldElement(document, fieldOwner, range, step));
+    field->initialize();
     return field.release();
 }
 
-void DateTimeHourFieldElement::populateDateTimeFieldsState(DateTimeFieldsState& dateTimeFieldsState)
+void DateTimeHour12FieldElement::populateDateTimeFieldsState(DateTimeFieldsState& dateTimeFieldsState)
+{
+    dateTimeFieldsState.setHour(hasValue() ? valueAsInteger() : DateTimeFieldsState::emptyValue);
+}
+
+void DateTimeHour12FieldElement::setValueAsInteger(int value, EventBehavior eventBehavior)
+{
+    value = Range(0, 24).clampValue(value) % 12;
+    DateTimeNumericFieldElement::setValueAsInteger(value ? value : 12, eventBehavior);
+}
+
+// ----------------------------
+
+DateTimeHour23FieldElement::DateTimeHour23FieldElement(Document* document, FieldOwner& fieldOwner, const Range& range, const Step& step)
+    : DateTimeHourFieldElementBase(document, fieldOwner, range, Range(0, 23), step)
+{
+}
+
+PassRefPtr<DateTimeHour23FieldElement> DateTimeHour23FieldElement::create(Document* document, FieldOwner& fieldOwner, const Range& hour23Range, const Step& step)
+{
+    ASSERT(hour23Range.minimum >= 0);
+    ASSERT(hour23Range.maximum <= 23);
+    ASSERT(hour23Range.minimum <= hour23Range.maximum);
+    RefPtr<DateTimeHour23FieldElement> field = adoptRef(new DateTimeHour23FieldElement(document, fieldOwner, hour23Range, step));
+    field->initialize();
+    return field.release();
+}
+
+void DateTimeHour23FieldElement::populateDateTimeFieldsState(DateTimeFieldsState& dateTimeFieldsState)
 {
     if (!hasValue()) {
         dateTimeFieldsState.setHour(DateTimeFieldsState::emptyValue);
@@ -141,91 +256,74 @@ void DateTimeHourFieldElement::populateDateTimeFieldsState(DateTimeFieldsState& 
 
     const int value = valueAsInteger();
 
-    switch (maximum()) {
-    case 11:
-        dateTimeFieldsState.setHour(value ? value : 12);
-        return;
-    case 12:
-        dateTimeFieldsState.setHour(value);
-        return;
-    case 23:
-        dateTimeFieldsState.setHour(value ? value % 12 : 12);
-        dateTimeFieldsState.setAMPM(value >= 12 ? DateTimeFieldsState::AMPMValuePM : DateTimeFieldsState::AMPMValueAM);
-        return;
-    case 24:
-        if (value == 24) {
-            dateTimeFieldsState.setHour(12);
-            dateTimeFieldsState.setHour(DateTimeFieldsState::AMPMValueAM);
-            return;
-        }
-        dateTimeFieldsState.setHour(value == 12 ? 12 : value % 12);
-        dateTimeFieldsState.setAMPM(value >= 12 ? DateTimeFieldsState::AMPMValuePM : DateTimeFieldsState::AMPMValueAM);
-        return;
-    default:
-        ASSERT_NOT_REACHED();
-    }
+    dateTimeFieldsState.setHour(value ? value % 12 : 12);
+    dateTimeFieldsState.setAMPM(value >= 12 ? DateTimeFieldsState::AMPMValuePM : DateTimeFieldsState::AMPMValueAM);
 }
 
-void DateTimeHourFieldElement::setValueAsDate(const DateComponents& date)
+void DateTimeHour23FieldElement::setValueAsInteger(int value, EventBehavior eventBehavior)
 {
-    setValueAsInteger(date.hour());
-}
-
-void DateTimeHourFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState)
-{
-    if (!dateTimeFieldsState.hasHour()) {
-        setEmptyValue();
-        return;
-    }
-
-    const int hour12 = dateTimeFieldsState.hour();
-
-    if (hour12 < 1 || hour12 > 12) {
-        setEmptyValue();
-        return;
-    }
-
-    switch (maximum()) {
-    case 11:
-        DateTimeNumericFieldElement::setValueAsInteger(hour12 % 12);
-        return;
-    case 12:
-        DateTimeNumericFieldElement::setValueAsInteger(hour12);
-        return;
-    case 23:
-        if (dateTimeFieldsState.ampm() == DateTimeFieldsState::AMPMValuePM)
-            DateTimeNumericFieldElement::setValueAsInteger((hour12 + 12) % 24);
-        else
-            DateTimeNumericFieldElement::setValueAsInteger(hour12 % 12);
-        return;
-    case 24:
-        if (dateTimeFieldsState.ampm() == DateTimeFieldsState::AMPMValuePM)
-            DateTimeNumericFieldElement::setValueAsInteger(hour12 == 12 ? 12 : hour12 + 12);
-        else
-            DateTimeNumericFieldElement::setValueAsInteger(hour12);
-        return;
-    default:
-        ASSERT_NOT_REACHED();
-    }
-}
-
-void DateTimeHourFieldElement::setValueAsInteger(int valueAsHour23, EventBehavior eventBehavior)
-{
-    const int value = Range(0, 23).clampValue(valueAsHour23) % m_alignment;
-    DateTimeNumericFieldElement::setValueAsInteger(range().minimum && !value ? m_alignment : value, eventBehavior);
+    value = Range(0, 23).clampValue(value);
+    DateTimeNumericFieldElement::setValueAsInteger(value, eventBehavior);
 }
 
 // ----------------------------
 
-DateTimeMillisecondFieldElement::DateTimeMillisecondFieldElement(Document* document, FieldOwner& fieldOwner, const DateTimeNumericFieldElement::Parameters& parameters)
-    : DateTimeNumericFieldElement(document, fieldOwner, 0, 999, "---", parameters)
+DateTimeHour24FieldElement::DateTimeHour24FieldElement(Document* document, FieldOwner& fieldOwner, const Range& range, const Step& step)
+    : DateTimeHourFieldElementBase(document, fieldOwner, range, Range(1, 24), step)
 {
 }
 
-PassRefPtr<DateTimeMillisecondFieldElement> DateTimeMillisecondFieldElement::create(Document* document, FieldOwner& fieldOwner, const DateTimeNumericFieldElement::Parameters& parameters)
+PassRefPtr<DateTimeHour24FieldElement> DateTimeHour24FieldElement::create(Document* document, FieldOwner& fieldOwner, const Range& hour23Range, const Step& step)
+{
+    ASSERT(hour23Range.minimum >= 0);
+    ASSERT(hour23Range.maximum <= 23);
+    ASSERT(hour23Range.minimum <= hour23Range.maximum);
+    Range range(hour23Range.minimum ? hour23Range.minimum : 24, hour23Range.maximum ? hour23Range.maximum : 24);
+    if (range.minimum > range.maximum) {
+        range.minimum = 1;
+        range.maximum = 24;
+    }
+
+    RefPtr<DateTimeHour24FieldElement> field = adoptRef(new DateTimeHour24FieldElement(document, fieldOwner, range, step));
+    field->initialize();
+    return field.release();
+}
+
+void DateTimeHour24FieldElement::populateDateTimeFieldsState(DateTimeFieldsState& dateTimeFieldsState)
+{
+    if (!hasValue()) {
+        dateTimeFieldsState.setHour(DateTimeFieldsState::emptyValue);
+        return;
+    }
+
+    const int value = valueAsInteger();
+
+    if (value == 24) {
+        dateTimeFieldsState.setHour(12);
+        dateTimeFieldsState.setAMPM(DateTimeFieldsState::AMPMValueAM);
+    } else {
+        dateTimeFieldsState.setHour(value == 12 ? 12 : value % 12);
+        dateTimeFieldsState.setAMPM(value >= 12 ? DateTimeFieldsState::AMPMValuePM : DateTimeFieldsState::AMPMValueAM);
+    }
+}
+
+void DateTimeHour24FieldElement::setValueAsInteger(int value, EventBehavior eventBehavior)
+{
+    value = Range(0, 24).clampValue(value);
+    DateTimeNumericFieldElement::setValueAsInteger(value ? value : 24, eventBehavior);
+}
+
+// ----------------------------
+
+DateTimeMillisecondFieldElement::DateTimeMillisecondFieldElement(Document* document, FieldOwner& fieldOwner, const Range& range, const Step& step)
+    : DateTimeNumericFieldElement(document, fieldOwner, range, Range(0, 999), "---", step)
+{
+}
+
+PassRefPtr<DateTimeMillisecondFieldElement> DateTimeMillisecondFieldElement::create(Document* document, FieldOwner& fieldOwner, const Range& range, const Step& step)
 {
     DEFINE_STATIC_LOCAL(AtomicString, millisecondPsuedoId, ("-webkit-datetime-edit-millisecond-field", AtomicString::ConstructFromLiteral));
-    RefPtr<DateTimeMillisecondFieldElement> field = adoptRef(new DateTimeMillisecondFieldElement(document, fieldOwner, parameters));
+    RefPtr<DateTimeMillisecondFieldElement> field = adoptRef(new DateTimeMillisecondFieldElement(document, fieldOwner, range, step));
     field->initialize(millisecondPsuedoId, AXMillisecondFieldText());
     return field.release();
 }
@@ -258,15 +356,15 @@ void DateTimeMillisecondFieldElement::setValueAsDateTimeFieldsState(const DateTi
 
 // ----------------------------
 
-DateTimeMinuteFieldElement::DateTimeMinuteFieldElement(Document* document, FieldOwner& fieldOwner, const DateTimeNumericFieldElement::Parameters& parameters)
-    : DateTimeNumericFieldElement(document, fieldOwner, 0, 59, "--", parameters)
+DateTimeMinuteFieldElement::DateTimeMinuteFieldElement(Document* document, FieldOwner& fieldOwner, const Range& range, const Step& step)
+    : DateTimeNumericFieldElement(document, fieldOwner, range, Range(0, 59), "--", step)
 {
 }
 
-PassRefPtr<DateTimeMinuteFieldElement> DateTimeMinuteFieldElement::create(Document* document, FieldOwner& fieldOwner, const DateTimeNumericFieldElement::Parameters& parameters)
+PassRefPtr<DateTimeMinuteFieldElement> DateTimeMinuteFieldElement::create(Document* document, FieldOwner& fieldOwner, const Range& range, const Step& step)
 {
     DEFINE_STATIC_LOCAL(AtomicString, minutePsuedoId, ("-webkit-datetime-edit-minute-field", AtomicString::ConstructFromLiteral));
-    RefPtr<DateTimeMinuteFieldElement> field = adoptRef(new DateTimeMinuteFieldElement(document, fieldOwner, parameters));
+    RefPtr<DateTimeMinuteFieldElement> field = adoptRef(new DateTimeMinuteFieldElement(document, fieldOwner, range, step));
     field->initialize(minutePsuedoId, AXMinuteFieldText());
     return field.release();
 }
@@ -299,15 +397,15 @@ void DateTimeMinuteFieldElement::setValueAsDateTimeFieldsState(const DateTimeFie
 
 // ----------------------------
 
-DateTimeMonthFieldElement::DateTimeMonthFieldElement(Document* document, FieldOwner& fieldOwner, const String& placeholder, int minimum, int maximum)
-    : DateTimeNumericFieldElement(document, fieldOwner, minimum, maximum, placeholder)
+DateTimeMonthFieldElement::DateTimeMonthFieldElement(Document* document, FieldOwner& fieldOwner, const String& placeholder, const Range& range)
+    : DateTimeNumericFieldElement(document, fieldOwner, range, Range(1, 12), placeholder)
 {
 }
 
-PassRefPtr<DateTimeMonthFieldElement> DateTimeMonthFieldElement::create(Document* document, FieldOwner& fieldOwner, const String& placeholder, int minimum, int maximum)
+PassRefPtr<DateTimeMonthFieldElement> DateTimeMonthFieldElement::create(Document* document, FieldOwner& fieldOwner, const String& placeholder, const Range& range)
 {
     DEFINE_STATIC_LOCAL(AtomicString, monthPsuedoId, ("-webkit-datetime-edit-month-field", AtomicString::ConstructFromLiteral));
-    RefPtr<DateTimeMonthFieldElement> field = adoptRef(new DateTimeMonthFieldElement(document, fieldOwner, placeholder.isEmpty() ? ASCIILiteral("--") : placeholder, minimum, maximum));
+    RefPtr<DateTimeMonthFieldElement> field = adoptRef(new DateTimeMonthFieldElement(document, fieldOwner, placeholder.isEmpty() ? ASCIILiteral("--") : placeholder, range));
     field->initialize(monthPsuedoId, AXMonthFieldText());
     return field.release();
 }
@@ -338,22 +436,17 @@ void DateTimeMonthFieldElement::setValueAsDateTimeFieldsState(const DateTimeFiel
     setEmptyValue();
 }
 
-int DateTimeMonthFieldElement::clampValueForHardLimits(int value) const
-{
-    return Range(1, 12).clampValue(value);
-}
-
 // ----------------------------
 
-DateTimeSecondFieldElement::DateTimeSecondFieldElement(Document* document, FieldOwner& fieldOwner, const DateTimeNumericFieldElement::Parameters& parameters)
-    : DateTimeNumericFieldElement(document, fieldOwner, 0, 59, "--", parameters)
+DateTimeSecondFieldElement::DateTimeSecondFieldElement(Document* document, FieldOwner& fieldOwner, const Range& range, const Step& step)
+    : DateTimeNumericFieldElement(document, fieldOwner, range, Range(0, 59), "--", step)
 {
 }
 
-PassRefPtr<DateTimeSecondFieldElement> DateTimeSecondFieldElement::create(Document* document, FieldOwner& fieldOwner, const DateTimeNumericFieldElement::Parameters& parameters)
+PassRefPtr<DateTimeSecondFieldElement> DateTimeSecondFieldElement::create(Document* document, FieldOwner& fieldOwner, const Range& range, const Step& step)
 {
     DEFINE_STATIC_LOCAL(AtomicString, secondPsuedoId, ("-webkit-datetime-edit-second-field", AtomicString::ConstructFromLiteral));
-    RefPtr<DateTimeSecondFieldElement> field = adoptRef(new DateTimeSecondFieldElement(document, fieldOwner, parameters));
+    RefPtr<DateTimeSecondFieldElement> field = adoptRef(new DateTimeSecondFieldElement(document, fieldOwner, range, step));
     field->initialize(secondPsuedoId, AXSecondFieldText());
     return field.release();
 }
@@ -430,15 +523,15 @@ void DateTimeSymbolicMonthFieldElement::setValueAsDateTimeFieldsState(const Date
 
 // ----------------------------
 
-DateTimeWeekFieldElement::DateTimeWeekFieldElement(Document* document, FieldOwner& fieldOwner, int minimum, int maximum)
-    : DateTimeNumericFieldElement(document, fieldOwner, minimum, maximum, "--")
+DateTimeWeekFieldElement::DateTimeWeekFieldElement(Document* document, FieldOwner& fieldOwner, const Range& range)
+    : DateTimeNumericFieldElement(document, fieldOwner, range, Range(DateComponents::minimumWeekNumber, DateComponents::maximumWeekNumber), "--")
 {
 }
 
-PassRefPtr<DateTimeWeekFieldElement> DateTimeWeekFieldElement::create(Document* document, FieldOwner& fieldOwner, int minimum, int maximum)
+PassRefPtr<DateTimeWeekFieldElement> DateTimeWeekFieldElement::create(Document* document, FieldOwner& fieldOwner, const Range& range)
 {
     DEFINE_STATIC_LOCAL(AtomicString, weekPsuedoId, ("-webkit-datetime-edit-week-field", AtomicString::ConstructFromLiteral));
-    RefPtr<DateTimeWeekFieldElement> field = adoptRef(new DateTimeWeekFieldElement(document, fieldOwner, minimum, maximum));
+    RefPtr<DateTimeWeekFieldElement> field = adoptRef(new DateTimeWeekFieldElement(document, fieldOwner, range));
     field->initialize(weekPsuedoId, AXWeekOfYearFieldText());
     return field.release();
 }
@@ -469,15 +562,10 @@ void DateTimeWeekFieldElement::setValueAsDateTimeFieldsState(const DateTimeField
     setEmptyValue();
 }
 
-int DateTimeWeekFieldElement::clampValueForHardLimits(int value) const
-{
-    return Range(DateComponents::minimumWeekNumber, DateComponents::maximumWeekNumber).clampValue(value);
-}
-
 // ----------------------------
 
 DateTimeYearFieldElement::DateTimeYearFieldElement(Document* document, FieldOwner& fieldOwner, const DateTimeYearFieldElement::Parameters& parameters)
-    : DateTimeNumericFieldElement(document, fieldOwner, parameters.minimumYear, parameters.maximumYear, parameters.placeholder.isEmpty() ? ASCIILiteral("----") : parameters.placeholder)
+    : DateTimeNumericFieldElement(document, fieldOwner, Range(parameters.minimumYear, parameters.maximumYear), Range(DateComponents::minimumYear(), DateComponents::maximumYear()), parameters.placeholder.isEmpty() ? ASCIILiteral("----") : parameters.placeholder)
     , m_minIsSpecified(parameters.minIsSpecified)
     , m_maxIsSpecified(parameters.maxIsSpecified)
 {
@@ -491,11 +579,6 @@ PassRefPtr<DateTimeYearFieldElement> DateTimeYearFieldElement::create(Document* 
     RefPtr<DateTimeYearFieldElement> field = adoptRef(new DateTimeYearFieldElement(document, fieldOwner, parameters));
     field->initialize(yearPsuedoId, AXYearFieldText());
     return field.release();
-}
-
-int DateTimeYearFieldElement::clampValueForHardLimits(int value) const
-{
-    return Range(DateComponents::minimumYear(), DateComponents::maximumYear()).clampValue(value);
 }
 
 static int currentFullYear()

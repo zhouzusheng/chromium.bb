@@ -26,12 +26,12 @@ struct MEDIA_EXPORT AudioInputBuffer {
 
 class MEDIA_EXPORT AudioParameters {
  public:
+  // TODO(miu): Rename this enum to something that correctly reflects its
+  // semantics, such as "TransportScheme."
   enum Format {
     AUDIO_PCM_LINEAR = 0,     // PCM is 'raw' amplitude samples.
     AUDIO_PCM_LOW_LATENCY,    // Linear PCM, low latency requested.
     AUDIO_FAKE,               // Creates a fake AudioOutputStream object.
-    AUDIO_VIRTUAL,            // Creates a VirtualAudioInputStream object.
-                              // Applies to input streams only.
     AUDIO_LAST_FORMAT         // Only used for validation of format.
   };
 
@@ -51,7 +51,7 @@ class MEDIA_EXPORT AudioParameters {
                   int sample_rate, int bits_per_sample,
                   int frames_per_buffer);
   void Reset(Format format, ChannelLayout channel_layout,
-             int input_channels,
+             int channels, int input_channels,
              int sample_rate, int bits_per_sample,
              int frames_per_buffer);
 
@@ -75,6 +75,9 @@ class MEDIA_EXPORT AudioParameters {
   int frames_per_buffer() const { return frames_per_buffer_; }
   int channels() const { return channels_; }
   int input_channels() const { return input_channels_; }
+
+  // Set to CHANNEL_LAYOUT_DISCRETE with given number of channels.
+  void SetDiscreteChannels(int channels);
 
  private:
   Format format_;                 // Format of the stream.

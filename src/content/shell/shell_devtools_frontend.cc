@@ -4,17 +4,44 @@
 
 #include "content/shell/shell_devtools_frontend.h"
 
+#include "base/command_line.h"
+#include "base/path_service.h"
 #include "content/public/browser/devtools_http_handler.h"
 #include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_client.h"
 #include "content/shell/shell.h"
 #include "content/shell/shell_browser_context.h"
 #include "content/shell/shell_browser_main_parts.h"
 #include "content/shell/shell_content_browser_client.h"
 #include "content/shell/shell_devtools_delegate.h"
+#include "content/shell/shell_switches.h"
+#include "net/base/net_util.h"
 
 namespace content {
+
+namespace {
+
+// DevTools frontend path for inspector LayoutTests.
+GURL GetDevToolsPathAsURL() {
+  base::FilePath dir_exe;
+  if (!PathService::Get(base::DIR_EXE, &dir_exe)) {
+    NOTREACHED();
+    return GURL();
+  }
+#if defined(OS_MACOSX)
+  // On Mac, the executable is in
+  // out/Release/Content Shell.app/Contents/MacOS/Content Shell.
+  // We need to go up 3 directories to get to out/Release.
+  dir_exe = dir_exe.AppendASCII("../../..");
+#endif
+  base::FilePath dev_tools_path = dir_exe.AppendASCII(
+      "resources/inspector/devtools.html");
+  return net::FilePathToFileURL(dev_tools_path);
+}
+
+}  // namespace
 
 // static
 ShellDevToolsFrontend* ShellDevToolsFrontend::Show(
@@ -26,20 +53,22 @@ ShellDevToolsFrontend* ShellDevToolsFrontend::Show(
                                         gfx::Size());
   ShellDevToolsFrontend* devtools_frontend = new ShellDevToolsFrontend(
       shell,
-      DevToolsAgentHost::GetFor(inspected_contents->GetRenderViewHost()));
+      DevToolsAgentHost::GetOrCreateFor(
+          inspected_contents->GetRenderViewHost()));
 
   ShellContentBrowserClient* browser_client =
       static_cast<ShellContentBrowserClient*>(
           GetContentClient()->browser());
   ShellDevToolsDelegate* delegate =
       browser_client->shell_browser_main_parts()->devtools_delegate();
+  // SHEZ: remove upstream code here, used only for testing
   shell->LoadURL(delegate->devtools_http_handler()->GetFrontendURL(NULL));
 
   return devtools_frontend;
 }
 
 void ShellDevToolsFrontend::Focus() {
-  web_contents()->Focus();
+  web_contents()->GetView()->Focus();
 }
 
 void ShellDevToolsFrontend::Close() {

@@ -71,8 +71,6 @@ private:
 
     virtual bool supportLabels() const OVERRIDE { return true; }
 
-    virtual bool supportsFocus() const;
-
     virtual bool recalcWillValidate() const { return false; }
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
@@ -91,7 +89,7 @@ inline bool isHTMLMeterElement(Node* node)
 
 inline HTMLMeterElement* toHTMLMeterElement(Node* node)
 {
-    ASSERT(!node || isHTMLMeterElement(node));
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLMeterElement(node));
     return static_cast<HTMLMeterElement*>(node);
 }
 

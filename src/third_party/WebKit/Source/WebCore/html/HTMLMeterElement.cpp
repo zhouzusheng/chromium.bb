@@ -71,11 +71,6 @@ bool HTMLMeterElement::childShouldCreateRenderer(const NodeRenderingContext& chi
     return childContext.isOnUpperEncapsulationBoundary() && HTMLElement::childShouldCreateRenderer(childContext);
 }
 
-bool HTMLMeterElement::supportsFocus() const
-{
-    return HTMLElement::supportsFocus() && !disabled();
-}
-
 void HTMLMeterElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == valueAttr || name == minAttr || name == maxAttr || name == lowAttr || name == highAttr || name == optimumAttr)
@@ -91,7 +86,7 @@ double HTMLMeterElement::min() const
 
 void HTMLMeterElement::setMin(double min, ExceptionCode& ec)
 {
-    if (!isfinite(min)) {
+    if (!std::isfinite(min)) {
         ec = NOT_SUPPORTED_ERR;
         return;
     }
@@ -105,7 +100,7 @@ double HTMLMeterElement::max() const
 
 void HTMLMeterElement::setMax(double max, ExceptionCode& ec)
 {
-    if (!isfinite(max)) {
+    if (!std::isfinite(max)) {
         ec = NOT_SUPPORTED_ERR;
         return;
     }
@@ -120,7 +115,7 @@ double HTMLMeterElement::value() const
 
 void HTMLMeterElement::setValue(double value, ExceptionCode& ec)
 {
-    if (!isfinite(value)) {
+    if (!std::isfinite(value)) {
         ec = NOT_SUPPORTED_ERR;
         return;
     }
@@ -135,7 +130,7 @@ double HTMLMeterElement::low() const
 
 void HTMLMeterElement::setLow(double low, ExceptionCode& ec)
 {
-    if (!isfinite(low)) {
+    if (!std::isfinite(low)) {
         ec = NOT_SUPPORTED_ERR;
         return;
     }
@@ -150,7 +145,7 @@ double HTMLMeterElement::high() const
 
 void HTMLMeterElement::setHigh(double high, ExceptionCode& ec)
 {
-    if (!isfinite(high)) {
+    if (!std::isfinite(high)) {
         ec = NOT_SUPPORTED_ERR;
         return;
     }
@@ -165,7 +160,7 @@ double HTMLMeterElement::optimum() const
 
 void HTMLMeterElement::setOptimum(double optimum, ExceptionCode& ec)
 {
-    if (!isfinite(optimum)) {
+    if (!std::isfinite(optimum)) {
         ec = NOT_SUPPORTED_ERR;
         return;
     }

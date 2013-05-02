@@ -32,7 +32,7 @@
 #include "HTMLElement.h"
 #include "HTMLNames.h"
 #include "TextIterator.h"
-#include "visible_units.h"
+#include "VisibleUnits.h"
 
 namespace WebCore {
 
@@ -219,7 +219,7 @@ void InsertListCommand::doApplyForSingleParagraph(bool forceCreateList, const Qu
             insertNodeBefore(newList, listNode);
 
             Node* firstChildInList = enclosingListChild(VisiblePosition(firstPositionInNode(listNode.get())).deepEquivalent().deprecatedNode(), listNode.get());
-            Node* outerBlock = firstChildInList->isBlockFlow() ? firstChildInList : listNode.get();
+            Node* outerBlock = firstChildInList->isBlockFlowElement() ? firstChildInList : listNode.get();
             
             moveParagraphWithClones(firstPositionInNode(listNode.get()), lastPositionInNode(listNode.get()), newList.get(), outerBlock);
 
@@ -303,7 +303,7 @@ void InsertListCommand::unlistifyParagraph(const VisiblePosition& originalStart,
         insertNodeAfter(nodeToInsert, listNode);
 
     VisiblePosition insertionPoint = VisiblePosition(positionBeforeNode(placeholder.get()));
-    moveParagraphs(start, end, insertionPoint, true);
+    moveParagraphs(start, end, insertionPoint, /* preserveSelection */ true, /* preserveStyle */ true, listChildNode);
 }
 
 static Element* adjacentEnclosingList(const VisiblePosition& pos, const VisiblePosition& adjacentPos, const QualifiedName& listTag)
@@ -376,9 +376,11 @@ PassRefPtr<HTMLElement> InsertListCommand::listifyParagraph(const VisiblePositio
         // We inserted the list at the start of the content we're about to move
         // Update the start of content, so we don't try to move the list into itself.  bug 19066
         // Layout is necessary since start's node's inline renderers may have been destroyed by the insertion
+        // The end of the content may have changed after the insertion and layout so update it as well.
         if (insertionPos == start.deepEquivalent()) {
             listElement->document()->updateLayoutIgnorePendingStylesheets();
             start = startOfParagraph(originalStart, CanSkipOverEditingBoundary);
+            end = endOfParagraph(start, CanSkipOverEditingBoundary);
         }
     }
 

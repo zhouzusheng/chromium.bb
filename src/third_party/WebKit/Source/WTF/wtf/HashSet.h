@@ -91,6 +91,8 @@ namespace WTF {
         void remove(iterator);
         void clear();
 
+        static bool isValidValue(const ValueType&);
+
     private:
         friend void deleteAllValues<>(const HashSet&);
 
@@ -209,6 +211,23 @@ namespace WTF {
         m_impl.clear(); 
     }
 
+    template<typename T, typename U, typename V>
+    inline bool HashSet<T, U, V>::isValidValue(const ValueType& value)
+    {
+        if (ValueTraits::isDeletedValue(value))
+            return false;
+
+        if (HashFunctions::safeToCompareToEmptyOrDeleted) {
+            if (value == ValueTraits::emptyValue())
+                return false;
+        } else {
+            if (isHashTraitsEmptyValue<ValueTraits>(value))
+                return false;
+        }
+
+        return true;
+    }
+
     template<typename ValueType, typename HashTableType>
     void deleteAllValues(HashTableType& collection)
     {
@@ -224,10 +243,10 @@ namespace WTF {
         deleteAllValues<typename HashSet<T, U, V>::ValueType>(collection.m_impl);
     }
 
-    template<typename T, typename U, typename V, typename W>
-    inline void copyToVector(const HashSet<T, U, V>& collection, W& vector)
+    template<typename C, typename W>
+    inline void copyToVector(const C& collection, W& vector)
     {
-        typedef typename HashSet<T, U, V>::const_iterator iterator;
+        typedef typename C::const_iterator iterator;
         
         vector.resize(collection.size());
         

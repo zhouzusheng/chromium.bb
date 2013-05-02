@@ -10,12 +10,12 @@
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
 #include "net/base/cert_verifier.h"
-#include "net/base/default_server_bound_cert_store.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/mock_host_resolver.h"
-#include "net/base/server_bound_cert_service.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
+#include "net/ssl/default_server_bound_cert_store.h"
+#include "net/ssl/server_bound_cert_service.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -124,8 +124,7 @@ void TestURLRequestContext::Init() {
   }
   if (!http_user_agent_settings()) {
     context_storage_.set_http_user_agent_settings(
-        new StaticHttpUserAgentSettings(
-            "en-us,fr", "iso-8859-1,*,utf-8", EmptyString()));
+        new StaticHttpUserAgentSettings("en-us,fr", EmptyString()));
   }
   if (!job_factory())
     context_storage_.set_job_factory(new URLRequestJobFactoryImpl);
@@ -134,7 +133,14 @@ void TestURLRequestContext::Init() {
 TestURLRequest::TestURLRequest(const GURL& url,
                                Delegate* delegate,
                                TestURLRequestContext* context)
-    : URLRequest(url, delegate, context) {
+    : URLRequest(url, delegate, context, context->network_delegate()) {
+}
+
+TestURLRequest::TestURLRequest(const GURL& url,
+                               Delegate* delegate,
+                               TestURLRequestContext* context,
+                               NetworkDelegate* network_delegate)
+    : URLRequest(url, delegate, context, network_delegate) {
 }
 
 TestURLRequest::~TestURLRequest() {

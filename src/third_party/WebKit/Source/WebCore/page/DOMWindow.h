@@ -59,6 +59,7 @@ namespace WebCore {
     class Navigator;
     class Node;
     class Page;
+    class PageConsole;
     class Performance;
     class PostMessageTimer;
     class ScheduledAction;
@@ -69,6 +70,7 @@ namespace WebCore {
     class Storage;
     class StyleMedia;
     class WebKitPoint;
+    class DOMWindowCSS;
 
 #if ENABLE(REQUEST_ANIMATION_FRAME)
     class RequestAnimationFrameCallback;
@@ -232,12 +234,13 @@ namespace WebCore {
         PassRefPtr<WebKitPoint> webkitConvertPointFromNodeToPage(Node*, const WebKitPoint*) const;        
 
         Console* console() const;
+        PageConsole* pageConsole() const;
 
         void printErrorMessage(const String&);
         String crossDomainAccessErrorMessage(DOMWindow* activeWindow);
 
         void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, const String& targetOrigin, DOMWindow* source, ExceptionCode&);
-        // FIXME: remove this when we update the ObjC bindings (bug #28774).
+        // Needed for Objective-C bindings (see bug 28774).
         void postMessage(PassRefPtr<SerializedScriptValue> message, MessagePort*, const String& targetOrigin, DOMWindow* source, ExceptionCode&);
         void postMessageTimerFired(PassOwnPtr<PostMessageTimer>);
         void dispatchMessageEventWithOriginCheck(SecurityOrigin* intendedTargetOrigin, PassRefPtr<Event>, PassRefPtr<ScriptCallStack>);
@@ -263,6 +266,10 @@ namespace WebCore {
         int requestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback>);
         int webkitRequestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback>);
         void cancelAnimationFrame(int id);
+#endif
+
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+        DOMWindowCSS* css();
 #endif
 
         // Events
@@ -456,6 +463,10 @@ namespace WebCore {
 
 #if ENABLE(WEB_TIMING)
         mutable RefPtr<Performance> m_performance;
+#endif
+
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+        mutable RefPtr<DOMWindowCSS> m_css;
 #endif
     };
 

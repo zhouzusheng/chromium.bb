@@ -39,6 +39,8 @@
 #include "talk/app/webrtc/videotrack.h"
 #include "talk/media/devices/dummydevicemanager.h"
 #include "talk/media/webrtc/webrtcmediaengine.h"
+#include "talk/media/webrtc/webrtcvideodecoderfactory.h"
+#include "webrtc/modules/audio_device/include/audio_device.h"
 
 using talk_base::scoped_refptr;
 
@@ -123,12 +125,14 @@ CreatePeerConnectionFactory() {
 }
 
 scoped_refptr<PeerConnectionFactoryInterface>
-CreatePeerConnectionFactory(talk_base::Thread* worker_thread,
-                            talk_base::Thread* signaling_thread,
-                            AudioDeviceModule* default_adm) {
+CreatePeerConnectionFactory(
+    talk_base::Thread* worker_thread,
+    talk_base::Thread* signaling_thread,
+    AudioDeviceModule* default_adm,
+    cricket::WebRtcVideoDecoderFactory* decoder_factory) {
   scoped_refptr<PeerConnectionFactory> pc_factory(
       new talk_base::RefCountedObject<PeerConnectionFactory>(
-          worker_thread, signaling_thread, default_adm));
+          worker_thread, signaling_thread, default_adm, decoder_factory));
   if (!pc_factory->Initialize()) {
     return NULL;
   }
@@ -148,11 +152,13 @@ PeerConnectionFactory::PeerConnectionFactory()
 PeerConnectionFactory::PeerConnectionFactory(
     talk_base::Thread* worker_thread,
     talk_base::Thread* signaling_thread,
-    AudioDeviceModule* default_adm)
+    AudioDeviceModule* default_adm,
+    cricket::WebRtcVideoDecoderFactory* video_decoder_factory)
     : owns_ptrs_(false),
       signaling_thread_(signaling_thread),
       worker_thread_(worker_thread),
-      default_adm_(default_adm) {
+      default_adm_(default_adm),
+      video_decoder_factory_(video_decoder_factory) {
   ASSERT(worker_thread != NULL);
   ASSERT(signaling_thread != NULL);
   // TODO: Currently there is no way creating an external adm in
@@ -213,11 +219,9 @@ void PeerConnectionFactory::OnMessage(talk_base::Message* msg) {
 bool PeerConnectionFactory::Initialize_s() {
   talk_base::InitRandom(talk_base::Time());
 
-  if (owns_ptrs_) {
-    allocator_factory_ = PortAllocatorFactory::Create(worker_thread_);
-    if (!allocator_factory_)
-      return false;
-  }
+  allocator_factory_ = PortAllocatorFactory::Create(worker_thread_);
+  if (!allocator_factory_)
+    return false;
 
   cricket::DummyDeviceManager* device_manager(
       new cricket::DummyDeviceManager());
@@ -225,7 +229,8 @@ bool PeerConnectionFactory::Initialize_s() {
   // WebRtcMediaEngine.
   cricket::WebRtcMediaEngine* webrtc_media_engine(
       new cricket::WebRtcMediaEngine(default_adm_.get(),
-                                     NULL));   // No secondary adm.
+                                     NULL,  // No secondary adm.
+                                     video_decoder_factory_.get()));
 
   channel_manager_.reset(new cricket::ChannelManager(
       webrtc_media_engine, device_manager, worker_thread_));
@@ -238,9 +243,7 @@ bool PeerConnectionFactory::Initialize_s() {
 // Terminate what we created on the signaling thread.
 void PeerConnectionFactory::Terminate_s() {
   channel_manager_.reset(NULL);
-  if (owns_ptrs_) {
-    allocator_factory_ = NULL;
-  }
+  allocator_factory_ = NULL;
 }
 
 talk_base::scoped_refptr<AudioSourceInterface>
@@ -300,10 +303,10 @@ PeerConnectionFactory::CreatePeerConnection_s(
   return PeerConnectionProxy::Create(signaling_thread(), pc);
 }
 
-scoped_refptr<LocalMediaStreamInterface>
-PeerConnectionFactory::CreateLocalMediaStream(
-      const std::string& label) {
-  return MediaStreamProxy::Create(label, signaling_thread_);
+scoped_refptr<MediaStreamInterface>
+PeerConnectionFactory::CreateLocalMediaStream(const std::string& label) {
+  return MediaStreamProxy::Create(signaling_thread_,
+                                  MediaStream::Create(label));
 }
 
 talk_base::scoped_refptr<AudioSourceInterface>
@@ -331,18 +334,7 @@ PeerConnectionFactory::CreateVideoTrack(
     VideoSourceInterface* source) {
   talk_base::scoped_refptr<VideoTrackInterface> track(
       VideoTrack::Create(id, source));
-  return VideoTrackProxy::Create(track, signaling_thread_);
-}
-
-// Deprecated: Please use the version that take a source as input.
-// TODO(perkj) Remove when Chrome does not make use of this.
-scoped_refptr<LocalVideoTrackInterface>
-PeerConnectionFactory::CreateLocalVideoTrack(
-    const std::string& id,
-    cricket::VideoCapturer* video_device) {
-  talk_base::scoped_refptr<VideoSourceInterface> source(
-      CreateVideoSource(video_device, NULL));
-  return CreateVideoTrack(id, source);
+  return VideoTrackProxy::Create(signaling_thread_, track);
 }
 
 scoped_refptr<AudioTrackInterface> PeerConnectionFactory::CreateAudioTrack(
@@ -350,17 +342,7 @@ scoped_refptr<AudioTrackInterface> PeerConnectionFactory::CreateAudioTrack(
     AudioSourceInterface* source) {
   talk_base::scoped_refptr<AudioTrackInterface> track(
       AudioTrack::Create(id, source));
-  return AudioTrackProxy::Create(track, signaling_thread_);
-}
-
-// Deprecated: Please use the version that take a source as input.
-// TODO(perkj): Remove when Chrome does not make use of this.
-scoped_refptr<LocalAudioTrackInterface>
-PeerConnectionFactory::CreateLocalAudioTrack(
-    const std::string& id,
-    AudioDeviceModule* audio_device) {
-  // |audio_device| have never been used in an audio track.
-  return CreateAudioTrack(id, NULL);
+  return AudioTrackProxy::Create(signaling_thread_, track);
 }
 
 cricket::ChannelManager* PeerConnectionFactory::channel_manager() {

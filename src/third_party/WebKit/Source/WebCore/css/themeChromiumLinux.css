@@ -30,14 +30,11 @@
 
 /* These styles override other user-agent styles for Chromium on Linux. */
 
-select {
-    background-color: #dddddd;
-}
-
-select:not([size]):not([multiple]) option,
-select[size="0"] option,
-select[size="1"] option {
-    background-color: #f7f7f7;
+select:not([size]):not([multiple]),
+select[size="0"],
+select[size="1"] {
+    /* Selects with popup menus look like buttons with a drop down triangle on Linux. */
+    background-color: ButtonFace;
 }
 
 input[type=range] {

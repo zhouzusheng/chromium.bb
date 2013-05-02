@@ -62,9 +62,9 @@ void HTMLViewSourceParser::pumpTokenizer()
     }
 }
 
-void HTMLViewSourceParser::append(const SegmentedString& input)
+void HTMLViewSourceParser::append(PassRefPtr<StringImpl> input)
 {
-    m_input.appendToEnd(input);
+    m_input.appendToEnd(String(input));
     pumpTokenizer();
 }
 
@@ -76,11 +76,9 @@ String HTMLViewSourceParser::sourceForToken()
 void HTMLViewSourceParser::updateTokenizerState()
 {
     // FIXME: The tokenizer should do this work for us.
-    if (m_token.type() != HTMLTokenTypes::StartTag)
+    if (m_token.type() != HTMLToken::StartTag)
         return;
-
-    AtomicString tagName(m_token.name().data(), m_token.name().size());
-    m_tokenizer->updateStateFor(tagName);
+    m_tokenizer->updateStateFor(AtomicString(m_token.name()));
 }
 
 void HTMLViewSourceParser::finish()

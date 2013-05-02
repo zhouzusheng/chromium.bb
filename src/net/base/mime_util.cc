@@ -13,8 +13,8 @@
 #include "base/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 
 using std::string;
@@ -129,7 +129,7 @@ static const MimeInfo primary_mappings[] = {
   { "audio/x-m4a", "m4a" },
   { "audio/mp3", "mp3" },
   { "video/ogg", "ogv,ogm" },
-  { "audio/ogg", "ogg,oga" },
+  { "audio/ogg", "ogg,oga,opus" },
   { "video/webm", "webm" },
   { "audio/webm", "webm" },
   { "audio/wav", "wav" },

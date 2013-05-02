@@ -165,7 +165,6 @@ void MediaStream::addTrack(PassRefPtr<MediaStreamTrack> prpTrack, ExceptionCode&
     }
 
     MediaStreamCenter::instance().didAddMediaStreamTrack(m_descriptor.get(), newTrack->component());
-    scheduleDispatchEvent(MediaStreamTrackEvent::create(eventNames().addtrackEvent, false, false, newTrack.release()));
 }
 
 void MediaStream::removeTrack(PassRefPtr<MediaStreamTrack> prpTrack , ExceptionCode& ec)
@@ -201,8 +200,10 @@ void MediaStream::removeTrack(PassRefPtr<MediaStreamTrack> prpTrack , ExceptionC
     }
     }
 
+    if (!m_audioTracks.size() && !m_videoTracks.size())
+        m_descriptor->setEnded();
+
     MediaStreamCenter::instance().didRemoveMediaStreamTrack(m_descriptor.get(), track->component());
-    scheduleDispatchEvent(MediaStreamTrackEvent::create(eventNames().removetrackEvent, false, false, track.release()));
 }
 
 MediaStreamTrack* MediaStream::getTrackById(String id)

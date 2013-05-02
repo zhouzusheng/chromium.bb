@@ -11,24 +11,24 @@
 #ifndef WEBRTC_VOICE_ENGINE_CHANNEL_H
 #define WEBRTC_VOICE_ENGINE_CHANNEL_H
 
-#include "audio_coding_module.h"
-#include "audio_conference_mixer_defines.h"
-#include "common_types.h"
-#include "dtmf_inband.h"
-#include "dtmf_inband_queue.h"
-#include "file_player.h"
-#include "file_recorder.h"
-#include "level_indicator.h"
-#include "resampler.h"
-#include "rtp_rtcp.h"
-#include "scoped_ptr.h"
-#include "shared_data.h"
-#include "voe_audio_processing.h"
-#include "voe_network.h"
-#include "voice_engine_defines.h"
+#include "webrtc/common_audio/resampler/include/resampler.h"
+#include "webrtc/common_types.h"
+#include "webrtc/modules/audio_coding/main/interface/audio_coding_module.h"
+#include "webrtc/modules/audio_conference_mixer/interface/audio_conference_mixer_defines.h"
+#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp.h"
+#include "webrtc/modules/utility/interface/file_player.h"
+#include "webrtc/modules/utility/interface/file_recorder.h"
+#include "webrtc/system_wrappers/interface/scoped_ptr.h"
+#include "webrtc/voice_engine/dtmf_inband.h"
+#include "webrtc/voice_engine/dtmf_inband_queue.h"
+#include "webrtc/voice_engine/include/voe_audio_processing.h"
+#include "webrtc/voice_engine/include/voe_network.h"
+#include "webrtc/voice_engine/level_indicator.h"
+#include "webrtc/voice_engine/shared_data.h"
+#include "webrtc/voice_engine/voice_engine_defines.h"
 
 #ifndef WEBRTC_EXTERNAL_TRANSPORT
-#include "udp_transport.h"
+#include "webrtc/modules/udp_transport/interface/udp_transport.h"
 #endif
 #ifdef WEBRTC_SRTP
 #include "SrtpModule.h"
@@ -73,9 +73,6 @@ class Channel:
     public RtpAudioFeedback,
     public AudioPacketizationCallback, // receive encoded packets from the ACM
     public ACMVADCallback, // receive voice activity from the ACM
-#ifdef WEBRTC_DTMF_DETECTION
-    public AudioCodingFeedback, // inband Dtmf detection in the ACM
-#endif
     public MixerParticipant // supplies output mixer with audio frames
 {
 public:
@@ -124,8 +121,6 @@ public:
 #endif
     WebRtc_Word32 SetNetEQPlayoutMode(NetEqModes mode);
     WebRtc_Word32 GetNetEQPlayoutMode(NetEqModes& mode);
-    WebRtc_Word32 SetNetEQBGNMode(NetEqBgnModes mode);
-    WebRtc_Word32 GetNetEQBGNMode(NetEqBgnModes& mode);
     WebRtc_Word32 SetOnHoldStatus(bool enable, OnHoldModes mode);
     WebRtc_Word32 GetOnHoldStatus(bool& enabled, OnHoldModes& mode);
     WebRtc_Word32 RegisterVoiceEngineObserver(VoiceEngineObserver& observer);
@@ -254,6 +249,7 @@ public:
 
     // VoEVideoSync
     int GetDelayEstimate(int& delayMs) const;
+    int SetInitialPlayoutDelay(int delay_ms);
     int SetMinimumPlayoutDelay(int delayMs);
     int GetPlayoutTimestamp(unsigned int& timestamp);
     int SetInitTimestamp(unsigned int timestamp);
@@ -297,15 +293,6 @@ public:
     bool DtmfPlayoutStatus() const;
     int SetSendTelephoneEventPayloadType(unsigned char type);
     int GetSendTelephoneEventPayloadType(unsigned char& type);
-#ifdef WEBRTC_DTMF_DETECTION
-    int RegisterTelephoneEventDetection(
-            TelephoneEventDetectionMethods detectionMethod,
-            VoETelephoneEventObserver& observer);
-    int DeRegisterTelephoneEventDetection();
-    int GetTelephoneEventDetectionStatus(
-            bool& enabled,
-            TelephoneEventDetectionMethods& detectionMethod);
-#endif
 
     // VoEAudioProcessingImpl
     int UpdateRxVadDetection(AudioFrame& audioFrame);
@@ -372,11 +359,6 @@ public:
                            const RTPFragmentationHeader* fragmentation);
     // From ACMVADCallback in the ACM
     WebRtc_Word32 InFrameType(WebRtc_Word16 frameType);
-
-#ifdef WEBRTC_DTMF_DETECTION
-public: // From AudioCodingFeedback in the ACM
-    int IncomingDtmf(const WebRtc_UWord8 digitDtmf, const bool end);
-#endif
 
 public:
     WebRtc_Word32 OnRxVadDetected(const int vadDecision);
@@ -604,9 +586,6 @@ private:
     Encryption* _encryptionPtr; // WebRtc SRTP or external encryption
     scoped_ptr<AudioProcessing> _rtpAudioProc;
     AudioProcessing* _rxAudioProcessingModulePtr; // far end AudioProcessing
-#ifdef WEBRTC_DTMF_DETECTION
-    VoETelephoneEventObserver* _telephoneEventDetectionPtr;
-#endif
     VoERxVadCallback* _rxVadObserverPtr;
     WebRtc_Word32 _oldVadDecision;
     WebRtc_Word32 _sendFrameType; // Send data is voice, 1-voice, 0-otherwise
@@ -635,8 +614,6 @@ private:
     // VoEDtmf
     bool _playOutbandDtmfEvent;
     bool _playInbandDtmfEvent;
-    bool _inbandTelephoneEventDetection;
-    bool _outOfBandTelephoneEventDetecion;
     // VoeRTP_RTCP
     WebRtc_UWord8 _extraPayloadType;
     bool _insertExtraRTPPacket;

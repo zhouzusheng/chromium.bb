@@ -62,6 +62,9 @@
 #include "IDBMetadata.h"
 #include "IconURL.h"
 #include "MediaPlayer.h"
+#if ENABLE(MEDIA_SOURCE)
+#include "MediaSourcePrivate.h"
+#endif
 #include "MediaStreamSource.h"
 #include "NotificationClient.h"
 #include "PageVisibilityState.h"
@@ -72,7 +75,7 @@
 #include "ResourceResponse.h"
 #include "Settings.h"
 #include "SpeechRecognitionError.h"
-#include "StorageInfo.h"
+#include "StorageQuota.h"
 #include "TextAffinity.h"
 #include "TextChecking.h"
 #include "TextControlInnerElements.h"
@@ -86,8 +89,6 @@
 #include "WebContentSecurityPolicy.h"
 #include "WebCursorInfo.h"
 #include "WebEditingAction.h"
-#include "WebFileError.h"
-#include "WebFileInfo.h"
 #include "WebFontDescription.h"
 #if ENABLE(REQUEST_AUTOCOMPLETE)
 #include "WebFormElement.h"
@@ -105,6 +106,7 @@
 #include "WebInputElement.h"
 #include "WebMediaPlayer.h"
 #include "WebMediaPlayerClient.h"
+#include "WebMediaSourceClient.h"
 #include "WebNotificationPresenter.h"
 #include "WebPageVisibilityState.h"
 #include "WebSettings.h"
@@ -117,6 +119,8 @@
 #include "WebTextCheckingType.h"
 #include "WebView.h"
 #include <public/WebClipboard.h>
+#include <public/WebFileError.h>
+#include <public/WebFileInfo.h>
 #include <public/WebFileSystem.h>
 #include <public/WebFilterOperation.h>
 #include <public/WebMediaStreamSource.h>
@@ -409,15 +413,13 @@ COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::PreloadMetaData, MediaPlayer::MetaD
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::PreloadAuto, MediaPlayer::Auto);
 
 #if ENABLE(MEDIA_SOURCE)
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::AddIdStatusOk, MediaPlayer::Ok);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::AddIdStatusNotSupported, MediaPlayer::NotSupported);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::AddIdStatusReachedIdLimit, MediaPlayer::ReachedIdLimit);
-#endif
+COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::AddStatusOk, MediaSourcePrivate::Ok);
+COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::AddStatusNotSupported, MediaSourcePrivate::NotSupported);
+COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::AddStatusReachedIdLimit, MediaSourcePrivate::ReachedIdLimit);
 
-#if ENABLE(ENCRYPTED_MEDIA)
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::EndOfStreamStatusNoError, MediaPlayer::EosNoError);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::EndOfStreamStatusNetworkError, MediaPlayer::EosNetworkError);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::EndOfStreamStatusDecodeError, MediaPlayer::EosDecodeError);
+COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::EndOfStreamStatusNoError, MediaSourcePrivate::EosNoError);
+COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::EndOfStreamStatusNetworkError, MediaSourcePrivate::EosNetworkError);
+COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::EndOfStreamStatusDecodeError, MediaSourcePrivate::EosDecodeError);
 #endif
 
 #if ENABLE(ENCRYPTED_MEDIA)
@@ -502,10 +504,10 @@ COMPILE_ASSERT_MATCHING_ENUM(WebIDBKeyPath::ArrayType, IDBKeyPath::ArrayType);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebIDBMetadata::NoIntVersion, IDBDatabaseMetadata::NoIntVersion);
 
-COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::Next, IDBCursor::NEXT);
-COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::NextNoDuplicate, IDBCursor::NEXT_NO_DUPLICATE);
-COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::Prev, IDBCursor::PREV);
-COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::PrevNoDuplicate, IDBCursor::PREV_NO_DUPLICATE);
+COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::Next, IndexedDB::CursorNext);
+COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::NextNoDuplicate, IndexedDB::CursorNextNoDuplicate);
+COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::Prev, IndexedDB::CursorPrev);
+COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::PrevNoDuplicate, IndexedDB::CursorPrevNoDuplicate);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebIDBDatabase::PreemptiveTask, IDBDatabaseBackendInterface::PreemptiveTask);
 COMPILE_ASSERT_MATCHING_ENUM(WebIDBDatabase::NormalTask, IDBDatabaseBackendInterface::NormalTask);
@@ -552,8 +554,8 @@ COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaErrorInvalidModification, INVALID_MO
 COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaErrorInvalidAccess, INVALID_ACCESS_ERR);
 COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaErrorAbort, ABORT_ERR);
 
-COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaTypeTemporary, StorageInfo::TEMPORARY);
-COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaTypePersistent, StorageInfo::PERSISTENT);
+COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaTypeTemporary, StorageQuota::Temporary);
+COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaTypePersistent, StorageQuota::Persistent);
 #endif
 
 COMPILE_ASSERT_MATCHING_ENUM(WebPageVisibilityStateVisible, PageVisibilityStateVisible);
@@ -575,7 +577,8 @@ COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::SignalingStateHa
 COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::SignalingStateHaveRemotePrAnswer, RTCPeerConnectionHandlerClient::SignalingStateHaveRemotePrAnswer);
 COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::SignalingStateClosed, RTCPeerConnectionHandlerClient::SignalingStateClosed);
 
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateStarting, RTCPeerConnectionHandlerClient::IceConnectionStateStarting);
+COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateStarting, RTCPeerConnectionHandlerClient::IceConnectionStateNew);
+COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateNew, RTCPeerConnectionHandlerClient::IceConnectionStateNew);
 COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateChecking, RTCPeerConnectionHandlerClient::IceConnectionStateChecking);
 COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateConnected, RTCPeerConnectionHandlerClient::IceConnectionStateConnected);
 COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateCompleted, RTCPeerConnectionHandlerClient::IceConnectionStateCompleted);
@@ -610,10 +613,10 @@ COMPILE_ASSERT_MATCHING_ENUM(WebReferrerPolicyDefault, ReferrerPolicyDefault);
 COMPILE_ASSERT_MATCHING_ENUM(WebReferrerPolicyNever, ReferrerPolicyNever);
 COMPILE_ASSERT_MATCHING_ENUM(WebReferrerPolicyOrigin, ReferrerPolicyOrigin);
 
-COMPILE_ASSERT_MATCHING_ENUM(WebContentSecurityPolicyTypeReportStableDirectives, ContentSecurityPolicy::ReportStableDirectives);
-COMPILE_ASSERT_MATCHING_ENUM(WebContentSecurityPolicyTypeEnforceStableDirectives, ContentSecurityPolicy::EnforceStableDirectives);
-COMPILE_ASSERT_MATCHING_ENUM(WebContentSecurityPolicyTypeReportAllDirectives, ContentSecurityPolicy::ReportAllDirectives);
-COMPILE_ASSERT_MATCHING_ENUM(WebContentSecurityPolicyTypeEnforceAllDirectives, ContentSecurityPolicy::EnforceAllDirectives);
+COMPILE_ASSERT_MATCHING_ENUM(WebContentSecurityPolicyTypeReport, ContentSecurityPolicy::Report);
+COMPILE_ASSERT_MATCHING_ENUM(WebContentSecurityPolicyTypeEnforce, ContentSecurityPolicy::Enforce);
+COMPILE_ASSERT_MATCHING_ENUM(WebContentSecurityPolicyTypePrefixedReport, ContentSecurityPolicy::PrefixedReport);
+COMPILE_ASSERT_MATCHING_ENUM(WebContentSecurityPolicyTypePrefixedEnforce, ContentSecurityPolicy::PrefixedEnforce);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebURLResponse::Unknown, ResourceResponse::Unknown);
 COMPILE_ASSERT_MATCHING_ENUM(WebURLResponse::HTTP_0_9, ResourceResponse::HTTP_0_9);
@@ -638,8 +641,7 @@ COMPILE_ASSERT_MATCHING_ENUM(WebURLRequest::PriorityMedium, ResourceLoadPriority
 COMPILE_ASSERT_MATCHING_ENUM(WebURLRequest::PriorityHigh, ResourceLoadPriorityHigh);
 COMPILE_ASSERT_MATCHING_ENUM(WebURLRequest::PriorityVeryHigh, ResourceLoadPriorityVeryHigh);
 
-COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelTip, TipMessageLevel);
+COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelDebug, DebugMessageLevel);
 COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelLog, LogMessageLevel);
 COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelWarning, WarningMessageLevel);
 COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelError, ErrorMessageLevel);
-COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelDebug, DebugMessageLevel);

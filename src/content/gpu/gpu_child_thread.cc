@@ -56,7 +56,8 @@ GpuChildThread::GpuChildThread(GpuWatchdogThread* watchdog_thread,
                                bool dead_on_arrival,
                                const GPUInfo& gpu_info)
     : dead_on_arrival_(dead_on_arrival),
-      gpu_info_(gpu_info) {
+      gpu_info_(gpu_info),
+      in_browser_process_(false) {
   watchdog_thread_ = watchdog_thread;
 #if defined(OS_WIN)
   target_services_ = NULL;
@@ -65,19 +66,18 @@ GpuChildThread::GpuChildThread(GpuWatchdogThread* watchdog_thread,
 
 GpuChildThread::GpuChildThread(const std::string& channel_id)
     : ChildThread(channel_id),
-      dead_on_arrival_(false) {
+      dead_on_arrival_(false),
+      in_browser_process_(true) {
 #if defined(OS_WIN)
   target_services_ = NULL;
 #endif
-  in_browser_process_ =
+  DCHECK(
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU);
-  if (in_browser_process_) {
-    // For single process and in-process GPU mode, we need to load and
-    // initialize the GL implementation and locate the GL entry points here.
-    if (!gfx::GLSurface::InitializeOneOff()) {
-      VLOG(1) << "gfx::GLSurface::InitializeOneOff()";
-    }
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU));
+  // For single process and in-process GPU mode, we need to load and
+  // initialize the GL implementation and locate the GL entry points here.
+  if (!gfx::GLSurface::InitializeOneOff()) {
+    VLOG(1) << "gfx::GLSurface::InitializeOneOff()";
   }
 }
 
@@ -105,8 +105,6 @@ bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(GpuMsg_CollectGraphicsInfo, OnCollectGraphicsInfo)
     IPC_MESSAGE_HANDLER(GpuMsg_GetVideoMemoryUsageStats,
                         OnGetVideoMemoryUsageStats)
-    IPC_MESSAGE_HANDLER(GpuMsg_SetVideoMemoryWindowCount,
-                        OnSetVideoMemoryWindowCount)
     IPC_MESSAGE_HANDLER(GpuMsg_Clean, OnClean)
     IPC_MESSAGE_HANDLER(GpuMsg_Crash, OnCrash)
     IPC_MESSAGE_HANDLER(GpuMsg_Hang, OnHang)
@@ -203,11 +201,6 @@ void GpuChildThread::OnGetVideoMemoryUsageStats() {
     gpu_channel_manager_->gpu_memory_manager()->GetVideoMemoryUsageStats(
         &video_memory_usage_stats);
   Send(new GpuHostMsg_VideoMemoryUsageStats(video_memory_usage_stats));
-}
-
-void GpuChildThread::OnSetVideoMemoryWindowCount(uint32 window_count) {
-  if (gpu_channel_manager_.get())
-    gpu_channel_manager_->gpu_memory_manager()->SetWindowCount(window_count);
 }
 
 void GpuChildThread::OnClean() {

@@ -38,6 +38,7 @@
 #include "FrameDestructionObserver.h"
 #include "FrameSelection.h"
 #include "TextChecking.h"
+#include "TextIterator.h"
 #include "VisibleSelection.h"
 #include "WritingDirection.h"
 
@@ -50,7 +51,9 @@ namespace WebCore {
 
 class Clipboard;
 class CompositeEditCommand;
+#if ENABLE(DELETION_UI)
 class DeleteButtonController;
+#endif
 class EditCommand;
 class EditCommandComposition;
 class EditorClient;
@@ -94,7 +97,16 @@ public:
     TextCheckerClient* textChecker() const;
 
     Frame* frame() const { return m_frame; }
+
+#if ENABLE(DELETION_UI)
     DeleteButtonController* deleteButtonController() const { return m_deleteButtonController.get(); }
+    PassRefPtr<Range> avoidIntersectionWithDeleteButtonController(const Range*) const;
+    VisibleSelection avoidIntersectionWithDeleteButtonController(const VisibleSelection&) const;
+#else
+    PassRefPtr<Range> avoidIntersectionWithDeleteButtonController(Range* range) const { return range; }
+    VisibleSelection avoidIntersectionWithDeleteButtonController(const VisibleSelection& selection) const { return selection; }
+#endif
+
     CompositeEditCommand* lastEditCommand() { return m_lastEditCommand.get(); }
 
     void handleKeyboardEvent(KeyboardEvent*);
@@ -132,7 +144,6 @@ public:
 
     bool shouldInsertFragment(PassRefPtr<DocumentFragment>, PassRefPtr<Range>, EditorInsertAction);
     bool shouldInsertText(const String&, Range*, EditorInsertAction) const;
-    bool shouldShowDeleteInterface(HTMLElement*) const;
     bool shouldDeleteRange(Range*) const;
     bool shouldApplyStyle(StylePropertySet*, Range*);
 
@@ -345,6 +356,7 @@ public:
     Node* findEventTargetFrom(const VisibleSelection& selection) const;
 
     String selectedText() const;
+    String selectedTextForClipboard() const;
     bool findString(const String&, FindOptions);
     // FIXME: Switch callers over to the FindOptions version and retire this one.
     bool findString(const String&, bool forward, bool caseFlag, bool wrapFlag, bool startInSelection);
@@ -403,7 +415,9 @@ public:
 private:
     virtual void willDetachPage() OVERRIDE;
 
+#if ENABLE(DELETION_UI)
     OwnPtr<DeleteButtonController> m_deleteButtonController;
+#endif
     RefPtr<CompositeEditCommand> m_lastEditCommand;
     RefPtr<Node> m_removedAnchor;
     RefPtr<Text> m_compositionNode;
@@ -429,6 +443,8 @@ private:
     void revealSelectionAfterEditingOperation(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, RevealExtentOption = DoNotRevealExtent);
     void markMisspellingsOrBadGrammar(const VisibleSelection&, bool checkSpelling, RefPtr<Range>& firstMisspellingRange);
     TextCheckingTypeMask resolveTextCheckingTypeMask(TextCheckingTypeMask);
+
+    String selectedText(TextIteratorBehavior) const;
 
     void selectComposition();
     enum SetCompositionMode { ConfirmComposition, CancelComposition };

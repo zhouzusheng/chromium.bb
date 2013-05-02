@@ -75,6 +75,9 @@ class ResourceCreationProxy : public InterfaceProxy,
   virtual PP_Resource CreateResourceArray(PP_Instance instance,
                                           const PP_Resource elements[],
                                           uint32_t size) OVERRIDE;
+  virtual PP_Resource CreateTrueTypeFont(
+      PP_Instance instance,
+      const PP_TrueTypeFontDesc_Dev& desc) OVERRIDE;
   virtual PP_Resource CreateURLLoader(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateURLRequestInfo(
       PP_Instance instance,
@@ -141,7 +144,9 @@ class ResourceCreationProxy : public InterfaceProxy,
       const PP_BrowserFont_Trusted_Description* description) OVERRIDE;
   virtual PP_Resource CreateBuffer(PP_Instance instance,
                                    uint32_t size) OVERRIDE;
-  virtual PP_Resource CreateDirectoryReader(PP_Resource directory_ref) OVERRIDE;
+  virtual PP_Resource CreateDirectoryReader(
+      PP_Instance instance,
+      PP_Resource directory_ref) OVERRIDE;
   virtual PP_Resource CreateFlashDeviceID(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateFlashFontFile(
       PP_Instance instance,

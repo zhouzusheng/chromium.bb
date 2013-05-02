@@ -5,8 +5,8 @@
 #ifndef NET_SPDY_SPDY_SESSION_POOL_H_
 #define NET_SPDY_SPDY_SESSION_POOL_H_
 
-#include <map>
 #include <list>
+#include <map>
 #include <string>
 
 #include "base/basictypes.h"
@@ -18,10 +18,10 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
 #include "net/base/network_change_notifier.h"
-#include "net/base/ssl_config_service.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_server.h"
 #include "net/socket/next_proto.h"
+#include "net/ssl/ssl_config_service.h"
 
 namespace net {
 
@@ -58,7 +58,7 @@ class NET_EXPORT SpdySessionPool
                   bool enable_compression,
                   bool enable_ping_based_connection_checking,
                   NextProto default_protocol,
-                  size_t default_initial_recv_window_size,
+                  size_t stream_initial_recv_window_size,
                   size_t initial_max_concurrent_streams,
                   size_t max_concurrent_streams_limit,
                   SpdySessionPool::TimeFunc time_func,
@@ -213,7 +213,7 @@ class NET_EXPORT SpdySessionPool
   bool enable_compression_;
   bool enable_ping_based_connection_checking_;
   NextProto default_protocol_;
-  size_t initial_recv_window_size_;
+  size_t stream_initial_recv_window_size_;
   size_t initial_max_concurrent_streams_;
   size_t max_concurrent_streams_limit_;
   TimeFunc time_func_;

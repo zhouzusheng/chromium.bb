@@ -160,14 +160,24 @@ String StylePropertySet::getPropertyValue(CSSPropertyID propertyID) const
         return get4Values(borderWidthShorthand());
     case CSSPropertyBorderStyle:
         return get4Values(borderStyleShorthand());
+    case CSSPropertyWebkitColumnRule:
+        return getShorthandValue(webkitColumnRuleShorthand());
+    case CSSPropertyWebkitColumns:
+        return getShorthandValue(webkitColumnsShorthand());
     case CSSPropertyWebkitFlex:
         return getShorthandValue(webkitFlexShorthand());
     case CSSPropertyWebkitFlexFlow:
         return getShorthandValue(webkitFlexFlowShorthand());
+    case CSSPropertyWebkitGridColumn:
+        return getShorthandValue(webkitGridColumnShorthand());
+    case CSSPropertyWebkitGridRow:
+        return getShorthandValue(webkitGridRowShorthand());
     case CSSPropertyFont:
         return fontValue();
     case CSSPropertyMargin:
         return get4Values(marginShorthand());
+    case CSSPropertyWebkitMarginCollapse:
+        return getShorthandValue(webkitMarginCollapseShorthand());
     case CSSPropertyOverflow:
         return getCommonValue(overflowShorthand());
     case CSSPropertyPadding:
@@ -176,6 +186,8 @@ String StylePropertySet::getPropertyValue(CSSPropertyID propertyID) const
         return getLayeredShorthandValue(transitionShorthand());
     case CSSPropertyListStyle:
         return getShorthandValue(listStyleShorthand());
+    case CSSPropertyWebkitMarquee:
+        return getShorthandValue(webkitMarqueeShorthand());
     case CSSPropertyWebkitMaskPosition:
         return getLayeredShorthandValue(webkitMaskPositionShorthand());
     case CSSPropertyWebkitMaskRepeat:
@@ -184,6 +196,8 @@ String StylePropertySet::getPropertyValue(CSSPropertyID propertyID) const
         return getLayeredShorthandValue(webkitMaskShorthand());
     case CSSPropertyWebkitTextEmphasis:
         return getShorthandValue(webkitTextEmphasisShorthand());
+    case CSSPropertyWebkitTextStroke:
+        return getShorthandValue(webkitTextStrokeShorthand());
     case CSSPropertyWebkitTransformOrigin:
         return getShorthandValue(webkitTransformOriginShorthand());
     case CSSPropertyWebkitTransition:
@@ -324,9 +338,9 @@ String StylePropertySet::get4Values(const StylePropertyShorthand& shorthand) con
     if (top.isImportant() != right.isImportant() || right.isImportant() != bottom.isImportant() || bottom.isImportant() != left.isImportant())
         return String();
 
-    bool showLeft = right.value()->cssText() != left.value()->cssText();
-    bool showBottom = (top.value()->cssText() != bottom.value()->cssText()) || showLeft;
-    bool showRight = (top.value()->cssText() != right.value()->cssText()) || showBottom;
+    bool showLeft = !right.value()->equals(*left.value());
+    bool showBottom = !top.value()->equals(*bottom.value()) || showLeft;
+    bool showRight = !top.value()->equals(*right.value()) || showBottom;
 
     StringBuilder result;
     result.append(top.value()->cssText());
@@ -1153,12 +1167,12 @@ CSSProperty* StylePropertySet::findMutableCSSPropertyWithID(CSSPropertyID proper
     return &mutablePropertyVector().at(foundPropertyIndex);
 }
     
-bool StylePropertySet::propertyMatches(const PropertyReference& property) const
+bool StylePropertySet::propertyMatches(CSSPropertyID propertyID, const CSSValue* propertyValue) const
 {
-    int foundPropertyIndex = findPropertyIndex(property.id());
+    int foundPropertyIndex = findPropertyIndex(propertyID);
     if (foundPropertyIndex == -1)
         return false;
-    return propertyAt(foundPropertyIndex).value()->cssText() == property.value()->cssText();
+    return propertyAt(foundPropertyIndex).value()->equals(*propertyValue);
 }
     
 void StylePropertySet::removeEquivalentProperties(const StylePropertySet* style)
@@ -1168,7 +1182,7 @@ void StylePropertySet::removeEquivalentProperties(const StylePropertySet* style)
     unsigned size = mutablePropertyVector().size();
     for (unsigned i = 0; i < size; ++i) {
         PropertyReference property = propertyAt(i);
-        if (style->propertyMatches(property))
+        if (style->propertyMatches(property.id(), property.value()))
             propertiesToRemove.append(property.id());
     }    
     // FIXME: This should use mass removal.
@@ -1183,7 +1197,7 @@ void StylePropertySet::removeEquivalentProperties(const CSSStyleDeclaration* sty
     unsigned size = mutablePropertyVector().size();
     for (unsigned i = 0; i < size; ++i) {
         PropertyReference property = propertyAt(i);
-        if (style->cssPropertyMatches(property))
+        if (style->cssPropertyMatches(property.id(), property.value()))
             propertiesToRemove.append(property.id());
     }    
     // FIXME: This should use mass removal.

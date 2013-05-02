@@ -11,18 +11,19 @@
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/in_process_webkit/indexed_db_context_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
-#include "content/public/browser/site_instance.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/storage_partition_impl_map.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
-#include "net/base/server_bound_cert_service.h"
-#include "net/base/server_bound_cert_store.h"
+#include "content/public/browser/site_instance.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/cookies/cookie_store.h"
+#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/server_bound_cert_store.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "ui/base/clipboard/clipboard.h"
 #include "webkit/database/database_tracker.h"
 #include "webkit/fileapi/external_mount_points.h"
 #endif // !OS_IOS
@@ -36,6 +37,7 @@ namespace content {
 namespace {
 
 // Key names on BrowserContext.
+const char kClipboardDestroyerKey[] = "clipboard_destroyer";
 const char kDownloadManagerKeyName[] = "download_manager";
 const char kMountPointsKey[] = "mount_points";
 const char kStorageParitionMapKeyName[] = "content_storage_partition_map";
@@ -90,6 +92,51 @@ void SaveSessionStateOnWebkitThread(
 
 void PurgeMemoryOnIOThread(appcache::AppCacheService* appcache_service) {
   appcache_service->PurgeMemory();
+}
+
+// OffTheRecordClipboardDestroyer is supposed to clear the clipboard in
+// destructor if current clipboard content came from corresponding OffTheRecord
+// browser context.
+class OffTheRecordClipboardDestroyer : public base::SupportsUserData::Data {
+ public:
+  virtual ~OffTheRecordClipboardDestroyer() {
+    ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
+    ExamineClipboard(clipboard, ui::Clipboard::BUFFER_STANDARD);
+    if (ui::Clipboard::IsValidBuffer(ui::Clipboard::BUFFER_SELECTION))
+      ExamineClipboard(clipboard, ui::Clipboard::BUFFER_SELECTION);
+  }
+
+  ui::Clipboard::SourceTag GetAsSourceTag() {
+    return ui::Clipboard::SourceTag(this);
+  }
+
+ private:
+  void ExamineClipboard(ui::Clipboard* clipboard,
+                        ui::Clipboard::Buffer buffer) {
+    ui::Clipboard::SourceTag source_tag = clipboard->ReadSourceTag(buffer);
+    if (source_tag == ui::Clipboard::SourceTag(this)) {
+      if (buffer == ui::Clipboard::BUFFER_STANDARD) {
+        // We want to leave invalid SourceTag in the clipboard in order to
+        // collect statistics later.
+        clipboard->WriteObjects(buffer,
+                                ui::Clipboard::ObjectMap(),
+                                ui::Clipboard::kInvalidSourceTag);
+      } else {
+        clipboard->Clear(buffer);
+      }
+    }
+  }
+};
+
+// Returns existing OffTheRecordClipboardDestroyer or creates one.
+OffTheRecordClipboardDestroyer* GetClipboardDestroyerForBrowserContext(
+    BrowserContext* context) {
+  if (base::SupportsUserData::Data* data = context->GetUserData(
+          kClipboardDestroyerKey))
+    return static_cast<OffTheRecordClipboardDestroyer*>(data);
+  OffTheRecordClipboardDestroyer* data = new OffTheRecordClipboardDestroyer;
+  context->SetUserData(kClipboardDestroyerKey, data);
+  return data;
 }
 
 }  // namespace
@@ -272,6 +319,17 @@ void BrowserContext::PurgeMemory(BrowserContext* browser_context) {
 
   ForEachStoragePartition(browser_context,
                           base::Bind(&PurgeDOMStorageContextInPartition));
+}
+
+ui::Clipboard::SourceTag BrowserContext::GetMarkerForOffTheRecordContext(
+    BrowserContext* context) {
+  if (context && context->IsOffTheRecord()) {
+    OffTheRecordClipboardDestroyer* clipboard_destroyer =
+        GetClipboardDestroyerForBrowserContext(context);
+
+    return clipboard_destroyer->GetAsSourceTag();
+  }
+  return ui::Clipboard::SourceTag();
 }
 #endif  // !OS_IOS
 

@@ -87,6 +87,10 @@ NET_ERROR(BLOCKED_BY_CLIENT, -20)
 // The network changed.
 NET_ERROR(NETWORK_CHANGED, -21)
 
+// The request was blocked by the URL blacklist configured by the domain
+// administrator.
+NET_ERROR(BLOCKED_BY_ADMINISTRATOR, -22)
+
 // A connection was closed (corresponding to a TCP FIN).
 NET_ERROR(CONNECTION_CLOSED, -100)
 
@@ -269,7 +273,7 @@ NET_ERROR(SSL_HANDSHAKE_NOT_COMPLETED, -148)
 NET_ERROR(SSL_BAD_PEER_PUBLIC_KEY, -149)
 
 // The certificate didn't match the built-in public key pins for the host name.
-// The pins are set in net/base/transport_security_state.cc and require that
+// The pins are set in net/http/transport_security_state.cc and require that
 // one of a set of public keys exist on the path from the leaf to the root.
 NET_ERROR(SSL_PINNED_KEY_NOT_IN_CERT_CHAIN, -150)
 

@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/logging.h"
+#include "base/message_loop_proxy.h"
 #include "base/stl_util.h"
 #include "content/browser/renderer_host/media/media_stream_settings_requester.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
@@ -19,50 +20,9 @@
 #include "content/public/browser/media_observer.h"
 #include "content/public/common/media_stream_request.h"
 #include "googleurl/src/gurl.h"
+#include "media/base/bind_to_loop.h"
 
 namespace content {
-namespace {
-
-// Helper class to handle the callbacks to a MediaStreamUIController instance.
-// This class will make sure that the call to PostResponse is executed on the IO
-// thread (and that the instance of MediaStreamUIController still exists).
-// This allows us to pass a simple base::Callback object to any class that needs
-// to post a response to the MediaStreamUIController object. This logic cannot
-// be implemented inside MediaStreamUIController::PostResponse since that
-// would imply that the WeakPtr<MediaStreamUIController> pointer has been
-// dereferenced already (which would cause an error in the ThreadChecker before
-// we even get there).
-class ResponseCallbackHelper
-    : public base::RefCountedThreadSafe<ResponseCallbackHelper> {
- public:
-  explicit ResponseCallbackHelper(
-      base::WeakPtr<MediaStreamUIController> controller)
-      : controller_(controller) {
-  }
-
-  void PostResponse(const std::string& label,
-                    const MediaStreamDevices& devices) {
-    if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
-      BrowserThread::PostTask(
-          BrowserThread::IO, FROM_HERE,
-          base::Bind(&MediaStreamUIController::PostResponse,
-                     controller_, label, devices));
-      return;
-    } else if (controller_) {
-      controller_->PostResponse(label, devices);
-    }
-  }
-
- private:
-  friend class base::RefCountedThreadSafe<ResponseCallbackHelper>;
-  ~ResponseCallbackHelper() {}
-
-  base::WeakPtr<MediaStreamUIController> controller_;
-
-  DISALLOW_COPY_AND_ASSIGN(ResponseCallbackHelper);
-};
-
-}  // namespace
 
 // UI request contains all data needed to keep track of requests between the
 // different calls.
@@ -214,6 +174,7 @@ void MediaStreamUIController::PostResponse(
 }
 
 void MediaStreamUIController::NotifyUIIndicatorDevicesOpened(
+    const std::string& label,
     int render_process_id,
     int render_view_id,
     const MediaStreamDevices& devices) {
@@ -224,9 +185,12 @@ void MediaStreamUIController::NotifyUIIndicatorDevicesOpened(
   if (media_observer == NULL)
     return;
 
-  media_observer->OnCaptureDevicesOpened(render_process_id,
-                                         render_view_id,
-                                         devices);
+  media_observer->OnCaptureDevicesOpened(
+      render_process_id, render_view_id, devices,
+      media::BindToLoop(
+          base::MessageLoopProxy::current(),
+          base::Bind(&MediaStreamUIController::OnStopStreamFromUI,
+                     weak_ptr_factory_.GetWeakPtr(), label)));
 }
 
 void MediaStreamUIController::NotifyUIIndicatorDevicesClosed(
@@ -301,15 +265,12 @@ void MediaStreamUIController::PostRequestToUI(const std::string& label) {
 
   request->posted_task = true;
 
-  scoped_refptr<ResponseCallbackHelper> helper =
-      new ResponseCallbackHelper(weak_ptr_factory_.GetWeakPtr());
-  MediaResponseCallback callback =
-      base::Bind(&ResponseCallbackHelper::PostResponse,
-                 helper.get(), label);
-
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&ProceedMediaAccessPermission, *request, callback));
+      base::Bind(&ProceedMediaAccessPermission, *request, media::BindToLoop(
+          base::MessageLoopProxy::current(), base::Bind(
+              &MediaStreamUIController::PostResponse,
+              weak_ptr_factory_.GetWeakPtr(), label))));
 }
 
 void MediaStreamUIController::PostRequestToFakeUI(const std::string& label) {
@@ -345,6 +306,11 @@ void MediaStreamUIController::PostRequestToFakeUI(const std::string& label) {
       BrowserThread::IO, FROM_HERE,
       base::Bind(&MediaStreamUIController::PostResponse,
                  weak_ptr_factory_.GetWeakPtr(), label, devices_to_use));
+}
+
+void MediaStreamUIController::OnStopStreamFromUI(const std::string& label) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  requester_->StopStreamFromUI(label);
 }
 
 }  // namespace content

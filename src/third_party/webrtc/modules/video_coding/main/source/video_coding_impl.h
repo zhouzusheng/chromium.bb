@@ -58,7 +58,8 @@ enum VCMKeyRequestMode
 class VideoCodingModuleImpl : public VideoCodingModule
 {
 public:
-    VideoCodingModuleImpl(const WebRtc_Word32 id, Clock* clock);
+    VideoCodingModuleImpl(const WebRtc_Word32 id, Clock* clock,
+                          EventFactory* event_factory, bool owns_event_factory);
 
     virtual ~VideoCodingModuleImpl();
 
@@ -108,7 +109,7 @@ public:
 
     // Set channel parameters
     virtual WebRtc_Word32 SetChannelParameters(
-        WebRtc_UWord32 availableBandWidth,
+        WebRtc_UWord32 target_bitrate,  // bits/s.
         WebRtc_UWord8 lossRate,
         WebRtc_UWord32 rtt);
 
@@ -262,6 +263,9 @@ public:
     virtual void SetNackSettings(size_t max_nack_list_size,
                                  int max_packet_age_to_nack);
 
+    // Set the video delay for the receiver (default = 0).
+    virtual int SetMinReceiverDelay(int desired_delay_ms);
+
     // Enables recording of debugging information.
     virtual int StartDebugRecording(const char* file_name_utf8);
 
@@ -304,7 +308,7 @@ private:
     VCMGenericEncoder*                  _encoder;
     VCMEncodedFrameCallback             _encodedFrameCallback;
     std::vector<FrameType>              _nextFrameTypes;
-    VCMMediaOptimization                _mediaOpt;
+    media_optimization::VCMMediaOptimization _mediaOpt;
     VideoCodecType                      _sendCodecType;
     VCMSendStatisticsCallback*          _sendStatsCallback;
     FILE*                               _encoderInputFile;
@@ -313,6 +317,9 @@ private:
     VCMProcessTimer                     _sendStatsTimer;
     VCMProcessTimer                     _retransmissionTimer;
     VCMProcessTimer                     _keyRequestTimer;
+    EventFactory*                       event_factory_;
+    bool                                owns_event_factory_;
+    bool                                frame_dropper_enabled_;
 };
 } // namespace webrtc
 #endif // WEBRTC_MODULES_VIDEO_CODING_VIDEO_CODING_IMPL_H_

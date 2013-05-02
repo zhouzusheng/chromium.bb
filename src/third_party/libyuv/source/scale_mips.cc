@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -17,7 +17,8 @@ extern "C" {
 #endif
 
 // This module is for GCC MIPS DSPR2
-#if !defined(YUV_DISABLE_ASM) && defined(__mips_dsp) && (__mips_dsp_rev >= 2)
+#if !defined(LIBYUV_DISABLE_MIPS) && \
+    defined(__mips_dsp) && (__mips_dsp_rev >= 2)
 
 void ScaleRowDown2_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t /* src_stride */,
                               uint8* dst, int dst_width) {

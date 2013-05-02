@@ -60,10 +60,11 @@
 #include "SecureTextInput.h"
 #include "Settings.h"
 #include "SpatialNavigation.h"
+#include "StylePropertySet.h"
 #include "TextIterator.h"
 #include "TypingCommand.h"
+#include "VisibleUnits.h"
 #include "htmlediting.h"
-#include "visible_units.h"
 #include <limits.h>
 #include <stdio.h>
 #include <wtf/text/CString.h>
@@ -353,7 +354,7 @@ static bool removingNodeRemovesPosition(Node* node, const Position& position)
     if (!node->isElementNode())
         return false;
 
-    Element* element = static_cast<Element*>(node);
+    Element* element = toElement(node);
     return element->containsIncludingShadowDOM(position.anchorNode());
 }
 

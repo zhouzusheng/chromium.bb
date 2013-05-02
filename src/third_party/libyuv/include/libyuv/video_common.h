@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -27,9 +27,15 @@ extern "C" {
 // Convert four characters to a FourCC code.
 // Needs to be a macro otherwise the OS X compiler complains when the kFormat*
 // constants are used in a switch.
+#ifdef __cplusplus
 #define FOURCC(a, b, c, d) ( \
     (static_cast<uint32>(a)) | (static_cast<uint32>(b) << 8) | \
     (static_cast<uint32>(c) << 16) | (static_cast<uint32>(d) << 24))
+#else
+#define FOURCC(a, b, c, d) ( \
+    ((uint32)(a)) | ((uint32)(b) << 8) | /* NOLINT */ \
+    ((uint32)(c) << 16) | ((uint32)(d) << 24))  /* NOLINT */
+#endif
 
 // Some pages discussing FourCC codes:
 //   http://www.fourcc.org/yuv.php

@@ -31,6 +31,7 @@
 #include "ImageDecodingStore.h"
 #include "ScaledImageFragment.h"
 #include "SharedBuffer.h"
+#include "TraceEvent.h"
 
 #include "skia/ext/image_operations.h"
 
@@ -48,6 +49,8 @@ skia::ImageOperations::ResizeMethod resizeMethod()
 ImageFrameGenerator::ImageFrameGenerator(const SkISize& fullSize, PassRefPtr<SharedBuffer> data, bool allDataReceived)
     : m_fullSize(fullSize)
     , m_decodeFailedAndEmpty(false)
+    , m_hasAlpha(true)
+    , m_decodeCount(0)
 {
     setData(data.get(), allDataReceived);
 }
@@ -66,6 +69,14 @@ void ImageFrameGenerator::setData(PassRefPtr<SharedBuffer> data, bool allDataRec
     m_data.setData(data.get(), allDataReceived);
 }
 
+void ImageFrameGenerator::copyData(RefPtr<SharedBuffer>* data, bool* allDataReceived)
+{
+    SharedBuffer* buffer = 0;
+    m_data.data(&buffer, allDataReceived);
+    if (buffer)
+        *data = buffer->copy();
+}
+
 const ScaledImageFragment* ImageFrameGenerator::decodeAndScale(const SkISize& scaledSize)
 {
     // Prevents concurrent decode or scale operations on the same image data.
@@ -79,6 +90,8 @@ const ScaledImageFragment* ImageFrameGenerator::decodeAndScale(const SkISize& sc
     cachedImage = tryToLockCompleteCache(scaledSize);
     if (cachedImage)
         return cachedImage;
+
+    TRACE_EVENT2("webkit", "ImageFrameGenerator::decodeAndScale", "generator", this, "decodeCount", ++m_decodeCount);
 
     cachedImage = tryToScale(0, scaledSize);
     if (cachedImage)
@@ -104,6 +117,8 @@ const ScaledImageFragment* ImageFrameGenerator::tryToLockCompleteCache(const SkI
 
 const ScaledImageFragment* ImageFrameGenerator::tryToScale(const ScaledImageFragment* fullSizeImage, const SkISize& scaledSize)
 {
+    TRACE_EVENT0("webkit", "ImageFrameGenerator::tryToScale");
+
     // If the requested scaled size is the same as the full size then exit
     // early. This saves a cache lookup.
     if (scaledSize == m_fullSize)
@@ -134,6 +149,8 @@ const ScaledImageFragment* ImageFrameGenerator::tryToScale(const ScaledImageFrag
 
 const ScaledImageFragment* ImageFrameGenerator::tryToResumeDecodeAndScale(const SkISize& scaledSize)
 {
+    TRACE_EVENT0("webkit", "ImageFrameGenerator::tryToResumeDecodeAndScale");
+
     const ScaledImageFragment* cachedImage = 0;
     ImageDecoder* cachedDecoder = 0;
     if (!ImageDecodingStore::instance()->lockCache(this, m_fullSize, ImageDecodingStore::CacheCanBeIncomplete, &cachedImage, &cachedDecoder))
@@ -153,6 +170,8 @@ const ScaledImageFragment* ImageFrameGenerator::tryToResumeDecodeAndScale(const 
 
 const ScaledImageFragment* ImageFrameGenerator::tryToDecodeAndScale(const SkISize& scaledSize)
 {
+    TRACE_EVENT0("webkit", "ImageFrameGenerator::tryToDecodeAndScale");
+
     ImageDecoder* decoder = 0;
     OwnPtr<ScaledImageFragment> fullSizeImage = decode(&decoder);
 
@@ -178,6 +197,8 @@ const ScaledImageFragment* ImageFrameGenerator::tryToDecodeAndScale(const SkISiz
 
 PassOwnPtr<ScaledImageFragment> ImageFrameGenerator::decode(ImageDecoder** decoder)
 {
+    TRACE_EVENT2("webkit", "ImageFrameGenerator::decode", "width", m_fullSize.width(), "height", m_fullSize.height());
+
     ASSERT(decoder);
     SharedBuffer* data = 0;
     bool allDataReceived = false;
@@ -211,9 +232,19 @@ PassOwnPtr<ScaledImageFragment> ImageFrameGenerator::decode(ImageDecoder** decod
 
     bool isComplete = frame->status() == ImageFrame::FrameComplete;
     SkBitmap fullSizeBitmap = frame->getSkBitmap();
+    {
+        MutexLocker lock(m_alphaMutex);
+        m_hasAlpha = !fullSizeBitmap.isOpaque();
+    }
     ASSERT(fullSizeBitmap.width() == m_fullSize.width() && fullSizeBitmap.height() == m_fullSize.height());
 
     return ScaledImageFragment::create(m_fullSize, fullSizeBitmap, isComplete);
+}
+
+bool ImageFrameGenerator::hasAlpha()
+{
+    MutexLocker lock(m_alphaMutex);
+    return m_hasAlpha;
 }
 
 } // namespace WebCore

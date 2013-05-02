@@ -40,13 +40,6 @@
           },
           'includes': [ '../../build/grit_action.gypi' ],
         },
-        {
-          'action_name': 'webkit_unscaled_resources',
-          'variables': {
-            'grit_grd_file': 'resources/webkit_unscaled_resources.grd',
-          },
-          'includes': [ '../../build/grit_action.gypi' ],
-        },
       ],
       'includes': [ '../../build/grit_target.gypi' ],
       'direct_dependent_settings': {
@@ -99,6 +92,7 @@
         '<(DEPTH)/ui/gl/gl.gyp:gl',
         '<(DEPTH)/ui/native_theme/native_theme.gyp:native_theme',
         '<(DEPTH)/ui/ui.gyp:ui',
+        '<(DEPTH)/ui/ui.gyp:ui_resources',
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
         '<(DEPTH)/webkit/compositor_bindings/compositor_bindings.gyp:webkit_compositor_support',
         '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
@@ -112,6 +106,7 @@
       'include_dirs': [
         '<(INTERMEDIATE_DIR)',
         '<(SHARED_INTERMEDIATE_DIR)/webkit',
+        '<(SHARED_INTERMEDIATE_DIR)/ui',
         # SHEZ: Changed upstream code here to include path to our stdint.h
         '../../third_party/ffmpeg/chromium/include/win',
       ],
@@ -211,8 +206,6 @@
         '../plugins/ppapi/ppb_broker_impl.h',
         '../plugins/ppapi/ppb_buffer_impl.cc',
         '../plugins/ppapi/ppb_buffer_impl.h',
-        '../plugins/ppapi/ppb_directory_reader_impl.cc',
-        '../plugins/ppapi/ppb_directory_reader_impl.h',
         '../plugins/ppapi/ppb_file_ref_impl.cc',
         '../plugins/ppapi/ppb_file_ref_impl.h',
         '../plugins/ppapi/ppb_file_system_impl.cc',
@@ -221,12 +214,8 @@
         '../plugins/ppapi/ppb_flash_message_loop_impl.h',
         '../plugins/ppapi/ppb_gpu_blacklist_private_impl.cc',
         '../plugins/ppapi/ppb_gpu_blacklist_private_impl.h',
-        '../plugins/ppapi/ppb_graphics_2d_impl.cc',
-        '../plugins/ppapi/ppb_graphics_2d_impl.h',
         '../plugins/ppapi/ppb_graphics_3d_impl.cc',
         '../plugins/ppapi/ppb_graphics_3d_impl.h',
-        '../plugins/ppapi/ppb_host_resolver_private_impl.cc',
-        '../plugins/ppapi/ppb_host_resolver_private_impl.h',
         '../plugins/ppapi/ppb_image_data_impl.cc',
         '../plugins/ppapi/ppb_image_data_impl.h',
         '../plugins/ppapi/ppb_network_monitor_private_impl.cc',
@@ -371,12 +360,6 @@
         'weburlrequest_extradata_impl.h',
         'weburlresponse_extradata_impl.cc',
         'weburlresponse_extradata_impl.h',
-        'web_intent_data.cc',
-        'web_intent_data.h',
-        'web_intent_reply_data.cc',
-        'web_intent_reply_data.h',
-        'web_intent_service_data.cc',
-        'web_intent_service_data.h',
         'web_io_operators.cc',
         'web_io_operators.h',
         'worker_task_runner.cc',
@@ -434,16 +417,6 @@
             ['exclude', '^\\.\\./plugins/npapi/webplugin_delegate_impl_aura'],
           ],
         }],
-        ['enable_web_intents==0', {
-          'sources!': [
-            'web_intent_data.cc',
-            'web_intent_data.h',
-            'web_intent_reply_data.cc',
-            'web_intent_reply_data.h',
-            'web_intent_service_data.cc',
-            'web_intent_service_data.h',
-          ],
-        }],
         ['OS!="mac"', {
           'sources/': [['exclude', '_mac\\.(cc|mm)$']],
           'sources!': [
@@ -496,6 +469,12 @@
             '<(DEPTH)/webkit/support/setup_third_party.gyp:third_party_headers',
           ],
         }],
+        ['OS=="android"', {
+          'dependencies': [
+            'overscroller_jni_headers',
+          ],
+        }],
+
       ],
     },
   ],
@@ -518,6 +497,19 @@
             },
           ],
           'includes': [ '../../build/grit_target.gypi' ],
+        },
+      ],
+    }],
+    ['OS=="android"', {
+      'targets': [
+        {
+          'target_name': 'overscroller_jni_headers',
+          'type': 'none',
+          'variables': {
+            'jni_gen_package': 'webkit',
+            'input_java_class': 'android/widget/OverScroller.class',
+          },
+          'includes': [ '../../build/jar_file_jni_generator.gypi' ],
         },
       ],
     }],

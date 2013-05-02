@@ -26,11 +26,6 @@ class TraceControllerImpl : public TraceController {
   // startup tracing.
   void InitStartupTracing(const CommandLine& command_line);
 
-  // Get set of known categories. This can change as new code paths are reached.
-  // If true is returned, subscriber->OnKnownCategoriesCollected will be called
-  // once the categories are retrieved from child processes.
-  bool GetKnownCategoriesAsync(TraceSubscriber* subscriber);
-
   // Same as above, but specifies which categories to trace.
   // If both included_categories and excluded_categories are empty,
   //   all categories are traced.
@@ -38,11 +33,13 @@ class TraceControllerImpl : public TraceController {
   // Else if excluded_categories is non-empty, everything but those are traced.
   bool BeginTracing(TraceSubscriber* subscriber,
                     const std::vector<std::string>& included_categories,
-                    const std::vector<std::string>& excluded_categories);
+                    const std::vector<std::string>& excluded_categories,
+                    base::debug::TraceLog::Options options);
 
   // TraceController implementation:
   virtual bool BeginTracing(TraceSubscriber* subscriber,
-                            const std::string& categories) OVERRIDE;
+                            const std::string& categories,
+                            base::debug::TraceLog::Options options) OVERRIDE;
   virtual  bool EndTracingAsync(TraceSubscriber* subscriber) OVERRIDE;
   virtual bool GetTraceBufferPercentFullAsync(
       TraceSubscriber* subscriber) OVERRIDE;
@@ -51,6 +48,7 @@ class TraceControllerImpl : public TraceController {
                              const std::string& event_name) OVERRIDE;
   virtual bool CancelWatchEvent(TraceSubscriber* subscriber) OVERRIDE;
   virtual void CancelSubscriber(TraceSubscriber* subscriber) OVERRIDE;
+  virtual bool GetKnownCategoriesAsync(TraceSubscriber* subscriber) OVERRIDE;
 
  private:
   typedef std::set<scoped_refptr<TraceMessageFilter> > FilterMap;
@@ -106,6 +104,7 @@ class TraceControllerImpl : public TraceController {
   std::vector<std::string> excluded_categories_;
   std::string watch_category_;
   std::string watch_name_;
+  base::debug::TraceLog::Options trace_options_;
 
   DISALLOW_COPY_AND_ASSIGN(TraceControllerImpl);
 };

@@ -29,7 +29,6 @@
 #include "ui/gfx/size.h"
 #include "webkit/glue/resource_type.h"
 
-struct BrowserPluginHostMsg_CreateGuest_Params;
 struct BrowserPluginHostMsg_ResizeGuest_Params;
 struct ViewHostMsg_DateTimeDialogValue_Params;
 struct ViewMsg_PostMessage_Params;
@@ -37,6 +36,7 @@ struct ViewMsg_PostMessage_Params;
 namespace content {
 class BrowserPluginEmbedder;
 class BrowserPluginGuest;
+class BrowserPluginGuestManager;
 class ColorChooser;
 class DateTimeChooserAndroid;
 class DownloadItem;
@@ -55,14 +55,14 @@ class TestWebContents;
 class WebContentsDelegate;
 class WebContentsImpl;
 class WebContentsObserver;
-class WebContentsView;
+class WebContentsViewPort;
 class WebContentsViewDelegate;
 struct FaviconURL;
 struct LoadNotificationDetails;
 
 // Factory function for the implementations that content knows about. Takes
 // ownership of |delegate|.
-WebContentsView* CreateWebContentsView(
+WebContentsViewPort* CreateWebContentsView(
     WebContentsImpl* web_contents,
     WebContentsViewDelegate* delegate,
     RenderViewHostDelegateView** render_view_host_delegate_view);
@@ -85,13 +85,10 @@ class CONTENT_EXPORT WebContentsImpl
   WebContentsImpl* opener() const { return opener_; }
 
   // Creates a WebContents to be used as a browser plugin guest.
-  static WebContentsImpl* CreateGuest(
+  static BrowserPluginGuest* CreateGuest(
       BrowserContext* browser_context,
       content::SiteInstance* site_instance,
-      int routing_id,
-      WebContentsImpl* opener_web_contents,
-      int guest_instance_id,
-      const BrowserPluginHostMsg_CreateGuest_Params& params);
+      int guest_instance_id);
 
   // Returns the content specific prefs for the given RVH.
   static webkit_glue::WebPreferences GetWebkitPrefs(
@@ -139,22 +136,12 @@ class CONTENT_EXPORT WebContentsImpl
   // Called by InterstitialPageImpl when it creates a RenderViewHost.
   void RenderViewForInterstitialPageCreated(RenderViewHost* render_view_host);
 
-  // Sets the passed passed interstitial as the currently showing interstitial.
-  // |interstitial_page| should be non NULL (use the remove_interstitial_page
-  // method to unset the interstitial) and no interstitial page should be set
-  // when there is already a non NULL interstitial page set.
-  void set_interstitial_page(InterstitialPageImpl* interstitial_page) {
-    render_manager_.set_interstitial_page(interstitial_page);
-  }
+  // Sets the passed interstitial as the currently showing interstitial.
+  // No interstitial page should already be attached.
+  void AttachInterstitialPage(InterstitialPageImpl* interstitial_page);
 
   // Unsets the currently showing interstitial.
-  void remove_interstitial_page() {
-    render_manager_.remove_interstitial_page();
-  }
-
-  void set_opener_web_ui_type(WebUI::TypeID opener_web_ui_type) {
-    opener_web_ui_type_ = opener_web_ui_type;
-  }
+  void DetachInterstitialPage();
 
 #if defined(ENABLE_JAVA_BRIDGE)
   JavaBridgeDispatcherHostManager* java_bridge_dispatcher_host_manager() const {
@@ -171,12 +158,19 @@ class CONTENT_EXPORT WebContentsImpl
   // Returns embedder browser plugin object, or NULL if this WebContents is not
   // an embedder.
   BrowserPluginEmbedder* GetBrowserPluginEmbedder() const;
+  // Returns the BrowserPluginGuestManager object, or NULL if this web contents
+  // does not have a BrowserPluginGuestManager.
+  BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
 
   // Gets the current fullscreen render widget's routing ID. Returns
   // MSG_ROUTING_NONE when there is no fullscreen render widget.
   int GetFullscreenWidgetRoutingID() const;
 
-  void DidBlock3DAPIs(const GURL& url, ThreeDAPIType requester);
+  // Invoked when visible SSL state (as defined by SSLStatus) changes.
+  void DidChangeVisibleSSLState();
+
+  // Invoked before a form repost warning is shown.
+  void NotifyBeforeFormRepostWarningShow();
 
   // WebContents ------------------------------------------------------
   virtual WebContentsDelegate* GetDelegate() OVERRIDE;
@@ -228,10 +222,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool NeedToFireBeforeUnload() OVERRIDE;
   virtual void Stop() OVERRIDE;
   virtual WebContents* Clone() OVERRIDE;
-  virtual gfx::NativeView GetContentNativeView() const OVERRIDE;
-  virtual gfx::NativeView GetNativeView() const OVERRIDE;
-  virtual void GetContainerBounds(gfx::Rect* out) const OVERRIDE;
-  virtual void Focus() OVERRIDE;
   virtual void FocusThroughTabTraversal(bool reverse) OVERRIDE;
   virtual bool ShowingInterstitialPage() const OVERRIDE;
   virtual InterstitialPage* GetInterstitialPage() const OVERRIDE;
@@ -255,7 +245,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual base::TimeTicks GetNewTabStartTime() const OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual void OnCloseStarted() OVERRIDE;
-  virtual bool ShouldAcceptDragAndDrop() const OVERRIDE;
   virtual void SystemDragEnded() OVERRIDE;
   virtual void UserGestureDone() OVERRIDE;
   virtual void SetClosedByUserGesture(bool value) OVERRIDE;
@@ -270,14 +259,15 @@ class CONTENT_EXPORT WebContentsImpl
   virtual int GetMaximumZoomPercent() const OVERRIDE;
   virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual int GetContentRestrictions() const OVERRIDE;
-  virtual WebUI::TypeID GetWebUITypeForCurrentState() OVERRIDE;
   virtual WebUI* GetWebUIForCurrentState() OVERRIDE;
   virtual bool GotResponseToLockMouseRequest(bool allowed) OVERRIDE;
   virtual bool HasOpener() const OVERRIDE;
   virtual void DidChooseColorInColorChooser(int color_chooser_id,
                                             SkColor color) OVERRIDE;
   virtual void DidEndColorChooser(int color_chooser_id) OVERRIDE;
-  virtual int DownloadFavicon(const GURL& url, int image_size,
+  virtual int DownloadFavicon(const GURL& url,
+                              bool is_favicon,
+                              int image_size,
                               const FaviconDownloadCallback& callback) OVERRIDE;
 
   // Implementation of PageNavigator.
@@ -437,6 +427,8 @@ class CONTENT_EXPORT WebContentsImpl
       bool* is_keyboard_shortcut) OVERRIDE;
   virtual void HandleKeyboardEvent(
       const NativeWebKeyboardEvent& event) OVERRIDE;
+  virtual bool PreHandleWheelEvent(
+      const WebKit::WebMouseWheelEvent& event) OVERRIDE;
 
   // RenderViewHostManager::Delegate -------------------------------------------
 
@@ -478,6 +470,7 @@ class CONTENT_EXPORT WebContentsImpl
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, FindOpenerRVHWhenPending);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest,
                            CrossSiteCantPreemptAfterUnload);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, PendingContents);
   FRIEND_TEST_ALL_PREFIXES(FormStructureBrowserTest, HTMLFiles);
   FRIEND_TEST_ALL_PREFIXES(NavigationControllerTest, HistoryNavigate);
   FRIEND_TEST_ALL_PREFIXES(RenderViewHostManagerTest, PageDoesBackAndReload);
@@ -571,8 +564,7 @@ class CONTENT_EXPORT WebContentsImpl
   void OnRequestPpapiBrokerPermission(int request_id,
                                       const GURL& url,
                                       const base::FilePath& plugin_path);
-  void OnBrowserPluginAllocateInstanceID(const IPC::Message& message,
-                                         int request_id);
+  void OnBrowserPluginMessage(const IPC::Message& message);
   void OnDidDownloadFavicon(int id,
                             const GURL& image_url,
                             int requested_size,
@@ -700,7 +692,7 @@ class CONTENT_EXPORT WebContentsImpl
   NavigationControllerImpl controller_;
 
   // The corresponding view.
-  scoped_ptr<WebContentsView> view_;
+  scoped_ptr<WebContentsViewPort> view_;
 
   // The view of the RVHD. Usually this is our WebContentsView implementation,
   // but if an embedder uses a different WebContentsView, they'll need to
@@ -817,10 +809,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Settings that get passed to the renderer process.
   RendererPreferences renderer_preferences_;
-
-  // If this tab was created from a renderer using window.open, this will be
-  // non-NULL and represent the WebUI of the opening renderer.
-  WebUI::TypeID opener_web_ui_type_;
 
   // The time that we started to create the new tab page.
   base::TimeTicks new_tab_start_time_;

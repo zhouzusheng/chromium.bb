@@ -27,7 +27,6 @@ text-rendering
 -webkit-locale
 -webkit-text-orientation
 -epub-text-orientation = -webkit-text-orientation
--webkit-text-size-adjust
 -webkit-writing-mode
 -epub-writing-mode = -webkit-writing-mode
 zoom
@@ -100,6 +99,9 @@ content
 counter-increment
 counter-reset
 cursor
+#if defined(ENABLE_CURSOR_VISIBILITY) && ENABLE_CURSOR_VISIBILITY
+-webkit-cursor-visibility
+#endif
 empty-cells
 float
 font-stretch
@@ -290,8 +292,14 @@ z-index
 -webkit-flex-wrap
 -webkit-justify-content
 -webkit-font-size-delta
+-webkit-grid-auto-columns
+-webkit-grid-auto-rows
 -webkit-grid-columns
 -webkit-grid-rows
+-webkit-grid-start
+-webkit-grid-end
+-webkit-grid-before
+-webkit-grid-after
 -webkit-grid-column
 -webkit-grid-row
 -webkit-grid-auto-flow
@@ -365,7 +373,9 @@ z-index
 #if defined(ENABLE_CSS3_TEXT) && ENABLE_CSS3_TEXT
 -webkit-text-decoration-line
 -webkit-text-decoration-style
+-webkit-text-decoration-color
 -webkit-text-align-last
+-webkit-text-underline-position
 #endif
 -webkit-text-decorations-in-effect
 -webkit-text-emphasis

@@ -34,10 +34,7 @@ SpeechRecognitionManagerImpl* g_speech_recognition_manager_impl;
 
 void ShowAudioInputSettingsOnFileThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  media::AudioManager* audio_manager = BrowserMainLoop::GetAudioManager();
-  DCHECK(audio_manager->CanShowAudioInputSettings());
-  if (audio_manager->CanShowAudioInputSettings())
-    audio_manager->ShowAudioInputSettings();
+  BrowserMainLoop::GetAudioManager()->ShowAudioInputSettings();
 }
 
 }  // namespace
@@ -265,7 +262,8 @@ void SpeechRecognitionManagerImpl::OnRecognitionStart(int session_id) {
   if (!context.devices.empty()) {
     // Notify the UI the devices are being used.
     BrowserMainLoop::GetMediaStreamManager()->NotifyUIDevicesOpened(
-        context.render_process_id, context.render_view_id, context.devices);
+        context.label, context.render_process_id, context.render_view_id,
+        context.devices);
   }
 #endif  // !defined(OS_IOS)
 

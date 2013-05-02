@@ -233,7 +233,23 @@ gfx::Size NativeThemeWin::GetPartSize(Part part,
     if (!size.IsEmpty())
       return size;
   }
+
+  // The GetThemePartSize call below returns the default size without
+  // accounting for user customization (crbug/218291).
   SIZE size;
+  switch (part) {
+    case kScrollbarDownArrow:
+    case kScrollbarLeftArrow:
+    case kScrollbarRightArrow:
+    case kScrollbarUpArrow:
+    case kScrollbarHorizontalThumb:
+    case kScrollbarVerticalThumb:
+    case kScrollbarHorizontalTrack:
+    case kScrollbarVerticalTrack:
+      size.cx = size.cy = ui::win::GetSystemMetricsInDIP(SM_CXVSCROLL);
+      return gfx::Size(size.cx, size.cy);
+  }
+
   int part_id = GetWindowsPart(part, state, extra);
   int state_id = GetWindowsState(part, state, extra);
 
@@ -254,17 +270,6 @@ gfx::Size NativeThemeWin::GetPartSize(Part part,
         size.cx = 13;
         size.cy = 13;
         break;
-      case kScrollbarDownArrow:
-      case kScrollbarLeftArrow:
-      case kScrollbarRightArrow:
-      case kScrollbarUpArrow:
-      case kScrollbarHorizontalThumb:
-      case kScrollbarVerticalThumb:
-      case kScrollbarHorizontalTrack:
-      case kScrollbarVerticalTrack:
-        size.cx = size.cy = GetSystemMetrics(SM_CXVSCROLL) /
-            ui::win::GetDeviceScaleFactor();
-        break;
       default:
         size.cx = 0;
         size.cy = 0;
@@ -280,6 +285,9 @@ void NativeThemeWin::Paint(SkCanvas* canvas,
                            State state,
                            const gfx::Rect& rect,
                            const ExtraParams& extra) const {
+  if (rect.IsEmpty())
+    return;
+
   if (IsNewMenuStyleEnabled()) {
     switch (part) {
       case kMenuPopupGutter:

@@ -5,8 +5,8 @@
 #include "webkit/support/platform_support.h"
 
 #include "base/base_paths.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/string16.h"
@@ -14,6 +14,7 @@
 #include "base/win/resource_util.h"
 #include "grit/webkit_chromium_resources.h"
 #include "grit/webkit_resources.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "webkit/support/test_webkit_platform_support.h"
 
 #define MAX_LOADSTRING 100
@@ -51,9 +52,16 @@ void BeforeInitialize(bool unit_test_mode) {
 }
 
 void AfterInitialize(bool unit_test_mode) {
+  // TODO(dpranke): update other resource loading to use the pak
+  // instead of loading resources directly compiled in.
+  base::FilePath path;
+  PathService::Get(base::DIR_EXE, &path);
+  path = path.AppendASCII("DumpRenderTree.pak");
+  ResourceBundle::InitSharedInstanceWithPakPath(path);
 }
 
 void BeforeShutdown() {
+  ResourceBundle::CleanupSharedInstance();
 }
 
 void AfterShutdown() {

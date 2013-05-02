@@ -203,16 +203,6 @@ function StringMatch(regexp) {
 }
 
 
-// SubString is an internal function that returns the sub string of 'string'.
-// If resulting string is of length 1, we use the one character cache
-// otherwise we call the runtime system.
-function SubString(string, start, end) {
-  // Use the one character string cache.
-  if (start + 1 == end) return %_StringCharAt(string, start);
-  return %_SubString(string, start, end);
-}
-
-
 // This has the same size as the lastMatchInfo array, and can be used for
 // functions that expect that structure to be returned.  It is used when the
 // needle is a string rather than a regexp.  In this case we can't update
@@ -229,60 +219,80 @@ function StringReplace(search, replace) {
   }
   var subject = TO_STRING_INLINE(this);
 
-  // Delegate to one of the regular expression variants if necessary.
+  // Decision tree for dispatch
+  // .. regexp search
+  // .... string replace
+  // ...... non-global search
+  // ........ empty string replace
+  // ........ non-empty string replace (with $-expansion)
+  // ...... global search
+  // ........ no need to circumvent last match info override
+  // ........ need to circument last match info override
+  // .... function replace
+  // ...... global search
+  // ...... non-global search
+  // .. string search
+  // .... special case that replaces with one single character
+  // ...... function replace
+  // ...... string replace (with $-expansion)
+
   if (IS_REGEXP(search)) {
-    // Emulate RegExp.prototype.exec's side effect in step 5, even though
+    // Emulate RegExp.prototype.exec's side effect in step 5, even if
     // value is discarded.
     ToInteger(search.lastIndex);
     %_Log('regexp', 'regexp-replace,%0r,%1S', [search, subject]);
-    if (IS_SPEC_FUNCTION(replace)) {
-      if (search.global) {
-        return StringReplaceGlobalRegExpWithFunction(subject, search, replace);
-      } else {
-        return StringReplaceNonGlobalRegExpWithFunction(subject,
-                                                        search,
-                                                        replace);
-      }
-    } else {
-      if (lastMatchInfoOverride == null) {
-        var answer = %StringReplaceRegExpWithString(subject,
-                                                    search,
-                                                    TO_STRING_INLINE(replace),
-                                                    lastMatchInfo);
-        if (IS_UNDEFINED(answer)) {  // No match.  Return subject string.
-          search.lastIndex = 0;
+
+    if (!IS_SPEC_FUNCTION(replace)) {
+      replace = TO_STRING_INLINE(replace);
+
+      if (!search.global) {
+        // Non-global regexp search, string replace.
+        var match = DoRegExpExec(search, subject, 0);
+        if (match == null) {
+          search.lastIndex = 0
           return subject;
         }
-        if (search.global) search.lastIndex = 0;
-        return answer;
+        if (replace.length == 0) {
+          return %_SubString(subject, 0, match[CAPTURE0]) +
+                 %_SubString(subject, match[CAPTURE1], subject.length)
+        }
+        return ExpandReplacement(replace, subject, lastMatchInfo,
+                                 %_SubString(subject, 0, match[CAPTURE0])) +
+               %_SubString(subject, match[CAPTURE1], subject.length);
+      }
+
+      // Global regexp search, string replace.
+      search.lastIndex = 0;
+      if (lastMatchInfoOverride == null) {
+        return %StringReplaceGlobalRegExpWithString(
+            subject, search, replace, lastMatchInfo);
       } else {
         // We use this hack to detect whether StringReplaceRegExpWithString
         // found at least one hit. In that case we need to remove any
         // override.
         var saved_subject = lastMatchInfo[LAST_SUBJECT_INDEX];
         lastMatchInfo[LAST_SUBJECT_INDEX] = 0;
-        var answer = %StringReplaceRegExpWithString(subject,
-                                                    search,
-                                                    TO_STRING_INLINE(replace),
-                                                    lastMatchInfo);
-        if (IS_UNDEFINED(answer)) {  // No match.  Return subject string.
-          search.lastIndex = 0;
-          lastMatchInfo[LAST_SUBJECT_INDEX] = saved_subject;
-          return subject;
-        }
+        var answer = %StringReplaceGlobalRegExpWithString(
+            subject, search, replace, lastMatchInfo);
         if (%_IsSmi(lastMatchInfo[LAST_SUBJECT_INDEX])) {
           lastMatchInfo[LAST_SUBJECT_INDEX] = saved_subject;
         } else {
           lastMatchInfoOverride = null;
         }
-        if (search.global) search.lastIndex = 0;
         return answer;
       }
     }
+
+    if (search.global) {
+      // Global regexp search, function replace.
+      return StringReplaceGlobalRegExpWithFunction(subject, search, replace);
+    }
+    // Non-global regexp search, function replace.
+    return StringReplaceNonGlobalRegExpWithFunction(subject, search, replace);
   }
 
-  // Convert the search argument to a string and search for it.
   search = TO_STRING_INLINE(search);
+
   if (search.length == 1 &&
       subject.length > 0xFF &&
       IS_STRING(replace) &&
@@ -296,7 +306,7 @@ function StringReplace(search, replace) {
   if (start < 0) return subject;
   var end = start + search.length;
 
-  var result = SubString(subject, 0, start);
+  var result = %_SubString(subject, 0, start);
 
   // Compute the string to replace with.
   if (IS_SPEC_FUNCTION(replace)) {
@@ -305,11 +315,13 @@ function StringReplace(search, replace) {
   } else {
     reusableMatchInfo[CAPTURE0] = start;
     reusableMatchInfo[CAPTURE1] = end;
-    replace = TO_STRING_INLINE(replace);
-    result = ExpandReplacement(replace, subject, reusableMatchInfo, result);
+    result = ExpandReplacement(TO_STRING_INLINE(replace),
+                               subject,
+                               reusableMatchInfo,
+                               result);
   }
 
-  return result + SubString(subject, end, subject.length);
+  return result + %_SubString(subject, end, subject.length);
 }
 
 
@@ -323,7 +335,7 @@ function ExpandReplacement(string, subject, matchInfo, result) {
     return result;
   }
 
-  if (next > 0) result += SubString(string, 0, next);
+  if (next > 0) result += %_SubString(string, 0, next);
 
   while (true) {
     var expansion = '$';
@@ -335,13 +347,39 @@ function ExpandReplacement(string, subject, matchInfo, result) {
         result += '$';
       } else if (peek == 38) {  // $& - match
         ++position;
-        result += SubString(subject, matchInfo[CAPTURE0], matchInfo[CAPTURE1]);
+        result +=
+          %_SubString(subject, matchInfo[CAPTURE0], matchInfo[CAPTURE1]);
       } else if (peek == 96) {  // $` - prefix
         ++position;
-        result += SubString(subject, 0, matchInfo[CAPTURE0]);
+        result += %_SubString(subject, 0, matchInfo[CAPTURE0]);
       } else if (peek == 39) {  // $' - suffix
         ++position;
-        result += SubString(subject, matchInfo[CAPTURE1], subject.length);
+        result += %_SubString(subject, matchInfo[CAPTURE1], subject.length);
+      } else if (peek >= 48 && peek <= 57) {
+        // Valid indices are $1 .. $9, $01 .. $09 and $10 .. $99
+        var scaled_index = (peek - 48) << 1;
+        var advance = 1;
+        var number_of_captures = NUMBER_OF_CAPTURES(matchInfo);
+        if (position + 1 < string.length) {
+          var next = %_StringCharCodeAt(string, position + 1);
+          if (next >= 48 && next <= 57) {
+            var new_scaled_index = scaled_index * 10 + ((next - 48) << 1);
+            if (new_scaled_index < number_of_captures) {
+              scaled_index = new_scaled_index;
+              advance = 2;
+            }
+          }
+        }
+        if (scaled_index != 0 && scaled_index < number_of_captures) {
+          var start = matchInfo[CAPTURE(scaled_index)];
+          if (start >= 0) {
+            result +=
+              %_SubString(subject, start, matchInfo[CAPTURE(scaled_index + 1)]);
+          }
+          position += advance;
+        } else {
+          result += '$';
+        }
       } else {
         result += '$';
       }
@@ -356,14 +394,14 @@ function ExpandReplacement(string, subject, matchInfo, result) {
     // haven't reached the end, we need to append the suffix.
     if (next < 0) {
       if (position < length) {
-        result += SubString(string, position, length);
+        result += %_SubString(string, position, length);
       }
       return result;
     }
 
     // Append substring between the previous and the next $ character.
     if (next > position) {
-      result += SubString(string, position, next);
+      result += %_SubString(string, position, next);
     }
   }
   return result;
@@ -379,7 +417,7 @@ function CaptureString(string, lastCaptureInfo, index) {
   // If start isn't valid, return undefined.
   if (start < 0) return;
   var end = lastCaptureInfo[CAPTURE(scaled + 1)];
-  return SubString(string, start, end);
+  return %_SubString(string, start, end);
 }
 
 
@@ -420,7 +458,7 @@ function StringReplaceGlobalRegExpWithFunction(subject, regexp, replace) {
     // input string and some replacements that were returned from the replace
     // function.
     var match_start = 0;
-    var override = new InternalArray(null, 0, subject);
+    var override = new InternalPackedArray(null, 0, subject);
     var receiver = %GetDefaultReceiver(replace);
     for (var i = 0; i < len; i++) {
       var elem = res[i];
@@ -475,7 +513,7 @@ function StringReplaceNonGlobalRegExpWithFunction(subject, regexp, replace) {
     return subject;
   }
   var index = matchInfo[CAPTURE0];
-  var result = SubString(subject, 0, index);
+  var result = %_SubString(subject, 0, index);
   var endOfMatch = matchInfo[CAPTURE1];
   // Compute the parameter list consisting of the match, captures, index,
   // and subject for the replace function invocation.
@@ -485,7 +523,7 @@ function StringReplaceNonGlobalRegExpWithFunction(subject, regexp, replace) {
   var receiver = %GetDefaultReceiver(replace);
   if (m == 1) {
     // No captures, only the match, which is always valid.
-    var s = SubString(subject, index, endOfMatch);
+    var s = %_SubString(subject, index, endOfMatch);
     // Don't call directly to avoid exposing the built-in global object.
     replacement = %_CallFunction(receiver, s, index, subject, replace);
   } else {
@@ -502,7 +540,7 @@ function StringReplaceNonGlobalRegExpWithFunction(subject, regexp, replace) {
   result += replacement;  // The add method converts to string if necessary.
   // Can't use matchInfo any more from here, since the function could
   // overwrite it.
-  return result + SubString(subject, endOfMatch, subject.length);
+  return result + %_SubString(subject, endOfMatch, subject.length);
 }
 
 
@@ -568,7 +606,7 @@ function StringSlice(start, end) {
     return '';
   }
 
-  return SubString(s, start_i, end_i);
+  return %_SubString(s, start_i, end_i);
 }
 
 
@@ -629,13 +667,13 @@ function StringSplitOnRegExp(subject, separator, limit, length) {
   while (true) {
 
     if (startIndex === length) {
-      result.push(SubString(subject, currentIndex, length));
+      result.push(%_SubString(subject, currentIndex, length));
       break;
     }
 
     var matchInfo = DoRegExpExec(separator, subject, startIndex);
     if (matchInfo == null || length === (startMatch = matchInfo[CAPTURE0])) {
-      result.push(SubString(subject, currentIndex, length));
+      result.push(%_SubString(subject, currentIndex, length));
       break;
     }
     var endIndex = matchInfo[CAPTURE1];
@@ -646,11 +684,7 @@ function StringSplitOnRegExp(subject, separator, limit, length) {
       continue;
     }
 
-    if (currentIndex + 1 == startMatch) {
-      result.push(%_StringCharAt(subject, currentIndex));
-    } else {
-      result.push(%_SubString(subject, currentIndex, startMatch));
-    }
+    result.push(%_SubString(subject, currentIndex, startMatch));
 
     if (result.length === limit) break;
 
@@ -659,11 +693,7 @@ function StringSplitOnRegExp(subject, separator, limit, length) {
       var start = matchInfo[i++];
       var end = matchInfo[i++];
       if (end != -1) {
-        if (start + 1 == end) {
-          result.push(%_StringCharAt(subject, start));
-        } else {
-          result.push(%_SubString(subject, start, end));
-        }
+        result.push(%_SubString(subject, start, end));
       } else {
         result.push(void 0);
       }
@@ -707,9 +737,7 @@ function StringSubstring(start, end) {
     }
   }
 
-  return ((start_i + 1 == end_i)
-          ? %_StringCharAt(s, start_i)
-          : %_SubString(s, start_i, end_i));
+  return %_SubString(s, start_i, end_i);
 }
 
 
@@ -751,9 +779,7 @@ function StringSubstr(start, n) {
   var end = start + len;
   if (end > s.length) end = s.length;
 
-  return ((start + 1 == end)
-          ? %_StringCharAt(s, start)
-          : %_SubString(s, start, end));
+  return %_SubString(s, start, end);
 }
 
 
@@ -821,8 +847,6 @@ function StringTrimRight() {
   return %StringTrim(TO_STRING_INLINE(this), false, true);
 }
 
-var static_charcode_array = new InternalArray(4);
-
 
 // ECMA-262, section 15.5.3.2
 function StringFromCharCode(code) {
@@ -838,8 +862,7 @@ function StringFromCharCode(code) {
     var code = %_Arguments(i);
     if (!%_IsSmi(code)) code = ToNumber(code) & 0xffff;
     if (code < 0) code = code & 0xffff;
-    // TODO(dcarney): Fix for Latin-1.
-    if (code > 0x7f) break;
+    if (code > 0xff) break;
     %_OneByteSeqStringSetChar(one_byte, i, code);
   }
   if (i == n) return one_byte;

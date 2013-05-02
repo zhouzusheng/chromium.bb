@@ -55,19 +55,16 @@ WebRTCStatsResponse::operator WTF::PassRefPtr<WebCore::RTCStatsResponseBase>() c
     return m_private.get();
 }
 
-size_t WebRTCStatsResponse::addReport()
+size_t WebRTCStatsResponse::addReport(WebString id, WebString type, double timestamp)
 {
-    return m_private->addReport();
+    ASSERT(!m_private.isNull());
+    return m_private->addReport(id, type, timestamp);
 }
 
-void WebRTCStatsResponse::addElement(size_t report, bool isLocal, double timestamp)
+void WebRTCStatsResponse::addStatistic(size_t report, WebString name, WebString value)
 {
-    m_private->addElement(report, isLocal, timestamp);
-}
-
-void WebRTCStatsResponse::addStatistic(size_t report, bool isLocal, WebString name, WebString value)
-{
-    m_private->addStatistic(report, isLocal, name, value);
+    ASSERT(!m_private.isNull());
+    m_private->addStatistic(report, name, value);
 }
 
 } // namespace WebKit

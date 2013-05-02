@@ -46,6 +46,9 @@ public:
     virtual ~InbandTextTrack();
 
     virtual bool isClosedCaptions() const OVERRIDE;
+    virtual bool containsOnlyForcedSubtitles() const OVERRIDE;
+    virtual bool isMainProgramContent() const OVERRIDE;
+    virtual bool isEasyToRead() const OVERRIDE;
     virtual void setMode(const AtomicString&) OVERRIDE;
     size_t inbandTrackIndex();
 
@@ -54,6 +57,10 @@ private:
 
     virtual void addGenericCue(InbandTextTrackPrivate*, GenericCueData*) OVERRIDE;
     virtual void addWebVTTCue(InbandTextTrackPrivate*, double, double, const String&, const String&, const String&) OVERRIDE;
+
+#if USE(PLATFORM_TEXT_TRACK_MENU)
+    virtual InbandTextTrackPrivate* privateTrack() OVERRIDE { return m_private.get(); }
+#endif
 
     RefPtr<InbandTextTrackPrivate> m_private;
 };

@@ -298,7 +298,7 @@ void DocumentStyleSheetCollection::collectActiveStyleSheets(Vector<RefPtr<StyleS
                    ||  (n->isSVGElement() && n->hasTagName(SVGNames::styleTag))
 #endif
                    ) {
-            Element* e = static_cast<Element*>(n);
+            Element* e = toElement(n);
             AtomicString title = e->getAttribute(titleAttr);
             bool enabledViaScript = false;
             if (e->hasLocalName(linkTag)) {
@@ -478,7 +478,7 @@ bool DocumentStyleSheetCollection::updateActiveStyleSheets(UpdateFlag updateFlag
     else {
         StyleResolver* styleResolver = m_document->styleResolver();
         if (styleResolverUpdateType == Reset) {
-            styleResolver->resetAuthorStyle();
+            styleResolver->ruleSets().resetAuthorStyle();
             styleResolver->appendAuthorStyleSheets(0, activeCSSStyleSheets);
         } else {
             ASSERT(styleResolverUpdateType == Additive);

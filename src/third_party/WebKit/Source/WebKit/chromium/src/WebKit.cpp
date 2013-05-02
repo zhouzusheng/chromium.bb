@@ -31,6 +31,8 @@
 #include "config.h"
 #include "WebKit.h"
 
+#include "CustomElementRegistry.h"
+#include "EventTracer.h"
 #include "ImageDecodingStore.h"
 #include "LayoutTestSupport.h"
 #include "Logging.h"
@@ -42,7 +44,6 @@
 #include "V8Binding.h"
 #include "V8RecursionScope.h"
 #include "WebSocket.h"
-#include "platform/WebKitPlatformSupport.h"
 #include "v8.h"
 #include <public/Platform.h>
 #include <public/WebPrerenderingSupport.h>
@@ -80,6 +81,9 @@ public:
     virtual void willProcessTask() { }
     virtual void didProcessTask()
     {
+#if ENABLE(CUSTOM_ELEMENTS)
+        WebCore::CustomElementRegistry::deliverAllLifecycleCallbacks();
+#endif
         WebCore::MutationObserver::deliverAllMutations();
     }
 };
@@ -92,7 +96,7 @@ static WebThread::TaskObserver* s_endOfTaskRunner = 0;
 // Doing so may cause hard to reproduce crashes.
 static bool s_webKitInitialized = false;
 
-static WebKitPlatformSupport* s_webKitPlatformSupport = 0;
+static Platform* s_webKitPlatformSupport = 0;
 
 static bool generateEntropy(unsigned char* buffer, size_t length)
 {
@@ -110,7 +114,7 @@ static void assertV8RecursionScope()
 }
 #endif
 
-void initialize(WebKitPlatformSupport* webKitPlatformSupport)
+void initialize(Platform* webKitPlatformSupport)
 {
     initializeWithoutV8(webKitPlatformSupport);
 
@@ -129,7 +133,7 @@ void initialize(WebKitPlatformSupport* webKitPlatformSupport)
     }
 }
 
-void initializeWithoutV8(WebKitPlatformSupport* webKitPlatformSupport)
+void initializeWithoutV8(Platform* webKitPlatformSupport)
 {
     ASSERT(!s_webKitInitialized);
     s_webKitInitialized = true;
@@ -156,6 +160,8 @@ void initializeWithoutV8(WebKitPlatformSupport* webKitPlatformSupport)
     // the initialization thread-safe, but given that so many code paths use
     // this, initializing this lazily probably doesn't buy us much.
     WebCore::UTF8Encoding();
+
+    WebCore::EventTracer::initialize();
 
 #if ENABLE(INDEXED_DATABASE)
     WebCore::setIDBFactoryBackendInterfaceCreateFunction(WebKit::IDBFactoryBackendProxy::create);
@@ -190,7 +196,7 @@ void shutdown()
     WebPrerenderingSupport::shutdown();
 }
 
-WebKitPlatformSupport* webKitPlatformSupport()
+Platform* webKitPlatformSupport()
 {
     return s_webKitPlatformSupport;
 }

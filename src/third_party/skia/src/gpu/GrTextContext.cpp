@@ -18,9 +18,10 @@
 #include "SkPath.h"
 #include "SkStrokeRec.h"
 
-enum {
-    kGlyphMaskStage = GrPaint::kTotalStages,
-};
+// glyph rendering shares this stage with edge rendering (kEdgeEffectStage in GrContext) && SW path
+// rendering (kPathMaskStage in GrSWMaskHelper)
+static const int kGlyphMaskStage = GrPaint::kTotalStages;
+static const int kGlyphCoordsAttributeIndex = 1;
 
 void GrTextContext::flushGlyphs() {
     if (NULL == fDrawTarget) {
@@ -32,7 +33,11 @@ void GrTextContext::flushGlyphs() {
         GrAssert(GrIsALIGN4(fCurrVertex));
         GrAssert(fCurrTexture);
         GrTextureParams params(SkShader::kRepeat_TileMode, false);
-        drawState->createTextureEffect(kGlyphMaskStage, fCurrTexture, SkMatrix::I(), params);
+
+        // This effect could be stored with one of the cache objects (atlas?)
+        drawState->setEffect(kGlyphMaskStage,
+                             GrSimpleTextureEffect::CreateWithCustomCoords(fCurrTexture, params),
+                             kGlyphCoordsAttributeIndex)->unref();
 
         if (!GrPixelConfigIsAlphaOnly(fCurrTexture->config())) {
             if (kOne_GrBlendCoeff != fPaint.getSrcBlendCoeff() ||
@@ -92,8 +97,6 @@ GrTextContext::GrTextContext(GrContext* context, const GrPaint& paint) : fPaint(
 
     fVertices = NULL;
     fMaxVertices = 0;
-
-    fVertexLayout =  GrDrawState::StageTexCoordVertexLayoutBit(kGlyphMaskStage, 0);
 }
 
 GrTextContext::~GrTextContext() {
@@ -189,13 +192,20 @@ HAS_ATLAS:
     }
 
     if (NULL == fVertices) {
-        // If we need to reserve vertices allow the draw target to suggest
+        // position + texture coord
+        static const GrVertexAttrib kVertexAttribs[] = {
+            {kVec2f_GrVertexAttribType, 0},
+            {kVec2f_GrVertexAttribType, sizeof(GrPoint)}
+        };
+        static const GrAttribBindings kAttribBindings = 0;
+
+       // If we need to reserve vertices allow the draw target to suggest
         // a number of verts to reserve and whether to perform a flush.
         fMaxVertices = kMinRequestedVerts;
         bool flush = false;
         fDrawTarget = fContext->getTextTarget(fPaint);
         if (NULL != fDrawTarget) {
-            fDrawTarget->drawState()->setVertexLayout(fVertexLayout);
+            fDrawTarget->drawState()->setVertexAttribs(kVertexAttribs, SK_ARRAY_COUNT(kVertexAttribs));
             flush = fDrawTarget->geometryHints(&fMaxVertices, NULL);
         }
         if (flush) {
@@ -203,8 +213,10 @@ HAS_ATLAS:
             fContext->flush();
             // flushGlyphs() will reset fDrawTarget to NULL.
             fDrawTarget = fContext->getTextTarget(fPaint);
-            fDrawTarget->drawState()->setVertexLayout(fVertexLayout);
+            fDrawTarget->drawState()->setVertexAttribs(kVertexAttribs, SK_ARRAY_COUNT(kVertexAttribs));
         }
+        fDrawTarget->drawState()->setAttribIndex(GrDrawState::kPosition_AttribIndex, 0);
+        fDrawTarget->drawState()->setAttribBindings(kAttribBindings);
         fMaxVertices = kDefaultRequestedVerts;
         // ignore return, no point in flushing again.
         fDrawTarget->geometryHints(&fMaxVertices, NULL);
@@ -222,6 +234,7 @@ HAS_ATLAS:
                                                    GrTCast<void**>(&fVertices),
                                                    NULL);
         GrAlwaysAssert(success);
+        GrAssert(2*sizeof(GrPoint) == fDrawTarget->getDrawState().getVertexSize());
     }
 
     GrFixed tx = SkIntToFixed(glyph->fAtlasLocation.fX);

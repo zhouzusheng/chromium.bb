@@ -10,7 +10,6 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/common/page_transition_types.h"
-#include "content/public/common/three_d_api_types.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "ui/base/window_open_disposition.h"
@@ -209,7 +208,7 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // this ID is supplied by the renderer, so should not be trusted. Besides, the
   // corresponding process has probably died at this point. The ID may even have
   // been reused by a new process.
-  virtual void PluginCrashed(const FilePath& plugin_path,
+  virtual void PluginCrashed(const base::FilePath& plugin_path,
                              base::ProcessId plugin_pid) {}
 
   // Notication that the given plugin has hung or become unhung. This
@@ -219,7 +218,7 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // that this ID is supplied by the renderer, so should be validated before
   // it's used for anything in case there's an exploited renderer.
   virtual void PluginHungStatusChanged(int plugin_child_id,
-                                       const FilePath& plugin_path,
+                                       const base::FilePath& plugin_path,
                                        bool is_hung) {}
 
   // Invoked when WebContents::Clone() was used to clone a WebContents.
@@ -234,12 +233,6 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // Called when the user agent override for a WebContents has been changed.
   virtual void UserAgentOverrideSet(const std::string& user_agent) {}
 
-  // Indicates that client 3D APIs (Pepper 3D, WebGL) were just
-  // blocked on the current page, specifically because the GPU was
-  // reset recently.
-  virtual void DidBlock3DAPIs(const GURL& url,
-                              ThreeDAPIType requester) {}
-
   // Invoked when new FaviconURL candidates are received from the renderer.
   virtual void DidUpdateFaviconURL(int32 page_id,
                                    const std::vector<FaviconURL>& candidates) {}
@@ -248,6 +241,16 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // render widget.
   virtual void DidShowFullscreenWidget(int routing_id) {}
   virtual void DidDestroyFullscreenWidget(int routing_id) {}
+
+  // Invoked when visible SSL state (as defined by SSLStatus) changes.
+  virtual void DidChangeVisibleSSLState() {}
+
+  // Invoked when an interstitial page is attached or detached.
+  virtual void DidAttachInterstitialPage() {}
+  virtual void DidDetachInterstitialPage() {}
+
+  // Invoked before a form repost warning is shown.
+  virtual void BeforeFormRepostWarningShow() {}
 
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;

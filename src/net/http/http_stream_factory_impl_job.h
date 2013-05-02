@@ -10,7 +10,7 @@
 #include "base/memory/weak_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_log.h"
-#include "net/base/ssl_config_service.h"
+#include "net/base/request_priority.h"
 #include "net/http/http_auth.h"
 #include "net/http/http_auth_controller.h"
 #include "net/http/http_pipelined_host.h"
@@ -20,6 +20,7 @@
 #include "net/quic/quic_stream_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/ssl/ssl_config_service.h"
 
 namespace net {
 
@@ -37,6 +38,7 @@ class HttpStreamFactoryImpl::Job {
   Job(HttpStreamFactoryImpl* stream_factory,
       HttpNetworkSession* session,
       const HttpRequestInfo& request_info,
+      RequestPriority priority,
       const SSLConfig& server_ssl_config,
       const SSLConfig& proxy_ssl_config,
       NetLog* net_log);
@@ -55,8 +57,10 @@ class HttpStreamFactoryImpl::Job {
 
   // Marks this Job as the "alternate" job, from Alternate-Protocol. Tracks the
   // original url so we can mark the Alternate-Protocol as broken if
-  // we fail to connect.
-  void MarkAsAlternate(const GURL& original_url);
+  // we fail to connect.  |alternate| specifies the alternate protocol to use
+  // and alternate port to connect to.
+  void MarkAsAlternate(const GURL& original_url,
+                       PortAlternateProtocolPair alternate);
 
   // Tells |this| to wait for |job| to resume it.
   void WaitFor(Job* job);
@@ -168,9 +172,6 @@ class HttpStreamFactoryImpl::Job {
                      SSLConfig* ssl_config,
                      bool is_proxy) const;
 
-  // AlternateProtocol API
-  void MarkBrokenAlternateProtocolAndFallback();
-
   // Retrieve SSLInfo from our SSL Socket.
   // This must only be called when we are using an SSLSocket.
   // After calling, the caller can use ssl_info_.
@@ -226,6 +227,7 @@ class HttpStreamFactoryImpl::Job {
   Request* request_;
 
   const HttpRequestInfo request_info_;
+  RequestPriority priority_;
   ProxyInfo proxy_info_;
   SSLConfig server_ssl_config_;
   SSLConfig proxy_ssl_config_;

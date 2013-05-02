@@ -17,6 +17,7 @@
 #include "base/sync_socket.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
+#include "ipc/ipc_platform_file.h"
 #include "media/video/capture/video_capture.h"
 #include "media/video/video_decode_accelerator.h"
 #include "ppapi/c/dev/pp_video_dev.h"
@@ -27,6 +28,7 @@
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_stdint.h"
 #include "ppapi/c/private/ppb_flash.h"
+#include "ppapi/c/private/ppb_tcp_socket_private.h"
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/shared_impl/dir_contents.h"
 #include "ui/gfx/size.h"
@@ -38,7 +40,6 @@ class GURL;
 class SkBitmap;
 class SkCanvas;
 class TransportDIB;
-struct PP_HostResolver_Private_Hint;
 struct PP_NetAddress_Private;
 
 namespace WebKit {
@@ -64,7 +65,6 @@ class CommandBuffer;
 
 namespace ppapi {
 class PepperFilePath;
-class PPB_HostResolver_Shared;
 class PPB_X509Certificate_Fields;
 struct DeviceRefData;
 struct HostPortPair;
@@ -544,6 +544,9 @@ class PluginDelegate {
   virtual void TCPSocketRead(uint32 socket_id, int32_t bytes_to_read) = 0;
   virtual void TCPSocketWrite(uint32 socket_id, const std::string& buffer) = 0;
   virtual void TCPSocketDisconnect(uint32 socket_id) = 0;
+  virtual void TCPSocketSetBoolOption(uint32 socket_id,
+                                      PP_TCPSocketOption_Private name,
+                                      bool value) = 0;
   virtual void RegisterTCPSocket(PPB_TCPSocket_Private_Impl* socket,
                                  uint32 socket_id) = 0;
 
@@ -555,16 +558,6 @@ class PluginDelegate {
   virtual void TCPServerSocketStopListening(
       PP_Resource socket_resource,
       uint32 socket_id) = 0;
-
-  // For PPB_HostResolver_Private.
-  virtual void RegisterHostResolver(
-      ::ppapi::PPB_HostResolver_Shared* host_resolver,
-      uint32 host_resolver_id) = 0;
-  virtual void HostResolverResolve(
-      uint32 host_resolver_id,
-      const ::ppapi::HostPortPair& host_port,
-      const PP_HostResolver_Private_Hint* hint) = 0;
-  virtual void UnregisterHostResolver(uint32 host_resolver_id) = 0;
 
   // Add/remove a network list observer.
   virtual bool AddNetworkListObserver(
@@ -658,6 +651,12 @@ class PluginDelegate {
   // Stop enumerating devices of the specified |request_id|. The |request_id|
   // is the return value of EnumerateDevicesCallback.
   virtual void StopEnumerateDevices(int request_id) = 0;
+
+  // Share a given handle with the target process.
+  virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
+      base::PlatformFile handle,
+      base::ProcessId target_process_id,
+      bool should_close_source) const = 0;
 };
 
 }  // namespace ppapi

@@ -214,11 +214,6 @@ class CONTENT_EXPORT RenderViewHostImpl
                                          float x,
                                          float y) OVERRIDE;
   virtual void RequestFindMatchRects(int current_version) OVERRIDE;
-  virtual void SynchronousFind(int request_id,
-                               const string16& search_text,
-                               const WebKit::WebFindOptions& options,
-                               int* match_count,
-                               int* active_ordinal) OVERRIDE;
 #endif
 
   void set_delegate(RenderViewHostDelegate* d) {
@@ -418,9 +413,17 @@ class CONTENT_EXPORT RenderViewHostImpl
     save_accessibility_tree_for_testing_ = save;
   }
 
-  const AccessibilityNodeData& accessibility_tree_for_testing() {
+  const AccessibilityNodeDataTreeNode& accessibility_tree_for_testing() {
     return accessibility_tree_;
   }
+
+  // Set accessibility callbacks.
+  void SetAccessibilityLayoutCompleteCallbackForTesting(
+      const base::Closure& callback);
+  void SetAccessibilityLoadCompleteCallbackForTesting(
+      const base::Closure& callback);
+  void SetAccessibilityOtherCallbackForTesting(
+      const base::Closure& callback);
 
   bool is_waiting_for_unload_ack_for_testing() {
     return is_waiting_for_unload_ack_;
@@ -562,11 +565,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnShowPopup(const ViewHostMsg_ShowPopup_Params& params);
 #endif
 
-#if defined(OS_ANDROID)
-  void OnDidChangeBodyBackgroundColor(SkColor color);
-  void OnStartContentIntent(const GURL& content_url);
-#endif
-
  private:
   friend class TestRenderViewHost;
 
@@ -652,6 +650,11 @@ class CONTENT_EXPORT RenderViewHostImpl
   // callbacks.
   std::map<int, JavascriptResultCallback> javascript_callbacks_;
 
+  // Accessibility callbacks.
+  base::Closure accessibility_layout_callback_;
+  base::Closure accessibility_load_callback_;
+  base::Closure accessibility_other_callback_;
+
   // True if the render view can be shut down suddenly.
   bool sudden_termination_allowed_;
 
@@ -667,7 +670,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   std::string frame_tree_;
 
   // The most recently received accessibility tree - for unit testing only.
-  AccessibilityNodeData accessibility_tree_;
+  AccessibilityNodeDataTreeNode accessibility_tree_;
 
   // The termination status of the last render view that terminated.
   base::TerminationStatus render_view_termination_status_;

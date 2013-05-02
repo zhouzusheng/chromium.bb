@@ -278,13 +278,16 @@ bool RenderObject::isHTMLMarquee() const
     return node() && node()->renderer() == this && node()->hasTagName(marqueeTag);
 }
 
-void RenderObject::setInRenderFlowThreadIncludingDescendants(bool b)
+void RenderObject::setFlowThreadStateIncludingDescendants(FlowThreadState state)
 {
-    setInRenderFlowThread(b);
+    setFlowThreadState(state);
 
     for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-        ASSERT(b != child->inRenderFlowThread());
-        child->setInRenderFlowThreadIncludingDescendants(b);
+        // If the child is a fragmentation context it already updated the descendants flag accordingly.
+        if (child->isRenderFlowThread())
+            continue;
+        ASSERT(state != child->flowThreadState());
+        child->setFlowThreadStateIncludingDescendants(state);
     }
 }
 
@@ -595,11 +598,10 @@ RenderBoxModelObject* RenderObject::enclosingBoxModelObject() const
     return 0;
 }
 
-RenderFlowThread* RenderObject::enclosingRenderFlowThread() const
-{   
-    if (!inRenderFlowThread())
-        return 0;
-    
+RenderFlowThread* RenderObject::locateFlowThreadContainingBlock() const
+{
+    ASSERT(flowThreadState() != NotInsideFlowThread);
+
     // See if we have the thread cached because we're in the middle of layout.
     RenderFlowThread* flowThread = view()->flowThreadController()->currentRenderFlowThread();
     if (flowThread)
@@ -610,7 +612,7 @@ RenderFlowThread* RenderObject::enclosingRenderFlowThread() const
     while (curr) {
         if (curr->isRenderFlowThread())
             return toRenderFlowThread(curr);
-        curr = curr->parent();
+        curr = curr->containingBlock();
     }
     return 0;
 }
@@ -781,7 +783,7 @@ RenderBlock* RenderObject::containingBlock() const
             // list in all RenderInlines and lets us return a strongly-typed RenderBlock* result
             // from this method.  The container() method can actually be used to obtain the
             // inline directly.
-            if (!o->style()->position() == StaticPosition && !(o->isInline() && !o->isReplaced()))
+            if (o->style()->position() != StaticPosition && (!o->isInline() || o->isReplaced()))
                 break;
             if (o->isRenderView())
                 break;
@@ -1109,7 +1111,7 @@ void RenderObject::addPDFURLRect(GraphicsContext* context, const LayoutRect& rec
     Node* n = node();
     if (!n || !n->isLink() || !n->isElementNode())
         return;
-    const AtomicString& href = static_cast<Element*>(n)->getAttribute(hrefAttr);
+    const AtomicString& href = toElement(n)->getAttribute(hrefAttr);
     if (href.isNull())
         return;
     context->setURLForRect(n->document()->completeURL(href), pixelSnappedIntRect(rect));
@@ -1299,11 +1301,16 @@ RenderLayerModelObject* RenderObject::containerForRepaint() const
     // If we have a flow thread, then we need to do individual repaints within the RenderRegions instead.
     // Return the flow thread as a repaint container in order to create a chokepoint that allows us to change
     // repainting to do individual region repaints.
-    if (inRenderFlowThread()) {
-        RenderFlowThread* parentRenderFlowThread = enclosingRenderFlowThread();
+    RenderFlowThread* parentRenderFlowThread = flowThreadContainingBlock();
+    if (parentRenderFlowThread) {
+        // The ancestor document will do the reparenting when the repaint propagates further up.
+        // We're just a seamless child document, and we don't need to do the hacking.
+        if (parentRenderFlowThread && parentRenderFlowThread->document() != document())
+            return repaintContainer;
         // If we have already found a repaint container then we will repaint into that container only if it is part of the same
         // flow thread. Otherwise we will need to catch the repaint call and send it to the flow thread.
-        if (!(repaintContainer && repaintContainer->inRenderFlowThread() && repaintContainer->enclosingRenderFlowThread() == parentRenderFlowThread))
+        RenderFlowThread* repaintContainerFlowThread = repaintContainer ? repaintContainer->flowThreadContainingBlock() : 0;
+        if (!repaintContainerFlowThread || repaintContainerFlowThread != parentRenderFlowThread)
             repaintContainer = parentRenderFlowThread;
     }
     return repaintContainer;
@@ -1503,14 +1510,6 @@ bool RenderObject::repaintAfterLayoutIfNeeded(const RenderLayerModelObject* repa
     return false;
 }
 
-void RenderObject::repaintDuringLayoutIfMoved(const LayoutRect&)
-{
-}
-
-void RenderObject::repaintOverhangingFloats(bool)
-{
-}
-
 bool RenderObject::checkForRepaintDuringLayout() const
 {
     return !document()->view()->needsFullRepaint() && !hasLayer() && everHadLayout();
@@ -1630,7 +1629,7 @@ Color RenderObject::selectionBackgroundColor() const
 {
     Color color;
     if (style()->userSelect() != SELECT_NONE) {
-        RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(SELECTION);
+        RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(PseudoStyleRequest(SELECTION));
         if (pseudoStyle && pseudoStyle->visitedDependentColor(CSSPropertyBackgroundColor).isValid())
             color = pseudoStyle->visitedDependentColor(CSSPropertyBackgroundColor).blendWithWhite();
         else
@@ -1651,7 +1650,7 @@ Color RenderObject::selectionColor(int colorProperty) const
         || (frame()->view()->paintBehavior() & PaintBehaviorSelectionOnly))
         return color;
 
-    if (RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(SELECTION)) {
+    if (RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(PseudoStyleRequest(SELECTION))) {
         color = pseudoStyle->visitedDependentColor(colorProperty);
         if (!color.isValid())
             color = pseudoStyle->visitedDependentColor(CSSPropertyColor);
@@ -1904,7 +1903,7 @@ void RenderObject::styleWillChange(StyleDifference diff, const RenderStyle* newS
             clearPositionedState();
         }
         setHorizontalWritingMode(true);
-        setPaintBackground(false);
+        setHasBoxDecorations(false);
         setHasOverflowClip(false);
         setHasTransform(false);
         setHasReflection(false);
@@ -2342,7 +2341,7 @@ RenderObject* RenderObject::container(const RenderLayerModelObject* repaintConta
 #endif
             // The render flow thread is the top most containing block
             // for the fixed positioned elements.
-            if (o->isRenderFlowThread())
+            if (o->isOutOfFlowRenderFlowThread())
                 break;
 
             if (repaintContainerSkipped && o == repaintContainer)
@@ -2501,8 +2500,7 @@ void RenderObject::willBeRemovedFromTree()
     if (isOutOfFlowPositioned() && parent()->childrenInline())
         parent()->dirtyLinesFromChangedChild(this);
 
-    if (inRenderFlowThread())
-        removeFromRenderFlowThread();
+    removeFromRenderFlowThread();
 
     if (RenderNamedFlowThread* containerFlowThread = parent()->renderNamedFlowThreadWrapper())
         containerFlowThread->removeFlowChild(this);
@@ -2515,13 +2513,14 @@ void RenderObject::willBeRemovedFromTree()
 
 void RenderObject::removeFromRenderFlowThread()
 {
-    RenderFlowThread* renderFlowThread = enclosingRenderFlowThread();
-    ASSERT(renderFlowThread);
-    // Sometimes we remove the element from the flow, but it's not destroyed at that time. 
+    if (flowThreadState() == NotInsideFlowThread)
+        return;
+    
+    // Sometimes we remove the element from the flow, but it's not destroyed at that time.
     // It's only until later when we actually destroy it and remove all the children from it. 
     // Currently, that happens for firstLetter elements and list markers.
     // Pass in the flow thread so that we don't have to look it up for all the children.
-    removeFromRenderFlowThreadRecursive(renderFlowThread);
+    removeFromRenderFlowThreadRecursive(flowThreadContainingBlock());
 }
 
 void RenderObject::removeFromRenderFlowThreadRecursive(RenderFlowThread* renderFlowThread)
@@ -2530,8 +2529,13 @@ void RenderObject::removeFromRenderFlowThreadRecursive(RenderFlowThread* renderF
         for (RenderObject* child = children->firstChild(); child; child = child->nextSibling())
             child->removeFromRenderFlowThreadRecursive(renderFlowThread);
     }
-    renderFlowThread->removeFlowChildInfo(this);
-    setInRenderFlowThread(false);
+    
+    RenderFlowThread* localFlowThread = renderFlowThread;
+    if (flowThreadState() == InsideInFlowThread)
+        localFlowThread = flowThreadContainingBlock(); // We have to ask. We can't just assume we are in the same flow thread.
+    if (localFlowThread)
+        localFlowThread->removeFlowChildInfo(this);
+    setFlowThreadState(NotInsideFlowThread);
 }
 
 void RenderObject::destroyAndCleanupAnonymousWrappers()
@@ -2711,7 +2715,7 @@ static PassRefPtr<RenderStyle> firstLineStyleForCachedUncachedType(StyleCacheSta
         if (RenderBlock* firstLineBlock = rendererForFirstLineStyle->firstLineBlock()) {
             if (type == Cached)
                 return firstLineBlock->getCachedPseudoStyle(FIRST_LINE, style);
-            return firstLineBlock->getUncachedPseudoStyle(FIRST_LINE, style, firstLineBlock == renderer ? style : 0);
+            return firstLineBlock->getUncachedPseudoStyle(PseudoStyleRequest(FIRST_LINE), style, firstLineBlock == renderer ? style : 0);
         }
     } else if (!rendererForFirstLineStyle->isAnonymous() && rendererForFirstLineStyle->isRenderInline()) {
         RenderStyle* parentStyle = rendererForFirstLineStyle->parent()->firstLineStyle();
@@ -2721,7 +2725,7 @@ static PassRefPtr<RenderStyle> firstLineStyleForCachedUncachedType(StyleCacheSta
                 rendererForFirstLineStyle->style()->setHasPseudoStyle(FIRST_LINE_INHERITED);
                 return rendererForFirstLineStyle->getCachedPseudoStyle(FIRST_LINE_INHERITED, parentStyle);
             }
-            return rendererForFirstLineStyle->getUncachedPseudoStyle(FIRST_LINE_INHERITED, parentStyle, style);
+            return rendererForFirstLineStyle->getUncachedPseudoStyle(PseudoStyleRequest(FIRST_LINE_INHERITED), parentStyle, style);
         }
     }
     return 0;
@@ -2756,15 +2760,15 @@ RenderStyle* RenderObject::getCachedPseudoStyle(PseudoId pseudo, RenderStyle* pa
     if (cachedStyle)
         return cachedStyle;
     
-    RefPtr<RenderStyle> result = getUncachedPseudoStyle(pseudo, parentStyle);
+    RefPtr<RenderStyle> result = getUncachedPseudoStyle(PseudoStyleRequest(pseudo), parentStyle);
     if (result)
         return style()->addCachedPseudoStyle(result.release());
     return 0;
 }
 
-PassRefPtr<RenderStyle> RenderObject::getUncachedPseudoStyle(PseudoId pseudo, RenderStyle* parentStyle, RenderStyle* ownStyle) const
+PassRefPtr<RenderStyle> RenderObject::getUncachedPseudoStyle(const PseudoStyleRequest& pseudoStyleRequest, RenderStyle* parentStyle, RenderStyle* ownStyle) const
 {
-    if (pseudo < FIRST_INTERNAL_PSEUDOID && !ownStyle && !style()->hasPseudoStyle(pseudo))
+    if (pseudoStyleRequest.pseudoId < FIRST_INTERNAL_PSEUDOID && !ownStyle && !style()->hasPseudoStyle(pseudoStyleRequest.pseudoId))
         return 0;
     
     if (!parentStyle) {
@@ -2780,17 +2784,24 @@ PassRefPtr<RenderStyle> RenderObject::getUncachedPseudoStyle(PseudoId pseudo, Re
         return 0;
     Element* element = toElement(n);
 
-    if (pseudo == FIRST_LINE_INHERITED) {
+    if (pseudoStyleRequest.pseudoId == FIRST_LINE_INHERITED) {
         RefPtr<RenderStyle> result = document()->styleResolver()->styleForElement(element, parentStyle, DisallowStyleSharing);
         result->setStyleType(FIRST_LINE_INHERITED);
         return result.release();
     }
-    return document()->styleResolver()->pseudoStyleForElement(pseudo, element, parentStyle);
+
+    return document()->styleResolver()->pseudoStyleForElement(element, pseudoStyleRequest, parentStyle);
 }
 
 static Color decorationColor(RenderStyle* style)
 {
     Color result;
+#if ENABLE(CSS3_TEXT)
+    // Check for text decoration color first.
+    result = style->visitedDependentColor(CSSPropertyWebkitTextDecorationColor);
+    if (result.isValid())
+        return result;
+#endif // CSS3_TEXT
     if (style->textStrokeWidth() > 0) {
         // Prefer stroke color if possible but not if it's fully transparent.
         result = style->visitedDependentColor(CSSPropertyWebkitTextStrokeColor);
@@ -2995,6 +3006,10 @@ RenderBoxModelObject* RenderObject::offsetParent() const
     // If A is an area HTML element which has a map HTML element somewhere in the ancestor
     // chain return the nearest ancestor map HTML element and stop this algorithm.
     // FIXME: Implement!
+
+    // FIXME: Stop the search at the flow thread boundary until we figure out the right
+    // behavior for elements inside a flow thread.
+    // https://bugs.webkit.org/show_bug.cgi?id=113276
     
     // Return the nearest ancestor element of A for which at least one of the following is
     // true and stop this algorithm if such an ancestor is found:
@@ -3007,7 +3022,7 @@ RenderBoxModelObject* RenderObject::offsetParent() const
     bool skipTables = isPositioned();
     float currZoom = style()->effectiveZoom();
     RenderObject* curr = parent();
-    while (curr && (!curr->node() || (!curr->isPositioned() && !curr->isBody()))) {
+    while (curr && (!curr->node() || (!curr->isPositioned() && !curr->isBody())) && !curr->isRenderNamedFlowThread()) {
         Node* element = curr->node();
         if (!skipTables && element && (element->hasTagName(tableTag) || element->hasTagName(tdTag) || element->hasTagName(thTag)))
             break;
@@ -3018,7 +3033,7 @@ RenderBoxModelObject* RenderObject::offsetParent() const
         currZoom = newZoom;
         curr = curr->parent();
     }
-    return curr && curr->isBoxModelObject() ? toRenderBoxModelObject(curr) : 0;
+    return curr && curr->isBoxModelObject() && !curr->isRenderNamedFlowThread() ? toRenderBoxModelObject(curr) : 0;
 }
 
 VisiblePosition RenderObject::createVisiblePosition(int offset, EAffinity affinity)

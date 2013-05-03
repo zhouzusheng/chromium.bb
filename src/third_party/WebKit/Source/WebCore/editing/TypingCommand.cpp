@@ -472,7 +472,7 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
 
         VisiblePosition visibleStart(endingSelection().visibleStart());
         // If we have a caret selection at the beginning of a cell, we have nothing to do.
-        Node* enclosingTableCell = enclosingNodeOfType(visibleStart.deepEquivalent(), &isTableCell);
+        enclosingTableCell = enclosingNodeOfType(visibleStart.deepEquivalent(), &isTableCell);
         if (enclosingTableCell && visibleStart == firstPositionInNode(enclosingTableCell))
             return;
 
@@ -563,7 +563,7 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
             return;
 
         // If the caret is at the end of a cell, we have nothing to do.
-        Node* enclosingTableCell = enclosingNodeOfType(visibleEnd.deepEquivalent(), &isTableCell);
+        enclosingTableCell = enclosingNodeOfType(visibleEnd.deepEquivalent(), &isTableCell);
         if (enclosingTableCell && visibleEnd == lastPositionInNode(enclosingTableCell))
             return;
 

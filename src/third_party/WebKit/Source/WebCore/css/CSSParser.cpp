@@ -6031,6 +6031,12 @@ bool CSSParser::fastParseColor(RGBA32& rgb, const StringType& name, bool strict)
     }
     return false;
 }
+
+bool CSSParser::fastParseColorAtomicString(RGBA32& rgb, const AtomicString& name, bool strict)
+{
+    return fastParseColor<AtomicString>(rgb, name, strict);
+}
+
     
 inline double CSSParser::parsedDouble(CSSParserValue *v, ReleaseParsedCalcValueCondition releaseCalc)
 {

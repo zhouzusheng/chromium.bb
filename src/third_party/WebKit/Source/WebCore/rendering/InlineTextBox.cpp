@@ -1205,7 +1205,7 @@ void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPoint& b
 
             if (colorAttr != nullAtom) {
                 RGBA32 rgba;
-                if (CSSParser::fastParseColor(rgba, colorAttr, false)) {
+                if (CSSParser::fastParseColorAtomicString(rgba, colorAttr, false)) {
                     markerColor.setRGB(rgba);
                 }
             }

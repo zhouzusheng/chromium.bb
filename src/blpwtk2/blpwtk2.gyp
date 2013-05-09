@@ -22,11 +22,201 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 {
+  'target_defaults': {
+    'conditions': [
+      # TODO(jschuh): Remove this after crbug.com/173851 gets fixed.
+      ['OS=="win" and target_arch=="x64"', {
+        'msvs_settings': {
+          'VCCLCompilerTool': {
+            'AdditionalOptions': ['/bigobj'],
+          },
+        },
+      }],
+    ],
+  },
   'targets': [
+    {
+      'target_name': 'blpwtk2',
+      'type': 'shared_library',
+      'dependencies': [
+        '../content/content.gyp:content_app',
+        '../content/content.gyp:content_browser',
+        '../content/content.gyp:content_common',
+        '../content/content.gyp:content_gpu',
+        '../content/content.gyp:content_plugin',
+        '../content/content.gyp:content_ppapi_plugin',
+        '../content/content.gyp:content_renderer',
+        '../content/content.gyp:content_utility',
+        '../content/content.gyp:content_worker',
+        '../base/base.gyp:base',
+        '../build/temp_gyp/googleurl.gyp:googleurl',
+        '../ipc/ipc.gyp:ipc',
+        '../net/net.gyp:net',
+        '../skia/skia.gyp:skia',
+        '../ui/gl/gl.gyp:gl',
+        '../ui/ui.gyp:ui',
+        '../v8/tools/gyp/v8.gyp:v8',
+        '../webkit/support/webkit_support.gyp:webkit_support',
+        '../sandbox/sandbox.gyp:sandbox',
+      ],
+      'conditions': [
+        ['OS=="win" and win_use_allocator_shim==1', {
+          'dependencies': [
+            '../base/allocator/allocator.gyp:allocator',
+          ],
+        }],
+      ],
+      'sources': [
+        '../content/app/startup_helper_win.cc',
+        'public/blpwtk2_config.h',
+        'public/blpwtk2.h',
+        'public/blpwtk2_string.cc',
+        'public/blpwtk2_string.h',
+        'public/blpwtk2_stringref.cc',
+        'public/blpwtk2_stringref.h',
+        'public/blpwtk2_webnode.cc',
+        'public/blpwtk2_webnode.h',
+        'public/blpwtk2_webelement.cc',
+        'public/blpwtk2_webelement.h',
+        'public/blpwtk2_webdocument.cc',
+        'public/blpwtk2_webdocument.h',
+        'public/blpwtk2_webframe.cc',
+        'public/blpwtk2_webframe.h',
+        'public/blpwtk2_webview.cc',
+        'public/blpwtk2_webview.h',
+        'public/blpwtk2_webviewdelegate.cc',
+        'public/blpwtk2_webviewdelegate.h',
+        'public/blpwtk2_toolkit.cc',
+        'public/blpwtk2_toolkit.h',
+        'public/blpwtk2_threadmode.cc',
+        'public/blpwtk2_threadmode.h',
+        'public/blpwtk2_pumpmode.cc',
+        'public/blpwtk2_pumpmode.h',
+        'public/blpwtk2_constants.cc',
+        'public/blpwtk2_constants.h',
+        'public/blpwtk2_createparams.cc',
+        'public/blpwtk2_createparams.h',
+        'public/blpwtk2_contextmenuparams.cc',
+        'public/blpwtk2_contextmenuparams.h',
+        'public/blpwtk2_httptransactionhandler.cc',
+        'public/blpwtk2_httptransactionhandler.h',
+        'public/blpwtk2_httptransaction.cc',
+        'public/blpwtk2_httptransaction.h',
+        'public/blpwtk2_newviewparams.cc',
+        'public/blpwtk2_newviewparams.h',
+        'private/blpwtk2_resourcecontextimpl.cc',
+        'private/blpwtk2_resourcecontextimpl.h',
+        'private/blpwtk2_urlrequestcontextgetterimpl.cc',
+        'private/blpwtk2_urlrequestcontextgetterimpl.h',
+        'private/blpwtk2_browsercontextimpl.cc',
+        'private/blpwtk2_browsercontextimpl.h',
+        'private/blpwtk2_contentbrowserclientimpl.cc',
+        'private/blpwtk2_contentbrowserclientimpl.h',
+        'private/blpwtk2_contentmaindelegateimpl.cc',
+        'private/blpwtk2_contentmaindelegateimpl.h',
+        'private/blpwtk2_browsermainrunner.cc',
+        'private/blpwtk2_browsermainrunner.h',
+        'private/blpwtk2_inprocessrendererhost.cc',
+        'private/blpwtk2_inprocessrendererhost.h',
+        'private/blpwtk2_browserthread.cc',
+        'private/blpwtk2_browserthread.h',
+        'private/blpwtk2_networkdelegateimpl.cc',
+        'private/blpwtk2_networkdelegateimpl.h',
+        'private/blpwtk2_webviewimpl.cc',
+        'private/blpwtk2_webviewimpl.h',
+        'private/blpwtk2_webframeimpl.cc',
+        'private/blpwtk2_webframeimpl.h',
+        'private/blpwtk2_webviewproxy.cc',
+        'private/blpwtk2_webviewproxy.h',
+        'private/blpwtk2_mainmessagepump.cc',
+        'private/blpwtk2_mainmessagepump.h',
+        'private/blpwtk2_webcontentsviewdelegateimpl.cc',
+        'private/blpwtk2_webcontentsviewdelegateimpl.h',
+        'private/blpwtk2_devtoolsfrontendhostdelegateimpl.cc',
+        'private/blpwtk2_devtoolsfrontendhostdelegateimpl.h',
+        'private/blpwtk2_devtoolshttphandlerdelegateimpl.cc',
+        'private/blpwtk2_devtoolshttphandlerdelegateimpl.h',
+        'private/blpwtk2_httptransactionfactoryimpl.cc',
+        'private/blpwtk2_httptransactionfactoryimpl.h',
+        'private/blpwtk2_httptransactionimpl.cc',
+        'private/blpwtk2_httptransactionimpl.h',
+        'private/blpwtk2_toolkitimpl.cc',
+        'private/blpwtk2_toolkitimpl.h',
+        'private/blpwtk2_statics.cc',
+        'private/blpwtk2_statics.h',
+        'private/blpwtk2_dllmain.cc',
+      ],
+      'include_dirs': [
+        'public',
+        'private',
+        '..',
+      ],
+      'configurations': {
+        'Debug_Base': {
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'LinkIncremental': '<(msvs_large_module_debug_link_mode)',
+            },
+          },
+        },
+      },
+      'defines': [
+        'BUILDING_BLPWTK2_SHARED',
+        'BLPWTK2_IMPLEMENTATION',
+      ],
+      'direct_dependent_settings': {
+        'defines': [
+          'USING_BLPWTK2_SHARED',
+        ],
+        'include_dirs': [
+          'public',
+        ],
+        'include_dirs!': [
+          '../third_party/wtl/include',
+          '..',
+          '../third_party/khronos',
+          '../gpu',
+          '../third_party/WebKit/Source/Platform/chromium',
+        ],
+      },
+    },
+    {
+      'target_name': 'blpwtk2_subprocess',
+      'type': 'executable',
+      'dependencies': [
+        'blpwtk2',
+      ],
+      'msvs_settings': {
+        'VCLinkerTool': {
+          'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
+        },
+      },
+      'sources': [
+        'subprocess/main.cc',
+      ],
+    },
+    {
+      'target_name': 'blpwtk2_shell',
+      'type': 'executable',
+      'dependencies': [
+        'blpwtk2',
+        '../v8/tools/gyp/v8.gyp:v8',
+      ],
+      'msvs_settings': {
+        'VCLinkerTool': {
+          'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
+        },
+      },
+      'sources': [
+        'shell/main.cc',
+      ],
+    },
     {
       'target_name': 'blpwtk2_all',
       'type': 'none',
       'dependencies': [
+        'blpwtk2_subprocess',
+        'blpwtk2_shell',
         '../content/content.gyp:content_shell',
         '../webkit/webkit.gyp:test_shell',
       ],

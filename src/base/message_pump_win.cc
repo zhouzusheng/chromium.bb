@@ -50,20 +50,28 @@ void MessagePumpWin::DidProcessMessage(const MSG& msg) {
   FOR_EACH_OBSERVER(MessagePumpObserver, observers_, DidProcessEvent(msg));
 }
 
+void MessagePumpWin::PushRunState(
+    RunState* run_state,
+    Delegate* delegate,
+    MessagePumpDispatcher* dispatcher) {
+  run_state->delegate = delegate;
+  run_state->dispatcher = dispatcher;
+  run_state->should_quit = false;
+  run_state->run_depth = state_ ? state_->run_depth + 1 : 1;
+  run_state->previous_state = state_;
+  state_ = run_state;
+}
+
 void MessagePumpWin::RunWithDispatcher(
     Delegate* delegate, MessagePumpDispatcher* dispatcher) {
   RunState s;
-  s.delegate = delegate;
-  s.dispatcher = dispatcher;
-  s.should_quit = false;
-  s.run_depth = state_ ? state_->run_depth + 1 : 1;
-
-  RunState* previous_state = state_;
-  state_ = &s;
-
+  PushRunState(&s, delegate, dispatcher);
   DoRunLoop();
+  PopRunState();
+}
 
-  state_ = previous_state;
+void MessagePumpWin::PopRunState() {
+  state_ = state_->previous_state;
 }
 
 void MessagePumpWin::Quit() {

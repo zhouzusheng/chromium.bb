@@ -52,6 +52,7 @@ class BASE_EXPORT MessagePumpWin : public MessagePump {
   struct RunState {
     Delegate* delegate;
     MessagePumpDispatcher* dispatcher;
+    RunState* previous_state;
 
     // Used to flag that the current Run() invocation should return ASAP.
     bool should_quit;
@@ -60,6 +61,10 @@ class BASE_EXPORT MessagePumpWin : public MessagePump {
     int run_depth;
   };
 
+  void PushRunState(RunState* run_state,
+                    Delegate* delegate,
+                    MessagePumpDispatcher* dispatcher);
+  void PopRunState();
   virtual void DoRunLoop() = 0;
   int GetCurrentDelay() const;
 

@@ -140,10 +140,30 @@ WebNodeList WebNode::childNodes()
     return WebNodeList(m_private->childNodes());
 }
 
-bool WebNode::appendChild(const WebNode& child) 
+bool WebNode::insertBefore(const WebNode& newChild, const WebNode& refChild, bool shouldLazyAttach)
 {
     ExceptionCode exceptionCode = 0;
-    m_private->appendChild(child, exceptionCode);
+    WebCore::AttachBehavior attachBehavior =
+        shouldLazyAttach ? WebCore::AttachLazily : WebCore::AttachNow;
+    m_private->insertBefore(newChild, refChild.m_private.get(), exceptionCode, attachBehavior);
+    return !exceptionCode;
+}
+
+bool WebNode::replaceChild(const WebNode& newChild, const WebNode& oldChild, bool shouldLazyAttach)
+{
+    ExceptionCode exceptionCode = 0;
+    WebCore::AttachBehavior attachBehavior =
+        shouldLazyAttach ? WebCore::AttachLazily : WebCore::AttachNow;
+    m_private->replaceChild(newChild, oldChild.m_private.get(), exceptionCode, attachBehavior);
+    return !exceptionCode;
+}
+
+bool WebNode::appendChild(const WebNode& child, bool shouldLazyAttach)
+{
+    ExceptionCode exceptionCode = 0;
+    WebCore::AttachBehavior attachBehavior =
+        shouldLazyAttach ? WebCore::AttachLazily : WebCore::AttachNow;
+    m_private->appendChild(child, exceptionCode, attachBehavior);
     return !exceptionCode;
 }
 
@@ -226,6 +246,13 @@ bool WebNode::remove()
 {
     ExceptionCode exceptionCode = 0;
     m_private->remove(exceptionCode);
+    return !exceptionCode;
+}
+
+bool WebNode::setTextContent(const WebString& text)
+{
+    ExceptionCode exceptionCode = 0;
+    m_private->setTextContent(text, exceptionCode);
     return !exceptionCode;
 }
 

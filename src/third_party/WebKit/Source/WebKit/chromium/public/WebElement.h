@@ -67,6 +67,7 @@ struct WebRect;
         WEBKIT_EXPORT WebString innerText();
         WEBKIT_EXPORT WebDocument document() const;
         WEBKIT_EXPORT void requestFullScreen();
+        WEBKIT_EXPORT WebString attributeName(unsigned index) const;
         WEBKIT_EXPORT WebString attributeLocalName(unsigned index) const;
         WEBKIT_EXPORT WebString attributeValue(unsigned index) const;
         WEBKIT_EXPORT unsigned attributeCount() const;

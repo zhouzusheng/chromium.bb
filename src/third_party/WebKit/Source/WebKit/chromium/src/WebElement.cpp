@@ -111,6 +111,13 @@ WebNode WebElement::shadowRoot() const
     return WebNode(shadowRoot);
 }
 
+WebString WebElement::attributeName(unsigned index) const
+{
+    if (index >= attributeCount())
+        return WebString();
+    return constUnwrap<Element>()->attributeItem(index)->name().toString();
+}
+
 WebString WebElement::attributeLocalName(unsigned index) const
 {
     if (index >= attributeCount())

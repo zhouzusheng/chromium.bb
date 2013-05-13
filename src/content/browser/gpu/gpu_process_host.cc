@@ -553,7 +553,14 @@ GpuProcessHost::~GpuProcessHost() {
   }
 
   int exit_code;
-  base::TerminationStatus status = process_->GetTerminationStatus(&exit_code);
+  base::TerminationStatus status;
+  if (in_process_) {
+    in_process_gpu_thread_.reset();
+    exit_code = 0;
+    status = base::TERMINATION_STATUS_NORMAL_TERMINATION;
+  }
+  else
+    status = process_->GetTerminationStatus(&exit_code);
   UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessTerminationStatus",
                             status,
                             base::TERMINATION_STATUS_MAX_ENUM);

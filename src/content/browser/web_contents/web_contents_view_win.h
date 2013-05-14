@@ -51,6 +51,16 @@ class CONTENT_EXPORT WebContentsViewWin
     MESSAGE_HANDLER(WM_SIZE, OnSize)
   END_MSG_MAP()
 
+  // If the embedder's root window does not belong to the browser's thread,
+  // then we cannot add a filter hook into it's wndproc, otherwise we run into
+  // race conditions because the filter hook code is not threadsafe.  As a
+  // workaround, embedders can disable hooking onto the root window, and we
+  // will depend on the embedder to notify us (in the browser thread) when the
+  // root window receives WM_WINDOWPOSCHANGED or WM_SETTINGCHANGE.
+  static void disableHookOnRoot();
+  static void onRootWindowPositionChanged(gfx::NativeView root);
+  static void onRootWindowSettingChange(gfx::NativeView root);
+
   // Overridden from WebContentsView:
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeView GetContentNativeView() const OVERRIDE;

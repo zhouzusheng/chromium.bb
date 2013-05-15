@@ -443,6 +443,23 @@ class CONTENT_EXPORT ContentBrowserClient {
                                    const GURL& url,
                                    webkit_glue::WebPreferences* prefs) {}
 
+  // Returns true whether the renderer should be run in-process or not. This is
+  // primarily for debugging purposes. When running "in process", the browser
+  // maintains a single RenderProcessHost which communicates to a RenderProcess
+  // which is instantiated in the same process with the Browser. All IPC
+  // between the Browser and the Renderer is the same, it's just not crossing a
+  // process boundary. This returns false by default. If implementations return
+  // true, they must also implement StartInProcessRendererThread and
+  // StopInProcessRendererThread.
+  virtual bool ShouldRunRendererInProcess();
+
+  // Start the in-process renderer thread.  This will only ever be called if
+  // ShouldRunRendererInProcess() returns true.
+  virtual void StartInProcessRendererThread(const std::string& channel_id) {}
+
+  // Stop the in-process renderer thread.
+  virtual void StopInProcessRendererThread() {}
+
   // Inspector setting was changed and should be persisted.
   virtual void UpdateInspectorSetting(RenderViewHost* rvh,
                                       const std::string& key,

@@ -28,7 +28,6 @@ class Size;
 namespace content {
 class GpuMessageFilter;
 class PeerConnectionTrackerHost;
-class RendererMainThread;
 class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
@@ -264,9 +263,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void ClearTransportDIBCache();
   // This is used to clear our cache five seconds after the last use.
   base::DelayTimer<RenderProcessHostImpl> cached_dibs_cleaner_;
-
-  // Used in single-process mode.
-  scoped_ptr<RendererMainThread> in_process_renderer_;
 
   // True after Init() has been called. We can't just check channel_ because we
   // also reset that in the case of process termination.

@@ -207,19 +207,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 
   // Static management functions -----------------------------------------------
 
-  // Flag to run the renderer in process.  This is primarily
-  // for debugging purposes.  When running "in process", the
-  // browser maintains a single RenderProcessHost which communicates
-  // to a RenderProcess which is instantiated in the same process
-  // with the Browser.  All IPC between the Browser and the
-  // Renderer is the same, it's just not crossing a process boundary.
-
-  static bool run_renderer_in_process();
-
-  // This also calls out to ContentBrowserClient::GetApplicationLocale and
-  // modifies the current process' command line.
-  static void SetRunRendererInProcess(bool value);
-
   // Allows iteration over all the RenderProcessHosts in the browser. Note
   // that each host may not be active, and therefore may have NULL channels.
   static iterator AllHostsIterator();

@@ -49,6 +49,7 @@
 #include "net/socket/tcp_client_socket.h"
 #include "net/ssl/ssl_config_service.h"
 #include "ui/base/clipboard/clipboard.h"
+#include "ui/base/ui_base_switches.h"
 
 #if defined(USE_AURA)
 #include "content/browser/renderer_host/image_transport_factory.h"
@@ -416,12 +417,15 @@ void BrowserMainLoop::CreateThreads() {
   if (parts_.get())
     result_code_ = parts_->PreCreateThreads();
 
-#if !defined(OS_IOS) && (!defined(GOOGLE_CHROME_BUILD) || defined(OS_ANDROID))
-  // Single-process is an unsupported and not fully tested mode, so
-  // don't enable it for official Chrome builds (except on Android).
-  if (parsed_command_line_.HasSwitch(switches::kSingleProcess))
-    RenderProcessHost::SetRunRendererInProcess(true);
-#endif
+  if (GetContentClient()->browser()->ShouldRunRendererInProcess() &&
+      !parsed_command_line_.HasSwitch(switches::kLang)) {
+    // Modify the current process' command line to include the browser locale,
+    // as the renderer expects this flag to be set.
+    const std::string locale =
+        GetContentClient()->browser()->GetApplicationLocale();
+    CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kLang,
+                                                        locale);
+  }
 
   if (result_code_ > 0)
     return;

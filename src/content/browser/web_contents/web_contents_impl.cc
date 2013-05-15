@@ -1410,9 +1410,22 @@ void WebContentsImpl::CreateNewWindow(
   }
 
   if (delegate_) {
+    ContentCreatedParams delegate_params;
+    delegate_params.disposition = params.disposition;
+    delegate_params.x = params.x;
+    delegate_params.y = params.y;
+    delegate_params.width = params.width;
+    delegate_params.height = params.height;
+    delegate_params.x_set = params.x_set;
+    delegate_params.y_set = params.y_set;
+    delegate_params.width_set = params.width_set;
+    delegate_params.height_set = params.height_set;
+    delegate_params.nofocus = params.nofocus;
+    delegate_params.hidden = params.hidden;
+    delegate_params.topmost = params.topmost;
     delegate_->WebContentsCreated(
         this, params.opener_frame_id, params.frame_name,
-        params.target_url, new_contents);
+        params.target_url, delegate_params, new_contents);
   }
 
   if (params.opener_suppressed) {

@@ -1907,6 +1907,21 @@ WebView* RenderViewImpl::createView(
   params.user_gesture = WebUserGestureIndicator::isProcessingUserGesture();
   params.window_container_type = WindowFeaturesToContainerType(features);
   params.session_storage_namespace_id = session_storage_namespace_id_;
+
+  params.x = features.x;
+  params.x_set = features.xSet;
+  params.y = features.y;
+  params.y_set = features.ySet;
+  params.width = features.width;
+  params.width_set = features.widthSet;
+  params.height = features.height;
+  params.height_set = features.heightSet;
+
+  // blpwtk-specific flags.
+  params.hidden = features.additionalFeatures.contains("hidden");
+  params.nofocus = features.additionalFeatures.contains("nofocus");
+  params.topmost = features.additionalFeatures.contains("topmost");
+
   if (frame_name != "_blank")
     params.frame_name = frame_name;
   params.opener_frame_id = creator->identifier();

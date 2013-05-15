@@ -56,6 +56,13 @@ namespace content {
 
 struct OpenURLParams;
 
+struct ContentCreatedParams {
+    WindowOpenDisposition disposition;
+    float x, y, width, height;
+    bool x_set, y_set, width_set, height_set;
+    bool hidden, nofocus, topmost;
+};
+
 typedef base::Callback< void(const MediaStreamDevices&) > MediaResponseCallback;
 
 // Objects implement this interface to get notified about changes in the
@@ -290,6 +297,7 @@ class CONTENT_EXPORT WebContentsDelegate {
                                   int64 source_frame_id,
                                   const string16& frame_name,
                                   const GURL& target_url,
+                                  const ContentCreatedParams& params,
                                   WebContents* new_contents) {}
 
   // Notifies the delegate that the content restrictions for this tab has

@@ -176,6 +176,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public NotificationObserver,
                                   int64 source_frame_id,
                                   const string16& frame_name,
                                   const GURL& target_url,
+                                  const ContentCreatedParams& params,
                                   WebContents* new_contents) OVERRIDE;
   virtual void RendererUnresponsive(WebContents* source) OVERRIDE;
   virtual void RendererResponsive(WebContents* source) OVERRIDE;

@@ -812,5 +812,8 @@
     // window.toString() requires special handling in V8
     [V8DoNotCheckSignature, DoNotCheckSecurity, Custom, NotEnumerable] DOMString toString();
 #endif // defined(V8_BINDING)
+
+    // Bloomberg specific objects/methods
+    readonly attribute BBClipboard bbClipboard; 
 };
 

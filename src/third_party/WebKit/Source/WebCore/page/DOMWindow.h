@@ -69,6 +69,7 @@ namespace WebCore {
     class Storage;
     class StyleMedia;
     class WebKitPoint;
+    class BBClipboard;
 
 #if ENABLE(REQUEST_ANIMATION_FRAME)
     class RequestAnimationFrameCallback;
@@ -403,6 +404,9 @@ namespace WebCore {
         void willDetachDocumentFromFrame();
         void willDestroyCachedFrame();
 
+        // Bloomberg specific objects/methods
+        BBClipboard* bbClipboard() const;
+
     private:
         explicit DOMWindow(Document*);
 
@@ -444,6 +448,7 @@ namespace WebCore {
         mutable RefPtr<Navigator> m_navigator;
         mutable RefPtr<Location> m_location;
         mutable RefPtr<StyleMedia> m_media;
+        mutable RefPtr<BBClipboard> m_bbClipboard;
 
         EventTargetData m_eventTargetData;
 

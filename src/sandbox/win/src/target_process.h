@@ -51,6 +51,40 @@ class TargetProcess {
                const base::win::StartupInformation& startup_info,
                base::win::ScopedProcessInformation* target_info);
 
+#if SANDBOX_DLL
+  // Injects sandbox DLL to target process, while target process is in
+  // suspended state.
+  DWORD InjectSandboxDll(const wchar_t* module_path);
+
+  // Close the initial token. This is normally done in Create(), but for
+  // sandbox dll mode, we need to wait until after InjectSandboxDll.
+  void CloseInitialToken();
+#endif
+
+  // Returns the target exe name or sandbox DLL name (if the sandbox.lib is
+  // linked into a DLL).
+  const wchar_t* SandboxModuleName() const
+  {
+#if SANDBOX_DLL
+    return module_path_.get() ? module_path_.get() : Name();
+#else
+    return Name();
+#endif
+  }
+
+  // Returns the address of the target main exe or sandbox dll (if the
+  // sandbox.lib is linked into a DLL).
+  HMODULE SandboxModule() const
+  {
+#if SANDBOX_DLL
+    return module_base_address_
+        ? reinterpret_cast<HMODULE>(module_base_address_)
+        : MainModule();
+#else
+    return MainModule();
+#endif
+  }
+
   // Destroys the target process.
   void Terminate();
 
@@ -110,6 +144,14 @@ class TargetProcess {
   scoped_ptr<SharedMemIPCServer> ipc_server_;
   // Provides the threads used by the IPC. This class does not own this pointer.
   ThreadProvider* thread_pool_;
+
+#if SANDBOX_DLL
+  // Base address of the sandbox module.
+  void* module_base_address_;
+  // Full name of the sandbox module.
+  scoped_ptr_malloc<wchar_t>  module_path_;
+#endif
+
   // Base address of the main executable
   void* base_address_;
   // Full name of the target executable.

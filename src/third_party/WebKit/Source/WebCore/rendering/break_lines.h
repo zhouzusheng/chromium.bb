@@ -29,14 +29,24 @@ class LazyLineBreakIterator;
 
 int nextBreakablePositionIgnoringNBSP(LazyLineBreakIterator&, int pos);
 int nextBreakablePosition(LazyLineBreakIterator&, int pos);
+int nextBreakablePositionIgnoringNBSPIgnoringLBI(LazyLineBreakIterator&, int pos);
+int nextBreakablePositionIgnoringLBI(LazyLineBreakIterator&, int pos);
 
-inline bool isBreakable(LazyLineBreakIterator& lazyBreakIterator, int pos, int& nextBreakable, bool breakNBSP)
+inline bool isBreakable(LazyLineBreakIterator& lazyBreakIterator, int pos, int& nextBreakable, bool breakNBSP, bool ignoreLBI)
 {
     if (pos > nextBreakable) {
-        if (breakNBSP)
-            nextBreakable = nextBreakablePosition(lazyBreakIterator, pos);
-        else
-            nextBreakable = nextBreakablePositionIgnoringNBSP(lazyBreakIterator, pos);
+        if (ignoreLBI) {
+            if (breakNBSP)
+                nextBreakable = nextBreakablePositionIgnoringLBI(lazyBreakIterator, pos);
+            else
+                nextBreakable = nextBreakablePositionIgnoringNBSPIgnoringLBI(lazyBreakIterator, pos);
+        }
+        else {
+            if (breakNBSP)
+                nextBreakable = nextBreakablePosition(lazyBreakIterator, pos);
+            else
+                nextBreakable = nextBreakablePositionIgnoringNBSP(lazyBreakIterator, pos);
+        }
     }
     return pos == nextBreakable;
 }

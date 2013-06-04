@@ -2741,6 +2741,9 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EWordBreak e)
         case BreakAllWordBreak:
             m_value.ident = CSSValueBreakAll;
             break;
+        case KeepAllWordBreak:
+            m_value.ident = CSSValueKeepAll;
+            break;
         case BreakWordBreak:
             m_value.ident = CSSValueBreakWord;
             break;
@@ -2752,6 +2755,8 @@ template<> inline CSSPrimitiveValue::operator EWordBreak() const
     switch (m_value.ident) {
         case CSSValueBreakAll:
             return BreakAllWordBreak;
+        case CSSValueKeepAll:
+            return KeepAllWordBreak;
         case CSSValueBreakWord:
             return BreakWordBreak;
         case CSSValueNormal:

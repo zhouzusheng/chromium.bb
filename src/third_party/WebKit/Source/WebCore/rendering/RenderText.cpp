@@ -994,6 +994,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
 
     bool breakNBSP = styleToUse->autoWrap() && styleToUse->nbspMode() == SPACE;
     bool breakAll = (styleToUse->wordBreak() == BreakAllWordBreak || styleToUse->wordBreak() == BreakWordBreak) && styleToUse->autoWrap();
+    bool keepAll = styleToUse->wordBreak() == KeepAllWordBreak && styleToUse->autoWrap();
 
     for (int i = 0; i < len; i++) {
         UChar c = characterAt(i);
@@ -1041,7 +1042,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             continue;
         }
 
-        bool hasBreak = breakAll || isBreakable(breakIterator, i, nextBreakable, breakNBSP);
+        bool hasBreak = breakAll || isBreakable(breakIterator, i, nextBreakable, breakNBSP, keepAll);
         bool betweenWords = true;
         int j = i;
         while (c != '\n' && !isSpaceAccordingToStyle(c, styleToUse) && c != '\t' && (c != softHyphen || styleToUse->hyphens() == HyphensNone)) {
@@ -1049,7 +1050,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             if (j == len)
                 break;
             c = characterAt(j);
-            if (isBreakable(breakIterator, j, nextBreakable, breakNBSP) && characterAt(j - 1) != softHyphen)
+            if (isBreakable(breakIterator, j, nextBreakable, breakNBSP, keepAll) && characterAt(j - 1) != softHyphen)
                 break;
             if (breakAll) {
                 betweenWords = false;

@@ -191,15 +191,19 @@
     {
       'target_name': 'blpwtk2_subprocess',
       'type': 'executable',
-      'dependencies': [
-        'blpwtk2',
-      ],
       'msvs_settings': {
         'VCLinkerTool': {
           'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
         },
       },
+      'dependencies': [
+        '../sandbox/sandbox.gyp:sandbox',
+      ],
+      'include_dirs': [
+        '..',
+      ],
       'sources': [
+        '../content/app/startup_helper_win.cc',
         'subprocess/main.cc',
       ],
     },

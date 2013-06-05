@@ -89,10 +89,6 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
                                         subprocess.value().c_str());
     }
 
-    // disable sandbox
-    if (!commandLine->HasSwitch(switches::kNoSandbox))
-        CommandLine::ForCurrentProcess()->AppendSwitch(switches::kNoSandbox);
-
     InitLogging();
     SetContentClient(&d_contentClient);
     return false;

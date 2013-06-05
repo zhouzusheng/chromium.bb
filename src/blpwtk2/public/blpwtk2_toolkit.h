@@ -178,10 +178,6 @@ struct BLPWTK2_EXPORT Toolkit {
     // been set using 'Toolkit::setPumpMode'.
     static bool preHandleMessage(const NativeMsg* msg);
     static void postHandleMessage(const NativeMsg* msg);
-
-    // This is blpwtk2_subprocess.exe's entry point into the blpwtk2.dll -- do
-    // not use this from other apps!!
-    static int subProcessMain(HINSTANCE hInstance);
 };
 
 }  // close namespace blpwtk2

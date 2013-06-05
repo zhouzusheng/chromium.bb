@@ -31,8 +31,6 @@
 // dependencies needed for Toolkit::subProcessMain()
 #include <blpwtk2_contentmaindelegateimpl.h>
 #include <content/public/app/content_main.h>
-#include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
-#include <sandbox/win/src/sandbox_types.h>  // for SandboxInterfaceInfo
 
 
 namespace blpwtk2 {
@@ -146,13 +144,14 @@ void Toolkit::postHandleMessage(const NativeMsg* msg)
     ToolkitImpl::instance()->postHandleMessage(msg);
 }
 
-int Toolkit::subProcessMain(HINSTANCE hInstance)
-{
-    sandbox::SandboxInterfaceInfo sandbox_info = {0};
-    content::InitializeSandboxInfo(&sandbox_info);
-    ContentMainDelegateImpl delegate;
-    return content::ContentMain(hInstance, &sandbox_info, &delegate);
-}
-
 }  // close namespace blpwtk2
 
+// This is the entry point for blpwtk2_subprocess.exe
+// Do not call this from anywhere else!!
+extern "C" __declspec(dllexport)
+int SubProcessMain(HINSTANCE hInstance,
+                   sandbox::SandboxInterfaceInfo* sandboxInfo)
+{
+    blpwtk2::ContentMainDelegateImpl delegate;
+    return content::ContentMain(hInstance, sandboxInfo, &delegate);
+}

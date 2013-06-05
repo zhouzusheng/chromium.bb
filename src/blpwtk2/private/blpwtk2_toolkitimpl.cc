@@ -44,6 +44,7 @@
 #include <content/public/renderer/render_thread.h>
 #include <content/browser/web_contents/web_contents_view_win.h>
 #include <content/browser/renderer_host/render_process_host_impl.h>
+#include <sandbox/win/src/win_utils.h>
 
 extern HANDLE g_instDLL;  // set in DllMain
 
@@ -119,6 +120,8 @@ ToolkitImpl::~ToolkitImpl()
 
     d_mainRunner->Shutdown();
     d_mainRunner.reset();
+
+    sandbox::CallOnExitHandlers();
 
     g_instance = 0;
 }

@@ -301,6 +301,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitBorderHorizontalSpacing:
     case CSSPropertyWebkitBorderVerticalSpacing:
     case CSSPropertyWebkitBoxDirection:
+    case CSSPropertyWebkitCaretColor:
     case CSSPropertyWebkitColorCorrection:
     case CSSPropertyWebkitFontFeatureSettings:
     case CSSPropertyWebkitFontKerning:

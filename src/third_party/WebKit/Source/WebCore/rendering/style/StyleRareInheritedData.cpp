@@ -56,6 +56,8 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
     Color touchColors;
 #endif
 
+    Color caretColor;
+
 #if ENABLE(CSS_VARIABLES)
     void* variableDataRefs[1];
 #endif
@@ -117,6 +119,7 @@ StyleRareInheritedData::StyleRareInheritedData()
 #if ENABLE(TOUCH_EVENTS)
     , tapHighlightColor(RenderStyle::initialTapHighlightColor())
 #endif    
+    , caretColor(RenderStyle::initialCaretColor())
 {
 #if ENABLE(CSS_VARIABLES)
     m_variables.init();
@@ -190,6 +193,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
 #if ENABLE(TOUCH_EVENTS)
     , tapHighlightColor(o.tapHighlightColor)
 #endif
+    , caretColor(o.caretColor)
 #if ENABLE(CSS_VARIABLES)
     , m_variables(o.m_variables)
 #endif
@@ -273,6 +277,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
 #endif // CSS3_TEXT
         && m_rubyPosition == o.m_rubyPosition
         && m_lineSnap == o.m_lineSnap
+        && caretColor == o.caretColor
 #if ENABLE(CSS_VARIABLES)
         && m_variables == o.m_variables
 #endif

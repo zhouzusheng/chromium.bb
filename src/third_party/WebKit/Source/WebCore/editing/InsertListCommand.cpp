@@ -366,7 +366,7 @@ PassRefPtr<HTMLElement> InsertListCommand::listifyParagraph(const VisiblePositio
         // inline ancestors of start, since it is easier for editing to produce 
         // clean markup when inline elements are pushed down as far as possible.
         Position insertionPos(start.deepEquivalent().upstream());
-        while (isInline(insertionPos.anchorNode())) {
+        while (isInline(insertionPos.anchorNode()) && !insertionPos.anchorNode()->hasTagName(brTag)) {
             insertionPos = positionInParentBeforeNode(insertionPos.anchorNode());
         }
         // Also avoid the containing list item.

@@ -1797,7 +1797,7 @@ VisiblePosition AccessibilityRenderObject::visiblePositionForIndex(int index) co
         return VisiblePosition();
     
     if (isNativeTextControl())
-        return toRenderTextControl(m_renderer)->visiblePositionForIndex(index);
+        return toRenderTextControl(m_renderer)->textFormControlElement()->visiblePositionForIndex(index);
 
     if (!allowsTextRanges() && !m_renderer->isText())
         return VisiblePosition();

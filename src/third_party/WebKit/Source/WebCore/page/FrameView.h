@@ -481,7 +481,7 @@ private:
     double adjustedDeferredRepaintDelay() const;
 
     bool updateWidgets();
-    void updateWidget(RenderObject*);
+    bool updateWidget(RenderObject*);
     void scrollToAnchor();
     void scrollPositionChanged();
 

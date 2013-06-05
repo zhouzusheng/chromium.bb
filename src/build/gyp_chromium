@@ -22,6 +22,11 @@ chrome_src = os.path.abspath(os.path.join(script_dir, os.pardir))
 with open(os.path.join(chrome_src, ".gitignore"), 'r') as f:
   ignoredLines = f.readlines()
 
+# SHEZ: hack!
+# Touch the .gitattributes file so that it will be picked up by the minimizer.
+with open(os.path.join(chrome_src, ".gitattributes"), 'r') as f:
+  ignoredLines = f.readlines()
+
 sys.path.insert(0, os.path.join(chrome_src, 'tools', 'gyp', 'pylib'))
 import gyp
 

@@ -46,7 +46,7 @@ void RenderTextTrackCue::layout()
     RenderBlock::layout();
 
     LayoutStateMaintainer statePusher(view(), this, locationOffset(), hasTransform() || hasReflection() || style()->isFlippedBlocksWritingMode());
-    
+
     if (m_cue->cueType()== TextTrackCue::WebVTT) {
         if (m_cue->snapToLines())
             repositionCueSnapToLinesSet();
@@ -58,12 +58,21 @@ void RenderTextTrackCue::layout()
     statePusher.pop();
 }
 
-bool RenderTextTrackCue::initializeLayoutParameters(InlineFlowBox*& firstLineBox, LayoutUnit& step, LayoutUnit& position)
+bool RenderTextTrackCue::findFirstLineBox(InlineFlowBox*& firstLineBox)
+{
+    if (firstChild()->isRenderInline())
+        firstLineBox = toRenderInline(firstChild())->firstLineBox();
+    else
+        return false;
+
+    return true;
+}
+
+bool RenderTextTrackCue::initializeLayoutParameters(InlineFlowBox* firstLineBox, LayoutUnit& step, LayoutUnit& position)
 {
     ASSERT(firstChild());
 
     RenderBlock* parentBlock = containingBlock();
-    firstLineBox = toRenderInline(firstChild())->firstLineBox();
 
     // 1. Horizontal: Let step be the height of the first line box in boxes.
     //    Vertical: Let step be the width of the first line box in boxes.
@@ -206,6 +215,10 @@ void RenderTextTrackCue::repositionCueSnapToLinesSet()
     InlineFlowBox* firstLineBox;
     LayoutUnit step;
     LayoutUnit position;
+
+    if (!findFirstLineBox(firstLineBox))
+        return;
+
     if (!initializeLayoutParameters(firstLineBox, step, position))
         return;
 
@@ -254,8 +267,8 @@ void RenderTextTrackCue::repositionGenericCue()
 
     ASSERT(firstChild());
 
-    InlineFlowBox* firstLineBox = toRenderInline(firstChild())->firstLineBox();
-    if (!firstLineBox)
+    InlineFlowBox* firstLineBox;
+    if (!findFirstLineBox(firstLineBox))
         return;
 
     LayoutUnit parentWidth = containingBlock()->logicalWidth();

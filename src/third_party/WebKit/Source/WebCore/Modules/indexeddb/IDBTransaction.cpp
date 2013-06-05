@@ -217,10 +217,12 @@ void IDBTransaction::abort(ExceptionCode& ec)
 
     m_state = Finishing;
 
-    while (!m_requestList.isEmpty()) {
-        RefPtr<IDBRequest> request = *m_requestList.begin();
-        m_requestList.remove(request);
-        request->abort();
+    if (!m_contextStopped) {
+        while (!m_requestList.isEmpty()) {
+            RefPtr<IDBRequest> request = *m_requestList.begin();
+            m_requestList.remove(request);
+            request->abort();
+        }
     }
 
     RefPtr<IDBTransaction> selfRef = this;
@@ -422,6 +424,9 @@ bool IDBTransaction::canSuspend() const
 
 void IDBTransaction::stop()
 {
+    if (m_contextStopped)
+        return;
+
     m_contextStopped = true;
 
     abort(IGNORE_EXCEPTION);

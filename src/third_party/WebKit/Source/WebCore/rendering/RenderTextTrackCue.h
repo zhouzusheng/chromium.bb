@@ -51,7 +51,8 @@ private:
     void moveBoxesByStep(LayoutUnit);
     bool switchDirection(bool&, LayoutUnit&);
 
-    bool initializeLayoutParameters(InlineFlowBox*&, LayoutUnit&, LayoutUnit&);
+    bool findFirstLineBox(InlineFlowBox*&);
+    bool initializeLayoutParameters(InlineFlowBox*, LayoutUnit&, LayoutUnit&);
     void placeBoxInDefaultPosition(LayoutUnit, bool&);
     void repositionCueSnapToLinesSet();
     void repositionCueSnapToLinesNotSet();

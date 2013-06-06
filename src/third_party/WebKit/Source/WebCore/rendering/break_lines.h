@@ -27,26 +27,16 @@ namespace WebCore {
 
 class LazyLineBreakIterator;
 
-int nextBreakablePositionIgnoringNBSP(LazyLineBreakIterator&, int pos);
-int nextBreakablePosition(LazyLineBreakIterator&, int pos);
-int nextBreakablePositionIgnoringNBSPIgnoringLBI(LazyLineBreakIterator&, int pos);
-int nextBreakablePositionIgnoringLBI(LazyLineBreakIterator&, int pos);
+int nextBreakablePositionIgnoringNBSP(LazyLineBreakIterator&, int pos, bool keepAll);
+int nextBreakablePosition(LazyLineBreakIterator&, int pos, bool keepAll);
 
-inline bool isBreakable(LazyLineBreakIterator& lazyBreakIterator, int pos, int& nextBreakable, bool breakNBSP, bool ignoreLBI)
+inline bool isBreakable(LazyLineBreakIterator& lazyBreakIterator, int pos, int& nextBreakable, bool breakNBSP, bool keepAll)
 {
     if (pos > nextBreakable) {
-        if (ignoreLBI) {
-            if (breakNBSP)
-                nextBreakable = nextBreakablePositionIgnoringLBI(lazyBreakIterator, pos);
-            else
-                nextBreakable = nextBreakablePositionIgnoringNBSPIgnoringLBI(lazyBreakIterator, pos);
-        }
-        else {
-            if (breakNBSP)
-                nextBreakable = nextBreakablePosition(lazyBreakIterator, pos);
-            else
-                nextBreakable = nextBreakablePositionIgnoringNBSP(lazyBreakIterator, pos);
-        }
+        if (breakNBSP)
+            nextBreakable = nextBreakablePosition(lazyBreakIterator, pos, keepAll);
+        else
+            nextBreakable = nextBreakablePositionIgnoringNBSP(lazyBreakIterator, pos, keepAll);
     }
     return pos == nextBreakable;
 }

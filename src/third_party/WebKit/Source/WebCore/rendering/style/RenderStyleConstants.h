@@ -207,7 +207,7 @@ enum EUserSelect {
 // Word Break Values. Matches WinIE, rather than CSS3
 
 enum EWordBreak {
-    NormalWordBreak, BreakAllWordBreak, KeepAllWordBreak, BreakWordBreak
+    NormalWordBreak, BreakAllWordBreak, KeepAllWordBreak, KeepAllIfKoreanWordBreak, BreakWordBreak
 };
 
 enum EOverflowWrap {

@@ -491,7 +491,7 @@ WebInspector.CSSMetadata._propertyDataMap = {
         "auto"
     ] },
     "word-break": { values: [
-        "normal", "break-all", "keep-all", "break-word"
+        "normal", "break-all", "keep-all", "-bb-keep-all-if-korean", "break-word"
     ] },
     "word-spacing": { values: [
         "normal"

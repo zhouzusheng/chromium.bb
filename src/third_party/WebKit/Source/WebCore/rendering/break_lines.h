@@ -22,21 +22,22 @@
 #define break_lines_h
 
 #include <wtf/unicode/Unicode.h>
+#include "RenderStyleConstants.h"
 
 namespace WebCore {
 
 class LazyLineBreakIterator;
 
-int nextBreakablePositionIgnoringNBSP(LazyLineBreakIterator&, int pos, bool keepAll);
-int nextBreakablePosition(LazyLineBreakIterator&, int pos, bool keepAll);
+int nextBreakablePositionIgnoringNBSP(LazyLineBreakIterator&, int pos, EWordBreak wordBreak);
+int nextBreakablePosition(LazyLineBreakIterator&, int pos, EWordBreak wordBreak);
 
-inline bool isBreakable(LazyLineBreakIterator& lazyBreakIterator, int pos, int& nextBreakable, bool breakNBSP, bool keepAll)
+inline bool isBreakable(LazyLineBreakIterator& lazyBreakIterator, int pos, int& nextBreakable, bool breakNBSP, EWordBreak wordBreak)
 {
     if (pos > nextBreakable) {
         if (breakNBSP)
-            nextBreakable = nextBreakablePosition(lazyBreakIterator, pos, keepAll);
+            nextBreakable = nextBreakablePosition(lazyBreakIterator, pos, wordBreak);
         else
-            nextBreakable = nextBreakablePositionIgnoringNBSP(lazyBreakIterator, pos, keepAll);
+            nextBreakable = nextBreakablePositionIgnoringNBSP(lazyBreakIterator, pos, wordBreak);
     }
     return pos == nextBreakable;
 }

@@ -2744,6 +2744,9 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EWordBreak e)
         case KeepAllWordBreak:
             m_value.ident = CSSValueKeepAll;
             break;
+        case KeepAllIfKoreanWordBreak:
+            m_value.ident = CSSValueBbKeepAllIfKorean;
+            break;
         case BreakWordBreak:
             m_value.ident = CSSValueBreakWord;
             break;
@@ -2757,6 +2760,8 @@ template<> inline CSSPrimitiveValue::operator EWordBreak() const
             return BreakAllWordBreak;
         case CSSValueKeepAll:
             return KeepAllWordBreak;
+        case CSSValueBbKeepAllIfKorean:
+            return KeepAllIfKoreanWordBreak;
         case CSSValueBreakWord:
             return BreakWordBreak;
         case CSSValueNormal:

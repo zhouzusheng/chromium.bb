@@ -38,6 +38,12 @@
 
 namespace WebCore {
 
+enum WordBreakSwitch {
+    Default,
+    KeepAll,
+    KeepAllIfKorean,
+};
+
 template<bool treatNoBreakSpaceAsBreak>
 static inline bool isBreakableSpace(UChar ch)
 {
@@ -139,15 +145,31 @@ static inline bool shouldBreakAfter(UChar lastCh, UChar ch, UChar nextCh)
     return false;
 }
 
-template<bool treatNoBreakSpaceAsBreak>
+inline bool isKorean(UChar ch)
+{
+    return ch > asciiLineBreakTableLastChar
+        && ((0xAC00 <= ch && ch <= 0xD7AF) ||
+            (0x1100 <= ch && ch <= 0x11FF) ||
+            (0x3130 <= ch && ch <= 0x318F) ||
+            (0x3200 <= ch && ch <= 0x32FF) ||
+            (0xA960 <= ch && ch <= 0xA97F) ||
+            (0xD7B0 <= ch && ch <= 0xD7FF) ||
+            (0xFF00 <= ch && ch <= 0xFFEF));
+}
+
+template<bool treatNoBreakSpaceAsBreak, WordBreakSwitch wordBreakSwitch>
 inline bool needsLineBreakIterator(UChar ch)
 {
+    if (wordBreakSwitch == KeepAll)
+        return false;
+    if (wordBreakSwitch == KeepAllIfKorean && isKorean(ch))
+        return false;
     if (treatNoBreakSpaceAsBreak)
         return ch > asciiLineBreakTableLastChar;
     return ch > asciiLineBreakTableLastChar && ch != noBreakSpace;
 }
 
-template<typename CharacterType, bool treatNoBreakSpaceAsBreak, bool keepAll>
+template<typename CharacterType, bool treatNoBreakSpaceAsBreak, WordBreakSwitch wordBreakSwitch>
 static inline int nextBreakablePosition(LazyLineBreakIterator& lazyBreakIterator, const CharacterType* str, unsigned length, int pos)
 {
     int len = static_cast<int>(length);
@@ -161,7 +183,7 @@ static inline int nextBreakablePosition(LazyLineBreakIterator& lazyBreakIterator
         if (isBreakableSpace<treatNoBreakSpaceAsBreak>(ch) || shouldBreakAfter(lastLastCh, lastCh, ch))
             return i;
 
-        if (!keepAll && (needsLineBreakIterator<treatNoBreakSpaceAsBreak>(ch) || needsLineBreakIterator<treatNoBreakSpaceAsBreak>(lastCh))) {
+        if (needsLineBreakIterator<treatNoBreakSpaceAsBreak, wordBreakSwitch>(ch) || needsLineBreakIterator<treatNoBreakSpaceAsBreak, wordBreakSwitch>(lastCh)) {
             if (nextBreak < i && i) {
                 TextBreakIterator* breakIterator = lazyBreakIterator.get();
                 if (breakIterator)
@@ -178,33 +200,41 @@ static inline int nextBreakablePosition(LazyLineBreakIterator& lazyBreakIterator
     return len;
 }
 
-int nextBreakablePositionIgnoringNBSP(LazyLineBreakIterator& lazyBreakIterator, int pos, bool keepAll)
+int nextBreakablePositionIgnoringNBSP(LazyLineBreakIterator& lazyBreakIterator, int pos, EWordBreak wordBreak)
 {
     String string = lazyBreakIterator.string();
-    if (keepAll) {
+    switch (wordBreak) {
+    case KeepAllWordBreak:
         if (string.is8Bit())
-            return nextBreakablePosition<LChar, false, true>(lazyBreakIterator, string.characters8(), string.length(), pos);
-        return nextBreakablePosition<UChar, false, true>(lazyBreakIterator, string.characters16(), string.length(), pos);
-    }
-    else {
+            return nextBreakablePosition<LChar, false, KeepAll>(lazyBreakIterator, string.characters8(), string.length(), pos);
+        return nextBreakablePosition<UChar, false, KeepAll>(lazyBreakIterator, string.characters16(), string.length(), pos);
+    case KeepAllIfKoreanWordBreak:
         if (string.is8Bit())
-            return nextBreakablePosition<LChar, false, false>(lazyBreakIterator, string.characters8(), string.length(), pos);
-        return nextBreakablePosition<UChar, false, false>(lazyBreakIterator, string.characters16(), string.length(), pos);
+            return nextBreakablePosition<LChar, false, KeepAllIfKorean>(lazyBreakIterator, string.characters8(), string.length(), pos);
+        return nextBreakablePosition<UChar, false, KeepAllIfKorean>(lazyBreakIterator, string.characters16(), string.length(), pos);
+    default:
+        if (string.is8Bit())
+            return nextBreakablePosition<LChar, false, Default>(lazyBreakIterator, string.characters8(), string.length(), pos);
+        return nextBreakablePosition<UChar, false, Default>(lazyBreakIterator, string.characters16(), string.length(), pos);
     }
 }
 
-int nextBreakablePosition(LazyLineBreakIterator& lazyBreakIterator, int pos, bool keepAll)
+int nextBreakablePosition(LazyLineBreakIterator& lazyBreakIterator, int pos, EWordBreak wordBreak)
 {
     String string = lazyBreakIterator.string();
-    if (keepAll) {
+    switch (wordBreak) {
+    case KeepAllWordBreak:
         if (string.is8Bit())
-            return nextBreakablePosition<LChar, true, true>(lazyBreakIterator, string.characters8(), string.length(), pos);
-        return nextBreakablePosition<UChar, true, true>(lazyBreakIterator, string.characters16(), string.length(), pos);
-    }
-    else {
+            return nextBreakablePosition<LChar, true, KeepAll>(lazyBreakIterator, string.characters8(), string.length(), pos);
+        return nextBreakablePosition<UChar, true, KeepAll>(lazyBreakIterator, string.characters16(), string.length(), pos);
+    case KeepAllIfKoreanWordBreak:
         if (string.is8Bit())
-            return nextBreakablePosition<LChar, true, false>(lazyBreakIterator, string.characters8(), string.length(), pos);
-        return nextBreakablePosition<UChar, true, false>(lazyBreakIterator, string.characters16(), string.length(), pos);
+            return nextBreakablePosition<LChar, true, KeepAllIfKorean>(lazyBreakIterator, string.characters8(), string.length(), pos);
+        return nextBreakablePosition<UChar, true, KeepAllIfKorean>(lazyBreakIterator, string.characters16(), string.length(), pos);
+    default:
+        if (string.is8Bit())
+            return nextBreakablePosition<LChar, true, Default>(lazyBreakIterator, string.characters8(), string.length(), pos);
+        return nextBreakablePosition<UChar, true, Default>(lazyBreakIterator, string.characters16(), string.length(), pos);
     }
 }
 

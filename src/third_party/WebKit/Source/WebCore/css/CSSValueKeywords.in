@@ -608,6 +608,7 @@ skip-white-space
 //
 break-all
 keep-all
+-bb-keep-all-if-korean
 
 //
 // CSS_PROP_WORD_WRAP

@@ -36,9 +36,36 @@
   },
   'targets': [
     {
+      'target_name': 'blpwtk2_gen_version',
+      'type': 'none',
+      'actions': [
+        {
+          'action_name': 'Generate version files',
+          'inputs': [
+            'gen_version.py',
+          ],
+          'outputs': [
+            'public/blpwtk2_products.h',
+            'public/blpwtk2_version.h',
+            'public/blpwtk2_version.cc',
+          ],
+          'action': [
+            'python',
+            '<@(_inputs)',
+            '--output-products', 'public/blpwtk2_products.h',
+            '--output-version-h', 'public/blpwtk2_version.h',
+            '--output-version-cc', 'public/blpwtk2_version.cc',
+            '--version', '<(bb_version)',
+          ],
+          'msvs_cygwin_shell': 1,
+        },
+      ],
+    },
+    {
       'target_name': 'blpwtk2',
       'type': 'shared_library',
       'dependencies': [
+        'blpwtk2_gen_version',
         '../content/content.gyp:content_app',
         '../content/content.gyp:content_browser',
         '../content/content.gyp:content_common',
@@ -65,9 +92,15 @@
             '../base/allocator/allocator.gyp:allocator',
           ],
         }],
+        ['bb_version!=""', {
+          'product_name': 'blpwtk2.<(bb_version)',
+        }],
       ],
       'sources': [
         '../content/app/startup_helper_win.cc',
+        'public/blpwtk2_products.h',
+        'public/blpwtk2_version.h',
+        'public/blpwtk2_version.cc',
         'public/blpwtk2_config.h',
         'public/blpwtk2.h',
         'public/blpwtk2_string.cc',
@@ -196,7 +229,13 @@
           'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
         },
       },
+      'conditions': [
+        ['bb_version!=""', {
+          'product_name': 'blpwtk2_subprocess.<(bb_version)',
+        }],
+      ],
       'dependencies': [
+        'blpwtk2_gen_version',
         '../sandbox/sandbox.gyp:sandbox',
       ],
       'include_dirs': [

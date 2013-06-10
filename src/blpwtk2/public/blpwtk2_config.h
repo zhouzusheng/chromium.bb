@@ -33,6 +33,9 @@
 #define BLPWTK2_EXPORT
 #endif
 
+#include <blpwtk2_version.h>
+#include <blpwtk2_products.h>
+
 namespace blpwtk2 {
 
 // TODO: support other native handles

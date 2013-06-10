@@ -62,7 +62,7 @@ std::string ContentClient::GetUserAgent() const
 {
     // include Chrome in our user-agent because some sites actually look for
     // this.  For example, google's "Search as you type" feature.
-    return webkit_glue::BuildUserAgentFromProduct("BlpWtk/2.0 Chrome/26.0.1410.43");
+    return webkit_glue::BuildUserAgentFromProduct("BlpWtk/" BB_PATCH_VERSION " Chrome/" CHROMIUM_VERSION);
 }
 
 
@@ -84,7 +84,7 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
         base::FilePath subprocess;
         bool success = PathService::Get(base::DIR_EXE, &subprocess);
         DCHECK(success);
-        subprocess = subprocess.AppendASCII("blpwtk2_subprocess.exe");
+        subprocess = subprocess.AppendASCII(BLPWTK2_SUBPROCESS_EXE_NAME);
         commandLine->AppendSwitchNative(switches::kBrowserSubprocessPath,
                                         subprocess.value().c_str());
     }

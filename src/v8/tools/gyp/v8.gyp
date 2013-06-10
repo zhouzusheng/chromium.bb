@@ -79,6 +79,9 @@
                 }],
               ],
               'conditions': [
+                ['bb_version!=""', {
+                  'product_name': 'blpv8.<(bb_version)',
+                }],
                 ['OS=="mac"', {
                   'xcode_settings': {
                     'OTHER_LDFLAGS': ['-dynamiclib', '-all_load']

@@ -21,6 +21,7 @@
  */
 
 #include <windows.h>  // NOLINT
+#include <blpwtk2/public/blpwtk2_products.h>
 #include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
 #include <sandbox/win/src/sandbox_types.h>  // for SandboxInterfaceInfo
 
@@ -29,7 +30,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     sandbox::SandboxInterfaceInfo sandboxInfo;
     content::InitializeSandboxInfo(&sandboxInfo);
     {
-        HMODULE blpwtk2Module = LoadLibraryW(L"blpwtk2.dll");
+        HMODULE blpwtk2Module = LoadLibraryA(BLPWTK2_DLL_NAME);
         if (!blpwtk2Module) return -3456;
         typedef int (*MainFunc)(HINSTANCE hInstance,
                                 sandbox::SandboxInterfaceInfo* sandboxInfo);

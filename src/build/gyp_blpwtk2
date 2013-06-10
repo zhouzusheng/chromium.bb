@@ -43,6 +43,8 @@ import os, sys, subprocess
 
 scriptDir = os.path.dirname(os.path.realpath(__file__))
 pathToGypChromium = os.path.join(scriptDir, 'gyp_chromium')
+chromeSrc = os.path.abspath(os.path.join(scriptDir, os.pardir))
+blpwtk2Dir = os.path.join(chromeSrc, 'blpwtk2')
 
 if 'GYP_GENERATOR_FLAGS' in os.environ:
   origGeneratorFlags = os.environ['GYP_GENERATOR_FLAGS']
@@ -53,6 +55,10 @@ if 'GYP_DEFINES' in os.environ:
   origGypDefines = os.environ['GYP_DEFINES']
 else:
   origGypDefines = None
+
+def cleanFile(fname):
+  if os.path.isfile(fname):
+    os.remove(fname)
 
 def execInShell(cmd):
   p = subprocess.Popen(cmd, shell=True)
@@ -146,6 +152,12 @@ def DoMain(argv):
   if 'GYP_GENERATORS' in os.environ:
     execGypChromiumInShell(gypChromiumArgs)
     sys.exit(0)
+
+  # Delete the generated version files, so that they will be regenerated
+  # with the updated version info.
+  cleanFile(os.path.join(blpwtk2Dir, 'public', 'blpwtk2_version.h'))
+  cleanFile(os.path.join(blpwtk2Dir, 'public', 'blpwtk2_version.cc'))
+  cleanFile(os.path.join(blpwtk2Dir, 'public', 'blpwtk2_products.h'))
 
   doMsvsNinja(gypChromiumArgs)
   restoreOriginalEnv()

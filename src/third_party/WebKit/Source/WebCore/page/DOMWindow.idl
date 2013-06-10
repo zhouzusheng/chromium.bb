@@ -815,5 +815,6 @@
 
     // Bloomberg specific objects/methods
     readonly attribute BBClipboard bbClipboard; 
+    readonly attribute BBWindowHooks bbWindowHooks;
 };
 

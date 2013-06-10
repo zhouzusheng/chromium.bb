@@ -30,6 +30,7 @@
 #include "BackForwardController.h"
 #include "BarInfo.h"
 #include "BBClipboard.h"
+#include "BBWindowHooks.h"
 #include "BeforeUnloadEvent.h"
 #include "CSSComputedStyleDeclaration.h"
 #include "CSSRuleList.h"
@@ -429,6 +430,7 @@ DOMWindow::~DOMWindow()
         ASSERT(!m_localStorage);
         ASSERT(!m_applicationCache);
         ASSERT(!m_bbClipboard);
+        ASSERT(!m_bbWindowHooks);
     }
 #endif
 
@@ -587,6 +589,7 @@ void DOMWindow::resetDOMWindowProperties()
     m_localStorage = 0;
     m_applicationCache = 0;
     m_bbClipboard = 0;
+    m_bbWindowHooks = 0;
 }
 
 bool DOMWindow::isCurrentlyDisplayedInFrame() const
@@ -1986,6 +1989,15 @@ BBClipboard* DOMWindow::bbClipboard() const
     if (!m_bbClipboard)
         m_bbClipboard = BBClipboard::create(m_frame);
     return m_bbClipboard.get();
+}
+
+BBWindowHooks* DOMWindow::bbWindowHooks() const
+{
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
+    if (!m_bbWindowHooks)
+        m_bbWindowHooks = BBWindowHooks::create(m_frame);
+    return m_bbWindowHooks.get();
 }
 
 } // namespace WebCore

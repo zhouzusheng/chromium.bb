@@ -70,6 +70,7 @@ namespace WebCore {
     class StyleMedia;
     class WebKitPoint;
     class BBClipboard;
+    class BBWindowHooks;
 
 #if ENABLE(REQUEST_ANIMATION_FRAME)
     class RequestAnimationFrameCallback;
@@ -406,6 +407,7 @@ namespace WebCore {
 
         // Bloomberg specific objects/methods
         BBClipboard* bbClipboard() const;
+        BBWindowHooks* bbWindowHooks() const;
 
     private:
         explicit DOMWindow(Document*);
@@ -449,6 +451,7 @@ namespace WebCore {
         mutable RefPtr<Location> m_location;
         mutable RefPtr<StyleMedia> m_media;
         mutable RefPtr<BBClipboard> m_bbClipboard;
+        mutable RefPtr<BBWindowHooks> m_bbWindowHooks;
 
         EventTargetData m_eventTargetData;
 

@@ -52,6 +52,13 @@ class TargetProcess {
                base::win::ScopedProcessInformation* target_info);
 
 #if SANDBOX_DLL
+  // Returns true if the exe has sandbox.lib linked into it. The sandbox DLL
+  // will only be injected if this returns false.
+  bool ExeHasSandbox() const
+  {
+    return exe_has_sandbox_;
+  }
+
   // Injects sandbox DLL to target process, while target process is in
   // suspended state.
   DWORD InjectSandboxDll(const wchar_t* module_path);
@@ -66,7 +73,10 @@ class TargetProcess {
   const wchar_t* SandboxModuleName() const
   {
 #if SANDBOX_DLL
-    return module_path_.get() ? module_path_.get() : Name();
+    if (exe_has_sandbox_)
+      return Name();
+    DCHECK(module_path_.get());
+    return module_path_.get();
 #else
     return Name();
 #endif
@@ -77,9 +87,10 @@ class TargetProcess {
   HMODULE SandboxModule() const
   {
 #if SANDBOX_DLL
-    return module_base_address_
-        ? reinterpret_cast<HMODULE>(module_base_address_)
-        : MainModule();
+    if (exe_has_sandbox_)
+      return MainModule();
+    DCHECK(module_base_address_);
+    return reinterpret_cast<HMODULE>(module_base_address_);
 #else
     return MainModule();
 #endif
@@ -146,9 +157,13 @@ class TargetProcess {
   ThreadProvider* thread_pool_;
 
 #if SANDBOX_DLL
-  // Base address of the sandbox module.
+  // True if the exe has sandbox.lib linked into it.
+  bool exe_has_sandbox_;
+  // Base address of the sandbox module. This is only set if exe_has_sandbox_
+  // is is false (i.e. only if a sandbox dll has been injected).
   void* module_base_address_;
-  // Full name of the sandbox module.
+  // Full name of the sandbox module. This is only set if exe_has_sandbox_ is
+  // false (i.e. only if a sandbox dll has been injected).
   scoped_ptr_malloc<wchar_t>  module_path_;
 #endif
 

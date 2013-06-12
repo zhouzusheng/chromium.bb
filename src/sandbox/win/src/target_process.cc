@@ -45,10 +45,28 @@ SANDBOX_INTERCEPT size_t g_shared_policy_size;
 
 // Returns the address of the main exe module in memory taking in account
 // address space layout randomization.
+#if SANDBOX_DLL
+void* GetBaseAddress(const wchar_t* exe_name, void* entry_point,
+                     bool* has_sandbox) {
+#else
 void* GetBaseAddress(const wchar_t* exe_name, void* entry_point) {
+#endif
   HMODULE exe = ::LoadLibrary(exe_name);
   if (NULL == exe)
     return exe;
+
+#if SANDBOX_DLL
+  *has_sandbox =
+      GetProcAddress(exe, "g_handles_to_close") != NULL &&
+      GetProcAddress(exe, "g_interceptions") != NULL &&
+      GetProcAddress(exe, "g_nt") != NULL &&
+      GetProcAddress(exe, "g_originals") != NULL &&
+      GetProcAddress(exe, "g_shared_IPC_size") != NULL &&
+      GetProcAddress(exe, "g_shared_delayed_integrity_level") != NULL &&
+      GetProcAddress(exe, "g_shared_delayed_mitigations") != NULL &&
+      GetProcAddress(exe, "g_shared_policy_size") != NULL &&
+      GetProcAddress(exe, "g_shared_section") != NULL;
+#endif
 
   base::win::PEImage pe(exe);
   if (!pe.VerifyMagic()) {
@@ -209,7 +227,11 @@ DWORD TargetProcess::Create(const wchar_t* exe_path,
     return win_result;
   }
 
+#if SANDBOX_DLL
+  base_address_ = GetBaseAddress(exe_path, entry_point, &exe_has_sandbox_);
+#else
   base_address_ = GetBaseAddress(exe_path, entry_point);
+#endif
   sandbox_process_info_.Set(process_info.Take());
   return win_result;
 }

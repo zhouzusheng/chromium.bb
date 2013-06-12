@@ -430,11 +430,12 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
     return SpawnCleanup(target, win_result);
 
 #if SANDBOX_DLL
-  // If the sandbox module path is a DLL, then we need to inject the sandbox
-  // dll into the target process. The target process is created in suspended
-  // mode, and so dlls will not be loaded.
+  // If the target exe does not have sandbox.lib linked into it, then we need
+  // to inject the sandbox dll into the target process. The target process is
+  // created in suspended mode, and so dlls will not be loaded.
   // DLL loading is required to intercept the APIs.
-  if (CanInjectSandboxModule(module_path_.get())) {
+  if (!target->ExeHasSandbox()) {
+    DCHECK(CanInjectSandboxModule(module_path_.get()));
     win_result = target->InjectSandboxDll(module_path_.get());
     if (ERROR_SUCCESS != win_result) {
       return SpawnCleanup(target, win_result);

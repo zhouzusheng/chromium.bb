@@ -137,7 +137,7 @@ v8::Handle<v8::Value> WindowSetTimeoutImpl(const v8::Arguments& args, bool singl
 
     // Try to do the idle notification before the timeout expires to get better
     // use of any idle time. Aim for the middle of the interval for simplicity.
-    if (timeout > 0) {
+    if (timeout >= 0) {
         double maximumFireInterval = static_cast<double>(timeout) / 1000 / 2;
         V8GCForContextDispose::instance().notifyIdleSooner(maximumFireInterval);
     }
@@ -539,7 +539,12 @@ bool V8DOMWindow::namedSecurityCheckCustom(v8::Local<v8::Object> host, v8::Local
         // We need to explicitly compare against nameOfProtoProperty because
         // V8's JSObject::LocalLookup finds __proto__ before
         // interceptors and even when __proto__ isn't a "real named property".
-        if (type == v8::ACCESS_GET && childFrame && !host->HasRealNamedProperty(key->ToString()) && name != nameOfProtoProperty)
+        v8::Handle<v8::String> keyString = key->ToString();
+        if (type == v8::ACCESS_GET
+            && childFrame
+            && !host->HasRealNamedProperty(keyString)
+            && !window->HasRealNamedProperty(keyString)
+            && name != nameOfProtoProperty)
             return true;
     }
 

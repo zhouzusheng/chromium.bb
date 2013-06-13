@@ -2611,6 +2611,9 @@ void FrameView::flushAnyPendingPostLayoutTasks()
 
 void FrameView::performPostLayoutTasks()
 {
+    // updateWidgets() call below can blow us away from underneath.
+    RefPtr<FrameView> protect(this);
+
     m_postLayoutTasksTimer.stop();
 
     m_frame->selection()->setCaretRectNeedsUpdate();

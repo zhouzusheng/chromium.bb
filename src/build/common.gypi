@@ -228,6 +228,9 @@
       # by the GYP command line or by ~/.gyp/include.gypi.
       'component%': 'static_library',
 
+      # By default, don't include PPAPI plugin examples for blpwtk2.
+      'bb_ppapi_examples%': 0,
+
       # Set to select the Title Case versions of strings in GRD files.
       'use_titlecase_in_grd_files%': 0,
 
@@ -700,6 +703,7 @@
     'sysroot%': '<(sysroot)',
     'system_libdir%': '<(system_libdir)',
     'component%': '<(component)',
+    'bb_ppapi_examples%': '<(bb_ppapi_examples)',
     'use_titlecase_in_grd_files%': '<(use_titlecase_in_grd_files)',
     'use_third_party_translations%': '<(use_third_party_translations)',
     'remoting%': '<(remoting)',
@@ -1332,9 +1336,7 @@
           ['MSVS_OS_BITS==32', {
             'msvs_large_module_debug_link_mode%': '1',  # No
           },{
-            # SHEZ: Changed upstream code here, don't do incremental linking
-            #       even on 64-bit machines because it fails frequently.
-            'msvs_large_module_debug_link_mode%': '1',  # No
+            'msvs_large_module_debug_link_mode%': '2',  # Yes
           }],
           ['MSVS_VERSION=="2012e" or MSVS_VERSION=="2010e"', {
             'msvs_express%': 1,

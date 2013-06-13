@@ -2104,10 +2104,8 @@ void Node::didMoveToNewDocument(Document* oldDocument)
         document()->didAddWheelEventHandler();
     }
 
-    Vector<AtomicString> touchEventNames = eventNames().touchEventNames();
-    for (size_t i = 0; i < touchEventNames.size(); ++i) {
-        const EventListenerVector& listeners = getEventListeners(touchEventNames[i]);
-        for (size_t j = 0; j < listeners.size(); ++j) {
+    if (const TouchEventTargetSet* touchHandlers = oldDocument ? oldDocument->touchEventTargets() : 0) {
+        while (touchHandlers->contains(this)) {
             oldDocument->didRemoveTouchEventHandler(this);
             document()->didAddTouchEventHandler(this);
         }

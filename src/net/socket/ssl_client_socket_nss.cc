@@ -2126,10 +2126,10 @@ bool SSLClientSocketNSS::Core::DoTransportIO() {
     // because Write() may return synchronously.
     do {
       rv = BufferSend();
-      if (rv > 0)
+      if (rv != ERR_IO_PENDING && rv != 0)
         network_moved = true;
     } while (rv > 0);
-    if (!transport_recv_eof_ && BufferRecv() >= 0)
+    if (!transport_recv_eof_ && BufferRecv() != ERR_IO_PENDING)
       network_moved = true;
   }
   return network_moved;
@@ -2184,7 +2184,7 @@ int SSLClientSocketNSS::Core::BufferRecv() {
   return rv;
 }
 
-// Return 0 for EOF,
+// Return 0 if nss_bufs_ was empty,
 // > 0 for bytes transferred immediately,
 // < 0 for error (or the non-error ERR_IO_PENDING).
 int SSLClientSocketNSS::Core::BufferSend() {
@@ -2257,20 +2257,30 @@ void SSLClientSocketNSS::Core::OnSendComplete(int result) {
   int rv_write = ERR_IO_PENDING;
   bool network_moved;
   do {
-      if (user_read_buf_)
-          rv_read = DoPayloadRead();
-      if (user_write_buf_)
-          rv_write = DoPayloadWrite();
-      network_moved = DoTransportIO();
+    if (user_read_buf_)
+      rv_read = DoPayloadRead();
+    if (user_write_buf_)
+      rv_write = DoPayloadWrite();
+    network_moved = DoTransportIO();
   } while (rv_read == ERR_IO_PENDING &&
            rv_write == ERR_IO_PENDING &&
            (user_read_buf_ || user_write_buf_) &&
            network_moved);
 
+  // If the parent SSLClientSocketNSS is deleted during the processing of the
+  // Read callback and OnNSSTaskRunner() == OnNetworkTaskRunner(), then the Core
+  // will be detached (and possibly deleted). Guard against deletion by taking
+  // an extra reference, then check if the Core was detached before invoking the
+  // next callback.
+  scoped_refptr<Core> guard(this);
   if (user_read_buf_ && rv_read != ERR_IO_PENDING)
-      DoReadCallback(rv_read);
+    DoReadCallback(rv_read);
+
+  if (OnNetworkTaskRunner() && detached_)
+    return;
+
   if (user_write_buf_ && rv_write != ERR_IO_PENDING)
-      DoWriteCallback(rv_write);
+    DoWriteCallback(rv_write);
 }
 
 // As part of Connect(), the SSLClientSocketNSS object performs an SSL

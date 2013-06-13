@@ -121,7 +121,7 @@ def builder():
     elif platform() == 'ios':
       return 'xcode'
     elif IsWindows():
-      return 'msvs'
+      return 'ninja'
     elif IsLinux():
       return 'make'
     elif IsMac():

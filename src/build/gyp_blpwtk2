@@ -1,0 +1,158 @@
+#!/usr/bin/env python
+
+# Copyright (C) 2013 Bloomberg L.P. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# This script is a wrapper for src/build/gyp_chromium, which runs gyp using the
+# most useful configurations for blpwtk2:
+#
+# msvs-ninja 2010 Debug/Release Shared-Library No-PPAPI-Examples
+# ninja      2008 Debug         Shared-Library PPAPI-Examples
+# ninja      2008 Release       Static-Library No-PPAPI-Examples
+#
+# Note that, if GYP_GENERATORS environment is set, then this script just calls
+# src/build/gyp_chromium once, without setting up the above configurations.
+# This is useful for doing project generation of a custom configuration.
+#
+# However, if the first command-line argument is:
+#     "msvs": Only do the msvs-ninja 2010 Debug/Release configuration.
+#     "ninjaDebug": Only do the ninja 2008 Debug configuration.
+#     "ninjaRelease": Only do the ninja 2008 Release configuration.
+
+import os, sys, subprocess
+
+scriptDir = os.path.dirname(os.path.realpath(__file__))
+pathToGypChromium = os.path.join(scriptDir, 'gyp_chromium')
+
+if 'GYP_GENERATOR_FLAGS' in os.environ:
+  origGeneratorFlags = os.environ['GYP_GENERATOR_FLAGS']
+else:
+  origGeneratorFlags = None
+
+if 'GYP_DEFINES' in os.environ:
+  origGypDefines = os.environ['GYP_DEFINES']
+else:
+  origGypDefines = None
+
+def execInShell(cmd):
+  p = subprocess.Popen(cmd, shell=True)
+  p.communicate()
+  return p.returncode
+
+def execGypChromiumInShell(args):
+  print "Running gyp_chromium with this environment:"
+  print "    CHROMIUM_GYP_FILE = '" + os.environ['CHROMIUM_GYP_FILE'] + "'"
+  print "    GYP_GENERATORS = '" + os.environ['GYP_GENERATORS'] + "'"
+  if 'GYP_MSVS_VERSION' in os.environ:
+    print "    GYP_MSVS_VERSION = '" + os.environ['GYP_MSVS_VERSION'] + "'"
+  if 'GYP_GENERATOR_FLAGS' in os.environ:
+    print "    GYP_GENERATOR_FLAGS = '" + os.environ['GYP_GENERATOR_FLAGS'] + "'"
+  if 'GYP_DEFINES' in os.environ:
+    print "    GYP_DEFINES = '" + os.environ['GYP_DEFINES'] + "'"
+  if len(args) > 0:
+    print "    CmdlineArgs: " + " ".join(args)
+
+  sys.stdout.flush()
+  cmd = ['python', pathToGypChromium]
+  cmd.extend(args)
+  execInShell(cmd)
+
+def restoreOriginalEnv():
+  if origGeneratorFlags != None:
+    os.environ['GYP_GENERATOR_FLAGS'] = origGeneratorFlags
+  elif 'GYP_GENERATOR_FLAGS' in os.environ:
+    del os.environ['GYP_GENERATOR_FLAGS']
+
+  if origGypDefines != None:
+    os.environ['GYP_DEFINES'] = origGypDefines
+  elif 'GYP_DEFINES' in os.environ:
+    del os.environ['GYP_DEFINES']
+
+def applyVariableToEnvironment(env, var, val):
+  if env in os.environ:
+    envItems = os.environ[env].split(" ")
+  else:
+    envItems = []
+  found = False
+  for i in range(0, len(envItems)):
+    iSplit = envItems[i].split("=")
+    if iSplit[0] == var:
+      # Don't change it
+      found = True
+      break
+  if not found:
+    envItems.append(var + "=" + val)
+  os.environ[env] = " ".join(envItems)
+
+def doMsvsNinja(args):
+  os.environ['GYP_GENERATORS'] = 'msvs-ninja'
+  os.environ['GYP_MSVS_VERSION'] = '2010'
+  applyVariableToEnvironment('GYP_DEFINES', 'component', 'shared_library')
+  applyVariableToEnvironment('GYP_DEFINES', 'bb_ppapi_examples', '0')
+  execGypChromiumInShell(args)
+
+def doNinjaDebug(args):
+  os.environ['GYP_GENERATORS'] = 'ninja'
+  os.environ['GYP_MSVS_VERSION'] = '2008'
+  applyVariableToEnvironment('GYP_GENERATOR_FLAGS', 'config', 'Debug')
+  applyVariableToEnvironment('GYP_DEFINES', 'component', 'shared_library')
+  applyVariableToEnvironment('GYP_DEFINES', 'bb_ppapi_examples', '1')
+  execGypChromiumInShell(args)
+
+def doNinjaRelease(args):
+  os.environ['GYP_GENERATORS'] = 'ninja'
+  os.environ['GYP_MSVS_VERSION'] = '2008'
+  applyVariableToEnvironment('GYP_GENERATOR_FLAGS', 'config', 'Release')
+  applyVariableToEnvironment('GYP_DEFINES', 'component', 'static_library')
+  applyVariableToEnvironment('GYP_DEFINES', 'bb_ppapi_examples', '0')
+  execGypChromiumInShell(args)
+
+def DoMain(argv):
+  if not 'CHROMIUM_GYP_FILE' in os.environ:
+    os.environ['CHROMIUM_GYP_FILE'] = 'src/blpwtk2/blpwtk2.gyp'
+
+  if 2 <= len(argv):
+    if "msvs" == argv[1]:
+      doMsvsNinja(argv[2:])
+      sys.exit(0)
+    if "ninjaDebug" == argv[1]:
+      doNinjaDebug(argv[2:])
+      sys.exit(0)
+    if "ninjaRelease" == argv[1]:
+      doNinjaRelease(argv[2:])
+      sys.exit(0)
+
+  gypChromiumArgs = argv[1:]
+  if 'GYP_GENERATORS' in os.environ:
+    execGypChromiumInShell(gypChromiumArgs)
+    sys.exit(0)
+
+  doMsvsNinja(gypChromiumArgs)
+  restoreOriginalEnv()
+  doNinjaDebug(gypChromiumArgs)
+  restoreOriginalEnv()
+  doNinjaRelease(gypChromiumArgs)
+
+if __name__ == '__main__':
+  DoMain(sys.argv)
+

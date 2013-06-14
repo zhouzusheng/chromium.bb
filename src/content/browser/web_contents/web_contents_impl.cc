@@ -256,7 +256,7 @@ WebContents* WebContents::CreateWithSessionStorage(
     const WebContents::CreateParams& params,
     const SessionStorageNamespaceMap& session_storage_namespace_map) {
   WebContentsImpl* new_contents = new WebContentsImpl(
-      params.browser_context, NULL);
+      params.browser_context, NULL, params.render_process_affinity);
 
   for (SessionStorageNamespaceMap::const_iterator it =
            session_storage_namespace_map.begin();
@@ -278,12 +278,14 @@ WebContents* WebContents::FromRenderViewHost(const RenderViewHost* rvh) {
 
 WebContentsImpl::WebContentsImpl(
     BrowserContext* browser_context,
-    WebContentsImpl* opener)
+    WebContentsImpl* opener,
+    int render_process_affinity)
     : delegate_(NULL),
       ALLOW_THIS_IN_INITIALIZER_LIST(controller_(this, browser_context)),
       render_view_host_delegate_view_(NULL),
       opener_(opener),
-      ALLOW_THIS_IN_INITIALIZER_LIST(render_manager_(this, this, this)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(render_manager_(this, this, this,
+                                                     render_process_affinity)),
       is_loading_(false),
       crashed_status_(base::TERMINATION_STATUS_STILL_RUNNING),
       crashed_error_code_(0),
@@ -364,7 +366,7 @@ WebContentsImpl* WebContentsImpl::CreateWithOpener(
     const WebContents::CreateParams& params,
     WebContentsImpl* opener) {
   WebContentsImpl* new_contents = new WebContentsImpl(
-      params.browser_context, opener);
+      params.browser_context, opener, params.render_process_affinity);
 
   new_contents->Init(params);
   return new_contents;
@@ -375,7 +377,9 @@ BrowserPluginGuest* WebContentsImpl::CreateGuest(
     BrowserContext* browser_context,
     SiteInstance* site_instance,
     int guest_instance_id) {
-  WebContentsImpl* new_contents = new WebContentsImpl(browser_context, NULL);
+  // TODO: should CreateGuest() take a process affinity parameter?
+  WebContentsImpl* new_contents = new WebContentsImpl(
+      browser_context, NULL, SiteInstance::kNoProcessAffinity);
 
   // This makes |new_contents| act as a guest.
   // For more info, see comment above class BrowserPluginGuest.
@@ -1355,7 +1359,8 @@ void WebContentsImpl::CreateNewWindow(
   // WebContentsView. In the future, we may want to create the view separately.
   WebContentsImpl* new_contents =
       new WebContentsImpl(GetBrowserContext(),
-                          params.opener_suppressed ? NULL : this);
+                          params.opener_suppressed ? NULL : this,
+                          render_manager_.RenderProcessAffinity());
 
   // We must assign the SessionStorageNamespace before calling Init().
   //

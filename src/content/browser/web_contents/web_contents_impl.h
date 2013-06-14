@@ -483,7 +483,8 @@ class CONTENT_EXPORT WebContentsImpl
 
   // See WebContents::Create for a description of these parameters.
   WebContentsImpl(BrowserContext* browser_context,
-                  WebContentsImpl* opener);
+                  WebContentsImpl* opener,
+                  int render_process_affinity);
 
   // Add and remove observers for page navigation notifications. Adding or
   // removing multiple times has no effect. The order in which notifications

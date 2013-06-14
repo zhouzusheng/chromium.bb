@@ -34,14 +34,16 @@ namespace content {
 RenderViewHostManager::RenderViewHostManager(
     RenderViewHostDelegate* render_view_delegate,
     RenderWidgetHostDelegate* render_widget_delegate,
-    Delegate* delegate)
+    Delegate* delegate,
+    int render_process_affinity)
     : delegate_(delegate),
       cross_navigation_pending_(false),
       render_view_delegate_(render_view_delegate),
       render_widget_delegate_(render_widget_delegate),
       render_view_host_(NULL),
       pending_render_view_host_(NULL),
-      interstitial_page_(NULL) {
+      interstitial_page_(NULL),
+      render_process_affinity_(render_process_affinity) {
 }
 
 RenderViewHostManager::~RenderViewHostManager() {
@@ -70,6 +72,10 @@ void RenderViewHostManager::Init(BrowserContext* browser_context,
   // ref counted.
   if (!site_instance)
     site_instance = SiteInstance::Create(browser_context);
+  // If we have affinity to a particular render process, then get the process
+  // now, or forever hold your peace.
+  if (render_process_affinity_ != SiteInstance::kNoProcessAffinity)
+    site_instance->GetProcess(render_process_affinity_);
   render_view_host_ = static_cast<RenderViewHostImpl*>(
       RenderViewHostFactory::Create(
           site_instance, render_view_delegate_, render_widget_delegate_,
@@ -812,8 +818,14 @@ RenderViewHostImpl* RenderViewHostManager::UpdateRendererStateForNavigate(
   bool is_guest_scheme = curr_instance->GetSiteURL().SchemeIs(
       chrome::kGuestScheme);
   bool force_swap = ShouldSwapProcessesForNavigation(curr_entry, &entry);
-  if (!is_guest_scheme && (ShouldTransitionCrossSite() || force_swap))
+  if (!is_guest_scheme && (ShouldTransitionCrossSite() || force_swap)) {
     new_instance = GetSiteInstanceForEntry(entry, curr_instance);
+
+    // If we have affinity to a particular process, get it now or forever hold
+    // your peace.
+    if (render_process_affinity_ != SiteInstance::kNoProcessAffinity)
+      new_instance->GetProcess(render_process_affinity_);
+  }
 
   if (!is_guest_scheme && (new_instance != curr_instance || force_swap)) {
     // New SiteInstance.

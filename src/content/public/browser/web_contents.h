@@ -77,6 +77,7 @@ class WebContents : public PageNavigator,
     BrowserContext* browser_context;
     SiteInstance* site_instance;
     int routing_id;
+    int render_process_affinity;
 
     // Initial size of the new WebContent's view. Can be (0, 0) if not needed.
     gfx::Size initial_size;

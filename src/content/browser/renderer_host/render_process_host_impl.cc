@@ -271,6 +271,8 @@ class RendererSandboxedProcessLauncherDelegate
 // create.
 static size_t g_max_renderer_count_override = 0;
 
+int RenderProcessHostImpl::kInvalidId = ChildProcessHostImpl::kInvalidChildProcessId;
+
 // static
 size_t RenderProcessHost::GetMaxRendererProcessCount() {
   if (g_max_renderer_count_override)
@@ -316,6 +318,7 @@ void RenderProcessHost::SetMaxRendererProcessCount(size_t count) {
 }
 
 RenderProcessHostImpl::RenderProcessHostImpl(
+    int host_id,
     BrowserContext* browser_context,
     StoragePartitionImpl* storage_partition_impl,
     bool supports_browser_plugin,
@@ -329,7 +332,7 @@ RenderProcessHostImpl::RenderProcessHostImpl(
                 FROM_HERE, base::TimeDelta::FromSeconds(5),
                 this, &RenderProcessHostImpl::ClearTransportDIBCache)),
           is_initialized_(false),
-          id_(ChildProcessHostImpl::GenerateChildProcessUniqueId()),
+          id_(host_id),
           browser_context_(browser_context),
           storage_partition_impl_(storage_partition_impl),
           sudden_termination_allowed_(true),
@@ -1239,6 +1242,12 @@ bool RenderProcessHostImpl::FastShutdownForPageCount(size_t count) {
 
 bool RenderProcessHostImpl::FastShutdownStarted() const {
   return fast_shutdown_started_;
+}
+
+// static
+int RenderProcessHostImpl::GenerateUniqueId()
+{
+  return ChildProcessHostImpl::GenerateChildProcessUniqueId();
 }
 
 // static

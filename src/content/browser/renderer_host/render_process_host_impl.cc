@@ -319,6 +319,7 @@ void RenderProcessHost::SetMaxRendererProcessCount(size_t count) {
 
 RenderProcessHostImpl::RenderProcessHostImpl(
     int host_id,
+    bool is_in_process,
     BrowserContext* browser_context,
     StoragePartitionImpl* storage_partition_impl,
     bool supports_browser_plugin,
@@ -341,7 +342,8 @@ RenderProcessHostImpl::RenderProcessHostImpl(
           dummy_shutdown_event_(false, false),
 #endif
           supports_browser_plugin_(supports_browser_plugin),
-          is_guest_(is_guest) {
+          is_guest_(is_guest),
+          is_in_process_(is_in_process) {
   widget_helper_ = new RenderWidgetHelper();
 
   ChildProcessSecurityPolicyImpl::GetInstance()->Add(GetID());
@@ -435,7 +437,8 @@ bool RenderProcessHostImpl::Init() {
 
   CreateMessageFilters();
 
-  if (GetContentClient()->browser()->ShouldRunRendererInProcess()) {
+  if (is_in_process_) {
+    DCHECK(GetContentClient()->browser()->SupportsInProcessRenderer());
     // Crank up a thread and run the initialization there.  With the way that
     // messages flow between the browser and renderer, this thread is required
     // to prevent a deadlock in single-process mode.  Since the primordial
@@ -635,7 +638,7 @@ bool RenderProcessHostImpl::WaitForBackingStoreMsg(
 }
 
 void RenderProcessHostImpl::ReceivedBadMessage() {
-  if (GetContentClient()->browser()->ShouldRunRendererInProcess()) {
+  if (is_in_process_) {
     // In single process mode it is better if we don't suicide but just
     // crash.
     CHECK(false);
@@ -893,7 +896,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 }
 
 base::ProcessHandle RenderProcessHostImpl::GetHandle() const {
-  if (GetContentClient()->browser()->ShouldRunRendererInProcess())
+  if (is_in_process_)
     return base::Process::Current().handle();
 
   if (!child_process_launcher_.get() || child_process_launcher_->IsStarting())
@@ -903,7 +906,7 @@ base::ProcessHandle RenderProcessHostImpl::GetHandle() const {
 }
 
 bool RenderProcessHostImpl::FastShutdownIfPossible() {
-  if (GetContentClient()->browser()->ShouldRunRendererInProcess())
+  if (is_in_process_)
     return false;  // Single process mode never shutdown the renderer.
 
   if (!GetContentClient()->browser()->IsFastShutdownPossible())
@@ -1158,8 +1161,8 @@ void RenderProcessHostImpl::Release(int routing_id) {
     return;
   }
 #endif
-  // Keep the one renderer thread around forever in single process mode.
-  if (!GetContentClient()->browser()->ShouldRunRendererInProcess())
+  // Keep the one renderer thread around forever for in-process renderer.
+  if (!is_in_process_)
     Cleanup();
 }
 
@@ -1182,7 +1185,7 @@ void RenderProcessHostImpl::Cleanup() {
     channel_.reset();
     gpu_message_filter_ = NULL;
 
-    if (GetContentClient()->browser()->ShouldRunRendererInProcess())
+    if (is_in_process_)
       GetContentClient()->browser()->StopInProcessRendererThread();
 
     // Remove ourself from the list of renderer processes so that we can't be
@@ -1223,6 +1226,10 @@ void RenderProcessHostImpl::SurfaceUpdated(int32 surface_id) {
 
 void RenderProcessHostImpl::ResumeRequestsForView(int route_id) {
   widget_helper_->ResumeRequestsForView(route_id);
+}
+
+bool RenderProcessHostImpl::IsInProcess() const {
+  return is_in_process_;
 }
 
 IPC::ChannelProxy* RenderProcessHostImpl::GetChannel() {
@@ -1276,7 +1283,7 @@ bool RenderProcessHostImpl::IsSuitableHost(
     RenderProcessHost* host,
     BrowserContext* browser_context,
     const GURL& site_url) {
-  if (GetContentClient()->browser()->ShouldRunRendererInProcess())
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
     return true;
 
   if (host->GetBrowserContext() != browser_context)
@@ -1336,7 +1343,7 @@ bool RenderProcessHost::ShouldTryToUseExistingProcessHost(
       command_line.HasSwitch(switches::kSitePerProcess))
     return false;
 
-  if (GetContentClient()->browser()->ShouldRunRendererInProcess())
+  if (command_line.HasSwitch(switches::kSingleProcess))
     return true;
 
   // NOTE: Sometimes it's necessary to create more render processes than
@@ -1543,10 +1550,9 @@ void RenderProcessHostImpl::EndFrameSubscription(int route_id) {
 void RenderProcessHostImpl::OnShutdownRequest() {
   // Don't shut down if there are more active RenderViews than the one asking
   // to close, or if there are pending RenderViews being swapped back in.
-  // In single process mode, we never shutdown the renderer.
+  // We never shutdown in-process renderers.
   int num_active_views = GetActiveViewCount();
-  if (pending_views_ || num_active_views > 1 ||
-      GetContentClient()->browser()->ShouldRunRendererInProcess())
+  if (pending_views_ || num_active_views > 1 || is_in_process_)
     return;
 
   // Notify any contents that might have swapped out renderers from this

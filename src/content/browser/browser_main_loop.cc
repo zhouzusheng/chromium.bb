@@ -417,7 +417,7 @@ void BrowserMainLoop::CreateThreads() {
   if (parts_.get())
     result_code_ = parts_->PreCreateThreads();
 
-  if (GetContentClient()->browser()->ShouldRunRendererInProcess() &&
+  if (GetContentClient()->browser()->SupportsInProcessRenderer() &&
       !parsed_command_line_.HasSwitch(switches::kLang)) {
     // Modify the current process' command line to include the browser locale,
     // as the renderer expects this flag to be set.

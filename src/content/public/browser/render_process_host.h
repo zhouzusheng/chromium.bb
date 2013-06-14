@@ -205,6 +205,10 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // were initially blocked.
   virtual void ResumeRequestsForView(int route_id) = 0;
 
+  // Return true if this is a host for an in-process renderer.
+  virtual bool IsInProcess() const = 0;
+
+
   // Static management functions -----------------------------------------------
 
   // Allows iteration over all the RenderProcessHosts in the browser. Note

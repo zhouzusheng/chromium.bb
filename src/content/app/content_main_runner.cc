@@ -324,8 +324,8 @@ class ContentClientInitializer {
       if (!content_client->plugin_)
         content_client->plugin_ = &g_empty_content_plugin_client.Get();
     } else if (process_type == switches::kRendererProcess ||
-               CommandLine::ForCurrentProcess()->HasSwitch(
-                   switches::kSingleProcess)) {
+               (content_client->browser_ &&
+                   content_client->browser_->SupportsInProcessRenderer())) {
       if (delegate)
         content_client->renderer_ = delegate->CreateContentRendererClient();
       if (!content_client->renderer_)

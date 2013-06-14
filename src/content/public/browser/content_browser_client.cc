@@ -233,7 +233,7 @@ bool ContentBrowserClient::IsFastShutdownPossible() {
   return true;
 }
 
-bool ContentBrowserClient::ShouldRunRendererInProcess() {
+bool ContentBrowserClient::SupportsInProcessRenderer() {
   return false;
 }
 

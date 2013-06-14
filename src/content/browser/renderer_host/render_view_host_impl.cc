@@ -487,7 +487,7 @@ void RenderViewHostImpl::WasSwappedOut() {
     for (; !iter.IsAtEnd(); iter.Advance())
       ++views;
 
-    if (!GetContentClient()->browser()->ShouldRunRendererInProcess() &&
+    if (!GetProcess()->IsInProcess() &&
         process_handle && views <= 1) {
       // The process can safely be terminated, only if WebContents sets
       // SuddenTerminationAllowed, which indicates that the timer has expired.

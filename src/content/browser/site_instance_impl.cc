@@ -131,14 +131,16 @@ RenderProcessHost* SiteInstanceImpl::GetProcess(int affinity) {
             ? affinity
             : RenderProcessHostImpl::GenerateUniqueId();
         DCHECK(!RenderProcessHost::FromID(id));
+        bool is_in_process = CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kSingleProcess);
         StoragePartitionImpl* partition =
             static_cast<StoragePartitionImpl*>(
                 BrowserContext::GetStoragePartition(browser_context, this));
         bool supports_browser_plugin = GetContentClient()->browser()->
             SupportsBrowserPlugin(browser_context, site_);
         process_ =
-            new RenderProcessHostImpl(id, browser_context, partition,
-                                      supports_browser_plugin,
+            new RenderProcessHostImpl(id, is_in_process, browser_context,
+                                      partition, supports_browser_plugin,
                                       site_.SchemeIs(chrome::kGuestScheme));
       }
     }

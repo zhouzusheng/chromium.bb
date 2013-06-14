@@ -165,7 +165,7 @@ void ShellContentBrowserClient::OverrideWebkitPrefs(
   // SHEZ: Removed upstream DumpRenderTree code here, used only for testing.
 }
 
-bool ShellContentBrowserClient::ShouldRunRendererInProcess()
+bool ShellContentBrowserClient::SupportsInProcessRenderer()
 {
 #if !defined(OS_IOS) && (!defined(GOOGLE_CHROME_BUILD) || defined(OS_ANDROID))
   return CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);

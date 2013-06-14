@@ -59,6 +59,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
       public ChildProcessLauncher::Client {
  public:
   RenderProcessHostImpl(int host_id,
+                        bool is_in_process,
                         BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
                         bool supports_browser_plugin,
@@ -108,6 +109,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual base::TimeDelta GetChildProcessIdleTime() const OVERRIDE;
   virtual void SurfaceUpdated(int32 surface_id) OVERRIDE;
   virtual void ResumeRequestsForView(int route_id) OVERRIDE;
+  virtual bool IsInProcess() const OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -323,6 +325,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Indicates whether this is a RenderProcessHost of a Browser Plugin guest
   // renderer.
   bool is_guest_;
+
+  // Indicates whether this is a RenderProcessHost for an in-process
+  // renderer.
+  bool is_in_process_;
 
   // Forwards messages between WebRTCInternals in the browser process
   // and PeerConnectionTracker in the renderer process.

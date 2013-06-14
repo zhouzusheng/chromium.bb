@@ -22,6 +22,9 @@ interface CharacterData : Node {
     [TreatNullAs=NullString] attribute DOMString data
         setter raises(DOMException);
 
+    void bbSetDataNoRelayout(in [Optional=DefaultIsUndefined] DOMString data)
+        raises(DOMException);
+
     readonly attribute unsigned long length;
     
     [TreatReturnedNullStringAs=Null, ObjCLegacyUnnamedParameters] DOMString substringData(in [IsIndex,Optional=DefaultIsUndefined] unsigned long offset, 

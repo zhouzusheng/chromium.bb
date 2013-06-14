@@ -22,3 +22,99 @@
 
 #include <blpwtk2_contextmenuparams.h>
 
+#include <base/logging.h>
+
+#include <vector>
+
+namespace blpwtk2 {
+
+class CustomItems {
+public:
+    CustomItems(int count) : d_items(count) {}
+    int count() const { return d_items.size(); }
+    const ContextMenuItem& item(int i) const { return d_items[i]; }
+    ContextMenuItem& item(int i) { return d_items[i]; }
+private:
+    std::vector<ContextMenuItem> d_items;
+};
+
+ContextMenuParams::ContextMenuParams()
+:d_customItems(0)
+{
+}
+
+ContextMenuParams::ContextMenuParams(const ContextMenuParams& other)
+: d_pointOnScreen(other.d_pointOnScreen)
+, d_canCut(other.d_canCut)
+, d_canCopy(other.d_canCopy)
+, d_canPaste(other.d_canPaste)
+, d_canDelete(other.d_canDelete)
+{
+    if (!other.d_customItems) {
+        d_customItems = 0;
+    } else {
+        d_customItems = new CustomItems(*other.d_customItems);
+    }
+}
+
+ContextMenuParams& ContextMenuParams::operator=(const ContextMenuParams& other)
+{
+    if (this == &other) {
+        return *this;
+    }
+    d_pointOnScreen = other.d_pointOnScreen;
+    d_canCut = other.d_canCut;
+    d_canCopy = other.d_canCopy;
+    d_canPaste = other.d_canPaste;
+    d_canDelete = other.d_canDelete;
+    if (d_customItems) {
+        delete d_customItems;
+    }
+    if (!other.d_customItems) {
+        d_customItems = 0;
+    } else {
+        d_customItems = new CustomItems(*other.d_customItems);
+    }
+    return *this;
+}
+
+ContextMenuParams::~ContextMenuParams()
+{
+    if (d_customItems){
+        delete d_customItems;
+        d_customItems = 0;
+    }
+}
+
+int ContextMenuParams::numCustomItems() const
+{
+    if (d_customItems) {
+        return d_customItems->count();
+    }
+    return 0;
+}
+
+void ContextMenuParams::setNumCustomItems(const int count)
+{
+    DCHECK(d_customItems == 0);
+    if (count > 0) {
+        d_customItems = new CustomItems(count);
+    }
+}
+
+const ContextMenuItem& ContextMenuParams::customItem(const int index) const
+{
+    DCHECK(d_customItems != 0);
+    DCHECK(index >= 0 && index < d_customItems->count());
+    return d_customItems->item(index);
+}
+
+ContextMenuItem& ContextMenuParams::customItem(const int index)
+{
+    DCHECK(d_customItems != 0);
+    DCHECK(index >= 0 && index < d_customItems->count());
+    return d_customItems->item(index);
+}
+
+}
+

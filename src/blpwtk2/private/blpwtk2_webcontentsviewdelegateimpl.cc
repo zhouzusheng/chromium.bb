@@ -23,11 +23,54 @@
 #include <blpwtk2_webcontentsviewdelegateimpl.h>
 
 #include <blpwtk2_contextmenuparams.h>
+#include <blpwtk2_contextmenuitem.h>
 #include <blpwtk2_webviewimpl.h>
 
 #include <content/public/browser/web_contents.h>
 #include <content/public/common/context_menu_params.h>
 #include <third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h>
+#include <webkit/glue/webmenuitem.h>
+
+namespace {
+
+void convertItem(const WebMenuItem& item1, blpwtk2::ContextMenuItem& item2);
+
+void convertSubmenus(const WebMenuItem& item1, blpwtk2::ContextMenuItem& item2)
+{
+    item2.setNumSubMenuItems(item1.submenu.size());
+    for (size_t i = 0; i < item1.submenu.size(); ++i) {
+        convertItem(item1.submenu[i], item2.subMenuItem(i));
+    }
+}
+
+void convertCustomItems(const content::ContextMenuParams& params, blpwtk2::ContextMenuParams& params2)
+{
+    params2.setNumCustomItems(params.custom_items.size());
+    for (size_t i = 0; i <params.custom_items.size(); ++i) {
+        convertItem(params.custom_items[i], params2.customItem(i));
+    }
+}
+
+void convertItem(const WebMenuItem& item1, blpwtk2::ContextMenuItem& item2)
+{
+    item2.setLabel(blpwtk2::String(item1.label));
+    item2.setTooltip(blpwtk2::String(item1.toolTip));
+    switch (item1.type) {
+    case WebKit::WebMenuItemInfo::Option: item2.setType(blpwtk2::ContextMenuItem::OPTION); break;
+    case WebKit::WebMenuItemInfo::CheckableOption: item2.setType(blpwtk2::ContextMenuItem::CHECKABLE_OPTION); break;
+    case WebKit::WebMenuItemInfo::Group: item2.setType(blpwtk2::ContextMenuItem::GROUP); break;
+    case WebKit::WebMenuItemInfo::Separator: item2.setType(blpwtk2::ContextMenuItem::SEPARATOR); break;
+    case WebKit::WebMenuItemInfo::SubMenu: item2.setType(blpwtk2::ContextMenuItem::SUBMENU); break;
+    }
+    item2.setAction(item1.action);
+    item2.setRtl(item1.rtl);
+    item2.setHasDirectionalOverride(item1.has_directional_override);
+    item2.setEnabled(item1.enabled);
+    item2.setChecked(item1.checked);
+    convertSubmenus(item1, item2);
+}
+
+} // close unnamed namespace
 
 namespace blpwtk2 {
 
@@ -59,6 +102,8 @@ void WebContentsViewDelegateImpl::ShowContextMenu(
     params2.setCanCopy(hasSelection || (params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanCopy)));
     params2.setCanPaste(params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanPaste));
     params2.setCanDelete(params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanDelete));
+
+    convertCustomItems(params, params2);
 
     webViewImpl->showContextMenu(params2);
 }

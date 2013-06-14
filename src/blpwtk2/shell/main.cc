@@ -561,6 +561,42 @@ Shell* createShell(blpwtk2::WebView* webView)
     return new Shell(mainWnd, urlEntryWnd, webView);
 }
 
+void populateSubmenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem& item);
+
+void populateMenuItem(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem& item)
+{
+    UINT flags =  MF_STRING | (item.enabled() ? MF_ENABLED : MF_GRAYED);
+    if (item.type() == blpwtk2::ContextMenuItem::OPTION) {
+        AppendMenuA(menu, flags, menuIdStart + item.action(), item.label().c_str());
+    }
+    else if (item.type() == blpwtk2::ContextMenuItem::CHECKABLE_OPTION) {
+        flags = flags | (item.checked() ? MF_CHECKED : MF_UNCHECKED);
+        AppendMenuA(menu, flags, menuIdStart + item.action(), item.label().c_str());
+    } else if (item.type() ==  blpwtk2::ContextMenuItem::SEPARATOR) {
+        AppendMenuA(menu, MF_SEPARATOR, 0, NULL);
+    } else if (item.type() == blpwtk2::ContextMenuItem::SUBMENU) {
+        HMENU popupMenu = CreatePopupMenu();
+        flags = flags | MF_POPUP;
+        AppendMenuA(menu, flags, (UINT_PTR)popupMenu, item.label().c_str());
+        populateSubmenu(popupMenu, menuIdStart, item);
+    }
+}
+
+void populateContextMenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuParams& params)
+{
+    for (int i = 0; i < params.numCustomItems(); ++i) {
+        populateMenuItem(menu, menuIdStart, params.customItem(i));
+    }
+}
+
+void populateSubmenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem& item)
+{
+    for (int i = 0; i < item.numSubMenuItems(); ++i) {
+        populateMenuItem(menu, menuIdStart,item.subMenuItem(i));
+    }
+}
+
+
 HMENU createContextMenu(const blpwtk2::ContextMenuParams& params)
 {
     bool addSeparator = false;
@@ -568,6 +604,13 @@ HMENU createContextMenu(const blpwtk2::ContextMenuParams& params)
         addSeparator = true;
 
     HMENU menu = CreatePopupMenu();
+
+    if (params.numCustomItems() > 0){
+        const int customContextMenuItemId = 5000;
+        populateContextMenu(menu, customContextMenuItemId, params);
+        AppendMenuA(menu, MF_SEPARATOR, 0, NULL);
+    }
+
     if (params.canCut())
         AppendMenu(menu, MF_STRING, IDM_CUT, L"C&ut");
     if (params.canCopy())

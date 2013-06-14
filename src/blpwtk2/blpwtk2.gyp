@@ -129,6 +129,8 @@
         'public/blpwtk2_constants.h',
         'public/blpwtk2_createparams.cc',
         'public/blpwtk2_createparams.h',
+        'public/blpwtk2_contextmenuitem.cc',
+        'public/blpwtk2_contextmenuitem.h',
         'public/blpwtk2_contextmenuparams.cc',
         'public/blpwtk2_contextmenuparams.h',
         'public/blpwtk2_httptransactionhandler.cc',

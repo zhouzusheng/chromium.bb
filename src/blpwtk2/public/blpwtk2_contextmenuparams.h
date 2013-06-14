@@ -24,14 +24,23 @@
 #define INCLUDED_BLPWTK2_CONTEXTMENUPARAMS_H
 
 #include <blpwtk2_config.h>
+#include <blpwtk2_contextmenuitem.h>
 
 namespace blpwtk2 {
+
+class CustomItems;
 
 // This class contains parameters that are passed to the application whenever
 // the user right clicks or presses the "Show Menu" key inside a WebView.  The
 // application can use this information to show an appropriate context menu.
 class BLPWTK2_EXPORT ContextMenuParams {
   public:
+    ContextMenuParams();
+    ~ContextMenuParams();
+
+    ContextMenuParams(const ContextMenuParams& other);
+    ContextMenuParams& operator=(const ContextMenuParams& other);
+
     void setPointOnScreen(const POINT& pt) { d_pointOnScreen = pt; }
     const POINT& pointOnScreen() const { return d_pointOnScreen; }
 
@@ -47,12 +56,19 @@ class BLPWTK2_EXPORT ContextMenuParams {
     void setCanDelete(bool can) { d_canDelete = can; }
     bool canDelete() const { return d_canDelete; }
 
+    int numCustomItems() const;
+    void setNumCustomItems(int count);
+
+    const ContextMenuItem& customItem(int index) const;
+    ContextMenuItem& customItem(int index);
+
   private:
     POINT d_pointOnScreen;
     bool d_canCut;
     bool d_canCopy;
     bool d_canPaste;
     bool d_canDelete;
+    CustomItems* d_customItems;
 };
 
 }  // close namespace blpwtk2

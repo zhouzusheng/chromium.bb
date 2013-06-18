@@ -1230,6 +1230,8 @@ void RenderWidgetHostViewWin::OnDestroy() {
 
 void RenderWidgetHostViewWin::OnPaint(HDC unused_dc) {
   TRACE_EVENT0("browser", "RenderWidgetHostViewWin::OnPaint");
+  if (is_hidden_)
+    return;
 
   // Grab the region to paint before creation of paint_dc since it clears the
   // damage region.

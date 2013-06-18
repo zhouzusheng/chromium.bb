@@ -41,11 +41,23 @@ class MediaRequest;
 // All methods on the delegate are invoked in the application's main thread.
 class BLPWTK2_EXPORT WebViewDelegate {
   public:
+    struct NavigationState {
+        bool canGoBack;
+        bool canGoForward;
+        bool isLoading;
+    };
+
     virtual ~WebViewDelegate();
 
     // Notification that the target URL has changed, for example when the user
     // moves the mouse over links.
     virtual void updateTargetURL(WebView* source, const StringRef& url) {}
+
+    // Notification that the navigation state of the specified 'source' has
+    // been updated.  This notification can be used to update the state of UI
+    // controls for back/forward actions.
+    virtual void updateNavigationState(WebView* source,
+                                       const NavigationState& state) {}
 
     // Invoked when a main frame navigation occurs.  This is the notification
     // that guarantees that the 'mainFrame()' method on the WebView can be used

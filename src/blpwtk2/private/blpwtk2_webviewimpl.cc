@@ -198,6 +198,29 @@ void WebViewImpl::reload(bool ignoreCache)
         d_webContents->GetController().Reload(checkForRepost);
 }
 
+void WebViewImpl::goBack()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    if (d_webContents->GetController().CanGoBack())
+        d_webContents->GetController().GoBack();
+}
+
+void WebViewImpl::goForward()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    if (d_webContents->GetController().CanGoForward())
+        d_webContents->GetController().GoForward();
+}
+
+void WebViewImpl::stop()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_webContents->Stop();
+}
+
 void WebViewImpl::focus()
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -291,6 +314,20 @@ void WebViewImpl::UpdateTargetURL(content::WebContents* source,
     if (d_wasDestroyed) return;
     if (d_delegate)
         d_delegate->updateTargetURL(this, url.spec());
+}
+
+void WebViewImpl::LoadingStateChanged(content::WebContents* source)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(source == d_webContents);
+    if (d_wasDestroyed) return;
+    if (d_delegate) {
+        WebViewDelegate::NavigationState state;
+        state.canGoBack = source->GetController().CanGoBack();
+        state.canGoForward = source->GetController().CanGoForward();
+        state.isLoading = source->IsLoading();
+        d_delegate->updateNavigationState(this, state);
+    }
 }
 
 void WebViewImpl::DidNavigateMainFramePostCommit(content::WebContents* source)

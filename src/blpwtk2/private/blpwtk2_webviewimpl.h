@@ -78,6 +78,9 @@ class WebViewImpl : public WebView,
     virtual void loadUrl(const StringRef& url) OVERRIDE;
     virtual void loadInspector(WebView* inspectedView) OVERRIDE;
     virtual void reload(bool ignoreCache) OVERRIDE;
+    virtual void goBack() OVERRIDE;
+    virtual void goForward() OVERRIDE;
+    virtual void stop() OVERRIDE;
     virtual void focus() OVERRIDE;
     virtual void show() OVERRIDE;
     virtual void hide() OVERRIDE;
@@ -98,6 +101,11 @@ class WebViewImpl : public WebView,
     virtual void UpdateTargetURL(content::WebContents* source,
                                  int32 page_id,
                                  const GURL& url) OVERRIDE;
+
+    // Notifies the delegate that this contents is starting or is done loading
+    // some resource. The delegate should use this notification to represent
+    // loading feedback. See WebContents::IsLoading()
+    virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
 
     // Invoked when a main frame navigation occurs.
     virtual void DidNavigateMainFramePostCommit(content::WebContents* source) OVERRIDE;

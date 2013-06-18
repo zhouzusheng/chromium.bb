@@ -74,6 +74,9 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void loadUrl(const StringRef& url) OVERRIDE;
     virtual void loadInspector(WebView* inspectedView) OVERRIDE;
     virtual void reload(bool ignoreCache) OVERRIDE;
+    virtual void goBack() OVERRIDE;
+    virtual void goForward() OVERRIDE;
+    virtual void stop() OVERRIDE;
     virtual void focus() OVERRIDE;
     virtual void show() OVERRIDE;
     virtual void hide() OVERRIDE;
@@ -90,6 +93,8 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     // ========== WebViewDelegate overrides ================
 
     virtual void updateTargetURL(WebView* source, const StringRef& url) OVERRIDE;
+    virtual void updateNavigationState(WebView* source,
+                                       const NavigationState& state) OVERRIDE;
     virtual void didNavigateMainFramePostCommit(WebView* source, const StringRef& url) OVERRIDE;
     virtual void didCreateNewView(WebView* source,
                                   WebView* newView,
@@ -115,6 +120,9 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void implLoadUrl(const std::string& url);
     void implLoadInspector(WebView* inspectedView);
     void implReload(bool ignoreCache);
+    void implGoBack();
+    void implGoForward();
+    void implStop();
     void implFocus();
     void implShow();
     void implHide();
@@ -130,6 +138,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
 
     // methods that get invoked in the proxy (main) thread
     void proxyUpdateTargetURL(const std::string& url);
+    void proxyUpdateNavigationState(const NavigationState& state);
     void proxyDidNavigateMainFramePostCommit(const std::string& url);
     void proxyDidCreateNewView(WebViewProxy* newProxy,
                                const NewViewParams& params);

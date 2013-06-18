@@ -129,6 +129,30 @@ void WebViewProxy::reload(bool ignoreCache)
         base::Bind(&WebViewProxy::implReload, this, ignoreCache));
 }
 
+void WebViewProxy::goBack()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_implDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::implGoBack, this));
+}
+
+void WebViewProxy::goForward()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_implDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::implGoForward, this));
+}
+
+void WebViewProxy::stop()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_implDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::implStop, this));
+}
+
 void WebViewProxy::focus()
 {
     DCHECK(Statics::isInApplicationMainThread());
@@ -234,6 +258,14 @@ void WebViewProxy::updateTargetURL(WebView* source, const StringRef& url)
         base::Bind(&WebViewProxy::proxyUpdateTargetURL, this, surl));
 }
 
+void WebViewProxy::updateNavigationState(WebView* source,
+                                         const NavigationState& state)
+{
+    DCHECK(source == d_impl);
+    d_proxyDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::proxyUpdateNavigationState, this, state));
+}
+
 void WebViewProxy::didNavigateMainFramePostCommit(WebView* source, const StringRef& url)
 {
     DCHECK(source == d_impl);
@@ -337,6 +369,24 @@ void WebViewProxy::implReload(bool ignoreCache)
     d_impl->reload(ignoreCache);
 }
 
+void WebViewProxy::implGoBack()
+{
+    DCHECK(d_impl);
+    d_impl->goBack();
+}
+
+void WebViewProxy::implGoForward()
+{
+    DCHECK(d_impl);
+    d_impl->goForward();
+}
+
+void WebViewProxy::implStop()
+{
+    DCHECK(d_impl);
+    d_impl->stop();
+}
+
 void WebViewProxy::implFocus()
 {
     DCHECK(d_impl);
@@ -413,6 +463,12 @@ void WebViewProxy::proxyUpdateTargetURL(const std::string& url)
 {
     if (d_delegate && !d_wasDestroyed)
         d_delegate->updateTargetURL(this, url);
+}
+
+void WebViewProxy::proxyUpdateNavigationState(const NavigationState& state)
+{
+    if (d_delegate && !d_wasDestroyed)
+        d_delegate->updateNavigationState(this, state);
 }
 
 void WebViewProxy::proxyDidNavigateMainFramePostCommit(const std::string& url)

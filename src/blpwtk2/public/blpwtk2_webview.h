@@ -64,6 +64,16 @@ public:
     // 'loadUrl' or 'loadInspector' has been called.
     virtual void reload(bool ignoreCache = false) = 0;
 
+    // Go back.  This is a no-op if there is nothing to go back to.
+    virtual void goBack() = 0;
+
+    // Go forward.  This is a no-op if there is nothing to go forward to.
+    virtual void goForward() = 0;
+
+    // Stop loading the current contents.  This is a no-op if the WebView is
+    // not loading any content.
+    virtual void stop() = 0;
+
     // Focus this WebView.  If any script has set focus to any editable
     // elements in this WebView, that element will get the input caret.
     virtual void focus() = 0;

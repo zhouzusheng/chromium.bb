@@ -51,7 +51,10 @@ WNDPROC g_defaultEditWndProc = 0;
 // button ids
 enum {
     IDC_START_OF_BUTTONS = 1000,
+    IDC_BACK,
+    IDC_FORWARD,
     IDC_RELOAD,
+    IDC_STOP,
     IDC_END_OF_BUTTONS,
     NUM_BUTTONS = IDC_END_OF_BUTTONS - IDC_START_OF_BUTTONS - 1
 };
@@ -211,6 +214,17 @@ public:
         char buf[1024];
         sprintf_s(buf, sizeof(buf), "DELEGATE: updateTargetUrl('%s')\n", str.c_str());
         OutputDebugStringA(buf);
+    }
+
+    // Notification that the navigation state of the specified 'source' has
+    // been updated.  This notification can be used to update the state of UI
+    // controls for back/forward actions.
+    virtual void updateNavigationState(blpwtk2::WebView* source,
+                                       const NavigationState& state) OVERRIDE
+    {
+        EnableWindow(GetDlgItem(d_mainWnd, IDC_BACK), state.canGoBack);
+        EnableWindow(GetDlgItem(d_mainWnd, IDC_FORWARD), state.canGoForward);
+        EnableWindow(GetDlgItem(d_mainWnd, IDC_STOP), state.isLoading);
     }
 
     // Invoked when a main frame navigation occurs.
@@ -382,8 +396,20 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             return 0;
         }
         switch (wmId) {
+        case IDC_BACK:
+            shell->d_webView->goBack();
+            shell->d_webView->focus();
+            break;
+        case IDC_FORWARD:
+            shell->d_webView->goForward();
+            shell->d_webView->focus();
+            break;
         case IDC_RELOAD:
             shell->d_webView->reload();
+            shell->d_webView->focus();
+            break;
+        case IDC_STOP:
+            shell->d_webView->stop();
             shell->d_webView->focus();
             break;
         case IDM_NEW_WINDOW:
@@ -544,10 +570,31 @@ Shell* createShell(blpwtk2::WebView* webView)
     HWND hwnd;
     int x = 0;
 
+    hwnd = CreateWindow(L"BUTTON", L"Back",
+                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON ,
+                        x, 0, BUTTON_WIDTH, URLBAR_HEIGHT,
+                        mainWnd, (HMENU)IDC_BACK, g_instance, 0);
+    assert(hwnd);
+    x += BUTTON_WIDTH;
+
+    hwnd = CreateWindow(L"BUTTON", L"Forward",
+                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON ,
+                        x, 0, BUTTON_WIDTH, URLBAR_HEIGHT,
+                        mainWnd, (HMENU)IDC_FORWARD, g_instance, 0);
+    assert(hwnd);
+    x += BUTTON_WIDTH;
+
     hwnd = CreateWindow(L"BUTTON", L"Reload",
                         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON ,
                         x, 0, BUTTON_WIDTH, URLBAR_HEIGHT,
-                        mainWnd, (HMENU) IDC_RELOAD, g_instance, 0);
+                        mainWnd, (HMENU)IDC_RELOAD, g_instance, 0);
+    assert(hwnd);
+    x += BUTTON_WIDTH;
+
+    hwnd = CreateWindow(L"BUTTON", L"Stop",
+                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON ,
+                        x, 0, BUTTON_WIDTH, URLBAR_HEIGHT,
+                        mainWnd, (HMENU)IDC_STOP, g_instance, 0);
     assert(hwnd);
     x += BUTTON_WIDTH;
 

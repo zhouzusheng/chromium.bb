@@ -234,7 +234,7 @@ void MainMessagePump::postHandleMessage(const MSG& msg)
 
 void MainMessagePump::doWorkUntilNextMessage()
 {
-    if (isWindowsMessagePending())
+    if (PumpMode::AUTOMATIC != Statics::pumpMode && isWindowsMessagePending())
         return;
 
     while (true) {

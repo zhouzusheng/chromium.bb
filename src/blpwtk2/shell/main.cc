@@ -72,10 +72,8 @@ enum {
     IDM_PASTE,
     IDM_DELETE,
     IDM_INSPECT,
-    IDM_CONTEXT_MENU_BASE_CUSTOM_TAG = 5000, 
-    IDM_CONTEXT_MENU_END_CUSTOM_TAG = 6000, 
-    IDM_END_OF_MENU_ITEMS,
-    NUM_MENU_ITEMS = IDM_END_OF_MENU_ITEMS - IDM_START_OF_MENU_ITEMS - 1
+    IDM_CONTEXT_MENU_BASE_CUSTOM_TAG = 5000,
+    IDM_CONTEXT_MENU_END_CUSTOM_TAG = 6000
 };
 
 class Shell;
@@ -381,7 +379,8 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         wmId = LOWORD(wParam);
         if (wmId >= IDM_CONTEXT_MENU_BASE_CUSTOM_TAG && wmId < IDM_CONTEXT_MENU_END_CUSTOM_TAG) {
             shell->d_webView->performCustomContextMenuAction(wmId - IDM_CONTEXT_MENU_BASE_CUSTOM_TAG);
-        } else 
+            return 0;
+        }
         switch (wmId) {
         case IDC_RELOAD:
             shell->d_webView->reload();

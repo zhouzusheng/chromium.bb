@@ -110,6 +110,10 @@ public:
     // 'false'.
     virtual void enableFocusBefore(bool enabled) = 0;
     virtual void enableFocusAfter(bool enabled) = 0;
+
+    // Perform a custom context menu action. This should be called when a custom 
+    // item in the conext menu has been selected.
+    virtual void performCustomContextMenuAction(int actionId) = 0;
 };
 
 }  // close namespace blpwtk2

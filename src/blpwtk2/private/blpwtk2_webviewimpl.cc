@@ -113,6 +113,11 @@ void WebViewImpl::showContextMenu(const ContextMenuParams& params)
         d_delegate->showContextMenu(this, params);
 }
 
+void WebViewImpl::saveCustomContextMenuContext(const content::CustomContextMenuContext& context)
+{
+    d_customContext = context;
+}
+
 void WebViewImpl::destroy()
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -268,6 +273,13 @@ void WebViewImpl::enableFocusAfter(bool enabled)
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
     d_focusAfterEnabled = enabled;
+}
+
+void WebViewImpl::performCustomContextMenuAction(int actionId)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_webContents->GetRenderViewHost()->ExecuteCustomContextMenuCommand(actionId, d_customContext);
 }
 
 void WebViewImpl::UpdateTargetURL(content::WebContents* source,

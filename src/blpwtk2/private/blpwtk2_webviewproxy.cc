@@ -218,6 +218,14 @@ void WebViewProxy::enableFocusAfter(bool enabled)
         base::Bind(&WebViewProxy::implEnableFocusAfter, this, enabled));
 }
 
+void WebViewProxy::performCustomContextMenuAction(int actionId)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_implDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::implPerformCustomContextMenuAction, this, actionId));
+}
+
 void WebViewProxy::updateTargetURL(WebView* source, const StringRef& url)
 {
     DCHECK(source == d_impl);
@@ -393,6 +401,12 @@ void WebViewProxy::implEnableFocusAfter(bool enabled)
 {
     DCHECK(d_impl);
     d_impl->enableFocusAfter(enabled);
+}
+
+void WebViewProxy::implPerformCustomContextMenuAction(int actionId)
+{
+    DCHECK(d_impl);
+    d_impl->performCustomContextMenuAction(actionId);
 }
 
 void WebViewProxy::proxyUpdateTargetURL(const std::string& url)

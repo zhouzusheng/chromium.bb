@@ -85,6 +85,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void deleteSelection() OVERRIDE;
     virtual void enableFocusBefore(bool enabled) OVERRIDE;
     virtual void enableFocusAfter(bool enabled) OVERRIDE;
+    virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
 
     // ========== WebViewDelegate overrides ================
 
@@ -125,6 +126,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void implDeleteSelection();
     void implEnableFocusBefore(bool enabled);
     void implEnableFocusAfter(bool enabled);
+    void implPerformCustomContextMenuAction(int actionId);
 
     // methods that get invoked in the proxy (main) thread
     void proxyUpdateTargetURL(const std::string& url);

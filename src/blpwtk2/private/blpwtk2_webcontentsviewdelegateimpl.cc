@@ -90,6 +90,7 @@ void WebContentsViewDelegateImpl::ShowContextMenu(
             content::ContextMenuSourceType type)
 {
     WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(d_webContents->GetDelegate());
+    webViewImpl->saveCustomContextMenuContext(params.custom_context);
 
     POINT point = { params.x, params.y };
     ClientToScreen(webViewImpl->getNativeView(), &point);

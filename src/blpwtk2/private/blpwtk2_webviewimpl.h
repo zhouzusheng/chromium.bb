@@ -28,6 +28,7 @@
 #include <blpwtk2_webview.h>
 
 #include <content/public/browser/web_contents_delegate.h>
+#include <content/public/common/context_menu_params.h>
 #include <ui/gfx/native_widget_types.h>
 
 namespace content {
@@ -68,6 +69,7 @@ class WebViewImpl : public WebView,
 
     gfx::NativeView getNativeView() const;
     void showContextMenu(const ContextMenuParams& params);
+    void saveCustomContextMenuContext(const content::CustomContextMenuContext& context);
 
     /////////////// WebView overrides
 
@@ -87,6 +89,7 @@ class WebViewImpl : public WebView,
     virtual void deleteSelection() OVERRIDE;
     virtual void enableFocusBefore(bool enabled) OVERRIDE;
     virtual void enableFocusAfter(bool enabled) OVERRIDE;
+    virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
 
 
     /////// WebContentsDelegate overrides
@@ -140,6 +143,7 @@ class WebViewImpl : public WebView,
     bool d_isReadyForDelete;  // when the underlying WebContents can be deleted
     bool d_wasDestroyed;      // if destroy() has been called
     bool d_isDeletingSoon;    // when DeleteSoon has been called
+    content::CustomContextMenuContext d_customContext; //for calling performCustomContextMenuAction()
 
     DISALLOW_COPY_AND_ASSIGN(WebViewImpl);
 };

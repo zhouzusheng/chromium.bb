@@ -23,6 +23,7 @@
 #include <blpwtk2_contentmaindelegateimpl.h>
 
 #include <blpwtk2_contentbrowserclientimpl.h>
+#include <blpwtk2_contentrendererclientimpl.h>
 
 #include <base/command_line.h>
 #include <base/files/file_path.h>
@@ -115,6 +116,13 @@ ContentMainDelegateImpl::CreateContentBrowserClient()
     return d_contentBrowserClient.get();
 }
 
+content::ContentRendererClient*
+ContentMainDelegateImpl::CreateContentRendererClient()
+{
+    if (!d_contentRendererClient.get())
+        d_contentRendererClient.reset(new ContentRendererClientImpl());
+    return d_contentRendererClient.get();
+}
 
 }  // close namespace blpwtk2
 

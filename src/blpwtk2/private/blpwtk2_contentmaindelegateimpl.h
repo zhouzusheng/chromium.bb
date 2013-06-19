@@ -29,10 +29,6 @@
 #include <content/public/app/content_main_delegate.h>
 #include <content/public/common/content_client.h>
 
-namespace content {
-    class ContentBrowserClient;
-}  // close namespace content
-
 namespace blpwtk2 {
 
 // FIXME: move this to a separate file
@@ -59,11 +55,14 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
     // ContentMainDelegate implementation
     virtual bool BasicStartupComplete(int* exit_code) OVERRIDE;
     virtual content::ContentBrowserClient*
-    CreateContentBrowserClient() OVERRIDE;
+        CreateContentBrowserClient() OVERRIDE;
+    virtual content::ContentRendererClient*
+        CreateContentRendererClient() OVERRIDE;
 
   private:
     ContentClient d_contentClient;
     scoped_ptr<content::ContentBrowserClient> d_contentBrowserClient;
+    scoped_ptr<content::ContentRendererClient> d_contentRendererClient;
 
     DISALLOW_COPY_AND_ASSIGN(ContentMainDelegateImpl);
 };

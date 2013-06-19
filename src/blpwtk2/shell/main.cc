@@ -235,6 +235,7 @@ public:
 
         blpwtk2::String surl(url);
         SendMessageA(d_urlEntryWnd, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(surl.c_str()));
+        EnableWindow(GetDlgItem(d_mainWnd, IDC_RELOAD), TRUE);
     }
 
     // Invoked when the WebView creates a new WebView, for example by using
@@ -571,28 +572,28 @@ Shell* createShell(blpwtk2::WebView* webView)
     int x = 0;
 
     hwnd = CreateWindow(L"BUTTON", L"Back",
-                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON ,
+                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED,
                         x, 0, BUTTON_WIDTH, URLBAR_HEIGHT,
                         mainWnd, (HMENU)IDC_BACK, g_instance, 0);
     assert(hwnd);
     x += BUTTON_WIDTH;
 
     hwnd = CreateWindow(L"BUTTON", L"Forward",
-                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON ,
+                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED,
                         x, 0, BUTTON_WIDTH, URLBAR_HEIGHT,
                         mainWnd, (HMENU)IDC_FORWARD, g_instance, 0);
     assert(hwnd);
     x += BUTTON_WIDTH;
 
     hwnd = CreateWindow(L"BUTTON", L"Reload",
-                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON ,
+                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED,
                         x, 0, BUTTON_WIDTH, URLBAR_HEIGHT,
                         mainWnd, (HMENU)IDC_RELOAD, g_instance, 0);
     assert(hwnd);
     x += BUTTON_WIDTH;
 
     hwnd = CreateWindow(L"BUTTON", L"Stop",
-                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON ,
+                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED,
                         x, 0, BUTTON_WIDTH, URLBAR_HEIGHT,
                         mainWnd, (HMENU)IDC_STOP, g_instance, 0);
     assert(hwnd);

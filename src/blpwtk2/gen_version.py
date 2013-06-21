@@ -61,7 +61,7 @@ def writeVersionFiles(fH, fCC, version):
     bbPatch = "bb1"
 
   exportedSymbol =  'd_version_' + chromiumVersion.replace('.', '_') \
-      + '_' + bbPatch.replace(',', '_')
+      + '_' + bbPatch.replace('.', '_')
 
   fH.write('// generated file -- DO NOT EDIT\n')
   fH.write('#ifndef INCLUDED_GENERATED_BLPWTK2_VERSION\n')

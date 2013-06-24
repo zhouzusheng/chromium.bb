@@ -333,8 +333,11 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
     } else if (name == contenteditableAttr) {
         if (value.isNull() || equalIgnoringCase(value, "false")) {
             RefPtr<Range> range = Range::create(document());
-            range->selectNode(this);
-            document()->frame()->editor()->clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
+
+            ExceptionCode ec = 0;
+            range->selectNode(this, ec);
+            if (ec == 0)
+                document()->frame()->editor()->clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
         }
     }
 }

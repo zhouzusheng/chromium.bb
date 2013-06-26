@@ -67,6 +67,7 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
     createParams.render_process_affinity = hostAffinity;
     d_webContents.reset(content::WebContents::Create(createParams));
     d_webContents->SetDelegate(this);
+    Observe(d_webContents.get());
 
     if (!initiallyVisible)
         ShowWindow(getNativeView(), SW_HIDE);
@@ -86,6 +87,7 @@ WebViewImpl::WebViewImpl(content::WebContents* contents)
     DCHECK(Statics::isInBrowserMainThread());
     d_webContents.reset(contents);
     d_webContents->SetDelegate(this);
+    Observe(d_webContents.get());
 
     d_originalParent = GetParent(getNativeView());
 }
@@ -123,6 +125,7 @@ void WebViewImpl::destroy()
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
     DCHECK(!d_isDeletingSoon);
+    Observe(0);  // stop observing the WebContents
     d_wasDestroyed = true;
     if (d_isReadyForDelete) {
         d_isDeletingSoon = true;
@@ -457,6 +460,37 @@ void WebViewImpl::RequestMediaAccessPermission(content::WebContents* web_content
         d_delegate->handleMediaRequest(this, refPtr.get());
     }
 }
+
+/////// WebContentsObserver overrides
+
+void WebViewImpl::DidFinishLoad(int64 frame_id,
+                                const GURL& validated_url,
+                                bool is_main_frame,
+                                content::RenderViewHost* render_view_host)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    if (d_wasDestroyed || !d_delegate) return;
+
+    // TODO: figure out what to do for iframes
+    if (is_main_frame)
+        d_delegate->didFinishLoad(this, validated_url.spec());
+}
+
+void WebViewImpl::DidFailLoad(int64 frame_id,
+                              const GURL& validated_url,
+                              bool is_main_frame,
+                              int error_code,
+                              const string16& error_description,
+                              content::RenderViewHost* render_view_host)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    if (d_wasDestroyed || !d_delegate) return;
+
+    // TODO: figure out what to do for iframes
+    if (is_main_frame)
+        d_delegate->didFailLoad(this, validated_url.spec());
+}
+
 
 }  // close namespace blpwtk2
 

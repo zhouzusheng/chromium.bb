@@ -96,6 +96,8 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void updateNavigationState(WebView* source,
                                        const NavigationState& state) OVERRIDE;
     virtual void didNavigateMainFramePostCommit(WebView* source, const StringRef& url) OVERRIDE;
+    virtual void didFinishLoad(WebView* source, const StringRef& url) OVERRIDE;
+    virtual void didFailLoad(WebView* source, const StringRef& url) OVERRIDE;
     virtual void didCreateNewView(WebView* source,
                                   WebView* newView,
                                   const NewViewParams& params,
@@ -140,6 +142,8 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void proxyUpdateTargetURL(const std::string& url);
     void proxyUpdateNavigationState(const NavigationState& state);
     void proxyDidNavigateMainFramePostCommit(const std::string& url);
+    void proxyDidFinishLoad(const std::string& url);
+    void proxyDidFailLoad(const std::string& url);
     void proxyDidCreateNewView(WebViewProxy* newProxy,
                                const NewViewParams& params);
     void proxyDestroyView();

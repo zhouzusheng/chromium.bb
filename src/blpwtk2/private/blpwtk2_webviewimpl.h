@@ -28,6 +28,7 @@
 #include <blpwtk2_webview.h>
 
 #include <content/public/browser/web_contents_delegate.h>
+#include <content/public/browser/web_contents_observer.h>
 #include <content/public/common/context_menu_params.h>
 #include <ui/gfx/native_widget_types.h>
 
@@ -57,7 +58,8 @@ class WebFrameImpl;
 // thread and the application thread.  See blpwtk2_toolkit.h for an explanation
 // about threads.
 class WebViewImpl : public WebView,
-                    public content::WebContentsDelegate  {
+                    public content::WebContentsDelegate,
+                    public content::WebContentsObserver {
   public:
     WebViewImpl(WebViewDelegate* delegate,
                 gfx::NativeView parent,
@@ -140,6 +142,31 @@ class WebViewImpl : public WebView,
         content::WebContents* web_contents,
         const content::MediaStreamRequest& request,
         const content::MediaResponseCallback& callback) OVERRIDE;
+
+
+    /////// WebContentsObserver overrides
+
+    // This method is invoked when the navigation is done, i.e. the spinner of
+    // the tab will stop spinning, and the onload event was dispatched.
+    //
+    // If the WebContents is displaying replacement content, e.g. network error
+    // pages, DidFinishLoad is invoked for frames that were not sending
+    // navigational events before. It is safe to ignore these events.
+    virtual void DidFinishLoad(
+        int64 frame_id,
+        const GURL& validated_url,
+        bool is_main_frame,
+        content::RenderViewHost* render_view_host) OVERRIDE;
+
+    // This method is like DidFinishLoad, but when the load failed or was
+    // cancelled, e.g. window.stop() is invoked.
+    virtual void DidFailLoad(
+        int64 frame_id,
+        const GURL& validated_url,
+        bool is_main_frame,
+        int error_code,
+        const string16& error_description,
+        content::RenderViewHost* render_view_host) OVERRIDE;
 
   private:
     scoped_ptr<content::WebContents> d_webContents;

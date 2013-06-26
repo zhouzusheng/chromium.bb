@@ -47,8 +47,8 @@ public:
     //
     // The main frame will not be available immediately after creating a
     // WebView, or loading a URL.  The application should wait for the
-    // 'didNavigateMainFramePostCommit()' callback to be invoked on the
-    // WebViewDelegate before trying to access the main frame.
+    // 'didFinishLoad()' callback to be invoked on the WebViewDelegate before
+    // trying to access the main frame.
     virtual WebFrame* mainFrame() = 0;
 
     // Load the specified 'url' into this WebView, replacing whatever contents

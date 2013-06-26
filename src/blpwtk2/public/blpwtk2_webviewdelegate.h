@@ -59,11 +59,21 @@ class BLPWTK2_EXPORT WebViewDelegate {
     virtual void updateNavigationState(WebView* source,
                                        const NavigationState& state) {}
 
-    // Invoked when a main frame navigation occurs.  This is the notification
-    // that guarantees that the 'mainFrame()' method on the WebView can be used
-    // (for in-process WebViews, and in the renderer thread).
+    // Invoked when a main frame navigation occurs.
     virtual void didNavigateMainFramePostCommit(WebView* source,
                                                 const StringRef& url) {}
+
+    // Invoked when the main frame finished loading the specified 'url'.  This
+    // is the notification that guarantees that the 'mainFrame()' method on the
+    // WebView can be used (for in-process WebViews, and in the renderer
+    // thread).
+    virtual void didFinishLoad(WebView* source,
+                               const StringRef& url) {}
+
+    // Invoked when the main frame failed loading the specified 'url', or was
+    // cancelled (e.g. window.stop() was called).
+    virtual void didFailLoad(WebView* source,
+                             const StringRef& url) {}
 
     // Invoked when the WebView creates a new WebView, for example by using
     // 'window.open'.  The default implementation of this method is to simply

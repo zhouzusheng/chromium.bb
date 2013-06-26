@@ -222,6 +222,13 @@ public:
     virtual void updateNavigationState(blpwtk2::WebView* source,
                                        const NavigationState& state) OVERRIDE
     {
+        assert(source == d_webView);
+
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "DELEGATE: updateNavigationState(canGoBack(%d), canGoForward(%d), isLoading(%d))\n",
+                  (int)state.canGoBack, (int)state.canGoForward, (int)state.isLoading);
+        OutputDebugStringA(buf);
+
         EnableWindow(GetDlgItem(d_mainWnd, IDC_BACK), state.canGoBack);
         EnableWindow(GetDlgItem(d_mainWnd, IDC_FORWARD), state.canGoForward);
         EnableWindow(GetDlgItem(d_mainWnd, IDC_STOP), state.isLoading);
@@ -231,11 +238,41 @@ public:
     virtual void didNavigateMainFramePostCommit(blpwtk2::WebView* source, const blpwtk2::StringRef& url) OVERRIDE
     {
         assert(source == d_webView);
-        OutputDebugStringA("DELEGATE: didNavigateMainFramePostCommit\n");
-
         blpwtk2::String surl(url);
+
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "DELEGATE: didNavigateMainFramePostCommit('%s')\n", surl.c_str());
+        OutputDebugStringA(buf);
+
         SendMessageA(d_urlEntryWnd, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(surl.c_str()));
         EnableWindow(GetDlgItem(d_mainWnd, IDC_RELOAD), TRUE);
+    }
+
+    // Invoked when the main frame finished loading the specified 'url'.  This
+    // is the notification that guarantees that the 'mainFrame()' method on the
+    // WebView can be used (for in-process WebViews, and in the renderer
+    // thread).
+    virtual void didFinishLoad(blpwtk2::WebView* source, const blpwtk2::StringRef& url) OVERRIDE
+    {
+        assert(source == d_webView);
+        std::string str(url.data(), url.length());
+
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "DELEGATE: didFinishLoad('%s')\n", str.c_str());
+        OutputDebugStringA(buf);
+    }
+
+    // Invoked when the main frame failed loading the specified 'url', or was
+    // cancelled (e.g. window.stop() was called).
+    virtual void didFailLoad(blpwtk2::WebView* source,
+                             const blpwtk2::StringRef& url) OVERRIDE
+    {
+        assert(source == d_webView);
+        std::string str(url.data(), url.length());
+
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "DELEGATE: didFailLoad('%s')\n", str.c_str());
+        OutputDebugStringA(buf);
     }
 
     // Invoked when the WebView creates a new WebView, for example by using

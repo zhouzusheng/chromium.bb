@@ -95,7 +95,7 @@ WebFrame* WebViewProxy::mainFrame()
     DCHECK(Statics::isRendererMainThreadMode());
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(d_isMainFrameAccessible)
-        << "You should wait for didNavigateMainFramePostCommit";
+        << "You should wait for didFinishLoad";
 
     return d_impl->mainFrame();
 }
@@ -272,6 +272,22 @@ void WebViewProxy::didNavigateMainFramePostCommit(WebView* source, const StringR
     std::string surl(url.data(), url.length());
     d_proxyDispatcher->PostTask(FROM_HERE,
         base::Bind(&WebViewProxy::proxyDidNavigateMainFramePostCommit, this, surl));
+}
+
+void WebViewProxy::didFinishLoad(WebView* source, const StringRef& url)
+{
+    DCHECK(source == d_impl);
+    std::string surl(url.data(), url.length());
+    d_proxyDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::proxyDidFinishLoad, this, surl));
+}
+
+void WebViewProxy::didFailLoad(WebView* source, const StringRef& url)
+{
+    DCHECK(source == d_impl);
+    std::string surl(url.data(), url.length());
+    d_proxyDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::proxyDidFailLoad, this, surl));
 }
 
 void WebViewProxy::didCreateNewView(WebView* source,
@@ -473,12 +489,24 @@ void WebViewProxy::proxyUpdateNavigationState(const NavigationState& state)
 
 void WebViewProxy::proxyDidNavigateMainFramePostCommit(const std::string& url)
 {
+    if (d_delegate && !d_wasDestroyed)
+        d_delegate->didNavigateMainFramePostCommit(this, url);
+}
+
+void WebViewProxy::proxyDidFinishLoad(const std::string& url)
+{
     d_isMainFrameAccessible = true;  // wait until we receive this
                                      // notification before we make the
                                      // mainFrame accessible
 
     if (d_delegate && !d_wasDestroyed)
-        d_delegate->didNavigateMainFramePostCommit(this, url);
+        d_delegate->didFinishLoad(this, url);
+}
+
+void WebViewProxy::proxyDidFailLoad(const std::string& url)
+{
+    if (d_delegate && !d_wasDestroyed)
+        d_delegate->didFailLoad(this, url);
 }
 
 void WebViewProxy::proxyDidCreateNewView(WebViewProxy* newProxy,

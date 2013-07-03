@@ -44,6 +44,8 @@ WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
 , d_implDispatcher(implDispatcher)
 , d_proxyDispatcher(MessageLoop::current())
 , d_delegate(delegate)
+, d_lastMoveRepaint(false)
+, d_isMoveAckPending(false)
 , d_wasDestroyed(false)
 , d_isMainFrameAccessible(false)
 {
@@ -64,6 +66,8 @@ WebViewProxy::WebViewProxy(WebViewImpl* impl,
 , d_implDispatcher(implDispatcher)
 , d_proxyDispatcher(proxyDispatcher)
 , d_delegate(0)
+, d_lastMoveRepaint(false)
+, d_isMoveAckPending(false)
 , d_wasDestroyed(false)
 , d_isMainFrameAccessible(false)
 {
@@ -189,6 +193,17 @@ void WebViewProxy::move(int left, int top, int width, int height, bool repaint)
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_wasDestroyed);
+    d_lastMoveRect.left = left;
+    d_lastMoveRect.top = top;
+    d_lastMoveRect.right = left + width;
+    d_lastMoveRect.bottom = top + height;
+    d_lastMoveRepaint = d_lastMoveRepaint || repaint;
+    if (d_isMoveAckPending) {
+        // Wait for the impl thread to finish processing the previous move
+        // request.
+        return;
+    }
+    d_isMoveAckPending = true;
     d_implDispatcher->PostTask(FROM_HERE,
         base::Bind(&WebViewProxy::implMove, this,
                    left, top, width, height, repaint));
@@ -431,6 +446,12 @@ void WebViewProxy::implMove(int left, int top, int width, int height, bool repai
 {
     DCHECK(d_impl);
     d_impl->move(left, top, width, height, repaint);
+
+    // Notify the proxy thread that the move has been processed, so that
+    // subsequent moves will be sent.
+    d_proxyDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::proxyMoveAck, this, left, top, width, height,
+                   repaint));
 }
 
 void WebViewProxy::implCutSelection()
@@ -560,6 +581,31 @@ void WebViewProxy::proxyHandleMediaRequest(MediaRequest* request)
 {
     if (d_delegate && !d_wasDestroyed){
         d_delegate->handleMediaRequest(this, request);
+    }
+}
+
+void WebViewProxy::proxyMoveAck(int left, int top, int width, int height, bool repaint)
+{
+    if (!d_wasDestroyed) {
+        d_isMoveAckPending = false;
+
+        // If the last requested move was different from what was just
+        // processed, then call move() again so that the impl thread gets the
+        // latest move request.
+        if (left != d_lastMoveRect.left ||
+            top != d_lastMoveRect.top ||
+            width != d_lastMoveRect.right - d_lastMoveRect.left ||
+            height != d_lastMoveRect.bottom - d_lastMoveRect.top ||
+            repaint != d_lastMoveRepaint)
+        {
+            move(d_lastMoveRect.left, d_lastMoveRect.top,
+                 d_lastMoveRect.right - d_lastMoveRect.left,
+                 d_lastMoveRect.bottom - d_lastMoveRect.top,
+                 d_lastMoveRepaint);
+        }
+        else {
+            d_lastMoveRepaint = false;
+        }
     }
 }
 

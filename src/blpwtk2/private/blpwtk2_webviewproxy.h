@@ -153,10 +153,15 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void proxyShowContextMenu(const ContextMenuParams& params);
     void proxyHandleMediaRequest(MediaRequest* request);
 
+    void proxyMoveAck(int left, int top, int width, int height, bool repaint);
+
     WebViewImpl* d_impl;
     MessageLoop* d_implDispatcher;
     MessageLoop* d_proxyDispatcher;
     WebViewDelegate* d_delegate;
+    RECT d_lastMoveRect;
+    bool d_lastMoveRepaint;
+    bool d_isMoveAckPending;
     bool d_wasDestroyed;
     bool d_isMainFrameAccessible;
 };

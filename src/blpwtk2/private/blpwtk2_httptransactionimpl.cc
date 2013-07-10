@@ -302,7 +302,7 @@ net::UploadProgress HttpTransactionImpl::GetUploadProgress() const
     if (d_fallbackTransaction.get())
         return d_fallbackTransaction->GetUploadProgress();
 
-    NOTIMPLEMENTED();
+    // TODO: should we allow the app to specify upload progress?
     return net::UploadProgress();
 }
 
@@ -313,7 +313,7 @@ bool HttpTransactionImpl::GetLoadTimingInfo(net::LoadTimingInfo* load_timing_inf
     if (d_fallbackTransaction.get())
         return d_fallbackTransaction->GetLoadTimingInfo(load_timing_info);
 
-    NOTIMPLEMENTED();
+    // TODO: should we allow the app to specify load timing info?
     return false;
 }
 

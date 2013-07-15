@@ -2691,7 +2691,7 @@ void StyleResolver::applyProperty(CSSPropertyID id, CSSValue* value)
             break;
 
         Color col = colorFromPrimitiveValue(primitiveValue);
-        state.style->setCaretColor(col);
+        state.style()->setCaretColor(col);
         return;
     }
     case CSSPropertyWebkitTextStrokeWidth: {

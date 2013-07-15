@@ -145,6 +145,8 @@ public:
     Color tapHighlightColor;
 #endif
 
+    Color caretColor;
+
 #if ENABLE(CSS_VARIABLES)
     DataRef<StyleVariableData> m_variables;
 #endif

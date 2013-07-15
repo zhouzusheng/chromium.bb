@@ -519,6 +519,7 @@ static inline bool isColorPropertyID(CSSPropertyID propertyId)
     case CSSPropertyWebkitBorderBeforeColor:
     case CSSPropertyWebkitBorderEndColor:
     case CSSPropertyWebkitBorderStartColor:
+    case CSSPropertyWebkitCaretColor:
     case CSSPropertyWebkitColumnRuleColor:
 #if ENABLE(CSS3_TEXT)
     case CSSPropertyWebkitTextDecorationColor:
@@ -1981,6 +1982,7 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
     case CSSPropertyWebkitBorderEndColor:
     case CSSPropertyWebkitBorderBeforeColor:
     case CSSPropertyWebkitBorderAfterColor:
+    case CSSPropertyWebkitCaretColor:
     case CSSPropertyColor: // <color> | inherit
     case CSSPropertyTextLineThroughColor: // CSS3 text decoration colors
     case CSSPropertyTextUnderlineColor:

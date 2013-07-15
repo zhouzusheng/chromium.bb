@@ -1458,7 +1458,7 @@ void CaretBase::paintCaret(Node* node, GraphicsContext* context, const LayoutPoi
     ColorSpace colorSpace = ColorSpaceDeviceRGB;
     Element* element = node->rootEditableElement();
     if (element && element->renderer()) {
-        caretColor = element->renderer()->style()->visitedDependentColor(CSSPropertyColor);
+        caretColor = element->renderer()->style()->visitedDependentColor(CSSPropertyWebkitCaretColor);
         colorSpace = element->renderer()->style()->colorSpace();
     }
 

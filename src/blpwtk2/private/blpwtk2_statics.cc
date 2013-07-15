@@ -22,6 +22,7 @@
 
 #include <blpwtk2_statics.h>
 
+#include <base/file_util.h>
 #include <base/logging.h>  // for DCHECK
 
 namespace blpwtk2 {
@@ -33,6 +34,22 @@ base::PlatformThreadId Statics::browserMainThreadId = base::kInvalidThreadId;
 content::DevToolsHttpHandler* Statics::devToolsHttpHandler = 0;
 HttpTransactionHandler* Statics::httpTransactionHandler = 0;
 MessageLoop* Statics::rendererMessageLoop = 0;
+
+std::vector<base::FilePath>& Statics::getPluginPaths()
+{
+    // The plugins registered via blpwtk2::Toolkit::registerPlugin need to be
+    // stored here temporarily because we can only pass it onto chromium when
+    // ToolkitImpl has been initialized.
+    static std::vector<base::FilePath> paths;
+    return paths;
+}
+
+void Statics::registerPlugin(const char* pluginPath)
+{
+    base::FilePath path = base::FilePath::FromUTF8Unsafe(pluginPath);
+    file_util::AbsolutePath(&path);
+    getPluginPaths().push_back(path);
+}
 
 void Statics::initApplicationMainThread()
 {

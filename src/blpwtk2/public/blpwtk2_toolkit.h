@@ -115,6 +115,12 @@ struct BLPWTK2_EXPORT Toolkit {
     // created (even if it has been destroyed).
     static void setPumpMode(PumpMode::Value mode);
 
+    // Register a plugin at the specified 'pluginPath'.  The 'pluginPath'
+    // should point to a DLL that exports the standard NPAPI entry points.
+    // This function can only be called before creating any WebViews, otherwise
+    // it will not have any effect.
+    static void registerPlugin(const char* pluginPath);
+
     // Install a custom HttpTransactionHandler.  This function can only be
     // called before creating any WebViews, otherwise it will not have any
     // effect.  The http handler should remain alive until shutdown() is

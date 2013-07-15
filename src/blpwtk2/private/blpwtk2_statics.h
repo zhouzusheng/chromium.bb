@@ -27,7 +27,10 @@
 #include <blpwtk2_threadmode.h>
 #include <blpwtk2_pumpmode.h>
 
+#include <base/files/file_path.h>
 #include <base/threading/platform_thread.h>
+
+#include <vector>
 
 class MessageLoop;
 
@@ -71,6 +74,9 @@ struct Statics {
 
 
     // ====== some utility functions =============
+
+    static std::vector<base::FilePath>& getPluginPaths();
+    static void registerPlugin(const char* pluginPath);
 
     static bool isOriginalThreadMode()
     {

@@ -24,12 +24,14 @@
 
 #include <blpwtk2_contentbrowserclientimpl.h>
 #include <blpwtk2_contentrendererclientimpl.h>
+#include <blpwtk2_statics.h>
 
 #include <base/command_line.h>
 #include <base/files/file_path.h>
 #include <base/logging.h>
 #include <base/path_service.h>
 #include <content/public/common/content_switches.h>
+#include <webkit/plugins/npapi/plugin_list.h>
 #include <webkit/user_agent/user_agent.h>
 #include <webkit/user_agent/user_agent_util.h>
 #include <ui/base/ui_base_switches.h>
@@ -92,6 +94,12 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
 
     InitLogging();
     SetContentClient(&d_contentClient);
+
+    for (size_t i = 0; i < Statics::getPluginPaths().size(); ++i) {
+        const base::FilePath& path = Statics::getPluginPaths()[i];
+        webkit::npapi::PluginList::Singleton()->AddExtraPluginPath(path);
+    }
+
     return false;
 }
 

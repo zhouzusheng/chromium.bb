@@ -62,6 +62,14 @@ void Toolkit::setPumpMode(PumpMode::Value mode)
     Statics::pumpMode = mode;
 }
 
+void Toolkit::registerPlugin(const char* pluginPath)
+{
+    Statics::initApplicationMainThread();
+    DCHECK(!g_started);
+    DCHECK(!ToolkitImpl::instance());
+    Statics::registerPlugin(pluginPath);
+}
+
 void Toolkit::setHttpTransactionHandler(HttpTransactionHandler* handler)
 {
     Statics::initApplicationMainThread();

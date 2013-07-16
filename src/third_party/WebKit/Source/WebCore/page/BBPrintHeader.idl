@@ -20,28 +20,20 @@
  * IN THE SOFTWARE.
  */
 
-#include <blpwtk2_renderviewobserverimpl.h>
-#include <blpwtk2_printutil.h>
-#include <content/public/renderer/render_view.h>
+interface BBPrintHeader {
 
-namespace blpwtk2 {
+    // align
+    const unsigned short LEFT       = 0;
+    const unsigned short CENTER     = 1;
+    const unsigned short RIGHT      = 2;
 
-RenderViewObserverImpl::RenderViewObserverImpl(content::RenderView* renderView)
-: content::RenderViewObserver(renderView)
-{
-}
+    attribute DOMString text;
+    attribute float fontSize;
+    attribute DOMString fontFamily;
+    attribute RGBColor color;
+    attribute float verticalMargin;
+    attribute float leftMargin;
+    attribute float rightMargin;
 
-RenderViewObserverImpl::~RenderViewObserverImpl()
-{
-}
-
-void RenderViewObserverImpl::PrintPage(
-    WebKit::WebFrame* frame,
-    bool userInitiated)
-{
-    WebKit::WebView* view = render_view()->GetWebView();
-
-    PrintUtil::PrintPage(frame, view);
-}
-
-}  // close namespace blpwtk2
+    void reset();
+};

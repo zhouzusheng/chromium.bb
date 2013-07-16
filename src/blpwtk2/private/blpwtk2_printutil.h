@@ -20,28 +20,24 @@
  * IN THE SOFTWARE.
  */
 
-#include <blpwtk2_renderviewobserverimpl.h>
-#include <blpwtk2_printutil.h>
-#include <content/public/renderer/render_view.h>
+#ifndef INCLUDED_BLPWTK2_PRINTUTIL_H
+#define INCLUDED_BLPWTK2_PRINTUTIL_H
+
+#include <blpwtk2_config.h>
+
+namespace WebKit {
+    class WebFrame;
+    class WebView;
+}
 
 namespace blpwtk2 {
 
-RenderViewObserverImpl::RenderViewObserverImpl(content::RenderView* renderView)
-: content::RenderViewObserver(renderView)
-{
-}
+struct PrintUtil {
 
-RenderViewObserverImpl::~RenderViewObserverImpl()
-{
-}
+    static void PrintPage(WebKit::WebFrame* frame, WebKit::WebView* view);
 
-void RenderViewObserverImpl::PrintPage(
-    WebKit::WebFrame* frame,
-    bool userInitiated)
-{
-    WebKit::WebView* view = render_view()->GetWebView();
-
-    PrintUtil::PrintPage(frame, view);
-}
+};
 
 }  // close namespace blpwtk2
+
+#endif  // INCLUDED_BLPWTK2_RENDERVIEWOBSERVERIMPL_H

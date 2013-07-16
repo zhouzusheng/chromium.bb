@@ -61,6 +61,7 @@ namespace WebCore {
 
 class AXObjectCache;
 class Attr;
+class BBPrintInfo;
 class CDATASection;
 class CSSStyleDeclaration;
 class CSSStyleSheet;
@@ -1217,6 +1218,8 @@ public:
     PassRefPtr<FontLoader> fontloader();
 #endif
 
+    PassRefPtr<BBPrintInfo> bbPrintInfo();
+
 protected:
     Document(Frame*, const KURL&, bool isXHTML, bool isHTML);
 
@@ -1592,6 +1595,8 @@ private:
 #if ENABLE(FONT_LOAD_EVENTS)
     RefPtr<FontLoader> m_fontloader;
 #endif
+
+    RefPtr<BBPrintInfo> m_bbPrintInfo;
 };
 
 inline void Document::notifyRemovePendingSheetIfNeeded()

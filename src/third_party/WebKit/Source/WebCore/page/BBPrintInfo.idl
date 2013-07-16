@@ -20,28 +20,14 @@
  * IN THE SOFTWARE.
  */
 
-#include <blpwtk2_renderviewobserverimpl.h>
-#include <blpwtk2_printutil.h>
-#include <content/public/renderer/render_view.h>
+[
+    ActiveDOMObject
+] interface BBPrintInfo {
 
-namespace blpwtk2 {
-
-RenderViewObserverImpl::RenderViewObserverImpl(content::RenderView* renderView)
-: content::RenderViewObserver(renderView)
-{
-}
-
-RenderViewObserverImpl::~RenderViewObserverImpl()
-{
-}
-
-void RenderViewObserverImpl::PrintPage(
-    WebKit::WebFrame* frame,
-    bool userInitiated)
-{
-    WebKit::WebView* view = render_view()->GetWebView();
-
-    PrintUtil::PrintPage(frame, view);
-}
-
-}  // close namespace blpwtk2
+    readonly attribute BBPrintHeader headerLeft;
+    readonly attribute BBPrintHeader headerCenter;
+    readonly attribute BBPrintHeader headerRight;
+    readonly attribute BBPrintHeader footerLeft;
+    readonly attribute BBPrintHeader footerCenter;
+    readonly attribute BBPrintHeader footerRight;
+};

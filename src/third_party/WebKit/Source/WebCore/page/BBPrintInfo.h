@@ -20,28 +20,42 @@
  * IN THE SOFTWARE.
  */
 
-#include <blpwtk2_renderviewobserverimpl.h>
-#include <blpwtk2_printutil.h>
-#include <content/public/renderer/render_view.h>
 
-namespace blpwtk2 {
+#ifndef BBPrintInfo_h
+#define BBPrintInfo_h
 
-RenderViewObserverImpl::RenderViewObserverImpl(content::RenderView* renderView)
-: content::RenderViewObserver(renderView)
-{
-}
+#include "ActiveDOMObject.h"
+#include "BBPrintHeader.h"
+#include <wtf/RefCounted.h>
 
-RenderViewObserverImpl::~RenderViewObserverImpl()
-{
-}
+namespace WebCore {
 
-void RenderViewObserverImpl::PrintPage(
-    WebKit::WebFrame* frame,
-    bool userInitiated)
-{
-    WebKit::WebView* view = render_view()->GetWebView();
+    class Document;
 
-    PrintUtil::PrintPage(frame, view);
-}
+    class BBPrintInfo : public RefCounted<BBPrintInfo>, public ActiveDOMObject {
+    public:
 
-}  // close namespace blpwtk2
+        static PassRefPtr<BBPrintInfo> create(Document* document) { return adoptRef(new BBPrintInfo(document)); }
+
+        RefPtr<BBPrintHeader> headerLeft();
+        RefPtr<BBPrintHeader> headerCenter();
+        RefPtr<BBPrintHeader> headerRight();
+        RefPtr<BBPrintHeader> footerLeft();
+        RefPtr<BBPrintHeader> footerCenter();
+        RefPtr<BBPrintHeader> footerRight();
+
+    private:
+
+        explicit BBPrintInfo(Document* document);
+
+        RefPtr<BBPrintHeader> d_headerLeft;
+        RefPtr<BBPrintHeader> d_headerCenter;
+        RefPtr<BBPrintHeader> d_headerRight;
+        RefPtr<BBPrintHeader> d_footerLeft;
+        RefPtr<BBPrintHeader> d_footerCenter;
+        RefPtr<BBPrintHeader> d_footerRight;
+    };
+
+} // namespace WebCore
+
+#endif // BBPrintInfo_h

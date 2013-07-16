@@ -32,6 +32,7 @@
 #include "WebDocument.h"
 
 #include "AXObjectCache.h"
+#include "BBPrintInfo.h"
 #include "CSSParserMode.h"
 #include "Document.h"
 #include "DocumentLoader.h"
@@ -49,6 +50,7 @@
 #include "SecurityOrigin.h"
 #include "StyleSheetContents.h"
 #include "WebAccessibilityObject.h"
+#include "WebBBPrintInfo.h"
 #include "WebDOMEvent.h"
 #include "WebDocumentType.h"
 #include "WebElement.h"
@@ -276,6 +278,12 @@ WebVector<WebDraggableRegion> WebDocument::draggableRegions() const
     }
 #endif
     return draggableRegions;
+}
+
+WebBBPrintInfo WebDocument::bbPrintInfo()
+{
+    Document* document = unwrap<Document>();
+    return WebBBPrintInfo(document->bbPrintInfo());
 }
 
 WebDocument::WebDocument(const PassRefPtr<Document>& elem)

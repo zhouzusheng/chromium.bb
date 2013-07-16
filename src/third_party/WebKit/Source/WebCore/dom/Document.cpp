@@ -32,6 +32,7 @@
 #include "AnimationController.h"
 #include "Attr.h"
 #include "Attribute.h"
+#include "BBPrintInfo.h"
 #include "CDATASection.h"
 #include "CSSParser.h"
 #include "CSSStyleDeclaration.h"
@@ -496,6 +497,7 @@ Document::Document(Frame* frame, const KURL& url, bool isXHTML, bool isHTML)
 #if ENABLE(FONT_LOAD_EVENTS)
     , m_fontloader(0)
 #endif
+    , m_bbPrintInfo(0)
 {
     m_printing = false;
     m_paginatedForScreen = false;
@@ -6160,5 +6162,12 @@ PassRefPtr<FontLoader> Document::fontloader()
     return m_fontloader;
 }
 #endif
+
+PassRefPtr<BBPrintInfo> Document::bbPrintInfo()
+{
+    if (!m_bbPrintInfo)
+        m_bbPrintInfo = BBPrintInfo::create(this);
+    return m_bbPrintInfo;
+}
 
 } // namespace WebCore

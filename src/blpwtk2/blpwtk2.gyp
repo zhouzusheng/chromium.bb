@@ -194,6 +194,8 @@
         'private/blpwtk2_statics.cc',
         'private/blpwtk2_statics.h',
         'private/blpwtk2_dllmain.cc',
+        'private/blpwtk2_printutil.cc',
+        'private/blpwtk2_printutil.h',
       ],
       'include_dirs': [
         'public',

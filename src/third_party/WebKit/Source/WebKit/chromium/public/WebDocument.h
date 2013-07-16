@@ -47,6 +47,7 @@ namespace WTF { template <typename T> class PassRefPtr; }
 
 namespace WebKit {
 class WebAccessibilityObject;
+class WebBBPrintInfo;
 class WebDocumentType;
 class WebElement;
 class WebFormElement;
@@ -124,6 +125,8 @@ public:
     WEBKIT_EXPORT void insertUserStyleSheet(const WebString& sourceCode, UserStyleLevel);
 
     WEBKIT_EXPORT WebVector<WebDraggableRegion> draggableRegions() const;
+
+    WEBKIT_EXPORT WebBBPrintInfo bbPrintInfo();
 
 #if WEBKIT_IMPLEMENTATION
     WebDocument(const WTF::PassRefPtr<WebCore::Document>&);

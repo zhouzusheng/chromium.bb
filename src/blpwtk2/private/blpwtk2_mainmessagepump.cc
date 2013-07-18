@@ -37,20 +37,6 @@ static bool s_isInModal = false;
 
 static const int kMsgHaveWork = WM_USER + 1;
 
-static void DebugWithTime(const char *format, ...)
-{
-    va_list arglist;
-    va_start(arglist, format);
-
-    static base::TimeTicks START_TIME = base::TimeTicks::Now();
-    int milliseconds = (base::TimeTicks::Now() - START_TIME).InMilliseconds();
-
-    char buf[1024];
-    int timeLen = sprintf_s(buf, sizeof(buf), "%d: ", milliseconds);
-    _vsprintf_s_l(buf+timeLen, sizeof(buf)-timeLen, format, NULL, arglist);
-    OutputDebugStringA(buf);
-}
-
 static bool isModalCode(int code)
 {
     return MSGF_DIALOGBOX == code

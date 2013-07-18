@@ -44,10 +44,13 @@ WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
 , d_implDispatcher(implDispatcher)
 , d_proxyDispatcher(MessageLoop::current())
 , d_delegate(delegate)
+, d_routingId(0)
 , d_lastMoveRepaint(false)
 , d_isMoveAckPending(false)
 , d_wasDestroyed(false)
 , d_isMainFrameAccessible(false)
+, d_isInProcess(false)
+, d_gotRendererInfo(false)
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(browserContext);
@@ -66,14 +69,19 @@ WebViewProxy::WebViewProxy(WebViewImpl* impl,
 , d_implDispatcher(implDispatcher)
 , d_proxyDispatcher(proxyDispatcher)
 , d_delegate(0)
+, d_routingId(0)
 , d_lastMoveRepaint(false)
 , d_isMoveAckPending(false)
 , d_wasDestroyed(false)
 , d_isMainFrameAccessible(false)
+, d_isInProcess(false)
+, d_gotRendererInfo(false)
 {
     DCHECK(MessageLoop::current() == implDispatcher);
 
     AddRef();  // this is balanced in destroy()
+
+    impl->setImplClient(this);
 }
 
 WebViewProxy::~WebViewProxy()
@@ -363,6 +371,13 @@ void WebViewProxy::handleMediaRequest(WebView* source, MediaRequest* mediaReques
                     make_scoped_refptr(static_cast<MediaRequestImpl*>(mediaRequest))));
 }
 
+void WebViewProxy::updateRendererInfo(bool isInProcess, int routingId)
+{
+    d_proxyDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::proxyUpdateRendererInfo, this, isInProcess,
+                   routingId));
+}
+
 void WebViewProxy::implInit(gfx::NativeView parent,
                             content::BrowserContext* browserContext,
                             int hostAffinity,
@@ -370,6 +385,7 @@ void WebViewProxy::implInit(gfx::NativeView parent,
 {
     d_impl = new WebViewImpl(this, parent, browserContext, hostAffinity,
                              initiallyVisible);
+    d_impl->setImplClient(this);
 }
 
 void WebViewProxy::implDestroy()
@@ -607,6 +623,13 @@ void WebViewProxy::proxyMoveAck(int left, int top, int width, int height, bool r
             d_lastMoveRepaint = false;
         }
     }
+}
+
+void WebViewProxy::proxyUpdateRendererInfo(bool isInProcess, int routingId)
+{
+    d_gotRendererInfo = true;
+    d_isInProcess = isInProcess;
+    d_routingId = routingId;
 }
 
 }  // close namespace blpwtk2

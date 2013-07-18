@@ -29,6 +29,7 @@
 #include <blpwtk2_webframeimpl.h>
 #include <blpwtk2_stringref.h>
 #include <blpwtk2_webviewdelegate.h>
+#include <blpwtk2_webviewimplclient.h>
 #include <blpwtk2_mediaobserverimpl.h>
 #include <blpwtk2_statics.h>
 
@@ -54,6 +55,7 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
                          int hostAffinity,
                          bool initiallyVisible)
 : d_delegate(delegate)
+, d_implClient(0)
 , d_focusBeforeEnabled(false)
 , d_focusAfterEnabled(false)
 , d_isReadyForDelete(false)
@@ -78,6 +80,7 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 
 WebViewImpl::WebViewImpl(content::WebContents* contents)
 : d_delegate(0)
+, d_implClient(0)
 , d_focusBeforeEnabled(false)
 , d_focusAfterEnabled(false)
 , d_isReadyForDelete(false)
@@ -99,6 +102,11 @@ WebViewImpl::~WebViewImpl()
     DCHECK(d_isReadyForDelete);
     DCHECK(d_isDeletingSoon);
     SetParent(getNativeView(), d_originalParent);
+}
+
+void WebViewImpl::setImplClient(WebViewImplClient* client)
+{
+    d_implClient = client;
 }
 
 gfx::NativeView WebViewImpl::getNativeView() const
@@ -472,8 +480,15 @@ void WebViewImpl::DidFinishLoad(int64 frame_id,
     if (d_wasDestroyed || !d_delegate) return;
 
     // TODO: figure out what to do for iframes
-    if (is_main_frame)
+    if (is_main_frame) {
         d_delegate->didFinishLoad(this, validated_url.spec());
+
+        if (d_implClient) {
+            bool inProcess = d_webContents->GetRenderProcessHost()->IsInProcess();
+            int routingId = d_webContents->GetRoutingID();
+            d_implClient->updateRendererInfo(inProcess, routingId);
+        }
+    }
 }
 
 void WebViewImpl::DidFailLoad(int64 frame_id,
@@ -487,10 +502,16 @@ void WebViewImpl::DidFailLoad(int64 frame_id,
     if (d_wasDestroyed || !d_delegate) return;
 
     // TODO: figure out what to do for iframes
-    if (is_main_frame)
+    if (is_main_frame) {
         d_delegate->didFailLoad(this, validated_url.spec());
-}
 
+        if (d_implClient) {
+            bool inProcess = d_webContents->GetRenderProcessHost()->IsInProcess();
+            int routingId = d_webContents->GetRoutingID();
+            d_implClient->updateRendererInfo(inProcess, routingId);
+        }
+    }
+}
 
 }  // close namespace blpwtk2
 

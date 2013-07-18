@@ -171,6 +171,8 @@
         'private/blpwtk2_networkdelegateimpl.h',
         'private/blpwtk2_webviewimpl.cc',
         'private/blpwtk2_webviewimpl.h',
+        'private/blpwtk2_webviewimplclient.cc',
+        'private/blpwtk2_webviewimplclient.h',
         'private/blpwtk2_webframeimpl.cc',
         'private/blpwtk2_webframeimpl.h',
         'private/blpwtk2_webviewproxy.cc',

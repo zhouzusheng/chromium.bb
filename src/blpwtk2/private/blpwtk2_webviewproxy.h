@@ -27,6 +27,7 @@
 
 #include <blpwtk2_webview.h>
 #include <blpwtk2_webviewdelegate.h>
+#include <blpwtk2_webviewimplclient.h>
 
 #include <base/memory/ref_counted.h>
 #include <ui/gfx/native_widget_types.h>
@@ -55,7 +56,8 @@ class WebViewImpl;
 // See blpwtk2_toolkit.h for an explanation about the threads.
 class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
                         public WebView,
-                        public WebViewDelegate {
+                        public WebViewDelegate,
+                        public WebViewImplClient {
   public:
     WebViewProxy(WebViewDelegate* delegate,
                  gfx::NativeView parent,
@@ -109,6 +111,10 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void showContextMenu(WebView* source, const ContextMenuParams& params) OVERRIDE;
     virtual void handleMediaRequest(WebView* source, MediaRequest* request) OVERRIDE;
 
+    // ========== WebViewImplClient overrides ================
+
+    virtual void updateRendererInfo(bool isInProcess, int routingId) OVERRIDE;
+
   private:
     // only RefCountedThreadSafe should be able to delete this object
     friend class base::RefCountedThreadSafe<WebViewProxy>;
@@ -155,15 +161,20 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
 
     void proxyMoveAck(int left, int top, int width, int height, bool repaint);
 
+    void proxyUpdateRendererInfo(bool isInProcess, int routingId);
+
     WebViewImpl* d_impl;
     MessageLoop* d_implDispatcher;
     MessageLoop* d_proxyDispatcher;
     WebViewDelegate* d_delegate;
+    int d_routingId;
     RECT d_lastMoveRect;
     bool d_lastMoveRepaint;
     bool d_isMoveAckPending;
     bool d_wasDestroyed;
     bool d_isMainFrameAccessible;
+    bool d_isInProcess;
+    bool d_gotRendererInfo;
 };
 
 

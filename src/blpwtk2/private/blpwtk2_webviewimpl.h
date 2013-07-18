@@ -42,6 +42,7 @@ namespace blpwtk2 {
 class ContextMenuParams;
 class WebViewDelegate;
 class WebFrameImpl;
+class WebViewImplClient;
 
 // This is the implementation of the blpwtk2::WebView interface.  It creates a
 // content::WebContents object, and implements the content::WebContentsDelegate
@@ -69,6 +70,7 @@ class WebViewImpl : public WebView,
     explicit WebViewImpl(content::WebContents* contents);
     virtual ~WebViewImpl();
 
+    void setImplClient(WebViewImplClient* client);
     gfx::NativeView getNativeView() const;
     void showContextMenu(const ContextMenuParams& params);
     void saveCustomContextMenuContext(const content::CustomContextMenuContext& context);
@@ -172,6 +174,7 @@ class WebViewImpl : public WebView,
     scoped_ptr<content::WebContents> d_webContents;
     scoped_ptr<WebFrameImpl> d_mainFrame;
     WebViewDelegate* d_delegate;
+    WebViewImplClient* d_implClient;
     gfx::NativeView d_originalParent;
     bool d_focusBeforeEnabled;
     bool d_focusAfterEnabled;

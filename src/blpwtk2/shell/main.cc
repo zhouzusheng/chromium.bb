@@ -506,6 +506,8 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
     case WM_SETTINGCHANGE:
         blpwtk2::Toolkit::onRootWindowSettingChange(hwnd);
         break;
+    case WM_ERASEBKGND:
+        return 1;
     case WM_DESTROY:
         delete shell;
         return 0;

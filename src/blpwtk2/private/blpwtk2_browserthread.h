@@ -70,7 +70,6 @@ class BrowserThread : private base::PlatformThread::Delegate {
     base::WaitableEvent* d_initializeEvent;
     sandbox::SandboxInterfaceInfo* d_sandboxInfo;
     BrowserMainRunner* d_mainRunner;
-    MessageLoop* d_messageLoop;
     base::PlatformThreadHandle d_threadHandle;
 };
 

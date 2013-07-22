@@ -28,6 +28,7 @@
 #include <blpwtk2_statics.h>
 
 #include <base/logging.h>  // for DCHECK
+#include <base/message_loop.h>
 #include <content/public/browser/browser_main_runner.h>
 
 namespace blpwtk2 {
@@ -42,6 +43,10 @@ BrowserMainRunner::BrowserMainRunner(sandbox::SandboxInterfaceInfo* sandboxInfo)
     int rc = d_impl->Initialize(d_mainParams);
     DCHECK(-1 == rc);  // it returns -1 for success!!
 
+    // The MessageLoop is created by content::BrowserMainRunner (inside
+    // content::BrowserMainLoop).
+    Statics::browserMainMessageLoop = MessageLoop::current();
+
     d_browserContext.reset(new BrowserContextImpl());
 
     d_devToolsHttpHandlerDelegate.reset(
@@ -53,6 +58,7 @@ BrowserMainRunner::~BrowserMainRunner()
     d_devToolsHttpHandlerDelegate.reset();
     d_inProcessRendererHost.reset();
     d_browserContext.reset();
+    Statics::browserMainMessageLoop = 0;
     d_impl->Shutdown();
 }
 

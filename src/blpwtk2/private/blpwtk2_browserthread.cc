@@ -24,6 +24,7 @@
 
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_inprocessrendererhost.h>
+#include <blpwtk2_statics.h>
 
 #include <base/at_exit.h>
 #include <base/bind.h>
@@ -65,8 +66,8 @@ BrowserMainRunner* BrowserThread::mainRunner() const
 
 MessageLoop* BrowserThread::messageLoop() const
 {
-    DCHECK(d_messageLoop);
-    return d_messageLoop;
+    DCHECK(Statics::browserMainMessageLoop);
+    return Statics::browserMainMessageLoop;
 }
 
 void BrowserThread::ThreadMain()
@@ -80,7 +81,6 @@ void BrowserThread::ThreadMain()
     base::ShadowingAtExitManager atExitManager;
 
     d_mainRunner = new BrowserMainRunner(d_sandboxInfo);
-    d_messageLoop = MessageLoop::current();
 
     // Force the creation of the in-process renderer host.  This has to be done
     // before signaling the initialize event, so that when the application
@@ -96,7 +96,6 @@ void BrowserThread::ThreadMain()
     DCHECK(0 == rc);
 
     delete d_mainRunner;
-    d_messageLoop = 0;
 }
 
 }  // close namespace blpwtk2

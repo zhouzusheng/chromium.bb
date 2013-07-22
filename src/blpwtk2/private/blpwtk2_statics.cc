@@ -34,6 +34,7 @@ base::PlatformThreadId Statics::browserMainThreadId = base::kInvalidThreadId;
 content::DevToolsHttpHandler* Statics::devToolsHttpHandler = 0;
 HttpTransactionHandler* Statics::httpTransactionHandler = 0;
 MessageLoop* Statics::rendererMessageLoop = 0;
+MessageLoop* Statics::browserMainMessageLoop = 0;
 
 std::vector<base::FilePath>& Statics::getPluginPaths()
 {

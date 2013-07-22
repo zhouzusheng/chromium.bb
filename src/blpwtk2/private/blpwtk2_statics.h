@@ -72,6 +72,9 @@ struct Statics {
     // MessageLoop for the in-process renderer thread.
     static MessageLoop* rendererMessageLoop;
 
+    // MessageLoop for the browser main thread.
+    static MessageLoop* browserMainMessageLoop;
+
 
     // ====== some utility functions =============
 

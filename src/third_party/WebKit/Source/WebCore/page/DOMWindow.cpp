@@ -31,6 +31,7 @@
 #include "BarInfo.h"
 #include "BBClipboard.h"
 #include "BBWindowHooks.h"
+#include "BBDragData.h"
 #include "BeforeUnloadEvent.h"
 #include "CSSComputedStyleDeclaration.h"
 #include "CSSRuleList.h"
@@ -396,6 +397,7 @@ DOMWindow::DOMWindow(Document* document)
     , FrameDestructionObserver(document->frame())
     , m_shouldPrintWhenFinishedLoading(false)
     , m_suspendedForPageCache(false)
+    , m_bbDragData(0)
 {
     ASSERT(frame());
     ASSERT(DOMWindow::document());
@@ -431,6 +433,7 @@ DOMWindow::~DOMWindow()
         ASSERT(!m_applicationCache);
         ASSERT(!m_bbClipboard);
         ASSERT(!m_bbWindowHooks);
+        ASSERT(!m_bbDragData);
     }
 #endif
 
@@ -590,6 +593,7 @@ void DOMWindow::resetDOMWindowProperties()
     m_applicationCache = 0;
     m_bbClipboard = 0;
     m_bbWindowHooks = 0;
+    m_bbDragData = 0;
 }
 
 bool DOMWindow::isCurrentlyDisplayedInFrame() const
@@ -1998,6 +2002,15 @@ BBWindowHooks* DOMWindow::bbWindowHooks() const
     if (!m_bbWindowHooks)
         m_bbWindowHooks = BBWindowHooks::create(m_frame);
     return m_bbWindowHooks.get();
+}
+
+PassRefPtr<BBDragData> DOMWindow::bbDragData()
+{
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
+    if (!m_bbDragData)
+        m_bbDragData = BBDragData::create();
+    return m_bbDragData;
 }
 
 } // namespace WebCore

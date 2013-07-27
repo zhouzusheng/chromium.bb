@@ -299,7 +299,9 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
                                              move.window_rect.height(), flags);
 
     if (!defer_window_pos_info) {
-      DCHECK(false) << "DeferWindowPos failed, so all plugin moves ignored.";
+      DWORD lastError = GetLastError();
+      DCHECK(false) << "DeferWindowPos failed, so all plugin moves ignored: "
+                    << lastError;
       return;
     }
   }

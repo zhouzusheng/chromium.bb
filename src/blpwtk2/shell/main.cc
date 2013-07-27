@@ -141,6 +141,7 @@ public:
     blpwtk2::WebView* d_webView;
     Shell* d_inspectorShell;
     Shell* d_inspectorFor;
+    POINT d_contextMenuPoint;
 
     Shell(HWND mainWnd, HWND urlEntryWnd, blpwtk2::WebView* webView = 0)
     : d_mainWnd(mainWnd)
@@ -337,6 +338,10 @@ public:
         assert(source == d_webView);
         OutputDebugStringA("DELEGATE: showContextMenu\n");
 
+        d_contextMenuPoint = params.pointOnScreen();
+        ::ScreenToClient(d_mainWnd, &d_contextMenuPoint);
+        d_contextMenuPoint.y -= URLBAR_HEIGHT;
+
         HMENU menu = createContextMenu(params);
         TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_RIGHTBUTTON,
                        params.pointOnScreen().x, params.pointOnScreen().y,
@@ -483,6 +488,7 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         case IDM_INSPECT:
             if (shell->d_inspectorShell) {
                 BringWindowToTop(shell->d_inspectorShell->d_mainWnd);
+                shell->d_inspectorShell->d_webView->inspectElementAt(shell->d_contextMenuPoint);
                 shell->d_inspectorShell->d_webView->focus();
                 return 0;
             }
@@ -491,6 +497,7 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             ShowWindow(shell->d_inspectorShell->d_mainWnd, SW_SHOW);
             UpdateWindow(shell->d_inspectorShell->d_mainWnd);
             shell->d_inspectorShell->d_webView->loadInspector(shell->d_webView);
+            shell->d_inspectorShell->d_webView->inspectElementAt(shell->d_contextMenuPoint);
             shell->d_inspectorShell->d_webView->focus();
             return 0;
         case IDM_EXIT:
@@ -714,7 +721,7 @@ HMENU createContextMenu(const blpwtk2::ContextMenuParams& params)
     if (addSeparator)
         AppendMenu(menu, MF_SEPARATOR, 0, NULL);
 
-    AppendMenu(menu, MF_STRING, IDM_INSPECT, L"I&nspect");
+    AppendMenu(menu, MF_STRING, IDM_INSPECT, L"I&nspect Element");
     return menu;
 }
 

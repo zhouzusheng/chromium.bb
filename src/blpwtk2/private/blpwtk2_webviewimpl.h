@@ -40,6 +40,7 @@ namespace content {
 namespace blpwtk2 {
 
 class ContextMenuParams;
+class DevToolsFrontendHostDelegateImpl;
 class WebViewDelegate;
 class WebFrameImpl;
 class WebViewImplClient;
@@ -81,6 +82,7 @@ class WebViewImpl : public WebView,
     virtual WebFrame* mainFrame() OVERRIDE;
     virtual void loadUrl(const StringRef& url) OVERRIDE;
     virtual void loadInspector(WebView* inspectedView) OVERRIDE;
+    virtual void inspectElementAt(const POINT& point) OVERRIDE;
     virtual void reload(bool ignoreCache) OVERRIDE;
     virtual void goBack() OVERRIDE;
     virtual void goForward() OVERRIDE;
@@ -171,6 +173,7 @@ class WebViewImpl : public WebView,
         content::RenderViewHost* render_view_host) OVERRIDE;
 
   private:
+    scoped_ptr<DevToolsFrontendHostDelegateImpl> d_devToolsFrontEndHost;
     scoped_ptr<content::WebContents> d_webContents;
     scoped_ptr<WebFrameImpl> d_mainFrame;
     WebViewDelegate* d_delegate;

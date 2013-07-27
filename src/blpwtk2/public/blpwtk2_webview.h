@@ -59,6 +59,10 @@ public:
     // replacing whatever contents are currently in this WebView.
     virtual void loadInspector(WebView* inspectedView) = 0;
 
+    // The the element at the specified 'point'.  The behavior is undefined
+    // unless 'loadInspector' has been called.
+    virtual void inspectElementAt(const POINT& point) = 0;
+
     // Reload the contents of this WebView.  Bypass the memory cache if the
     // specified 'ignoreCache' is 'true'.  The behavior is undefined unless
     // 'loadUrl' or 'loadInspector' has been called.

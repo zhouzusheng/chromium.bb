@@ -190,11 +190,20 @@ void WebViewImpl::loadInspector(WebView* inspectedView)
     scoped_refptr<content::DevToolsAgentHost> agentHost
         = content::DevToolsAgentHost::GetOrCreateFor(inspectedContents->GetRenderViewHost());
 
-    DevToolsFrontendHostDelegateImpl* devtoolsFrontend
-        = new DevToolsFrontendHostDelegateImpl(d_webContents.get(), agentHost);
+    d_devToolsFrontEndHost.reset(
+        new DevToolsFrontendHostDelegateImpl(d_webContents.get(), agentHost));
 
     GURL url = Statics::devToolsHttpHandler->GetFrontendURL(NULL);
     loadUrl(url.spec());
+}
+
+void WebViewImpl::inspectElementAt(const POINT& point)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    DCHECK(d_devToolsFrontEndHost.get())
+        << "Need to call loadInspector first!";
+    d_devToolsFrontEndHost->agentHost()->InspectElement(point.x, point.y);
 }
 
 void WebViewImpl::reload(bool ignoreCache)

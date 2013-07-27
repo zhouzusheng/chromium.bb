@@ -75,6 +75,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual WebFrame* mainFrame() OVERRIDE;
     virtual void loadUrl(const StringRef& url) OVERRIDE;
     virtual void loadInspector(WebView* inspectedView) OVERRIDE;
+    virtual void inspectElementAt(const POINT& point) OVERRIDE;
     virtual void reload(bool ignoreCache) OVERRIDE;
     virtual void goBack() OVERRIDE;
     virtual void goForward() OVERRIDE;
@@ -127,6 +128,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void implDestroy();
     void implLoadUrl(const std::string& url);
     void implLoadInspector(WebView* inspectedView);
+    void implInspectElementAt(const POINT& point);
     void implReload(bool ignoreCache);
     void implGoBack();
     void implGoForward();

@@ -46,6 +46,8 @@ class DevToolsFrontendHostDelegateImpl
                                      content::DevToolsAgentHost* agentHost);
     virtual ~DevToolsFrontendHostDelegateImpl();
 
+    content::DevToolsAgentHost* agentHost() const { return d_agentHost.get(); }
+
     // ======== WebContentsObserver overrides ============
 
     virtual void RenderViewCreated(content::RenderViewHost* renderViewHost) OVERRIDE;

@@ -133,6 +133,14 @@ void WebViewProxy::loadInspector(WebView* inspectedView)
         base::Bind(&WebViewProxy::implLoadInspector, this, inspectedView));
 }
 
+void WebViewProxy::inspectElementAt(const POINT& point)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_implDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::implInspectElementAt, this, point));
+}
+
 void WebViewProxy::reload(bool ignoreCache)
 {
     DCHECK(Statics::isInApplicationMainThread());
@@ -408,6 +416,12 @@ void WebViewProxy::implLoadInspector(WebView* inspectedView)
         = static_cast<WebViewProxy*>(inspectedView);
     DCHECK(inspectedViewProxy->d_impl);
     d_impl->loadInspector(inspectedViewProxy->d_impl);
+}
+
+void WebViewProxy::implInspectElementAt(const POINT& point)
+{
+    DCHECK(d_impl);
+    d_impl->inspectElementAt(point);
 }
 
 void WebViewProxy::implReload(bool ignoreCache)

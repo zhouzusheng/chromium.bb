@@ -56,7 +56,11 @@ public:
     virtual void loadUrl(const StringRef& url) = 0;
 
     // Load an inspector for the specified 'inspectedView' into this WebView,
-    // replacing whatever contents are currently in this WebView.
+    // replacing whatever contents are currently in this WebView.  This method
+    // depends on the blpwtk2_devtools pak file being present in the same
+    // directory as blpwtk2.dll.  This can be checked using the
+    // blpwtk2::Toolkit::hasDevTools() method.  The behavior if this method is
+    // undefined unless blpwtk2::Toolkit::hasDevTools() returns true.
     virtual void loadInspector(WebView* inspectedView) = 0;
 
     // The the element at the specified 'point'.  The behavior is undefined

@@ -121,6 +121,13 @@ struct BLPWTK2_EXPORT Toolkit {
     // it will not have any effect.
     static void registerPlugin(const char* pluginPath);
 
+    // Return true if the blpwtk2_devtools pak file was detected and has been
+    // loaded.  This method determines whether blpwtk2::WebView::loadInspector
+    // can be used.  Note that the pak file is only loaded when a WebView has
+    // been created, which may happen asynchronously if using the RENDERER_MAIN
+    // thread mode.
+    static bool hasDevTools();
+
     // Install a custom HttpTransactionHandler.  This function can only be
     // called before creating any WebViews, otherwise it will not have any
     // effect.  The http handler should remain alive until shutdown() is

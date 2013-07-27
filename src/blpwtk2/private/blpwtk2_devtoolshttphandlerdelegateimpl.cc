@@ -61,14 +61,5 @@ DevToolsHttpHandlerDelegateImpl::~DevToolsHttpHandlerDelegateImpl()
     Statics::devToolsHttpHandler = 0;
 }
 
-base::FilePath DevToolsHttpHandlerDelegateImpl::GetDebugFrontendDir()
-{
-    base::FilePath path;
-    PathService::Get(base::DIR_EXE, &path);
-    path = path.AppendASCII("resources");
-    path = path.AppendASCII("inspector");
-    return path;
-}
-
 }  // close namespace blpwtk2
 

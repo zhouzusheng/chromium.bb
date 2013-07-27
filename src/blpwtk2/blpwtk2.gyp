@@ -271,11 +271,49 @@
       ],
     },
     {
+      'target_name': 'blpwtk2_devtools',
+      'type': 'none',
+      'dependencies': [
+        '../content/browser/devtools/devtools_resources.gyp:devtools_resources',
+      ],
+      'variables': {
+        'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
+      },
+      'actions': [
+        {
+          'action_name': 'repack_blpwtk2_devtools',
+          'variables': {
+            'pak_inputs': [
+              '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
+            ],
+          },
+          'inputs': [
+            '<(repack_path)',
+            '<@(pak_inputs)',
+          ],
+          'action': ['python', '<(repack_path)', '<@(_outputs)',
+                     '<@(pak_inputs)'],
+          'conditions': [
+            ['bb_version!=""', {
+              'outputs': [
+                '<(PRODUCT_DIR)/blpwtk2_devtools.<(bb_version).pak',
+              ],
+            }, {
+              'outputs': [
+                '<(PRODUCT_DIR)/blpwtk2_devtools.pak',
+              ],
+            }],
+          ],
+        },
+      ],
+    },
+    {
       'target_name': 'blpwtk2_all',
       'type': 'none',
       'dependencies': [
         'blpwtk2_subprocess',
         'blpwtk2_shell',
+        'blpwtk2_devtools',
         '../content/content.gyp:content_shell',
         '../webkit/webkit.gyp:test_shell',
       ],

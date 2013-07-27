@@ -75,6 +75,9 @@ struct Statics {
     // MessageLoop for the browser main thread.
     static MessageLoop* browserMainMessageLoop;
 
+    // Whether or not devtools is available.
+    static bool hasDevTools;
+
 
     // ====== some utility functions =============
 

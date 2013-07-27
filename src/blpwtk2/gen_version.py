@@ -34,6 +34,7 @@ def writeProductsFile(f, version):
   f.write('#define BLPWTK2_VERSION "' + version + '"\n')
   f.write('#define BLPWTK2_DLL_NAME "blpwtk2' + productAppend + '.dll"\n')
   f.write('#define BLPWTK2_SUBPROCESS_EXE_NAME "blpwtk2_subprocess' + productAppend + '.exe"\n')
+  f.write('#define BLPWTK2_DEVTOOLS_PAK_NAME "blpwtk2_devtools' + productAppend + '.pak"\n')
   f.write('#define BLPV8_DLL_NAME "blpv8' + productAppend + '.dll"\n')
   f.write('\n')
   f.write('#endif  // INCLUDED_GENERATED_BLPWTK2_PRODUCTS\n')

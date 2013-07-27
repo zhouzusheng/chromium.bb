@@ -40,6 +40,11 @@ class ContentClient : public content::ContentClient {
     // Returns the user agent.
     virtual std::string GetUserAgent() const OVERRIDE;
 
+    // Return the contents of a resource in a StringPiece given the resource id.
+    virtual base::StringPiece GetDataResource(
+        int resource_id,
+        ui::ScaleFactor scale_factor) const OVERRIDE;
+
   private:
     DISALLOW_COPY_AND_ASSIGN(ContentClient);
 };
@@ -54,6 +59,7 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
 
     // ContentMainDelegate implementation
     virtual bool BasicStartupComplete(int* exit_code) OVERRIDE;
+    virtual void PreSandboxStartup() OVERRIDE;
     virtual content::ContentBrowserClient*
         CreateContentBrowserClient() OVERRIDE;
     virtual content::ContentRendererClient*

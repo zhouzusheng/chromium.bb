@@ -24,16 +24,19 @@
 
 #include <blpwtk2_contentbrowserclientimpl.h>
 #include <blpwtk2_contentrendererclientimpl.h>
+#include <blpwtk2_products.h>
 #include <blpwtk2_statics.h>
 
 #include <base/command_line.h>
 #include <base/files/file_path.h>
+#include <base/file_util.h>
 #include <base/logging.h>
 #include <base/path_service.h>
 #include <content/public/common/content_switches.h>
 #include <webkit/plugins/npapi/plugin_list.h>
 #include <webkit/user_agent/user_agent.h>
 #include <webkit/user_agent/user_agent_util.h>
+#include <ui/base/resource/resource_bundle.h>
 #include <ui/base/ui_base_switches.h>
 
 namespace blpwtk2 {
@@ -52,6 +55,18 @@ static void InitLogging()
     logging::SetLogItems(true, true, true, true);
 }
 
+static void InitResourceBundle()
+{
+    base::FilePath pak_file;
+    base::FilePath pak_dir;
+    PathService::Get(base::DIR_MODULE, &pak_dir);
+    pak_file = pak_dir.AppendASCII(BLPWTK2_DEVTOOLS_PAK_NAME);
+    if (file_util::PathExists(pak_file)) {
+        Statics::hasDevTools = true;
+        ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
+    }
+}
+
 ContentClient::ContentClient()
 {
 }
@@ -68,6 +83,17 @@ std::string ContentClient::GetUserAgent() const
     return webkit_glue::BuildUserAgentFromProduct("BlpWtk/" BB_PATCH_VERSION " Chrome/" CHROMIUM_VERSION);
 }
 
+base::StringPiece ContentClient::GetDataResource(
+    int resource_id,
+    ui::ScaleFactor scale_factor) const
+{
+    if (!Statics::hasDevTools) {
+        return base::StringPiece();
+    }
+
+    return ui::ResourceBundle::GetSharedInstance().GetRawDataResourceForScale(
+        resource_id, scale_factor);
+}
 
 ContentMainDelegateImpl::ContentMainDelegateImpl()
 {
@@ -101,6 +127,11 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
     }
 
     return false;
+}
+
+void ContentMainDelegateImpl::PreSandboxStartup()
+{
+    InitResourceBundle();
 }
 
 content::ContentBrowserClient*

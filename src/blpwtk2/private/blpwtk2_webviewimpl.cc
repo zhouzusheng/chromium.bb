@@ -31,6 +31,7 @@
 #include <blpwtk2_webviewdelegate.h>
 #include <blpwtk2_webviewimplclient.h>
 #include <blpwtk2_mediaobserverimpl.h>
+#include <blpwtk2_products.h>
 #include <blpwtk2_statics.h>
 
 #include <base/message_loop.h>
@@ -181,6 +182,7 @@ void WebViewImpl::loadInspector(WebView* inspectedView)
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
     DCHECK(inspectedView);
+    DCHECK(Statics::hasDevTools) << "Could not find: " << BLPWTK2_DEVTOOLS_PAK_NAME;
 
     WebViewImpl* inspectedViewImpl
         = static_cast<WebViewImpl*>(inspectedView);

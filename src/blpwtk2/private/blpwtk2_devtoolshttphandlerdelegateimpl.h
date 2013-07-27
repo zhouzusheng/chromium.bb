@@ -38,8 +38,8 @@ class DevToolsHttpHandlerDelegateImpl
 
     // ====== DevToolsHttpHandlerDelegate overrides =======
     virtual std::string GetDiscoveryPageHTML() OVERRIDE { return ""; }
-    virtual bool BundlesFrontendResources() OVERRIDE { return false; }
-    virtual base::FilePath GetDebugFrontendDir() OVERRIDE;
+    virtual bool BundlesFrontendResources() OVERRIDE { return true; }
+    virtual base::FilePath GetDebugFrontendDir() OVERRIDE { return base::FilePath(); }
     virtual std::string GetPageThumbnailData(const GURL& url) OVERRIDE { return ""; }
     virtual content::RenderViewHost* CreateNewTarget() OVERRIDE { return 0; }
     virtual TargetType GetTargetType(content::RenderViewHost*) OVERRIDE { return kTargetTypeTab; }

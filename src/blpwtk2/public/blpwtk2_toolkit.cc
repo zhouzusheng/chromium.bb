@@ -70,6 +70,12 @@ void Toolkit::registerPlugin(const char* pluginPath)
     Statics::registerPlugin(pluginPath);
 }
 
+bool Toolkit::hasDevTools()
+{
+    Statics::isInApplicationMainThread();
+    return Statics::hasDevTools;
+}
+
 void Toolkit::setHttpTransactionHandler(HttpTransactionHandler* handler)
 {
     Statics::initApplicationMainThread();

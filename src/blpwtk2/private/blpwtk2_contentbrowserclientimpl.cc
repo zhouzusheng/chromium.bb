@@ -32,6 +32,7 @@
 #include <base/threading/thread.h>
 #include <base/threading/platform_thread.h>
 #include <content/public/browser/browser_thread.h>
+#include <content/public/browser/render_process_host.h>
 #include <content/public/renderer/render_thread.h>
 
 namespace blpwtk2 {
@@ -82,6 +83,16 @@ ContentBrowserClientImpl::ContentBrowserClientImpl()
 
 ContentBrowserClientImpl::~ContentBrowserClientImpl()
 {
+}
+
+void ContentBrowserClientImpl::RenderProcessHostCreated(
+    content::RenderProcessHost* host)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    int renderer = Statics::hostIdToRenderer(host->GetID());
+    if (Statics::rendererUsesInProcessPlugins(renderer)) {
+        host->SetUsesInProcessPlugins();
+    }
 }
 
 bool ContentBrowserClientImpl::SupportsInProcessRenderer()

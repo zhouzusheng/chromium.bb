@@ -121,6 +121,13 @@ struct BLPWTK2_EXPORT Toolkit {
     // it will not have any effect.
     static void registerPlugin(const char* pluginPath);
 
+    // Mark the specified 'renderer' to use in-process plugins.  Any WebView
+    // created with affinity to the specified 'renderer' will use in-process
+    // plugins.  The behavior is undefined if this function is called after any
+    // such WebViews have been created.  Note that using in-process plugins
+    // will disable the sandbox for that renderer.
+    static void setRendererUsesInProcessPlugins(int renderer);
+
     // Return true if the blpwtk2_devtools pak file was detected and has been
     // loaded.  This method determines whether blpwtk2::WebView::loadInspector
     // can be used.  Note that the pak file is only loaded when a WebView has

@@ -46,6 +46,12 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
     ContentBrowserClientImpl();
     virtual ~ContentBrowserClientImpl();
 
+    // Notifies that a RenderProcessHost has been created. This is called before
+    // the content layer adds its own BrowserMessageFilters, so that the
+    // embedder's IPC filters have priority.
+    virtual void RenderProcessHostCreated(
+        content::RenderProcessHost* host) OVERRIDE;
+
     // Returns true whether the embedder supports in-process renderers or not.
     // When running "in process", the browser maintains a RenderProcessHost which
     // communicates to a RenderProcess which is instantiated in the same process

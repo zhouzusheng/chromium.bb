@@ -138,23 +138,22 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     // command line.  This is useful for debugging.
     if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess)
         || params.rendererAffinity() == Constants::IN_PROCESS_RENDERER) {
-        hostAffinity = Statics::isRendererMainThreadMode()
-            ? d_browserThread->mainRunner()->inProcessRendererHost()->id()
-            : d_browserMainRunner->createInProcessRendererHost()->id();
+        if (Statics::isOriginalThreadMode()) {
+            d_browserMainRunner->createInProcessRendererHost();
+        }
+        hostAffinity = Statics::rendererToHostId(Constants::IN_PROCESS_RENDERER);
+        DCHECK(-1 != hostAffinity);
     }
     else if (params.rendererAffinity() == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
         hostAffinity = content::SiteInstance::kNoProcessAffinity;
     }
     else {
         DCHECK(0 <= params.rendererAffinity());
-        RendererToHostIdMap::iterator it =
-            d_rendererToHostIdMap.find(params.rendererAffinity());
-        if (it == d_rendererToHostIdMap.end()) {
+        hostAffinity = Statics::rendererToHostId(params.rendererAffinity());
+        if (-1 == hostAffinity) {
             hostAffinity = content::RenderProcessHostImpl::GenerateUniqueId();
-            d_rendererToHostIdMap[params.rendererAffinity()] = hostAffinity;
+            Statics::setRendererHostId(params.rendererAffinity(), hostAffinity);
         }
-        else
-            hostAffinity = it->second;
     }
 
     if (Statics::isRendererMainThreadMode()) {

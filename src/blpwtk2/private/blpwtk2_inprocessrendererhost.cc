@@ -22,6 +22,9 @@
 
 #include <blpwtk2_inprocessrendererhost.h>
 
+#include <blpwtk2_constants.h>
+#include <blpwtk2_statics.h>
+
 #include <content/public/browser/browser_context.h>
 // TODO: remove dependency on these impl classes
 #include <content/browser/renderer_host/render_process_host_impl.h>
@@ -40,6 +43,7 @@ createRenderProcessHost(content::BrowserContext* browserContext)
     int id = content::RenderProcessHostImpl::GenerateUniqueId();
     bool supportsBrowserPlugin = true;
     bool isGuest = false;
+    Statics::setRendererHostId(Constants::IN_PROCESS_RENDERER, id);
     return new content::RenderProcessHostImpl(id, true, browserContext,
                                               partitionImpl,
                                               supportsBrowserPlugin, isGuest);

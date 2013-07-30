@@ -70,6 +70,12 @@ void Toolkit::registerPlugin(const char* pluginPath)
     Statics::registerPlugin(pluginPath);
 }
 
+void Toolkit::setRendererUsesInProcessPlugins(int renderer)
+{
+    Statics::initApplicationMainThread();
+    Statics::setRendererUsesInProcessPlugins(renderer);
+}
+
 bool Toolkit::hasDevTools()
 {
     Statics::isInApplicationMainThread();

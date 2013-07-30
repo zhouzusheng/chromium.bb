@@ -70,12 +70,9 @@ class ToolkitImpl {
     void postHandleMessage(const NativeMsg* msg);
 
   private:
-    typedef std::map<int,int> RendererToHostIdMap;
-
     sandbox::SandboxInterfaceInfo d_sandboxInfo;
     ContentMainDelegateImpl d_mainDelegate;
     scoped_ptr<content::ContentMainRunner> d_mainRunner;
-    RendererToHostIdMap d_rendererToHostIdMap;
 
     // only used for the RENDERER_MAIN thread mode
     scoped_ptr<BrowserThread> d_browserThread;

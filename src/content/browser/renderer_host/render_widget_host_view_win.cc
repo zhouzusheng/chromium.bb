@@ -542,7 +542,8 @@ void RenderWidgetHostViewWin::CreateBrowserAccessibilityManagerIfNeeded() {
 void RenderWidgetHostViewWin::MovePluginWindows(
     const gfx::Vector2d& scroll_offset,
     const std::vector<webkit::npapi::WebPluginGeometry>& plugin_window_moves) {
-  MovePluginWindowsHelper(m_hWnd, plugin_window_moves);
+  bool ipp = GetRenderWidgetHost()->GetProcess()->UsesInProcessPlugins();
+  MovePluginWindowsHelper(m_hWnd, plugin_window_moves, ipp);
 }
 
 static BOOL CALLBACK AddChildWindowToVector(HWND hwnd, LPARAM lparam) {

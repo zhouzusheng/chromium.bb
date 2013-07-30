@@ -110,6 +110,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void SurfaceUpdated(int32 surface_id) OVERRIDE;
   virtual void ResumeRequestsForView(int route_id) OVERRIDE;
   virtual bool IsInProcess() const OVERRIDE;
+  virtual bool UsesInProcessPlugins() const OVERRIDE;
+  virtual void SetUsesInProcessPlugins() OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -329,6 +331,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Indicates whether this is a RenderProcessHost for an in-process
   // renderer.
   bool is_in_process_;
+
+  // Indicates whether this RenderProcessHost uses in-process plugins.
+  bool uses_in_process_plugins_;
 
   // Forwards messages between WebRTCInternals in the browser process
   // and PeerConnectionTracker in the renderer process.

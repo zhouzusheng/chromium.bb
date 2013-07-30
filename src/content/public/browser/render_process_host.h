@@ -208,6 +208,14 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Return true if this is a host for an in-process renderer.
   virtual bool IsInProcess() const = 0;
 
+  // Return true if this renderer uses in-process plugins.
+  virtual bool UsesInProcessPlugins() const = 0;
+
+  // Make this RenderProcessHost use in-process plugins.  This should be called
+  // in ContentBrowserClient::RenderProcessHostCreated if the embedder wants
+  // this renderer to use in-process plugins.
+  virtual void SetUsesInProcessPlugins() = 0;
+
 
   // Static management functions -----------------------------------------------
 

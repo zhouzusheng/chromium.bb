@@ -110,6 +110,7 @@
 #include "content/public/common/process_type.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
+#include "content/renderer/render_process_impl.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_platform_file.h"
@@ -244,14 +245,19 @@ SiteProcessMap* GetSiteProcessMapForBrowserContext(BrowserContext* context) {
 // NOTE: changes to this class need to be reviewed by the security team.
 class RendererSandboxedProcessLauncherDelegate
     : public content::SandboxedProcessLauncherDelegate {
+  bool in_process_plugins_;
  public:
-  RendererSandboxedProcessLauncherDelegate() {}
+  explicit RendererSandboxedProcessLauncherDelegate(
+      bool in_process_plugins)
+      : in_process_plugins_(in_process_plugins)
+  {
+  }
   virtual ~RendererSandboxedProcessLauncherDelegate() {}
 
   virtual void ShouldSandbox(bool* in_sandbox) OVERRIDE {
 #if !defined (GOOGLE_CHROME_BUILD)
     if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kInProcessPlugins)) {
+        switches::kInProcessPlugins) || in_process_plugins_) {
       *in_sandbox = false;
     }
 #endif
@@ -343,7 +349,8 @@ RenderProcessHostImpl::RenderProcessHostImpl(
 #endif
           supports_browser_plugin_(supports_browser_plugin),
           is_guest_(is_guest),
-          is_in_process_(is_in_process) {
+          is_in_process_(is_in_process),
+          uses_in_process_plugins_(false) {
   widget_helper_ = new RenderWidgetHelper();
 
   ChildProcessSecurityPolicyImpl::GetInstance()->Add(GetID());
@@ -439,6 +446,9 @@ bool RenderProcessHostImpl::Init() {
 
   if (is_in_process_) {
     DCHECK(GetContentClient()->browser()->SupportsInProcessRenderer());
+    if (uses_in_process_plugins_)
+      RenderProcessImpl::ForceInProcessPlugins();
+
     // Crank up a thread and run the initialization there.  With the way that
     // messages flow between the browser and renderer, this thread is required
     // to prevent a deadlock in single-process mode.  Since the primordial
@@ -461,7 +471,7 @@ bool RenderProcessHostImpl::Init() {
     // at this stage.
     child_process_launcher_.reset(new ChildProcessLauncher(
 #if defined(OS_WIN)
-        new RendererSandboxedProcessLauncherDelegate,
+        new RendererSandboxedProcessLauncherDelegate(uses_in_process_plugins_),
 #elif defined(OS_POSIX)
         renderer_prefix.empty(),
         base::EnvironmentVector(),
@@ -690,6 +700,11 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
   // Now send any options from our own command line we want to propagate.
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
   PropagateBrowserCommandLineToRenderer(browser_command_line, command_line);
+
+  if (uses_in_process_plugins_ &&
+      !command_line->HasSwitch(switches::kInProcessPlugins)) {
+    command_line->AppendSwitch(switches::kInProcessPlugins);
+  }
 
   // Pass on the browser locale.
   const std::string locale =
@@ -1230,6 +1245,14 @@ void RenderProcessHostImpl::ResumeRequestsForView(int route_id) {
 
 bool RenderProcessHostImpl::IsInProcess() const {
   return is_in_process_;
+}
+
+bool RenderProcessHostImpl::UsesInProcessPlugins() const {
+  return uses_in_process_plugins_;
+}
+
+void RenderProcessHostImpl::SetUsesInProcessPlugins() {
+  uses_in_process_plugins_ = true;
 }
 
 IPC::ChannelProxy* RenderProcessHostImpl::GetChannel() {

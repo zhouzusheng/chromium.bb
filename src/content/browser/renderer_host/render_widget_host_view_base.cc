@@ -201,11 +201,13 @@ void RenderWidgetHostViewBase::DetachPluginWindowsCallback(HWND window) {
 // static
 void RenderWidgetHostViewBase::MovePluginWindowsHelper(
     HWND parent,
-    const std::vector<webkit::npapi::WebPluginGeometry>& moves) {
+    const std::vector<webkit::npapi::WebPluginGeometry>& moves,
+    bool uses_in_process_plugins) {
   if (moves.empty())
     return;
 
   bool oop_plugins =
+    !uses_in_process_plugins &&
     !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) &&
     !CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessPlugins);
 

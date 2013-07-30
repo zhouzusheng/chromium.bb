@@ -31,6 +31,7 @@ class RenderProcessImpl : public RenderProcess {
   virtual TransportDIB* CreateTransportDIB(size_t size) OVERRIDE;
   virtual void FreeTransportDIB(TransportDIB*) OVERRIDE;
 
+  static void ForceInProcessPlugins();
   // Like UseInProcessPlugins(), but called before RenderProcess is created
   // and does not allow overriding by tests. This just checks the command line
   // each time.

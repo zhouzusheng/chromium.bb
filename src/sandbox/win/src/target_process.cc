@@ -192,15 +192,7 @@ DWORD TargetProcess::Create(const wchar_t* exe_path,
       ::TerminateProcess(process_info.process_handle(), 0);
       return win_result;
     }
-
-    // If sandbox is implemented as a DLL, impersonation token cannot be closed
-    // here as the impersonation token should be used to inject dll in the
-    // target process. DLL is injected by creating a remote thread and this
-    // thread handle requires higher privileges to load DLL. The broker will
-    // explicitly close the initial token after the dll is injected.
-#if !SANDBOX_DLL
     initial_token_.Close();
-#endif
   }
 
   CONTEXT context;
@@ -238,94 +230,161 @@ DWORD TargetProcess::Create(const wchar_t* exe_path,
 
 #if SANDBOX_DLL
 // This function injects sandbox DLL to target process. The function runs
-// LoadLibrary function in a remote thread with DLL path as parameter.
-// The thread should be created in suspended mode and the impersonation token
-// should be assigned as loading library required additional privileges.
+//LoadLibrary, SetEvent and SuspendThread in three APC threads in same order.
 DWORD TargetProcess::InjectSandboxDll(const wchar_t* module_path)
 {
+  typedef void (CALLBACK *PKNORMAL_ROUTINE)(PVOID, PVOID, PVOID);
+  typedef NTSTATUS (NTAPI *NTQUEUEAPCTHREAD)(HANDLE, PKNORMAL_ROUTINE,
+    PVOID, PVOID, PVOID);
   module_path_.reset(_wcsdup(module_path));
+  HANDLE event_handle = NULL;
+  LPVOID module_path_mem = NULL;
+  int module_path_length = 0;
+  DWORD win_result = ERROR_SUCCESS;
 
-  DWORD win_result = 0;
-  LPVOID load_library_addr =
-      (LPVOID)::GetProcAddress(GetModuleHandle(L"kernel32.dll"),
-                               "LoadLibraryW");
-  if (NULL == load_library_addr) {
+  do {
+    NTQUEUEAPCTHREAD   NtQueueApcThread = (NTQUEUEAPCTHREAD)
+      ::GetProcAddress(GetModuleHandle(L"NTDLL.DLL"),  "NtQueueApcThread");
+    if (NULL == NtQueueApcThread) {
+      win_result = ::GetLastError();
+      break;
+    }
+
+    HMODULE kernel32_module = GetModuleHandle(L"kernel32.dll");
+    LPVOID load_library_addr = (LPVOID)::GetProcAddress(kernel32_module,
+      "LoadLibraryW");
+    if (NULL == load_library_addr) {
+      win_result = ::GetLastError();
+      break;
+    }
+
+    module_path_length  = (wcslen(module_path_.get()) + 1)* sizeof(wchar_t);
+    module_path_mem = (LPVOID)::VirtualAllocEx(
+      sandbox_process_info_.process_handle(), NULL, module_path_length,
+      MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (NULL == module_path_mem){
+      win_result = ::GetLastError();
+      break;
+    }
+
+    if (!::WriteProcessMemory(sandbox_process_info_.process_handle(),
+      module_path_mem, module_path_.get(), module_path_length, NULL)) {
+      win_result = ::GetLastError();
+      break;
+    }
+
+    NTSTATUS  status = NtQueueApcThread(sandbox_process_info_.thread_handle(),
+      (PKNORMAL_ROUTINE)load_library_addr, module_path_mem, NULL, NULL);
+    if (STATUS_SUCCESS != status) {
+      win_result = status;
+      break;
+    }
+
+    LPVOID set_event_addr = (LPVOID)::GetProcAddress(kernel32_module,
+      "SetEvent");
+    if (NULL == set_event_addr) {
+      win_result = ::GetLastError();
+      break;
+    }
+    event_handle = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+    HANDLE child_event_handle = NULL;
+    if (!::DuplicateHandle(GetCurrentProcess(), event_handle,
+      sandbox_process_info_.process_handle(), &child_event_handle, 0, FALSE,
+      DUPLICATE_SAME_ACCESS)) {
+      win_result = ::GetLastError();
+      break;
+    }
+    status = NtQueueApcThread(sandbox_process_info_.thread_handle(),
+      (PKNORMAL_ROUTINE)set_event_addr,  child_event_handle, NULL, NULL);
+    if (STATUS_SUCCESS != status) {
+      win_result = status;
+      break;
+    }
+
+    LPVOID suspend_thread_addr = (LPVOID)::GetProcAddress(kernel32_module,
+      "SuspendThread");
+    if (NULL == suspend_thread_addr) {
+      win_result = ::GetLastError();
+      break;
+    }
+    HANDLE child_thread_handle = NULL;
+    if (!::DuplicateHandle(GetCurrentProcess(),
+      sandbox_process_info_.thread_handle(),
+      sandbox_process_info_.process_handle(),
+      &child_thread_handle, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+      win_result = ::GetLastError();
+      break;
+    }
+    status = NtQueueApcThread(sandbox_process_info_.thread_handle(),
+      (PKNORMAL_ROUTINE)suspend_thread_addr, child_thread_handle, NULL, NULL);
+    if (STATUS_SUCCESS != status) {
+      win_result = status;
+      break;
+    }
+
+    if (!::ResumeThread(sandbox_process_info_.thread_handle())) {
+      win_result = ::GetLastError();
+      break;
+    }
+
+    DWORD wait_status = ::WaitForSingleObject(event_handle, 10000);
+    if (WAIT_OBJECT_0 != wait_status) {
+      win_result = wait_status;
+      if (WAIT_FAILED == wait_status) {
+        win_result = ::GetLastError();
+      }
+      break;
+    }
+
+  } while (false);
+
+  if (NULL != event_handle) {
+    CloseHandle(event_handle);
+  }
+  if (NULL != module_path_mem) {
+    ::VirtualFreeEx(sandbox_process_info_.process_handle(), module_path_mem,
+    module_path_length, MEM_RELEASE);
+  }
+  if (ERROR_SUCCESS!= win_result) {
+    return win_result;
+  }
+
+  //Wait until thread is suspended GetThreadContext fails if the thread
+  //is not suspended
+  CONTEXT context;
+  context.ContextFlags = CONTEXT_ALL;
+  while (!::GetThreadContext(sandbox_process_info_.thread_handle(),
+    &context)) {
+    Sleep(100);
+  }
+
+  DWORD needed;
+  if(!::EnumProcessModules(sandbox_process_info_.process_handle(), NULL,
+    0, &needed)) {
     return ::GetLastError();
   }
+  HMODULE* modules = new HMODULE[needed / sizeof(HMODULE)];
 
-  int length  = (wcslen(module_path_.get()) + 1)* sizeof(wchar_t);
-  LPVOID param =
-      (LPVOID)::VirtualAllocEx(sandbox_process_info_.process_handle(),
-                               NULL,
-                               length,
-                               MEM_RESERVE | MEM_COMMIT,
-                               PAGE_READWRITE);
-  if (NULL == param){
+  if(!::EnumProcessModules(sandbox_process_info_.process_handle(), modules,
+    needed, &needed)) {
     return ::GetLastError();
   }
-
-  if (!::WriteProcessMemory(sandbox_process_info_.process_handle(),
-                            param, module_path_.get(), length, NULL)) {
-    win_result = ::GetLastError();
-    ::VirtualFreeEx(sandbox_process_info_.process_handle(),
-                    param, length, MEM_RELEASE);
-    return win_result;
+  module_base_address_ = NULL;
+  for (unsigned int i = 0; i < (needed / sizeof(HMODULE)); i++ ) {
+    wchar_t module_name[MAX_PATH];
+    if (::GetModuleFileNameEx(sandbox_process_info_.process_handle(),
+      modules[i], module_name, sizeof(module_name) / sizeof(wchar_t))) {
+      if(_wcsicmp(module_name, module_path_.get())== 0) {
+        module_base_address_ = modules[i];
+        break;
+      }
+    }
   }
-
-  HANDLE remote_thread_handle = ::CreateRemoteThread(
-                                    sandbox_process_info_.process_handle(),
-                                    NULL,
-                                    NULL,
-                                    (LPTHREAD_START_ROUTINE)load_library_addr,
-                                    param,
-                                    CREATE_SUSPENDED,
-                                    NULL);
-
-  if (NULL == remote_thread_handle) {
-    win_result = ::GetLastError();
-    ::VirtualFreeEx(sandbox_process_info_.process_handle(),
-                    param, length, MEM_RELEASE);
-    return win_result;
-  }
-
-  if (!::SetThreadToken(&remote_thread_handle, initial_token_)) {
-    win_result = ::GetLastError();
-    ::CloseHandle(remote_thread_handle);
-    ::VirtualFreeEx(sandbox_process_info_.process_handle(),
-                    param, length, MEM_RELEASE);
-    return win_result;
-  }
-
-  if (!::ResumeThread(remote_thread_handle)) {
-    win_result = ::GetLastError();
-    ::CloseHandle(remote_thread_handle);
-    ::VirtualFreeEx(sandbox_process_info_.process_handle(),
-                    param, length, MEM_RELEASE);
-    return win_result;
-  }
-
-  if (WAIT_OBJECT_0 != ::WaitForSingleObject(remote_thread_handle, 1000)) {
-    CloseHandle(remote_thread_handle);
-    ::VirtualFreeEx(sandbox_process_info_.process_handle(),
-                    param, length, MEM_RELEASE);
+  delete[] modules;
+  if (NULL == module_base_address_) {
     return SBOX_ERROR_GENERIC;
   }
-
-  ::VirtualFreeEx(sandbox_process_info_.process_handle(),
-                  param, length, MEM_RELEASE);
-  if (!::GetExitCodeThread(remote_thread_handle,
-                           (LPDWORD)&module_base_address_)) {
-    win_result = ::GetLastError();
-    ::CloseHandle(remote_thread_handle);
-    return win_result;
-  }
-  ::CloseHandle(remote_thread_handle);
   return ERROR_SUCCESS;
-}
-
-void TargetProcess::CloseInitialToken()
-{
-  initial_token_.Close();
 }
 #endif
 

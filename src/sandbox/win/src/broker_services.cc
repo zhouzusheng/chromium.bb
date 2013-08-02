@@ -441,12 +441,6 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
       return SpawnCleanup(target, win_result);
     }
   }
-
-  // In normal mode, the initial token is closed inside
-  // TargetProcess::Create(), but this is not done in SANDBOX_DLL because we
-  // need to hold on to the initial token for injecting the dll. Now that
-  // that's done, we can close the initial token.
-  target->CloseInitialToken();
 #endif
 
   // Now the policy is the owner of the target.

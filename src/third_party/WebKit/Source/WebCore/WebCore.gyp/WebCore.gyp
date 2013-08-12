@@ -1911,7 +1911,7 @@
 
             # SystemInfo.cpp is useful and we don't want to copy it.
             ['include', 'platform/win/SystemInfo\\.cpp$'],
-			
+
             ['include', 'platform/win/BbClipboardUtil\\.cpp$'],
             ['include', 'platform/win/BbUtfUtil\\.cpp$'],
 

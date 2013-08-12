@@ -36,6 +36,7 @@
 namespace WebCore {
 
     class BarInfo;
+    class BBDragData;
     class CSSRuleList;
     class CSSStyleDeclaration;
     class Console;
@@ -415,6 +416,7 @@ namespace WebCore {
         // Bloomberg specific objects/methods
         BBClipboard* bbClipboard() const;
         BBWindowHooks* bbWindowHooks() const;
+        PassRefPtr<BBDragData> bbDragData();
 
     private:
         explicit DOMWindow(Document*);
@@ -459,6 +461,7 @@ namespace WebCore {
         mutable RefPtr<StyleMedia> m_media;
         mutable RefPtr<BBClipboard> m_bbClipboard;
         mutable RefPtr<BBWindowHooks> m_bbWindowHooks;
+        mutable RefPtr<BBDragData> m_bbDragData;
 
         EventTargetData m_eventTargetData;
 

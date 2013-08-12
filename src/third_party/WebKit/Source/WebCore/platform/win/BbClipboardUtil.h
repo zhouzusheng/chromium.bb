@@ -87,14 +87,14 @@ class ClipboardUtil {
         // onto the clipboard with the specified 'format', returning true upon
         // success and false otherwise.
 
-	static bool setBitmapData(const unsigned char*	rgbData,  
-							  int					width, 
-							  int					height, 
-							  int					bytesPerPixel);
-		// Write the specified 'rgbData' onto the clipboard. 'rgbData' represents
-		// bitmap pixel data, which has the specified 'width', 'height' and
-		// 'bytesPerPixel'.
-        
+    static bool setBitmapData(const unsigned char* rgbData,
+                              int                  width,
+                              int                  height,
+                              int                  bytesPerPixel);
+        // Write the specified 'rgbData' onto the clipboard. 'rgbData' represents
+        // bitmap pixel data, which has the specified 'width', 'height' and
+        // 'bytesPerPixel'.
+
     static bool emptyClipboard();
         // Empty the clipboard
 };

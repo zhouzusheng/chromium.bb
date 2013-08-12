@@ -29,6 +29,7 @@
 #if ENABLE(DRAG_SUPPORT)
 
 #include "CachedImage.h"
+#include "BBDragData.h"
 #include "Clipboard.h"
 #include "ClipboardAccessPolicy.h"
 #include "CachedResourceLoader.h"
@@ -908,6 +909,14 @@ void DragController::doSystemDrag(DragImageRef image, const IntPoint& dragLoc, c
 {
     m_didInitiateDrag = true;
     m_dragInitiator = frame->document();
+
+    RefPtr<BBDragData> bbDragData = m_dragInitiator->domWindow()->bbDragData();
+    bbDragData->setClipboard(clipboard);
+
+    m_client->willDrag();
+
+    bbDragData->setClipboard(0);
+
     // Protect this frame and view, as a load may occur mid drag and attempt to unload this frame
     RefPtr<Frame> frameProtector = m_page->mainFrame();
     RefPtr<FrameView> viewProtector = frameProtector->view();

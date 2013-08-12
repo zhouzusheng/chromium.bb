@@ -809,7 +809,8 @@
 #endif // defined(V8_BINDING)
 
     // Bloomberg specific objects/methods
-    readonly attribute BBClipboard bbClipboard; 
+    readonly attribute BBClipboard bbClipboard;
     readonly attribute BBWindowHooks bbWindowHooks;
+    readonly attribute BBDragData bbDragData;
 };
 

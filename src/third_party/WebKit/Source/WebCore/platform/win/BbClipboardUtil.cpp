@@ -64,47 +64,47 @@ class ClipboardGuard {
 };
 } // close anonymous namespace
 
-bool saveHBitmapIntoClipboard(HBITMAP   sourceBitmap, 
-							  const int width, 
-							  const int height)
+bool saveHBitmapIntoClipboard(HBITMAP   sourceBitmap,
+                              const int width,
+                              const int height)
 {
-	// see ui/base/clipboard/clipboard_win.cc for details
-	HDC dc = ::GetDC(NULL);
-	HDC compatible_dc = ::CreateCompatibleDC(NULL);
-	HDC source_dc = ::CreateCompatibleDC(NULL);
+    // see ui/base/clipboard/clipboard_win.cc for details
+    HDC dc = ::GetDC(NULL);
+    HDC compatible_dc = ::CreateCompatibleDC(NULL);
+    HDC source_dc = ::CreateCompatibleDC(NULL);
 
-	// This is the HBITMAP we will eventually write to the clipboard
-	HBITMAP hbitmap = ::CreateCompatibleBitmap(dc, width, height);
-	if (!hbitmap) {
-		// Failed to create the bitmap
-		::DeleteDC(compatible_dc);
-		::DeleteDC(source_dc);
-		::ReleaseDC(NULL, dc);
-		return false;
-	}
+    // This is the HBITMAP we will eventually write to the clipboard
+    HBITMAP hbitmap = ::CreateCompatibleBitmap(dc, width, height);
+    if (!hbitmap) {
+        // Failed to create the bitmap
+        ::DeleteDC(compatible_dc);
+        ::DeleteDC(source_dc);
+        ::ReleaseDC(NULL, dc);
+        return false;
+    }
 
-	HBITMAP old_hbitmap = (HBITMAP)SelectObject(compatible_dc, hbitmap);
-	HBITMAP old_source = (HBITMAP)SelectObject(source_dc, sourceBitmap);
+    HBITMAP old_hbitmap = (HBITMAP)SelectObject(compatible_dc, hbitmap);
+    HBITMAP old_source = (HBITMAP)SelectObject(source_dc, sourceBitmap);
 
-	// Now we need to blend it into an HBITMAP we can place on the clipboard
-	BLENDFUNCTION bf = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
-	::GdiAlphaBlend(compatible_dc, 0, 0, width, height,
-		source_dc, 0, 0, width, height, bf);
+    // Now we need to blend it into an HBITMAP we can place on the clipboard
+    BLENDFUNCTION bf = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    ::GdiAlphaBlend(compatible_dc, 0, 0, width, height,
+                    source_dc, 0, 0, width, height, bf);
 
-	// Clean up all the handles we just opened
-	::SelectObject(compatible_dc, old_hbitmap);
-	::SelectObject(source_dc, old_source);
-	::DeleteDC(compatible_dc);
-	::DeleteDC(source_dc);
-	::ReleaseDC(NULL, dc);
+    // Clean up all the handles we just opened
+    ::SelectObject(compatible_dc, old_hbitmap);
+    ::SelectObject(source_dc, old_source);
+    ::DeleteDC(compatible_dc);
+    ::DeleteDC(source_dc);
+    ::ReleaseDC(NULL, dc);
 
-	ClipboardGuard clipboardGuard(GetClipboardOwner());
-	EmptyClipboard();
-	HANDLE ret = SetClipboardData(CF_BITMAP, hbitmap);
-	if (!ret) {
-		::DeleteObject(hbitmap);
-	}
-	return ret != 0;
+    ClipboardGuard clipboardGuard(GetClipboardOwner());
+    EmptyClipboard();
+    HANDLE ret = SetClipboardData(CF_BITMAP, hbitmap);
+    if (!ret) {
+        ::DeleteObject(hbitmap);
+    }
+    return ret != 0;
 }
 
 bool getStandardClipboardFormatName(std::string *formatNameString, UINT uformat)
@@ -400,41 +400,41 @@ bool ClipboardUtil::setCustomData(const void         *pData,
     return true;
 }
 
-bool ClipboardUtil::setBitmapData(const unsigned char* rgbData, 
-								  const int			   width, 
-								  const int			   height, 
-								  const int			   bytesPerPixel)
+bool ClipboardUtil::setBitmapData(const unsigned char* rgbData,
+                                  const int            width,
+                                  const int            height,
+                                  const int            bytesPerPixel)
 {
-	const int bitsPerPixel = bytesPerPixel * 8;
+    const int bitsPerPixel = bytesPerPixel * 8;
 
-	HDC dc = ::GetDC(NULL);
+    HDC dc = ::GetDC(NULL);
 
-	// Create an HBITMAP
-	BITMAPINFO bm_info = {0};
-	bm_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bm_info.bmiHeader.biWidth = width;
-	bm_info.bmiHeader.biHeight = -height;  // sets vertical orientation
-	bm_info.bmiHeader.biPlanes = 1;
-	bm_info.bmiHeader.biBitCount = (WORD)bitsPerPixel;
-	bm_info.bmiHeader.biCompression = BI_RGB;
+    // Create an HBITMAP
+    BITMAPINFO bm_info = {0};
+    bm_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bm_info.bmiHeader.biWidth = width;
+    bm_info.bmiHeader.biHeight = -height;  // sets vertical orientation
+    bm_info.bmiHeader.biPlanes = 1;
+    bm_info.bmiHeader.biBitCount = (WORD)bitsPerPixel;
+    bm_info.bmiHeader.biCompression = BI_RGB;
 
-	// We can't write the created bitmap into the clipboard.
-	// We have to create a new one and save that into the clipboard.
-	void *bits;
-	HBITMAP sourceBitmap =
-		::CreateDIBSection(dc, &bm_info, DIB_RGB_COLORS, &bits, NULL, 0);
+    // We can't write the created bitmap into the clipboard.
+    // We have to create a new one and save that into the clipboard.
+    void *bits;
+    HBITMAP sourceBitmap =
+        ::CreateDIBSection(dc, &bm_info, DIB_RGB_COLORS, &bits, NULL, 0);
 
-	bool ret = false;
-	if (bits && sourceBitmap) {
-		// Copy the bitmap out of shared memory and into GDI
-		memcpy(bits, rgbData, 4 *width * height);
-		ret = saveHBitmapIntoClipboard(sourceBitmap, width, height);
-	}
+    bool ret = false;
+    if (bits && sourceBitmap) {
+        // Copy the bitmap out of shared memory and into GDI
+        memcpy(bits, rgbData, 4 *width * height);
+        ret = saveHBitmapIntoClipboard(sourceBitmap, width, height);
+    }
 
-	::DeleteObject(sourceBitmap);
-	::ReleaseDC(NULL, dc);
+    ::DeleteObject(sourceBitmap);
+    ::ReleaseDC(NULL, dc);
 
-	return ret;
+    return ret;
 }
 
 bool ClipboardUtil::emptyClipboard()

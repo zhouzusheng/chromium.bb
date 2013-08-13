@@ -51,6 +51,18 @@ class WebElement : public WebNode {
     BLPWTK2_EXPORT String attributeLocalName(unsigned index) const;
     BLPWTK2_EXPORT String attributeValue(unsigned index) const;
     BLPWTK2_EXPORT int attributeCount() const;
+    BLPWTK2_EXPORT String getAttribute(const StringRef& name) const;
+    BLPWTK2_EXPORT void removeAttribute(const StringRef& name);
+    BLPWTK2_EXPORT bool setCssProperty(const StringRef& name, const StringRef& value, const StringRef& priority);
+    BLPWTK2_EXPORT bool removeCssProperty(const StringRef& name);
+    BLPWTK2_EXPORT bool addClass(const StringRef& name);
+    BLPWTK2_EXPORT bool removeClass(const StringRef& name);
+    BLPWTK2_EXPORT bool containsClass(const StringRef& name) const;
+    BLPWTK2_EXPORT bool toggleClass(const StringRef& name);
+    BLPWTK2_EXPORT String innerHTML() const;
+
+    BLPWTK2_EXPORT static bool isWebElement(v8::Handle<v8::Value> handle);
+    BLPWTK2_EXPORT static WebElement fromV8Handle(v8::Handle<v8::Value> handle);
 
 #ifdef BLPWTK2_IMPLEMENTATION
     WebElement(const WebKit::WebElement&);

@@ -24,8 +24,11 @@
 
 #include <blpwtk2_webelement.h>
 #include <blpwtk2_stringref.h>
+#include <blpwtk2_string.h>
 #include <third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h>
 #include <third_party/WebKit/Source/WebKit/chromium/public/WebElement.h>
+
+#include <v8/include/v8.h>
 
 namespace blpwtk2 {
 
@@ -46,6 +49,32 @@ WebElement WebDocument::head() const
 {
     // const_cast required because WebKit::WebDocument::head() is not const
     return internalToNonConst<WebKit::WebDocument>().head();
+}
+
+WebElement WebDocument::documentElement() const
+{
+    return internalToConst<WebKit::WebDocument>().documentElement();
+}
+
+WebElement WebDocument::getElementById(const StringRef& id) const
+{
+    WebKit::WebString idStr = toWebString(id);
+    return internalToConst<WebKit::WebDocument>().getElementById(idStr);
+}
+
+String WebDocument::innerHTML() const
+{
+    return fromWebString(internalToConst<WebKit::WebDocument>().innerHTML());
+}
+
+bool WebDocument::isWebDocument(v8::Handle<v8::Value> handle)
+{
+    return WebKit::WebDocument::isWebDocument(handle);
+}
+
+WebDocument WebDocument::fromV8Handle(v8::Handle<v8::Value> handle)
+{
+    return WebKit::WebDocument::fromV8Handle(handle);
 }
 
 WebDocument::WebDocument(const WebKit::WebDocument& other)

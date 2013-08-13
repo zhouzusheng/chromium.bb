@@ -31,6 +31,11 @@ namespace WebKit {
 }  // close namespace WebKit
 #endif  // BLPWTK2_IMPLEMENTATION
 
+namespace v8 {
+    template <class T> class Handle;
+    class Value;
+}
+
 namespace blpwtk2 {
 
 class String;
@@ -64,12 +69,20 @@ class WebNode {
     BLPWTK2_EXPORT WebNode nextSibling() const;
     BLPWTK2_EXPORT bool isTextNode() const;
     BLPWTK2_EXPORT bool isElementNode() const;
-
     BLPWTK2_EXPORT bool insertBefore(const WebNode& newChild, const WebNode& refChild, bool shouldLazyAttach = false);
     BLPWTK2_EXPORT bool replaceChild(const WebNode& newChild, const WebNode& oldChild, bool shouldLazyAttach = false);
     BLPWTK2_EXPORT bool appendChild(const WebNode& child, bool shouldLazyAttach = false);
     BLPWTK2_EXPORT bool remove();
     BLPWTK2_EXPORT bool setTextContent(const StringRef&);
+    BLPWTK2_EXPORT bool removeChild(const WebNode& oldChild);
+    BLPWTK2_EXPORT String textContent() const;
+    BLPWTK2_EXPORT unsigned numChildren() const;
+    BLPWTK2_EXPORT WebNode childAt(size_t index) const;
+
+    BLPWTK2_EXPORT v8::Handle<v8::Value> toV8Handle() const;
+
+    BLPWTK2_EXPORT static bool isWebNode(v8::Handle<v8::Value> handle);
+    BLPWTK2_EXPORT static WebNode fromV8Handle(v8::Handle<v8::Value> handle);
 
 #ifdef BLPWTK2_IMPLEMENTATION
     WebNode(const WebKit::WebNode&);

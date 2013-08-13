@@ -108,6 +108,7 @@ public:
     WEBKIT_EXPORT WebDOMEvent createEvent(const WebString& eventType);
     WEBKIT_EXPORT WebReferrerPolicy referrerPolicy() const;
     WEBKIT_EXPORT WebElement createElement(const WebString& tagName);
+    WEBKIT_EXPORT WebString innerHTML() const;
 
     // Accessibility support. These methods should only be called on the
     // top-level document, because one accessibility cache spans all of
@@ -127,6 +128,9 @@ public:
     WEBKIT_EXPORT WebVector<WebDraggableRegion> draggableRegions() const;
 
     WEBKIT_EXPORT WebBBPrintInfo bbPrintInfo();
+
+    WEBKIT_EXPORT static bool isWebDocument(v8::Handle<v8::Value> handle);
+    WEBKIT_EXPORT static WebDocument fromV8Handle(v8::Handle<v8::Value> handle);
 
 #if WEBKIT_IMPLEMENTATION
     WebDocument(const WTF::PassRefPtr<WebCore::Document>&);

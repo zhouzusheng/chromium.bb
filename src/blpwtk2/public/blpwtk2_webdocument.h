@@ -36,6 +36,7 @@ namespace blpwtk2 {
 
 class WebElement;
 class StringRef;
+class String;
 
 class WebDocument : public WebNode {
 public:
@@ -46,6 +47,12 @@ public:
     BLPWTK2_EXPORT WebElement createElement(const StringRef& tagName);
     BLPWTK2_EXPORT WebElement body() const;
     BLPWTK2_EXPORT WebElement head() const;
+    BLPWTK2_EXPORT WebElement documentElement() const;
+    BLPWTK2_EXPORT WebElement getElementById(const StringRef& id) const;
+    BLPWTK2_EXPORT String innerHTML() const;
+
+    BLPWTK2_EXPORT static bool isWebDocument(v8::Handle<v8::Value> handle);
+    BLPWTK2_EXPORT static WebDocument fromV8Handle(v8::Handle<v8::Value> handle);
 
 #ifdef BLPWTK2_IMPLEMENTATION
     WebDocument(const WebKit::WebDocument&);

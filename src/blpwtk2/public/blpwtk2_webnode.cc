@@ -28,6 +28,9 @@
 
 #include <third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h>
 #include <third_party/WebKit/Source/WebKit/chromium/public/WebNode.h>
+#include <third_party/WebKit/Source/WebKit/chromium/public/WebNodeList.h>
+
+#include <v8/include/v8.h>
 
 namespace blpwtk2 {
 
@@ -154,6 +157,41 @@ bool WebNode::setTextContent(const StringRef& text)
 {
     WebKit::WebString textStr = toWebString(text);
     return internalTo<WebKit::WebNode>().setTextContent(textStr);
+}
+
+bool WebNode::removeChild(const WebNode& oldChild)
+{
+    return internalTo<WebKit::WebNode>().removeChild(oldChild.internalToConst<WebKit::WebNode>());
+}
+
+String WebNode::textContent() const
+{
+    return fromWebString(internalToConst<WebKit::WebNode>().textContent());
+}
+
+unsigned WebNode::numChildren() const
+{
+    return internalToNonConst<WebKit::WebNode>().childNodes().length();
+}
+
+WebNode WebNode::childAt(const size_t index) const
+{
+    return internalToNonConst<WebKit::WebNode>().childNodes().item(index);
+}
+
+v8::Handle<v8::Value> WebNode::toV8Handle() const
+{
+    return internalToConst<WebKit::WebNode>().toV8Handle();
+}
+
+bool WebNode::isWebNode(v8::Handle<v8::Value> handle)
+{
+    return WebKit::WebNode::isWebNode(handle);
+}
+
+WebNode WebNode::fromV8Handle(v8::Handle<v8::Value> handle)
+{
+    return WebKit::WebNode::fromV8Handle(handle);
 }
 
 WebNode::WebNode(const WebKit::WebNode& other)

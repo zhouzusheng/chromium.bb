@@ -70,6 +70,7 @@ enum {
     IDM_TEST_APPEND_ELEMENT,
     IDM_TEST_APPEND_TABLE,
     IDM_TEST_V8_APPEND_ELEMENT,
+    IDM_TEST_V8_CONVERSIONS,
     IDM_CUT,
     IDM_COPY,
     IDM_PASTE,
@@ -129,6 +130,36 @@ void v8AppendElement(blpwtk2::WebView* webView)
         char buf[1024];
         sprintf_s(buf, sizeof(buf), "EXCEPTION: %s\n", *msg);
         OutputDebugStringA(buf);
+    }
+}
+
+void testV8Conversions(blpwtk2::WebView* webView)
+{
+    blpwtk2::WebFrame* mainFrame = webView->mainFrame();
+    blpwtk2::WebDocument document = mainFrame->document();
+    blpwtk2::WebElement divElem = document.createElement("div");
+    divElem.setTextContent("Element V8 Conversion failed.");
+    document.body().appendChild(divElem);
+    v8::HandleScope handleScope;
+    v8::Handle<v8::Value> v8Handle = divElem.toV8Handle();
+    if (v8Handle->IsObject()) {
+        v8::Local<v8::Object> obj = v8Handle->ToObject();
+        v8::Handle<v8::Context> cxt = obj->CreationContext();
+        v8::Context::Scope context_scope(cxt);
+        obj->Set(v8::String::New("innerText"), v8::String::New("Element to V8 conversion succeeded!")); 
+    }
+
+    blpwtk2::WebElement divElem2 = document.createElement("div");
+    document.body().appendChild(divElem2);
+    bool isWebElement =  blpwtk2::WebElement::isWebElement(v8Handle);
+    if (isWebElement) {
+        divElem2.setTextContent("isWebElement() succeeded!") ;   
+    } else {
+        divElem2.setTextContent("isWebElement() failed.") ;   
+    }
+    if (isWebElement) {
+        blpwtk2::WebElement elem = blpwtk2::WebElement::fromV8Handle(v8Handle);
+        elem.setCssProperty("color", "blue", "");
     }
 }
 
@@ -473,6 +504,9 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         case IDM_TEST_V8_APPEND_ELEMENT:
             v8AppendElement(shell->d_webView);
             return 0;
+        case IDM_TEST_V8_CONVERSIONS:
+            testV8Conversions(shell->d_webView);
+            return 0;
         case IDM_CUT:
             shell->d_webView->cutSelection();
             return 0;
@@ -611,6 +645,7 @@ Shell* createShell(blpwtk2::WebView* webView)
     AppendMenu(testMenu, MF_STRING, IDM_TEST_APPEND_ELEMENT, L"&Append Element");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_APPEND_TABLE, L"Append &Table");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_V8_APPEND_ELEMENT, L"Append Element Using &V8");
+    AppendMenu(testMenu, MF_STRING, IDM_TEST_V8_CONVERSIONS, L"Test V8 Conversions");
     AppendMenu(menu, MF_POPUP, (UINT_PTR)testMenu, L"&Test");
     SetMenu(mainWnd, menu);
 

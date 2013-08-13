@@ -26,6 +26,8 @@
 #include <blpwtk2_stringref.h>
 #include <third_party/WebKit/Source/WebKit/chromium/public/WebElement.h>
 
+#include <v8/include/v8.h>
+
 namespace blpwtk2 {
 
 COMPILE_ASSERT(sizeof(WebElement) == sizeof(WebKit::WebElement), webelement_size_mismatch);
@@ -66,6 +68,62 @@ String WebElement::attributeValue(unsigned index) const
 int WebElement::attributeCount() const
 {
     return internalToConst<WebKit::WebElement>().attributeCount();
+}
+
+String WebElement::getAttribute(const StringRef& name) const
+{
+    return fromWebString(internalToConst<WebKit::WebElement>().getAttribute(
+                                                                toWebString(name)));
+}
+
+void WebElement::removeAttribute(const StringRef& name)
+{
+    internalTo<WebKit::WebElement>().removeAttribute(toWebString(name));
+}
+
+bool WebElement::setCssProperty(const StringRef& name, const StringRef& value, const StringRef& priority)
+{
+    return internalTo<WebKit::WebElement>().setCssProperty(toWebString(name), toWebString(value), toWebString(priority));
+}
+
+bool WebElement::removeCssProperty(const StringRef& name)
+{
+    return internalTo<WebKit::WebElement>().removeCssProperty(toWebString(name));
+}
+
+bool WebElement::addClass(const StringRef& name)
+{
+     return internalTo<WebKit::WebElement>().addClass(toWebString(name));
+}
+
+bool WebElement::removeClass(const StringRef& name)
+{
+    return internalTo<WebKit::WebElement>().removeClass(toWebString(name));
+}
+
+bool WebElement::containsClass(const StringRef& name) const
+{
+    return internalToNonConst<WebKit::WebElement>().containsClass(toWebString(name));
+}
+
+bool WebElement::toggleClass(const StringRef& name)
+{
+    return internalTo<WebKit::WebElement>().toggleClass(toWebString(name));
+}
+
+String WebElement::innerHTML() const
+{
+    return  fromWebString(internalToConst<WebKit::WebElement>().innerHTML());
+}
+
+bool WebElement::isWebElement(v8::Handle<v8::Value> handle)
+{
+    return WebKit::WebElement::isWebElement(handle);
+}
+
+WebElement WebElement::fromV8Handle(v8::Handle<v8::Value> handle)
+{
+    return WebKit::WebElement::fromV8Handle(handle);
 }
 
 WebElement::WebElement(const WebKit::WebElement& other)

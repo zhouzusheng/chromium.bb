@@ -48,7 +48,7 @@ class MainMessagePump : public base::MessagePumpForUI {
     void postHandleMessage(const MSG& msg);
 
   private:
-    void doWorkUntilNextMessage();
+    void doWork();
     void scheduleMoreWorkIfNecessary();
     void handleWorkMessage();
     void handleTimerMessage();
@@ -58,10 +58,14 @@ class MainMessagePump : public base::MessagePumpForUI {
                                          WPARAM wparam,
                                          LPARAM lparam);
 
+    // MessagePump overrides
+    virtual void ScheduleDelayedWork(const base::TimeTicks& delayed_work_time) OVERRIDE;
+
     scoped_ptr<base::RunLoop> d_runLoop;
     RunState d_runState;
+    bool d_hasAutoPumpTimer;
     bool d_didNotifyWillProcessMsg;
-    bool d_immediateWorkIsPlausible;  // whether or not we need work scheduled
+    bool d_moreWorkIsPlausible;  // whether or not we need work scheduled
 
     DISALLOW_COPY_AND_ASSIGN(MainMessagePump);
 };

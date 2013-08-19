@@ -1277,8 +1277,17 @@ RenderLayer* RenderLayer::enclosingPositionedAncestor() const
 RenderLayer* RenderLayer::enclosingScrollableLayer() const
 {
     for (RenderObject* nextRenderer = renderer()->parent(); nextRenderer; nextRenderer = nextRenderer->parent()) {
-        if (nextRenderer->isBox() && toRenderBox(nextRenderer)->canBeScrolledAndHasScrollableArea())
-            return nextRenderer->enclosingLayer();
+        if (nextRenderer->isBox() && toRenderBox(nextRenderer)->canBeScrolledAndHasScrollableArea()) {
+            // When we traverse the render tree upwards, we can not blindly rely on
+            // RenderBox::canBeScrolledAndHasScrollableArea. The reason is because it calls
+            // the virtual method canBeProgramaticallyScrolled, which is reimplemented and
+            // default to true in a couple of other classes (e.g. RenderTextControl and RenderListBox).
+            // If the enclosing layer of this candidate scrollable renderer is not actually
+            // scrollable, continue;
+            RenderBox* candidateRenderer = nextRenderer->enclosingLayer()->renderBox();
+            if (candidateRenderer && candidateRenderer->canBeScrolledAndHasScrollableArea())
+                return nextRenderer->enclosingLayer();
+        }
     }
 
     return 0;
@@ -2240,8 +2249,8 @@ void RenderLayer::scrollRectToVisible(const LayoutRect& rect, const ScrollAlignm
         }
     }
     
-    if (parentLayer)
-        parentLayer->scrollRectToVisible(newRect, alignX, alignY);
+    if (RenderLayer* scrollableEnclosingLayer = enclosingScrollableLayer())
+        scrollableEnclosingLayer->scrollRectToVisible(newRect, alignX, alignY);
 
     if (frameView)
         frameView->resumeScheduledEvents();

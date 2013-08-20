@@ -26,11 +26,19 @@
 #include <blpwtk2_stringref.h>
 #include <third_party/WebKit/Source/WebKit/chromium/public/WebElement.h>
 
+#include <base/logging.h>
+
 #include <v8/include/v8.h>
 
 namespace blpwtk2 {
 
 COMPILE_ASSERT(sizeof(WebElement) == sizeof(WebKit::WebElement), webelement_size_mismatch);
+
+WebElement::WebElement(const WebNode& other)
+: WebNode(other)
+{
+    DCHECK(other.isElementNode());
+}
 
 // Returns the qualified name, which may contain a prefix and a colon.
 String WebElement::tagName() const

@@ -34,6 +34,11 @@ namespace blpwtk2 {
 
 COMPILE_ASSERT(sizeof(WebDocument) == sizeof(WebKit::WebDocument), webdocument_size_mismatch);
 
+WebDocument::WebDocument(const WebNode& other)
+: WebNode(other)
+{
+}
+
 WebElement WebDocument::createElement(const StringRef& tagName)
 {
     WebKit::WebString tagNameStr = toWebString(tagName);

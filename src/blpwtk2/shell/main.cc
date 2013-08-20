@@ -71,6 +71,7 @@ enum {
     IDM_TEST_APPEND_TABLE,
     IDM_TEST_V8_APPEND_ELEMENT,
     IDM_TEST_V8_CONVERSIONS,
+    IDM_TEST_WEBELEMENT_CONVERSION,
     IDM_CUT,
     IDM_COPY,
     IDM_PASTE,
@@ -160,6 +161,26 @@ void testV8Conversions(blpwtk2::WebView* webView)
     if (isWebElement) {
         blpwtk2::WebElement elem = blpwtk2::WebElement::fromV8Handle(v8Handle);
         elem.setCssProperty("color", "blue", "");
+    }
+}
+
+void testWebElementConversion(blpwtk2::WebView* webView) 
+{
+    blpwtk2::WebFrame* mainFrame = webView->mainFrame();
+    blpwtk2::WebDocument document = mainFrame->document();
+    blpwtk2::WebElement divElem = document.createElement("div");
+    blpwtk2::WebElement childDivElem = document.createElement("div");
+    childDivElem.attributeCount();
+    childDivElem.setTextContent("This text should be red if web element conversion succeeds.");
+    divElem.appendChild(childDivElem);
+    document.body().appendChild(divElem);
+    int numChildren = divElem.numChildren();
+    for (int i = 0; i < numChildren; i++) {
+        blpwtk2::WebNode childNode = divElem.childAt(i);
+        if (childNode.isElementNode()) {
+            blpwtk2::WebElement elem(childNode);
+            elem.setCssProperty("color", "red", "");
+        }
     }
 }
 
@@ -507,6 +528,9 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         case IDM_TEST_V8_CONVERSIONS:
             testV8Conversions(shell->d_webView);
             return 0;
+        case IDM_TEST_WEBELEMENT_CONVERSION:
+            testWebElementConversion(shell->d_webView);
+            return 0;
         case IDM_CUT:
             shell->d_webView->cutSelection();
             return 0;
@@ -646,6 +670,7 @@ Shell* createShell(blpwtk2::WebView* webView)
     AppendMenu(testMenu, MF_STRING, IDM_TEST_APPEND_TABLE, L"Append &Table");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_V8_APPEND_ELEMENT, L"Append Element Using &V8");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_V8_CONVERSIONS, L"Test V8 Conversions");
+    AppendMenu(testMenu, MF_STRING, IDM_TEST_WEBELEMENT_CONVERSION, L"Test WebElement Conversion");
     AppendMenu(menu, MF_POPUP, (UINT_PTR)testMenu, L"&Test");
     SetMenu(mainWnd, menu);
 

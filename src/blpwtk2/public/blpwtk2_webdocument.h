@@ -42,6 +42,7 @@ class WebDocument : public WebNode {
 public:
     WebDocument() : WebNode() {}
     WebDocument(const WebDocument& other) : WebNode(other) {}
+    explicit BLPWTK2_EXPORT WebDocument(const WebNode& other);
     WebDocument& operator=(const WebDocument& rhs) { assign(rhs); return *this; }
 
     BLPWTK2_EXPORT WebElement createElement(const StringRef& tagName);

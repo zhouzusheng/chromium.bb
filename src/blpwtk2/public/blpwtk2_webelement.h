@@ -41,6 +41,7 @@ class WebElement : public WebNode {
   public:
     WebElement() : WebNode() {}
     WebElement(const WebElement& other) : WebNode(other) {}
+    explicit BLPWTK2_EXPORT WebElement(const WebNode& other);
     WebElement& operator=(const WebElement& rhs) { assign(rhs); return *this; }
 
     // Returns the qualified name, which may contain a prefix and a colon.

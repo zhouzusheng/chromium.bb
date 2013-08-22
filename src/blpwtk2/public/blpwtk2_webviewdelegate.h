@@ -118,6 +118,11 @@ class BLPWTK2_EXPORT WebViewDelegate {
     // any more.
     virtual void handleMediaRequest(WebView* source,
                                     MediaRequest* request) {}
+
+    // Invoked when an attempt is made to navigate using a protocol
+    // that cannot be used withing the browser, such as 'mailto:'.
+    virtual void handleExternalProtocol(WebView* source,
+                                        const StringRef& url) {}
 };
 
 }  // close namespace blpwtk2

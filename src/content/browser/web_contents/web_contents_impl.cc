@@ -1609,6 +1609,11 @@ void WebContentsImpl::RequestMediaAccessPermission(
     callback.Run(MediaStreamDevices());
 }
 
+void WebContentsImpl::HandleExternalProtocol(const GURL& url) {
+  if (delegate_) 
+    delegate_->HandleExternalProtocol(url);
+}
+
 void WebContentsImpl::UpdatePreferredSize(const gfx::Size& pref_size) {
   preferred_size_ = pref_size;
   if (delegate_)

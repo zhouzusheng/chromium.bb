@@ -379,6 +379,14 @@ void WebViewProxy::handleMediaRequest(WebView* source, MediaRequest* mediaReques
                     make_scoped_refptr(static_cast<MediaRequestImpl*>(mediaRequest))));
 }
 
+void WebViewProxy::handleExternalProtocol(WebView* source, const StringRef& url)
+{
+    DCHECK(source == d_impl);
+    std::string surl(url.data(), url.length());
+    d_proxyDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::proxyHandleExternalProtocol, this, surl));
+}
+
 void WebViewProxy::updateRendererInfo(bool isInProcess, int routingId)
 {
     d_proxyDispatcher->PostTask(FROM_HERE,
@@ -612,6 +620,12 @@ void WebViewProxy::proxyHandleMediaRequest(MediaRequest* request)
     if (d_delegate && !d_wasDestroyed){
         d_delegate->handleMediaRequest(this, request);
     }
+}
+
+void WebViewProxy::proxyHandleExternalProtocol(const std::string& url)
+{
+    if (d_delegate && !d_wasDestroyed)
+        d_delegate->handleExternalProtocol(this, url);
 }
 
 void WebViewProxy::proxyMoveAck(int left, int top, int width, int height, bool repaint)

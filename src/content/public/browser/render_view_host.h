@@ -278,6 +278,9 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Informs the renderer process of a change in timezone.
   virtual void NotifyTimezoneChange() = 0;
 
+  // Handle external protocol (i.e 'mailto:')
+  virtual void HandleExternalProtocol(const GURL& url) = 0;
+
 #if defined(OS_ANDROID)
   // Selects and zooms to the find result nearest to the point (x,y)
   // defined in find-in-page coordinates.

@@ -480,6 +480,14 @@ void WebViewImpl::RequestMediaAccessPermission(content::WebContents* web_content
     }
 }
 
+void WebViewImpl::HandleExternalProtocol(const GURL& url)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    if (d_wasDestroyed || !d_delegate) return;
+
+    d_delegate->handleExternalProtocol(this, url.spec());
+}
+
 /////// WebContentsObserver overrides
 
 void WebViewImpl::DidFinishLoad(int64 frame_id,

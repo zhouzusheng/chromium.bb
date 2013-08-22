@@ -424,6 +424,9 @@ class CONTENT_EXPORT WebContentsDelegate {
       const base::FilePath& plugin_path,
       const base::Callback<void(bool)>& callback);
 
+  // Handle external protocol such as 'mailto:'
+  virtual void HandleExternalProtocol(const GURL& url) {}
+
  protected:
   virtual ~WebContentsDelegate();
 

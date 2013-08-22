@@ -21,6 +21,7 @@
  */
 
 #include <windows.h>  // NOLINT
+#include <shellapi.h>
 
 // This pragma makes us use the version 6.0 of ComCtl32.dll, which is necessary
 // to make tooltips appear correctly.  See:
@@ -427,6 +428,18 @@ public:
 
         delete[] deviceIndices;
         request->release();
+    }
+
+    virtual void handleExternalProtocol(blpwtk2::WebView* source, const blpwtk2::StringRef& url) OVERRIDE
+    {
+        assert(source == d_webView);
+        std::string target(url.data(), url.length());
+
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "DELEGATE: handleExternalProtocol('%s')\n", target.c_str());
+        OutputDebugStringA(buf);
+
+        ShellExecuteA(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);        
     }
 };
 std::set<Shell*> Shell::s_shells;

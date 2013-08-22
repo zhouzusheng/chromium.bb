@@ -147,6 +147,8 @@ class WebViewImpl : public WebView,
         const content::MediaStreamRequest& request,
         const content::MediaResponseCallback& callback) OVERRIDE;
 
+    // Handle external protocol url such as 'mailto:'
+    virtual void HandleExternalProtocol(const GURL& url) OVERRIDE;
 
     /////// WebContentsObserver overrides
 

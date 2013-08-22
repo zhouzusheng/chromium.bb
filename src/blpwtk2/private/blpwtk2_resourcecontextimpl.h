@@ -28,6 +28,10 @@
 #include <base/memory/scoped_ptr.h>
 #include <content/public/browser/resource_context.h>
 
+namespace net {
+class URLRequestContextGetter;
+}
+
 namespace blpwtk2 {
 
 // An instance of this class is owned by each BrowserContext.  Per
@@ -38,6 +42,10 @@ class ResourceContextImpl : public content::ResourceContext {
     ResourceContextImpl();
     virtual ~ResourceContextImpl();
 
+    void setRequestContextGetter(net::URLRequestContextGetter* getter);
+    
+    // ======== content::ResourceContext implementation =============
+
     virtual net::HostResolver* GetHostResolver() OVERRIDE;
 
     // DEPRECATED: This is no longer a valid given isolated apps/sites and
@@ -46,6 +54,7 @@ class ResourceContextImpl : public content::ResourceContext {
     virtual net::URLRequestContext* GetRequestContext() OVERRIDE;
 
   private:
+    scoped_refptr<net::URLRequestContextGetter> d_requestContextGetter;
     scoped_ptr<net::HostResolver> d_hostResolver;
 
     DISALLOW_COPY_AND_ASSIGN(ResourceContextImpl);

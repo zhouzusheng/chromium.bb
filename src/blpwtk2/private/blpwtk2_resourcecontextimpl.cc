@@ -23,15 +23,22 @@
 #include <blpwtk2_resourcecontextimpl.h>
 
 #include <net/dns/host_resolver.h>
+#include <net/url_request/url_request_context_getter.h>
 
 namespace blpwtk2 {
 
-ResourceContextImpl::ResourceContextImpl()
+ResourceContextImpl::ResourceContextImpl() : d_requestContextGetter(NULL)
 {
 }
 
 ResourceContextImpl::~ResourceContextImpl()
 {
+}
+
+void ResourceContextImpl::setRequestContextGetter(
+    net::URLRequestContextGetter* getter)
+{
+    d_requestContextGetter = getter;
 }
 
 net::HostResolver* ResourceContextImpl::GetHostResolver()
@@ -43,8 +50,7 @@ net::HostResolver* ResourceContextImpl::GetHostResolver()
 
 net::URLRequestContext* ResourceContextImpl::GetRequestContext()
 {
-    NOTIMPLEMENTED();
-    return 0;
+    return d_requestContextGetter->GetURLRequestContext();
 }
 
 }  // close namespace blpwtk2

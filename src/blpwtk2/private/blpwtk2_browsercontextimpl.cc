@@ -59,6 +59,10 @@ void BrowserContextImpl::setRequestContextGetter(
     net::URLRequestContextGetter* getter)
 {
     d_requestContextGetter = getter;
+
+    if (d_resourceContext) {
+        d_resourceContext->setRequestContextGetter(d_requestContextGetter);
+    }
 }
 
 net::URLRequestContextGetter* BrowserContextImpl::requestContextGetter() const
@@ -113,8 +117,10 @@ content::ResourceContext* BrowserContextImpl::GetResourceContext()
 {
 	DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-	if (!d_resourceContext.get())
+	if (!d_resourceContext.get()) {
 		d_resourceContext.reset(new ResourceContextImpl());
+        d_resourceContext->setRequestContextGetter(d_requestContextGetter.get());
+    }
     return d_resourceContext.get();
 }
 

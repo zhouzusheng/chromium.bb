@@ -68,6 +68,8 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
     // Stop the in-process renderer thread.
     virtual void StopInProcessRendererThread() OVERRIDE;
 
+    virtual void ResourceDispatcherHostCreated() OVERRIDE;
+
     // If content creates the WebContentsView implementation, it will ask the
     // embedder to return an (optional) delegate to customize it. The view will
     // own the delegate.

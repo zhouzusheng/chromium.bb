@@ -32,8 +32,11 @@
 #include <base/threading/thread.h>
 #include <base/threading/platform_thread.h>
 #include <content/public/browser/browser_thread.h>
+#include <content/public/browser/render_view_host.h>
 #include <content/public/browser/render_process_host.h>
 #include <content/public/renderer/render_thread.h>
+#include <content/public/browser/resource_dispatcher_host.h>
+#include <content/public/browser/resource_dispatcher_host_delegate.h>
 
 namespace blpwtk2 {
 
@@ -75,7 +78,56 @@ private:
 };
 InProcessRendererThread* g_inProcessRendererThread = 0;
 
+class ResourceDispatcherHostDelegate : public content::ResourceDispatcherHostDelegate
+{
+public:
+    static ResourceDispatcherHostDelegate& Get()
+    {
+        static ResourceDispatcherHostDelegate instance;
+        return instance;
+    }
+
+    virtual bool HandleExternalProtocol(const GURL& url,
+                                        int child_id,
+                                        int route_id);
+
+private:
+    ResourceDispatcherHostDelegate() {}
+    DISALLOW_COPY_AND_ASSIGN(ResourceDispatcherHostDelegate);
+
+    static void doHandleExternalProtocol(const GURL& url,
+                                         int child_id,
+                                         int route_id);
+};
+
 }  // close unnamed namespace
+
+bool ResourceDispatcherHostDelegate::HandleExternalProtocol(const GURL& url,
+                                                            int child_id,
+                                                            int route_id)
+{
+    if (Statics::isInBrowserMainThread()) {
+        doHandleExternalProtocol(url, child_id, route_id);
+    }
+    else {
+        Statics::browserMainMessageLoop->PostTask(
+            FROM_HERE,
+            base::Bind(&doHandleExternalProtocol, url, child_id, route_id));
+    }
+    return true;
+}
+
+void ResourceDispatcherHostDelegate::doHandleExternalProtocol(const GURL& url,
+                                                              int child_id,
+                                                              int route_id)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+
+    content::RenderViewHost* viewHost = 
+        content::RenderViewHost::FromID(child_id, route_id);
+
+    viewHost->HandleExternalProtocol(url);
+}
 
 ContentBrowserClientImpl::ContentBrowserClientImpl()
 {
@@ -117,6 +169,11 @@ void ContentBrowserClientImpl::StartInProcessRendererThread(
         DCHECK(!g_inProcessRendererThread);
         g_inProcessRendererThread = new InProcessRendererThread(channel_id);
     }
+}
+
+void ContentBrowserClientImpl::ResourceDispatcherHostCreated() {
+    content::ResourceDispatcherHost::Get()->SetDelegate(
+        &ResourceDispatcherHostDelegate::Get());
 }
 
 void ContentBrowserClientImpl::StopInProcessRendererThread()

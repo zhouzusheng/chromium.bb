@@ -417,6 +417,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void RequestMediaAccessPermission(
       const MediaStreamRequest& request,
       const MediaResponseCallback& callback) OVERRIDE;
+  virtual void HandleExternalProtocol(const GURL& url) OVERRIDE;
 
   // RenderWidgetHostDelegate --------------------------------------------------
 

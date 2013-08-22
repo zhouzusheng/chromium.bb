@@ -21,3 +21,11 @@
  */
 
 #include <blpwtk2_httptransaction.h>
+
+namespace blpwtk2 {
+
+HttpTransaction::~HttpTransaction()
+{
+}
+
+}  // close namespace blpwtk2

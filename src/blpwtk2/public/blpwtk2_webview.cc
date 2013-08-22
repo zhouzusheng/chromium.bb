@@ -21,3 +21,11 @@
  */
 
 #include <blpwtk2_webview.h>
+
+namespace blpwtk2 {
+
+WebView::~WebView()
+{
+}
+
+}  // close namespace blpwtk2

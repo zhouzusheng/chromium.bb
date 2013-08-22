@@ -22,3 +22,10 @@
 
 #include <blpwtk2_webframe.h>
 
+namespace blpwtk2 {
+
+WebFrame::~WebFrame()
+{
+}
+
+}  // close namespace blpwtk2

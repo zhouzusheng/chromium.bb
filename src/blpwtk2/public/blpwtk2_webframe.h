@@ -34,6 +34,12 @@ class WebFrame {
 public:
     virtual WebDocument document() const = 0;
     virtual v8::Local<v8::Context> mainWorldScriptContext() const = 0;
+
+protected:
+    // Destroy this WebView.  Note that clients of blpwtk2 should not delete
+    // this object.  It will be deleted automatically when the WebView gets
+    // destroyed.
+    virtual ~WebFrame();
 };
 
 }  // close namespace blpwtk2

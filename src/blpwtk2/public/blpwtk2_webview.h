@@ -132,6 +132,11 @@ public:
     // Perform a custom context menu action. This should be called when a custom 
     // item in the conext menu has been selected.
     virtual void performCustomContextMenuAction(int actionId) = 0;
+
+protected:
+    // Destroy this WebView.  Note that clients of blpwtk2 should use the
+    // 'destroy()' method, instead of deleting the object directly.
+    virtual ~WebView();
 };
 
 }  // close namespace blpwtk2

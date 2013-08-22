@@ -68,6 +68,12 @@ public:
     // this transaction.  Unlike the other methods on this class, this method
     // can be called from any other thread.
     virtual void notifyDataAvailable() = 0;
+
+protected:
+    // Destroy this transaction.  Note that clients of blpwtk2 should not
+    // delete this object.  It will be deleted automatically after
+    // 'HttpTransactionHandler::endTransaction()' is called.
+    virtual ~HttpTransaction();
 };
 
 }  // close namespace blpwtk2

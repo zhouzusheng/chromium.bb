@@ -24,6 +24,11 @@
 
 #include <blpwtk2_renderviewobserverimpl.h>
 
+#include <base/utf_string_conversions.h>
+#include <net/base/net_errors.h>
+#include <third_party/WebKit/Source/Platform/chromium/public/WebURLError.h>
+#include <third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h>
+
 namespace blpwtk2 {
 
 ContentRendererClientImpl::ContentRendererClientImpl()
@@ -42,5 +47,61 @@ void ContentRendererClientImpl::RenderViewCreated(
     new RenderViewObserverImpl(render_view);
 }
 
+void ContentRendererClientImpl::GetNavigationErrorStrings(
+    const WebKit::WebURLRequest& failed_request,
+    const WebKit::WebURLError& error,
+    std::string* error_html,
+    string16* error_description)
+{
+    GURL gurl = failed_request.url();
+
+    WebKit::WebCString webcs_domain = error.domain.utf8();
+    std::string domain(webcs_domain.data(), webcs_domain.length());
+
+    std::string description;
+    if (0 == strcmp(domain.c_str(), net::kErrorDomain)) {
+        description = net::ErrorToString(error.reason);
+    }
+
+    std::string errorCode;
+    {
+        char tmp[128];
+        sprintf_s(tmp, sizeof(tmp), "%d", error.reason);
+        errorCode = tmp;
+    }
+
+    WebKit::WebCString webcs_localdesc = error.localizedDescription.utf8();
+    std::string localdesc(webcs_localdesc.data(), webcs_localdesc.length());
+
+    if (error_html) {
+        *error_html = "<h2>Navigation Error</h2>";
+        *error_html += "<p>Failed to load '<b>" + gurl.spec() + "</b>'</p>";
+        if (description.length()) {
+            *error_html += "<p>" + description + "</p>";
+        }
+        if (domain.length()) {
+            *error_html += "<p>Error Domain: " + domain + "</p>";
+        }
+        *error_html += "<p>Error Reason: " + errorCode + "</p>";
+        if (localdesc.length()) {
+            *error_html += "<p>" + localdesc + "</p>";
+        }
+    }
+
+    if (error_description) {
+        std::string tmp = "Failed to load '" + gurl.spec() + "'.";
+        if (description.length()) {
+            tmp += " " + description;
+        }
+        if (domain.length()) {
+            tmp += " -- Error Domain: " + domain;
+        }
+        tmp += " -- Error Reason: " + errorCode;
+        if (localdesc.length()) {
+            tmp += " -- " + localdesc;
+        }
+        *error_description = UTF8ToUTF16(tmp);
+    }
+}
 
 }  // close namespace blpwtk2

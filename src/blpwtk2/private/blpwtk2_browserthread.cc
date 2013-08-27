@@ -34,13 +34,16 @@
 
 namespace blpwtk2 {
 
-BrowserThread::BrowserThread(base::WaitableEvent* initializeEvent,
-                             sandbox::SandboxInterfaceInfo* sandboxInfo)
-: d_initializeEvent(initializeEvent)
-, d_sandboxInfo(sandboxInfo)
+static base::WaitableEvent* s_initWaitEvent = 0;
+
+BrowserThread::BrowserThread(sandbox::SandboxInterfaceInfo* sandboxInfo)
+: d_sandboxInfo(sandboxInfo)
 {
-    DCHECK(d_initializeEvent);
+    base::WaitableEvent event(true, false);
+    s_initWaitEvent = &event;
     base::PlatformThread::Create(0, this, &d_threadHandle);
+    s_initWaitEvent->Wait();
+    s_initWaitEvent = 0;
 }
 
 BrowserThread::~BrowserThread()
@@ -75,22 +78,28 @@ void BrowserThread::ThreadMain()
     // Ensure that any singletons created by chromium will be destructed in the
     // browser-main thread, instead of the application's main thread.  This is
     // shadowing the AtExitManager created by ContentMainRunner.  The fact that
-    // the main thread waits for the initialize event, and the fact that the
-    // main thread joins this thread before shutting down ContentMainRunner,
-    // makes this shadowing thread-safe.
+    // the constructor waits for 's_initWaitEvent' immediately after creating
+    // the thread, and the fact that the main thread joins this thread before
+    // shutting down ContentMainRunner, makes this shadowing thread-safe.
+    // Note that this means singletons created in the in-process renderer
+    // thread (the application's main thread) will be destructed in the
+    // browser-main thread.  This should be safe because this would happen
+    // while the renderer thread is waiting for the browser-main thread to
+    // join.  However, we may get assertion failures in the future if any of
+    // the renderer components start asserting that they are destroyed in the
+    // same thread where they are created.  We should be able to safely remove
+    // those assertions.
     base::ShadowingAtExitManager atExitManager;
 
     d_mainRunner = new BrowserMainRunner(d_sandboxInfo);
 
-    // Force the creation of the in-process renderer host.  This has to be done
-    // before signaling the initialize event, so that when the application
-    // tries to create an in-process WebView, the application's main thread
-    // will be able to access the InProcessRendererHost's ID immediately
-    // (without having to synchronize with the browser-main thread again).
-    d_mainRunner->createInProcessRendererHost();
-
-    d_initializeEvent->Signal();
-    d_initializeEvent = 0;
+    // Allow the main thread to continue executing, after the
+    // ShadowingAtExitManager has been fully constructed and installed, and
+    // after the browser threads have been created.  This let's the main thread
+    // assume it can start posting tasks immediately after constructing the
+    // BrowserThread object.
+    DCHECK(s_initWaitEvent);
+    s_initWaitEvent->Signal();
 
     int rc = d_mainRunner->Run();
     DCHECK(0 == rc);

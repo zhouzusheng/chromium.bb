@@ -82,15 +82,7 @@ ToolkitImpl::ToolkitImpl()
         Statics::rendererMessageLoop = new MessageLoop(MessageLoop::TYPE_UI);
 
         content::WebContentsViewWin::disableHookOnRoot();
-        base::WaitableEvent initializeEvent(true, false);
-        d_browserThread.reset(new BrowserThread(&initializeEvent, &d_sandboxInfo));
-
-        // We must wait for the browser thread to finish initializing before we
-        // return to the application.  Part of the initialization of the
-        // BrowserThread is the creation of the InProcessRendererHost, which
-        // must exist before the application can create any in-process
-        // WebViews.
-        initializeEvent.Wait();
+        d_browserThread.reset(new BrowserThread(&d_sandboxInfo));
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
@@ -138,9 +130,25 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     // command line.  This is useful for debugging.
     if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess)
         || params.rendererAffinity() == Constants::IN_PROCESS_RENDERER) {
-        if (Statics::isOriginalThreadMode()) {
-            d_browserMainRunner->createInProcessRendererHost();
+        BrowserMainRunner* mainRunner =
+            Statics::isOriginalThreadMode() ? d_browserMainRunner.get()
+                                            : d_browserThread->mainRunner();
+
+        if (!mainRunner->hasInProcessRendererHost()) {
+            if (Statics::isOriginalThreadMode()) {
+                mainRunner->createInProcessRendererHost();
+            }
+            else {
+                d_browserThread->messageLoop()->PostTask(
+                    FROM_HERE,
+                    base::Bind(&BrowserMainRunner::createInProcessRendererHost,
+                               base::Unretained(mainRunner)));
+                d_browserThread->sync();
+            }
+
+            DCHECK(mainRunner->hasInProcessRendererHost());
         }
+
         hostAffinity = Statics::rendererToHostId(Constants::IN_PROCESS_RENDERER);
         DCHECK(-1 != hostAffinity);
     }

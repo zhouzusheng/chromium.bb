@@ -30,14 +30,6 @@
 
 class MessageLoop;
 
-namespace base {
-    class WaitableEvent;
-}  // close namespace base
-
-namespace content {
-    class BrowserContext;
-}  // close namespace content
-
 namespace sandbox {
     struct SandboxInterfaceInfo;
 }  // close namespace sandbox
@@ -55,8 +47,7 @@ class BrowserMainRunner;
 // to this thread.
 class BrowserThread : private base::PlatformThread::Delegate {
   public:
-    BrowserThread(base::WaitableEvent* initializeEvent,
-                  sandbox::SandboxInterfaceInfo* sandboxInfo);
+    explicit BrowserThread(sandbox::SandboxInterfaceInfo* sandboxInfo);
     ~BrowserThread();
 
     void sync();
@@ -67,7 +58,6 @@ class BrowserThread : private base::PlatformThread::Delegate {
   private:
     virtual void ThreadMain() OVERRIDE;
 
-    base::WaitableEvent* d_initializeEvent;
     sandbox::SandboxInterfaceInfo* d_sandboxInfo;
     BrowserMainRunner* d_mainRunner;
     base::PlatformThreadHandle d_threadHandle;

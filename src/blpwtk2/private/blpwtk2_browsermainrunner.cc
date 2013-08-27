@@ -67,19 +67,17 @@ int BrowserMainRunner::Run()
     return d_impl->Run();
 }
 
-InProcessRendererHost* BrowserMainRunner::createInProcessRendererHost()
+void BrowserMainRunner::createInProcessRendererHost()
 {
     DCHECK(Statics::isInBrowserMainThread());
-    if (!d_inProcessRendererHost.get()) {
-        d_inProcessRendererHost.reset(
-            new InProcessRendererHost(d_browserContext.get()));
-    }
-    return d_inProcessRendererHost.get();
+    DCHECK(!d_inProcessRendererHost.get());
+    d_inProcessRendererHost.reset(
+        new InProcessRendererHost(d_browserContext.get()));
 }
 
-InProcessRendererHost* BrowserMainRunner::inProcessRendererHost() const
+bool BrowserMainRunner::hasInProcessRendererHost() const
 {
-    return d_inProcessRendererHost.get();  // can return 0
+    return 0 != d_inProcessRendererHost.get();
 }
 
 content::BrowserContext* BrowserMainRunner::browserContext() const

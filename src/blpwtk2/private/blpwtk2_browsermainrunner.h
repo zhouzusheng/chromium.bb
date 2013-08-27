@@ -59,11 +59,11 @@ class BrowserMainRunner {
     // Create the (singleton) InProcessRendererHost.  This can only be called
     // from the browser-main thread.  This is a no-op if the
     // InProcessRendererHost has already been created.
-    InProcessRendererHost* createInProcessRendererHost();
+    void createInProcessRendererHost();
 
-    // This will return the (singleton) InProcessRendererHost.  Returns 0 if it
-    // hasn't been created yet.
-    InProcessRendererHost* inProcessRendererHost() const;
+    // Return true if the in-process renderer host has been created, and false
+    // otherwise.
+    bool hasInProcessRendererHost() const;
 
     // This will return the (singleton) BrowserContext
     content::BrowserContext* browserContext() const;

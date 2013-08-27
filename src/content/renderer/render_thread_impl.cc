@@ -225,7 +225,7 @@ void AddTraceEvent(char phase,
 }
 #endif
 
-RenderProcessImpl* g_render_process;
+RenderProcessImpl* g_render_process = 0;
 
 }  // namespace
 
@@ -239,7 +239,10 @@ void RenderThread::InitInProcessRenderer(const std::string& channel_id)
 // static
 void RenderThread::CleanUpInProcessRenderer()
 {
-  delete g_render_process;
+  if (g_render_process) {
+    delete g_render_process;
+    g_render_process = 0;
+  }
 }
 
 class RenderThreadImpl::GpuVDAContextLostCallback

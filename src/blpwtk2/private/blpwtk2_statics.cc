@@ -91,6 +91,7 @@ HttpTransactionHandler* Statics::httpTransactionHandler = 0;
 MessageLoop* Statics::rendererMessageLoop = 0;
 MessageLoop* Statics::browserMainMessageLoop = 0;
 bool Statics::hasDevTools = false;
+int Statics::numWebViews = 0;
 
 std::vector<base::FilePath>& Statics::getPluginPaths()
 {

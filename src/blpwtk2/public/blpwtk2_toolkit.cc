@@ -113,7 +113,9 @@ void Toolkit::setHttpTransactionHandler(HttpTransactionHandler* handler)
 void Toolkit::shutdown()
 {
     Statics::initApplicationMainThread();
-
+    DCHECK(0 == Statics::numWebViews) << "Have not destroyed "
+                                      << Statics::numWebViews
+                                      << " WebViews!";
     if (g_started && !g_shutdown) {
         DCHECK(ToolkitImpl::instance());
         g_shutdown = true;

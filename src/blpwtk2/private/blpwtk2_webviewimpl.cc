@@ -67,6 +67,9 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(profile);
 
+    if (ThreadMode::ORIGINAL == Statics::threadMode)
+        ++Statics::numWebViews;
+
     ProfileImpl* profileImpl = static_cast<ProfileImpl*>(profile);
     BrowserContextImpl* browserContext =
         BrowserContextImpl::fromProfile(profileImpl);
@@ -94,6 +97,10 @@ WebViewImpl::WebViewImpl(content::WebContents* contents)
 , d_isDeletingSoon(false)
 {
     DCHECK(Statics::isInBrowserMainThread());
+
+    if (ThreadMode::ORIGINAL == Statics::threadMode)
+        ++Statics::numWebViews;
+
     d_webContents.reset(contents);
     d_webContents->SetDelegate(this);
     Observe(d_webContents.get());
@@ -139,6 +146,12 @@ void WebViewImpl::destroy()
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
     DCHECK(!d_isDeletingSoon);
+
+    if (ThreadMode::ORIGINAL == Statics::threadMode) {
+        DCHECK(0 < Statics::numWebViews);
+        --Statics::numWebViews;
+    }
+
     Observe(0);  // stop observing the WebContents
     d_wasDestroyed = true;
     if (d_isReadyForDelete) {

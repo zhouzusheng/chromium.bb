@@ -54,6 +54,7 @@ WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(profile);
+    ++Statics::numWebViews;
 
     AddRef();  // this is balanced in destroy()
 
@@ -78,6 +79,7 @@ WebViewProxy::WebViewProxy(WebViewImpl* impl,
 , d_gotRendererInfo(false)
 {
     DCHECK(MessageLoop::current() == implDispatcher);
+    ++Statics::numWebViews;
 
     AddRef();  // this is balanced in destroy()
 
@@ -94,6 +96,8 @@ void WebViewProxy::destroy()
     DCHECK(Statics::isInApplicationMainThread());
 
     DCHECK(!d_wasDestroyed);
+    DCHECK(0 < Statics::numWebViews);
+    --Statics::numWebViews;
     d_wasDestroyed = true;
     d_implDispatcher->PostTask(FROM_HERE,
         base::Bind(&WebViewProxy::implDestroy, this));

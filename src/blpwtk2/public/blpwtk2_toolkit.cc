@@ -76,6 +76,22 @@ void Toolkit::setRendererUsesInProcessPlugins(int renderer)
     Statics::setRendererUsesInProcessPlugins(renderer);
 }
 
+Profile* Toolkit::getProfile(const char* dataDir)
+{
+    Statics::initApplicationMainThread();
+    DCHECK(!g_shutdown);
+    DCHECK(dataDir);
+    DCHECK(*dataDir);
+    return Statics::getOrCreateProfile(dataDir);
+}
+
+Profile* Toolkit::createIncognitoProfile()
+{
+    Statics::initApplicationMainThread();
+    DCHECK(!g_shutdown);
+    return Statics::createIncognitoProfile();
+}
+
 bool Toolkit::hasDevTools()
 {
     Statics::isInApplicationMainThread();
@@ -98,11 +114,12 @@ void Toolkit::shutdown()
 {
     Statics::initApplicationMainThread();
 
-    if (!g_started || g_shutdown)
-        return;
-    DCHECK(ToolkitImpl::instance());
-    g_shutdown = true;
-    delete ToolkitImpl::instance();
+    if (g_started && !g_shutdown) {
+        DCHECK(ToolkitImpl::instance());
+        g_shutdown = true;
+        delete ToolkitImpl::instance();
+    }
+    Statics::deleteProfiles();
 }
 
 WebView* Toolkit::createWebView(NativeView parent,

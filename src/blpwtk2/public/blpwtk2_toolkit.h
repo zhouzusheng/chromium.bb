@@ -77,8 +77,8 @@
 //   * the WebView::mainFrame() is not available immediately after creating the
 //     WebView, because you have to wait for the post to the browser-main
 //     thread, and post back to the render thread.  In general, you should wait
-//     for the first didNavigateMainFramePostCommit() callback on your
-//     WebViewDelegate, before attempting to access WebView::mainFrame().
+//     for the first didFinishLoad() callback on your WebViewDelegate, before
+//     attempting to access WebView::mainFrame().
 
 #include <blpwtk2_config.h>
 
@@ -89,6 +89,7 @@
 
 namespace blpwtk2 {
 
+class Profile;
 class HttpTransactionHandler;
 class WebView;
 class WebViewDelegate;
@@ -127,6 +128,27 @@ struct BLPWTK2_EXPORT Toolkit {
     // such WebViews have been created.  Note that using in-process plugins
     // will disable the sandbox for that renderer.
     static void setRendererUsesInProcessPlugins(int renderer);
+
+    // Get the profile that stores data in the specified 'dataDir'.  A browser
+    // will typically create a profile for each user on the system.  The data
+    // (cookies, local storage, cache, etc) for any WebViews created using this
+    // profile will be stored within the specified 'dataDir' path.  The profile
+    // will be created if it does not already exist.  Note that profile
+    // settings (such as proxy configuration) are not persisted in the
+    // 'dataDir', so applications are responsible for restoring those settings
+    // (if desired) when they first get the profile.
+    // The returned Profile object will remain valid until shutdown() is
+    // called.  The behavior is undefined if shutdown() has already been
+    // called.  The behavior is also undefined if any other process creates a
+    // profile in the same 'dataDir'.
+    static Profile* getProfile(const char* dataDir);
+
+    // Create a new Profile that will prevent WebViews that are created using
+    // it from storing any data (cookies, local storage, cache, etc) on disk.
+    // The returned Profile object will remain valid until shutdown() is
+    // called.  The behavior is undefined if shutdown() has already been
+    // called.
+    static Profile* createIncognitoProfile();
 
     // Return true if the blpwtk2_devtools pak file was detected and has been
     // loaded.  This method determines whether blpwtk2::WebView::loadInspector

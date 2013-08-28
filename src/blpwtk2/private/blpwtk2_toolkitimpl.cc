@@ -30,6 +30,7 @@
 #include <blpwtk2_inprocessrendererhost.h>
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_mainmessagepump.h>
+#include <blpwtk2_profileimpl.h>
 #include <blpwtk2_webviewimpl.h>
 #include <blpwtk2_webviewproxy.h>
 
@@ -125,24 +126,38 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     DCHECK(Statics::isRendererMainThreadMode()
         || Statics::isOriginalThreadMode());
 
+    ProfileImpl* profile = static_cast<ProfileImpl*>(params.profile());
+    if (!profile) {
+        profile = static_cast<ProfileImpl*>(Statics::defaultProfile());
+    }
+
+    // Prevent the application from changing the 'diskCacheEnabled' setting,
+    // because it will be accessed from a different thread, and cannot be
+    // changed thereafter.
+    profile->disableDiskCacheChanges();
+
     int hostAffinity;
+    bool singleProcess = CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
     // Enforce in-process renderer if "--single-process" is specified on the
     // command line.  This is useful for debugging.
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess)
-        || params.rendererAffinity() == Constants::IN_PROCESS_RENDERER) {
+    if (singleProcess || params.rendererAffinity() == Constants::IN_PROCESS_RENDERER) {
+        DCHECK(params.rendererAffinity() != Constants::IN_PROCESS_RENDERER ||
+               Statics::dcheckProfileForRenderer(params.rendererAffinity(), profile));
+
         BrowserMainRunner* mainRunner =
             Statics::isOriginalThreadMode() ? d_browserMainRunner.get()
                                             : d_browserThread->mainRunner();
 
         if (!mainRunner->hasInProcessRendererHost()) {
             if (Statics::isOriginalThreadMode()) {
-                mainRunner->createInProcessRendererHost();
+                mainRunner->createInProcessRendererHost(profile);
             }
             else {
                 d_browserThread->messageLoop()->PostTask(
                     FROM_HERE,
                     base::Bind(&BrowserMainRunner::createInProcessRendererHost,
-                               base::Unretained(mainRunner)));
+                               base::Unretained(mainRunner),
+                               profile));
                 d_browserThread->sync();
             }
 
@@ -157,6 +172,8 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     }
     else {
         DCHECK(0 <= params.rendererAffinity());
+        DCHECK(Statics::dcheckProfileForRenderer(params.rendererAffinity(), profile));
+
         hostAffinity = Statics::rendererToHostId(params.rendererAffinity());
         if (-1 == hostAffinity) {
             hostAffinity = content::RenderProcessHostImpl::GenerateUniqueId();
@@ -167,23 +184,17 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     if (Statics::isRendererMainThreadMode()) {
         DCHECK(d_browserThread.get());
 
-        content::BrowserContext* browserContext
-            = d_browserThread->mainRunner()->browserContext();
-
         return new WebViewProxy(delegate,
                                 parent,
                                 d_browserThread->messageLoop(),
-                                browserContext,
+                                profile,
                                 hostAffinity,
                                 params.initiallyVisible());
     }
     else if (Statics::isOriginalThreadMode()) {
-        content::BrowserContext* browserContext
-            = d_browserMainRunner->browserContext();
-
         return new WebViewImpl(delegate,
                                parent,
-                               browserContext,
+                               profile,
                                hostAffinity,
                                params.initiallyVisible());
     }

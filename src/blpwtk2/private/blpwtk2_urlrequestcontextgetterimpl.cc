@@ -22,8 +22,10 @@
 
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
 
+#include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_httptransactionfactoryimpl.h>
 #include <blpwtk2_networkdelegateimpl.h>
+#include <blpwtk2_profileimpl.h>
 
 #include <base/command_line.h>
 #include <base/logging.h>  // for DCHECK
@@ -68,27 +70,15 @@ void installProtocolHandlers(net::URLRequestJobFactoryImpl* jobFactory,
 }  // close unnamed namespace
 
 URLRequestContextGetterImpl::URLRequestContextGetterImpl(
-        bool ignoreCertificateErrors,
-        const base::FilePath& basePath,
-        MessageLoop* ioLoop,
-        MessageLoop* fileLoop,
+        BrowserContextImpl* browserContext,
         content::ProtocolHandlerMap* protocolHandlers)
-: d_ignoreCertificateErrors(ignoreCertificateErrors)
-, d_basePath(basePath)
-, d_ioLoop(ioLoop)
-, d_fileLoop(fileLoop)
+: d_browserContext(browserContext)
 {
-    // Must first be created on the UI thread.
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK(d_browserContext);
+    DCHECK(!d_browserContext->requestContextGetter());
+    d_browserContext->setRequestContextGetter(this);
 
     std::swap(d_protocolHandlers, *protocolHandlers);
-
-    // We must create the proxy config service on the UI loop on Linux because
-    // it must synchronously run on the glib message loop.  This will be passed
-    // to the URLRequestContextStorage on the IO thread in initialize().
-    d_proxyConfigService.reset(
-        net::ProxyService::CreateSystemProxyConfigService(
-            d_ioLoop->message_loop_proxy(), d_fileLoop));
 }
 
 URLRequestContextGetterImpl::~URLRequestContextGetterImpl()
@@ -135,10 +125,9 @@ void URLRequestContextGetterImpl::initialize()
 
     d_storage->set_cert_verifier(net::CertVerifier::CreateDefault());
     {
-        // TODO(jam): use v8 if possible, look at chrome code.
-        d_storage->set_proxy_service(
-            net::ProxyService::CreateUsingSystemProxyResolver(
-                d_proxyConfigService.release(), 0, 0));
+        net::ProxyService* proxyService =
+            d_browserContext->profile()->initFromBrowserIOThread();
+        d_storage->set_proxy_service(proxyService);
     }
     d_storage->set_ssl_config_service(new net::SSLConfigServiceDefaults);
     d_storage->set_http_auth_handler_factory(
@@ -160,7 +149,7 @@ void URLRequestContextGetterImpl::initialize()
         d_urlRequestContext->network_delegate();
     networkSessionParams.http_server_properties =
         d_urlRequestContext->http_server_properties();
-    networkSessionParams.ignore_certificate_errors = d_ignoreCertificateErrors;
+    networkSessionParams.ignore_certificate_errors = true;
     if (cmdline.HasSwitch(switches::kHostResolverRules)) {
         scoped_ptr<net::MappedHostResolver> mappedHostResolver(
             new net::MappedHostResolver(hostResolver.Pass()));
@@ -174,10 +163,10 @@ void URLRequestContextGetterImpl::initialize()
     networkSessionParams.host_resolver =
         d_urlRequestContext->host_resolver();
 
-    bool useCache = true;  // TODO: make this configurable
+    bool useCache = d_browserContext->profile()->diskCacheEnabled();
     net::HttpCache::BackendFactory* backendFactory =
         useCache ? new net::HttpCache::DefaultBackend(net::DISK_CACHE,
-                                                      d_basePath.Append(FILE_PATH_LITERAL("Cache")),
+                                                      d_browserContext->GetPath().Append(FILE_PATH_LITERAL("Cache")),
                                                       0,
                                                       content::BrowserThread::GetMessageLoopProxyForThread(content::BrowserThread::CACHE))
                  : net::HttpCache::DefaultBackend::InMemory(0);

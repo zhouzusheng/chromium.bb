@@ -22,12 +22,12 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 
+#include <blpwtk2_profileimpl.h>
 #include <blpwtk2_resourcecontextimpl.h>
 
 #include <base/files/file_path.h>
 #include <base/file_util.h>
 #include <base/logging.h>  // for CHECK
-#include <base/path_service.h>
 #include <base/threading/thread_restrictions.h>
 #include <content/public/browser/browser_thread.h>
 #include <content/public/browser/storage_partition.h>
@@ -35,19 +35,59 @@
 
 namespace blpwtk2 {
 
-BrowserContextImpl::BrowserContextImpl()
+// static
+BrowserContextImpl* BrowserContextImpl::fromProfile(ProfileImpl* profile)
 {
-    // allow IO during creation of browser context
-    base::ThreadRestrictions::ScopedAllowIO allowIO;
+    DCHECK(profile);
+    if (profile->browserContext()) {
+        return static_cast<BrowserContextImpl*>(profile->browserContext());
+    }
+    return new BrowserContextImpl(profile);
+}
 
-    CHECK(PathService::Get(base::DIR_LOCAL_APP_DATA, &d_path));
-    d_path = d_path.Append(std::wstring(L"blpwtk2"));
-    if (!file_util::PathExists(d_path))
-        file_util::CreateDirectory(d_path);
+BrowserContextImpl::BrowserContextImpl(ProfileImpl* profile)
+: d_profile(profile)
+{
+    DCHECK(d_profile);
+    DCHECK(!d_profile->browserContext());
+
+    if (d_profile->dataDir()) {
+        // allow IO during creation of data directory
+        base::ThreadRestrictions::ScopedAllowIO allowIO;
+
+        d_path = base::FilePath::FromUTF8Unsafe(d_profile->dataDir());
+        if (!file_util::PathExists(d_path))
+            file_util::CreateDirectory(d_path);
+    }
+    else {
+        // It seems that even incognito browser contexts need to return a valid
+        // data path.  Not providing one causes a DCHECK failure in
+        // fileapi::DeviceMediaAsyncFileUtil::Create.
+        // For now, just create a temporary directory for this.
+        // TODO: see if we can remove this requirement.
+
+        // allow IO during creation of temporary directory
+        base::ThreadRestrictions::ScopedAllowIO allowIO;
+        file_util::CreateNewTempDirectory(L"blpwtk2_", &d_path);
+    }
+
+    d_profile->initFromBrowserUIThread(
+        this,
+        content::BrowserThread::UnsafeGetMessageLoopForThread(content::BrowserThread::IO),
+        content::BrowserThread::UnsafeGetMessageLoopForThread(content::BrowserThread::FILE));
 }
 
 BrowserContextImpl::~BrowserContextImpl()
 {
+    if (!d_profile->dataDir()) {
+        // Delete the temporary directory that we created in the constructor.
+
+        // allow IO during deletion of temporary directory
+        base::ThreadRestrictions::ScopedAllowIO allowIO;
+        DCHECK(file_util::PathExists(d_path));
+        file_util::Delete(d_path, true);
+    }
+
     if (d_resourceContext.get()) {
         content::BrowserThread::DeleteSoon(content::BrowserThread::IO,
                                            FROM_HERE,
@@ -70,6 +110,11 @@ net::URLRequestContextGetter* BrowserContextImpl::requestContextGetter() const
     return d_requestContextGetter.get();
 }
 
+ProfileImpl* BrowserContextImpl::profile() const
+{
+    return d_profile;
+}
+
 
 // ======== content::BrowserContext implementation =============
 
@@ -80,7 +125,7 @@ base::FilePath BrowserContextImpl::GetPath()
 
 bool BrowserContextImpl::IsOffTheRecord() const
 {
-    return true;
+    return 0 == d_profile->dataDir();
 }
 
 net::URLRequestContextGetter* BrowserContextImpl::GetRequestContext()

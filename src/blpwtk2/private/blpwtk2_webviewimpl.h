@@ -33,7 +33,6 @@
 #include <ui/gfx/native_widget_types.h>
 
 namespace content {
-    class BrowserContext;
     class WebContents;
 }  // close namespace content
 
@@ -41,6 +40,7 @@ namespace blpwtk2 {
 
 class ContextMenuParams;
 class DevToolsFrontendHostDelegateImpl;
+class Profile;
 class WebViewDelegate;
 class WebFrameImpl;
 class WebViewImplClient;
@@ -65,7 +65,7 @@ class WebViewImpl : public WebView,
   public:
     WebViewImpl(WebViewDelegate* delegate,
                 gfx::NativeView parent,
-                content::BrowserContext* browserContext,
+                Profile* profile,
                 int hostAffinity,
                 bool initiallyVisible);
     explicit WebViewImpl(content::WebContents* contents);

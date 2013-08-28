@@ -26,6 +26,7 @@
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
 #include <blpwtk2_mediarequestimpl.h>
 #include <blpwtk2_newviewparams.h>
+#include <blpwtk2_profileimpl.h>
 #include <blpwtk2_webframeimpl.h>
 #include <blpwtk2_stringref.h>
 #include <blpwtk2_webviewdelegate.h>
@@ -52,7 +53,7 @@ namespace blpwtk2 {
 
 WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
                          gfx::NativeView parent,
-                         content::BrowserContext* browserContext,
+                         Profile* profile,
                          int hostAffinity,
                          bool initiallyVisible)
 : d_delegate(delegate)
@@ -64,7 +65,11 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 , d_isDeletingSoon(false)
 {
     DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(browserContext);
+    DCHECK(profile);
+
+    ProfileImpl* profileImpl = static_cast<ProfileImpl*>(profile);
+    BrowserContextImpl* browserContext =
+        BrowserContextImpl::fromProfile(profileImpl);
 
     content::WebContents::CreateParams createParams(browserContext);
     createParams.render_process_affinity = hostAffinity;

@@ -20,39 +20,12 @@
  * IN THE SOFTWARE.
  */
 
-#include <blpwtk2_createparams.h>
-
-#include <blpwtk2_constants.h>
-
-#include <base/logging.h>  // for DCHECK
+#include <blpwtk2_profile.h>
 
 namespace blpwtk2 {
 
-CreateParams::CreateParams()
-: d_initiallyVisible(true)
-, d_rendererAffinity(Constants::ANY_OUT_OF_PROCESS_RENDERER)
-, d_profile(0)
+Profile::~Profile()
 {
-}
-
-void CreateParams::setInitiallyVisible(bool visible)
-{
-    d_initiallyVisible = visible;
-}
-
-void CreateParams::setRendererAffinity(int affinity)
-{
-    DCHECK(affinity == Constants::ANY_OUT_OF_PROCESS_RENDERER
-        || affinity == Constants::IN_PROCESS_RENDERER
-        || affinity >= 0);
-
-    d_rendererAffinity = affinity;
-}
-
-void CreateParams::setProfile(Profile* profile)
-{
-    d_profile = profile;
 }
 
 }  // close namespace blpwtk2
-

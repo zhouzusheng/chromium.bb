@@ -41,6 +41,7 @@ namespace content {
 namespace blpwtk2 {
 
 class HttpTransactionHandler;
+class Profile;
 
 // Hold any static variables.  This will be used to store global state that
 // may be setup before ToolkitImpl is instantiated, or any other global
@@ -90,6 +91,14 @@ struct Statics {
     static void setRendererHostId(int renderer, int hostId);
     static int rendererToHostId(int renderer);
     static int hostIdToRenderer(int hostId);
+
+    static bool dcheckProfileForRenderer(int renderer, Profile* profile);
+
+    static Profile* getOrCreateProfile(const char* dataDir);
+    static Profile* createIncognitoProfile();
+    static Profile* defaultProfile();
+    static void deleteProfiles();
+    static void deleteBrowserContexts();
 
     static bool isOriginalThreadMode()
     {

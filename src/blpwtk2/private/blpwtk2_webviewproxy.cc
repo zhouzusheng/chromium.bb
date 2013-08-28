@@ -37,7 +37,7 @@ namespace blpwtk2 {
 WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
                            gfx::NativeView parent,
                            MessageLoop* implDispatcher,
-                           content::BrowserContext* browserContext,
+                           Profile* profile,
                            int hostAffinity,
                            bool initiallyVisible)
 : d_impl(0)
@@ -53,12 +53,12 @@ WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
 , d_gotRendererInfo(false)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(browserContext);
+    DCHECK(profile);
 
     AddRef();  // this is balanced in destroy()
 
     d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implInit, this, parent, browserContext,
+        base::Bind(&WebViewProxy::implInit, this, parent, profile,
                    hostAffinity, initiallyVisible));
 }
 
@@ -395,11 +395,11 @@ void WebViewProxy::updateRendererInfo(bool isInProcess, int routingId)
 }
 
 void WebViewProxy::implInit(gfx::NativeView parent,
-                            content::BrowserContext* browserContext,
+                            Profile* profile,
                             int hostAffinity,
                             bool initiallyVisible)
 {
-    d_impl = new WebViewImpl(this, parent, browserContext, hostAffinity,
+    d_impl = new WebViewImpl(this, parent, profile, hostAffinity,
                              initiallyVisible);
     d_impl->setImplClient(this);
 }

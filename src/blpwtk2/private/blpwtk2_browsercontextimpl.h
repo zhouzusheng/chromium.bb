@@ -32,28 +32,35 @@
 
 namespace blpwtk2 {
 
+class ProfileImpl;
 class ResourceContextImpl;
 
 // This is our implementation of the content::BrowserContext interface.  A
 // browser context represents a user's "Profile" in chromium.  In blpwtk2, we
-// only create one BrowserContext in BrowserMainRunner.
+// create a BrowserContext for each blpwtk2::Profile.
+//
+// There is a 1-to-1 relationship between BrowserContextImpl and ProfileImpl.
+// See blpwtk2_profileimpl.h for more details about this relationship.
 //
 // This class is responsible for providing net::URLRequestContextGetter
 // objects.  URLRequestContextGetter are used to create a "request context" for
 // each URL request.  The request context contains the necessary mechanisms to
 // control caching/proxying etc.
-//
-// Right now, we only create one URLRequestContextGetter and keep reusing it.
-// FIXME: We could create separate URLRequestContextGetter for each renderer.
-// FIXME: This will allow us to setup different caching/proxy rules for each
-// FIXME: renderer.
 class BrowserContextImpl : public content::BrowserContext {
   public:
-    BrowserContextImpl();
+    // Return the BrowserContext for the specified 'profile'.  If 'profile'
+    // doesn't have a BrowserContext yet, a new BrowserContextImpl will be
+    // created and returned.  The newly created BrowserContextImpl will be
+    // automatically associated with the specified 'profile'.  This function
+    // can only be invoked from the browser-main thread.
+    static BrowserContextImpl* fromProfile(ProfileImpl* profile);
+
+    explicit BrowserContextImpl(ProfileImpl* profile);
     virtual ~BrowserContextImpl();
 
     void setRequestContextGetter(net::URLRequestContextGetter* getter);
     net::URLRequestContextGetter* requestContextGetter() const;
+    ProfileImpl* profile() const;
 
     // ======== content::BrowserContext implementation =============
 
@@ -80,6 +87,7 @@ class BrowserContextImpl : public content::BrowserContext {
   private:
     scoped_ptr<ResourceContextImpl> d_resourceContext;
     scoped_refptr<net::URLRequestContextGetter> d_requestContextGetter;
+    ProfileImpl* d_profile;
     base::FilePath d_path;
 
     DISALLOW_COPY_AND_ASSIGN(BrowserContextImpl);

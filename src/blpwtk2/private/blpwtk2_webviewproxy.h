@@ -36,12 +36,9 @@
 
 class MessageLoop;
 
-namespace content {
-    class BrowserContext;
-}  // close namespace content
-
 namespace blpwtk2 {
 
+class Profile;
 class WebViewImpl;
 
 // This is an alternate implementation of the blpwtk2::WebView interface, and
@@ -62,7 +59,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     WebViewProxy(WebViewDelegate* delegate,
                  gfx::NativeView parent,
                  MessageLoop* implDispatcher,
-                 content::BrowserContext* browserContext,
+                 Profile* profile,
                  int hostAffinity,
                  bool initiallyVisible);
     WebViewProxy(WebViewImpl* impl,
@@ -124,7 +121,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
 
   private:
     // methods that get invoked in the impl thread
-    void implInit(gfx::NativeView parent, content::BrowserContext* browserContext,
+    void implInit(gfx::NativeView parent, Profile* profile,
                   int hostAffinity, bool initiallyVisible);
     void implDestroy();
     void implLoadUrl(const std::string& url);

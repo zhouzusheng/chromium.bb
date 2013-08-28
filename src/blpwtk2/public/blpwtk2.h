@@ -37,6 +37,8 @@
 #include <blpwtk2_httptransactionhandler.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_mediarequest.h>
+#include <blpwtk2_profile.h>
+#include <blpwtk2_proxyconfig.h>
 
 #endif  // INCLUDED_BLPWTK2_H
 

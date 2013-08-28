@@ -47,8 +47,6 @@ BrowserMainRunner::BrowserMainRunner(sandbox::SandboxInterfaceInfo* sandboxInfo)
     // content::BrowserMainLoop).
     Statics::browserMainMessageLoop = MessageLoop::current();
 
-    d_browserContext.reset(new BrowserContextImpl());
-
     d_devToolsHttpHandlerDelegate.reset(
         new DevToolsHttpHandlerDelegateImpl());
 }
@@ -57,8 +55,8 @@ BrowserMainRunner::~BrowserMainRunner()
 {
     d_devToolsHttpHandlerDelegate.reset();
     d_inProcessRendererHost.reset();
-    d_browserContext.reset();
     Statics::browserMainMessageLoop = 0;
+    Statics::deleteBrowserContexts();
     d_impl->Shutdown();
 }
 
@@ -67,22 +65,19 @@ int BrowserMainRunner::Run()
     return d_impl->Run();
 }
 
-void BrowserMainRunner::createInProcessRendererHost()
+void BrowserMainRunner::createInProcessRendererHost(ProfileImpl* profile)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_inProcessRendererHost.get());
+    BrowserContextImpl* browserContext
+        = BrowserContextImpl::fromProfile(profile);
     d_inProcessRendererHost.reset(
-        new InProcessRendererHost(d_browserContext.get()));
+        new InProcessRendererHost(browserContext));
 }
 
 bool BrowserMainRunner::hasInProcessRendererHost() const
 {
     return 0 != d_inProcessRendererHost.get();
-}
-
-content::BrowserContext* BrowserMainRunner::browserContext() const
-{
-    return d_browserContext.get();
 }
 
 }  // close namespace blpwtk2

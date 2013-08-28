@@ -27,6 +27,8 @@
 
 namespace blpwtk2 {
 
+class Profile;
+
 // This class contains parameters that are passed to blpwtk2 whenever the
 // application wants to create a new WebView.
 class BLPWTK2_EXPORT CreateParams {
@@ -72,12 +74,24 @@ class BLPWTK2_EXPORT CreateParams {
     // regardless of the 'affinity' setting.  This is useful for debugging.
     void setRendererAffinity(int affinity);
 
+    // Set the profile that will be used for the newly created WebView.  By
+    // default, the profile is null.  This makes blpwtk2 use the default
+    // profile, which is incognito and uses the system proxy configuration.
+    // Note that right now, WebViews with affinity to a particular process
+    // (i.e. if 'rendererAffinity()' is not 'ANY_OUT_OF_PROCESS_RENDERER') must
+    // use the same profile.  In other words, it is undefined behavior to
+    // create two WebViews with different profiles but with affinity to the
+    // same renderer process.
+    void setProfile(Profile* profile);
+
     bool initiallyVisible() const { return d_initiallyVisible; }
     int rendererAffinity() const { return d_rendererAffinity; }
+    Profile* profile() const { return d_profile; }
 
   private:
     bool d_initiallyVisible;
     int d_rendererAffinity;
+    Profile* d_profile;
 };
 
 

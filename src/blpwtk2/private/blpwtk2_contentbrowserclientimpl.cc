@@ -31,7 +31,6 @@
 #include <base/message_loop.h>
 #include <base/threading/thread.h>
 #include <base/threading/platform_thread.h>
-#include <content/public/browser/browser_thread.h>
 #include <content/public/browser/render_view_host.h>
 #include <content/public/browser/render_process_host.h>
 #include <content/public/renderer/render_thread.h>
@@ -210,13 +209,8 @@ net::URLRequestContextGetter* ContentBrowserClientImpl::CreateRequestContext(
         = static_cast<BrowserContextImpl*>(browserContext);
 
     if (!contextImpl->requestContextGetter()) {
-        bool ignoreCertificateErrors = true;
-        contextImpl->setRequestContextGetter(new URLRequestContextGetterImpl(
-            ignoreCertificateErrors,
-            contextImpl->GetPath(),
-            content::BrowserThread::UnsafeGetMessageLoopForThread(content::BrowserThread::IO),
-            content::BrowserThread::UnsafeGetMessageLoopForThread(content::BrowserThread::FILE),
-            protocolHandlers));
+        new URLRequestContextGetterImpl(contextImpl, protocolHandlers);
+        DCHECK(contextImpl->requestContextGetter());
     }
 
     return contextImpl->requestContextGetter();

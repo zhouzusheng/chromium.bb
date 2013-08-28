@@ -39,9 +39,9 @@ namespace net {
     class URLRequestContextStorage;
 }  // close namespace net
 
-class MessageLoop;
-
 namespace blpwtk2 {
+
+class BrowserContextImpl;
 
 // An instance of this is created for each BrowserContext by the
 // ContentBrowserClient.  This implementation is mostly a copy of
@@ -50,10 +50,7 @@ namespace blpwtk2 {
 class URLRequestContextGetterImpl : public net::URLRequestContextGetter {
 public:
     URLRequestContextGetterImpl(
-        bool ignoreCertificateErrors,
-        const base::FilePath& basePath,
-        MessageLoop* ioLoop,
-        MessageLoop* fileLoop,
+        BrowserContextImpl* browserContext,
         content::ProtocolHandlerMap* protocolHandlers);
     virtual ~URLRequestContextGetterImpl();
 
@@ -66,12 +63,7 @@ public:
 private:
     void initialize();
 
-    bool d_ignoreCertificateErrors;
-    base::FilePath d_basePath;
-    MessageLoop* d_ioLoop;
-    MessageLoop* d_fileLoop;
-
-    scoped_ptr<net::ProxyConfigService> d_proxyConfigService;
+    BrowserContextImpl* d_browserContext;
     scoped_ptr<net::NetworkDelegate> d_networkDelegate;
     scoped_ptr<net::URLRequestContextStorage> d_storage;
     scoped_ptr<net::URLRequestContext> d_urlRequestContext;

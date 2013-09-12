@@ -50,7 +50,7 @@ class ApiFunction;
 
 namespace internal {
 
-struct StatsCounter;
+class StatsCounter;
 // -----------------------------------------------------------------------------
 // Platform independent assembler base class.
 
@@ -67,6 +67,14 @@ class AssemblerBase: public Malloced {
 
   bool predictable_code_size() const { return predictable_code_size_; }
   void set_predictable_code_size(bool value) { predictable_code_size_ = value; }
+
+  uint64_t enabled_cpu_features() const { return enabled_cpu_features_; }
+  void set_enabled_cpu_features(uint64_t features) {
+    enabled_cpu_features_ = features;
+  }
+  bool IsEnabled(CpuFeature f) {
+    return (enabled_cpu_features_ & (static_cast<uint64_t>(1) << f)) != 0;
+  }
 
   // Overwrite a host NaN with a quiet target NaN.  Used by mksnapshot for
   // cross-snapshotting.
@@ -89,6 +97,7 @@ class AssemblerBase: public Malloced {
  private:
   Isolate* isolate_;
   int jit_cookie_;
+  uint64_t enabled_cpu_features_;
   bool emit_debug_code_;
   bool predictable_code_size_;
 };
@@ -106,6 +115,22 @@ class PredictableCodeSizeScope {
   int expected_size_;
   int start_offset_;
   bool old_value_;
+};
+
+
+// Enable a specified feature within a scope.
+class CpuFeatureScope BASE_EMBEDDED {
+ public:
+#ifdef DEBUG
+  CpuFeatureScope(AssemblerBase* assembler, CpuFeature f);
+  ~CpuFeatureScope();
+
+ private:
+  AssemblerBase* assembler_;
+  uint64_t old_enabled_;
+#else
+  CpuFeatureScope(AssemblerBase* assembler, CpuFeature f) {}
+#endif
 };
 
 
@@ -291,6 +316,9 @@ class RelocInfo BASE_EMBEDDED {
   static inline bool IsEmbeddedObject(Mode mode) {
     return mode == EMBEDDED_OBJECT;
   }
+  static inline bool IsRuntimeEntry(Mode mode) {
+    return mode == RUNTIME_ENTRY;
+  }
   // Is the relocation mode affected by GC?
   static inline bool IsGCRelocMode(Mode mode) {
     return mode <= LAST_GCED_ENUM;
@@ -345,7 +373,7 @@ class RelocInfo BASE_EMBEDDED {
 
   // Read/modify the code target in the branch/call instruction
   // this relocation applies to;
-  // can only be called if IsCodeTarget(rmode_) || rmode_ == RUNTIME_ENTRY
+  // can only be called if IsCodeTarget(rmode_) || IsRuntimeEntry(rmode_)
   INLINE(Address target_address());
   INLINE(void set_target_address(Address target,
                                  WriteBarrierMode mode = UPDATE_WRITE_BARRIER));
@@ -354,6 +382,10 @@ class RelocInfo BASE_EMBEDDED {
   INLINE(Object** target_object_address());
   INLINE(void set_target_object(Object* target,
                                 WriteBarrierMode mode = UPDATE_WRITE_BARRIER));
+  INLINE(Address target_runtime_entry(Assembler* origin));
+  INLINE(void set_target_runtime_entry(Address target,
+                                       WriteBarrierMode mode =
+                                           UPDATE_WRITE_BARRIER));
   INLINE(JSGlobalPropertyCell* target_cell());
   INLINE(Handle<JSGlobalPropertyCell> target_cell_handle());
   INLINE(void set_target_cell(JSGlobalPropertyCell* cell,
@@ -418,7 +450,7 @@ class RelocInfo BASE_EMBEDDED {
 #ifdef ENABLE_DISASSEMBLER
   // Printing
   static const char* RelocModeName(Mode rmode);
-  void Print(FILE* out);
+  void Print(Isolate* isolate, FILE* out);
 #endif  // ENABLE_DISASSEMBLER
 #ifdef VERIFY_HEAP
   void Verify();
@@ -649,7 +681,7 @@ class ExternalReference BASE_EMBEDDED {
   explicit ExternalReference(const SCTableReference& table_ref);
 
   // Isolate::Current() as an external reference.
-  static ExternalReference isolate_address();
+  static ExternalReference isolate_address(Isolate* isolate);
 
   // One-of-a-kind references. These references are not part of a general
   // pattern. This means that they have to be added to the
@@ -717,6 +749,14 @@ class ExternalReference BASE_EMBEDDED {
   // Used for fast allocation in generated code.
   static ExternalReference new_space_allocation_top_address(Isolate* isolate);
   static ExternalReference new_space_allocation_limit_address(Isolate* isolate);
+  static ExternalReference old_pointer_space_allocation_top_address(
+      Isolate* isolate);
+  static ExternalReference old_pointer_space_allocation_limit_address(
+      Isolate* isolate);
+  static ExternalReference old_data_space_allocation_top_address(
+      Isolate* isolate);
+  static ExternalReference old_data_space_allocation_limit_address(
+      Isolate* isolate);
 
   static ExternalReference double_fp_operation(Token::Value operation,
                                                Isolate* isolate);

@@ -29,32 +29,31 @@
 #include "config.h"
 #include "IDBFactoryBackendProxy.h"
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "CrossThreadTask.h"
-#include "DOMStringList.h"
+#include <public/WebIDBDatabase.h>
+#include <public/WebIDBDatabaseError.h>
+#include <public/WebIDBFactory.h>
+#include <public/WebVector.h>
 #include "IDBDatabaseBackendProxy.h"
-#include "IDBDatabaseCallbacks.h"
-#include "IDBDatabaseError.h"
-#include "ScriptExecutionContext.h"
-#include "SecurityOrigin.h"
 #include "WebFrameImpl.h"
 #include "WebIDBCallbacksImpl.h"
-#include "WebIDBDatabase.h"
 #include "WebIDBDatabaseCallbacksImpl.h"
-#include "WebIDBDatabaseError.h"
-#include "WebIDBFactory.h"
 #include "WebKit.h"
 #include "WebPermissionClient.h"
+#include "WebSecurityOrigin.h"
 #include "WebViewImpl.h"
 #include "WebWorkerBase.h"
 #include "WebWorkerClientImpl.h"
 #include "WorkerAllowMainThreadBridgeBase.h"
-#include "WorkerContext.h"
-#include "WorkerLoaderProxy.h"
-#include "WorkerScriptController.h"
-#include "WorkerThread.h"
-#include <public/WebVector.h>
+#include "bindings/v8/WorkerScriptController.h"
+#include "core/dom/CrossThreadTask.h"
+#include "core/dom/ScriptExecutionContext.h"
+#include "core/page/SecurityOrigin.h"
+#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerLoaderProxy.h"
+#include "core/workers/WorkerThread.h"
+#include "modules/indexeddb/IDBDatabaseCallbacks.h"
+#include "modules/indexeddb/IDBDatabaseError.h"
+
 
 using namespace WebCore;
 
@@ -150,50 +149,35 @@ bool IDBFactoryBackendProxy::allowIndexedDB(ScriptExecutionContext* context, con
     return allowed;
 }
 
-static WebFrameImpl* getWebFrame(ScriptExecutionContext* context)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument() || context->isWorkerContext());
-    if (context->isDocument()) {
-        Document* document = static_cast<Document*>(context);
-        return WebFrameImpl::fromFrame(document->frame());
-    }
-    return 0;
-}
-
-void IDBFactoryBackendProxy::getDatabaseNames(PassRefPtr<IDBCallbacks> prpCallbacks, PassRefPtr<SecurityOrigin> securityOrigin, ScriptExecutionContext* context, const String& dataDir)
+void IDBFactoryBackendProxy::getDatabaseNames(PassRefPtr<IDBCallbacks> prpCallbacks, const String& databaseIdentifier, ScriptExecutionContext* context, const String& dataDir)
 {
     RefPtr<IDBCallbacks> callbacks(prpCallbacks);
-    WebSecurityOrigin origin(securityOrigin);
+    WebSecurityOrigin origin(context->securityOrigin());
     if (!allowIndexedDB(context, "Database Listing", origin, callbacks))
         return;
 
-    WebFrameImpl* webFrame = getWebFrame(context);
-    m_webIDBFactory->getDatabaseNames(new WebIDBCallbacksImpl(callbacks), origin, webFrame, dataDir);
+    m_webIDBFactory->getDatabaseNames(new WebIDBCallbacksImpl(callbacks), databaseIdentifier, dataDir);
 }
 
-void IDBFactoryBackendProxy::open(const String& name, int64_t version, int64_t transactionId, PassRefPtr<IDBCallbacks> prpCallbacks, PassRefPtr<IDBDatabaseCallbacks> prpDatabaseCallbacks, PassRefPtr<SecurityOrigin> securityOrigin, ScriptExecutionContext* context, const String& dataDir)
+void IDBFactoryBackendProxy::open(const String& name, int64_t version, int64_t transactionId, PassRefPtr<IDBCallbacks> prpCallbacks, PassRefPtr<IDBDatabaseCallbacks> prpDatabaseCallbacks, const String& databaseIdentifier, ScriptExecutionContext* context, const String& dataDir)
 {
     RefPtr<IDBCallbacks> callbacks(prpCallbacks);
     RefPtr<IDBDatabaseCallbacks> databaseCallbacks(prpDatabaseCallbacks);
-    WebSecurityOrigin origin(securityOrigin);
+    WebSecurityOrigin origin(context->securityOrigin());
     if (!allowIndexedDB(context, name, origin, callbacks))
         return;
 
-    WebFrameImpl* webFrame = getWebFrame(context);
-    m_webIDBFactory->open(name, version, transactionId, new WebIDBCallbacksImpl(callbacks), new WebIDBDatabaseCallbacksImpl(databaseCallbacks), origin, webFrame, dataDir);
+    m_webIDBFactory->open(name, version, transactionId, new WebIDBCallbacksImpl(callbacks), new WebIDBDatabaseCallbacksImpl(databaseCallbacks), databaseIdentifier, dataDir);
 }
 
-void IDBFactoryBackendProxy::deleteDatabase(const String& name, PassRefPtr<IDBCallbacks> prpCallbacks, PassRefPtr<SecurityOrigin> securityOrigin, ScriptExecutionContext* context, const String& dataDir)
+void IDBFactoryBackendProxy::deleteDatabase(const String& name, PassRefPtr<IDBCallbacks> prpCallbacks, const String& databaseIdentifier, ScriptExecutionContext* context, const String& dataDir)
 {
     RefPtr<IDBCallbacks> callbacks(prpCallbacks);
-    WebSecurityOrigin origin(securityOrigin);
+    WebSecurityOrigin origin(context->securityOrigin());
     if (!allowIndexedDB(context, name, origin, callbacks))
         return;
 
-    WebFrameImpl* webFrame = getWebFrame(context);
-    m_webIDBFactory->deleteDatabase(name, new WebIDBCallbacksImpl(callbacks), origin, webFrame, dataDir);
+    m_webIDBFactory->deleteDatabase(name, new WebIDBCallbacksImpl(callbacks), databaseIdentifier, dataDir);
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)

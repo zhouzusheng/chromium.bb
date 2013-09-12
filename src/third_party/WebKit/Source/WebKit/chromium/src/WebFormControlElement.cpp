@@ -31,8 +31,8 @@
 #include "config.h"
 #include "WebFormControlElement.h"
 
-#include "HTMLFormControlElement.h"
-#include "HTMLFormElement.h"
+#include "core/html/HTMLFormControlElement.h"
+#include "core/html/HTMLFormElement.h"
 #include <wtf/PassRefPtr.h>
 
 using namespace WebCore;
@@ -41,12 +41,12 @@ namespace WebKit {
 
 bool WebFormControlElement::isEnabled() const
 {
-    return constUnwrap<HTMLFormControlElement>()->isEnabledFormControl();
+    return !constUnwrap<HTMLFormControlElement>()->isDisabledFormControl();
 }
 
 bool WebFormControlElement::isReadOnly() const
 {
-    return constUnwrap<HTMLFormControlElement>()->readOnly();
+    return constUnwrap<HTMLFormControlElement>()->isReadOnly();
 }
 
 WebString WebFormControlElement::formControlName() const

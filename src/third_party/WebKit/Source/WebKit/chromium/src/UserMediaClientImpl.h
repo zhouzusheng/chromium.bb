@@ -31,10 +31,8 @@
 #ifndef UserMediaClientImpl_h
 #define UserMediaClientImpl_h
 
-#if ENABLE(MEDIA_STREAM)
-
-#include "MediaStreamSource.h"
-#include "UserMediaClient.h"
+#include "core/platform/mediastream/MediaStreamSource.h"
+#include "modules/mediastream/UserMediaClient.h"
 #include <wtf/PassRefPtr.h>
 
 namespace WebCore {
@@ -62,7 +60,5 @@ private:
 };
 
 } // namespace WebKit
-
-#endif // ENABLE(MEDIA_STREAM)
 
 #endif // UserMediaClientImpl_h

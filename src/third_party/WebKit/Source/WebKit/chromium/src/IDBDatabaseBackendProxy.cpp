@@ -26,21 +26,17 @@
 #include "config.h"
 #include "IDBDatabaseBackendProxy.h"
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "DOMStringList.h"
-#include "IDBCallbacks.h"
-#include "IDBDatabaseCallbacks.h"
-#include "IDBKeyRange.h"
-#include "IDBMetadata.h"
-#include "WebDOMStringList.h"
+#include <public/WebIDBCursor.h>
+#include <public/WebIDBDatabase.h>
+#include <public/WebIDBDatabaseError.h>
+#include <public/WebIDBKeyRange.h>
 #include "WebFrameImpl.h"
 #include "WebIDBCallbacksImpl.h"
-#include "WebIDBCursor.h"
-#include "WebIDBDatabase.h"
 #include "WebIDBDatabaseCallbacksImpl.h"
-#include "WebIDBDatabaseError.h"
-#include "WebIDBKeyRange.h"
+#include "modules/indexeddb/IDBCallbacks.h"
+#include "modules/indexeddb/IDBDatabaseCallbacks.h"
+#include "modules/indexeddb/IDBKeyRange.h"
+#include "modules/indexeddb/IDBMetadata.h"
 #include "public/WebData.h"
 
 using namespace WebCore;
@@ -73,9 +69,10 @@ void IDBDatabaseBackendProxy::deleteObjectStore(int64_t transactionId, int64_t o
         m_webIDBDatabase->deleteObjectStore(transactionId, objectStoreId);
 }
 
-void IDBDatabaseBackendProxy::createTransaction(int64_t id, PassRefPtr<IDBDatabaseCallbacks> callbacks, const Vector<int64_t>& objectStoreIds, unsigned short mode)
+void IDBDatabaseBackendProxy::createTransaction(int64_t id, PassRefPtr<IDBDatabaseCallbacks>, const Vector<int64_t>& objectStoreIds, unsigned short mode)
 {
-    m_webIDBDatabase->createTransaction(id, new WebIDBDatabaseCallbacksImpl(callbacks), objectStoreIds, mode);
+    // WebIDBDatabaseImpl holds on to the specific callbacks object for this connection.
+    m_webIDBDatabase->createTransaction(id, 0, objectStoreIds, mode);
 }
 
 void IDBDatabaseBackendProxy::commit(int64_t transactionId)
@@ -159,5 +156,3 @@ void IDBDatabaseBackendProxy::close(PassRefPtr<IDBDatabaseCallbacks>)
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)

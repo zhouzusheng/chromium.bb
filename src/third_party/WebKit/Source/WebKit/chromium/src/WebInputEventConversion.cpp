@@ -31,22 +31,22 @@
 #include "config.h"
 #include "WebInputEventConversion.h"
 
-#include "EventNames.h"
-#include "GestureEvent.h"
-#include "KeyboardCodes.h"
-#include "KeyboardEvent.h"
-#include "MouseEvent.h"
-#include "PlatformKeyboardEvent.h"
-#include "PlatformMouseEvent.h"
-#include "PlatformWheelEvent.h"
-#include "RenderObject.h"
-#include "ScrollView.h"
-#include "Touch.h"
-#include "TouchEvent.h"
-#include "TouchList.h"
 #include "WebInputEvent.h"
-#include "WheelEvent.h"
-#include "Widget.h"
+#include "core/dom/EventNames.h"
+#include "core/dom/GestureEvent.h"
+#include "core/dom/KeyboardEvent.h"
+#include "core/dom/MouseEvent.h"
+#include "core/dom/Touch.h"
+#include "core/dom/TouchEvent.h"
+#include "core/dom/TouchList.h"
+#include "core/dom/WheelEvent.h"
+#include "core/platform/PlatformKeyboardEvent.h"
+#include "core/platform/PlatformMouseEvent.h"
+#include "core/platform/PlatformWheelEvent.h"
+#include "core/platform/ScrollView.h"
+#include "core/platform/Widget.h"
+#include "core/platform/chromium/KeyboardCodes.h"
+#include "core/rendering/RenderObject.h"
 
 using namespace WebCore;
 
@@ -75,9 +75,7 @@ PlatformMouseEventBuilder::PlatformMouseEventBuilder(Widget* widget, const WebMo
     // to get rid of this once we abstract popups into a WebKit API.
     m_position = widget->convertFromContainingWindow(IntPoint(e.x / scale, e.y / scale));
     m_globalPosition = IntPoint(e.globalX, e.globalY);
-#if ENABLE(POINTER_LOCK)
     m_movementDelta = IntPoint(e.movementX / scale, e.movementY / scale);
-#endif
     m_button = static_cast<MouseButton>(e.button);
 
     m_modifiers = 0;
@@ -152,7 +150,6 @@ PlatformWheelEventBuilder::PlatformWheelEventBuilder(Widget* widget, const WebMo
 
 // PlatformGestureEventBuilder --------------------------------------------------
 
-#if ENABLE(GESTURE_EVENTS)
 PlatformGestureEventBuilder::PlatformGestureEventBuilder(Widget* widget, const WebGestureEvent& e)
 {
     float scale = widgetScaleFactor(widget);
@@ -179,12 +176,23 @@ PlatformGestureEventBuilder::PlatformGestureEventBuilder(Widget* widget, const W
         // FIXME: PlatformGestureEvent deltaX is overloaded - wkb.ug/93123
         m_deltaX = static_cast<int>(e.data.tap.tapCount);
         break;
+    case WebInputEvent::GestureTapUnconfirmed:
+        m_type = PlatformEvent::GestureTapUnconfirmed;
+        m_area = expandedIntSize(FloatSize(e.data.tap.width / scale, e.data.tap.height / scale));
+        break;
     case WebInputEvent::GestureTapDown:
         m_type = PlatformEvent::GestureTapDown;
         m_area = expandedIntSize(FloatSize(e.data.tapDown.width / scale, e.data.tapDown.height / scale));
         break;
     case WebInputEvent::GestureTapCancel:
         m_type = PlatformEvent::GestureTapDownCancel;
+        break;
+    case WebInputEvent::GestureDoubleTap:
+        // DoubleTap gesture is now handled as PlatformEvent::GestureTap with tap_count = 2. So no
+        // need to convert to a Platfrom DoubleTap gesture. But in WebViewImpl::handleGestureEvent
+        // all WebGestureEvent are converted to PlatformGestureEvent, for completeness and not reach
+        // the ASSERT_NOT_REACHED() at the end, convert the DoubleTap to a NoType.
+        m_type = PlatformEvent::NoType;
         break;
     case WebInputEvent::GestureTwoFingerTap:
         m_type = PlatformEvent::GestureTwoFingerTap;
@@ -226,7 +234,6 @@ PlatformGestureEventBuilder::PlatformGestureEventBuilder(Widget* widget, const W
     if (e.modifiers & WebInputEvent::MetaKey)
         m_modifiers |= PlatformEvent::MetaKey;
 }
-#endif
 
 // MakePlatformKeyboardEvent --------------------------------------------------
 
@@ -322,7 +329,6 @@ bool PlatformKeyboardEventBuilder::isCharacterKey() const
     return true;
 }
 
-#if ENABLE(TOUCH_EVENTS)
 inline PlatformEvent::Type toPlatformTouchEventType(const WebInputEvent::Type type)
 {
     switch (type) {
@@ -404,7 +410,6 @@ PlatformTouchEventBuilder::PlatformTouchEventBuilder(Widget* widget, const WebTo
     for (unsigned i = 0; i < event.touchesLength; ++i)
         m_touchPoints.append(PlatformTouchPointBuilder(widget, event.touches[i]));
 }
-#endif
 
 static int getWebInputModifiers(const UIEventWithKeyState& event)
 {
@@ -485,11 +490,10 @@ WebMouseEventBuilder::WebMouseEventBuilder(const Widget* widget, const WebCore::
             modifiers |= WebInputEvent::RightButtonDown;
             break;
         }
-    }
-#if ENABLE(POINTER_LOCK)
+    } else
+        button = WebMouseEvent::ButtonNone;
     movementX = event.webkitMovementX();
     movementY = event.webkitMovementY();
-#endif
     clickCount = event.detail();
 }
 
@@ -575,8 +579,6 @@ WebKeyboardEventBuilder::WebKeyboardEventBuilder(const KeyboardEvent& event)
     memcpy(keyIdentifier, event.keyIdentifier().ascii().data(), event.keyIdentifier().length());
 }
 
-#if ENABLE(TOUCH_EVENTS)
-
 static void addTouchPoints(const Widget* widget, const AtomicString& touchType, TouchList* touches, WebTouchPoint* touchPoints, unsigned* touchPointsLength, const WebCore::RenderObject* renderObject)
 {
     unsigned numberOfTouches = std::min(touches->length(), static_cast<unsigned>(WebTouchEvent::touchesLengthCap));
@@ -622,9 +624,6 @@ WebTouchEventBuilder::WebTouchEventBuilder(const Widget* widget, const WebCore::
     addTouchPoints(widget, event.type(), event.targetTouches(), targetTouches, &targetTouchesLength, renderObject);
 }
 
-#endif // ENABLE(TOUCH_EVENTS)
-
-#if ENABLE(GESTURE_EVENTS)
 WebGestureEventBuilder::WebGestureEventBuilder(const Widget* widget, const WebCore::RenderObject* renderObject, const GestureEvent& event)
 {
     if (event.type() == eventNames().gesturetapEvent)
@@ -650,6 +649,5 @@ WebGestureEventBuilder::WebGestureEventBuilder(const Widget* widget, const WebCo
     x = localPoint.x();
     y = localPoint.y();
 }
-#endif // ENABLE(GESTURE_EVENTS)
 
 } // namespace WebKit

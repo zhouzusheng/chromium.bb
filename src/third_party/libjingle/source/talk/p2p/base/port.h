@@ -33,13 +33,13 @@
 #include <map>
 
 #include "talk/base/network.h"
-#include "talk/base/packetsocketfactory.h"
 #include "talk/base/proxyinfo.h"
 #include "talk/base/ratetracker.h"
 #include "talk/base/sigslot.h"
 #include "talk/base/socketaddress.h"
 #include "talk/base/thread.h"
 #include "talk/p2p/base/candidate.h"
+#include "talk/p2p/base/packetsocketfactory.h"
 #include "talk/p2p/base/portinterface.h"
 #include "talk/p2p/base/stun.h"
 #include "talk/p2p/base/stunrequest.h"
@@ -79,7 +79,14 @@ enum RelayType {
 };
 
 enum IcePriorityValue {
-  ICE_TYPE_PREFERENCE_RELAY = 0,
+  // The reason we are choosing Relay preference 2 is because, we can run
+  // Relay from client to server on UDP/TCP/TLS. To distinguish the transport
+  // protocol, we prefer UDP over TCP over TLS.
+  // For UDP ICE_TYPE_PREFERENCE_RELAY will be 2.
+  // For TCP ICE_TYPE_PREFERENCE_RELAY will be 1.
+  // For TLS ICE_TYPE_PREFERENCE_RELAY will be 0.
+  // Check turnport.cc for setting these values.
+  ICE_TYPE_PREFERENCE_RELAY = 2,
   ICE_TYPE_PREFERENCE_HOST_TCP = 90,
   ICE_TYPE_PREFERENCE_SRFLX = 100,
   ICE_TYPE_PREFERENCE_PRFLX = 110,
@@ -282,6 +289,9 @@ class Port : public PortInterface, public talk_base::MessageHandler,
                             IceMessage* stun_msg,
                             const std::string& remote_ufrag);
 
+  // Called when the socket is currently able to send.
+  void OnReadyToSend();
+
  protected:
   void set_type(const std::string& type) { type_ = type; }
   // Fills in the local address of the port.
@@ -435,8 +445,13 @@ class Connection : public talk_base::MessageHandler,
 
   sigslot::signal3<Connection*, const char*, size_t> SignalReadPacket;
 
+  sigslot::signal1<Connection*> SignalReadyToSend;
+
   // Called when a packet is received on this connection.
   void OnReadPacket(const char* data, size_t size);
+
+  // Called when the socket is currently able to send.
+  void OnReadyToSend();
 
   // Called when a connection is determined to be no longer useful to us.  We
   // still keep it around in case the other side wants to use it.  But we can

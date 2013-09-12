@@ -12,9 +12,10 @@
 #include "base/string_util.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
-#include "net/base/cert_verifier.h"
+#include "net/base/cache_type.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate.h"
+#include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/dns/host_resolver.h"
 #include "net/ftp/ftp_network_layer.h"
@@ -77,7 +78,7 @@ class BasicNetworkDelegate : public NetworkDelegate {
   virtual void OnURLRequestDestroyed(URLRequest* request) OVERRIDE {}
 
   virtual void OnPACScriptError(int line_number,
-                                const string16& error) OVERRIDE {}
+                                const base::string16& error) OVERRIDE {}
 
   virtual NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       URLRequest* request,
@@ -125,7 +126,7 @@ class BasicURLRequestContext : public URLRequestContext {
   BasicURLRequestContext()
       : cache_thread_("Cache Thread"),
         file_thread_("File Thread"),
-        ALLOW_THIS_IN_INITIALIZER_LIST(storage_(this)) {}
+        storage_(this) {}
 
   URLRequestContextStorage* storage() {
     return &storage_;
@@ -272,6 +273,7 @@ URLRequestContext* URLRequestContextBuilder::Build() {
       context->StartCacheThread();
       http_cache_backend =
           new HttpCache::DefaultBackend(DISK_CACHE,
+                                        net::CACHE_BACKEND_DEFAULT,
                                         http_cache_params_.path,
                                         http_cache_params_.max_size,
                                         context->cache_message_loop_proxy());

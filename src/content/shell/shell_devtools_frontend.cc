@@ -56,13 +56,12 @@ ShellDevToolsFrontend* ShellDevToolsFrontend::Show(
       DevToolsAgentHost::GetOrCreateFor(
           inspected_contents->GetRenderViewHost()));
 
-  ShellContentBrowserClient* browser_client =
-      static_cast<ShellContentBrowserClient*>(
-          GetContentClient()->browser());
-  ShellDevToolsDelegate* delegate =
-      browser_client->shell_browser_main_parts()->devtools_delegate();
-  // SHEZ: remove upstream code here, used only for testing
-  shell->LoadURL(delegate->devtools_http_handler()->GetFrontendURL(NULL));
+  ShellDevToolsDelegate* delegate = ShellContentBrowserClient::Get()->
+      shell_browser_main_parts()->devtools_delegate();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
+    shell->LoadURL(GetDevToolsPathAsURL());
+  else
+    shell->LoadURL(delegate->devtools_http_handler()->GetFrontendURL(NULL));
 
   return devtools_frontend;
 }

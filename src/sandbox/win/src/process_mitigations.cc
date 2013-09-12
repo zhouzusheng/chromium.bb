@@ -14,7 +14,10 @@ namespace {
 // Functions for enabling policies.
 typedef BOOL (WINAPI *SetProcessDEPPolicyFunction)(DWORD dwFlags);
 
-// SHEZ: Remove upstream code here to compile with Win7.1 SDK
+typedef BOOL (WINAPI *SetProcessMitigationPolicyFunction)(
+    PROCESS_MITIGATION_POLICY mitigation_policy,
+    PVOID buffer,
+    SIZE_T length);
 
 typedef BOOL (WINAPI *SetDefaultDllDirectoriesFunction)(
     DWORD DirectoryFlags);
@@ -34,8 +37,20 @@ bool ApplyProcessMitigationsToCurrentProcess(MitigationFlags flags) {
   base::win::Version version = base::win::GetVersion();
   HMODULE module = ::GetModuleHandleA("kernel32.dll");
 
-  // SHEZ: Remove upstream code here to compile with Win7.1 SDK
-  //       (LOAD_LIBRARY_SEARCH_DEFAULT_DIRS is not defined)
+  if (version >= base::win::VERSION_VISTA &&
+      (flags & MITIGATION_DLL_SEARCH_ORDER)) {
+    SetDefaultDllDirectoriesFunction set_default_dll_directories =
+        reinterpret_cast<SetDefaultDllDirectoriesFunction>(
+            ::GetProcAddress(module, "SetDefaultDllDirectories"));
+
+    // Check for SetDefaultDllDirectories since it requires KB2533623.
+    if (set_default_dll_directories) {
+      if (!set_default_dll_directories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) &&
+          ERROR_ACCESS_DENIED != ::GetLastError()) {
+        return false;
+      }
+    }
+  }
 
   // Set the heap to terminate on corruption
   if (version >= base::win::VERSION_VISTA &&
@@ -91,7 +106,67 @@ bool ApplyProcessMitigationsToCurrentProcess(MitigationFlags flags) {
 #endif
 
   // This is all we can do in Win7 and below.
-  // SHEZ: Remove upstream code here in order to compile using Win7.1 SDK
+  if (version < base::win::VERSION_WIN8)
+    return true;
+
+  SetProcessMitigationPolicyFunction set_process_mitigation_policy =
+      reinterpret_cast<SetProcessMitigationPolicyFunction>(
+          ::GetProcAddress(module, "SetProcessMitigationPolicy"));
+  if (!set_process_mitigation_policy)
+    return false;
+
+  // Enable ASLR policies.
+  if (flags & MITIGATION_RELOCATE_IMAGE) {
+    PROCESS_MITIGATION_ASLR_POLICY policy = { 0 };
+    policy.EnableForceRelocateImages = true;
+    policy.DisallowStrippedImages = (flags &
+        MITIGATION_RELOCATE_IMAGE_REQUIRED) ==
+        MITIGATION_RELOCATE_IMAGE_REQUIRED;
+
+    if (!set_process_mitigation_policy(ProcessASLRPolicy, &policy,
+                                       sizeof(policy)) &&
+        ERROR_ACCESS_DENIED != ::GetLastError()) {
+      return false;
+    }
+  }
+
+  // Enable strict handle policies.
+  if (flags & MITIGATION_STRICT_HANDLE_CHECKS) {
+    PROCESS_MITIGATION_STRICT_HANDLE_CHECK_POLICY policy = { 0 };
+    policy.HandleExceptionsPermanentlyEnabled =
+        policy.RaiseExceptionOnInvalidHandleReference = true;
+
+    if (!set_process_mitigation_policy(ProcessStrictHandleCheckPolicy, &policy,
+                                       sizeof(policy)) &&
+        ERROR_ACCESS_DENIED != ::GetLastError()) {
+      return false;
+    }
+  }
+
+  // Enable system call policies.
+  if (flags & MITIGATION_WIN32K_DISABLE) {
+    PROCESS_MITIGATION_SYSTEM_CALL_DISABLE_POLICY policy = { 0 };
+    policy.DisallowWin32kSystemCalls = true;
+
+    if (!set_process_mitigation_policy(ProcessSystemCallDisablePolicy, &policy,
+                                       sizeof(policy)) &&
+        ERROR_ACCESS_DENIED != ::GetLastError()) {
+      return false;
+    }
+  }
+
+  // Enable system call policies.
+  if (flags & MITIGATION_EXTENSION_DLL_DISABLE) {
+    PROCESS_MITIGATION_EXTENSION_POINT_DISABLE_POLICY policy = { 0 };
+    policy.DisableExtensionPoints = true;
+
+    if (!set_process_mitigation_policy(ProcessExtensionPointDisablePolicy,
+                                       &policy, sizeof(policy)) &&
+        ERROR_ACCESS_DENIED != ::GetLastError()) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -132,7 +207,44 @@ void ConvertProcessMitigationsToPolicy(MitigationFlags flags,
   if (version < base::win::VERSION_WIN8)
     return;
 
-  // SHEZ: Remove upstream code here to compile with Win7.1 SDK
+  if (flags & MITIGATION_RELOCATE_IMAGE) {
+    *policy_flags |=
+        PROCESS_CREATION_MITIGATION_POLICY_FORCE_RELOCATE_IMAGES_ALWAYS_ON;
+    if (flags & MITIGATION_RELOCATE_IMAGE_REQUIRED) {
+      *policy_flags |=
+          PROCESS_CREATION_MITIGATION_POLICY_FORCE_RELOCATE_IMAGES_ALWAYS_ON_REQ_RELOCS;
+    }
+  }
+
+  if (flags & MITIGATION_HEAP_TERMINATE) {
+    *policy_flags |=
+        PROCESS_CREATION_MITIGATION_POLICY_HEAP_TERMINATE_ALWAYS_ON;
+  }
+
+  if (flags & MITIGATION_BOTTOM_UP_ASLR) {
+    *policy_flags |=
+        PROCESS_CREATION_MITIGATION_POLICY_BOTTOM_UP_ASLR_ALWAYS_ON;
+  }
+
+  if (flags & MITIGATION_HIGH_ENTROPY_ASLR) {
+    *policy_flags |=
+        PROCESS_CREATION_MITIGATION_POLICY_HIGH_ENTROPY_ASLR_ALWAYS_ON;
+  }
+
+  if (flags & MITIGATION_STRICT_HANDLE_CHECKS) {
+    *policy_flags |=
+        PROCESS_CREATION_MITIGATION_POLICY_STRICT_HANDLE_CHECKS_ALWAYS_ON;
+  }
+
+  if (flags & MITIGATION_WIN32K_DISABLE) {
+    *policy_flags |=
+        PROCESS_CREATION_MITIGATION_POLICY_WIN32K_SYSTEM_CALL_DISABLE_ALWAYS_ON;
+  }
+
+  if (flags & MITIGATION_EXTENSION_DLL_DISABLE) {
+    *policy_flags |=
+        PROCESS_CREATION_MITIGATION_POLICY_EXTENSION_POINT_DISABLE_ALWAYS_ON;
+  }
 }
 
 MitigationFlags FilterPostStartupProcessMitigations(MitigationFlags flags) {

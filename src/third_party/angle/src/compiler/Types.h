@@ -14,23 +14,13 @@
 class TType;
 struct TPublicType;
 
-//
-// Need to have association of line numbers to types in a list for building structs.
-//
-struct TTypeLine {
-    TType* type;
-    int line;
-};
-typedef TVector<TTypeLine> TTypeList;
+typedef TVector<TType*> TTypeList;
 
 inline TTypeList* NewPoolTTypeList()
 {
     void* memory = GlobalPoolAllocator.allocate(sizeof(TTypeList));
     return new(memory) TTypeList;
 }
-
-typedef TMap<TTypeList*, TTypeList*> TStructureMap;
-typedef TMap<TTypeList*, TTypeList*>::iterator TStructureMapIterator;
 
 //
 // Base class for things that have a type.
@@ -53,59 +43,6 @@ public:
         typeName = NewPoolTString(n.c_str());
     }
 
-    void copyType(const TType& copyOf, TStructureMap& remapper)
-    {
-        type = copyOf.type;
-        precision = copyOf.precision;
-        qualifier = copyOf.qualifier;
-        size = copyOf.size;
-        matrix = copyOf.matrix;
-        array = copyOf.array;
-        arraySize = copyOf.arraySize;
-
-        TStructureMapIterator iter;
-        if (copyOf.structure) {
-            if ((iter = remapper.find(structure)) == remapper.end()) {
-                // create the new structure here
-                structure = NewPoolTTypeList();
-                for (unsigned int i = 0; i < copyOf.structure->size(); ++i) {
-                    TTypeLine typeLine;
-                    typeLine.line = (*copyOf.structure)[i].line;
-                    typeLine.type = (*copyOf.structure)[i].type->clone(remapper);
-                    structure->push_back(typeLine);
-                }
-            } else {
-                structure = iter->second;
-            }
-        } else
-            structure = 0;
-
-        fieldName = 0;
-        if (copyOf.fieldName)
-            fieldName = NewPoolTString(copyOf.fieldName->c_str());
-        typeName = 0;
-        if (copyOf.typeName)
-            typeName = NewPoolTString(copyOf.typeName->c_str());
-
-        mangled = 0;
-        if (copyOf.mangled)
-            mangled = NewPoolTString(copyOf.mangled->c_str());
-
-        structureSize = copyOf.structureSize;
-        maxArraySize = copyOf.maxArraySize;
-        deepestStructNesting = copyOf.deepestStructNesting;
-        assert(copyOf.arrayInformationType == 0);
-        arrayInformationType = 0; // arrayInformationType should not be set for builtIn symbol table level
-    }
-
-    TType* clone(TStructureMap& remapper)
-    {
-        TType *newType = new TType();
-        newType->copyType(*this, remapper);
-
-        return newType;
-    }
-
     TBasicType getBasicType() const { return type; }
     void setBasicType(TBasicType t) { type = t; }
 
@@ -119,22 +56,7 @@ public:
     int getNominalSize() const { return size; }
     void setNominalSize(int s) { size = s; }
     // Full size of single instance of type
-    int getObjectSize() const
-    {
-        int totalSize;
-
-        if (getBasicType() == EbtStruct)
-            totalSize = getStructSize();
-        else if (matrix)
-            totalSize = size * size;
-        else
-            totalSize = size;
-
-        if (isArray())
-            totalSize *= std::max(getArraySize(), getMaxArraySize());
-
-        return totalSize;
-    }
+    size_t getObjectSize() const;
 
     bool isMatrix() const { return matrix ? true : false; }
     void setMatrix(bool m) { matrix = m; }
@@ -234,9 +156,9 @@ public:
 
     bool isStructureContainingArrays() const;
 
-protected:
+private:
     void buildMangledName(TString&);
-    int getStructSize() const;
+    size_t getStructSize() const;
     void computeDeepestStructNesting();
 
     TBasicType type      : 6;
@@ -250,7 +172,7 @@ protected:
     TType* arrayInformationType;
 
     TTypeList* structure;      // 0 unless this is a struct
-    mutable int structureSize;
+    mutable size_t structureSize;
     int deepestStructNesting;
 
     TString *fieldName;         // for structure field names
@@ -277,9 +199,9 @@ struct TPublicType
     bool array;
     int arraySize;
     TType* userDef;
-    int line;
+    TSourceLoc line;
 
-    void setBasic(TBasicType bt, TQualifier q, int ln = 0)
+    void setBasic(TBasicType bt, TQualifier q, const TSourceLoc& ln)
     {
         type = bt;
         qualifier = q;

@@ -24,6 +24,7 @@ void GrGLCaps::reset() {
     fStencilVerifiedColorConfigs.reset();
     fMSFBOType = kNone_MSFBOType;
     fCoverageAAType = kNone_CoverageAAType;
+    fFBFetchType = kNone_FBFetchType;
     fMaxFragmentUniformVectors = 0;
     fMaxVertexAttributes = 0;
     fRGBA8RenderbufferSupport = false;
@@ -43,6 +44,7 @@ void GrGLCaps::reset() {
     fVertexArrayObjectSupport = false;
     fUseNonVBOVertexAndIndexDynamicData = false;
     fIsCoreProfile = false;
+    fDiscardFBSupport = false;
 }
 
 GrGLCaps::GrGLCaps(const GrGLCaps& caps) : GrDrawTargetCaps() {
@@ -59,6 +61,7 @@ GrGLCaps& GrGLCaps::operator = (const GrGLCaps& caps) {
     fMSFBOType = caps.fMSFBOType;
     fCoverageAAType = caps.fCoverageAAType;
     fMSAACoverageModes = caps.fMSAACoverageModes;
+    fFBFetchType = caps.fFBFetchType;
     fRGBA8RenderbufferSupport = caps.fRGBA8RenderbufferSupport;
     fBGRAFormatSupport = caps.fBGRAFormatSupport;
     fBGRAIsInternalFormat = caps.fBGRAIsInternalFormat;
@@ -76,6 +79,7 @@ GrGLCaps& GrGLCaps::operator = (const GrGLCaps& caps) {
     fVertexArrayObjectSupport = caps.fVertexArrayObjectSupport;
     fUseNonVBOVertexAndIndexDynamicData = caps.fUseNonVBOVertexAndIndexDynamicData;
     fIsCoreProfile = caps.fIsCoreProfile;
+    fDiscardFBSupport = caps.fDiscardFBSupport;
 
     return *this;
 }
@@ -194,11 +198,21 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
         fIsCoreProfile = SkToBool(profileMask & GR_GL_CONTEXT_CORE_PROFILE_BIT);
     }
 
+    fDiscardFBSupport = ctxInfo.hasExtension("GL_EXT_discard_framebuffer");
+
     if (kDesktop_GrGLBinding == binding) {
         fVertexArrayObjectSupport = version >= GR_GL_VER(3, 0) ||
                                     ctxInfo.hasExtension("GL_ARB_vertex_array_object");
     } else {
         fVertexArrayObjectSupport = ctxInfo.hasExtension("GL_OES_vertex_array_object");
+    }
+
+    if (kES2_GrGLBinding == binding) {
+        if (ctxInfo.hasExtension("GL_EXT_shader_framebuffer_fetch")) {
+            fFBFetchType = kEXT_FBFetchType;
+        } else if (ctxInfo.hasExtension("GL_NV_shader_framebuffer_fetch")) {
+            fFBFetchType = kNV_FBFetchType;
+        }
     }
 
     this->initFSAASupport(ctxInfo, gli);
@@ -215,12 +229,14 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
 
     GrGLint numFormats;
     GR_GL_GetIntegerv(gli, GR_GL_NUM_COMPRESSED_TEXTURE_FORMATS, &numFormats);
-    SkAutoSTMalloc<10, GrGLint> formats(numFormats);
-    GR_GL_GetIntegerv(gli, GR_GL_COMPRESSED_TEXTURE_FORMATS, formats);
-    for (int i = 0; i < numFormats; ++i) {
-        if (formats[i] == GR_GL_PALETTE8_RGBA8) {
-            f8BitPaletteSupport = true;
-            break;
+    if (numFormats) {
+        SkAutoSTMalloc<10, GrGLint> formats(numFormats);
+        GR_GL_GetIntegerv(gli, GR_GL_COMPRESSED_TEXTURE_FORMATS, formats);
+        for (int i = 0; i < numFormats; ++i) {
+            if (formats[i] == GR_GL_PALETTE8_RGBA8) {
+                f8BitPaletteSupport = true;
+                break;
+            }
         }
     }
 
@@ -268,6 +284,8 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
     fPathStencilingSupport = GR_GL_USE_NV_PATH_RENDERING &&
                              ctxInfo.hasExtension("GL_NV_path_rendering");
 
+    fDstReadInShaderSupport = kNone_FBFetchType != fFBFetchType;
+
     // Enable supported shader-related caps
     if (kDesktop_GrGLBinding == binding) {
         fDualSourceBlendingSupport = ctxInfo.version() >= GR_GL_VER(3,3) ||
@@ -280,7 +298,7 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
         fShaderDerivativeSupport = ctxInfo.hasExtension("GL_OES_standard_derivatives");
     }
 
-    if (GrGLCaps::kImaginationES_MSFBOType == fMSFBOType) {
+    if (GrGLCaps::kES_IMG_MsToTexture_MSFBOType == fMSFBOType) {
         GR_GL_GetIntegerv(gli, GR_GL_MAX_SAMPLES_IMG, &fMaxSampleCount);
     } else if (GrGLCaps::kNone_MSFBOType != fMSFBOType) {
         GR_GL_GetIntegerv(gli, GR_GL_MAX_SAMPLES, &fMaxSampleCount);
@@ -339,19 +357,21 @@ void GrGLCaps::initFSAASupport(const GrGLContextInfo& ctxInfo, const GrGLInterfa
        if (ctxInfo.hasExtension("GL_CHROMIUM_framebuffer_multisample")) {
            // chrome's extension is equivalent to the EXT msaa
            // and fbo_blit extensions.
-           fMSFBOType = kDesktopEXT_MSFBOType;
+           fMSFBOType = kDesktop_EXT_MSFBOType;
        } else if (ctxInfo.hasExtension("GL_APPLE_framebuffer_multisample")) {
-           fMSFBOType = kAppleES_MSFBOType;
+           fMSFBOType = kES_Apple_MSFBOType;
+       } else if (ctxInfo.hasExtension("GL_EXT_multisampled_render_to_texture")) {
+           fMSFBOType = kES_EXT_MsToTexture_MSFBOType;
        } else if (ctxInfo.hasExtension("GL_IMG_multisampled_render_to_texture")) {
-           fMSFBOType = kImaginationES_MSFBOType;
+           fMSFBOType = kES_IMG_MsToTexture_MSFBOType;
        }
     } else {
         if ((ctxInfo.version() >= GR_GL_VER(3,0)) ||
             ctxInfo.hasExtension("GL_ARB_framebuffer_object")) {
-            fMSFBOType = GrGLCaps::kDesktopARB_MSFBOType;
+            fMSFBOType = GrGLCaps::kDesktop_ARB_MSFBOType;
         } else if (ctxInfo.hasExtension("GL_EXT_framebuffer_multisample") &&
                    ctxInfo.hasExtension("GL_EXT_framebuffer_blit")) {
-            fMSFBOType = GrGLCaps::kDesktopEXT_MSFBOType;
+            fMSFBOType = GrGLCaps::kDesktop_EXT_MSFBOType;
         }
         // TODO: We could populate fMSAACoverageModes using GetInternalformativ
         // on GL 4.2+. It's format-specific, though. See also
@@ -462,7 +482,7 @@ void GrGLCaps::markColorConfigAndStencilFormatAsVerified(
 #if !GR_GL_CHECK_FBO_STATUS_ONCE_PER_FORMAT
     return;
 #endif
-    GrAssert((unsigned)config < kGrPixelConfigCnt);
+    GrAssert((unsigned)config < (unsigned)kGrPixelConfigCnt);
     GrAssert(fStencilFormats.count() == fStencilVerifiedColorConfigs.count());
     int count = fStencilFormats.count();
     // we expect a really small number of possible formats so linear search
@@ -485,7 +505,7 @@ bool GrGLCaps::isColorConfigAndStencilFormatVerified(
 #if !GR_GL_CHECK_FBO_STATUS_ONCE_PER_FORMAT
     return false;
 #endif
-    GrAssert((unsigned)config < kGrPixelConfigCnt);
+    GrAssert((unsigned)config < (unsigned)kGrPixelConfigCnt);
     int count = fStencilFormats.count();
     // we expect a really small number of possible formats so linear search
     // should be OK
@@ -513,19 +533,35 @@ void GrGLCaps::print() const {
                  fStencilFormats[i].fTotalBits);
     }
 
-    GR_STATIC_ASSERT(0 == kNone_MSFBOType);
-    GR_STATIC_ASSERT(1 == kDesktopARB_MSFBOType);
-    GR_STATIC_ASSERT(2 == kDesktopEXT_MSFBOType);
-    GR_STATIC_ASSERT(3 == kAppleES_MSFBOType);
-    GR_STATIC_ASSERT(4 == kImaginationES_MSFBOType);
-    static const char* gMSFBOExtStr[] = {
+    static const char* kMSFBOExtStr[] = {
         "None",
         "ARB",
         "EXT",
         "Apple",
-        "IMG",
+        "IMG MS To Texture",
+        "EXT MS To Texture",
     };
-    GrPrintf("MSAA Type: %s\n", gMSFBOExtStr[fMSFBOType]);
+    GR_STATIC_ASSERT(0 == kNone_MSFBOType);
+    GR_STATIC_ASSERT(1 == kDesktop_ARB_MSFBOType);
+    GR_STATIC_ASSERT(2 == kDesktop_EXT_MSFBOType);
+    GR_STATIC_ASSERT(3 == kES_Apple_MSFBOType);
+    GR_STATIC_ASSERT(4 == kES_IMG_MsToTexture_MSFBOType);
+    GR_STATIC_ASSERT(5 == kES_EXT_MsToTexture_MSFBOType);
+    GR_STATIC_ASSERT(GR_ARRAY_COUNT(kMSFBOExtStr) == kLast_MSFBOType + 1);
+
+    static const char* kFBFetchTypeStr[] = {
+        "None",
+        "EXT",
+        "NV",
+    };
+    GR_STATIC_ASSERT(0 == kNone_FBFetchType);
+    GR_STATIC_ASSERT(1 == kEXT_FBFetchType);
+    GR_STATIC_ASSERT(2 == kNV_FBFetchType);
+    GR_STATIC_ASSERT(GR_ARRAY_COUNT(kFBFetchTypeStr) == kLast_FBFetchType + 1);
+
+
+    GrPrintf("MSAA Type: %s\n", kMSFBOExtStr[fMSFBOType]);
+    GrPrintf("FB Fetch Type: %s\n", kFBFetchTypeStr[fFBFetchType]);
     GrPrintf("Max FS Uniform Vectors: %d\n", fMaxFragmentUniformVectors);
     GrPrintf("Max Vertex Attributes: %d\n", fMaxVertexAttributes);
     GrPrintf("Support RGBA8 Render Buffer: %s\n", (fRGBA8RenderbufferSupport ? "YES": "NO"));
@@ -548,4 +584,5 @@ void GrGLCaps::print() const {
     GrPrintf("Use non-VBO for dynamic data: %s\n",
              (fUseNonVBOVertexAndIndexDynamicData ? "YES" : "NO"));
     GrPrintf("Core Profile: %s\n", (fIsCoreProfile ? "YES" : "NO"));
+    GrPrintf("Discard FrameBuffer support: %s\n", (fDiscardFBSupport ? "YES" : "NO"));
 }

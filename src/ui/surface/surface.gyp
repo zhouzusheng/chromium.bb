@@ -22,16 +22,7 @@
         'rules': [
           {
             'variables': {
-              # SHEZ: Changed upstream code here to set location of fxc.exe
-              #       It is not shipped in the Win7.1 SDK, so we get it from the
-              #       DX SDK.
-              'conditions': [
-                ['MSVS_OS_BITS==32', {
-                  'fxc': '$(DXSDK_DIR)/Utilities/bin/x86/fxc.exe',
-                },{
-                  'fxc': '$(DXSDK_DIR)/Utilities/bin/x64/fxc.exe',
-                }],
-              ],
+              'fxc': '<(windows_sdk_path)/bin/x86/fxc.exe',
               'h_file': '<(INTERMEDIATE_DIR)/hlsl/<(RULE_INPUT_ROOT)_hlsl_compiled.h',
               'cc_file': '<(INTERMEDIATE_DIR)/hlsl/<(RULE_INPUT_ROOT)_hlsl_compiled.cc',
             },
@@ -90,9 +81,8 @@
         'surface_switches.cc',
         'transport_dib.h',
         'transport_dib.cc',
-        'transport_dib_android.cc',
-        'transport_dib_linux.cc',
-        'transport_dib_mac.cc',
+        'transport_dib_posix.cc',
+        'transport_dib_sysvipc.cc',
         'transport_dib_win.cc',
       ],
       'defines': [

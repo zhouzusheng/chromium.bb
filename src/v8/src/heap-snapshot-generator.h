@@ -157,18 +157,12 @@ class HeapSnapshotsCollection;
 // HeapSnapshotGenerator fills in a HeapSnapshot.
 class HeapSnapshot {
  public:
-  enum Type {
-    kFull = v8::HeapSnapshot::kFull
-  };
-
   HeapSnapshot(HeapSnapshotsCollection* collection,
-               Type type,
                const char* title,
                unsigned uid);
   void Delete();
 
   HeapSnapshotsCollection* collection() { return collection_; }
-  Type type() { return type_; }
   const char* title() { return title_; }
   unsigned uid() { return uid_; }
   size_t RawSnapshotSize() const;
@@ -203,7 +197,6 @@ class HeapSnapshot {
 
  private:
   HeapSnapshotsCollection* collection_;
-  Type type_;
   const char* title_;
   unsigned uid_;
   int root_index_;
@@ -305,8 +298,7 @@ class HeapSnapshotsCollection {
   void StartHeapObjectsTracking() { is_tracking_objects_ = true; }
   void StopHeapObjectsTracking() { ids_.StopHeapObjectsTracking(); }
 
-  HeapSnapshot* NewSnapshot(
-      HeapSnapshot::Type type, const char* name, unsigned uid);
+  HeapSnapshot* NewSnapshot(const char* name, unsigned uid);
   void SnapshotGenerationFinished(HeapSnapshot* snapshot);
   List<HeapSnapshot*>* snapshots() { return &snapshots_; }
   HeapSnapshot* GetSnapshot(unsigned uid);
@@ -479,10 +471,11 @@ class V8HeapExplorer : public HeapEntriesAllocator {
   void ExtractElementReferences(JSObject* js_obj, int entry);
   void ExtractInternalReferences(JSObject* js_obj, int entry);
   bool IsEssentialObject(Object* object);
-  void SetClosureReference(HeapObject* parent_obj,
+  void SetContextReference(HeapObject* parent_obj,
                            int parent,
                            String* reference_name,
-                           Object* child);
+                           Object* child,
+                           int field_offset);
   void SetNativeBindReference(HeapObject* parent_obj,
                               int parent,
                               const char* reference_name,
@@ -512,7 +505,7 @@ class V8HeapExplorer : public HeapEntriesAllocator {
                         int field_offset);
   void SetPropertyReference(HeapObject* parent_obj,
                             int parent,
-                            String* reference_name,
+                            Name* reference_name,
                             Object* child,
                             const char* name_format_string = NULL,
                             int field_offset = -1);
@@ -662,7 +655,6 @@ class HeapSnapshotJSONSerializer {
         v8::internal::kZeroHashSeed);
   }
 
-  HeapSnapshot* CreateFakeSnapshot();
   int GetStringId(const char* s);
   int entry_index(HeapEntry* e) { return e->index() * kNodeFieldsCount; }
   void SerializeEdge(HeapGraphEdge* edge, bool first_edge);

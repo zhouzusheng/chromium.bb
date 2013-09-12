@@ -112,32 +112,33 @@ bool inline Heap::IsOneByte(String* str, int chars) {
 }
 
 
-MaybeObject* Heap::AllocateSymbolFromUtf8(Vector<const char> str,
-                                          int chars,
-                                          uint32_t hash_field) {
+MaybeObject* Heap::AllocateInternalizedStringFromUtf8(
+    Vector<const char> str, int chars, uint32_t hash_field) {
   if (IsOneByte(str, chars)) {
-    return AllocateOneByteSymbol(Vector<const uint8_t>::cast(str), hash_field);
+    return AllocateOneByteInternalizedString(
+        Vector<const uint8_t>::cast(str), hash_field);
   }
-  return AllocateInternalSymbol<false>(str, chars, hash_field);
+  return AllocateInternalizedStringImpl<false>(str, chars, hash_field);
 }
 
 
 template<typename T>
-MaybeObject* Heap::AllocateInternalSymbol(T t, int chars, uint32_t hash_field) {
+MaybeObject* Heap::AllocateInternalizedStringImpl(
+    T t, int chars, uint32_t hash_field) {
   if (IsOneByte(t, chars)) {
-    return AllocateInternalSymbol<true>(t, chars, hash_field);
+    return AllocateInternalizedStringImpl<true>(t, chars, hash_field);
   }
-  return AllocateInternalSymbol<false>(t, chars, hash_field);
+  return AllocateInternalizedStringImpl<false>(t, chars, hash_field);
 }
 
 
-MaybeObject* Heap::AllocateOneByteSymbol(Vector<const uint8_t> str,
-                                       uint32_t hash_field) {
+MaybeObject* Heap::AllocateOneByteInternalizedString(Vector<const uint8_t> str,
+                                                     uint32_t hash_field) {
   if (str.length() > SeqOneByteString::kMaxLength) {
     return Failure::OutOfMemoryException(0x2);
   }
   // Compute map and object size.
-  Map* map = ascii_symbol_map();
+  Map* map = ascii_internalized_string_map();
   int size = SeqOneByteString::SizeFor(str.length());
 
   // Allocate string.
@@ -158,20 +159,20 @@ MaybeObject* Heap::AllocateOneByteSymbol(Vector<const uint8_t> str,
   ASSERT_EQ(size, answer->Size());
 
   // Fill in the characters.
-  memcpy(answer->address() + SeqOneByteString::kHeaderSize,
-         str.start(), str.length());
+  OS::MemCopy(answer->address() + SeqOneByteString::kHeaderSize,
+              str.start(), str.length());
 
   return answer;
 }
 
 
-MaybeObject* Heap::AllocateTwoByteSymbol(Vector<const uc16> str,
-                                         uint32_t hash_field) {
+MaybeObject* Heap::AllocateTwoByteInternalizedString(Vector<const uc16> str,
+                                                     uint32_t hash_field) {
   if (str.length() > SeqTwoByteString::kMaxLength) {
     return Failure::OutOfMemoryException(0x3);
   }
   // Compute map and object size.
-  Map* map = symbol_map();
+  Map* map = internalized_string_map();
   int size = SeqTwoByteString::SizeFor(str.length());
 
   // Allocate string.
@@ -191,8 +192,8 @@ MaybeObject* Heap::AllocateTwoByteSymbol(Vector<const uc16> str,
   ASSERT_EQ(size, answer->Size());
 
   // Fill in the characters.
-  memcpy(answer->address() + SeqTwoByteString::kHeaderSize,
-         str.start(), str.length() * kUC16Size);
+  OS::MemCopy(answer->address() + SeqTwoByteString::kHeaderSize,
+              str.start(), str.length() * kUC16Size);
 
   return answer;
 }
@@ -210,6 +211,7 @@ MaybeObject* Heap::CopyFixedDoubleArray(FixedDoubleArray* src) {
 MaybeObject* Heap::AllocateRaw(int size_in_bytes,
                                AllocationSpace space,
                                AllocationSpace retry_space) {
+  SLOW_ASSERT(!isolate_->optimizing_compiler_thread()->IsOptimizerThread());
   ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
   ASSERT(space != NEW_SPACE ||
          retry_space == OLD_POINTER_SPACE ||
@@ -319,8 +321,8 @@ bool Heap::InNewSpace(Object* object) {
 }
 
 
-bool Heap::InNewSpace(Address addr) {
-  return new_space_.Contains(addr);
+bool Heap::InNewSpace(Address address) {
+  return new_space_.Contains(address);
 }
 
 
@@ -331,6 +333,26 @@ bool Heap::InFromSpace(Object* object) {
 
 bool Heap::InToSpace(Object* object) {
   return new_space_.ToSpaceContains(object);
+}
+
+
+bool Heap::InOldPointerSpace(Address address) {
+  return old_pointer_space_->Contains(address);
+}
+
+
+bool Heap::InOldPointerSpace(Object* object) {
+  return InOldPointerSpace(reinterpret_cast<Address>(object));
+}
+
+
+bool Heap::InOldDataSpace(Address address) {
+  return old_data_space_->Contains(address);
+}
+
+
+bool Heap::InOldDataSpace(Object* object) {
+  return InOldDataSpace(reinterpret_cast<Address>(object));
 }
 
 
@@ -388,7 +410,9 @@ AllocationSpace Heap::TargetSpaceId(InstanceType type) {
   ASSERT(type != ODDBALL_TYPE);
   ASSERT(type != JS_GLOBAL_PROPERTY_CELL_TYPE);
 
-  if (type < FIRST_NONSTRING_TYPE) {
+  if (type <= LAST_NAME_TYPE) {
+    if (type == SYMBOL_TYPE) return OLD_POINTER_SPACE;
+    ASSERT(type < FIRST_NONSTRING_TYPE);
     // There are four string representations: sequential strings, external
     // strings, cons strings, and sliced strings.
     // Only the latter two contain non-map-word pointers to heap objects.
@@ -404,7 +428,7 @@ AllocationSpace Heap::TargetSpaceId(InstanceType type) {
 void Heap::CopyBlock(Address dst, Address src, int byte_size) {
   CopyWords(reinterpret_cast<Object**>(dst),
             reinterpret_cast<Object**>(src),
-            byte_size / kPointerSize);
+            static_cast<size_t>(byte_size / kPointerSize));
 }
 
 
@@ -422,7 +446,7 @@ void Heap::MoveBlock(Address dst, Address src, int byte_size) {
       *dst_slot++ = *src_slot++;
     }
   } else {
-    memmove(dst, src, byte_size);
+    OS::MemMove(dst, src, static_cast<size_t>(byte_size));
   }
 }
 
@@ -452,6 +476,15 @@ void Heap::ScavengeObject(HeapObject** p, HeapObject* object) {
 
   // Call the slow part of scavenge object.
   return ScavengeObjectSlow(p, object);
+}
+
+
+MaybeObject* Heap::AllocateEmptyJSArrayWithAllocationSite(
+      ElementsKind elements_kind,
+      Handle<Object> allocation_site_payload) {
+  return AllocateJSArrayAndStorageWithAllocationSite(elements_kind, 0, 0,
+      allocation_site_payload,
+      DONT_INITIALIZE_ARRAY_ELEMENTS);
 }
 
 
@@ -545,50 +578,68 @@ Isolate* Heap::isolate() {
 // Warning: Do not use the identifiers __object__, __maybe_object__ or
 // __scope__ in a call to this macro.
 
-#define CALL_AND_RETRY(ISOLATE, FUNCTION_CALL, RETURN_VALUE, RETURN_EMPTY)\
-  do {                                                                    \
-    GC_GREEDY_CHECK();                                                    \
-    MaybeObject* __maybe_object__ = FUNCTION_CALL;                        \
-    Object* __object__ = NULL;                                            \
-    if (__maybe_object__->ToObject(&__object__)) RETURN_VALUE;            \
-    if (__maybe_object__->IsOutOfMemory()) {                              \
-      v8::internal::V8::FatalProcessOutOfMemory("CALL_AND_RETRY_0", true);\
-    }                                                                     \
-    if (!__maybe_object__->IsRetryAfterGC()) RETURN_EMPTY;                \
-    ISOLATE->heap()->CollectGarbage(Failure::cast(__maybe_object__)->     \
-                                    allocation_space(),                   \
-                                    "allocation failure");                \
-    __maybe_object__ = FUNCTION_CALL;                                     \
-    if (__maybe_object__->ToObject(&__object__)) RETURN_VALUE;            \
-    if (__maybe_object__->IsOutOfMemory()) {                              \
-      v8::internal::V8::FatalProcessOutOfMemory("CALL_AND_RETRY_1", true);\
-    }                                                                     \
-    if (!__maybe_object__->IsRetryAfterGC()) RETURN_EMPTY;                \
-    ISOLATE->counters()->gc_last_resort_from_handles()->Increment();      \
-    ISOLATE->heap()->CollectAllAvailableGarbage("last resort gc");        \
-    {                                                                     \
-      AlwaysAllocateScope __scope__;                                      \
-      __maybe_object__ = FUNCTION_CALL;                                   \
-    }                                                                     \
-    if (__maybe_object__->ToObject(&__object__)) RETURN_VALUE;            \
-    if (__maybe_object__->IsOutOfMemory() ||                              \
-        __maybe_object__->IsRetryAfterGC()) {                             \
-      /* TODO(1181417): Fix this. */                                      \
-      v8::internal::V8::FatalProcessOutOfMemory("CALL_AND_RETRY_2", true);\
-    }                                                                     \
-    RETURN_EMPTY;                                                         \
+#define CALL_AND_RETRY(ISOLATE, FUNCTION_CALL, RETURN_VALUE, RETURN_EMPTY, OOM)\
+  do {                                                                         \
+    GC_GREEDY_CHECK();                                                         \
+    MaybeObject* __maybe_object__ = FUNCTION_CALL;                             \
+    Object* __object__ = NULL;                                                 \
+    if (__maybe_object__->ToObject(&__object__)) RETURN_VALUE;                 \
+    if (__maybe_object__->IsOutOfMemory()) {                                   \
+      OOM;                                                                     \
+    }                                                                          \
+    if (!__maybe_object__->IsRetryAfterGC()) RETURN_EMPTY;                     \
+    ISOLATE->heap()->CollectGarbage(Failure::cast(__maybe_object__)->          \
+                                    allocation_space(),                        \
+                                    "allocation failure");                     \
+    __maybe_object__ = FUNCTION_CALL;                                          \
+    if (__maybe_object__->ToObject(&__object__)) RETURN_VALUE;                 \
+    if (__maybe_object__->IsOutOfMemory()) {                                   \
+      OOM;                                                                     \
+    }                                                                          \
+    if (!__maybe_object__->IsRetryAfterGC()) RETURN_EMPTY;                     \
+    ISOLATE->counters()->gc_last_resort_from_handles()->Increment();           \
+    ISOLATE->heap()->CollectAllAvailableGarbage("last resort gc");             \
+    {                                                                          \
+      AlwaysAllocateScope __scope__;                                           \
+      __maybe_object__ = FUNCTION_CALL;                                        \
+    }                                                                          \
+    if (__maybe_object__->ToObject(&__object__)) RETURN_VALUE;                 \
+    if (__maybe_object__->IsOutOfMemory()) {                                   \
+      OOM;                                                                     \
+    }                                                                          \
+    if (__maybe_object__->IsRetryAfterGC()) {                                  \
+      /* TODO(1181417): Fix this. */                                           \
+      v8::internal::V8::FatalProcessOutOfMemory("CALL_AND_RETRY_LAST", true);  \
+    }                                                                          \
+    RETURN_EMPTY;                                                              \
   } while (false)
 
+#define CALL_AND_RETRY_OR_DIE(                                             \
+     ISOLATE, FUNCTION_CALL, RETURN_VALUE, RETURN_EMPTY)                   \
+  CALL_AND_RETRY(                                                          \
+      ISOLATE,                                                             \
+      FUNCTION_CALL,                                                       \
+      RETURN_VALUE,                                                        \
+      RETURN_EMPTY,                                                        \
+      v8::internal::V8::FatalProcessOutOfMemory("CALL_AND_RETRY", true))
 
-#define CALL_HEAP_FUNCTION(ISOLATE, FUNCTION_CALL, TYPE)       \
-  CALL_AND_RETRY(ISOLATE,                                      \
-                 FUNCTION_CALL,                                \
-                 return Handle<TYPE>(TYPE::cast(__object__), ISOLATE),  \
-                 return Handle<TYPE>())
+#define CALL_HEAP_FUNCTION(ISOLATE, FUNCTION_CALL, TYPE)                      \
+  CALL_AND_RETRY_OR_DIE(ISOLATE,                                              \
+                        FUNCTION_CALL,                                        \
+                        return Handle<TYPE>(TYPE::cast(__object__), ISOLATE), \
+                        return Handle<TYPE>())                                \
 
 
-#define CALL_HEAP_FUNCTION_VOID(ISOLATE, FUNCTION_CALL) \
-  CALL_AND_RETRY(ISOLATE, FUNCTION_CALL, return, return)
+#define CALL_HEAP_FUNCTION_VOID(ISOLATE, FUNCTION_CALL)  \
+  CALL_AND_RETRY_OR_DIE(ISOLATE, FUNCTION_CALL, return, return)
+
+
+#define CALL_HEAP_FUNCTION_PASS_EXCEPTION(ISOLATE, FUNCTION_CALL) \
+  CALL_AND_RETRY(ISOLATE,                                         \
+                 FUNCTION_CALL,                                   \
+                 return __object__,                               \
+                 return __maybe_object__,                         \
+                 return __maybe_object__)
 
 
 #ifdef DEBUG
@@ -633,24 +684,12 @@ void ExternalStringTable::Verify() {
     // TODO(yangguo): check that the object is indeed an external string.
     ASSERT(heap_->InNewSpace(obj));
     ASSERT(obj != HEAP->the_hole_value());
-#ifndef ENABLE_LATIN_1
-    if (obj->IsExternalAsciiString()) {
-      ExternalAsciiString* string = ExternalAsciiString::cast(obj);
-      ASSERT(String::IsAscii(string->GetChars(), string->length()));
-    }
-#endif
   }
   for (int i = 0; i < old_space_strings_.length(); ++i) {
     Object* obj = Object::cast(old_space_strings_[i]);
     // TODO(yangguo): check that the object is indeed an external string.
     ASSERT(!heap_->InNewSpace(obj));
     ASSERT(obj != HEAP->the_hole_value());
-#ifndef ENABLE_LATIN_1
-    if (obj->IsExternalAsciiString()) {
-      ExternalAsciiString* string = ExternalAsciiString::cast(obj);
-      ASSERT(String::IsAscii(string->GetChars(), string->length()));
-    }
-#endif
   }
 #endif
 }

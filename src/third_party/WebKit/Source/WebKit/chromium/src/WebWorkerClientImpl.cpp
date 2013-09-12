@@ -31,35 +31,33 @@
 #include "config.h"
 #include "WebWorkerClientImpl.h"
 
-#if ENABLE(WORKERS)
-
-#include "CrossThreadTask.h"
-#include "DedicatedWorkerThread.h"
-#include "Document.h"
-#include "ErrorEvent.h"
-#include "Frame.h"
-#include "FrameLoaderClient.h"
-#include "GroupSettings.h"
-#include "InspectorInstrumentation.h"
-#include "MessageEvent.h"
-#include "MessagePort.h"
-#include "MessagePortChannel.h"
-#include "Page.h"
-#include "PageGroup.h"
-#include "ScriptCallStack.h"
-#include "ScriptExecutionContext.h"
-#include "Worker.h"
-#include "WorkerContext.h"
-#include "WorkerScriptController.h"
-#include "WorkerMessagingProxy.h"
+#include "bindings/v8/WorkerScriptController.h"
+#include "core/dom/CrossThreadTask.h"
+#include "core/dom/Document.h"
+#include "core/dom/ErrorEvent.h"
+#include "core/dom/MessageEvent.h"
+#include "core/dom/MessagePort.h"
+#include "core/dom/MessagePortChannel.h"
+#include "core/dom/ScriptExecutionContext.h"
+#include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/ScriptCallStack.h"
+#include "core/loader/FrameLoaderClient.h"
+#include "core/page/Frame.h"
+#include "core/page/GroupSettings.h"
+#include "core/page/Page.h"
+#include "core/page/PageGroup.h"
+#include "core/workers/DedicatedWorkerThread.h"
+#include "core/workers/Worker.h"
+#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerMessagingProxy.h"
 #include <wtf/Threading.h>
 
 #include "FrameLoaderClientImpl.h"
-#include "PlatformMessagePortChannelChromium.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
 #include "WebPermissionClient.h"
 #include "WebViewImpl.h"
+#include "core/dom/default/chromium/PlatformMessagePortChannelChromium.h"
 #include <public/WebFileSystemCallbacks.h>
 #include <public/WebMessagePortChannel.h>
 #include <public/WebString.h>
@@ -162,5 +160,3 @@ WebWorkerClientImpl::~WebWorkerClientImpl()
 }
 
 } // namespace WebKit
-
-#endif

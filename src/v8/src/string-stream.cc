@@ -254,7 +254,7 @@ void StringStream::Add(const char* format, FmtElm arg0, FmtElm arg1,
 
 SmartArrayPointer<const char> StringStream::ToCString() const {
   char* str = NewArray<char>(length_ + 1);
-  memcpy(str, buffer_, length_);
+  OS::MemCopy(str, buffer_, length_);
   str[length_] = '\0';
   return SmartArrayPointer<const char>(str);
 }
@@ -493,7 +493,7 @@ void StringStream::PrintFunction(Object* f, Object* receiver, Code** code) {
       // Common case: on-stack function present and resolved.
       PrintPrototype(fun, receiver);
       *code = fun->code();
-    } else if (f->IsSymbol()) {
+    } else if (f->IsInternalizedString()) {
       // Unresolved and megamorphic calls: Instead of the function
       // we have the function name on the stack.
       PrintName(f);
@@ -575,7 +575,7 @@ char* HeapStringAllocator::grow(unsigned* bytes) {
   if (new_space == NULL) {
     return space_;
   }
-  memcpy(new_space, space_, *bytes);
+  OS::MemCopy(new_space, space_, *bytes);
   *bytes = new_bytes;
   DeleteArray(space_);
   space_ = new_space;

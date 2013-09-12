@@ -48,15 +48,15 @@ class Descriptor BASE_EMBEDDED {
     return Smi::cast(value)->value();
   }
 
-  MUST_USE_RESULT MaybeObject* KeyToSymbol() {
-    if (!StringShape(key_).IsSymbol()) {
-      MaybeObject* maybe_result = HEAP->LookupSymbol(key_);
+  MUST_USE_RESULT MaybeObject* KeyToUniqueName() {
+    if (!key_->IsUniqueName()) {
+      MaybeObject* maybe_result = HEAP->InternalizeString(String::cast(key_));
       if (!maybe_result->To(&key_)) return maybe_result;
     }
     return key_;
   }
 
-  String* GetKey() { return key_; }
+  Name* GetKey() { return key_; }
   Object* GetValue() { return value_; }
   PropertyDetails GetDetails() { return details_; }
 
@@ -65,38 +65,40 @@ class Descriptor BASE_EMBEDDED {
 #endif
 
   void SetEnumerationIndex(int index) {
-    details_ = PropertyDetails(details_.attributes(), details_.type(), index);
+    details_ = PropertyDetails(details_.attributes(), details_.type(),
+                               details_.representation(), index);
   }
 
   void SetSortedKeyIndex(int index) { details_ = details_.set_pointer(index); }
 
  private:
-  String* key_;
+  Name* key_;
   Object* value_;
   PropertyDetails details_;
 
  protected:
   Descriptor() : details_(Smi::FromInt(0)) {}
 
-  void Init(String* key, Object* value, PropertyDetails details) {
+  void Init(Name* key, Object* value, PropertyDetails details) {
     key_ = key;
     value_ = value;
     details_ = details;
   }
 
-  Descriptor(String* key, Object* value, PropertyDetails details)
+  Descriptor(Name* key, Object* value, PropertyDetails details)
       : key_(key),
         value_(value),
         details_(details) { }
 
-  Descriptor(String* key,
+  Descriptor(Name* key,
              Object* value,
              PropertyAttributes attributes,
              PropertyType type,
+             Representation representation,
              int index)
       : key_(key),
         value_(value),
-        details_(attributes, type, index) { }
+        details_(attributes, type, representation, index) { }
 
   friend class DescriptorArray;
 };
@@ -104,31 +106,35 @@ class Descriptor BASE_EMBEDDED {
 
 class FieldDescriptor: public Descriptor {
  public:
-  FieldDescriptor(String* key,
+  FieldDescriptor(Name* key,
                   int field_index,
                   PropertyAttributes attributes,
+                  Representation representation,
                   int index = 0)
-      : Descriptor(key, Smi::FromInt(field_index), attributes, FIELD, index) {}
+      : Descriptor(key, Smi::FromInt(field_index), attributes,
+                   FIELD, representation, index) {}
 };
 
 
 class ConstantFunctionDescriptor: public Descriptor {
  public:
-  ConstantFunctionDescriptor(String* key,
+  ConstantFunctionDescriptor(Name* key,
                              JSFunction* function,
                              PropertyAttributes attributes,
                              int index)
-      : Descriptor(key, function, attributes, CONSTANT_FUNCTION, index) {}
+      : Descriptor(key, function, attributes,
+                   CONSTANT_FUNCTION, Representation::Tagged(), index) {}
 };
 
 
 class CallbacksDescriptor:  public Descriptor {
  public:
-  CallbacksDescriptor(String* key,
+  CallbacksDescriptor(Name* key,
                       Object* foreign,
                       PropertyAttributes attributes,
                       int index = 0)
-      : Descriptor(key, foreign, attributes, CALLBACKS, index) {}
+      : Descriptor(key, foreign, attributes, CALLBACKS,
+                   Representation::Tagged(), index) {}
 };
 
 
@@ -155,6 +161,18 @@ class PropertyIndex {
     return value();
   }
 
+  bool is_inobject(Handle<JSObject> holder) {
+    if (is_header_index()) return true;
+    return field_index() < holder->map()->inobject_properties();
+  }
+
+  int translate(Handle<JSObject> holder) {
+    if (is_header_index()) return header_index();
+    int index = field_index() - holder->map()->inobject_properties();
+    if (index >= 0) return index;
+    return index + holder->map()->instance_size() / kPointerSize;
+  }
+
  private:
   static const int kHeaderIndexBit = 1 << 31;
   static const int kIndexMask = ~kHeaderIndexBit;
@@ -178,7 +196,7 @@ class LookupResult BASE_EMBEDDED {
         lookup_type_(NOT_FOUND),
         holder_(NULL),
         cacheable_(true),
-        details_(NONE, NONEXISTENT) {
+        details_(NONE, NONEXISTENT, Representation::None()) {
     isolate->SetTopLookupResult(this);
   }
 
@@ -196,21 +214,15 @@ class LookupResult BASE_EMBEDDED {
     number_ = number;
   }
 
-  void TransitionResult(JSObject* holder, int number) {
-    lookup_type_ = TRANSITION_TYPE;
-    details_ = PropertyDetails(NONE, TRANSITION);
-    holder_ = holder;
-    number_ = number;
+  bool CanHoldValue(Handle<Object> value) {
+    return value->FitsRepresentation(details_.representation());
   }
 
-  void ConstantResult(JSObject* holder) {
-    lookup_type_ = CONSTANT_TYPE;
+  void TransitionResult(JSObject* holder, int number) {
+    lookup_type_ = TRANSITION_TYPE;
+    details_ = PropertyDetails(NONE, TRANSITION, Representation::None());
     holder_ = holder;
-    details_ =
-        PropertyDetails(static_cast<PropertyAttributes>(DONT_ENUM |
-                                                        DONT_DELETE),
-                        CALLBACKS);
-    number_ = -1;
+    number_ = number;
   }
 
   void DictionaryResult(JSObject* holder, int entry) {
@@ -223,19 +235,19 @@ class LookupResult BASE_EMBEDDED {
   void HandlerResult(JSProxy* proxy) {
     lookup_type_ = HANDLER_TYPE;
     holder_ = proxy;
-    details_ = PropertyDetails(NONE, HANDLER);
+    details_ = PropertyDetails(NONE, HANDLER, Representation::None());
     cacheable_ = false;
   }
 
   void InterceptorResult(JSObject* holder) {
     lookup_type_ = INTERCEPTOR_TYPE;
     holder_ = holder;
-    details_ = PropertyDetails(NONE, INTERCEPTOR);
+    details_ = PropertyDetails(NONE, INTERCEPTOR, Representation::None());
   }
 
   void NotFound() {
     lookup_type_ = NOT_FOUND;
-    details_ = PropertyDetails(NONE, NONEXISTENT);
+    details_ = PropertyDetails(NONE, NONEXISTENT, Representation::None());
     holder_ = NULL;
   }
 
@@ -252,6 +264,11 @@ class LookupResult BASE_EMBEDDED {
   PropertyType type() {
     ASSERT(IsFound());
     return details_.type();
+  }
+
+  Representation representation() {
+    ASSERT(IsFound());
+    return details_.representation();
   }
 
   PropertyAttributes GetAttributes() {
@@ -360,10 +377,14 @@ class LookupResult BASE_EMBEDDED {
     return NULL;
   }
 
-  Map* GetTransitionTarget() {
+  Map* GetTransitionTarget(Map* map) {
     ASSERT(IsTransition());
-    TransitionArray* transitions = holder()->map()->transitions();
+    TransitionArray* transitions = map->transitions();
     return transitions->GetTarget(number_);
+  }
+
+  Map* GetTransitionTarget() {
+    return GetTransitionTarget(holder()->map());
   }
 
   PropertyDetails GetTransitionDetails(Map* map) {
@@ -429,10 +450,7 @@ class LookupResult BASE_EMBEDDED {
   }
 
   Object* GetCallbackObject() {
-    if (lookup_type_ == CONSTANT_TYPE) {
-      return HEAP->prototype_accessors();
-    }
-    ASSERT(!IsTransition());
+    ASSERT(type() == CALLBACKS && !IsTransition());
     return GetValue();
   }
 
@@ -468,8 +486,7 @@ class LookupResult BASE_EMBEDDED {
     TRANSITION_TYPE,
     DICTIONARY_TYPE,
     HANDLER_TYPE,
-    INTERCEPTOR_TYPE,
-    CONSTANT_TYPE
+    INTERCEPTOR_TYPE
   } lookup_type_;
 
   JSReceiver* holder_;

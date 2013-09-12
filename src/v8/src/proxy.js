@@ -27,9 +27,13 @@
 
 "use strict";
 
-global.Proxy = new $Object();
+// This file relies on the fact that the following declaration has been made
+// in runtime.js:
+// var $Object = global.Object;
 
-var $Proxy = global.Proxy
+var $Proxy = new $Object();
+
+// -------------------------------------------------------------------
 
 function ProxyCreate(handler, proto) {
   if (!IS_SPEC_OBJECT(handler))
@@ -62,23 +66,32 @@ function ProxyCreateFunction(handler, callTrap, constructTrap) {
     handler, callTrap, constructTrap, $Function.prototype)
 }
 
-%CheckIsBootstrapping()
-InstallFunctions($Proxy, DONT_ENUM, [
-  "create", ProxyCreate,
-  "createFunction", ProxyCreateFunction
-])
+
+// -------------------------------------------------------------------
+
+function SetUpProxy() {
+  %CheckIsBootstrapping()
+
+  global.Proxy = $Proxy;
+
+  // Set up non-enumerable properties of the Proxy object.
+  InstallFunctions($Proxy, DONT_ENUM, [
+    "create", ProxyCreate,
+    "createFunction", ProxyCreateFunction
+  ])
+}
+
+SetUpProxy();
 
 
-////////////////////////////////////////////////////////////////////////////////
-// Builtins
-////////////////////////////////////////////////////////////////////////////////
+// -------------------------------------------------------------------
+// Proxy Builtins
 
 function DerivedConstructTrap(callTrap) {
   return function() {
     var proto = this.prototype
     if (!IS_SPEC_OBJECT(proto)) proto = $Object.prototype
-    var obj = new $Object()
-    obj.__proto__ = proto
+    var obj = { __proto__: proto };
     var result = %Apply(callTrap, obj, arguments, 0, %_ArgumentsLength());
     return IS_SPEC_OBJECT(result) ? result : obj
   }
@@ -163,6 +176,7 @@ function DerivedKeysTrap() {
   var enumerableNames = []
   for (var i = 0, count = 0; i < names.length; ++i) {
     var name = names[i]
+    if (IS_SYMBOL(name)) continue
     var desc = this.getOwnPropertyDescriptor(TO_STRING_INLINE(name))
     if (!IS_UNDEFINED(desc) && desc.enumerable) {
       enumerableNames[count++] = names[i]
@@ -176,6 +190,7 @@ function DerivedEnumerateTrap() {
   var enumerableNames = []
   for (var i = 0, count = 0; i < names.length; ++i) {
     var name = names[i]
+    if (IS_SYMBOL(name)) continue
     var desc = this.getPropertyDescriptor(TO_STRING_INLINE(name))
     if (!IS_UNDEFINED(desc) && desc.enumerable) {
       enumerableNames[count++] = names[i]
@@ -189,6 +204,6 @@ function ProxyEnumerate(proxy) {
   if (IS_UNDEFINED(handler.enumerate)) {
     return %Apply(DerivedEnumerateTrap, handler, [], 0, 0)
   } else {
-    return ToStringArray(handler.enumerate(), "enumerate")
+    return ToNameArray(handler.enumerate(), "enumerate", false)
   }
 }

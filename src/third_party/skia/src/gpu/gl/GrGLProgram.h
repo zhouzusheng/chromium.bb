@@ -60,18 +60,23 @@ public:
     GrGLuint programID() const { return fProgramID; }
 
     /**
-     * Some GL state that is relevant to programs is not stored per-program. In particular vertex
-     * attributes are global state. This struct is read and updated by GrGLProgram::setData to
-     * allow us to avoid setting this state redundantly.
+     * Some GL state that is relevant to programs is not stored per-program. In particular color
+     * and coverage attributes can be global state. This struct is read and updated by
+     * GrGLProgram::setColor and GrGLProgram::setCoverage to allow us to avoid setting this state
+     * redundantly.
      */
     struct SharedGLState {
         GrColor fConstAttribColor;
+        int     fConstAttribColorIndex;
         GrColor fConstAttribCoverage;
+        int     fConstAttribCoverageIndex;
 
         SharedGLState() { this->invalidate(); }
         void invalidate() {
             fConstAttribColor = GrColor_ILLEGAL;
+            fConstAttribColorIndex = -1;
             fConstAttribCoverage = GrColor_ILLEGAL;
+            fConstAttribCoverageIndex = -1;
         }
     };
 
@@ -120,13 +125,13 @@ private:
      */
     bool genProgram(const GrEffectStage* stages[]);
 
-    void genInputColor(GrGLShaderBuilder* builder, SkString* inColor);
+    GrSLConstantVec genInputColor(GrGLShaderBuilder* builder, SkString* inColor);
+
+    GrSLConstantVec genInputCoverage(GrGLShaderBuilder* builder, SkString* inCoverage);
 
     void genGeometryShader(GrGLShaderBuilder* segments) const;
 
     typedef GrGLUniformManager::UniformHandle UniformHandle;
-
-    void genUniformCoverage(GrGLShaderBuilder* segments, SkString* inOutCoverage);
 
     // Creates a GL program ID, binds shader attributes to GL vertex attrs, and links the program
     bool bindOutputsAttribsAndLinkProgram(const GrGLShaderBuilder& builder,

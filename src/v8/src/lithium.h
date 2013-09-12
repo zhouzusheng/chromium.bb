@@ -663,6 +663,7 @@ class LChunk: public ZoneObject {
   int spill_slot_count() const { return spill_slot_count_; }
   CompilationInfo* info() const { return info_; }
   HGraph* graph() const { return graph_; }
+  Isolate* isolate() const { return graph_->isolate(); }
   const ZoneList<LInstruction*>* instructions() const { return &instructions_; }
   void AddGapMove(int index, LOperand* from, LOperand* to);
   LGap* GetGapAt(int index) const;
@@ -684,7 +685,7 @@ class LChunk: public ZoneObject {
 
   Zone* zone() const { return info_->zone(); }
 
-  Handle<Code> Codegen(Code::Kind kind);
+  Handle<Code> Codegen();
 
   void set_allocated_double_registers(BitVector* allocated_registers);
   BitVector* allocated_double_registers() {

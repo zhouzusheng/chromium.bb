@@ -153,14 +153,17 @@ const char* StringsStorage::GetVFormatted(const char* format, va_list args) {
 }
 
 
-const char* StringsStorage::GetName(String* name) {
+const char* StringsStorage::GetName(Name* name) {
   if (name->IsString()) {
-    int length = Min(kMaxNameSize, name->length());
+    String* str = String::cast(name);
+    int length = Min(kMaxNameSize, str->length());
     SmartArrayPointer<char> data =
-        name->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL, 0, length);
+        str->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL, 0, length);
     uint32_t hash = StringHasher::HashSequentialString(
         *data, length, name->GetHeap()->HashSeed());
     return AddOrDisposeString(data.Detach(), hash);
+  } else if (name->IsSymbol()) {
+    return "<symbol>";
   }
   return "";
 }
@@ -257,12 +260,13 @@ double ProfileNode::GetTotalMillis() const {
 
 
 void ProfileNode::Print(int indent) {
-  OS::Print("%5u %5u %*c %s%s [%d]",
+  OS::Print("%5u %5u %*c %s%s [%d] #%d",
             total_ticks_, self_ticks_,
             indent, ' ',
             entry_->name_prefix(),
             entry_->name(),
-            entry_->security_token_id());
+            entry_->security_token_id(),
+            id());
   if (entry_->resource_name()[0] != '\0')
     OS::Print(" %s:%d", entry_->resource_name(), entry_->line_number());
   OS::Print("\n");
@@ -293,6 +297,7 @@ ProfileTree::ProfileTree()
                   "",
                   0,
                   TokenEnumerator::kNoSecurityToken),
+      next_node_id_(1),
       root_(new ProfileNode(this, &root_entry_)) {
 }
 
@@ -303,7 +308,7 @@ ProfileTree::~ProfileTree() {
 }
 
 
-void ProfileTree::AddPathFromEnd(const Vector<CodeEntry*>& path) {
+ProfileNode* ProfileTree::AddPathFromEnd(const Vector<CodeEntry*>& path) {
   ProfileNode* node = root_;
   for (CodeEntry** entry = path.start() + path.length() - 1;
        entry != path.start() - 1;
@@ -313,6 +318,7 @@ void ProfileTree::AddPathFromEnd(const Vector<CodeEntry*>& path) {
     }
   }
   node->IncrementSelfTicks();
+  return node;
 }
 
 
@@ -464,28 +470,25 @@ void ProfileTree::ShortPrint() {
 
 
 void CpuProfile::AddPath(const Vector<CodeEntry*>& path) {
-  top_down_.AddPathFromEnd(path);
-  bottom_up_.AddPathFromStart(path);
+  ProfileNode* top_frame_node = top_down_.AddPathFromEnd(path);
+  if (record_samples_) samples_.Add(top_frame_node);
 }
 
 
 void CpuProfile::CalculateTotalTicks() {
   top_down_.CalculateTotalTicks();
-  bottom_up_.CalculateTotalTicks();
 }
 
 
 void CpuProfile::SetActualSamplingRate(double actual_sampling_rate) {
   top_down_.SetTickRatePerMs(actual_sampling_rate);
-  bottom_up_.SetTickRatePerMs(actual_sampling_rate);
 }
 
 
 CpuProfile* CpuProfile::FilteredClone(int security_token_id) {
   ASSERT(security_token_id != TokenEnumerator::kNoSecurityToken);
-  CpuProfile* clone = new CpuProfile(title_, uid_);
+  CpuProfile* clone = new CpuProfile(title_, uid_, false);
   clone->top_down_.FilteredClone(&top_down_, security_token_id);
-  clone->bottom_up_.FilteredClone(&bottom_up_, security_token_id);
   return clone;
 }
 
@@ -493,16 +496,12 @@ CpuProfile* CpuProfile::FilteredClone(int security_token_id) {
 void CpuProfile::ShortPrint() {
   OS::Print("top down ");
   top_down_.ShortPrint();
-  OS::Print("bottom up ");
-  bottom_up_.ShortPrint();
 }
 
 
 void CpuProfile::Print() {
   OS::Print("[Top down]:\n");
   top_down_.Print();
-  OS::Print("[Bottom up]:\n");
-  bottom_up_.Print();
 }
 
 
@@ -572,7 +571,12 @@ void CodeMap::MoveCode(Address from, Address to) {
 
 void CodeMap::CodeTreePrinter::Call(
     const Address& key, const CodeMap::CodeEntryInfo& value) {
-  OS::Print("%p %5d %s\n", key, value.size, value.entry->name());
+  // For shared function entries, 'size' field is used to store their IDs.
+  if (value.entry == kSharedFunctionCodeEntry) {
+    OS::Print("%p SharedFunctionInfo %d\n", key, value.size);
+  } else {
+    OS::Print("%p %5d %s\n", key, value.size, value.entry->name());
+  }
 }
 
 
@@ -614,7 +618,8 @@ CpuProfilesCollection::~CpuProfilesCollection() {
 }
 
 
-bool CpuProfilesCollection::StartProfiling(const char* title, unsigned uid) {
+bool CpuProfilesCollection::StartProfiling(const char* title, unsigned uid,
+                                           bool record_samples) {
   ASSERT(uid > 0);
   current_profiles_semaphore_->Wait();
   if (current_profiles_.length() >= kMaxSimultaneousProfiles) {
@@ -628,14 +633,9 @@ bool CpuProfilesCollection::StartProfiling(const char* title, unsigned uid) {
       return false;
     }
   }
-  current_profiles_.Add(new CpuProfile(title, uid));
+  current_profiles_.Add(new CpuProfile(title, uid, record_samples));
   current_profiles_semaphore_->Signal();
   return true;
-}
-
-
-bool CpuProfilesCollection::StartProfiling(String* title, unsigned uid) {
-  return StartProfiling(GetName(title), uid);
 }
 
 
@@ -782,7 +782,7 @@ List<CpuProfile*>* CpuProfilesCollection::Profiles(int security_token_id) {
 
 
 CodeEntry* CpuProfilesCollection::NewCodeEntry(Logger::LogEventsAndTags tag,
-                                               String* name,
+                                               Name* name,
                                                String* resource_name,
                                                int line_number) {
   CodeEntry* entry = new CodeEntry(tag,
@@ -811,7 +811,7 @@ CodeEntry* CpuProfilesCollection::NewCodeEntry(Logger::LogEventsAndTags tag,
 
 CodeEntry* CpuProfilesCollection::NewCodeEntry(Logger::LogEventsAndTags tag,
                                                const char* name_prefix,
-                                               String* name) {
+                                               Name* name) {
   CodeEntry* entry = new CodeEntry(tag,
                                    name_prefix,
                                    GetName(name),
@@ -906,14 +906,6 @@ void ProfileGenerator::RecordTickSample(const TickSample& sample) {
       // that a callback calls itself.
       *(entries.start()) = NULL;
       *entry++ = code_map_.FindEntry(sample.external_callback);
-    } else if (sample.tos != NULL) {
-      // Find out, if top of stack was pointing inside a JS function
-      // meaning that we have encountered a frameless invocation.
-      *entry = code_map_.FindEntry(sample.tos);
-      if (*entry != NULL && !(*entry)->is_js_function()) {
-        *entry = NULL;
-      }
-      entry++;
     }
 
     for (const Address* stack_pos = sample.stack,

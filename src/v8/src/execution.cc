@@ -33,6 +33,7 @@
 #include "bootstrapper.h"
 #include "codegen.h"
 #include "debug.h"
+#include "deoptimizer.h"
 #include "isolate-inl.h"
 #include "runtime-profiler.h"
 #include "simulator.h"
@@ -75,7 +76,7 @@ static Handle<Object> Invoke(bool is_construct,
   Isolate* isolate = function->GetIsolate();
 
   // Entering JavaScript.
-  VMState state(isolate, JS);
+  VMState<JS> state(isolate);
 
   // Placeholder for return value.
   MaybeObject* value = reinterpret_cast<Object*>(kZapValue);
@@ -425,29 +426,17 @@ bool StackGuard::IsTerminateExecution() {
 }
 
 
+void StackGuard::CancelTerminateExecution() {
+  ExecutionAccess access(isolate_);
+  Continue(TERMINATE);
+  isolate_->CancelTerminateExecution();
+}
+
+
 void StackGuard::TerminateExecution() {
   ExecutionAccess access(isolate_);
   thread_local_.interrupt_flags_ |= TERMINATE;
   set_interrupt_limits(access);
-}
-
-
-void StackGuard::RequestCodeReadyEvent() {
-  ASSERT(FLAG_parallel_recompilation);
-  if (ExecutionAccess::TryLock(isolate_)) {
-    thread_local_.interrupt_flags_ |= CODE_READY;
-    if (thread_local_.postpone_interrupts_nesting_ == 0) {
-      thread_local_.jslimit_ = thread_local_.climit_ = kInterruptLimit;
-      isolate_->heap()->SetStackLimits();
-    }
-    ExecutionAccess::Unlock(isolate_);
-  }
-}
-
-
-bool StackGuard::IsCodeReadyEvent() {
-  ExecutionAccess access(isolate_);
-  return (thread_local_.interrupt_flags_ & CODE_READY) != 0;
 }
 
 
@@ -464,6 +453,19 @@ void StackGuard::RequestGC() {
     thread_local_.jslimit_ = thread_local_.climit_ = kInterruptLimit;
     isolate_->heap()->SetStackLimits();
   }
+}
+
+
+bool StackGuard::IsFullDeopt() {
+  ExecutionAccess access(isolate_);
+  return (thread_local_.interrupt_flags_ & FULL_DEOPT) != 0;
+}
+
+
+void StackGuard::FullDeopt() {
+  ExecutionAccess access(isolate_);
+  thread_local_.interrupt_flags_ |= FULL_DEOPT;
+  set_interrupt_limits(access);
 }
 
 
@@ -507,7 +509,7 @@ void StackGuard::Continue(InterruptFlag after_what) {
 
 char* StackGuard::ArchiveStackGuard(char* to) {
   ExecutionAccess access(isolate_);
-  memcpy(to, reinterpret_cast<char*>(&thread_local_), sizeof(ThreadLocal));
+  OS::MemCopy(to, reinterpret_cast<char*>(&thread_local_), sizeof(ThreadLocal));
   ThreadLocal blank;
 
   // Set the stack limits using the old thread_local_.
@@ -524,7 +526,8 @@ char* StackGuard::ArchiveStackGuard(char* to) {
 
 char* StackGuard::RestoreStackGuard(char* from) {
   ExecutionAccess access(isolate_);
-  memcpy(reinterpret_cast<char*>(&thread_local_), from, sizeof(ThreadLocal));
+  OS::MemCopy(
+      reinterpret_cast<char*>(&thread_local_), from, sizeof(ThreadLocal));
   isolate_->heap()->SetStackLimits();
   return from + sizeof(ThreadLocal);
 }
@@ -601,22 +604,6 @@ void StackGuard::InitThread(const ExecutionAccess& lock) {
   } while (false)
 
 
-Handle<Object> Execution::ToBoolean(Isolate* isolate, Handle<Object> obj) {
-  // See the similar code in runtime.js:ToBoolean.
-  if (obj->IsBoolean()) return obj;
-  bool result = true;
-  if (obj->IsString()) {
-    result = Handle<String>::cast(obj)->length() != 0;
-  } else if (obj->IsNull() || obj->IsUndefined()) {
-    result = false;
-  } else if (obj->IsNumber()) {
-    double value = obj->Number();
-    result = !((value == 0) || isnan(value));
-  }
-  return Handle<Object>(isolate->heap()->ToBoolean(result), isolate);
-}
-
-
 Handle<Object> Execution::ToNumber(Handle<Object> obj, bool* exc) {
   RETURN_NATIVE_CALL(to_number, { obj }, exc);
 }
@@ -683,10 +670,8 @@ Handle<Object> Execution::CharAt(Handle<String> string, uint32_t index) {
     return factory->undefined_value();
   }
 
-  Handle<Object> char_at =
-      GetProperty(isolate,
-                  isolate->js_builtins_object(),
-                  factory->char_at_symbol());
+  Handle<Object> char_at = GetProperty(
+      isolate, isolate->js_builtins_object(), factory->char_at_string());
   if (!char_at->IsJSFunction()) {
     return factory->undefined_value();
   }
@@ -787,7 +772,7 @@ Handle<String> Execution::GetStackTraceLine(Handle<Object> recv,
                                   args,
                                   &caught_exception);
   if (caught_exception || !result->IsString()) {
-      return isolate->factory()->empty_symbol();
+      return isolate->factory()->empty_string();
   }
 
   return Handle<String>::cast(result);
@@ -917,18 +902,6 @@ MaybeObject* Execution::HandleStackGuardInterrupt(Isolate* isolate) {
     stack_guard->Continue(GC_REQUEST);
   }
 
-  if (stack_guard->IsCodeReadyEvent()) {
-    ASSERT(FLAG_parallel_recompilation);
-    if (FLAG_trace_parallel_recompilation) {
-      PrintF("  ** CODE_READY event received.\n");
-    }
-    stack_guard->Continue(CODE_READY);
-  }
-  if (!stack_guard->IsTerminateExecution() &&
-      !FLAG_manual_parallel_recompilation) {
-    isolate->optimizing_compiler_thread()->InstallOptimizedFunctions();
-  }
-
   isolate->counters()->stack_interrupts()->Increment();
   isolate->counters()->runtime_profiler_ticks()->Increment();
   isolate->runtime_profiler()->OptimizeNow();
@@ -945,6 +918,10 @@ MaybeObject* Execution::HandleStackGuardInterrupt(Isolate* isolate) {
   if (stack_guard->IsInterrupted()) {
     stack_guard->Continue(INTERRUPT);
     return isolate->StackOverflow();
+  }
+  if (stack_guard->IsFullDeopt()) {
+    stack_guard->Continue(FULL_DEOPT);
+    Deoptimizer::DeoptimizeAll(isolate);
   }
   return isolate->heap()->undefined_value();
 }

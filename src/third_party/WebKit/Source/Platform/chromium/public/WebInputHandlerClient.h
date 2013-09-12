@@ -63,6 +63,13 @@ public:
     // direction.
     virtual bool scrollVerticallyByPageIfPossible(WebPoint origin, WebScrollbar::ScrollDirection) = 0;
 
+    // Push velocity updates for the duration of animated fling gestures.
+    virtual void notifyCurrentFlingVelocity(WebFloatSize velocity) { }
+
+    // Returns ScrollStarted if a layer was being actively being scrolled,
+    // ScrollIgnored if not.
+    virtual ScrollStatus flingScrollBegin() = 0;
+
     // Stop scrolling the selected layer. Should only be called if scrollBegin()
     // returned ScrollStarted.
     virtual void scrollEnd() = 0;
@@ -84,8 +91,10 @@ public:
     // given WebPoint.
     virtual bool haveTouchEventHandlersAt(WebPoint) = 0;
 
-    // Indicate that the final input event for the current vsync interval was received.
-    virtual void didReceiveLastInputEventForVSync() { }
+    // Indicate that the final input event for the current vsync interval was
+    // received. The frame time is given in the same time base as
+    // monotonicallyIncreasingTime().
+    virtual void didReceiveLastInputEventForVSync(double frameTimeSeconds) { }
 
 protected:
     virtual ~WebInputHandlerClient() { }

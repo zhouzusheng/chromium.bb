@@ -30,18 +30,16 @@
 
 #include "config.h"
 
-#if ENABLE(MEDIA_STREAM)
-
 #include "WebUserMediaRequest.h"
 
-#include "Document.h"
-#include "MediaConstraints.h"
-#include "MediaStreamDescriptor.h"
-#include "MediaStreamSource.h"
-#include "SecurityOrigin.h"
-#include "UserMediaRequest.h"
 #include "WebDocument.h"
 #include "WebSecurityOrigin.h"
+#include "core/dom/Document.h"
+#include "core/page/SecurityOrigin.h"
+#include "core/platform/mediastream/MediaConstraints.h"
+#include "core/platform/mediastream/MediaStreamDescriptor.h"
+#include "core/platform/mediastream/MediaStreamSource.h"
+#include "modules/mediastream/UserMediaRequest.h"
 #include <public/WebMediaConstraints.h>
 #include <public/WebMediaStream.h>
 #include <public/WebMediaStreamSource.h>
@@ -129,6 +127,3 @@ WebUserMediaRequest::operator UserMediaRequest*() const
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(MEDIA_STREAM)
-

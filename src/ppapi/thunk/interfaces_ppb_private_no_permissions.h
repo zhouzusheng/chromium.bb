@@ -44,4 +44,5 @@ PROXIED_IFACE(PPB_NetworkMonitor_Private,
               PPB_NETWORKMONITOR_PRIVATE_INTERFACE_0_2,
               PPB_NetworkMonitor_Private_0_2)
 
+
 #include "ppapi/thunk/interfaces_postamble.h"

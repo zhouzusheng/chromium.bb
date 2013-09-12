@@ -89,6 +89,9 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.accelerate_painting =
       cmd->HasSwitch(switches::kEnableAcceleratedPainting);
   settings.render_vsync_enabled = !cmd->HasSwitch(switches::kDisableGpuVsync);
+  settings.render_vsync_notification_enabled =
+      cmd->HasSwitch(switches::kEnableVsyncNotification);
+  settings.synchronously_disable_vsync = widget->SynchronouslyDisableVSync();
   settings.per_tile_painting_enabled =
       cmd->HasSwitch(cc::switches::kEnablePerTilePainting);
   settings.accelerated_animation_enabled =
@@ -126,10 +129,8 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.right_aligned_scheduling_enabled =
       cmd->HasSwitch(cc::switches::kEnableRightAlignedScheduling);
   settings.impl_side_painting = cc::switches::IsImplSidePaintingEnabled();
-  settings.use_cheapness_estimator =
-      !cmd->HasSwitch(cc::switches::kDisableCheapnessEstimator);
   settings.use_color_estimator =
-      cmd->HasSwitch(cc::switches::kUseColorEstimator);
+      !cmd->HasSwitch(cc::switches::kDisableColorEstimator);
   settings.prediction_benchmarking =
       cmd->HasSwitch(cc::switches::kEnablePredictionBenchmarking);
 
@@ -179,6 +180,11 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kBackgroundColorInsteadOfCheckerboard);
   settings.show_overdraw_in_tracing =
       cmd->HasSwitch(cc::switches::kTraceOverdraw);
+
+#if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_CHROMEOS)
+  settings.use_pinch_zoom_scrollbars =
+      cmd->HasSwitch(cc::switches::kEnablePinchZoomScrollbars);
+#endif
 
   // These flags should be mirrored by UI versions in ui/compositor/.
   settings.initial_debug_state.show_debug_borders =
@@ -237,15 +243,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
                           &settings.low_res_contents_scale_factor);
   }
 
-  if (cmd->HasSwitch(cc::switches::kMaxPrepaintTileDistance)) {
-    int max_prepaint_tile_distance;
-    if (GetSwitchValueAsInt(*cmd,
-                            cc::switches::kMaxPrepaintTileDistance,
-                            0, std::numeric_limits<int>::max(),
-                            &max_prepaint_tile_distance))
-      settings.max_prepaint_tile_distance = max_prepaint_tile_distance;
-  }
-
   if (cmd->HasSwitch(cc::switches::kMaxTilesForInterestArea)) {
     int max_tiles_for_interest_area;
     if (GetSwitchValueAsInt(*cmd,
@@ -267,6 +264,9 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
     }
   }
 
+  settings.strict_layer_property_change_checking =
+      cmd->HasSwitch(cc::switches::kStrictLayerPropertyChangeChecking);
+
 #if defined(OS_ANDROID)
   // TODO(danakj): Move these to the android code.
   settings.can_use_lcd_text = false;
@@ -275,6 +275,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.solid_color_scrollbars = true;
   settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
   settings.solid_color_scrollbar_thickness_dip = 3;
+  settings.highp_threshold_min = 2048;
 #endif
 
   if (!compositor->initialize(settings))
@@ -311,6 +312,10 @@ void RenderWidgetCompositor::Composite(base::TimeTicks frame_begin_time) {
   layer_tree_host_->Composite(frame_begin_time);
 }
 
+void RenderWidgetCompositor::SetNeedsDisplayOnAllLayers() {
+  layer_tree_host_->SetNeedsDisplayOnAllLayers();
+}
+
 void RenderWidgetCompositor::GetRenderingStats(cc::RenderingStats* stats) {
   layer_tree_host_->CollectRenderingStats(stats);
 }
@@ -319,13 +324,21 @@ skia::RefPtr<SkPicture> RenderWidgetCompositor::CapturePicture() {
   return layer_tree_host_->CapturePicture();
 }
 
-void RenderWidgetCompositor::EnableHidingTopControls(bool enable) {
-  layer_tree_host_->EnableHidingTopControls(enable);
+void RenderWidgetCompositor::UpdateTopControlsState(bool enable_hiding,
+                                                    bool enable_showing,
+                                                    bool animate) {
+  layer_tree_host_->UpdateTopControlsState(enable_hiding,
+                                           enable_showing,
+                                           animate);
 }
 
 void RenderWidgetCompositor::SetOverdrawBottomHeight(
     float overdraw_bottom_height) {
   layer_tree_host_->SetOverdrawBottomHeight(overdraw_bottom_height);
+}
+
+void RenderWidgetCompositor::SetNeedsRedrawRect(gfx::Rect damage_rect) {
+  layer_tree_host_->SetNeedsRedrawRect(damage_rect);
 }
 
 bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {
@@ -357,13 +370,13 @@ void RenderWidgetCompositor::clearRootLayer() {
 }
 
 void RenderWidgetCompositor::setViewportSize(
-    const WebSize& layout_viewport_size,
+    const WebSize&,
     const WebSize& device_viewport_size) {
-  layer_tree_host_->SetViewportSize(layout_viewport_size, device_viewport_size);
+  layer_tree_host_->SetViewportSize(device_viewport_size);
 }
 
 WebSize RenderWidgetCompositor::layoutViewportSize() const {
-  return layer_tree_host_->layout_viewport_size();
+  return layer_tree_host_->device_viewport_size();
 }
 
 WebSize RenderWidgetCompositor::deviceViewportSize() const {
@@ -509,8 +522,9 @@ void RenderWidgetCompositor::DidRecreateOutputSurface(bool success) {
     widget_->webwidget()->didExitCompositingMode();
 }
 
-scoped_ptr<cc::InputHandler> RenderWidgetCompositor::CreateInputHandler() {
-  scoped_ptr<cc::InputHandler> ret;
+scoped_ptr<cc::InputHandlerClient>
+RenderWidgetCompositor::CreateInputHandlerClient() {
+  scoped_ptr<cc::InputHandlerClient> ret;
   scoped_ptr<WebKit::WebInputHandler> web_handler(
       widget_->webwidget()->createInputHandler());
   if (web_handler)

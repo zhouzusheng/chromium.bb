@@ -17,7 +17,7 @@ namespace webrtc {
 
 enum { kMaxNumberOfFrames     = 300 };
 enum { kStartNumberOfFrames   = 6 };
-enum { kMaxVideoDelayMs       = 2000 };
+enum { kMaxVideoDelayMs       = 10000 };
 
 enum VCMJitterBufferEnum {
   kMaxConsecutiveOldFrames        = 60,
@@ -59,19 +59,6 @@ enum VCMNaluCompleteness {
   kNaluIncomplete,      // Packet is not beginning or end of NALU
   kNaluEnd,             // Packet is the end of a NALU
 };
-
-// Returns the latest of the two timestamps, compensating for wrap arounds.
-// This function assumes that the two timestamps are close in time.
-WebRtc_UWord32 LatestTimestamp(WebRtc_UWord32 timestamp1,
-                               WebRtc_UWord32 timestamp2,
-                               bool* has_wrapped);
-
-// Returns the latest of the two sequence numbers, compensating for wrap
-// arounds. This function assumes that the two sequence numbers are close in
-// time.
-WebRtc_Word32 LatestSequenceNumber(WebRtc_Word32 seq_num1,
-                                   WebRtc_Word32 seq_num2,
-                                   bool* has_wrapped);
 }  // namespace webrtc
 
 #endif  // WEBRTC_MODULES_VIDEO_CODING_JITTER_BUFFER_COMMON_H_

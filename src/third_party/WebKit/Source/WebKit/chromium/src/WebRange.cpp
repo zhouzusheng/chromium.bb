@@ -31,15 +31,16 @@
 #include "config.h"
 #include "WebRange.h"
 
-#include "Document.h"
-#include "Element.h"
-#include "Frame.h"
-#include "FrameView.h"
-#include "Range.h"
-#include "ShadowRoot.h"
-#include "TextIterator.h"
 #include "WebFrameImpl.h"
 #include "WebNode.h"
+#include "core/dom/Document.h"
+#include "core/dom/Element.h"
+#include "core/dom/Range.h"
+#include "core/dom/ShadowRoot.h"
+#include "core/editing/FrameSelection.h"
+#include "core/editing/TextIterator.h"
+#include "core/page/Frame.h"
+#include "core/page/FrameView.h"
 #include <public/WebFloatQuad.h>
 #include <public/WebString.h>
 #include <wtf/PassRefPtr.h>

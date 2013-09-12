@@ -33,9 +33,9 @@
 
 #if ENABLE(PAGE_POPUP)
 
-#include "PagePopup.h"
 #include "PageWidgetDelegate.h"
 #include "WebPagePopup.h"
+#include "core/page/PagePopup.h"
 #include <wtf/OwnPtr.h>
 #include <wtf/RefCounted.h>
 
@@ -79,9 +79,7 @@ private:
     // PageWidgetEventHandler functions
     virtual bool handleKeyEvent(const WebKeyboardEvent&) OVERRIDE;
     virtual bool handleCharEvent(const WebKeyboardEvent&) OVERRIDE;
-#if ENABLE(GESTURE_EVENTS)
     virtual bool handleGestureEvent(const WebGestureEvent&) OVERRIDE;
-#endif
 
     explicit WebPagePopupImpl(WebWidgetClient*);
     bool initializePage();

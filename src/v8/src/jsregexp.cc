@@ -624,7 +624,8 @@ int RegExpImpl::IrregexpExecRaw(Handle<JSRegExp> regexp,
                                                      index);
   if (result == RE_SUCCESS) {
     // Copy capture results to the start of the registers array.
-    memcpy(output, raw_output, number_of_capture_registers * sizeof(int32_t));
+    OS::MemCopy(
+        output, raw_output, number_of_capture_registers * sizeof(int32_t));
   }
   if (result == RE_EXCEPTION) {
     ASSERT(!isolate->has_pending_exception());
@@ -2299,35 +2300,33 @@ RegExpNode::LimitResult RegExpNode::LimitVersions(RegExpCompiler* compiler,
 
 
 int ActionNode::EatsAtLeast(int still_to_find,
-                            int recursion_depth,
+                            int budget,
                             bool not_at_start) {
-  if (recursion_depth > RegExpCompiler::kMaxRecursion) return 0;
+  if (budget <= 0) return 0;
   if (type_ == POSITIVE_SUBMATCH_SUCCESS) return 0;  // Rewinds input!
   return on_success()->EatsAtLeast(still_to_find,
-                                   recursion_depth + 1,
+                                   budget - 1,
                                    not_at_start);
 }
 
 
 void ActionNode::FillInBMInfo(int offset,
-                              int recursion_depth,
                               int budget,
                               BoyerMooreLookahead* bm,
                               bool not_at_start) {
   if (type_ == BEGIN_SUBMATCH) {
     bm->SetRest(offset);
   } else if (type_ != POSITIVE_SUBMATCH_SUCCESS) {
-    on_success()->FillInBMInfo(
-        offset, recursion_depth + 1, budget - 1, bm, not_at_start);
+    on_success()->FillInBMInfo(offset, budget - 1, bm, not_at_start);
   }
   SaveBMInfo(bm, not_at_start, offset);
 }
 
 
 int AssertionNode::EatsAtLeast(int still_to_find,
-                               int recursion_depth,
+                               int budget,
                                bool not_at_start) {
-  if (recursion_depth > RegExpCompiler::kMaxRecursion) return 0;
+  if (budget <= 0) return 0;
   // If we know we are not at the start and we are asked "how many characters
   // will you match if you succeed?" then we can answer anything since false
   // implies false.  So lets just return the max answer (still_to_find) since
@@ -2335,55 +2334,53 @@ int AssertionNode::EatsAtLeast(int still_to_find,
   // branches in the node graph.
   if (type() == AT_START && not_at_start) return still_to_find;
   return on_success()->EatsAtLeast(still_to_find,
-                                   recursion_depth + 1,
+                                   budget - 1,
                                    not_at_start);
 }
 
 
 void AssertionNode::FillInBMInfo(int offset,
-                                 int recursion_depth,
                                  int budget,
                                  BoyerMooreLookahead* bm,
                                  bool not_at_start) {
   // Match the behaviour of EatsAtLeast on this node.
   if (type() == AT_START && not_at_start) return;
-  on_success()->FillInBMInfo(
-      offset, recursion_depth + 1, budget - 1, bm, not_at_start);
+  on_success()->FillInBMInfo(offset, budget - 1, bm, not_at_start);
   SaveBMInfo(bm, not_at_start, offset);
 }
 
 
 int BackReferenceNode::EatsAtLeast(int still_to_find,
-                                   int recursion_depth,
+                                   int budget,
                                    bool not_at_start) {
-  if (recursion_depth > RegExpCompiler::kMaxRecursion) return 0;
+  if (budget <= 0) return 0;
   return on_success()->EatsAtLeast(still_to_find,
-                                   recursion_depth + 1,
+                                   budget - 1,
                                    not_at_start);
 }
 
 
 int TextNode::EatsAtLeast(int still_to_find,
-                          int recursion_depth,
+                          int budget,
                           bool not_at_start) {
   int answer = Length();
   if (answer >= still_to_find) return answer;
-  if (recursion_depth > RegExpCompiler::kMaxRecursion) return answer;
+  if (budget <= 0) return answer;
   // We are not at start after this node so we set the last argument to 'true'.
   return answer + on_success()->EatsAtLeast(still_to_find - answer,
-                                            recursion_depth + 1,
+                                            budget - 1,
                                             true);
 }
 
 
 int NegativeLookaheadChoiceNode::EatsAtLeast(int still_to_find,
-                                             int recursion_depth,
+                                             int budget,
                                              bool not_at_start) {
-  if (recursion_depth > RegExpCompiler::kMaxRecursion) return 0;
+  if (budget <= 0) return 0;
   // Alternative 0 is the negative lookahead, alternative 1 is what comes
   // afterwards.
   RegExpNode* node = alternatives_->at(1).node();
-  return node->EatsAtLeast(still_to_find, recursion_depth + 1, not_at_start);
+  return node->EatsAtLeast(still_to_find, budget - 1, not_at_start);
 }
 
 
@@ -2400,39 +2397,40 @@ void NegativeLookaheadChoiceNode::GetQuickCheckDetails(
 
 
 int ChoiceNode::EatsAtLeastHelper(int still_to_find,
-                                  int recursion_depth,
+                                  int budget,
                                   RegExpNode* ignore_this_node,
                                   bool not_at_start) {
-  if (recursion_depth > RegExpCompiler::kMaxRecursion) return 0;
+  if (budget <= 0) return 0;
   int min = 100;
   int choice_count = alternatives_->length();
+  budget = (budget - 1) / choice_count;
   for (int i = 0; i < choice_count; i++) {
     RegExpNode* node = alternatives_->at(i).node();
     if (node == ignore_this_node) continue;
-    int node_eats_at_least = node->EatsAtLeast(still_to_find,
-                                               recursion_depth + 1,
-                                               not_at_start);
+    int node_eats_at_least =
+        node->EatsAtLeast(still_to_find, budget, not_at_start);
     if (node_eats_at_least < min) min = node_eats_at_least;
+    if (min == 0) return 0;
   }
   return min;
 }
 
 
 int LoopChoiceNode::EatsAtLeast(int still_to_find,
-                                int recursion_depth,
+                                int budget,
                                 bool not_at_start) {
   return EatsAtLeastHelper(still_to_find,
-                           recursion_depth,
+                           budget - 1,
                            loop_node_,
                            not_at_start);
 }
 
 
 int ChoiceNode::EatsAtLeast(int still_to_find,
-                            int recursion_depth,
+                            int budget,
                             bool not_at_start) {
   return EatsAtLeastHelper(still_to_find,
-                           recursion_depth,
+                           budget,
                            NULL,
                            not_at_start);
 }
@@ -2515,11 +2513,7 @@ bool RegExpNode::EmitQuickCheck(RegExpCompiler* compiler,
     // For 2-character preloads in ASCII mode or 1-character preloads in
     // TWO_BYTE mode we also use a 16 bit load with zero extend.
     if (details->characters() == 2 && compiler->ascii()) {
-#ifndef ENABLE_LATIN_1
-      if ((mask & 0x7f7f) == 0xffff) need_mask = false;
-#else
       if ((mask & 0xffff) == 0xffff) need_mask = false;
-#endif
     } else if (details->characters() == 1 && !compiler->ascii()) {
       if ((mask & 0xffff) == 0xffff) need_mask = false;
     } else {
@@ -2797,17 +2791,12 @@ RegExpNode* SeqRegExpNode::FilterSuccessor(int depth, bool ignore_case) {
 
 // We need to check for the following characters: 0x39c 0x3bc 0x178.
 static inline bool RangeContainsLatin1Equivalents(CharacterRange range) {
-#ifdef ENABLE_LATIN_1
   // TODO(dcarney): this could be a lot more efficient.
   return range.Contains(0x39c) ||
       range.Contains(0x3bc) || range.Contains(0x178);
-#else
-  return false;
-#endif
 }
 
 
-#ifdef ENABLE_LATIN_1
 static bool RangesContainLatin1Equivalents(ZoneList<CharacterRange>* ranges) {
   for (int i = 0; i < ranges->length(); i++) {
     // TODO(dcarney): this could be a lot more efficient.
@@ -2815,7 +2804,6 @@ static bool RangesContainLatin1Equivalents(ZoneList<CharacterRange>* ranges) {
   }
   return false;
 }
-#endif
 
 
 RegExpNode* TextNode::FilterASCII(int depth, bool ignore_case) {
@@ -2829,11 +2817,6 @@ RegExpNode* TextNode::FilterASCII(int depth, bool ignore_case) {
     if (elm.type == TextElement::ATOM) {
       Vector<const uc16> quarks = elm.data.u_atom->data();
       for (int j = 0; j < quarks.length(); j++) {
-#ifndef ENABLE_LATIN_1
-        if (quarks[j] > String::kMaxOneByteCharCode) {
-          return set_replacement(NULL);
-        }
-#else
         uint16_t c = quarks[j];
         if (c <= String::kMaxOneByteCharCode) continue;
         if (!ignore_case) return set_replacement(NULL);
@@ -2845,7 +2828,6 @@ RegExpNode* TextNode::FilterASCII(int depth, bool ignore_case) {
         // Convert quark to Latin-1 in place.
         uint16_t* copy = const_cast<uint16_t*>(quarks.start());
         copy[j] = converted;
-#endif
       }
     } else {
       ASSERT(elm.type == TextElement::CHAR_CLASS);
@@ -2860,19 +2842,15 @@ RegExpNode* TextNode::FilterASCII(int depth, bool ignore_case) {
         if (range_count != 0 &&
             ranges->at(0).from() == 0 &&
             ranges->at(0).to() >= String::kMaxOneByteCharCode) {
-#ifdef ENABLE_LATIN_1
           // This will be handled in a later filter.
           if (ignore_case && RangesContainLatin1Equivalents(ranges)) continue;
-#endif
           return set_replacement(NULL);
         }
       } else {
         if (range_count == 0 ||
             ranges->at(0).from() > String::kMaxOneByteCharCode) {
-#ifdef ENABLE_LATIN_1
           // This will be handled in a later filter.
           if (ignore_case && RangesContainLatin1Equivalents(ranges)) continue;
-#endif
           return set_replacement(NULL);
         }
       }
@@ -2988,19 +2966,15 @@ void LoopChoiceNode::GetQuickCheckDetails(QuickCheckDetails* details,
 
 
 void LoopChoiceNode::FillInBMInfo(int offset,
-                                  int recursion_depth,
                                   int budget,
                                   BoyerMooreLookahead* bm,
                                   bool not_at_start) {
-  if (body_can_be_zero_length_ ||
-      recursion_depth > RegExpCompiler::kMaxRecursion ||
-      budget <= 0) {
+  if (body_can_be_zero_length_ || budget <= 0) {
     bm->SetRest(offset);
     SaveBMInfo(bm, not_at_start, offset);
     return;
   }
-  ChoiceNode::FillInBMInfo(
-      offset, recursion_depth + 1, budget - 1, bm, not_at_start);
+  ChoiceNode::FillInBMInfo(offset, budget - 1, bm, not_at_start);
   SaveBMInfo(bm, not_at_start, offset);
 }
 
@@ -3097,12 +3071,13 @@ void AssertionNode::EmitBoundaryCheck(RegExpCompiler* compiler, Trace* trace) {
   BoyerMooreLookahead* lookahead = bm_info(not_at_start);
   if (lookahead == NULL) {
     int eats_at_least =
-        Min(kMaxLookaheadForBoyerMoore,
-            EatsAtLeast(kMaxLookaheadForBoyerMoore, 0, not_at_start));
+        Min(kMaxLookaheadForBoyerMoore, EatsAtLeast(kMaxLookaheadForBoyerMoore,
+                                                    kRecursionBudget,
+                                                    not_at_start));
     if (eats_at_least >= 1) {
       BoyerMooreLookahead* bm =
           new(zone()) BoyerMooreLookahead(eats_at_least, compiler, zone());
-      FillInBMInfo(0, 0, kFillInBMBudget, bm, not_at_start);
+      FillInBMInfo(0, kRecursionBudget, bm, not_at_start);
       if (bm->at(0)->is_non_word()) next_is_word_character = Trace::FALSE;
       if (bm->at(0)->is_word()) next_is_word_character = Trace::TRUE;
     }
@@ -4034,16 +4009,17 @@ void ChoiceNode::Emit(RegExpCompiler* compiler, Trace* trace) {
         ASSERT(trace->is_trivial());  // This is the case on LoopChoiceNodes.
         BoyerMooreLookahead* lookahead = bm_info(not_at_start);
         if (lookahead == NULL) {
-          eats_at_least =
-              Min(kMaxLookaheadForBoyerMoore,
-                  EatsAtLeast(kMaxLookaheadForBoyerMoore, 0, not_at_start));
+          eats_at_least = Min(kMaxLookaheadForBoyerMoore,
+                              EatsAtLeast(kMaxLookaheadForBoyerMoore,
+                                          kRecursionBudget,
+                                          not_at_start));
           if (eats_at_least >= 1) {
             BoyerMooreLookahead* bm =
                 new(zone()) BoyerMooreLookahead(eats_at_least,
                                                 compiler,
                                                 zone());
             GuardedAlternative alt0 = alternatives_->at(0);
-            alt0.node()->FillInBMInfo(0, 0, kFillInBMBudget, bm, not_at_start);
+            alt0.node()->FillInBMInfo(0, kRecursionBudget, bm, not_at_start);
             skip_was_emitted = bm->EmitSkipInstructions(macro_assembler);
           }
         } else {
@@ -4055,7 +4031,8 @@ void ChoiceNode::Emit(RegExpCompiler* compiler, Trace* trace) {
 
   if (eats_at_least == kEatsAtLeastNotYetInitialized) {
     // Save some time by looking at most one machine word ahead.
-    eats_at_least = EatsAtLeast(compiler->ascii() ? 4 : 2, 0, not_at_start);
+    eats_at_least =
+        EatsAtLeast(compiler->ascii() ? 4 : 2, kRecursionBudget, not_at_start);
   }
   int preload_characters = CalculatePreloadCharacters(compiler, eats_at_least);
 
@@ -5811,7 +5788,6 @@ void Analysis::VisitAssertion(AssertionNode* that) {
 
 
 void BackReferenceNode::FillInBMInfo(int offset,
-                                     int recursion_depth,
                                      int budget,
                                      BoyerMooreLookahead* bm,
                                      bool not_at_start) {
@@ -5827,7 +5803,6 @@ STATIC_ASSERT(BoyerMoorePositionInfo::kMapSize ==
 
 
 void ChoiceNode::FillInBMInfo(int offset,
-                              int recursion_depth,
                               int budget,
                               BoyerMooreLookahead* bm,
                               bool not_at_start) {
@@ -5840,15 +5815,13 @@ void ChoiceNode::FillInBMInfo(int offset,
       SaveBMInfo(bm, not_at_start, offset);
       return;
     }
-    alt.node()->FillInBMInfo(
-        offset, recursion_depth + 1, budget, bm, not_at_start);
+    alt.node()->FillInBMInfo(offset, budget, bm, not_at_start);
   }
   SaveBMInfo(bm, not_at_start, offset);
 }
 
 
 void TextNode::FillInBMInfo(int initial_offset,
-                            int recursion_depth,
                             int budget,
                             BoyerMooreLookahead* bm,
                             bool not_at_start) {
@@ -5905,7 +5878,6 @@ void TextNode::FillInBMInfo(int initial_offset,
     return;
   }
   on_success()->FillInBMInfo(offset,
-                             recursion_depth + 1,
                              budget - 1,
                              bm,
                              true);  // Not at start after a text node.

@@ -115,7 +115,16 @@ public:
             Note: Currently this is not serializable, the bounding data will be
             discarded if you serialize into a stream and then deserialize.
         */
-        kOptimizeForClippedPlayback_RecordingFlag = 0x02
+        kOptimizeForClippedPlayback_RecordingFlag = 0x02,
+        /*
+            This flag disables all the picture recording optimizations (i.e.,
+            those in SkPictureRecord). It is mainly intended for testing the
+            existing optimizations (i.e., to actually have the pattern
+            appear in an .skp we have to disable the optimization). This
+            option doesn't affect the optimizations controlled by
+            'kOptimizeForClippedPlayback_RecordingFlag'.
+         */
+        kDisableRecordOptimizations_RecordingFlag = 0x04
     };
 
     /** Returns the canvas that records the drawing commands.
@@ -183,7 +192,6 @@ public:
     void abortPlayback();
 #endif
 
-protected:
     // V2 : adds SkPixelRef's generation ID.
     // V3 : PictInfo tag at beginning, and EOF tag at the end
     // V4 : move SkPictInfo to be the header
@@ -194,8 +202,10 @@ protected:
     // V9 : Allow the reader and writer of an SKP disagree on whether to support
     //      SK_SUPPORT_HINTING_SCALE_FACTOR
     // V10: add drawRRect, drawOval, clipRRect
-    static const uint32_t PICTURE_VERSION = 10;
+    // V11: modify how readBitmap and writeBitmap store their info.
+    static const uint32_t PICTURE_VERSION = 11;
 
+protected:
     // fPlayback, fRecord, fWidth & fHeight are protected to allow derived classes to
     // install their own SkPicturePlayback-derived players,SkPictureRecord-derived
     // recorders and set the picture size

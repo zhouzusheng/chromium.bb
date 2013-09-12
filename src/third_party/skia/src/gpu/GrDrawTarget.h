@@ -139,8 +139,8 @@ public:
      *    data. The target provides ptrs to hold the vertex and/or index data.
      *
      *    The data is writable up until the next drawIndexed, drawNonIndexed,
-     *    drawIndexedInstances, or pushGeometrySource. At this point the data is
-     *    frozen and the ptrs are no longer valid.
+     *    drawIndexedInstances, drawRect, copySurface, or pushGeometrySource. At
+     *    this point the data is frozen and the ptrs are no longer valid.
      *
      *    Where the space is allocated and how it is uploaded to the GPU is
      *    subclass-dependent.
@@ -169,9 +169,9 @@ public:
      * source is reset and likewise for indexCount.
      *
      * The pointers to the space allocated for vertices and indices remain valid
-     * until a drawIndexed, drawNonIndexed, drawIndexedInstances, or push/
-     * popGeomtrySource is called. At that point logically a snapshot of the
-     * data is made and the pointers are invalid.
+     * until a drawIndexed, drawNonIndexed, drawIndexedInstances, drawRect,
+     * copySurface, or push/popGeomtrySource is called. At that point logically a
+     * snapshot of the data is made and the pointers are invalid.
      *
      * @param vertexCount  the number of vertices to reserve space for. Can be
      *                     0. Vertex size is queried from the current GrDrawState.
@@ -331,16 +331,8 @@ public:
     void stencilPath(const GrPath*, const SkStrokeRec& stroke, SkPath::FillType fill);
 
     /**
-     * Helper function for drawing rects. This does not use the current index
-     * and vertex sources. After returning, the vertex and index sources may
-     * have changed. They should be reestablished before the next draw call.
-     * This cannot be called between reserving and releasing
-     * geometry.
-     *
-     * A subclass may override this to perform more optimal rect rendering. Its
-     * draws should be funneled through one of the public GrDrawTarget draw methods
-     * (e.g. drawNonIndexed, drawIndexedInstances, ...). The base class draws a two
-     * triangle fan using drawNonIndexed from reserved vertex space.
+     * Helper function for drawing rects. It performs a geometry src push and pop
+     * and thus will finalize any reserved geometry.
      *
      * @param rect        the rect to draw
      * @param matrix      optional matrix applied to rect (before viewMatrix)
@@ -351,10 +343,13 @@ public:
      *                    then srcRect will be transformed by srcMatrix.
      *                    srcMatrix can be NULL when no srcMatrix is desired.
      */
-    virtual void drawRect(const GrRect& rect,
-                          const SkMatrix* matrix,
-                          const GrRect* localRect,
-                          const SkMatrix* localMatrix);
+    void drawRect(const GrRect& rect,
+                  const SkMatrix* matrix,
+                  const GrRect* localRect,
+                  const SkMatrix* localMatrix) {
+        AutoGeometryPush agp(this);
+        this->onDrawRect(rect, matrix, localRect, localMatrix);
+    }
 
     /**
      * Helper for drawRect when the caller doesn't need separate local rects or matrices.
@@ -411,6 +406,38 @@ public:
     virtual void clear(const GrIRect* rect,
                        GrColor color,
                        GrRenderTarget* renderTarget = NULL) = 0;
+
+    /**
+     * Copies a pixel rectangle from one surface to another. This call may finalize
+     * reserved vertex/index data (as though a draw call was made). The src pixels
+     * copied are specified by srcRect. They are copied to a rect of the same
+     * size in dst with top left at dstPoint. If the src rect is clipped by the
+     * src bounds then  pixel values in the dst rect corresponding to area clipped
+     * by the src rect are not overwritten. This method can fail and return false
+     * depending on the type of surface, configs, etc, and the backend-specific
+     * limitations. If rect is clipped out entirely by the src or dst bounds then
+     * true is returned since there is no actual copy necessary to succeed.
+     */
+    bool copySurface(GrSurface* dst,
+                     GrSurface* src,
+                     const SkIRect& srcRect,
+                     const SkIPoint& dstPoint);
+    /**
+     * Function that determines whether a copySurface call would succeed without
+     * performing the copy.
+     */
+    bool canCopySurface(GrSurface* dst,
+                        GrSurface* src,
+                        const SkIRect& srcRect,
+                        const SkIPoint& dstPoint);
+
+    /**
+     * This is can be called before allocating a texture to be a dst for copySurface. It will
+     * populate the origin, config, and flags fields of the desc such that copySurface is more
+     * likely to succeed and be efficient.
+     */
+    virtual void initCopySurfaceDstDesc(const GrSurface* src, GrTextureDesc* desc);
+
 
     /**
      * Release any resources that are cached but not currently in use. This
@@ -533,20 +560,47 @@ public:
 
     ////////////////////////////////////////////////////////////////////////////
 
-    class AutoGeometryAndStatePush : ::GrNoncopyable {
+    /**
+     * Saves the geometry src state at construction and restores in the destructor. It also saves
+     * and then restores the vertex attrib state.
+     */
+    class AutoGeometryPush : ::GrNoncopyable {
     public:
-        AutoGeometryAndStatePush(GrDrawTarget* target, ASRInit init)
-            : fState(target, init) {
+        AutoGeometryPush(GrDrawTarget* target)
+            : fAttribRestore(target->drawState()) {
             GrAssert(NULL != target);
             fTarget = target;
             target->pushGeometrySource();
         }
-        ~AutoGeometryAndStatePush() {
-            fTarget->popGeometrySource();
-        }
+
+        ~AutoGeometryPush() { fTarget->popGeometrySource(); }
+
     private:
-        GrDrawTarget*    fTarget;
+        GrDrawTarget*                           fTarget;
+        GrDrawState::AutoVertexAttribRestore    fAttribRestore;
+    };
+
+    /**
+     * Combination of AutoGeometryPush and AutoStateRestore. The vertex attribs will be in default
+     * state regardless of ASRInit value.
+     */
+    class AutoGeometryAndStatePush : ::GrNoncopyable {
+    public:
+        AutoGeometryAndStatePush(GrDrawTarget* target, ASRInit init)
+            : fState(target, init){
+            GrAssert(NULL != target);
+            fTarget = target;
+            target->pushGeometrySource();
+            if (kPreserve_ASRInit == init) {
+                target->drawState()->setDefaultVertexAttribs();
+            }
+        }
+
+        ~AutoGeometryAndStatePush() { fTarget->popGeometrySource(); }
+
+    private:
         AutoStateRestore fState;
+        GrDrawTarget*    fTarget;
     };
 
 protected:
@@ -593,6 +647,25 @@ protected:
                 return 0;
         }
     }
+
+    // This method is called by copySurface  The srcRect is guaranteed to be entirely within the
+    // src bounds. Likewise, the dst rect implied by dstPoint and srcRect's width and height falls
+    // entirely within the dst. The default implementation will draw a rect from the src to the
+    // dst if the src is a texture and the dst is a render target and fail otherwise.
+    virtual bool onCopySurface(GrSurface* dst,
+                               GrSurface* src,
+                               const SkIRect& srcRect,
+                               const SkIPoint& dstPoint);
+
+    // Called to determine whether an onCopySurface call would succeed or not. This is useful for
+    // proxy subclasses to test whether the copy would succeed without executing it yet. Derived
+    // classes must keep this consistent with their implementation of onCopySurface(). The inputs
+    // are the same as onCopySurface(), i.e. srcRect and dstPoint are clipped to be inside the src
+    // and dst bounds.
+    virtual bool onCanCopySurface(GrSurface* dst,
+                                  GrSurface* src,
+                                  const SkIRect& srcRect,
+                                  const SkIPoint& dstPoint);
 
     GrContext* getContext() { return fContext; }
     const GrContext* getContext() const { return fContext; }
@@ -654,7 +727,7 @@ protected:
             fDevBounds = &fDevBoundsStorage;
         }
         const SkRect* getDevBounds() const { return fDevBounds; }
-        
+
         bool getDevIBounds(SkIRect* bounds) const {
             if (NULL != fDevBounds) {
                 fDevBounds->roundOut(bounds);
@@ -717,6 +790,16 @@ private:
     virtual void geometrySourceWillPop(const GeometrySrcState& restoredState) = 0;
     // subclass called to perform drawing
     virtual void onDraw(const DrawInfo&) = 0;
+    // Implementation of drawRect. The geometry src and vertex attribs will already
+    // be saved before this is called and restored afterwards. A subclass may override
+    // this to perform more optimal rect rendering. Its draws should be funneled through
+    // one of the public GrDrawTarget draw methods (e.g. drawNonIndexed,
+    // drawIndexedInstances, ...). The base class draws a two triangle fan using
+    // drawNonIndexed from reserved vertex space.
+    virtual void onDrawRect(const GrRect& rect,
+                            const SkMatrix* matrix,
+                            const GrRect* localRect,
+                            const SkMatrix* localMatrix);
     virtual void onStencilPath(const GrPath*, const SkStrokeRec& stroke, SkPath::FillType fill) = 0;
 
     // helpers for reserving vertex and index space.

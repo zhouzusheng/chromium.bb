@@ -29,12 +29,12 @@
  */
 
 #include "config.h"
-#include "ApplicationCacheHost.h"
+#include "core/loader/appcache/ApplicationCacheHost.h"
 
-#include "DocumentLoader.h"
 #include "WebApplicationCacheHostClient.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
+#include "core/loader/DocumentLoader.h"
 #include <public/WebURL.h>
 
 namespace WebCore {

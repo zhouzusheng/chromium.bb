@@ -31,7 +31,10 @@ void ShellJavaScriptDialogManager::RunJavaScriptDialog(
     const string16& default_prompt_text,
     const DialogClosedCallback& callback,
     bool* did_suppress_message) {
-  // SHEZ: remove upstream code here, used only for testing
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
+    callback.Run(true, string16());
+    return;
+  }
 
   if (!dialog_request_callback_.is_null()) {
     dialog_request_callback_.Run();
@@ -43,7 +46,7 @@ void ShellJavaScriptDialogManager::RunJavaScriptDialog(
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(TOOLKIT_GTK)
   *did_suppress_message = false;
 
-  if (dialog_.get()) {
+  if (dialog_) {
     // One dialog at a time, please.
     *did_suppress_message = true;
     return;
@@ -73,7 +76,10 @@ void ShellJavaScriptDialogManager::RunBeforeUnloadDialog(
     const string16& message_text,
     bool is_reload,
     const DialogClosedCallback& callback) {
-  // SHEZ: remove upstream code here, used only for testing
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
+    callback.Run(true, string16());
+    return;
+  }
 
   if (!dialog_request_callback_.is_null()) {
     dialog_request_callback_.Run();
@@ -83,7 +89,7 @@ void ShellJavaScriptDialogManager::RunBeforeUnloadDialog(
   }
 
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(TOOLKIT_GTK)
-  if (dialog_.get()) {
+  if (dialog_) {
     // Seriously!?
     callback.Run(true, string16());
     return;
@@ -112,7 +118,7 @@ void ShellJavaScriptDialogManager::RunBeforeUnloadDialog(
 void ShellJavaScriptDialogManager::ResetJavaScriptState(
     WebContents* web_contents) {
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(TOOLKIT_GTK)
-  if (dialog_.get()) {
+  if (dialog_) {
     dialog_->Cancel();
     dialog_.reset();
   }

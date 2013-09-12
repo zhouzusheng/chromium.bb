@@ -74,9 +74,11 @@ namespace internal {
 class LogMessageBuilder;
 class Profiler;
 class Semaphore;
+struct TickSample;
 class Ticker;
 class Isolate;
 class PositionsRecorder;
+class CpuProfiler;
 
 #undef LOG
 #define LOG(isolate, Call)                          \
@@ -135,9 +137,11 @@ class PositionsRecorder;
   V(KEYED_EXTERNAL_ARRAY_STORE_IC_TAG, "KeyedExternalArrayStoreIC")     \
   V(LAZY_COMPILE_TAG,               "LazyCompile")                      \
   V(LOAD_IC_TAG,                    "LoadIC")                           \
+  V(LOAD_POLYMORPHIC_IC_TAG,        "LoadPolymorphicIC")                \
   V(REG_EXP_TAG,                    "RegExp")                           \
   V(SCRIPT_TAG,                     "Script")                           \
   V(STORE_IC_TAG,                   "StoreIC")                          \
+  V(STORE_POLYMORPHIC_IC_TAG,       "StorePolymorphicIC")               \
   V(STUB_TAG,                       "Stub")                             \
   V(NATIVE_FUNCTION_TAG,            "Function")                         \
   V(NATIVE_LAZY_COMPILE_TAG,        "LazyCompile")                      \
@@ -159,14 +163,11 @@ class Logger {
 #undef DECLARE_ENUM
 
   // Acquires resources for logging if the right flags are set.
-  bool SetUp();
+  bool SetUp(Isolate* isolate);
 
   // Sets the current code event handler.
   void SetCodeEventHandler(uint32_t options,
                            JitCodeEventHandler event_handler);
-
-  void EnsureTickerStarted();
-  void EnsureTickerStopped();
 
   Sampler* sampler();
 
@@ -202,7 +203,7 @@ class Logger {
 
   // Emits an event that an undefined property was read from an
   // object.
-  void SuspectReadEvent(String* name, Object* obj);
+  void SuspectReadEvent(Name* name, Object* obj);
 
   // Emits an event when a message is put on or read from a debugging queue.
   // DebugTag lets us put a call-site specific label on the event.
@@ -223,22 +224,22 @@ class Logger {
 
   // ==== Events logged by --log-code. ====
   // Emits a code event for a callback function.
-  void CallbackEvent(String* name, Address entry_point);
-  void GetterCallbackEvent(String* name, Address entry_point);
-  void SetterCallbackEvent(String* name, Address entry_point);
+  void CallbackEvent(Name* name, Address entry_point);
+  void GetterCallbackEvent(Name* name, Address entry_point);
+  void SetterCallbackEvent(Name* name, Address entry_point);
   // Emits a code create event.
   void CodeCreateEvent(LogEventsAndTags tag,
                        Code* code, const char* source);
   void CodeCreateEvent(LogEventsAndTags tag,
-                       Code* code, String* name);
+                       Code* code, Name* name);
   void CodeCreateEvent(LogEventsAndTags tag,
                        Code* code,
                        SharedFunctionInfo* shared,
-                       String* name);
+                       Name* name);
   void CodeCreateEvent(LogEventsAndTags tag,
                        Code* code,
                        SharedFunctionInfo* shared,
-                       String* source, int line);
+                       Name* source, int line);
   void CodeCreateEvent(LogEventsAndTags tag, Code* code, int args_count);
   void CodeMovingGCEvent();
   // Emits a code create event for a RegExp.
@@ -291,8 +292,8 @@ class Logger {
 
   void TimerEvent(StartEnd se, const char* name);
 
-  static void EnterExternal();
-  static void LeaveExternal();
+  static void EnterExternal(Isolate* isolate);
+  static void LeaveExternal(Isolate* isolate);
 
   class TimerEventScope {
    public:
@@ -324,7 +325,7 @@ class Logger {
   void RegExpCompileEvent(Handle<JSRegExp> regexp, bool in_cache);
 
   // Log an event reported from generated code
-  void LogRuntime(Isolate* isolate, Vector<const char> format, JSArray* args);
+  void LogRuntime(Vector<const char> format, JSArray* args);
 
   bool is_logging() {
     return logging_nesting_ > 0;
@@ -394,7 +395,7 @@ class Logger {
 
   // Emits callback event messages.
   void CallbackEventInternal(const char* prefix,
-                             const char* name,
+                             Name* name,
                              Address entry_point);
 
   // Internal configurable move event.
@@ -445,9 +446,6 @@ class Logger {
   void UncheckedIntEvent(const char* name, int value);
   void UncheckedIntPtrTEvent(const char* name, intptr_t value);
 
-  // Returns whether profiler's sampler is active.
-  bool IsProfilerSamplerActive();
-
   Isolate* isolate_;
 
   // The sampler used by the profiler and the sliding state window.
@@ -468,8 +466,7 @@ class Logger {
   friend class LogMessageBuilder;
   friend class TimeLog;
   friend class Profiler;
-  friend class StackTracer;
-  friend class VMState;
+  template <StateTag Tag> friend class VMState;
 
   friend class LoggerTestHelper;
 
@@ -506,46 +503,6 @@ class Logger {
   friend class CpuProfiler;
 };
 
-
-// Process wide registry of samplers.
-class SamplerRegistry : public AllStatic {
- public:
-  enum State {
-    HAS_NO_SAMPLERS,
-    HAS_SAMPLERS,
-    HAS_CPU_PROFILING_SAMPLERS
-  };
-
-  static void SetUp();
-
-  typedef void (*VisitSampler)(Sampler*, void*);
-
-  static State GetState();
-
-  // Iterates over all active samplers keeping the internal lock held.
-  // Returns whether there are any active samplers.
-  static bool IterateActiveSamplers(VisitSampler func, void* param);
-
-  // Adds/Removes an active sampler.
-  static void AddActiveSampler(Sampler* sampler);
-  static void RemoveActiveSampler(Sampler* sampler);
-
- private:
-  static bool ActiveSamplersExist() {
-    return active_samplers_ != NULL && !active_samplers_->is_empty();
-  }
-
-  static List<Sampler*>* active_samplers_;
-
-  DISALLOW_IMPLICIT_CONSTRUCTORS(SamplerRegistry);
-};
-
-
-// Class that extracts stack trace, used for profiling.
-class StackTracer : public AllStatic {
- public:
-  static void Trace(Isolate* isolate, TickSample* sample);
-};
 
 } }  // namespace v8::internal
 

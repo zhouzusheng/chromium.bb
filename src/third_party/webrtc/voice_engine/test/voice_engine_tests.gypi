@@ -20,7 +20,8 @@
         '<(DEPTH)/testing/gmock.gyp:gmock',
         '<(DEPTH)/third_party/google-gflags/google-gflags.gyp:google-gflags',
         '<(webrtc_root)/test/libtest/libtest.gyp:libtest',
-      ],
+        '<(webrtc_root)/test/channel_transport.gyp:channel_transport',
+       ],
       'include_dirs': [
         'auto_test',
         'auto_test/fixtures',
@@ -59,7 +60,6 @@
         'auto_test/standard/mixing_test.cc',
         'auto_test/standard/neteq_stats_test.cc',
         'auto_test/standard/neteq_test.cc',
-        'auto_test/standard/network_before_streaming_test.cc',
         'auto_test/standard/network_test.cc',
         'auto_test/standard/rtp_rtcp_before_streaming_test.cc',
         'auto_test/standard/rtp_rtcp_test.cc',
@@ -102,6 +102,7 @@
         '<(DEPTH)/testing/gtest.gyp:gtest',
         'voice_engine_core',
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+        '<(webrtc_root)/test/channel_transport.gyp:channel_transport',
       ],
       'sources': [
         'cmd_test/voe_cmd_test.cc',
@@ -160,9 +161,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

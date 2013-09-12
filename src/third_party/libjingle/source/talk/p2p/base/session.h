@@ -319,6 +319,14 @@ class BaseSession : public sigslot::has_slots<>,
   sigslot::signal2<BaseSession* , const ContentInfos&>
       SignalRemoteDescriptionUpdate;
 
+  // Fired when SetState is called (regardless if there's a state change), which
+  // indicates the session description might have be updated.
+  sigslot::signal2<BaseSession*, ContentAction> SignalNewLocalDescription;
+
+  // Fired when SetState is called (regardless if there's a state change), which
+  // indicates the session description might have be updated.
+  sigslot::signal2<BaseSession*, ContentAction> SignalNewRemoteDescription;
+
   // Returns the transport that has been negotiated or NULL if
   // negotiation is still in progress.
   Transport* GetTransport(const std::string& content_name);
@@ -457,6 +465,12 @@ class BaseSession : public sigslot::has_slots<>,
                                const std::string& content_name,
                                TransportDescription* info);
 
+  // Fires the new description signal according to the current state.
+  void SignalNewDescription();
+
+  // Gets the ContentAction and ContentSource according to the session state.
+  bool GetContentAction(ContentAction* action, ContentSource* source);
+
   talk_base::Thread* signaling_thread_;
   talk_base::Thread* worker_thread_;
   PortAllocator* port_allocator_;
@@ -467,7 +481,6 @@ class BaseSession : public sigslot::has_slots<>,
   talk_base::SSLIdentity* identity_;
   const SessionDescription* local_description_;
   SessionDescription* remote_description_;
-  bool transport_muxed_;
   uint64 ice_tiebreaker_;
   // This flag will be set to true after the first role switch. This flag
   // will enable us to stop any role switch during the call.

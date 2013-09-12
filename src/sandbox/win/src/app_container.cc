@@ -28,22 +28,22 @@ PSID ConvertSid(const string16& sid) {
 namespace sandbox {
 
 AppContainerAttributes::AppContainerAttributes() {
-  app_container_sid_ = NULL;
+  memset(&capabilities_, 0, sizeof(capabilities_));
 }
 
 AppContainerAttributes::~AppContainerAttributes() {
   for (size_t i = 0; i < attributes_.size(); i++)
     LocalFree(attributes_[i].Sid);
-  LocalFree(app_container_sid_);
+  LocalFree(capabilities_.AppContainerSid);
 }
 
 ResultCode AppContainerAttributes::SetAppContainer(
     const string16& app_container_sid,
     const std::vector<string16>&  capabilities) {
-  DCHECK(!app_container_sid_);
+  DCHECK(!capabilities_.AppContainerSid);
   DCHECK(attributes_.empty());
-  app_container_sid_ = ConvertSid(app_container_sid);
-  if (!app_container_sid_)
+  capabilities_.AppContainerSid = ConvertSid(app_container_sid);
+  if (!capabilities_.AppContainerSid)
     return SBOX_ERROR_INVALID_APP_CONTAINER;
 
   for (size_t i = 0; i < capabilities.size(); i++)  {
@@ -56,23 +56,31 @@ ResultCode AppContainerAttributes::SetAppContainer(
     attributes_.push_back(sid_and_attributes);
   }
 
+  if (capabilities.size()) {
+    capabilities_.CapabilityCount = static_cast<DWORD>(capabilities.size());
+    capabilities_.Capabilities = &attributes_[0];
+  }
   return SBOX_ALL_OK;
 }
 
 ResultCode AppContainerAttributes::ShareForStartup(
       base::win::StartupInformation* startup_information) const {
   // The only thing we support so far is an AppContainer.
-  if (!app_container_sid_)
+  if (!capabilities_.AppContainerSid)
     return SBOX_ERROR_INVALID_APP_CONTAINER;
 
-  // SHEZ: Remove upstream code here.  This is where the thread attribute
-  //       actually gets set, but we skip this in order to compile in the
-  //       Win7.1 (SECURITY_CAPABILITIES is not defined)
+  if (!startup_information->UpdateProcThreadAttribute(
+           PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+           const_cast<SECURITY_CAPABILITIES*>(&capabilities_),
+           sizeof(capabilities_)))  {
+    DPLOG(ERROR) << "Failed UpdateProcThreadAttribute";
+    return SBOX_ERROR_CANNOT_INIT_APPCONTAINER;
+  }
   return SBOX_ALL_OK;
 }
 
 bool AppContainerAttributes::HasAppContainer() const {
-  return (app_container_sid_ != NULL);
+  return (capabilities_.AppContainerSid != NULL);
 }
 
 ResultCode CreateAppContainer(const string16& sid, const string16& name) {

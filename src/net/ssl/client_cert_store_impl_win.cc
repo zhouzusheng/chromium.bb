@@ -14,7 +14,7 @@
 
 #include "base/logging.h"
 #include "crypto/scoped_capi_types.h"
-#include "net/base/x509_util.h"
+#include "net/cert/x509_util.h"
 
 namespace net {
 
@@ -83,8 +83,7 @@ bool GetClientCertsImpl(HCERTSTORE cert_store,
   find_by_issuer_para.pszUsageIdentifier = szOID_PKIX_KP_CLIENT_AUTH;
   find_by_issuer_para.cIssuer = static_cast<DWORD>(auth_count);
   find_by_issuer_para.rgIssuer =
-      // SHEZ: modified upstream code here to compile with VS2008
-      reinterpret_cast<CERT_NAME_BLOB*>(0 == issuers.size() ? 0 : &issuers[0]);
+      reinterpret_cast<CERT_NAME_BLOB*>(issuers.data());
   find_by_issuer_para.pfnFindCallback = ClientCertFindCallback;
 
   PCCERT_CHAIN_CONTEXT chain_context = NULL;
@@ -161,9 +160,10 @@ bool ClientCertStoreImpl::GetClientCerts(const SSLCertRequestInfo& request,
   return rv;
 }
 
-bool ClientCertStoreImpl::SelectClientCerts(const CertificateList& input_certs,
-                                            const SSLCertRequestInfo& request,
-                                            CertificateList* selected_certs) {
+bool ClientCertStoreImpl::SelectClientCertsForTesting(
+    const CertificateList& input_certs,
+    const SSLCertRequestInfo& request,
+    CertificateList* selected_certs) {
   typedef crypto::ScopedCAPIHandle<
       HCERTSTORE,
       crypto::CAPIDestroyerWithFlags<HCERTSTORE,

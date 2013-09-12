@@ -53,6 +53,7 @@ public:
     };
 
     virtual bool scrollAnimatorEnabled() const = 0;
+    virtual bool touchEditingEnabled() const = 0;
     virtual bool viewportEnabled() const = 0;
     virtual void setAccelerated2dCanvasEnabled(bool) = 0;
     virtual void setAcceleratedCompositingEnabled(bool) = 0;
@@ -72,8 +73,6 @@ public:
     virtual void setAllowScriptsToCloseWindows(bool) = 0;
     virtual void setAllowUniversalAccessFromFileURLs(bool) = 0;
     virtual void setAntialiased2dCanvasEnabled(bool) = 0;
-    virtual void setApplyDeviceScaleFactorInCompositor(bool) = 0;
-    virtual void setApplyPageScaleFactorInCompositor(bool) = 0;
     virtual void setAsynchronousSpellCheckingEnabled(bool) = 0;
     virtual void setAutoZoomFocusedNodeToLegibleScale(bool) = 0;
     virtual void setAuthorAndUserStylesEnabled(bool) = 0;
@@ -89,7 +88,6 @@ public:
     virtual void setDefaultVideoPosterURL(const WebString&) = 0;
     void setDeferred2dCanvasEnabled(bool) { } // temporary stub
     virtual void setDeferredImageDecodingEnabled(bool) = 0;
-    virtual void setDeveloperExtrasEnabled(bool) = 0;
     virtual void setDeviceSupportsMouse(bool) = 0;
     virtual void setDeviceSupportsTouch(bool) = 0;
     virtual void setDoubleTapToZoomEnabled(bool) = 0;
@@ -104,7 +102,6 @@ public:
     virtual void setExperimentalCSSVariablesEnabled(bool) = 0;
     virtual void setExperimentalWebGLEnabled(bool) = 0;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
-    virtual void setFixedElementsLayoutRelativeToFrame(bool) = 0;
     virtual void setFixedFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setFixedPositionCreatesStackingContext(bool) = 0;
     virtual void setFontRenderingModeNormal() = 0;
@@ -128,12 +125,11 @@ public:
     virtual void setMinimumAccelerated2dCanvasSize(int) = 0;
     virtual void setMinimumFontSize(int) = 0;
     virtual void setMinimumLogicalFontSize(int) = 0;
-    virtual void setMinimumTimerInterval(double) = 0;
+    virtual void setMinimumTimerInterval(double) = 0; // FIXME: remove this once the embedder is no longer calling it.
     virtual void setMockScrollbarsEnabled(bool) = 0;
     virtual void setNeedsSiteSpecificQuirks(bool) = 0;
     virtual void setOfflineWebApplicationCacheEnabled(bool) = 0;
     virtual void setOpenGLMultisamplingEnabled(bool) = 0;
-    virtual void setPageCacheSupportsPlugins(bool) = 0;
     virtual void setPasswordEchoDurationInSeconds(double) = 0;
     virtual void setPasswordEchoEnabled(bool) = 0;
     virtual void setPerTilePaintingEnabled(bool) = 0;
@@ -143,6 +139,7 @@ public:
     virtual void setRenderVSyncNotificationEnabled(bool) = 0;
     virtual void setSansSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setSelectTrailingWhitespaceEnabled(bool) = 0;
+    virtual void setSelectionIncludesAltImageText(bool) = 0;
     virtual void setSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setShouldPrintBackgrounds(bool) = 0;
     virtual void setShouldRespectImageOrientation(bool) = 0;
@@ -151,7 +148,9 @@ public:
     virtual void setShowPaintRects(bool) = 0;
     virtual void setShrinksStandaloneImagesToFit(bool) = 0;
     virtual void setSmartInsertDeleteEnabled(bool) = 0;
+    virtual void setSpatialNavigationEnabled(bool) = 0;
     virtual void setStandardFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
+    virtual void setSupportDeprecatedTargetDensityDPI(bool) = 0;
     virtual void setSupportsMultipleWindows(bool) = 0;
     virtual void setSyncXHRInDocumentsEnabled(bool) = 0;
     virtual void setTextAreasAreResizable(bool) = 0;
@@ -160,11 +159,12 @@ public:
     virtual void setTextDirectionSubmenuInclusionBehaviorNeverIncluded() = 0;
     virtual void setThreadedHTMLParser(bool) = 0;
     virtual void setTouchDragDropEnabled(bool) = 0;
+    virtual void setTouchEditingEnabled(bool) = 0;
     virtual void setUnifiedTextCheckerEnabled(bool) = 0;
     virtual void setUnsafePluginPastingEnabled(bool) = 0;
     virtual void setUserStyleSheetLocation(const WebURL&) = 0;
     virtual void setUsesEncodingDetector(bool) = 0;
-    virtual void setUsesPageCache(bool) = 0;
+    virtual void setUseWideViewport(bool) = 0;
     virtual void setValidationMessageTimerMagnification(int) = 0;
     virtual void setViewportEnabled(bool) = 0;
     virtual void setVisualWordMovementEnabled(bool) = 0;
@@ -173,8 +173,10 @@ public:
     virtual void setWebSecurityEnabled(bool) = 0;
     virtual void setXSSAuditorEnabled(bool) = 0;
 
-    // DEPRECATED (renamed. remove this after all call sites changed to the new name)
-    void setApplyDefaultDeviceScaleFactorInCompositor(bool enabled) { setApplyDeviceScaleFactorInCompositor(enabled); }
+    // DEPRECATED: Delete after Chromium-side calls deleted.
+    void setApplyPageScaleFactorInCompositor(bool enabled) { }
+    void setApplyDefaultDeviceScaleFactorInCompositor(bool enabled) { }
+    void setFixedElementsLayoutRelativeToFrame(bool) { }
 
 protected:
     ~WebSettings() { }

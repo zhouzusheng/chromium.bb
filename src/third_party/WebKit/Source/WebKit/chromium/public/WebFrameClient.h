@@ -138,7 +138,6 @@ public:
     // defaultPolicy should just be returned.
     virtual WebNavigationPolicy decidePolicyForNavigation(
         WebFrame*, const WebURLRequest&, WebNavigationType,
-        const WebNode& originatingNode,
         WebNavigationPolicy defaultPolicy, bool isRedirect) { return defaultPolicy; }
 
     // Query if the specified request can be handled.
@@ -249,15 +248,6 @@ public:
 
 
     // Low-level resource notifications ------------------------------------
-
-    // An identifier was assigned to the specified request.  The client
-    // should remember this association if interested in subsequent events.
-    virtual void assignIdentifierToRequest(
-        WebFrame*, unsigned identifier, const WebURLRequest&) { }
-
-     // Remove the association between an identifier assigned to a request if
-     // the client keeps such an association.
-     virtual void removeIdentifierForRequest(unsigned identifier) { }
 
     // An element will request a resource.
     virtual void willRequestResource(WebFrame*, const WebCachedURLRequest&) { }
@@ -425,6 +415,10 @@ public:
     // URL. Non-empty strings indicate an override should be used. Otherwise,
     // Platform::current()->userAgent() will be called to provide one.
     virtual WebString userAgentOverride(WebFrame*, const WebURL& url) { return WebString(); }
+
+    // Asks the embedder what value the network stack will send for the DNT
+    // header. An empty string indicates that no DNT header will be send.
+    virtual WebString doNotTrackValue(WebFrame*) { return WebString(); }
 
     // WebGL ------------------------------------------------------
 

@@ -1,10 +1,10 @@
-win stable release 27.0.1453.110
-released 06/04/13
-trunk revision 190564
-branch revision 202711
-webkit revision 146842
-webkit version: None
-v8 version 3.17.6.15
+Source: http://omahaproxy.appspot.com/viewer
 
-created from true branch 1453
-http://src.chromium.org/svn/releases/27.0.1453.110/
+version        channel  released   trunk   branch          webkit   v8
+-------        -------  --------   -----   ------          ------   --
+28.0.1500.95   stable   07/30/13   198577  1500@213514     149738   3.18.5.14
+27.0.1453.110  stable   06/04/13   190564  1453@202711     146842   3.17.6.15
+27.0.1453.94   stable   05/23/13   190564  1453_81@201630  146842   3.17.6.14
+27.0.1453.73   beta     05/01/13   190564  1453@197225     146842   3.17.6.10
+26.0.1410.43   stable   03/26/13   181864  1410@189671     142426   3.16.14.9
+26.0.1410.33   beta     03/13/13   181864  1410@187744     142426   3.16.14.5

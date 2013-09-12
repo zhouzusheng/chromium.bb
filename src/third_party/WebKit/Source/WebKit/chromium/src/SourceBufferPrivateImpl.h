@@ -31,9 +31,7 @@
 #ifndef SourceBufferPrivateImpl_h
 #define SourceBufferPrivateImpl_h
 
-#if ENABLE(MEDIA_SOURCE)
-
-#include "SourceBufferPrivate.h"
+#include "core/platform/graphics/SourceBufferPrivate.h"
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 
@@ -60,5 +58,4 @@ private:
 
 }
 
-#endif
 #endif

@@ -52,7 +52,7 @@ namespace internal {
 bool CpuFeatures::initialized_ = false;
 #endif
 uint64_t CpuFeatures::supported_ = 0;
-uint64_t CpuFeatures::found_by_runtime_probing_ = 0;
+uint64_t CpuFeatures::found_by_runtime_probing_only_ = 0;
 
 
 ExternalReference ExternalReference::cpu_features() {
@@ -146,7 +146,7 @@ void CpuFeatures::Probe() {
   __ bind(&cpuid);
   __ mov(eax, 1);
   supported_ = (1 << CPUID);
-  { Scope fscope(CPUID);
+  { CpuFeatureScope fscope(&assm, CPUID);
     __ cpuid();
   }
   supported_ = 0;
@@ -169,11 +169,10 @@ void CpuFeatures::Probe() {
 
   typedef uint64_t (*F0)();
   F0 probe = FUNCTION_CAST<F0>(reinterpret_cast<Address>(memory->address()));
-  supported_ = probe();
-  found_by_runtime_probing_ = supported_;
-  uint64_t os_guarantees = OS::CpuFeaturesImpliedByPlatform();
-  supported_ |= os_guarantees;
-  found_by_runtime_probing_ &= ~os_guarantees;
+  uint64_t probed_features = probe();
+  uint64_t platform_features = OS::CpuFeaturesImpliedByPlatform();
+  supported_ = probed_features | platform_features;
+  found_by_runtime_probing_only_ = probed_features & ~platform_features;
 
   delete memory;
 }
@@ -475,7 +474,7 @@ void Assembler::CodeTargetAlign() {
 
 
 void Assembler::cpuid() {
-  ASSERT(CpuFeatures::IsEnabled(CPUID));
+  ASSERT(IsEnabled(CPUID));
   EnsureSpace ensure_space(this);
   EMIT(0x0F);
   EMIT(0xA2);
@@ -697,7 +696,7 @@ void Assembler::movzx_w(Register dst, const Operand& src) {
 
 
 void Assembler::cmov(Condition cc, Register dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(CMOV));
+  ASSERT(IsEnabled(CMOV));
   EnsureSpace ensure_space(this);
   // Opcode: 0f 40 + cc /r.
   EMIT(0x0F);
@@ -1306,7 +1305,7 @@ void Assembler::nop() {
 
 
 void Assembler::rdtsc() {
-  ASSERT(CpuFeatures::IsEnabled(RDTSC));
+  ASSERT(IsEnabled(RDTSC));
   EnsureSpace ensure_space(this);
   EMIT(0x0F);
   EMIT(0x31);
@@ -1426,7 +1425,11 @@ void Assembler::call(byte* entry, RelocInfo::Mode rmode) {
   EnsureSpace ensure_space(this);
   ASSERT(!RelocInfo::IsCodeTarget(rmode));
   EMIT(0xE8);
-  emit(entry - (pc_ + sizeof(int32_t)), rmode);
+  if (RelocInfo::IsRuntimeEntry(rmode)) {
+    emit(reinterpret_cast<uint32_t>(entry), rmode);
+  } else {
+    emit(entry - (pc_ + sizeof(int32_t)), rmode);
+  }
 }
 
 
@@ -1456,7 +1459,7 @@ void Assembler::call(Handle<Code> code,
   EnsureSpace ensure_space(this);
   ASSERT(RelocInfo::IsCodeTarget(rmode));
   EMIT(0xE8);
-  emit(reinterpret_cast<intptr_t>(code.location()), rmode, ast_id);
+  emit(code, rmode, ast_id);
 }
 
 
@@ -1491,7 +1494,11 @@ void Assembler::jmp(byte* entry, RelocInfo::Mode rmode) {
   EnsureSpace ensure_space(this);
   ASSERT(!RelocInfo::IsCodeTarget(rmode));
   EMIT(0xE9);
-  emit(entry - (pc_ + sizeof(int32_t)), rmode);
+  if (RelocInfo::IsRuntimeEntry(rmode)) {
+    emit(reinterpret_cast<uint32_t>(entry), rmode);
+  } else {
+    emit(entry - (pc_ + sizeof(int32_t)), rmode);
+  }
 }
 
 
@@ -1506,7 +1513,7 @@ void Assembler::jmp(Handle<Code> code, RelocInfo::Mode rmode) {
   EnsureSpace ensure_space(this);
   ASSERT(RelocInfo::IsCodeTarget(rmode));
   EMIT(0xE9);
-  emit(reinterpret_cast<intptr_t>(code.location()), rmode);
+  emit(code, rmode);
 }
 
 
@@ -1548,7 +1555,11 @@ void Assembler::j(Condition cc, byte* entry, RelocInfo::Mode rmode) {
   // 0000 1111 1000 tttn #32-bit disp.
   EMIT(0x0F);
   EMIT(0x80 | cc);
-  emit(entry - (pc_ + sizeof(int32_t)), rmode);
+  if (RelocInfo::IsRuntimeEntry(rmode)) {
+    emit(reinterpret_cast<uint32_t>(entry), rmode);
+  } else {
+    emit(entry - (pc_ + sizeof(int32_t)), rmode);
+  }
 }
 
 
@@ -1557,7 +1568,7 @@ void Assembler::j(Condition cc, Handle<Code> code) {
   // 0000 1111 1000 tttn #32-bit disp
   EMIT(0x0F);
   EMIT(0x80 | cc);
-  emit(reinterpret_cast<intptr_t>(code.location()), RelocInfo::CODE_TARGET);
+  emit(code, RelocInfo::CODE_TARGET);
 }
 
 
@@ -1660,7 +1671,7 @@ void Assembler::fistp_s(const Operand& adr) {
 
 
 void Assembler::fisttp_s(const Operand& adr) {
-  ASSERT(CpuFeatures::IsEnabled(SSE3));
+  ASSERT(IsEnabled(SSE3));
   EnsureSpace ensure_space(this);
   EMIT(0xDB);
   emit_operand(ecx, adr);
@@ -1668,7 +1679,7 @@ void Assembler::fisttp_s(const Operand& adr) {
 
 
 void Assembler::fisttp_d(const Operand& adr) {
-  ASSERT(CpuFeatures::IsEnabled(SSE3));
+  ASSERT(IsEnabled(SSE3));
   EnsureSpace ensure_space(this);
   EMIT(0xDD);
   emit_operand(ecx, adr);
@@ -1930,7 +1941,7 @@ void Assembler::setcc(Condition cc, Register reg) {
 
 
 void Assembler::cvttss2si(Register dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF3);
   EMIT(0x0F);
@@ -1940,7 +1951,7 @@ void Assembler::cvttss2si(Register dst, const Operand& src) {
 
 
 void Assembler::cvttsd2si(Register dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);
   EMIT(0x0F);
@@ -1950,7 +1961,7 @@ void Assembler::cvttsd2si(Register dst, const Operand& src) {
 
 
 void Assembler::cvtsd2si(Register dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);
   EMIT(0x0F);
@@ -1960,7 +1971,7 @@ void Assembler::cvtsd2si(Register dst, XMMRegister src) {
 
 
 void Assembler::cvtsi2sd(XMMRegister dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);
   EMIT(0x0F);
@@ -1970,7 +1981,7 @@ void Assembler::cvtsi2sd(XMMRegister dst, const Operand& src) {
 
 
 void Assembler::cvtss2sd(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF3);
   EMIT(0x0F);
@@ -1980,7 +1991,7 @@ void Assembler::cvtss2sd(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::cvtsd2ss(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);
   EMIT(0x0F);
@@ -1990,7 +2001,7 @@ void Assembler::cvtsd2ss(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::addsd(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);
   EMIT(0x0F);
@@ -2000,7 +2011,7 @@ void Assembler::addsd(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::addsd(XMMRegister dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);
   EMIT(0x0F);
@@ -2010,7 +2021,7 @@ void Assembler::addsd(XMMRegister dst, const Operand& src) {
 
 
 void Assembler::mulsd(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);
   EMIT(0x0F);
@@ -2020,7 +2031,7 @@ void Assembler::mulsd(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::mulsd(XMMRegister dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);
   EMIT(0x0F);
@@ -2030,7 +2041,7 @@ void Assembler::mulsd(XMMRegister dst, const Operand& src) {
 
 
 void Assembler::subsd(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);
   EMIT(0x0F);
@@ -2040,7 +2051,7 @@ void Assembler::subsd(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::divsd(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);
   EMIT(0x0F);
@@ -2050,7 +2061,7 @@ void Assembler::divsd(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::xorpd(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2095,7 +2106,7 @@ void Assembler::orpd(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::ucomisd(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2105,7 +2116,7 @@ void Assembler::ucomisd(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::ucomisd(XMMRegister dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2115,7 +2126,7 @@ void Assembler::ucomisd(XMMRegister dst, const Operand& src) {
 
 
 void Assembler::roundsd(XMMRegister dst, XMMRegister src, RoundingMode mode) {
-  ASSERT(CpuFeatures::IsEnabled(SSE4_1));
+  ASSERT(IsEnabled(SSE4_1));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2127,7 +2138,7 @@ void Assembler::roundsd(XMMRegister dst, XMMRegister src, RoundingMode mode) {
 }
 
 void Assembler::movmskpd(Register dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2137,7 +2148,7 @@ void Assembler::movmskpd(Register dst, XMMRegister src) {
 
 
 void Assembler::movmskps(Register dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x0F);
   EMIT(0x50);
@@ -2146,7 +2157,7 @@ void Assembler::movmskps(Register dst, XMMRegister src) {
 
 
 void Assembler::pcmpeqd(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2156,7 +2167,7 @@ void Assembler::pcmpeqd(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::cmpltsd(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);
   EMIT(0x0F);
@@ -2167,7 +2178,7 @@ void Assembler::cmpltsd(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::movaps(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x0F);
   EMIT(0x28);
@@ -2176,7 +2187,7 @@ void Assembler::movaps(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::movdqa(const Operand& dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2186,7 +2197,7 @@ void Assembler::movdqa(const Operand& dst, XMMRegister src) {
 
 
 void Assembler::movdqa(XMMRegister dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2196,7 +2207,7 @@ void Assembler::movdqa(XMMRegister dst, const Operand& src) {
 
 
 void Assembler::movdqu(const Operand& dst, XMMRegister src ) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF3);
   EMIT(0x0F);
@@ -2206,7 +2217,7 @@ void Assembler::movdqu(const Operand& dst, XMMRegister src ) {
 
 
 void Assembler::movdqu(XMMRegister dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF3);
   EMIT(0x0F);
@@ -2216,7 +2227,7 @@ void Assembler::movdqu(XMMRegister dst, const Operand& src) {
 
 
 void Assembler::movntdqa(XMMRegister dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE4_1));
+  ASSERT(IsEnabled(SSE4_1));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2227,7 +2238,7 @@ void Assembler::movntdqa(XMMRegister dst, const Operand& src) {
 
 
 void Assembler::movntdq(const Operand& dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2260,7 +2271,7 @@ void Assembler::movdbl(const Operand& dst, XMMRegister src) {
 
 
 void Assembler::movsd(const Operand& dst, XMMRegister src ) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);  // double
   EMIT(0x0F);
@@ -2270,7 +2281,7 @@ void Assembler::movsd(const Operand& dst, XMMRegister src ) {
 
 
 void Assembler::movsd(XMMRegister dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);  // double
   EMIT(0x0F);
@@ -2280,7 +2291,7 @@ void Assembler::movsd(XMMRegister dst, const Operand& src) {
 
 
 void Assembler::movsd(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF2);
   EMIT(0x0F);
@@ -2290,7 +2301,7 @@ void Assembler::movsd(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::movss(const Operand& dst, XMMRegister src ) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF3);  // float
   EMIT(0x0F);
@@ -2300,7 +2311,7 @@ void Assembler::movss(const Operand& dst, XMMRegister src ) {
 
 
 void Assembler::movss(XMMRegister dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF3);  // float
   EMIT(0x0F);
@@ -2310,7 +2321,7 @@ void Assembler::movss(XMMRegister dst, const Operand& src) {
 
 
 void Assembler::movss(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0xF3);
   EMIT(0x0F);
@@ -2320,7 +2331,7 @@ void Assembler::movss(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::movd(XMMRegister dst, const Operand& src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2330,7 +2341,7 @@ void Assembler::movd(XMMRegister dst, const Operand& src) {
 
 
 void Assembler::movd(const Operand& dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2353,7 +2364,7 @@ void Assembler::extractps(Register dst, XMMRegister src, byte imm8) {
 
 
 void Assembler::pand(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2363,7 +2374,7 @@ void Assembler::pand(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::pxor(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2373,7 +2384,7 @@ void Assembler::pxor(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::por(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2383,7 +2394,7 @@ void Assembler::por(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::ptest(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE4_1));
+  ASSERT(IsEnabled(SSE4_1));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2394,7 +2405,7 @@ void Assembler::ptest(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::psllq(XMMRegister reg, int8_t shift) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2405,7 +2416,7 @@ void Assembler::psllq(XMMRegister reg, int8_t shift) {
 
 
 void Assembler::psllq(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2415,7 +2426,7 @@ void Assembler::psllq(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::psrlq(XMMRegister reg, int8_t shift) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2426,7 +2437,7 @@ void Assembler::psrlq(XMMRegister reg, int8_t shift) {
 
 
 void Assembler::psrlq(XMMRegister dst, XMMRegister src) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2436,7 +2447,7 @@ void Assembler::psrlq(XMMRegister dst, XMMRegister src) {
 
 
 void Assembler::pshufd(XMMRegister dst, XMMRegister src, uint8_t shuffle) {
-  ASSERT(CpuFeatures::IsEnabled(SSE2));
+  ASSERT(IsEnabled(SSE2));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2447,7 +2458,7 @@ void Assembler::pshufd(XMMRegister dst, XMMRegister src, uint8_t shuffle) {
 
 
 void Assembler::pextrd(const Operand& dst, XMMRegister src, int8_t offset) {
-  ASSERT(CpuFeatures::IsEnabled(SSE4_1));
+  ASSERT(IsEnabled(SSE4_1));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2459,7 +2470,7 @@ void Assembler::pextrd(const Operand& dst, XMMRegister src, int8_t offset) {
 
 
 void Assembler::pinsrd(XMMRegister dst, const Operand& src, int8_t offset) {
-  ASSERT(CpuFeatures::IsEnabled(SSE4_1));
+  ASSERT(IsEnabled(SSE4_1));
   EnsureSpace ensure_space(this);
   EMIT(0x66);
   EMIT(0x0F);
@@ -2545,9 +2556,9 @@ void Assembler::GrowBuffer() {
   // Copy the data.
   int pc_delta = desc.buffer - buffer_;
   int rc_delta = (desc.buffer + desc.buffer_size) - (buffer_ + buffer_size_);
-  memmove(desc.buffer, buffer_, desc.instr_size);
-  memmove(rc_delta + reloc_info_writer.pos(),
-          reloc_info_writer.pos(), desc.reloc_size);
+  OS::MemMove(desc.buffer, buffer_, desc.instr_size);
+  OS::MemMove(rc_delta + reloc_info_writer.pos(),
+              reloc_info_writer.pos(), desc.reloc_size);
 
   // Switch buffers.
   if (isolate()->assembler_spare_buffer() == NULL &&
@@ -2565,10 +2576,7 @@ void Assembler::GrowBuffer() {
   // Relocate runtime entries.
   for (RelocIterator it(desc); !it.done(); it.next()) {
     RelocInfo::Mode rmode = it.rinfo()->rmode();
-    if (rmode == RelocInfo::RUNTIME_ENTRY) {
-      int32_t* p = reinterpret_cast<int32_t*>(it.rinfo()->pc());
-      *p -= pc_delta;  // relocate entry
-    } else if (rmode == RelocInfo::INTERNAL_REFERENCE) {
+    if (rmode == RelocInfo::INTERNAL_REFERENCE) {
       int32_t* p = reinterpret_cast<int32_t*>(it.rinfo()->pc());
       if (*p != 0) {  // 0 means uninitialized.
         *p += pc_delta;

@@ -87,6 +87,9 @@ public:
         [a, c] - Resulting (alpha, color) values
         For these equations, the colors are in premultiplied state.
         If no xfermode is specified, kSrcOver is assumed.
+        The modes are ordered by those that can be expressed as a pair of Coeffs, followed by those
+        that aren't Coeffs but have separable r,g,b computations, and finally
+        those that are not separable.
      */
     enum Mode {
         kClear_Mode,    //!< [0, 0]
@@ -104,12 +107,11 @@ public:
         kPlus_Mode,     //!< [Sa + Da, Sc + Dc]
         kModulate_Mode, // multiplies all components (= alpha and color)
 
-        // all above modes can be expressed as pair of src/dst Coeffs
-        kCoeffModesCnt,
-
         // Following blend modes are defined in the CSS Compositing standard:
         // https://dvcs.w3.org/hg/FXTF/rawfile/tip/compositing/index.html#blending
-        kScreen_Mode = kCoeffModesCnt,
+        kScreen_Mode,
+        kLastCoeffMode = kScreen_Mode,
+
         kOverlay_Mode,
         kDarken_Mode,
         kLighten_Mode,
@@ -120,14 +122,19 @@ public:
         kDifference_Mode,
         kExclusion_Mode,
         kMultiply_Mode,
+        kLastSeparableMode = kMultiply_Mode,
 
         kHue_Mode,
         kSaturation_Mode,
         kColor_Mode,
         kLuminosity_Mode,
-
         kLastMode = kLuminosity_Mode
     };
+
+    /**
+     * Gets the name of the Mode as a string.
+     */
+    static const char* ModeName(Mode);
 
     /**
      *  If the xfermode is one of the modes in the Mode enum, then asMode()

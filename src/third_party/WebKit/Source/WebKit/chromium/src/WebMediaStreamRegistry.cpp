@@ -30,13 +30,11 @@
 
 #include "config.h"
 
-#if ENABLE(MEDIA_STREAM)
-
 #include "WebMediaStreamRegistry.h"
 
-#include "KURL.h"
-#include "MediaStreamDescriptor.h"
-#include "MediaStreamRegistry.h"
+#include "core/platform/KURL.h"
+#include "core/platform/mediastream/MediaStreamDescriptor.h"
+#include "modules/mediastream/MediaStreamRegistry.h"
 #include <public/WebMediaStream.h>
 #include <public/WebString.h>
 #include <public/WebURL.h>
@@ -51,5 +49,3 @@ WebMediaStream WebMediaStreamRegistry::lookupMediaStreamDescriptor(const WebURL&
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(MEDIA_STREAM)

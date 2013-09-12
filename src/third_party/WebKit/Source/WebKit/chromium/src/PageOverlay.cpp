@@ -29,15 +29,15 @@
 #include "config.h"
 #include "PageOverlay.h"
 
-#include "GraphicsLayer.h"
-#include "GraphicsLayerChromium.h"
-#include "GraphicsLayerClient.h"
-#include "Page.h"
-#include "PlatformContextSkia.h"
-#include "Settings.h"
 #include "WebPageOverlay.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
+#include "core/page/Page.h"
+#include "core/page/Settings.h"
+#include "core/platform/graphics/GraphicsLayer.h"
+#include "core/platform/graphics/GraphicsLayerClient.h"
+#include "core/platform/graphics/chromium/GraphicsLayerChromium.h"
+#include "core/platform/graphics/skia/PlatformContextSkia.h"
 #include <public/WebLayer.h>
 
 using namespace WebCore;
@@ -65,7 +65,6 @@ PageOverlay::PageOverlay(WebViewImpl* viewImpl, WebPageOverlay* overlay)
 {
 }
 
-#if USE(ACCELERATED_COMPOSITING)
 class OverlayGraphicsLayerClientImpl : public WebCore::GraphicsLayerClient {
 public:
     static PassOwnPtr<OverlayGraphicsLayerClientImpl*> create(WebViewImpl* webViewImpl, WebPageOverlay* overlay)
@@ -76,8 +75,6 @@ public:
     virtual ~OverlayGraphicsLayerClientImpl() { }
 
     virtual void notifyAnimationStarted(const GraphicsLayer*, double time) { }
-
-    virtual void notifyFlushRequired(const GraphicsLayer*) { }
 
     virtual void paintContents(const GraphicsLayer*, GraphicsContext& gc, GraphicsLayerPaintingPhase, const IntRect& inClip)
     {
@@ -106,26 +103,22 @@ private:
     WebPageOverlay* m_overlay;
     WebViewImpl* m_webViewImpl;
 };
-#endif
 
 void PageOverlay::clear()
 {
     invalidateWebFrame();
 
-#if USE(ACCELERATED_COMPOSITING)
     if (m_layer) {
         m_layer->removeFromParent();
         m_layer = nullptr;
         m_layerClient = nullptr;
     }
-#endif
 }
 
 void PageOverlay::update()
 {
     invalidateWebFrame();
 
-#if USE(ACCELERATED_COMPOSITING)
     if (!m_layer) {
         m_layerClient = OverlayGraphicsLayerClientImpl::create(m_viewImpl, m_overlay);
         m_layer = GraphicsLayer::create(m_viewImpl->graphicsLayerFactory(), m_layerClient.get());
@@ -146,7 +139,6 @@ void PageOverlay::update()
 
     WebLayer* platformLayer = static_cast<GraphicsLayerChromium*>(m_layer.get())->platformLayer();
     platformLayer->setShouldScrollOnMainThread(true);
-#endif
 }
 
 void PageOverlay::paintWebFrame(GraphicsContext& gc)

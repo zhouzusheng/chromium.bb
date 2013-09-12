@@ -29,10 +29,8 @@
 #ifndef IDBFactoryBackendProxy_h
 #define IDBFactoryBackendProxy_h
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "IDBCallbacks.h"
-#include "IDBFactoryBackendInterfaceChromium.h"
+#include "modules/indexeddb/chromium/IDBFactoryBackendInterfaceChromium.h"
+#include "modules/indexeddb/IDBCallbacks.h"
 
 namespace WebCore {
 class ScriptExecutionContext;
@@ -48,9 +46,9 @@ public:
     static PassRefPtr<WebCore::IDBFactoryBackendInterface> create();
     virtual ~IDBFactoryBackendProxy();
 
-    virtual void getDatabaseNames(PassRefPtr<WebCore::IDBCallbacks>, PassRefPtr<WebCore::SecurityOrigin>, WebCore::ScriptExecutionContext*, const String& dataDir);
-    virtual void open(const String& name, int64_t version, int64_t transactionId, PassRefPtr<WebCore::IDBCallbacks>, PassRefPtr<WebCore::IDBDatabaseCallbacks>, PassRefPtr<WebCore::SecurityOrigin>, WebCore::ScriptExecutionContext*, const String& dataDir);
-    virtual void deleteDatabase(const String& name, PassRefPtr<WebCore::IDBCallbacks>, PassRefPtr<WebCore::SecurityOrigin>, WebCore::ScriptExecutionContext*, const String& dataDir);
+    virtual void getDatabaseNames(PassRefPtr<WebCore::IDBCallbacks>, const String& databaseIdentifier, WebCore::ScriptExecutionContext*, const String& dataDir);
+    virtual void open(const String& name, int64_t version, int64_t transactionId, PassRefPtr<WebCore::IDBCallbacks>, PassRefPtr<WebCore::IDBDatabaseCallbacks>, const String& databaseIdentifier, WebCore::ScriptExecutionContext*, const String& dataDir);
+    virtual void deleteDatabase(const String& name, PassRefPtr<WebCore::IDBCallbacks>, const String& databaseIdentifier, WebCore::ScriptExecutionContext*, const String& dataDir);
 
 private:
     IDBFactoryBackendProxy();
@@ -61,7 +59,5 @@ private:
 };
 
 } // namespace WebKit
-
-#endif
 
 #endif // IDBFactoryBackendProxy_h

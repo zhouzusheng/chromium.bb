@@ -174,8 +174,6 @@ v8::Handle<v8::Value> BreakIterator::JSInternalBreakIteratorBreakType(
 
 v8::Handle<v8::Value> BreakIterator::JSCreateBreakIterator(
     const v8::Arguments& args) {
-  v8::HandleScope handle_scope;
-
   if (args.Length() != 3 ||
       !args[0]->IsString() ||
       !args[1]->IsObject() ||
@@ -229,8 +227,6 @@ static icu::BreakIterator* InitializeBreakIterator(
     v8::Handle<v8::String> locale,
     v8::Handle<v8::Object> options,
     v8::Handle<v8::Object> resolved) {
-  v8::HandleScope handle_scope;
-
   // Convert BCP47 into ICU locale format.
   UErrorCode status = U_ZERO_ERROR;
   icu::Locale icu_locale;
@@ -298,8 +294,6 @@ static icu::BreakIterator* CreateICUBreakIterator(
 static void SetResolvedSettings(const icu::Locale& icu_locale,
                                 icu::BreakIterator* date_format,
                                 v8::Handle<v8::Object> resolved) {
-  v8::HandleScope handle_scope;
-
   UErrorCode status = U_ZERO_ERROR;
 
   // Set the locale

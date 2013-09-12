@@ -1,36 +1,35 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_GPU_GPU_DATA_MANAGER_IMPL_H_
 #define CONTENT_BROWSER_GPU_GPU_DATA_MANAGER_IMPL_H_
 
-#include <list>
-#include <map>
 #include <string>
 
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
-#include "base/memory/ref_counted.h"
+#include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "base/observer_list_threadsafe.h"
 #include "base/process_util.h"
 #include "base/synchronization/lock.h"
 #include "base/time.h"
 #include "base/values.h"
-#include "content/browser/gpu/gpu_blacklist.h"
-#include "content/browser/gpu/gpu_driver_bug_list.h"
-#include "content/browser/gpu/gpu_switching_list.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/common/gpu_info.h"
 #include "content/public/common/gpu_memory_stats.h"
+#include "content/public/common/gpu_switching_option.h"
 #include "content/public/common/three_d_api_types.h"
 
 class CommandLine;
 class GURL;
+struct WebPreferences;
 
 namespace content {
+
+class GpuDataManagerImplPrivate;
 
 class CONTENT_EXPORT GpuDataManagerImpl
     : public NON_EXPORTED_BASE(GpuDataManager) {
@@ -60,15 +59,15 @@ class CONTENT_EXPORT GpuDataManagerImpl
   virtual void InitializeForTesting(
       const std::string& gpu_blacklist_json,
       const GPUInfo& gpu_info) OVERRIDE;
-  virtual GpuFeatureType GetBlacklistedFeatures() const OVERRIDE;
+  virtual bool IsFeatureBlacklisted(int feature) const OVERRIDE;
   virtual GPUInfo GetGPUInfo() const OVERRIDE;
   virtual void GetGpuProcessHandles(
       const GetGpuProcessHandlesCallback& callback) const OVERRIDE;
-  virtual bool GpuAccessAllowed() const OVERRIDE;
+  virtual bool GpuAccessAllowed(std::string* reason) const OVERRIDE;
   virtual void RequestCompleteGpuInfoIfNeeded() OVERRIDE;
   virtual bool IsCompleteGpuInfoAvailable() const OVERRIDE;
   virtual void RequestVideoMemoryUsageStatsUpdate() const OVERRIDE;
-  virtual bool ShouldUseSoftwareRendering() const OVERRIDE;
+  virtual bool ShouldUseSwiftShader() const OVERRIDE;
   virtual void RegisterSwiftShaderPath(const base::FilePath& path) OVERRIDE;
   virtual void AddObserver(GpuDataManagerObserver* observer) OVERRIDE;
   virtual void RemoveObserver(GpuDataManagerObserver* observer) OVERRIDE;
@@ -105,6 +104,9 @@ class CONTENT_EXPORT GpuDataManagerImpl
   // Insert switches into plugin process command line:
   // kDisableCoreAnimationPlugins.
   void AppendPluginCommandLine(CommandLine* command_line) const;
+
+  // Update WebPreferences for renderer based on blacklisting decisions.
+  void UpdateRendererWebPrefs(WebPreferences* prefs) const;
 
   GpuSwitchingOption GetGpuSwitchingOption() const;
 
@@ -155,120 +157,48 @@ class CONTENT_EXPORT GpuDataManagerImpl
   // Disables domain blocking for 3D APIs. For use only in tests.
   void DisableDomainBlockingFor3DAPIsForTesting();
 
- private:
-  struct DomainBlockEntry {
-    DomainGuilt last_guilt;
-  };
-
-  typedef std::map<std::string, DomainBlockEntry> DomainBlockMap;
-
-  typedef ObserverListThreadSafe<GpuDataManagerObserver>
-      GpuDataManagerObserverList;
-
-  friend class GpuDataManagerImplTest;
-  friend struct DefaultSingletonTraits<GpuDataManagerImpl>;
-
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, GpuSideBlacklisting);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, GpuSideExceptions);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
-                           DisableHardwareAcceleration);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, SoftwareRendering);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, SoftwareRendering2);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest, GpuInfoUpdate);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
-                           NoGpuInfoUpdateWithSoftwareRendering);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
-                           GPUVideoMemoryUsageStatsUpdate);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
-                           BlockAllDomainsFrom3DAPIs);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
-                           UnblockGuiltyDomainFrom3DAPIs);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
-                           UnblockDomainOfUnknownGuiltFrom3DAPIs);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
-                           UnblockOtherDomainFrom3DAPIs);
-  FRIEND_TEST_ALL_PREFIXES(GpuDataManagerImplTest,
-                           UnblockThisDomainFrom3DAPIs);
-
-  GpuDataManagerImpl();
-  virtual ~GpuDataManagerImpl();
-
-  void InitializeImpl(const std::string& gpu_blacklist_json,
-                      const std::string& gpu_switching_list_json,
-                      const std::string& gpu_driver_bug_list_json,
-                      const GPUInfo& gpu_info);
-
-  void UpdateBlacklistedFeatures(GpuFeatureType features);
-
-  // This should only be called once at initialization time, when preliminary
-  // gpu info is collected.
-  void UpdatePreliminaryBlacklistedFeatures();
-
-  // Update the GPU switching status.
-  // This should only be called once at initialization time.
-  void UpdateGpuSwitchingManager(const GPUInfo& gpu_info);
-
-  // Notify all observers whenever there is a GPU info update.
-  void NotifyGpuInfoUpdate();
-
-  // Try to switch to software rendering, if possible and necessary.
-  void EnableSoftwareRenderingIfNecessary();
-
-  // Helper to extract the domain from a given URL.
-  std::string GetDomainFromURL(const GURL& url) const;
-
-  // Implementation functions for blocking of 3D graphics APIs, used
-  // for unit testing.
-  void BlockDomainFrom3DAPIsAtTime(
-      const GURL& url, DomainGuilt guilt, base::Time at_time);
-  DomainBlockStatus Are3DAPIsBlockedAtTime(
-      const GURL& url, base::Time at_time) const;
-  int64 GetBlockAllDomainsDurationInMs() const;
-
   void Notify3DAPIBlocked(const GURL& url,
                           int render_process_id,
                           int render_view_id,
                           ThreeDAPIType requester);
 
-  bool complete_gpu_info_already_requested_;
+  // Get number of features being blacklisted.
+  size_t GetBlacklistedFeatureCount() const;
 
-  GpuFeatureType blacklisted_features_;
-  GpuFeatureType preliminary_blacklisted_features_;
+ private:
+  friend class GpuDataManagerImplPrivate;
+  friend class GpuDataManagerImplPrivateTest;
+  friend struct DefaultSingletonTraits<GpuDataManagerImpl>;
 
-  GpuSwitchingOption gpu_switching_;
+  // It's similar to AutoUnlock, but we want to make it a no-op
+  // if the owner GpuDataManagerImpl is null.
+  // This should only be used by GpuDataManagerImplPrivate where
+  // callbacks are called, during which re-entering
+  // GpuDataManagerImpl is possible.
+  class UnlockedSession {
+   public:
+    explicit UnlockedSession(GpuDataManagerImpl* owner)
+        : owner_(owner) {
+      DCHECK(owner_);
+      owner_->lock_.AssertAcquired();
+      owner_->lock_.Release();
+    }
 
-  int gpu_driver_bugs_;
+    ~UnlockedSession() {
+      DCHECK(owner_);
+      owner_->lock_.Acquire();
+    }
 
-  GPUInfo gpu_info_;
-  mutable base::Lock gpu_info_lock_;
+   private:
+    GpuDataManagerImpl* owner_;
+    DISALLOW_COPY_AND_ASSIGN(UnlockedSession);
+  };
 
-  scoped_ptr<GpuBlacklist> gpu_blacklist_;
-  scoped_ptr<GpuSwitchingList> gpu_switching_list_;
-  scoped_ptr<GpuDriverBugList> gpu_driver_bug_list_;
+  GpuDataManagerImpl();
+  virtual ~GpuDataManagerImpl();
 
-  const scoped_refptr<GpuDataManagerObserverList> observer_list_;
-
-  ListValue log_messages_;
-  mutable base::Lock log_messages_lock_;
-
-  bool software_rendering_;
-
-  base::FilePath swiftshader_path_;
-
-  // Current card force-blacklisted due to GPU crashes, or disabled through
-  // the --disable-gpu commandline switch.
-  bool card_blacklisted_;
-
-  // We disable histogram stuff in testing, especially in unit tests because
-  // they cause random failures.
-  bool update_histograms_;
-
-  // Number of currently open windows, to be used in gpu memory allocation.
-  int window_count_;
-
-  DomainBlockMap blocked_domains_;
-  mutable std::list<base::Time> timestamps_of_gpu_resets_;
-  bool domain_blocking_enabled_;
+  mutable base::Lock lock_;
+  scoped_ptr<GpuDataManagerImplPrivate> private_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuDataManagerImpl);
 };

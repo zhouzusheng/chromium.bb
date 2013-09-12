@@ -224,8 +224,7 @@ class XcodeSettings(object):
 
   def _GetSdkVersionInfoItem(self, sdk, infoitem):
     job = subprocess.Popen(['xcodebuild', '-version', '-sdk', sdk, infoitem],
-                           stdout=subprocess.PIPE,
-                           stderr=subprocess.STDOUT)
+                           stdout=subprocess.PIPE)
     out = job.communicate()[0]
     if job.returncode != 0:
       sys.stderr.write(out + '\n')
@@ -234,6 +233,8 @@ class XcodeSettings(object):
 
   def _SdkPath(self):
     sdk_root = self.GetPerTargetSetting('SDKROOT', default='macosx')
+    if sdk_root.startswith('/'):
+      return sdk_root
     if sdk_root not in XcodeSettings._sdk_path_cache:
       XcodeSettings._sdk_path_cache[sdk_root] = self._GetSdkVersionInfoItem(
           sdk_root, 'Path')

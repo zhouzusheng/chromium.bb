@@ -30,10 +30,10 @@
 
 #include "config.h"
 
-#include "ChromiumDataObject.h"
-#include "ClipboardMimeTypes.h"
-#include "DataTransferItem.h"
-#include "DraggedIsolatedFileSystem.h"
+#include "core/dom/DataTransferItem.h"
+#include "core/platform/chromium/ChromiumDataObject.h"
+#include "core/platform/chromium/ClipboardMimeTypes.h"
+#include "modules/filesystem/DraggedIsolatedFileSystem.h"
 #include <public/WebData.h>
 #include <public/WebDragData.h>
 #include <public/WebString.h>
@@ -131,22 +131,18 @@ void WebDragData::addItem(const Item& item)
 
 WebString WebDragData::filesystemId() const
 {
-#if ENABLE(FILE_SYSTEM)
     ASSERT(!isNull());
     DraggedIsolatedFileSystem* filesystem = DraggedIsolatedFileSystem::from(m_private);
     if (filesystem)
         return filesystem->filesystemId();
-#endif
     return WebString();
 }
 
 void WebDragData::setFilesystemId(const WebString& filesystemId)
 {
-#if ENABLE(FILE_SYSTEM)
     // The ID is an opaque string, given by and validated by chromium port.
     ensureMutable();
     DraggedIsolatedFileSystem::provideTo(m_private, DraggedIsolatedFileSystem::supplementName(), DraggedIsolatedFileSystem::create(filesystemId));
-#endif
 }
 
 WebDragData::WebDragData(const WTF::PassRefPtr<WebCore::ChromiumDataObject>& data)

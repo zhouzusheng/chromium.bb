@@ -27,24 +27,7 @@
 #include "config.h"
 #include "EditorClientImpl.h"
 
-#include "Document.h"
-#include "Editor.h"
-#include "EventHandler.h"
-#include "EventNames.h"
-#include "Frame.h"
-#include "HTMLInputElement.h"
 #include "HTMLNames.h"
-#include "KeyboardCodes.h"
-#include "KeyboardEvent.h"
-#include "NotImplemented.h"
-#include "Page.h"
-#include "PlatformKeyboardEvent.h"
-#include "RenderObject.h"
-#include "Settings.h"
-#include "SpellChecker.h"
-#include "UndoStep.h"
-
-#include "DOMUtilitiesPrivate.h"
 #include "WebAutofillClient.h"
 #include "WebEditingAction.h"
 #include "WebElement.h"
@@ -62,6 +45,21 @@
 #include "WebTextCheckingResult.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
+#include "core/dom/Document.h"
+#include "core/dom/EventNames.h"
+#include "core/dom/KeyboardEvent.h"
+#include "core/editing/Editor.h"
+#include "core/editing/SpellChecker.h"
+#include "core/editing/UndoStep.h"
+#include "core/html/HTMLInputElement.h"
+#include "core/page/EventHandler.h"
+#include "core/page/Frame.h"
+#include "core/page/Page.h"
+#include "core/page/Settings.h"
+#include "core/platform/NotImplemented.h"
+#include "core/platform/PlatformKeyboardEvent.h"
+#include "core/platform/chromium/KeyboardCodes.h"
+#include "core/rendering/RenderObject.h"
 #include <wtf/text/WTFString.h>
 
 using namespace WebCore;
@@ -658,7 +656,7 @@ void EditorClientImpl::textFieldDidBeginEditing(Element* element)
 
 void EditorClientImpl::textFieldDidEndEditing(Element* element)
 {
-    HTMLInputElement* inputElement = toHTMLInputElement(element);
+    HTMLInputElement* inputElement = element->toInputElement();
     if (m_webView->autofillClient() && inputElement)
         m_webView->autofillClient()->textFieldDidEndEditing(WebInputElement(inputElement));
 
@@ -680,7 +678,7 @@ void EditorClientImpl::textDidChangeInTextField(Element* element)
 bool EditorClientImpl::doTextFieldCommandFromEvent(Element* element,
                                                    KeyboardEvent* event)
 {
-    HTMLInputElement* inputElement = toHTMLInputElement(element);
+    HTMLInputElement* inputElement = element->toInputElement();
     if (m_webView->autofillClient() && inputElement) {
         m_webView->autofillClient()->textFieldDidReceiveKeyDown(WebInputElement(inputElement),
                                                                 WebKeyboardEventBuilder(*event));
@@ -744,8 +742,10 @@ void EditorClientImpl::checkSpellingOfString(const UChar* text, int length,
 void EditorClientImpl::requestCheckingOfString(WTF::PassRefPtr<WebCore::TextCheckingRequest> request)
 {
     if (m_webView->spellCheckClient()) {
-        String text = request->data().text();
-        m_webView->spellCheckClient()->requestCheckingOfText(text, new WebTextCheckingCompletionImpl(request));
+        const String& text = request->data().text();
+        const Vector<uint32_t>& markers = request->data().markers();
+        const Vector<unsigned>& markerOffsets = request->data().offsets();
+        m_webView->spellCheckClient()->requestCheckingOfText(text, markers, markerOffsets, new WebTextCheckingCompletionImpl(request));
     }
 }
 

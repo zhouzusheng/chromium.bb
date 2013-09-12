@@ -31,10 +31,8 @@
 #ifndef WebMediaSourceImpl_h
 #define WebMediaSourceImpl_h
 
-#if ENABLE(MEDIA_SOURCE)
-
-#include "MediaSource.h"
 #include "WebMediaSource.h"
+#include "modules/mediasource/MediaSource.h"
 
 namespace WebKit {
 
@@ -51,7 +49,5 @@ private:
 };
 
 }
-
-#endif
 
 #endif

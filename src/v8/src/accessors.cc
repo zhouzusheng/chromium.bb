@@ -103,7 +103,7 @@ MaybeObject* Accessors::ArraySetLength(JSObject* object, Object* value, void*) {
   // causes an infinite loop.
   if (!object->IsJSArray()) {
     return object->SetLocalPropertyIgnoreAttributes(
-        isolate->heap()->length_symbol(), value, NONE);
+        isolate->heap()->length_string(), value, NONE);
   }
 
   value = FlattenNumber(value);
@@ -441,6 +441,13 @@ const AccessorDescriptor Accessors::ScriptEvalFromFunctionName = {
 //
 
 
+Handle<Object> Accessors::FunctionGetPrototype(Handle<Object> object) {
+  Isolate* isolate = Isolate::Current();
+  CALL_HEAP_FUNCTION(
+      isolate, Accessors::FunctionGetPrototype(*object, 0), Object);
+}
+
+
 MaybeObject* Accessors::FunctionGetPrototype(Object* object, void*) {
   Isolate* isolate = Isolate::Current();
   JSFunction* function = FindInstanceOf<JSFunction>(isolate, object);
@@ -475,7 +482,7 @@ MaybeObject* Accessors::FunctionSetPrototype(JSObject* object,
   if (function_raw == NULL) return heap->undefined_value();
   if (!function_raw->should_have_prototype()) {
     // Since we hit this accessor, object will have no prototype property.
-    return object->SetLocalPropertyIgnoreAttributes(heap->prototype_symbol(),
+    return object->SetLocalPropertyIgnoreAttributes(heap->prototype_string(),
                                                     value_raw,
                                                     NONE);
   }
@@ -503,7 +510,7 @@ MaybeObject* Accessors::FunctionSetPrototype(JSObject* object,
 
   if (is_observed && !old_value->SameValue(*value)) {
     JSObject::EnqueueChangeRecord(
-        function, "updated", isolate->factory()->prototype_symbol(), old_value);
+        function, "updated", isolate->factory()->prototype_string(), old_value);
   }
 
   return *function;
@@ -630,7 +637,7 @@ MaybeObject* Accessors::FunctionGetArguments(Object* object, void*) {
         // If there is an arguments variable in the stack, we return that.
         Handle<ScopeInfo> scope_info(function->shared()->scope_info());
         int index = scope_info->StackSlotIndex(
-            isolate->heap()->arguments_symbol());
+            isolate->heap()->arguments_string());
         if (index >= 0) {
           Handle<Object> arguments(frame->GetExpression(index), isolate);
           if (!arguments->IsArgumentsMarker()) return *arguments;
@@ -778,64 +785,6 @@ MaybeObject* Accessors::FunctionGetCaller(Object* object, void*) {
 const AccessorDescriptor Accessors::FunctionCaller = {
   FunctionGetCaller,
   ReadOnlySetAccessor,
-  0
-};
-
-
-//
-// Accessors::ObjectPrototype
-//
-
-
-static inline Object* GetPrototypeSkipHiddenPrototypes(Isolate* isolate,
-                                                       Object* receiver) {
-  Object* current = receiver->GetPrototype(isolate);
-  while (current->IsJSObject() &&
-         JSObject::cast(current)->map()->is_hidden_prototype()) {
-    current = current->GetPrototype(isolate);
-  }
-  return current;
-}
-
-
-MaybeObject* Accessors::ObjectGetPrototype(Object* receiver, void*) {
-  return GetPrototypeSkipHiddenPrototypes(Isolate::Current(), receiver);
-}
-
-
-MaybeObject* Accessors::ObjectSetPrototype(JSObject* receiver_raw,
-                                           Object* value_raw,
-                                           void*) {
-  const bool kSkipHiddenPrototypes = true;
-  // To be consistent with other Set functions, return the value.
-  if (!(FLAG_harmony_observation && receiver_raw->map()->is_observed()))
-    return receiver_raw->SetPrototype(value_raw, kSkipHiddenPrototypes);
-
-  Isolate* isolate = receiver_raw->GetIsolate();
-  HandleScope scope(isolate);
-  Handle<JSObject> receiver(receiver_raw);
-  Handle<Object> value(value_raw, isolate);
-  Handle<Object> old_value(GetPrototypeSkipHiddenPrototypes(isolate, *receiver),
-                           isolate);
-
-  MaybeObject* result = receiver->SetPrototype(*value, kSkipHiddenPrototypes);
-  Handle<Object> hresult;
-  if (!result->ToHandle(&hresult, isolate)) return result;
-
-  Handle<Object> new_value(GetPrototypeSkipHiddenPrototypes(isolate, *receiver),
-                           isolate);
-  if (!new_value->SameValue(*old_value)) {
-    JSObject::EnqueueChangeRecord(receiver, "prototype",
-                                  isolate->factory()->Proto_symbol(),
-                                  old_value);
-  }
-  return *hresult;
-}
-
-
-const AccessorDescriptor Accessors::ObjectPrototype = {
-  ObjectGetPrototype,
-  ObjectSetPrototype,
   0
 };
 

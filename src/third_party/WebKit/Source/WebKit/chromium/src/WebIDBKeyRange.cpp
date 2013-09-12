@@ -24,13 +24,11 @@
  */
 
 #include "config.h"
-#include "WebIDBKeyRange.h"
+#include <public/WebIDBKeyRange.h>
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "IDBKey.h"
-#include "IDBKeyRange.h"
-#include "WebIDBKey.h"
+#include <public/WebIDBKey.h>
+#include "modules/indexeddb/IDBKey.h"
+#include "modules/indexeddb/IDBKeyRange.h"
 
 using namespace WebCore;
 
@@ -95,5 +93,3 @@ WebIDBKeyRange::operator PassRefPtr<IDBKeyRange>() const
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)

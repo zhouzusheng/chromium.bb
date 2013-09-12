@@ -31,8 +31,8 @@
 #ifndef WebPopupMenuImpl_h
 #define WebPopupMenuImpl_h
 
-#include "FramelessScrollViewClient.h"
 #include "WebPopupMenu.h"
+#include "core/platform/chromium/FramelessScrollViewClient.h"
 #include <public/WebPoint.h>
 #include <public/WebSize.h>
 #include <wtf/OwnPtr.h>
@@ -113,16 +113,15 @@ public:
     ~WebPopupMenuImpl();
 
     // WebCore::HostWindow methods:
-    virtual void invalidateRootView(const WebCore::IntRect&, bool) OVERRIDE;
-    virtual void invalidateContentsAndRootView(const WebCore::IntRect&, bool) OVERRIDE;
-    virtual void invalidateContentsForSlowScroll(const WebCore::IntRect&, bool) OVERRIDE;
+    virtual void invalidateContentsAndRootView(const WebCore::IntRect&) OVERRIDE;
+    virtual void invalidateContentsForSlowScroll(const WebCore::IntRect&) OVERRIDE;
     virtual void scheduleAnimation() OVERRIDE;
     virtual void scroll(
         const WebCore::IntSize& scrollDelta, const WebCore::IntRect& scrollRect,
         const WebCore::IntRect& clipRect) OVERRIDE;
     virtual WebCore::IntPoint screenToRootView(const WebCore::IntPoint&) const OVERRIDE;
     virtual WebCore::IntRect rootViewToScreen(const WebCore::IntRect&) const OVERRIDE;
-    virtual PlatformPageClient platformPageClient() const OVERRIDE { return 0; }
+    virtual WebScreenInfo screenInfo() const OVERRIDE;
     virtual void scrollbarsModeDidChange() const OVERRIDE;
     virtual void setCursor(const WebCore::Cursor&) OVERRIDE;
     virtual void setCursorHiddenUntilMouseMoves(bool) OVERRIDE;

@@ -78,21 +78,21 @@
 #include "config.h"
 #include "WebPageSerializerImpl.h"
 
-#include "Document.h"
-#include "DocumentLoader.h"
-#include "DocumentType.h"
-#include "Element.h"
-#include "FrameLoader.h"
-#include "HTMLAllCollection.h"
-#include "HTMLElement.h"
-#include "HTMLFormElement.h"
-#include "HTMLMetaElement.h"
-#include "HTMLNames.h"
-#include "KURL.h"
-#include "TextEncoding.h"
-#include "markup.h"
 #include "DOMUtilitiesPrivate.h"
+#include "HTMLNames.h"
 #include "WebFrameImpl.h"
+#include "core/dom/Document.h"
+#include "core/dom/DocumentType.h"
+#include "core/dom/Element.h"
+#include "core/editing/markup.h"
+#include "core/html/HTMLAllCollection.h"
+#include "core/html/HTMLElement.h"
+#include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLMetaElement.h"
+#include "core/loader/DocumentLoader.h"
+#include "core/loader/FrameLoader.h"
+#include "core/platform/KURL.h"
+#include "core/platform/text/TextEncoding.h"
 #include <public/WebURL.h>
 #include <public/WebVector.h>
 
@@ -383,7 +383,7 @@ void WebPageSerializerImpl::endTagToString(Element* element,
         if (param->isHTMLDocument) {
             result.append('>');
             // FIXME: This code is horribly wrong.  WebPageSerializerImpl must die.
-            if (!toHTMLElement(element)->ieForbidsInsertHTML()) {
+            if (!element->isHTMLElement() || !toHTMLElement(element)->ieForbidsInsertHTML()) {
                 // We need to write end tag when it is required.
                 result.appendLiteral("</");
                 result.append(element->nodeName().lower());

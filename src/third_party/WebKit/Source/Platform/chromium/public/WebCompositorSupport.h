@@ -50,8 +50,6 @@ class WebSolidColorLayer;
 class WebThread;
 class WebTransformAnimationCurve;
 class WebTransformOperations;
-class WebVideoFrameProvider;
-class WebVideoLayer;
 
 class WebCompositorSupport {
 public:
@@ -79,11 +77,11 @@ public:
 
     virtual WebExternalTextureLayer* createExternalTextureLayer(WebExternalTextureLayerClient* = 0) { return 0; }
 
+    virtual WebExternalTextureLayer* createExternalTextureLayerForMailbox(WebExternalTextureLayerClient*) { return 0; }
+
     virtual WebImageLayer* createImageLayer() { return 0; }
 
     virtual WebSolidColorLayer* createSolidColorLayer() { return 0; }
-
-    virtual WebVideoLayer* createVideoLayer(WebVideoFrameProvider*) { return 0; }
 
     virtual WebScrollbarLayer* createScrollbarLayer(WebScrollbar*, WebScrollbarThemePainter, WebScrollbarThemeGeometry*) { return 0; }
 

@@ -58,6 +58,7 @@ class WebSettings;
 class WebSpellCheckClient;
 class WebString;
 class WebTextFieldDecoratorClient;
+class WebValidationMessageClient;
 class WebViewBenchmarkSupport;
 class WebViewClient;
 struct WebActiveWheelFlingParameters;
@@ -72,12 +73,6 @@ public:
     WEBKIT_EXPORT static const double maxTextSizeMultiplier;
     WEBKIT_EXPORT static const float minPageScaleFactor;
     WEBKIT_EXPORT static const float maxPageScaleFactor;
-
-    // Controls the time that user scripts injected into the document run.
-    enum UserScriptInjectAt {
-        UserScriptInjectAtDocumentStart,
-        UserScriptInjectAtDocumentEnd
-    };
 
     // Controls which frames user content is injected into.
     enum UserContentInjectIn {
@@ -113,6 +108,7 @@ public:
     virtual void setPermissionClient(WebPermissionClient*) = 0;
     virtual void setPrerendererClient(WebPrerendererClient*) = 0;
     virtual void setSpellCheckClient(WebSpellCheckClient*) = 0;
+    virtual void setValidationMessageClient(WebValidationMessageClient*) = 0;
     virtual void addTextFieldDecoratorClient(WebTextFieldDecoratorClient*) = 0;
 
 
@@ -353,6 +349,9 @@ public:
         const WebPoint& clientPoint, const WebPoint& screenPoint,
         int keyModifiers) = 0;
 
+    // Retrieves a list of spelling markers.
+    virtual void spellingMarkers(WebVector<uint32_t>* markers) = 0;
+
 
     // Support for resource loading initiated by plugins -------------------
 
@@ -444,10 +443,6 @@ public:
                                     unsigned inactiveForegroundColor) = 0;
 
     // User scripts --------------------------------------------------------
-    WEBKIT_EXPORT static void addUserScript(const WebString& sourceCode,
-                                            const WebVector<WebString>& patterns,
-                                            UserScriptInjectAt injectAt,
-                                            UserContentInjectIn injectIn);
     WEBKIT_EXPORT static void addUserStyleSheet(const WebString& sourceCode,
                                                 const WebVector<WebString>& patterns,
                                                 UserContentInjectIn injectIn,

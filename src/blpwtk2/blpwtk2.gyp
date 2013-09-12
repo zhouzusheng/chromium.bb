@@ -28,7 +28,7 @@
       'type': 'none',
       'dependencies': [
         '../content/content.gyp:content_shell',
-        '../webkit/webkit.gyp:test_shell',
+        '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
       ],
       'conditions': [
         ['bb_ppapi_examples==1', {

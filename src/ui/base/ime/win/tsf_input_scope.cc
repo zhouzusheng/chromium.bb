@@ -118,7 +118,8 @@ InputScope GetInputScopeType(TextInputType text_input_type) {
   switch (text_input_type) {
     case TEXT_INPUT_TYPE_PASSWORD:
       return IS_PASSWORD;
-    // SHEZ: remove upstream code here to compile with Win7.1 SDK
+    case TEXT_INPUT_TYPE_SEARCH:
+      return IS_SEARCH;
     case TEXT_INPUT_TYPE_EMAIL:
       return IS_EMAIL_SMTPEMAILADDRESS;
     case TEXT_INPUT_TYPE_NUMBER:

@@ -31,10 +31,10 @@
 #include "config.h"
 #include "WebStorageEventDispatcher.h"
 
-#include "KURL.h"
-#include "SecurityOrigin.h"
 #include "StorageAreaProxy.h"
 #include "WebViewImpl.h"
+#include "core/page/SecurityOrigin.h"
+#include "core/platform/KURL.h"
 #include <public/WebURL.h>
 #include <wtf/PassOwnPtr.h>
 
@@ -48,7 +48,7 @@ void WebStorageEventDispatcher::dispatchLocalStorageEvent(
 {
     RefPtr<WebCore::SecurityOrigin> securityOrigin = WebCore::SecurityOrigin::create(origin);
     WebCore::StorageAreaProxy::dispatchLocalStorageEvent(
-            WebViewImpl::defaultPageGroup(), key, oldValue, newValue, securityOrigin.get(), pageURL,
+            key, oldValue, newValue, securityOrigin.get(), pageURL,
             sourceAreaInstance, originatedInProcess);
 }
 
@@ -60,7 +60,7 @@ void WebStorageEventDispatcher::dispatchSessionStorageEvent(
 {
     RefPtr<WebCore::SecurityOrigin> securityOrigin = WebCore::SecurityOrigin::create(origin);
     WebCore::StorageAreaProxy::dispatchSessionStorageEvent(
-            WebViewImpl::defaultPageGroup(), key, oldValue, newValue, securityOrigin.get(), pageURL,
+            key, oldValue, newValue, securityOrigin.get(), pageURL,
             sessionNamespace, sourceAreaInstance, originatedInProcess);
 }
 

@@ -54,7 +54,7 @@
 #include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
+#include "webkit/gpu/webgraphicscontext3d_provider_impl.h"
 
 #if defined(OS_WIN)
 #include "content/common/child_process_messages.h"
@@ -229,7 +229,7 @@ WebKit::WebMimeRegistry* RendererWebKitPlatformSupportImpl::mimeRegistry() {
 
 WebKit::WebFileUtilities*
 RendererWebKitPlatformSupportImpl::fileUtilities() {
-  if (!file_utilities_.get()) {
+  if (!file_utilities_) {
     file_utilities_.reset(new FileUtilities(thread_safe_sender_));
     file_utilities_->set_sandbox_enabled(sandboxEnabled());
   }
@@ -358,7 +358,7 @@ RendererWebKitPlatformSupportImpl::createLocalStorageNamespace(
 //------------------------------------------------------------------------------
 
 WebIDBFactory* RendererWebKitPlatformSupportImpl::idbFactory() {
-  if (!web_idb_factory_.get()) {
+  if (!web_idb_factory_) {
     if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
       web_idb_factory_.reset(WebIDBFactory::create());
     else
@@ -370,7 +370,7 @@ WebIDBFactory* RendererWebKitPlatformSupportImpl::idbFactory() {
 //------------------------------------------------------------------------------
 
 WebFileSystem* RendererWebKitPlatformSupportImpl::fileSystem() {
-  if (!web_file_system_.get())
+  if (!web_file_system_)
     web_file_system_.reset(new WebFileSystemImpl());
   return web_file_system_.get();
 }
@@ -471,9 +471,9 @@ bool RendererWebKitPlatformSupportImpl::Hyphenator::canHyphenate(
 
   // Create a hyphenator object and attach it to the render thread so it can
   // receive a dictionary file opened by a browser.
-  if (!hyphenator_.get()) {
+  if (!hyphenator_) {
     hyphenator_.reset(new content::Hyphenator(base::kInvalidPlatformFileValue));
-    if (!hyphenator_.get())
+    if (!hyphenator_)
       return false;
     return hyphenator_->Attach(RenderThreadImpl::current(), locale);
   }
@@ -760,7 +760,7 @@ void RendererWebKitPlatformSupportImpl::screenColorProfile(
 
 WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
   // thread_safe_sender_ can be NULL when running some tests.
-  if (!blob_registry_.get() && thread_safe_sender_.get())
+  if (!blob_registry_.get() && thread_safe_sender_)
     blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_));
   return blob_registry_.get();
 }
@@ -769,7 +769,7 @@ WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
 
 void RendererWebKitPlatformSupportImpl::sampleGamepads(WebGamepads& gamepads) {
   if (g_test_gamepads == 0) {
-    if (!gamepad_shared_memory_reader_.get())
+    if (!gamepad_shared_memory_reader_)
       gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader);
     gamepad_shared_memory_reader_->SampleGamepads(gamepads);
   } else {
@@ -856,6 +856,14 @@ WebKit::WebHyphenator* RendererWebKitPlatformSupportImpl::hyphenator() {
 
 //------------------------------------------------------------------------------
 
+WebKit::WebSpeechSynthesizer*
+RendererWebKitPlatformSupportImpl::createSpeechSynthesizer(
+    WebKit::WebSpeechSynthesizerClient* client) {
+  return GetContentClient()->renderer()->OverrideSpeechSynthesizer(client);
+}
+
+//------------------------------------------------------------------------------
+
 bool RendererWebKitPlatformSupportImpl::processMemorySizesInBytes(
     size_t* private_bytes, size_t* shared_bytes) {
   content::RenderThread::Get()->Send(
@@ -896,5 +904,19 @@ GrContext* RendererWebKitPlatformSupportImpl::sharedOffscreenGrContext() {
   return shared_offscreen_context_->GrContext();
 }
 
+//------------------------------------------------------------------------------
+
+WebKit::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
+    createSharedOffscreenGraphicsContext3DProvider() {
+  if (!shared_offscreen_context_ ||
+      shared_offscreen_context_->DestroyedOnMainThread()) {
+    shared_offscreen_context_ =
+        RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
+  }
+  if (!shared_offscreen_context_)
+    return NULL;
+  return new webkit::gpu::WebGraphicsContext3DProviderImpl(
+      shared_offscreen_context_);
+}
 
 }  // namespace content

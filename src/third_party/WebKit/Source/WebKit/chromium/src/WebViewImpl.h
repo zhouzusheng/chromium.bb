@@ -31,25 +31,26 @@
 #ifndef WebViewImpl_h
 #define WebViewImpl_h
 
+#include "BackForwardClientImpl.h"
 #include "ChromeClientImpl.h"
 #include "ContextMenuClientImpl.h"
 #include "DragClientImpl.h"
 #include "EditorClientImpl.h"
-#include "FloatSize.h"
-#include "GraphicsContext3D.h"
-#include "GraphicsLayer.h"
 #include "InspectorClientImpl.h"
-#include "IntPoint.h"
-#include "IntRect.h"
 #include "NotificationPresenterImpl.h"
 #include "PageOverlayList.h"
-#include "PagePopupDriver.h"
 #include "PageWidgetDelegate.h"
 #include "UserMediaClientImpl.h"
 #include "WebInputEvent.h"
 #include "WebNavigationPolicy.h"
 #include "WebView.h"
 #include "WebViewBenchmarkSupportImpl.h"
+#include "core/page/PagePopupDriver.h"
+#include "core/platform/graphics/FloatSize.h"
+#include "core/platform/graphics/GraphicsContext3D.h"
+#include "core/platform/graphics/GraphicsLayer.h"
+#include "core/platform/graphics/IntPoint.h"
+#include "core/platform/graphics/IntRect.h"
 #include <public/WebFloatQuad.h>
 #include <public/WebGestureCurveTarget.h>
 #include <public/WebLayer.h>
@@ -150,6 +151,7 @@ public:
     virtual void themeChanged();
     virtual void setNeedsRedraw();
     virtual bool handleInputEvent(const WebInputEvent&);
+    virtual void setCursorVisibilityState(bool isVisible);
     virtual bool hasTouchEventHandlersAt(const WebPoint&);
     virtual WebInputHandler* createInputHandler() OVERRIDE;
     virtual void applyScrollAndScale(const WebSize&, float);
@@ -191,6 +193,7 @@ public:
     virtual void setPermissionClient(WebPermissionClient*);
     virtual void setPrerendererClient(WebPrerendererClient*) OVERRIDE;
     virtual void setSpellCheckClient(WebSpellCheckClient*);
+    virtual void setValidationMessageClient(WebValidationMessageClient*) OVERRIDE;
     virtual void addTextFieldDecoratorClient(WebTextFieldDecoratorClient*) OVERRIDE;
     virtual WebSettings* settings();
     virtual WebString pageEncoding() const;
@@ -277,6 +280,7 @@ public:
         const WebPoint& clientPoint,
         const WebPoint& screenPoint,
         int keyModifiers);
+    virtual void spellingMarkers(WebVector<uint32_t>* markers);
     virtual unsigned long createUniqueIdentifierForRequest();
     virtual void inspectElementAt(const WebPoint& point);
     virtual WebString inspectorSettings() const;
@@ -339,12 +343,6 @@ public:
     WebCore::Node* focusedWebCoreNode();
 
     static WebViewImpl* fromPage(WebCore::Page*);
-
-    // A pageGroup identifies a namespace of pages. Page groups are used on PLATFORM(MAC)
-    // for some programs that use HTML views to display things that don't seem like
-    // web pages to the user (so shouldn't have visited link coloring). We only use
-    // one page group.
-    static WebCore::PageGroup* defaultPageGroup();
 
     WebViewClient* client()
     {
@@ -419,6 +417,7 @@ public:
     void layoutUpdated(WebFrameImpl*);
 
     void didChangeContentsSize();
+    void deviceOrPageScaleFactorChanged();
 
     // Returns true if popup menus should be rendered by the browser, false if
     // they should be rendered by WebKit (which is the default).
@@ -444,7 +443,6 @@ public:
         return m_maxAutoSize;
     }
 
-    WebCore::IntSize dipSize() const;
     WebCore::IntSize scaledSize(float) const;
 
     // Set the disposition for how this webview is to be initially shown.
@@ -525,7 +523,6 @@ public:
     }
 
     WebCore::GraphicsLayer* rootGraphicsLayer();
-#if USE(ACCELERATED_COMPOSITING)
     bool allowsAcceleratedCompositing();
     void setRootGraphicsLayer(WebCore::GraphicsLayer*);
     void scheduleCompositingLayerSync();
@@ -535,10 +532,9 @@ public:
     void setBackgroundColor(const WebCore::Color&);
     WebCore::GraphicsLayerFactory* graphicsLayerFactory() const;
     void registerForAnimations(WebLayer*);
-#endif
-#if ENABLE(REQUEST_ANIMATION_FRAME)
     void scheduleAnimation();
-#endif
+
+    void didProgrammaticallyScroll(const WebCore::IntPoint& scrollPoint);
 
     virtual void setVisibilityState(WebPageVisibilityState, bool);
 
@@ -560,12 +556,10 @@ public:
     // a plugin can update its own zoom, say because of its own UI.
     void fullFramePluginZoomLevelChanged(double zoomLevel);
 
-#if ENABLE(GESTURE_EVENTS)
     void computeScaleAndScrollForHitRect(const WebRect& hitRect, AutoZoomType, float& scale, WebPoint& scroll, bool& isAnchor);
     WebCore::Node* bestTapNode(const WebCore::PlatformGestureEvent& tapEvent);
     void enableTapHighlight(const WebCore::PlatformGestureEvent& tapEvent);
     void computeScaleAndScrollForFocusedNode(WebCore::Node* focusedNode, float& scale, WebCore::IntPoint& scroll, bool& needAnimation);
-#endif
     void animateZoomAroundPoint(const WebCore::IntPoint&, AutoZoomType);
 
     void enableFakeDoubleTapAnimationForTesting(bool);
@@ -586,20 +580,16 @@ public:
 
     // Pointer Lock calls allow a page to capture all mouse events and
     // disable the system cursor.
-#if ENABLE(POINTER_LOCK)
     virtual bool requestPointerLock();
     virtual void requestPointerUnlock();
     virtual bool isPointerLocked();
-#endif
 
     // Heuristic-based function for determining if we should disable workarounds
     // for viewing websites that are not optimized for mobile devices.
     bool shouldDisableDesktopWorkarounds();
 
-#if ENABLE(GESTURE_EVENTS)
     // Exposed for tests.
     LinkHighlight* linkHighlight() { return m_linkHighlight.get(); }
-#endif
 
     WebSettingsImpl* settingsImpl();
 
@@ -655,26 +645,20 @@ private:
 
     void configureAutoResizeMode();
 
-#if USE(ACCELERATED_COMPOSITING)
     void setIsAcceleratedCompositingActive(bool);
     void doComposite();
     void doPixelReadbackToCanvas(WebCanvas*, const WebCore::IntRect&);
     void reallocateRenderer();
     void updateLayerTreeViewport();
-#endif
 
-#if ENABLE(GESTURE_EVENTS)
     // Returns the bounding box of the block type node touched by the WebRect.
     WebRect computeBlockBounds(const WebRect&, AutoZoomType);
 
     // Helper function: Widens the width of |source| by the specified margins
     // while keeping it smaller than page width.
     WebRect widenRectWithinPageBounds(const WebRect& source, int targetMargin, int minimumMargin);
-#endif
 
-#if ENABLE(POINTER_LOCK)
     void pointerLockMouseEvent(const WebInputEvent&);
-#endif
 
     // PageWidgetEventHandler functions
     virtual void handleMouseLeave(WebCore::Frame&, const WebMouseEvent&) OVERRIDE;
@@ -696,6 +680,7 @@ private:
     DragClientImpl m_dragClientImpl;
     EditorClientImpl m_editorClientImpl;
     InspectorClientImpl m_inspectorClientImpl;
+    BackForwardClientImpl m_backForwardClientImpl;
 
     WebSize m_size;
     // If true, automatically resize the render view around its content.
@@ -844,7 +829,6 @@ private:
 
     WebViewBenchmarkSupportImpl m_benchmarkSupport;
 
-#if USE(ACCELERATED_COMPOSITING)
     WebCore::IntRect m_rootLayerScrollDamage;
     OwnPtr<NonCompositedContentHost> m_nonCompositedContentHost;
     WebLayerTreeView* m_layerTreeView;
@@ -857,15 +841,12 @@ private:
     // If true, the graphics context is being restored.
     bool m_recreatingGraphicsContext;
     int m_inputHandlerIdentifier;
-#endif
     static const WebInputEvent* m_currentInputEvent;
 
 #if ENABLE(INPUT_SPEECH)
     OwnPtr<SpeechInputClientImpl> m_speechInputClient;
 #endif
-#if ENABLE(SCRIPTED_SPEECH)
     OwnPtr<SpeechRecognitionClientProxy> m_speechRecognitionClient;
-#endif
 
     OwnPtr<DeviceOrientationClientProxy> m_deviceOrientationClientProxy;
     OwnPtr<GeolocationClientProxy> m_geolocationClientProxy;
@@ -875,9 +856,7 @@ private:
 
     float m_emulatedTextZoomFactor;
 
-#if ENABLE(MEDIA_STREAM)
     UserMediaClientImpl m_userMediaClientImpl;
-#endif
 #if ENABLE(NAVIGATOR_CONTENT_UTILS)
     OwnPtr<NavigatorContentUtilsClientImpl> m_navigatorContentUtilsClient;
 #endif
@@ -886,9 +865,7 @@ private:
     WebPoint m_globalPositionOnFlingStart;
     int m_flingModifier;
     bool m_flingSourceDevice;
-#if ENABLE(GESTURE_EVENTS)
     OwnPtr<LinkHighlight> m_linkHighlight;
-#endif
     OwnPtr<ValidationMessageClientImpl> m_validationMessage;
 
     bool m_showFPSCounter;

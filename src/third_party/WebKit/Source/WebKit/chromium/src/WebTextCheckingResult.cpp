@@ -31,7 +31,7 @@
 #include "config.h"
 #include "WebTextCheckingResult.h"
 
-#include "TextCheckerClient.h"
+#include "core/platform/text/TextCheckerClient.h"
 
 using namespace WebCore;
 
@@ -44,6 +44,7 @@ WebTextCheckingResult::operator TextCheckingResult() const
     result.location = location;
     result.length = length;
     result.replacement = replacement;
+    result.hash = hash;
     if (result.type == TextCheckingTypeGrammar) {
         GrammarDetail detail;
         detail.location = 0;

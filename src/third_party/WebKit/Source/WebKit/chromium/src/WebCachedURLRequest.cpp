@@ -31,9 +31,9 @@
 #include "config.h"
 #include "WebCachedURLRequest.h"
 
-#include "CachedResourceRequest.h"
-#include "Element.h"
-#include "WrappedResourceRequest.h"
+#include "core/dom/Element.h"
+#include "core/loader/cache/CachedResourceRequest.h"
+#include "core/platform/chromium/support/WrappedResourceRequest.h"
 #include <public/WebURLRequest.h>
 
 using namespace WebCore;

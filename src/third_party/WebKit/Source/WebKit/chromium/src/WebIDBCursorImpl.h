@@ -26,11 +26,8 @@
 #ifndef WebIDBCursorImpl_h
 #define WebIDBCursorImpl_h
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "WebExceptionCode.h"
-#include "WebIDBCursor.h"
 #include <public/WebCommon.h>
+#include <public/WebIDBCursor.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 
@@ -44,10 +41,10 @@ public:
     WebIDBCursorImpl(WTF::PassRefPtr<WebCore::IDBCursorBackendInterface>);
     virtual ~WebIDBCursorImpl();
 
-    virtual void advance(unsigned long, WebIDBCallbacks*, WebExceptionCode&);
-    virtual void continueFunction(const WebIDBKey&, WebIDBCallbacks*, WebExceptionCode&);
-    virtual void deleteFunction(WebIDBCallbacks*, WebExceptionCode&);
-    virtual void prefetchContinue(int numberToFetch, WebIDBCallbacks*, WebExceptionCode&);
+    virtual void advance(unsigned long, WebIDBCallbacks*);
+    virtual void continueFunction(const WebIDBKey&, WebIDBCallbacks*);
+    virtual void deleteFunction(WebIDBCallbacks* callbacks) { ASSERT_NOT_REACHED(); } // FIXME: Remove: http://crbug.com/241526
+    virtual void prefetchContinue(int numberToFetch, WebIDBCallbacks*);
     virtual void prefetchReset(int usedPrefetches, int unusedPrefetches);
 
  private:
@@ -55,7 +52,5 @@ public:
 };
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)
 
 #endif // WebIDBCursorImpl_h

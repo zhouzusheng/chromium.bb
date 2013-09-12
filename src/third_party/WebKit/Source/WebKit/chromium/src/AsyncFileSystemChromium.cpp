@@ -30,16 +30,14 @@
 #include "config.h"
 #include "AsyncFileSystemChromium.h"
 
-#if ENABLE(FILE_SYSTEM)
-
-#include "AsyncFileSystemCallbacks.h"
 #include "AsyncFileWriterChromium.h"
-#include "BlobURL.h"
-#include "FileMetadata.h"
-#include "SecurityOrigin.h"
-#include "ThreadableBlobRegistry.h"
 #include "WebFileSystemCallbacksImpl.h"
 #include "WebFileWriter.h"
+#include "core/fileapi/BlobURL.h"
+#include "core/fileapi/ThreadableBlobRegistry.h"
+#include "core/page/SecurityOrigin.h"
+#include "core/platform/AsyncFileSystemCallbacks.h"
+#include "core/platform/FileMetadata.h"
 #include <public/Platform.h>
 #include <public/WebFileInfo.h>
 #include <public/WebFileSystem.h>
@@ -47,11 +45,6 @@
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
-
-bool AsyncFileSystem::isAvailable()
-{
-    return true;
-}
 
 PassOwnPtr<AsyncFileSystem> AsyncFileSystem::create()
 {
@@ -187,5 +180,3 @@ void AsyncFileSystemChromium::createSnapshotFileAndReadMetadata(const KURL& path
 }
 
 } // namespace WebCore
-
-#endif

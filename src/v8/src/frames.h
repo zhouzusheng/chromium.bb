@@ -84,6 +84,18 @@ class InnerPointerToCodeCache {
 };
 
 
+class StackHandlerConstants : public AllStatic {
+ public:
+  static const int kNextOffset     = 0 * kPointerSize;
+  static const int kCodeOffset     = 1 * kPointerSize;
+  static const int kStateOffset    = 2 * kPointerSize;
+  static const int kContextOffset  = 3 * kPointerSize;
+  static const int kFPOffset       = 4 * kPointerSize;
+
+  static const int kSize = kFPOffset + kPointerSize;
+};
+
+
 class StackHandler BASE_EMBEDDED {
  public:
   enum Kind {
@@ -524,6 +536,11 @@ class JavaScriptFrame: public StandardFrame {
     return GetNumberOfIncomingArguments();
   }
 
+  // Access the operand stack.
+  inline Address GetOperandSlot(int index) const;
+  inline Object* GetOperand(int index) const;
+  inline int ComputeOperandsCount() const;
+
   // Debugger access.
   void SetParameterValue(int index, Object* value) const;
 
@@ -581,7 +598,6 @@ class JavaScriptFrame: public StandardFrame {
   inline Object* function_slot_object() const;
 
   friend class StackFrameIterator;
-  friend class StackTracer;
 };
 
 
@@ -708,6 +724,10 @@ class StubFailureTrampolineFrame: public StandardFrame {
   virtual Code* unchecked_code() const;
 
   virtual void Iterate(ObjectVisitor* v) const;
+
+  // Architecture-specific register description.
+  static Register fp_register();
+  static Register context_register();
 
  protected:
   inline explicit StubFailureTrampolineFrame(

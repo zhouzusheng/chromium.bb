@@ -375,8 +375,7 @@ class HighResNowSingleton {
   int64 GetQPCDriftMicroseconds() {
     if (!IsUsingHighResClock())
       return 0;
-    // SHEZ: modified upstream code here to compile in VS2008
-    return abs(long((UnreliableNow() - ReliableNow()) - skew_));
+    return abs((UnreliableNow() - ReliableNow()) - skew_);
   }
 
   int64 QPCValueToMicroseconds(LONGLONG qpc_value) {

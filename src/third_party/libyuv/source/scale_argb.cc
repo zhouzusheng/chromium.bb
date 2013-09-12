@@ -24,12 +24,10 @@ extern "C" {
 #endif
 
 // ARGB scaling uses bilinear or point, but not box filter.
-
 #if !defined(LIBYUV_DISABLE_NEON) && \
     (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
 #define HAS_SCALEARGBROWDOWNEVEN_NEON
 #define HAS_SCALEARGBROWDOWN2_NEON
-#define HAS_SCALEARGBFILTERROWS_NEON
 void ScaleARGBRowDownEven_NEON(const uint8* src_argb, int src_stride,
                                int src_stepx,
                                uint8* dst_argb, int dst_width);
@@ -40,9 +38,6 @@ void ScaleARGBRowDown2_NEON(const uint8* src_ptr, ptrdiff_t /* src_stride */,
                             uint8* dst, int dst_width);
 void ScaleARGBRowDown2Int_NEON(const uint8* src_ptr, ptrdiff_t src_stride,
                                uint8* dst, int dst_width);
-void ScaleARGBFilterRows_NEON(uint8* dst_ptr,
-                              const uint8* src_ptr, ptrdiff_t src_stride,
-                              int dst_width, int source_y_fraction);
 #endif
 
 #if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86)
@@ -165,18 +160,18 @@ static void ScaleARGBRowDownEvenInt_SSE2(const uint8* src_argb,
     mov        ebx, [esp + 12 + 12]   // src_stepx
     mov        edx, [esp + 12 + 16]   // dst_argb
     mov        ecx, [esp + 12 + 20]   // dst_width
-    lea        esi, [eax + esi]      // row1 pointer
+    lea        esi, [eax + esi]       // row1 pointer
     lea        ebx, [ebx * 4]
     lea        edi, [ebx + ebx * 2]
 
     align      16
   wloop:
-    movq       xmm0, qword ptr [eax] // row0 4 pairs
+    movq       xmm0, qword ptr [eax]  // row0 4 pairs
     movhps     xmm0, qword ptr [eax + ebx]
     movq       xmm1, qword ptr [eax + ebx * 2]
     movhps     xmm1, qword ptr [eax + edi]
     lea        eax,  [eax + ebx * 4]
-    movq       xmm2, qword ptr [esi] // row1 4 pairs
+    movq       xmm2, qword ptr [esi]  // row1 4 pairs
     movhps     xmm2, qword ptr [esi + ebx]
     movq       xmm3, qword ptr [esi + ebx * 2]
     movhps     xmm3, qword ptr [esi + edi]
@@ -199,222 +194,139 @@ static void ScaleARGBRowDownEvenInt_SSE2(const uint8* src_argb,
   }
 }
 
-// Bilinear row filtering combines 4x2 -> 4x1. SSE2 version.
-#define HAS_SCALEARGBFILTERROWS_SSE2
+// Column scaling unfiltered. SSSE3 version.
+// TODO(fbarchard): Port to Neon
+
+#define HAS_SCALEARGBCOLS_SSE2
 __declspec(naked) __declspec(align(16))
-void ScaleARGBFilterRows_SSE2(uint8* dst_argb, const uint8* src_argb,
-                              ptrdiff_t src_stride, int dst_width,
-                              int source_y_fraction) {
+static void ScaleARGBCols_SSE2(uint8* dst_argb, const uint8* src_argb,
+                               int dst_width, int x, int dx) {
   __asm {
     push       esi
     push       edi
-    mov        edi, [esp + 8 + 4]   // dst_argb
-    mov        esi, [esp + 8 + 8]   // src_argb
-    mov        edx, [esp + 8 + 12]  // src_stride
-    mov        ecx, [esp + 8 + 16]  // dst_width
-    mov        eax, [esp + 8 + 20]  // source_y_fraction (0..255)
-    sub        edi, esi
-    // Dispatch to specialized filters if applicable.
-    cmp        eax, 0
-    je         xloop100  // 0 / 256.  Blend 100 / 0.
-    cmp        eax, 64
-    je         xloop75   // 64 / 256 is 0.25.  Blend 75 / 25.
-    cmp        eax, 128
-    je         xloop50   // 128 / 256 is 0.50.  Blend 50 / 50.
-    cmp        eax, 192
-    je         xloop25   // 192 / 256 is 0.75.  Blend 25 / 75.
+    mov        edi, [esp + 8 + 4]    // dst_argb
+    mov        esi, [esp + 8 + 8]    // src_argb
+    mov        ecx, [esp + 8 + 12]   // dst_width
+    movd       xmm2, [esp + 8 + 16]  // x
+    movd       xmm3, [esp + 8 + 20]  // dx
+    pextrw     eax, xmm2, 1          // get x0 integer. preroll
+    sub        ecx, 2
+    jl         xloop29
 
-    movd       xmm5, eax            // xmm5 = y fraction
-    punpcklbw  xmm5, xmm5
-    psrlw      xmm5, 1
-    punpcklwd  xmm5, xmm5
-    punpckldq  xmm5, xmm5
-    punpcklqdq xmm5, xmm5
-    pxor       xmm4, xmm4
+    movdqa     xmm0, xmm2           // x1 = x0 + dx
+    paddd      xmm0, xmm3
+    punpckldq  xmm2, xmm0           // x0 x1
+    punpckldq  xmm3, xmm3           // dx dx
+    paddd      xmm3, xmm3           // dx * 2, dx * 2
+    pextrw     edx, xmm2, 3         // get x1 integer. preroll
 
+    // 2 Pixel loop.
     align      16
-  xloop:
-    movdqa     xmm0, [esi]  // row0
-    movdqa     xmm2, [esi + edx]  // row1
-    movdqa     xmm1, xmm0
-    movdqa     xmm3, xmm2
-    punpcklbw  xmm2, xmm4
-    punpckhbw  xmm3, xmm4
-    punpcklbw  xmm0, xmm4
-    punpckhbw  xmm1, xmm4
-    psubw      xmm2, xmm0  // row1 - row0
-    psubw      xmm3, xmm1
-    paddw      xmm2, xmm2  // 9 bits * 15 bits = 8.16
-    paddw      xmm3, xmm3
-    pmulhw     xmm2, xmm5  // scale diff
-    pmulhw     xmm3, xmm5
-    paddw      xmm0, xmm2  // sum rows
-    paddw      xmm1, xmm3
-    packuswb   xmm0, xmm1
-    sub        ecx, 4
-    movdqa     [esi + edi], xmm0
-    lea        esi, [esi + 16]
-    jg         xloop
-    jmp        xloop99
+  xloop2:
+    paddd      xmm2, xmm3           // x += dx
+    movd       xmm0, qword ptr [esi + eax * 4]  // 1 source x0 pixels
+    movd       xmm1, qword ptr [esi + edx * 4]  // 1 source x1 pixels
+    punpckldq  xmm0, xmm1           // x0 x1
+    pextrw     eax, xmm2, 1         // get x0 integer. next iteration.
+    pextrw     edx, xmm2, 3         // get x1 integer. next iteration.
+    movq       qword ptr [edi], xmm0
+    lea        edi, [edi + 8]
+    sub        ecx, 2               // 2 pixels
+    jge        xloop2
+ xloop29:
 
-    // Blend 25 / 75.
-    align      16
-  xloop25:
-    movdqa     xmm0, [esi]
-    movdqa     xmm1, [esi + edx]
-    pavgb      xmm0, xmm1
-    pavgb      xmm0, xmm1
-    sub        ecx, 4
-    movdqa     [esi + edi], xmm0
-    lea        esi, [esi + 16]
-    jg         xloop25
-    jmp        xloop99
+    add        ecx, 2 - 1
+    jl         xloop99
 
-    // Blend 50 / 50.
-    align      16
-  xloop50:
-    movdqa     xmm0, [esi]
-    movdqa     xmm1, [esi + edx]
-    pavgb      xmm0, xmm1
-    sub        ecx, 4
-    movdqa     [esi + edi], xmm0
-    lea        esi, [esi + 16]
-    jg         xloop50
-    jmp        xloop99
+    // 1 pixel remainder
+    movd       xmm0, qword ptr [esi + eax * 4]  // 1 source x0 pixels
+    movd       [edi], xmm0
+ xloop99:
 
-    // Blend 75 / 25.
-    align      16
-  xloop75:
-    movdqa     xmm1, [esi]
-    movdqa     xmm0, [esi + edx]
-    pavgb      xmm0, xmm1
-    pavgb      xmm0, xmm1
-    sub        ecx, 4
-    movdqa     [esi + edi], xmm0
-    lea        esi, [esi + 16]
-    jg         xloop75
-    jmp        xloop99
-
-    // Blend 100 / 0 - Copy row unchanged.
-    align      16
-  xloop100:
-    movdqa     xmm0, [esi]
-    sub        ecx, 4
-    movdqa     [esi + edi], xmm0
-    lea        esi, [esi + 16]
-    jg         xloop100
-
-  xloop99:
-    shufps     xmm0, xmm0, 0xff
-    movdqa     [esi + edi], xmm0    // duplicate last pixel for filtering
     pop        edi
     pop        esi
     ret
   }
 }
 
-// Bilinear row filtering combines 4x2 -> 4x1. SSSE3 version.
-#define HAS_SCALEARGBFILTERROWS_SSSE3
+// Bilinear row filtering combines 2x1 -> 1x1. SSSE3 version.
+// TODO(fbarchard): Port to Neon
+
+// Shuffle table for arranging 2 pixels into pairs for pmaddubsw
+static const uvec8 kShuffleColARGB = {
+  0u, 4u, 1u, 5u, 2u, 6u, 3u, 7u,  // bbggrraa 1st pixel
+  8u, 12u, 9u, 13u, 10u, 14u, 11u, 15u  // bbggrraa 2nd pixel
+};
+
+// Shuffle table for duplicating 2 fractions into 8 bytes each
+static const uvec8 kShuffleFractions = {
+  0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 4u, 4u, 4u, 4u, 4u, 4u, 4u, 4u,
+};
+
+#define HAS_SCALEARGBFILTERCOLS_SSSE3
 __declspec(naked) __declspec(align(16))
-void ScaleARGBFilterRows_SSSE3(uint8* dst_argb, const uint8* src_argb,
-                               ptrdiff_t src_stride, int dst_width,
-                               int source_y_fraction) {
+static void ScaleARGBFilterCols_SSSE3(uint8* dst_argb, const uint8* src_argb,
+                                      int dst_width, int x, int dx) {
   __asm {
     push       esi
     push       edi
-    mov        edi, [esp + 8 + 4]   // dst_argb
-    mov        esi, [esp + 8 + 8]   // src_argb
-    mov        edx, [esp + 8 + 12]  // src_stride
-    mov        ecx, [esp + 8 + 16]  // dst_width
-    mov        eax, [esp + 8 + 20]  // source_y_fraction (0..255)
-    sub        edi, esi
-    shr        eax, 1
-    cmp        eax, 0  // dispatch to specialized filters if applicable.
-    je         xloop100
-    cmp        eax, 32
-    je         xloop75
-    cmp        eax, 64
-    je         xloop50
-    cmp        eax, 96
-    je         xloop25
+    mov        edi, [esp + 8 + 4]    // dst_argb
+    mov        esi, [esp + 8 + 8]    // src_argb
+    mov        ecx, [esp + 8 + 12]   // dst_width
+    movd       xmm2, [esp + 8 + 16]  // x
+    movd       xmm3, [esp + 8 + 20]  // dx
+    movdqa     xmm4, kShuffleColARGB
+    movdqa     xmm5, kShuffleFractions
+    pcmpeqb    xmm6, xmm6           // generate 0x007f for inverting fraction.
+    psrlw      xmm6, 9
+    pextrw     eax, xmm2, 1         // get x0 integer. preroll
+    sub        ecx, 2
+    jl         xloop29
 
-    movd       xmm0, eax  // high fraction 0..127
-    neg        eax
-    add        eax, 128
-    movd       xmm5, eax  // low fraction 128..1
-    punpcklbw  xmm5, xmm0
-    punpcklwd  xmm5, xmm5
-    pshufd     xmm5, xmm5, 0
+    movdqa     xmm0, xmm2           // x1 = x0 + dx
+    paddd      xmm0, xmm3
+    punpckldq  xmm2, xmm0           // x0 x1
+    punpckldq  xmm3, xmm3           // dx dx
+    paddd      xmm3, xmm3           // dx * 2, dx * 2
+    pextrw     edx, xmm2, 3         // get x1 integer. preroll
 
+    // 2 Pixel loop.
     align      16
-  xloop:
-    movdqa     xmm0, [esi]
-    movdqa     xmm2, [esi + edx]
-    movdqa     xmm1, xmm0
-    punpcklbw  xmm0, xmm2
-    punpckhbw  xmm1, xmm2
-    pmaddubsw  xmm0, xmm5
-    pmaddubsw  xmm1, xmm5
+  xloop2:
+    movdqa     xmm1, xmm2           // x0, x1 fractions.
+    paddd      xmm2, xmm3           // x += dx
+    movq       xmm0, qword ptr [esi + eax * 4]  // 2 source x0 pixels
+    psrlw      xmm1, 9              // 7 bit fractions.
+    movhps     xmm0, qword ptr [esi + edx * 4]  // 2 source x1 pixels
+    pshufb     xmm1, xmm5           // 0000000011111111
+    pshufb     xmm0, xmm4           // arrange pixels into pairs
+    pxor       xmm1, xmm6           // 0..7f and 7f..0
+    pmaddubsw  xmm0, xmm1           // argb_argb 16 bit, 2 pixels.
+    psrlw      xmm0, 7              // argb 8.7 fixed point to low 8 bits.
+    pextrw     eax, xmm2, 1         // get x0 integer. next iteration.
+    pextrw     edx, xmm2, 3         // get x1 integer. next iteration.
+    packuswb   xmm0, xmm0           // argb_argb 8 bits, 2 pixels.
+    movq       qword ptr [edi], xmm0
+    lea        edi, [edi + 8]
+    sub        ecx, 2               // 2 pixels
+    jge        xloop2
+ xloop29:
+
+    add        ecx, 2 - 1
+    jl         xloop99
+
+    // 1 pixel remainder
+    psrlw      xmm2, 9              // 7 bit fractions.
+    movq       xmm0, qword ptr [esi + eax * 4]  // 2 source x0 pixels
+    pshufb     xmm2, xmm5           // 00000000
+    pshufb     xmm0, xmm4           // arrange pixels into pairs
+    pxor       xmm2, xmm6           // 0..7f and 7f..0
+    pmaddubsw  xmm0, xmm2           // argb 16 bit, 1 pixel.
     psrlw      xmm0, 7
-    psrlw      xmm1, 7
-    packuswb   xmm0, xmm1
-    sub        ecx, 4
-    movdqa     [esi + edi], xmm0
-    lea        esi, [esi + 16]
-    jg         xloop
-    jmp        xloop99
+    packuswb   xmm0, xmm0           // argb 8 bits, 1 pixel.
+    movd       [edi], xmm0
+ xloop99:
 
-    // Blend 25 / 75.
-    align      16
-  xloop25:
-    movdqa     xmm0, [esi]
-    movdqa     xmm1, [esi + edx]
-    pavgb      xmm0, xmm1
-    pavgb      xmm0, xmm1
-    sub        ecx, 4
-    movdqa     [esi + edi], xmm0
-    lea        esi, [esi + 16]
-    jg         xloop25
-    jmp        xloop99
-
-    // Blend 50 / 50.
-    align      16
-  xloop50:
-    movdqa     xmm0, [esi]
-    movdqa     xmm1, [esi + edx]
-    pavgb      xmm0, xmm1
-    sub        ecx, 4
-    movdqa     [esi + edi], xmm0
-    lea        esi, [esi + 16]
-    jg         xloop50
-    jmp        xloop99
-
-    // Blend 75 / 25.
-    align      16
-  xloop75:
-    movdqa     xmm1, [esi]
-    movdqa     xmm0, [esi + edx]
-    pavgb      xmm0, xmm1
-    pavgb      xmm0, xmm1
-    sub        ecx, 4
-    movdqa     [esi + edi], xmm0
-    lea        esi, [esi + 16]
-    jg         xloop75
-    jmp        xloop99
-
-    // Blend 100 / 0 - Copy row unchanged.
-    align      16
-  xloop100:
-    movdqa     xmm0, [esi]
-    sub        ecx, 4
-    movdqa     [esi + edi], xmm0
-    lea        esi, [esi + 16]
-    jg         xloop100
-
-    // Extrude last pixel.
-  xloop99:
-    shufps     xmm0, xmm0, 0xff
-    movdqa     [esi + edi], xmm0
     pop        edi
     pop        esi
     ret
@@ -440,8 +352,8 @@ static void ScaleARGBRowDown2_SSE2(const uint8* src_argb,
     "movdqa    %%xmm0,(%1)                     \n"
     "lea       0x10(%1),%1                     \n"
     "jg        1b                              \n"
-  : "+r"(src_argb),   // %0
-    "+r"(dst_argb),   // %1
+  : "+r"(src_argb),  // %0
+    "+r"(dst_argb),  // %1
     "+r"(dst_width)  // %2
   :
   : "memory", "cc"
@@ -472,8 +384,8 @@ static void ScaleARGBRowDown2Int_SSE2(const uint8* src_argb,
     "movdqa    %%xmm0,(%1)                     \n"
     "lea       0x10(%1),%1                     \n"
     "jg        1b                              \n"
-  : "+r"(src_argb),    // %0
-    "+r"(dst_argb),    // %1
+  : "+r"(src_argb),   // %0
+    "+r"(dst_argb),   // %1
     "+r"(dst_width)   // %2
   : "r"(static_cast<intptr_t>(src_stride))   // %3
   : "memory", "cc"
@@ -508,9 +420,9 @@ void ScaleARGBRowDownEven_SSE2(const uint8* src_argb, ptrdiff_t src_stride,
     "movdqa    %%xmm0,(%2)                     \n"
     "lea       0x10(%2),%2                     \n"
     "jg        1b                              \n"
-  : "+r"(src_argb),       // %0
+  : "+r"(src_argb),      // %0
     "+r"(src_stepx_x4),  // %1
-    "+r"(dst_argb),       // %2
+    "+r"(dst_argb),      // %2
     "+r"(dst_width),     // %3
     "+r"(src_stepx_x12)  // %4
   :
@@ -555,9 +467,9 @@ static void ScaleARGBRowDownEvenInt_SSE2(const uint8* src_argb,
     "movdqa    %%xmm0,(%2)                     \n"
     "lea       0x10(%2),%2                     \n"
     "jg        1b                              \n"
-  : "+r"(src_argb),        // %0
+  : "+r"(src_argb),       // %0
     "+r"(src_stepx_x4),   // %1
-    "+r"(dst_argb),        // %2
+    "+r"(dst_argb),       // %2
     "+rm"(dst_width),     // %3
     "+r"(src_stepx_x12),  // %4
     "+r"(row1)            // %5
@@ -569,223 +481,144 @@ static void ScaleARGBRowDownEvenInt_SSE2(const uint8* src_argb,
   );
 }
 
-// Bilinear row filtering combines 4x2 -> 4x1. SSE2 version
-#define HAS_SCALEARGBFILTERROWS_SSE2
-void ScaleARGBFilterRows_SSE2(uint8* dst_argb, const uint8* src_argb,
-                              ptrdiff_t src_stride, int dst_width,
-                              int source_y_fraction) {
+#define HAS_SCALEARGBCOLS_SSE2
+static void ScaleARGBCols_SSE2(uint8* dst_argb, const uint8* src_argb,
+                               int dst_width, int x, int dx) {
+  intptr_t x0 = 0, x1 = 0;
   asm volatile (
-    "sub       %1,%0                           \n"
-    "shr       %3                              \n"
-    "cmp       $0x0,%3                         \n"
-    "je        100f                            \n"
-    "cmp       $0x20,%3                        \n"
-    "je        75f                             \n"
-    "cmp       $0x40,%3                        \n"
-    "je        50f                             \n"
-    "cmp       $0x60,%3                        \n"
-    "je        25f                             \n"
+    "movd      %5,%%xmm2                       \n"
+    "movd      %6,%%xmm3                       \n"
+    "pextrw    $0x1,%%xmm2,%k3                 \n"
+    "sub       $0x2,%2                         \n"
+    "jl        29f                             \n"
+    "movdqa    %%xmm2,%%xmm0                   \n"
+    "paddd     %%xmm3,%%xmm0                   \n"
+    "punpckldq %%xmm0,%%xmm2                   \n"
+    "punpckldq %%xmm3,%%xmm3                   \n"
+    "paddd     %%xmm3,%%xmm3                   \n"
+    "pextrw    $0x3,%%xmm2,%k4                 \n"
 
-    "movd      %3,%%xmm0                       \n"
-    "neg       %3                              \n"
-    "add       $0x80,%3                        \n"
-    "movd      %3,%%xmm5                       \n"
-    "punpcklbw %%xmm0,%%xmm5                   \n"
-    "punpcklwd %%xmm5,%%xmm5                   \n"
-    "pshufd    $0x0,%%xmm5,%%xmm5              \n"
-    "pxor      %%xmm4,%%xmm4                   \n"
-
-    // General purpose row blend.
     ".p2align  4                               \n"
-  "1:                                          \n"
-    "movdqa    (%1),%%xmm0                     \n"
-    "movdqa    (%1,%4,1),%%xmm2                \n"
-    "movdqa    %%xmm0,%%xmm1                   \n"
-    "movdqa    %%xmm2,%%xmm3                   \n"
-    "punpcklbw %%xmm4,%%xmm2                   \n"
-    "punpckhbw %%xmm4,%%xmm3                   \n"
-    "punpcklbw %%xmm4,%%xmm0                   \n"
-    "punpckhbw %%xmm4,%%xmm1                   \n"
-    "psubw     %%xmm0,%%xmm2                   \n"
-    "psubw     %%xmm1,%%xmm3                   \n"
-    "paddw     %%xmm2,%%xmm2                   \n"
-    "paddw     %%xmm3,%%xmm3                   \n"
-    "pmulhw    %%xmm5,%%xmm2                   \n"
-    "pmulhw    %%xmm5,%%xmm3                   \n"
-    "paddw     %%xmm2,%%xmm0                   \n"
-    "paddw     %%xmm3,%%xmm1                   \n"
-    "packuswb  %%xmm1,%%xmm0                   \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
-    "lea       0x10(%1),%1                     \n"
-    "jg        1b                              \n"
-    "jmp       99f                             \n"
+  "2:                                          \n"
+    "paddd     %%xmm3,%%xmm2                   \n"
+    "movd      (%1,%3,4),%%xmm0                \n"
+    "movd      (%1,%4,4),%%xmm1                \n"
+    "punpckldq %%xmm1,%%xmm0                   \n"
+    "pextrw    $0x1,%%xmm2,%k3                 \n"
+    "pextrw    $0x3,%%xmm2,%k4                 \n"
+    "movq      %%xmm0,(%0)                     \n"
+    "lea       0x8(%0),%0                      \n"
+    "sub       $0x2,%2                         \n"
+    "jge       2b                              \n"
 
-    // Blend 25 / 75.
-    ".p2align  4                               \n"
-  "25:                                         \n"
-    "movdqa    (%1),%%xmm0                     \n"
-    "movdqa    (%1,%4,1),%%xmm1                \n"
-    "pavgb     %%xmm1,%%xmm0                   \n"
-    "pavgb     %%xmm1,%%xmm0                   \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
-    "lea       0x10(%1),%1                     \n"
-    "jg        25b                             \n"
-    "jmp       99f                             \n"
-
-    // Blend 50 / 50.
-    ".p2align  4                               \n"
-  "50:                                         \n"
-    "movdqa    (%1),%%xmm0                     \n"
-    "movdqa    (%1,%4,1),%%xmm1                \n"
-    "pavgb     %%xmm1,%%xmm0                   \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
-    "lea       0x10(%1),%1                     \n"
-    "jg        50b                             \n"
-    "jmp       99f                             \n"
-
-    // Blend 75 / 25.
-    ".p2align  4                               \n"
-  "75:                                         \n"
-    "movdqa    (%1),%%xmm1                     \n"
-    "movdqa    (%1,%4,1),%%xmm0                \n"
-    "pavgb     %%xmm1,%%xmm0                   \n"
-    "pavgb     %%xmm1,%%xmm0                   \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
-    "lea       0x10(%1),%1                     \n"
-    "jg        75b                             \n"
-    "jmp       99f                             \n"
-
-    // Blend 100 / 0 - Copy row unchanged.
-    ".p2align  4                               \n"
-  "100:                                        \n"
-    "movdqa    (%1),%%xmm0                     \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
-    "lea       0x10(%1),%1                     \n"
-    "jg        100b                            \n"
-
+  "29:                                         \n"
+    "add       $0x1,%2                         \n"
+    "jl        99f                             \n"
+    "movd      (%1,%3,4),%%xmm0                \n"
+    "movd      %%xmm0,(%0)                     \n"
   "99:                                         \n"
-    "shufps    $0xff,%%xmm0,%%xmm0             \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
-  : "+r"(dst_argb),   // %0
-    "+r"(src_argb),   // %1
-    "+r"(dst_width),  // %2
-    "+r"(source_y_fraction)  // %3
-  : "r"(static_cast<intptr_t>(src_stride))  // %4
+  : "+r"(dst_argb),    // %0
+    "+r"(src_argb),    // %1
+    "+rm"(dst_width),  // %2
+    "+r"(x0),          // %3
+    "+r"(x1)           // %4
+  : "rm"(x),           // %5
+    "rm"(dx)           // %6
   : "memory", "cc"
 #if defined(__SSE2__)
-    , "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"
+    , "xmm0", "xmm1", "xmm2", "xmm3"
 #endif
   );
 }
 
+#ifdef __APPLE__
+#define CONST
+#else
+#define CONST static const
+#endif
+
+// Shuffle table for arranging 2 pixels into pairs for pmaddubsw
+CONST uvec8 kShuffleColARGB = {
+  0u, 4u, 1u, 5u, 2u, 6u, 3u, 7u,  // bbggrraa 1st pixel
+  8u, 12u, 9u, 13u, 10u, 14u, 11u, 15u  // bbggrraa 2nd pixel
+};
+
+// Shuffle table for duplicating 2 fractions into 8 bytes each
+CONST uvec8 kShuffleFractions = {
+  0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 4u, 4u, 4u, 4u, 4u, 4u, 4u, 4u,
+};
+
 // Bilinear row filtering combines 4x2 -> 4x1. SSSE3 version
-#define HAS_SCALEARGBFILTERROWS_SSSE3
-void ScaleARGBFilterRows_SSSE3(uint8* dst_argb, const uint8* src_argb,
-                               ptrdiff_t src_stride, int dst_width,
-                               int source_y_fraction) {
+#define HAS_SCALEARGBFILTERCOLS_SSSE3
+static void ScaleARGBFilterCols_SSSE3(uint8* dst_argb, const uint8* src_argb,
+                                      int dst_width, int x, int dx) {
+  intptr_t x0 = 0, x1 = 0;
   asm volatile (
-    "sub       %1,%0                           \n"
-    "shr       %3                              \n"
-    "cmp       $0x0,%3                         \n"
-    "je        100f                            \n"
-    "cmp       $0x20,%3                        \n"
-    "je        75f                             \n"
-    "cmp       $0x40,%3                        \n"
-    "je        50f                             \n"
-    "cmp       $0x60,%3                        \n"
-    "je        25f                             \n"
+    "movdqa    %0,%%xmm4                       \n"
+    "movdqa    %1,%%xmm5                       \n"
+  :
+  : "m"(kShuffleColARGB),  // %0
+    "m"(kShuffleFractions)  // %1
+  );
 
-    "movd      %3,%%xmm0                       \n"
-    "neg       %3                              \n"
-    "add       $0x80,%3                        \n"
-    "movd      %3,%%xmm5                       \n"
-    "punpcklbw %%xmm0,%%xmm5                   \n"
-    "punpcklwd %%xmm5,%%xmm5                   \n"
-    "pshufd    $0x0,%%xmm5,%%xmm5              \n"
+  asm volatile (
+    "movd      %5,%%xmm2                       \n"
+    "movd      %6,%%xmm3                       \n"
+    "pcmpeqb   %%xmm6,%%xmm6                   \n"
+    "psrlw     $0x9,%%xmm6                     \n"
+    "pextrw    $0x1,%%xmm2,%k3                 \n"
+    "sub       $0x2,%2                         \n"
+    "jl        29f                             \n"
+    "movdqa    %%xmm2,%%xmm0                   \n"
+    "paddd     %%xmm3,%%xmm0                   \n"
+    "punpckldq %%xmm0,%%xmm2                   \n"
+    "punpckldq %%xmm3,%%xmm3                   \n"
+    "paddd     %%xmm3,%%xmm3                   \n"
+    "pextrw    $0x3,%%xmm2,%k4                 \n"
 
-    // General purpose row blend.
     ".p2align  4                               \n"
-  "1:                                          \n"
-    "movdqa    (%1),%%xmm0                     \n"
-    "movdqa    (%1,%4,1),%%xmm2                \n"
-    "movdqa    %%xmm0,%%xmm1                   \n"
-    "punpcklbw %%xmm2,%%xmm0                   \n"
-    "punpckhbw %%xmm2,%%xmm1                   \n"
-    "pmaddubsw %%xmm5,%%xmm0                   \n"
-    "pmaddubsw %%xmm5,%%xmm1                   \n"
+  "2:                                          \n"
+    "movdqa    %%xmm2,%%xmm1                   \n"
+    "paddd     %%xmm3,%%xmm2                   \n"
+    "movq      (%1,%3,4),%%xmm0                \n"
+    "psrlw     $0x9,%%xmm1                     \n"
+    "movhps    (%1,%4,4),%%xmm0                \n"
+    "pshufb    %%xmm5,%%xmm1                   \n"
+    "pshufb    %%xmm4,%%xmm0                   \n"
+    "pxor      %%xmm6,%%xmm1                   \n"
+    "pmaddubsw %%xmm1,%%xmm0                   \n"
     "psrlw     $0x7,%%xmm0                     \n"
-    "psrlw     $0x7,%%xmm1                     \n"
-    "packuswb  %%xmm1,%%xmm0                   \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
-    "lea       0x10(%1),%1                     \n"
-    "jg        1b                              \n"
-    "jmp       99f                             \n"
+    "pextrw    $0x1,%%xmm2,%k3                 \n"
+    "pextrw    $0x3,%%xmm2,%k4                 \n"
+    "packuswb  %%xmm0,%%xmm0                   \n"
+    "movq      %%xmm0,(%0)                     \n"
+    "lea       0x8(%0),%0                      \n"
+    "sub       $0x2,%2                         \n"
+    "jge       2b                              \n"
 
-    // Blend 25 / 75.
-    ".p2align  4                               \n"
-  "25:                                         \n"
-    "movdqa    (%1),%%xmm0                     \n"
-    "movdqa    (%1,%4,1),%%xmm1                \n"
-    "pavgb     %%xmm1,%%xmm0                   \n"
-    "pavgb     %%xmm1,%%xmm0                   \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
-    "lea       0x10(%1),%1                     \n"
-    "jg        25b                             \n"
-    "jmp       99f                             \n"
-
-    // Blend 50 / 50.
-    ".p2align  4                               \n"
-  "50:                                         \n"
-    "movdqa    (%1),%%xmm0                     \n"
-    "movdqa    (%1,%4,1),%%xmm1                \n"
-    "pavgb     %%xmm1,%%xmm0                   \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
-    "lea       0x10(%1),%1                     \n"
-    "jg        50b                             \n"
-    "jmp       99f                             \n"
-
-    // Blend 75 / 25.
-    ".p2align  4                               \n"
-  "75:                                         \n"
-    "movdqa    (%1),%%xmm1                     \n"
-    "movdqa    (%1,%4,1),%%xmm0                \n"
-    "pavgb     %%xmm1,%%xmm0                   \n"
-    "pavgb     %%xmm1,%%xmm0                   \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
-    "lea       0x10(%1),%1                     \n"
-    "jg        75b                             \n"
-    "jmp       99f                             \n"
-
-    // Blend 100 / 0 - Copy row unchanged.
-    ".p2align  4                               \n"
-  "100:                                        \n"
-    "movdqa    (%1),%%xmm0                     \n"
-    "sub       $0x4,%2                         \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
-    "lea       0x10(%1),%1                     \n"
-    "jg        100b                            \n"
-
-    // Extrude last pixel.
+  "29:                                         \n"
+    "add       $0x1,%2                         \n"
+    "jl        99f                             \n"
+    "psrlw     $0x9,%%xmm2                     \n"
+    "movq      (%1,%3,4),%%xmm0                \n"
+    "pshufb    %%xmm5,%%xmm2                   \n"
+    "pshufb    %%xmm4,%%xmm0                   \n"
+    "pxor      %%xmm6,%%xmm2                   \n"
+    "pmaddubsw %%xmm2,%%xmm0                   \n"
+    "psrlw     $0x7,%%xmm0                     \n"
+    "packuswb  %%xmm0,%%xmm0                   \n"
+    "movd      %%xmm0,(%0)                     \n"
   "99:                                         \n"
-    "shufps    $0xff,%%xmm0,%%xmm0             \n"
-    "movdqa    %%xmm0,(%1,%0,1)                \n"
   : "+r"(dst_argb),    // %0
     "+r"(src_argb),    // %1
-    "+r"(dst_width),  // %2
-    "+r"(source_y_fraction)  // %3
-  : "r"(static_cast<intptr_t>(src_stride))  // %4
+    "+rm"(dst_width),  // %2
+    "+r"(x0),          // %3
+    "+r"(x1)           // %4
+  : "rm"(x),           // %5
+    "rm"(dx)           // %6
   : "memory", "cc"
 #if defined(__SSE2__)
-    , "xmm0", "xmm1", "xmm2", "xmm5"
+    , "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6"
 #endif
   );
 }
@@ -859,14 +692,10 @@ static void ScaleARGBRowDownEvenInt_C(const uint8* src_argb,
   }
 }
 
-// (1-f)a + fb can be replaced with a + f(b-a)
-
-#define BLENDER1(a, b, f) (static_cast<int>(a) + \
-    ((f) * (static_cast<int>(b) - static_cast<int>(a)) >> 16))
-
+// Mimics SSSE3 blender
+#define BLENDER1(a, b, f) ((a) * (0x7f ^ f) + (b) * f) >> 7
 #define BLENDERC(a, b, f, s) static_cast<uint32>( \
     BLENDER1(((a) >> s) & 255, ((b) >> s) & 255, f) << s)
-
 #define BLENDER(a, b, f) \
     BLENDERC(a, b, f, 24) | BLENDERC(a, b, f, 16) | \
     BLENDERC(a, b, f, 8) | BLENDERC(a, b, f, 0)
@@ -877,68 +706,26 @@ static void ScaleARGBFilterCols_C(uint8* dst_argb, const uint8* src_argb,
   uint32* dst = reinterpret_cast<uint32*>(dst_argb);
   for (int j = 0; j < dst_width - 1; j += 2) {
     int xi = x >> 16;
+    int xf = (x >> 9) & 0x7f;
     uint32 a = src[xi];
     uint32 b = src[xi + 1];
-    dst[0] = BLENDER(a, b, x & 0xffff);
+    dst[0] = BLENDER(a, b, xf);
     x += dx;
     xi = x >> 16;
+    xf = (x >> 9) & 0x7f;
     a = src[xi];
     b = src[xi + 1];
-    dst[1] = BLENDER(a, b, x & 0xffff);
+    dst[1] = BLENDER(a, b, xf);
     x += dx;
     dst += 2;
   }
   if (dst_width & 1) {
     int xi = x >> 16;
+    int xf = (x >> 9) & 0x7f;
     uint32 a = src[xi];
     uint32 b = src[xi + 1];
-    dst[0] = BLENDER(a, b, x & 0xffff);
+    dst[0] = BLENDER(a, b, xf);
   }
-}
-
-// C version 2x2 -> 2x1
-void ScaleARGBFilterRows_C(uint8* dst_argb, const uint8* src_argb,
-                           ptrdiff_t src_stride,
-                           int dst_width, int source_y_fraction) {
-  assert(dst_width > 0);
-  // Specialized case for 100% first row.  Helps avoid reading beyond last row.
-  if (source_y_fraction == 0) {
-    memcpy(dst_argb, src_argb, dst_width * 4);
-    dst_argb += dst_width * 4;
-    dst_argb[0] = dst_argb[-4];
-    dst_argb[1] = dst_argb[-3];
-    dst_argb[2] = dst_argb[-2];
-    dst_argb[3] = dst_argb[-1];
-    return;
-  }
-  int y1_fraction = source_y_fraction;
-  int y0_fraction = 256 - y1_fraction;
-  const uint8* src_ptr1 = src_argb + src_stride;
-  for (int x = 0; x < dst_width - 1; x += 2) {
-    dst_argb[0] = (src_argb[0] * y0_fraction + src_ptr1[0] * y1_fraction) >> 8;
-    dst_argb[1] = (src_argb[1] * y0_fraction + src_ptr1[1] * y1_fraction) >> 8;
-    dst_argb[2] = (src_argb[2] * y0_fraction + src_ptr1[2] * y1_fraction) >> 8;
-    dst_argb[3] = (src_argb[3] * y0_fraction + src_ptr1[3] * y1_fraction) >> 8;
-    dst_argb[4] = (src_argb[4] * y0_fraction + src_ptr1[4] * y1_fraction) >> 8;
-    dst_argb[5] = (src_argb[5] * y0_fraction + src_ptr1[5] * y1_fraction) >> 8;
-    dst_argb[6] = (src_argb[6] * y0_fraction + src_ptr1[6] * y1_fraction) >> 8;
-    dst_argb[7] = (src_argb[7] * y0_fraction + src_ptr1[7] * y1_fraction) >> 8;
-    src_argb += 8;
-    src_ptr1 += 8;
-    dst_argb += 8;
-  }
-  if (dst_width & 1) {
-    dst_argb[0] = (src_argb[0] * y0_fraction + src_ptr1[0] * y1_fraction) >> 8;
-    dst_argb[1] = (src_argb[1] * y0_fraction + src_ptr1[1] * y1_fraction) >> 8;
-    dst_argb[2] = (src_argb[2] * y0_fraction + src_ptr1[2] * y1_fraction) >> 8;
-    dst_argb[3] = (src_argb[3] * y0_fraction + src_ptr1[3] * y1_fraction) >> 8;
-    dst_argb += 4;
-  }
-  // Duplicate the last pixel (4 bytes) for filtering.
-  dst_argb[0] = dst_argb[-4];
-  dst_argb[1] = dst_argb[-3];
-  dst_argb[2] = dst_argb[-2];
-  dst_argb[3] = dst_argb[-1];
 }
 
 // ScaleARGB ARGB, 1/2
@@ -1017,42 +804,70 @@ static void ScaleARGBDownEven(int src_width, int src_height,
 
 // ScaleARGB ARGB to/from any dimensions, with bilinear
 // interpolation.
-
-// Maximum width handled by 2 pass Bilinear.
-static const int kMaxInputWidth = 2560;
-static void ScaleARGBBilinear(int src_width, int src_height,
-                              int dst_width, int dst_height,
-                              int src_stride, int dst_stride,
-                              const uint8* src_argb, uint8* dst_argb) {
+static void ScaleARGBBilinearDown(int src_width, int src_height,
+                                  int dst_width, int dst_height,
+                                  int src_stride, int dst_stride,
+                                  const uint8* src_argb, uint8* dst_argb) {
   assert(dst_width > 0);
   assert(dst_height > 0);
-  assert(src_width <= kMaxInputWidth);
-  SIMD_ALIGNED(uint8 row[kMaxInputWidth * 4 + 16]);
+  assert(src_width * 4 <= kMaxStride);
+  SIMD_ALIGNED(uint8 row[kMaxStride + 16]);
   void (*ScaleARGBFilterRows)(uint8* dst_argb, const uint8* src_argb,
-                              ptrdiff_t src_stride,
-                              int dst_width, int source_y_fraction) =
-      ScaleARGBFilterRows_C;
-#if defined(HAS_SCALEARGBFILTERROWS_SSE2)
-  if (TestCpuFlag(kCpuHasSSE2) && IS_ALIGNED(src_width, 4) &&
-      IS_ALIGNED(src_argb, 16) && IS_ALIGNED(src_stride, 16)) {
-    ScaleARGBFilterRows = ScaleARGBFilterRows_SSE2;
+      ptrdiff_t src_stride, int dst_width, int source_y_fraction) =
+      ARGBInterpolateRow_C;
+#if defined(HAS_ARGBINTERPOLATEROW_SSE2)
+  if (TestCpuFlag(kCpuHasSSE2) && src_width >= 4) {
+    ScaleARGBFilterRows = ARGBInterpolateRow_Any_SSE2;
+    if (IS_ALIGNED(src_width, 4)) {
+      ScaleARGBFilterRows = ARGBInterpolateRow_Unaligned_SSE2;
+      if (IS_ALIGNED(src_argb, 16) && IS_ALIGNED(src_stride, 16)) {
+        ScaleARGBFilterRows = ARGBInterpolateRow_SSE2;
+      }
+    }
   }
 #endif
-#if defined(HAS_SCALEARGBFILTERROWS_SSSE3)
-  if (TestCpuFlag(kCpuHasSSSE3) && IS_ALIGNED(src_width, 4) &&
-      IS_ALIGNED(src_argb, 16) && IS_ALIGNED(src_stride, 16)) {
-    ScaleARGBFilterRows = ScaleARGBFilterRows_SSSE3;
+#if defined(HAS_ARGBINTERPOLATEROW_SSSE3)
+  if (TestCpuFlag(kCpuHasSSSE3) && src_width >= 4) {
+    ScaleARGBFilterRows = ARGBInterpolateRow_Any_SSSE3;
+    if (IS_ALIGNED(src_width, 4)) {
+      ScaleARGBFilterRows = ARGBInterpolateRow_Unaligned_SSSE3;
+      if (IS_ALIGNED(src_argb, 16) && IS_ALIGNED(src_stride, 16)) {
+        ScaleARGBFilterRows = ARGBInterpolateRow_SSSE3;
+      }
+    }
   }
 #endif
-#if defined(HAS_SCALEARGBFILTERROWS_NEON)
-  if (TestCpuFlag(kCpuHasNEON) && IS_ALIGNED(src_width, 4)) {
-    ScaleARGBFilterRows = ScaleARGBFilterRows_NEON;
+#if defined(HAS_ARGBINTERPOLATEROW_NEON)
+  if (TestCpuFlag(kCpuHasNEON) && src_width >= 4) {
+    ScaleARGBFilterRows = ARGBInterpolateRow_Any_NEON;
+    if (IS_ALIGNED(src_width, 4)) {
+      ScaleARGBFilterRows = ARGBInterpolateRow_NEON;
+    }
   }
 #endif
-  int dx = (src_width << 16) / dst_width;
-  int dy = (src_height << 16) / dst_height;
-  int x = (dx >= 65536) ? ((dx >> 1) - 32768) : (dx >> 1);
-  int y = (dy >= 65536) ? ((dy >> 1) - 32768) : (dy >> 1);
+  void (*ScaleARGBFilterCols)(uint8* dst_argb, const uint8* src_argb,
+      int dst_width, int x, int dx) = ScaleARGBFilterCols_C;
+#if defined(HAS_SCALEARGBFILTERCOLS_SSSE3)
+  if (TestCpuFlag(kCpuHasSSSE3)) {
+    ScaleARGBFilterCols = ScaleARGBFilterCols_SSSE3;
+  }
+#endif
+  int dx = 0;
+  int dy = 0;
+  int x = 0;
+  int y = 0;
+  if (dst_width <= src_width) {
+    dx = (src_width << 16) / dst_width;
+    x = (dx >> 1) - 32768;
+  } else if (dst_width > 1) {
+    dx = ((src_width - 1) << 16) / (dst_width - 1);
+  }
+  if (dst_height <= src_height) {
+    dy = (src_height << 16) / dst_height;
+    y = (dy >> 1) - 32768;
+  } else if (dst_height > 1) {
+    dy = ((src_height - 1) << 16) / (dst_height - 1);
+  }
   int maxy = (src_height > 1) ? ((src_height - 1) << 16) - 1 : 0;
   for (int j = 0; j < dst_height; ++j) {
     if (y > maxy) {
@@ -1062,7 +877,113 @@ static void ScaleARGBBilinear(int src_width, int src_height,
     int yf = (y >> 8) & 255;
     const uint8* src = src_argb + yi * src_stride;
     ScaleARGBFilterRows(row, src, src_stride, src_width, yf);
-    ScaleARGBFilterCols_C(dst_argb, row, dst_width, x, dx);
+    ScaleARGBFilterCols(dst_argb, row, dst_width, x, dx);
+    dst_argb += dst_stride;
+    y += dy;
+  }
+}
+
+// ScaleARGB ARGB to/from any dimensions, with bilinear
+// interpolation.
+static void ScaleARGBBilinearUp(int src_width, int src_height,
+                                int dst_width, int dst_height,
+                                int src_stride, int dst_stride,
+                                const uint8* src_argb, uint8* dst_argb) {
+  assert(dst_width > 0);
+  assert(dst_height > 0);
+  assert(dst_width * 4 <= kMaxStride);
+  void (*ScaleARGBFilterRows)(uint8* dst_argb, const uint8* src_argb,
+      ptrdiff_t src_stride, int dst_width, int source_y_fraction) =
+      ARGBInterpolateRow_C;
+#if defined(HAS_ARGBINTERPOLATEROW_SSE2)
+  if (TestCpuFlag(kCpuHasSSE2) && dst_width >= 4) {
+    ScaleARGBFilterRows = ARGBInterpolateRow_Any_SSE2;
+    if (IS_ALIGNED(dst_width, 4)) {
+      ScaleARGBFilterRows = ARGBInterpolateRow_Unaligned_SSE2;
+      if (IS_ALIGNED(dst_argb, 16) && IS_ALIGNED(dst_stride, 16)) {
+        ScaleARGBFilterRows = ARGBInterpolateRow_SSE2;
+      }
+    }
+  }
+#endif
+#if defined(HAS_ARGBINTERPOLATEROW_SSSE3)
+  if (TestCpuFlag(kCpuHasSSSE3) && dst_width >= 4) {
+    ScaleARGBFilterRows = ARGBInterpolateRow_Any_SSSE3;
+    if (IS_ALIGNED(dst_width, 4)) {
+      ScaleARGBFilterRows = ARGBInterpolateRow_Unaligned_SSSE3;
+      if (IS_ALIGNED(dst_argb, 16) && IS_ALIGNED(dst_stride, 16)) {
+        ScaleARGBFilterRows = ARGBInterpolateRow_SSSE3;
+      }
+    }
+  }
+#endif
+#if defined(HAS_ARGBINTERPOLATEROW_NEON)
+  if (TestCpuFlag(kCpuHasNEON) && dst_width >= 4) {
+    ScaleARGBFilterRows = ARGBInterpolateRow_Any_NEON;
+    if (IS_ALIGNED(dst_width, 4)) {
+      ScaleARGBFilterRows = ARGBInterpolateRow_NEON;
+    }
+  }
+#endif
+  void (*ScaleARGBFilterCols)(uint8* dst_argb, const uint8* src_argb,
+      int dst_width, int x, int dx) = ScaleARGBFilterCols_C;
+#if defined(HAS_SCALEARGBFILTERCOLS_SSSE3)
+  if (TestCpuFlag(kCpuHasSSSE3)) {
+    ScaleARGBFilterCols = ScaleARGBFilterCols_SSSE3;
+  }
+#endif
+  int dx = 0;
+  int dy = 0;
+  int x = 0;
+  int y = 0;
+  if (dst_width <= src_width) {
+    dx = (src_width << 16) / dst_width;
+    x = (dx >> 1) - 32768;
+  } else if (dst_width > 1) {
+    dx = ((src_width - 1) << 16) / (dst_width - 1);
+  }
+  if (dst_height <= src_height) {
+    dy = (src_height << 16) / dst_height;
+    y = (dy >> 1) - 32768;
+  } else if (dst_height > 1) {
+    dy = ((src_height - 1) << 16) / (dst_height - 1);
+  }
+  int maxy = (src_height > 1) ? ((src_height - 1) << 16) - 1 : 0;
+  if (y > maxy) {
+    y = maxy;
+  }
+  int yi = y >> 16;
+  int yf = (y >> 8) & 255;
+  const uint8* src = src_argb + yi * src_stride;
+  SIMD_ALIGNED(uint8 row[2 * kMaxStride]);
+  uint8* rowptr = row;
+  int rowstride = kMaxStride;
+  int lasty = 0;
+
+  ScaleARGBFilterCols(rowptr, src, dst_width, x, dx);
+  if (src_height > 1) {
+    src += src_stride;
+  }
+  ScaleARGBFilterCols(rowptr + rowstride, src, dst_width, x, dx);
+  src += src_stride;
+
+  for (int j = 0; j < dst_height; ++j) {
+    yi = y >> 16;
+    yf = (y >> 8) & 255;
+    if (yi != lasty) {
+      if (y <= maxy) {
+        y = maxy;
+        yi = y >> 16;
+        yf = (y >> 8) & 255;
+      } else {
+        ScaleARGBFilterCols(rowptr, src, dst_width, x, dx);
+        rowptr += rowstride;
+        rowstride = -rowstride;
+        lasty = yi;
+        src += src_stride;
+      }
+    }
+    ScaleARGBFilterRows(dst_argb, rowptr, rowstride, dst_width, yf);
     dst_argb += dst_stride;
     y += dy;
   }
@@ -1071,8 +992,8 @@ static void ScaleARGBBilinear(int src_width, int src_height,
 // Scales a single row of pixels using point sampling.
 // Code is adapted from libyuv bilinear yuv scaling, but with bilinear
 //     interpolation off, and argb pixels instead of yuv.
-static void ScaleARGBCols(uint8* dst_argb, const uint8* src_argb,
-                          int dst_width, int x, int dx) {
+static void ScaleARGBCols_C(uint8* dst_argb, const uint8* src_argb,
+                            int dst_width, int x, int dx) {
   const uint32* src = reinterpret_cast<const uint32*>(src_argb);
   uint32* dst = reinterpret_cast<uint32*>(dst_argb);
   for (int j = 0; j < dst_width - 1; j += 2) {
@@ -1087,7 +1008,6 @@ static void ScaleARGBCols(uint8* dst_argb, const uint8* src_argb,
   }
 }
 
-
 // ScaleARGB ARGB to/from any dimensions, without interpolation.
 // Fixed point math is used for performance: The upper 16 bits
 // of x and dx is the integer part of the source position and
@@ -1097,13 +1017,20 @@ static void ScaleARGBSimple(int src_width, int src_height,
                             int dst_width, int dst_height,
                             int src_stride, int dst_stride,
                             const uint8* src_argb, uint8* dst_argb) {
+  void (*ScaleARGBCols)(uint8* dst_argb, const uint8* src_argb,
+      int dst_width, int x, int dx) = ScaleARGBCols_C;
+#if defined(HAS_SCALEARGBCOLS_SSE2)
+  if (TestCpuFlag(kCpuHasSSE2)) {
+    ScaleARGBCols = ScaleARGBCols_SSE2;
+  }
+#endif
   int dx = (src_width << 16) / dst_width;
   int dy = (src_height << 16) / dst_height;
   int x = (dx >= 65536) ? ((dx >> 1) - 32768) : (dx >> 1);
   int y = (dy >= 65536) ? ((dy >> 1) - 32768) : (dy >> 1);
   for (int i = 0; i < dst_height; ++i) {
-    ScaleARGBCols(dst_argb, src_argb + (y >> 16) * src_stride, dst_width, x,
-                  dx);
+    ScaleARGBCols(dst_argb, src_argb + (y >> 16) * src_stride,
+                  dst_width, x, dx);
     dst_argb += dst_stride;
     y += dy;
   }
@@ -1116,17 +1043,22 @@ static void ScaleARGBAnySize(int src_width, int src_height,
                              int src_stride, int dst_stride,
                              const uint8* src_argb, uint8* dst_argb,
                              FilterMode filtering) {
-  if (!filtering || (src_width > kMaxInputWidth)) {
+  if (!filtering ||
+      (src_width * 4 > kMaxStride && dst_width * 4 > kMaxStride)) {
     ScaleARGBSimple(src_width, src_height, dst_width, dst_height,
                     src_stride, dst_stride, src_argb, dst_argb);
+    return;
+  }
+  if (dst_height <= src_height || dst_width * 4 > kMaxStride) {
+    ScaleARGBBilinearDown(src_width, src_height, dst_width, dst_height,
+                          src_stride, dst_stride, src_argb, dst_argb);
   } else {
-    ScaleARGBBilinear(src_width, src_height, dst_width, dst_height,
-                      src_stride, dst_stride, src_argb, dst_argb);
+    ScaleARGBBilinearUp(src_width, src_height, dst_width, dst_height,
+                        src_stride, dst_stride, src_argb, dst_argb);
   }
 }
 
 // ScaleARGB a ARGB.
-//
 // This function in turn calls a scaling function
 // suitable for handling the desired resolutions.
 
@@ -1137,7 +1069,7 @@ static void ScaleARGB(const uint8* src, int src_stride,
                       FilterMode filtering) {
 #ifdef CPU_X86
   // environment variable overrides for testing.
-  char *filter_override = getenv("LIBYUV_FILTER");
+  char* filter_override = getenv("LIBYUV_FILTER");
   if (filter_override) {
     filtering = (FilterMode)atoi(filter_override);  // NOLINT
   }
@@ -1175,10 +1107,10 @@ static void ScaleARGB(const uint8* src, int src_stride,
 // ScaleARGB an ARGB image.
 LIBYUV_API
 int ARGBScale(const uint8* src_argb, int src_stride_argb,
-             int src_width, int src_height,
-             uint8* dst_argb, int dst_stride_argb,
-             int dst_width, int dst_height,
-             FilterMode filtering) {
+              int src_width, int src_height,
+              uint8* dst_argb, int dst_stride_argb,
+              int dst_width, int dst_height,
+              FilterMode filtering) {
   if (!src_argb || src_width <= 0 || src_height == 0 ||
       !dst_argb || dst_width <= 0 || dst_height <= 0) {
     return -1;

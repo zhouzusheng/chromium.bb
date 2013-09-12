@@ -64,9 +64,7 @@ class Handle {
   INLINE(T* operator ->() const) { return operator*(); }
 
   // Check if this handle refers to the exact same object as the other handle.
-  bool is_identical_to(const Handle<T> other) const {
-    return *location_ == *other.location_;
-  }
+  INLINE(bool is_identical_to(const Handle<T> other) const);
 
   // Provides the C++ dereference operator.
   INLINE(T* operator*() const);
@@ -75,8 +73,8 @@ class Handle {
   INLINE(T** location() const);
 
   template <class S> static Handle<T> cast(Handle<S> that) {
-    T::cast(*that);
-    return Handle<T>(reinterpret_cast<T**>(that.location()));
+    T::cast(*reinterpret_cast<T**>(that.location_));
+    return Handle<T>(reinterpret_cast<T**>(that.location_));
   }
 
   static Handle<T> null() { return Handle<T>(); }
@@ -85,6 +83,10 @@ class Handle {
   // Closes the given scope, but lets this handle escape. See
   // implementation in api.h.
   inline Handle<T> EscapeFrom(v8::HandleScope* scope);
+
+#ifdef DEBUG
+  bool IsDereferenceAllowed(bool allow_deferred) const;
+#endif  // DEBUG
 
  private:
   T** location_;
@@ -162,13 +164,14 @@ class HandleScope {
   // Extend the handle scope making room for more handles.
   static internal::Object** Extend(Isolate* isolate);
 
+#ifdef ENABLE_EXTRA_CHECKS
   // Zaps the handles in the half-open interval [start, end).
   static void ZapRange(internal::Object** start, internal::Object** end);
+#endif
 
-  friend class v8::internal::DeferredHandles;
   friend class v8::HandleScope;
+  friend class v8::internal::DeferredHandles;
   friend class v8::internal::HandleScopeImplementer;
-  friend class v8::ImplementationUtilities;
   friend class v8::internal::Isolate;
 };
 
@@ -224,20 +227,17 @@ Handle<Object> ForceSetProperty(Handle<JSObject> object,
                                 Handle<Object> value,
                                 PropertyAttributes attributes);
 
-Handle<Object> ForceDeleteProperty(Handle<JSObject> object,
-                                   Handle<Object> key);
+Handle<Object> DeleteProperty(Handle<JSObject> object, Handle<Object> key);
 
-Handle<Object> GetProperty(Handle<JSReceiver> obj,
-                           const char* name);
+Handle<Object> ForceDeleteProperty(Handle<JSObject> object, Handle<Object> key);
+
+Handle<Object> HasProperty(Handle<JSReceiver> obj, Handle<Object> key);
+
+Handle<Object> GetProperty(Handle<JSReceiver> obj, const char* name);
 
 Handle<Object> GetProperty(Isolate* isolate,
                            Handle<Object> obj,
                            Handle<Object> key);
-
-Handle<Object> GetPropertyWithInterceptor(Handle<JSObject> receiver,
-                                          Handle<JSObject> holder,
-                                          Handle<String> name,
-                                          PropertyAttributes* attributes);
 
 Handle<Object> SetPrototype(Handle<JSObject> obj, Handle<Object> value);
 
@@ -245,6 +245,8 @@ Handle<Object> LookupSingleCharacterStringFromCode(Isolate* isolate,
                                                    uint32_t index);
 
 Handle<JSObject> Copy(Handle<JSObject> obj);
+
+Handle<JSObject> DeepCopy(Handle<JSObject> obj);
 
 Handle<Object> SetAccessor(Handle<JSObject> obj, Handle<AccessorInfo> info);
 
@@ -341,34 +343,28 @@ class NoHandleAllocation BASE_EMBEDDED {
 };
 
 
-class NoHandleDereference BASE_EMBEDDED {
+class HandleDereferenceGuard BASE_EMBEDDED {
  public:
+  enum State { ALLOW, DISALLOW, DISALLOW_DEFERRED };
 #ifndef DEBUG
-  explicit NoHandleDereference(Isolate* isolate) {}
-  ~NoHandleDereference() {}
+  HandleDereferenceGuard(Isolate* isolate, State state) { }
+  ~HandleDereferenceGuard() { }
 #else
-  explicit inline NoHandleDereference(Isolate* isolate);
-  inline ~NoHandleDereference();
+  inline HandleDereferenceGuard(Isolate* isolate,  State state);
+  inline ~HandleDereferenceGuard();
  private:
   Isolate* isolate_;
-  bool old_state_;
+  State old_state_;
 #endif
 };
 
-
-class AllowHandleDereference BASE_EMBEDDED {
- public:
-#ifndef DEBUG
-  explicit AllowHandleDereference(Isolate* isolate) {}
-  ~AllowHandleDereference() {}
+#ifdef DEBUG
+#define ALLOW_HANDLE_DEREF(isolate, why_this_is_safe)                          \
+  HandleDereferenceGuard allow_deref(isolate,                                  \
+                                     HandleDereferenceGuard::ALLOW);
 #else
-  explicit inline AllowHandleDereference(Isolate* isolate);
-  inline ~AllowHandleDereference();
- private:
-  Isolate* isolate_;
-  bool old_state_;
-#endif
-};
+#define ALLOW_HANDLE_DEREF(isolate, why_this_is_safe)
+#endif  // DEBUG
 
 } }  // namespace v8::internal
 

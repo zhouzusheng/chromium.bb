@@ -145,6 +145,13 @@ public:
         virtual ~WebGraphicsMemoryAllocationChangedCallbackCHROMIUM() { }
     };
 
+    class WebGraphicsSyncPointCallback {
+    public:
+        virtual ~WebGraphicsSyncPointCallback() { }
+
+        virtual void onSyncPointReached() = 0;
+    };
+
     // This destructor needs to be public so that using classes can destroy instances if initialization fails.
     virtual ~WebGraphicsContext3D() { }
 
@@ -181,6 +188,9 @@ public:
 
     virtual unsigned insertSyncPoint() { return 0; }
     virtual void waitSyncPoint(unsigned) { }
+    // This call passes ownership of the WebGraphicsSyncPointCallback to the
+    // WebGraphicsContext3D implementation.
+    virtual void signalSyncPoint(unsigned syncPoint, WebGraphicsSyncPointCallback* callback) { delete callback; }
 
     // Helper for software compositing path. Reads back the frame buffer into
     // the memory region pointed to by "pixels" with size "bufferSize". It is
@@ -479,6 +489,9 @@ public:
 
     // FIXME: Make implementations of this class override this method instead and then remove onCreateGrGLInterface().
     virtual GrGLInterface* createGrGLInterface() { return onCreateGrGLInterface(); }
+
+    // GL_CHROMIUM_gpu_memory_buffer
+    virtual void imageBufferDataCHROMIUM(WGC3Denum target, WGC3Dsizei width, WGC3Dsizei height) { }
 
 protected:
     virtual GrGLInterface* onCreateGrGLInterface() { return 0; }

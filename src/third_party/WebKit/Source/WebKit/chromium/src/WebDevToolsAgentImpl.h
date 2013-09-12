@@ -31,8 +31,8 @@
 #ifndef WebDevToolsAgentImpl_h
 #define WebDevToolsAgentImpl_h
 
-#include "InspectorClient.h"
-#include "InspectorFrontendChannel.h"
+#include "core/inspector/InspectorClient.h"
+#include "core/inspector/InspectorFrontendChannel.h"
 
 #include "WebDevToolsAgentPrivate.h"
 #include "WebPageOverlay.h"
@@ -79,6 +79,7 @@ public:
     virtual void mainFrameViewCreated(WebFrameImpl*);
     virtual bool metricsOverridden();
     virtual void webViewResized(const WebSize&);
+    virtual bool handleInputEvent(WebCore::Page*, const WebInputEvent&);
 
     // WebDevToolsAgent implementation.
     virtual void attach();
@@ -95,14 +96,8 @@ public:
     virtual void setProcessId(long);
 
     // InspectorClient implementation.
-    virtual void inspectorDestroyed();
-    virtual WebCore::InspectorFrontendChannel* openInspectorFrontend(WebCore::InspectorController*);
-    virtual void closeInspectorFrontend();
-
-    virtual void bringFrontendToFront();
     virtual void highlight();
     virtual void hideHighlight();
-    virtual bool supportsInspectorStateUpdates() const { return true; }
     virtual void updateInspectorStateCookie(const WTF::String&);
     virtual bool sendMessageToFrontend(const WTF::String&);
 
@@ -115,10 +110,6 @@ public:
     virtual void getAllocatedObjects(HashSet<const void*>&);
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&);
     virtual void setTraceEventCallback(TraceEventCallback);
-
-    virtual bool captureScreenshot(WTF::String* data);
-
-    virtual bool handleJavaScriptDialog(bool accept, const WTF::String* promptText);
 
     int hostId() { return m_hostId; }
 
@@ -140,7 +131,6 @@ private:
     WebViewImpl* m_webViewImpl;
     bool m_attached;
     OwnPtr<DeviceMetricsSupport> m_metricsSupport;
-    BrowserDataHint m_sendWithBrowserDataHint;
 };
 
 } // namespace WebKit

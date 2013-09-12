@@ -26,13 +26,11 @@
 #include "config.h"
 #include "IDBCursorBackendProxy.h"
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "IDBAny.h"
-#include "IDBCallbacks.h"
-#include "IDBKey.h"
+#include <public/WebIDBKey.h>
 #include "WebIDBCallbacksImpl.h"
-#include "WebIDBKey.h"
+#include "modules/indexeddb/IDBAny.h"
+#include "modules/indexeddb/IDBCallbacks.h"
+#include "modules/indexeddb/IDBKey.h"
 
 using namespace WebCore;
 
@@ -52,19 +50,14 @@ IDBCursorBackendProxy::~IDBCursorBackendProxy()
 {
 }
 
-void IDBCursorBackendProxy::advance(unsigned long count, PassRefPtr<IDBCallbacks> callbacks, ExceptionCode& ec)
+void IDBCursorBackendProxy::advance(unsigned long count, PassRefPtr<IDBCallbacks> callbacks)
 {
-    m_idbCursor->advance(count, new WebIDBCallbacksImpl(callbacks), ec);
+    m_idbCursor->advance(count, new WebIDBCallbacksImpl(callbacks));
 }
 
-void IDBCursorBackendProxy::continueFunction(PassRefPtr<IDBKey> key, PassRefPtr<IDBCallbacks> callbacks, ExceptionCode& ec)
+void IDBCursorBackendProxy::continueFunction(PassRefPtr<IDBKey> key, PassRefPtr<IDBCallbacks> callbacks)
 {
-    m_idbCursor->continueFunction(key, new WebIDBCallbacksImpl(callbacks), ec);
-}
-
-void IDBCursorBackendProxy::deleteFunction(PassRefPtr<IDBCallbacks> callbacks, ExceptionCode& ec)
-{
-    m_idbCursor->deleteFunction(new WebIDBCallbacksImpl(callbacks), ec);
+    m_idbCursor->continueFunction(key, new WebIDBCallbacksImpl(callbacks));
 }
 
 void IDBCursorBackendProxy::postSuccessHandlerCallback()
@@ -73,5 +66,3 @@ void IDBCursorBackendProxy::postSuccessHandlerCallback()
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)

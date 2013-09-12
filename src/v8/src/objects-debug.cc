@@ -80,6 +80,9 @@ void HeapObject::HeapObjectVerify() {
   }
 
   switch (instance_type) {
+    case SYMBOL_TYPE:
+      Symbol::cast(this)->SymbolVerify();
+      break;
     case MAP_TYPE:
       Map::cast(this)->MapVerify();
       break;
@@ -135,6 +138,9 @@ void HeapObject::HeapObjectVerify() {
     case JS_OBJECT_TYPE:
     case JS_CONTEXT_EXTENSION_OBJECT_TYPE:
       JSObject::cast(this)->JSObjectVerify();
+      break;
+    case JS_GENERATOR_OBJECT_TYPE:
+      JSGeneratorObject::cast(this)->JSGeneratorObjectVerify();
       break;
     case JS_MODULE_TYPE:
       JSModule::cast(this)->JSModuleVerify();
@@ -192,6 +198,12 @@ void HeapObject::HeapObjectVerify() {
     case JS_MESSAGE_OBJECT_TYPE:
       JSMessageObject::cast(this)->JSMessageObjectVerify();
       break;
+    case JS_ARRAY_BUFFER_TYPE:
+      JSArrayBuffer::cast(this)->JSArrayBufferVerify();
+      break;
+    case JS_TYPED_ARRAY_TYPE:
+      JSTypedArray::cast(this)->JSTypedArrayVerify();
+      break;
 
 #define MAKE_STRUCT_CASE(NAME, Name, name) \
   case NAME##_TYPE:                        \
@@ -210,6 +222,14 @@ void HeapObject::HeapObjectVerify() {
 void HeapObject::VerifyHeapPointer(Object* p) {
   CHECK(p->IsHeapObject());
   CHECK(HEAP->Contains(HeapObject::cast(p)));
+}
+
+
+void Symbol::SymbolVerify() {
+  CHECK(IsSymbol());
+  CHECK(HasHashCode());
+  CHECK_GT(Hash(), 0);
+  CHECK(name()->IsUndefined() || name()->IsString());
 }
 
 
@@ -381,12 +401,24 @@ void FixedDoubleArray::FixedDoubleArrayVerify() {
   for (int i = 0; i < length(); i++) {
     if (!is_the_hole(i)) {
       double value = get_scalar(i);
-      CHECK(!isnan(value) ||
+      CHECK(!std::isnan(value) ||
              (BitCast<uint64_t>(value) ==
               BitCast<uint64_t>(canonical_not_the_hole_nan_as_double())) ||
              ((BitCast<uint64_t>(value) & Double::kSignMask) != 0));
     }
   }
+}
+
+
+void JSGeneratorObject::JSGeneratorObjectVerify() {
+  // In an expression like "new g()", there can be a point where a generator
+  // object is allocated but its fields are all undefined, as it hasn't yet been
+  // initialized by the generator.  Hence these weak checks.
+  VerifyObjectField(kFunctionOffset);
+  VerifyObjectField(kContextOffset);
+  VerifyObjectField(kReceiverOffset);
+  VerifyObjectField(kOperandStackOffset);
+  VerifyObjectField(kContinuationOffset);
 }
 
 
@@ -469,23 +501,14 @@ void JSMessageObject::JSMessageObjectVerify() {
 void String::StringVerify() {
   CHECK(IsString());
   CHECK(length() >= 0 && length() <= Smi::kMaxValue);
-  if (IsSymbol()) {
+  if (IsInternalizedString()) {
     CHECK(!HEAP->InNewSpace(this));
   }
   if (IsConsString()) {
     ConsString::cast(this)->ConsStringVerify();
   } else if (IsSlicedString()) {
     SlicedString::cast(this)->SlicedStringVerify();
-  } else if (IsSeqOneByteString()) {
-    SeqOneByteString::cast(this)->SeqOneByteStringVerify();
   }
-}
-
-
-void SeqOneByteString::SeqOneByteStringVerify() {
-#ifndef ENABLE_LATIN_1
-  CHECK(String::IsAscii(GetChars(), length()));
-#endif
 }
 
 
@@ -710,6 +733,36 @@ void JSFunctionProxy::JSFunctionProxyVerify() {
   VerifyPointer(construct_trap());
 }
 
+void JSArrayBuffer::JSArrayBufferVerify() {
+  CHECK(IsJSArrayBuffer());
+  JSObjectVerify();
+  VerifyPointer(byte_length());
+  CHECK(byte_length()->IsSmi() || byte_length()->IsHeapNumber()
+        || byte_length()->IsUndefined());
+}
+
+
+void JSTypedArray::JSTypedArrayVerify() {
+  CHECK(IsJSTypedArray());
+  JSObjectVerify();
+  VerifyPointer(buffer());
+  CHECK(buffer()->IsJSArrayBuffer() || buffer()->IsUndefined());
+
+  VerifyPointer(byte_offset());
+  CHECK(byte_offset()->IsSmi() || byte_offset()->IsHeapNumber()
+        || byte_offset()->IsUndefined());
+
+  VerifyPointer(byte_length());
+  CHECK(byte_length()->IsSmi() || byte_length()->IsHeapNumber()
+        || byte_length()->IsUndefined());
+
+  VerifyPointer(length());
+  CHECK(length()->IsSmi() || length()->IsHeapNumber()
+        || length()->IsUndefined());
+
+  VerifyPointer(elements());
+}
+
 
 void Foreign::ForeignVerify() {
   CHECK(IsForeign());
@@ -734,7 +787,7 @@ void ExecutableAccessorInfo::ExecutableAccessorInfoVerify() {
 
 void DeclaredAccessorDescriptor::DeclaredAccessorDescriptorVerify() {
   CHECK(IsDeclaredAccessorDescriptor());
-  VerifySmiField(kInternalFieldOffset);
+  VerifyPointer(serialized_data());
 }
 
 
@@ -912,7 +965,7 @@ void JSObject::IncrementSpillStatistics(SpillInformation* info) {
     info->number_of_fast_used_fields_   += map()->NextFreePropertyIndex();
     info->number_of_fast_unused_fields_ += map()->unused_property_fields();
   } else {
-    StringDictionary* dict = property_dictionary();
+    NameDictionary* dict = property_dictionary();
     info->number_of_slow_used_properties_ += dict->NumberOfElements();
     info->number_of_slow_unused_properties_ +=
         dict->Capacity() - dict->NumberOfElements();
@@ -1003,10 +1056,10 @@ void JSObject::SpillInformation::Print() {
 
 bool DescriptorArray::IsSortedNoDuplicates(int valid_entries) {
   if (valid_entries == -1) valid_entries = number_of_descriptors();
-  String* current_key = NULL;
+  Name* current_key = NULL;
   uint32_t current = 0;
   for (int i = 0; i < number_of_descriptors(); i++) {
-    String* key = GetSortedKey(i);
+    Name* key = GetSortedKey(i);
     if (key == current_key) {
       PrintDescriptors();
       return false;
@@ -1025,10 +1078,10 @@ bool DescriptorArray::IsSortedNoDuplicates(int valid_entries) {
 
 bool TransitionArray::IsSortedNoDuplicates(int valid_entries) {
   ASSERT(valid_entries == -1);
-  String* current_key = NULL;
+  Name* current_key = NULL;
   uint32_t current = 0;
   for (int i = 0; i < number_of_transitions(); i++) {
-    String* key = GetSortedKey(i);
+    Name* key = GetSortedKey(i);
     if (key == current_key) {
       PrintTransitions();
       return false;

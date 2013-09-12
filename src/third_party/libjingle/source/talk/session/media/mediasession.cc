@@ -653,9 +653,14 @@ static void NegotiateCodecs(const std::vector<C>& local_codecs,
         C negotiated = *ours;
         negotiated.IntersectFeedbackParams(*theirs);
         if (IsRtxCodec(negotiated)) {
-          // Since we use the payload type from the |offered_codecs|, we also
-          // need to use the referenced payload type.
-          negotiated.params = theirs->params;
+          // Only negotiate RTX if kCodecParamAssociatedPayloadType has been
+          // set.
+          std::string apt_value;
+          if (!theirs->GetParam(kCodecParamAssociatedPayloadType, &apt_value)) {
+            LOG(LS_WARNING) << "RTX missing associated payload type.";
+            continue;
+          }
+          negotiated.SetParam(kCodecParamAssociatedPayloadType, apt_value);
         }
         negotiated.id = theirs->id;
         negotiated_codecs->push_back(negotiated);
@@ -781,6 +786,17 @@ static void NegotiateRtpHeaderExtensions(
   }
 }
 
+static void StripCNCodecs(AudioCodecs* audio_codecs) {
+  AudioCodecs::iterator iter = audio_codecs->begin();
+  while (iter != audio_codecs->end()) {
+    if (stricmp(iter->name.c_str(), kComfortNoiseCodecName) == 0) {
+      iter = audio_codecs->erase(iter);
+    } else {
+      ++iter;
+    }
+  }
+}
+
 // Create a media content to be answered in a session-accept,
 // according to the given options.rtcp_mux, options.streams, codecs,
 // crypto, and streams.  If we don't currently have crypto (in
@@ -834,6 +850,25 @@ static bool CreateMediaContentAnswer(
           answer->type(), options.streams, current_streams,
           answer, add_legacy_stream)) {
     return false;  // Something went seriously wrong.
+  }
+
+  // Make sure the answer media content direction is per default set as
+  // described in RFC3264 section 6.1.
+  switch (offer->direction()) {
+    case MD_INACTIVE:
+      answer->set_direction(MD_INACTIVE);
+      break;
+    case MD_SENDONLY:
+      answer->set_direction(MD_RECVONLY);
+      break;
+    case MD_RECVONLY:
+      answer->set_direction(MD_SENDONLY);
+      break;
+    case MD_SENDRECV:
+      answer->set_direction(MD_SENDRECV);
+      break;
+    default:
+      break;
   }
 
   return true;
@@ -915,6 +950,11 @@ SessionDescription* MediaSessionDescriptionFactory::CreateOffer(
   DataCodecs data_codecs;
   GetCodecsToOffer(current_description, &audio_codecs, &video_codecs,
                    &data_codecs);
+
+  if (!options.vad_enabled) {
+    // If application doesn't want CN codecs in offer.
+    StripCNCodecs(&audio_codecs);
+  }
 
   RtpHeaderExtensions audio_rtp_extensions;
   RtpHeaderExtensions video_rtp_extensions;
@@ -1049,6 +1089,11 @@ SessionDescription* MediaSessionDescriptionFactory::CreateAnswer(
       return NULL;
     }
 
+    AudioCodecs audio_codecs = audio_codecs_;
+    if (!options.vad_enabled) {
+      StripCNCodecs(&audio_codecs);
+    }
+
     scoped_ptr<AudioContentDescription> audio_answer(
         new AudioContentDescription());
     // Do not require or create SDES cryptos if DTLS is used.
@@ -1058,7 +1103,7 @@ SessionDescription* MediaSessionDescriptionFactory::CreateAnswer(
             static_cast<const AudioContentDescription*>(
                 audio_content->description),
             options,
-            audio_codecs_,
+            audio_codecs,
             sdes_policy,
             GetCryptos(GetFirstAudioContentDescription(current_description)),
             audio_rtp_extensions_,

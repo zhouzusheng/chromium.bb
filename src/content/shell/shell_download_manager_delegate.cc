@@ -90,7 +90,10 @@ bool ShellDownloadManagerDelegate::DetermineDownloadTarget(
 bool ShellDownloadManagerDelegate::ShouldOpenDownload(
       DownloadItem* item,
       const DownloadOpenDelayedCallback& callback) {
-  // SHEZ: remove upstream code here, used only for testing
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
+    WebKitTestController::Get()->OpenURL(
+        net::FilePathToFileURL(item->GetFullPath()));
+  }
   return true;
 }
 

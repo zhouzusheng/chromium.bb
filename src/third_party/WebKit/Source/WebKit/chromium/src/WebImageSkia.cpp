@@ -30,11 +30,11 @@
 
 #include "config.h"
 
-#include "Image.h"
-#include "ImageDecoder.h"
-#include "NativeImageSkia.h"
-#include "SharedBuffer.h"
 #include <algorithm>
+#include "core/platform/SharedBuffer.h"
+#include "core/platform/graphics/Image.h"
+#include "core/platform/graphics/skia/NativeImageSkia.h"
+#include "core/platform/image-decoders/ImageDecoder.h"
 #include <public/WebData.h>
 #include <public/WebImage.h>
 #include <public/WebSize.h>
@@ -50,7 +50,7 @@ namespace WebKit {
 WebImage WebImage::fromData(const WebData& data, const WebSize& desiredSize)
 {
     RefPtr<SharedBuffer> buffer = PassRefPtr<SharedBuffer>(data);
-    OwnPtr<ImageDecoder> decoder(adoptPtr(ImageDecoder::create(*buffer.get(), ImageSource::AlphaPremultiplied, ImageSource::GammaAndColorProfileIgnored)));
+    OwnPtr<ImageDecoder> decoder(ImageDecoder::create(*buffer.get(), ImageSource::AlphaPremultiplied, ImageSource::GammaAndColorProfileIgnored));
     if (!decoder)
         return WebImage();
 
@@ -85,7 +85,7 @@ WebImage WebImage::fromData(const WebData& data, const WebSize& desiredSize)
     if (!frame)
         return WebImage();
 
-    OwnPtr<NativeImageSkia> image = adoptPtr(frame->asNewNativeImage());
+    RefPtr<NativeImageSkia> image = frame->asNewNativeImage();
     if (!image)
         return WebImage();
 
@@ -98,7 +98,7 @@ WebVector<WebImage> WebImage::framesFromData(const WebData& data)
     const size_t maxFrameCount = 8;
 
     RefPtr<SharedBuffer> buffer = PassRefPtr<SharedBuffer>(data);
-    OwnPtr<ImageDecoder> decoder(adoptPtr(ImageDecoder::create(*buffer.get(), ImageSource::AlphaPremultiplied, ImageSource::GammaAndColorProfileIgnored)));
+    OwnPtr<ImageDecoder> decoder(ImageDecoder::create(*buffer.get(), ImageSource::AlphaPremultiplied, ImageSource::GammaAndColorProfileIgnored));
     if (!decoder)
         return WebVector<WebImage>();
 
@@ -122,8 +122,8 @@ WebVector<WebImage> WebImage::framesFromData(const WebData& data)
         if (!frame)
             continue;
 
-        OwnPtr<NativeImageSkia> image = adoptPtr(frame->asNewNativeImage());
-        if (image.get() && image->isDataComplete())
+        RefPtr<NativeImageSkia> image = frame->asNewNativeImage();
+        if (image && image->isDataComplete())
             frames.append(WebImage(image->bitmap()));
     }
 
@@ -157,8 +157,8 @@ WebImage::WebImage(const PassRefPtr<Image>& image)
 
 WebImage& WebImage::operator=(const PassRefPtr<Image>& image)
 {
-    NativeImagePtr p;
-    if (image.get() && (p = image->nativeImageForCurrentFrame()))
+    RefPtr<NativeImageSkia> p;
+    if (image && (p = image->nativeImageForCurrentFrame()))
         assign(p->bitmap());
     else
         reset();

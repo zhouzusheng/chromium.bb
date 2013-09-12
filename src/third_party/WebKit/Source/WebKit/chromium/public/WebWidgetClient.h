@@ -172,6 +172,12 @@ public:
     // Called when a gesture event is handled.
     virtual void didHandleGestureEvent(const WebGestureEvent& event, bool eventCancelled) { }
 
+    // Called to update if touch events should be sent.
+    virtual void hasTouchEventHandlers(bool) { }
+
+    // Called when WebKit programmatically scrolls.
+    virtual void didProgrammaticallyScroll(const WebPoint& scrollPoint) { }
+
 protected:
     ~WebWidgetClient() { }
 };

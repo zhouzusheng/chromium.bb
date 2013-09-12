@@ -31,14 +31,15 @@
 #include "config.h"
 #include "InspectorFrontendClientImpl.h"
 
-#include "Document.h"
-#include "Frame.h"
-#include "InspectorFrontendHost.h"
-#include "Page.h"
-#include "ScriptController.h"
 #include "V8InspectorFrontendHost.h"
 #include "WebDevToolsFrontendClient.h"
 #include "WebDevToolsFrontendImpl.h"
+#include "bindings/v8/ScriptController.h"
+#include "core/dom/Document.h"
+#include "core/inspector/InspectorFrontendHost.h"
+#include "core/page/Frame.h"
+#include "core/page/Page.h"
+#include "core/platform/NotImplemented.h"
 #include <public/WebFloatPoint.h>
 #include <public/WebString.h>
 #include <wtf/text/WTFString.h>
@@ -74,18 +75,9 @@ void InspectorFrontendClientImpl::windowObjectCleared()
     global->Set(v8::String::New("InspectorFrontendHost"), frontendHostObj);
 }
 
-void InspectorFrontendClientImpl::frontendLoaded()
-{
-}
-
 void InspectorFrontendClientImpl::moveWindowBy(float x, float y)
 {
     m_client->moveWindowBy(WebFloatPoint(x, y));
-}
-
-String InspectorFrontendClientImpl::localizedStringsURL()
-{
-    return "";
 }
 
 void InspectorFrontendClientImpl::bringToFront()
@@ -119,11 +111,6 @@ void InspectorFrontendClientImpl::openInNewTab(const String& url)
     m_client->openInNewTab(url);
 }
 
-bool InspectorFrontendClientImpl::canSave()
-{
-    return true;
-}
-
 void InspectorFrontendClientImpl::save(const String& url, const String& content, bool forceSaveAs)
 {
     m_client->save(url, content, forceSaveAs);
@@ -142,11 +129,6 @@ void InspectorFrontendClientImpl::inspectedURLChanged(const String& url)
 void InspectorFrontendClientImpl::sendMessageToBackend(const String& message)
 {
     m_client->sendMessageToBackend(message);
-}
-
-bool InspectorFrontendClientImpl::supportsFileSystems()
-{
-    return true;
 }
 
 void InspectorFrontendClientImpl::requestFileSystems()

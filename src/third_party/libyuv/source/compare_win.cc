@@ -94,6 +94,7 @@ uint32 SumSquareError_AVX2(const uint8* src_a, const uint8* src_b, int count) {
     vpermq     ymm1, ymm0, 0x02  // high + low lane.
     vpaddd     ymm0, ymm0, ymm1
     vmovd      eax, xmm0
+    vzeroupper
     ret
   }
 }
@@ -189,4 +190,3 @@ uint32 HashDjb2_SSE41(const uint8* src, int count, uint32 seed) {
 }  // extern "C"
 }  // namespace libyuv
 #endif
-

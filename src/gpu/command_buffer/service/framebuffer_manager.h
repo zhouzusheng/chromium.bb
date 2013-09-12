@@ -170,7 +170,7 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   static FramebufferComboCompleteMap* framebuffer_combo_complete_map_;
   static bool allow_framebuffer_combo_complete_map_;
 
-  scoped_array<GLenum> draw_buffers_;
+  scoped_ptr<GLenum[]> draw_buffers_;
 
   DISALLOW_COPY_AND_ASSIGN(Framebuffer);
 };

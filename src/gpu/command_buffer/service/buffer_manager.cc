@@ -7,8 +7,8 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
+#include "gpu/command_buffer/service/error_state.h"
 #include "gpu/command_buffer/service/feature_info.h"
-#include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "ui/gl/gl_bindings.h"
 
@@ -99,10 +99,10 @@ void Buffer::SetInfo(
     bool is_client_side_array) {
   usage_ = usage;
   is_client_side_array_ = is_client_side_array;
+  ClearCache();
   if (size != size_ || shadow != shadowed_) {
     shadowed_ = shadow;
     size_ = size;
-    ClearCache();
     if (shadowed_) {
       shadow_.reset(new int8[size]);
     } else {
@@ -240,6 +240,11 @@ bool BufferManager::IsUsageClientSideArray(GLenum usage) {
   return usage == GL_STREAM_DRAW && use_client_side_arrays_for_stream_buffers_;
 }
 
+bool BufferManager::UseNonZeroSizeForClientSideArrayBuffer() {
+  return feature_info_ && feature_info_->workarounds(
+              ).use_non_zero_size_for_client_side_stream_buffers;
+}
+
 void BufferManager::SetInfo(
     Buffer* buffer, GLsizeiptr size, GLenum usage, const GLvoid* data) {
   DCHECK(buffer);
@@ -253,26 +258,27 @@ void BufferManager::SetInfo(
 }
 
 void BufferManager::DoBufferData(
-    GLES2Decoder* decoder,
+    ErrorState* error_state,
     Buffer* buffer,
     GLsizeiptr size,
     GLenum usage,
     const GLvoid* data) {
   // Clear the buffer to 0 if no initial data was passed in.
-  scoped_array<int8> zero;
+  scoped_ptr<int8[]> zero;
   if (!data) {
     zero.reset(new int8[size]);
     memset(zero.get(), 0, size);
     data = zero.get();
   }
 
-  GLESDECODER_COPY_REAL_GL_ERRORS_TO_WRAPPER(decoder, "glBufferData");
+  ERRORSTATE_COPY_REAL_GL_ERRORS_TO_WRAPPER(error_state, "glBufferData");
   if (IsUsageClientSideArray(usage)) {
-    glBufferData(buffer->target(), 0, NULL, usage);
+    GLsizei empty_size = UseNonZeroSizeForClientSideArrayBuffer() ? 1 : 0;
+    glBufferData(buffer->target(), empty_size, NULL, usage);
   } else {
     glBufferData(buffer->target(), size, data, usage);
   }
-  GLenum error = GLESDECODER_PEEK_GL_ERROR(decoder, "glBufferData");
+  GLenum error = ERRORSTATE_PEEK_GL_ERROR(error_state, "glBufferData");
   if (error == GL_NO_ERROR) {
     SetInfo(buffer, size, usage, data);
   } else {
@@ -281,14 +287,14 @@ void BufferManager::DoBufferData(
 }
 
 void BufferManager::DoBufferSubData(
-    GLES2Decoder* decoder,
+    ErrorState* error_state,
     Buffer* buffer,
     GLintptr offset,
     GLsizeiptr size,
     const GLvoid* data) {
   if (!buffer->SetRange(offset, size, data)) {
-    GLESDECODER_SET_GL_ERROR(
-        decoder, GL_INVALID_VALUE, "glBufferSubData", "out of range");
+    ERRORSTATE_SET_GL_ERROR(
+        error_state, GL_INVALID_VALUE, "glBufferSubData", "out of range");
     return;
   }
 

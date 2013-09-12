@@ -108,8 +108,6 @@ v8::Handle<v8::Value> Collator::JSInternalCompare(
 
 v8::Handle<v8::Value> Collator::JSCreateCollator(
     const v8::Arguments& args) {
-  v8::HandleScope handle_scope;
-
   if (args.Length() != 3 ||
       !args[0]->IsString() ||
       !args[1]->IsObject() ||
@@ -161,8 +159,6 @@ v8::Handle<v8::Value> Collator::JSCreateCollator(
 static icu::Collator* InitializeCollator(v8::Handle<v8::String> locale,
                                          v8::Handle<v8::Object> options,
                                          v8::Handle<v8::Object> resolved) {
-  v8::HandleScope handle_scope;
-
   // Convert BCP47 into ICU locale format.
   UErrorCode status = U_ZERO_ERROR;
   icu::Locale icu_locale;
@@ -269,8 +265,6 @@ static bool SetBooleanAttribute(UColAttribute attribute,
 static void SetResolvedSettings(const icu::Locale& icu_locale,
                                 icu::Collator* collator,
                                 v8::Handle<v8::Object> resolved) {
-  v8::HandleScope handle_scope;
-
   SetBooleanSetting(UCOL_NUMERIC_COLLATION, collator, "numeric", resolved);
 
   UErrorCode status = U_ZERO_ERROR;

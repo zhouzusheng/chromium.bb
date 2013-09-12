@@ -31,9 +31,7 @@
 #ifndef WorkerAsyncFileWriterChromium_h
 #define WorkerAsyncFileWriterChromium_h
 
-#if ENABLE(FILE_SYSTEM) && ENABLE(WORKERS)
-
-#include "AsyncFileWriter.h"
+#include "modules/filesystem/AsyncFileWriter.h"
 #include <wtf/PassOwnPtr.h>
 
 namespace WebKit {
@@ -82,7 +80,5 @@ private:
 };
 
 } // namespace
-
-#endif // ENABLE(FILE_SYSTEM)
 
 #endif // AsyncFileWriterChromium_h

@@ -418,6 +418,7 @@ class Debug {
   static void GenerateStoreICDebugBreak(MacroAssembler* masm);
   static void GenerateKeyedLoadICDebugBreak(MacroAssembler* masm);
   static void GenerateKeyedStoreICDebugBreak(MacroAssembler* masm);
+  static void GenerateCompareNilICDebugBreak(MacroAssembler* masm);
   static void GenerateReturnDebugBreak(MacroAssembler* masm);
   static void GenerateCallFunctionStubDebugBreak(MacroAssembler* masm);
   static void GenerateCallFunctionStubRecordDebugBreak(MacroAssembler* masm);
@@ -1041,6 +1042,7 @@ class MessageDispatchHelperThread: public Thread {
  private:
   void Run();
 
+  Isolate* isolate_;
   Semaphore* const sem_;
   Mutex* const mutex_;
   bool already_signalled_;

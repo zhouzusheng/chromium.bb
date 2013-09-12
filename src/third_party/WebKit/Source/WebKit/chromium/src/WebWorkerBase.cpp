@@ -31,18 +31,16 @@
 #include "config.h"
 #include "WebWorkerBase.h"
 
-#include "CrossThreadTask.h"
+#include "core/dom/CrossThreadTask.h"
 
-#include "WorkerContext.h"
-#include "WorkerLoaderProxy.h"
-#include "WorkerThread.h"
+#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerLoaderProxy.h"
+#include "core/workers/WorkerThread.h"
 #include <wtf/MainThread.h>
 
 using namespace WebCore;
 
 namespace WebKit {
-
-#if ENABLE(WORKERS)
 
 static void invokeTaskMethod(void* param)
 {
@@ -57,7 +55,5 @@ void WebWorkerBase::dispatchTaskToMainThread(PassOwnPtr<ScriptExecutionContext::
 {
     callOnMainThread(invokeTaskMethod, task.leakPtr());
 }
-
-#endif // ENABLE(WORKERS)
 
 } // namespace WebKit

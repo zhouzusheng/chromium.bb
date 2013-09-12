@@ -353,6 +353,12 @@ void PrettyPrinter::VisitAssignment(Assignment* node) {
 }
 
 
+void PrettyPrinter::VisitYield(Yield* node) {
+  Print("yield ");
+  Visit(node->expression());
+}
+
+
 void PrettyPrinter::VisitThrow(Throw* node) {
   Print("throw ");
   Visit(node->exception());
@@ -362,7 +368,7 @@ void PrettyPrinter::VisitThrow(Throw* node) {
 void PrettyPrinter::VisitProperty(Property* node) {
   Expression* key = node->key();
   Literal* literal = key->AsLiteral();
-  if (literal != NULL && literal->handle()->IsSymbol()) {
+  if (literal != NULL && literal->handle()->IsInternalizedString()) {
     Print("(");
     Visit(node->obj());
     Print(").");
@@ -499,7 +505,7 @@ void PrettyPrinter::Print(const char* format, ...) {
       const int slack = 32;
       int new_size = size_ + (size_ >> 1) + slack;
       char* new_output = NewArray<char>(new_size);
-      memcpy(new_output, output_, pos_);
+      OS::MemCopy(new_output, output_, pos_);
       DeleteArray(output_);
       output_ = new_output;
       size_ = new_size;
@@ -1059,6 +1065,11 @@ void AstPrinter::VisitAssignment(Assignment* node) {
 }
 
 
+void AstPrinter::VisitYield(Yield* node) {
+  PrintIndentedVisit("YIELD", node->expression());
+}
+
+
 void AstPrinter::VisitThrow(Throw* node) {
   PrintIndentedVisit("THROW", node->exception());
 }
@@ -1068,7 +1079,7 @@ void AstPrinter::VisitProperty(Property* node) {
   IndentedScope indent(this, "PROPERTY", node);
   Visit(node->obj());
   Literal* literal = node->key()->AsLiteral();
-  if (literal != NULL && literal->handle()->IsSymbol()) {
+  if (literal != NULL && literal->handle()->IsInternalizedString()) {
     PrintLiteralIndented("NAME", literal->handle(), false);
   } else {
     PrintIndentedVisit("KEY", node->key());

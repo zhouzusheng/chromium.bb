@@ -31,9 +31,7 @@
 #ifndef MediaSourcePrivateImpl_h
 #define MediaSourcePrivateImpl_h
 
-#if ENABLE(MEDIA_SOURCE)
-
-#include "MediaSourcePrivate.h"
+#include "core/platform/graphics/MediaSourcePrivate.h"
 #include <wtf/OwnPtr.h>
 
 namespace WebKit {
@@ -57,7 +55,5 @@ private:
 };
 
 }
-
-#endif
 
 #endif

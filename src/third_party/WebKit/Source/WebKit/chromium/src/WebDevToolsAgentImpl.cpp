@@ -31,33 +31,34 @@
 #include "config.h"
 #include "WebDevToolsAgentImpl.h"
 
-#include "ExceptionCode.h"
-#include "Frame.h"
-#include "FrameView.h"
-#include "GraphicsContext.h"
-#include "InjectedScriptHost.h"
 #include "InspectorBackendDispatcher.h"
-#include "InspectorController.h"
 #include "InspectorFrontend.h"
 #include "InspectorProtocolVersion.h"
-#include "InspectorValues.h"
-#include "MemoryCache.h"
-#include "Page.h"
-#include "PageGroup.h"
-#include "PageScriptDebugServer.h"
-#include "painting/GraphicsContextBuilder.h"
-#include "RenderView.h"
-#include "ResourceError.h"
-#include "ResourceRequest.h"
-#include "ResourceResponse.h"
-#include "V8Binding.h"
-#include "V8Utilities.h"
 #include "WebDataSource.h"
 #include "WebDevToolsAgentClient.h"
 #include "WebFrameImpl.h"
+#include "WebInputEventConversion.h"
 #include "WebMemoryUsageInfo.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
+#include "bindings/v8/PageScriptDebugServer.h"
+#include "bindings/v8/ScriptController.h"
+#include "bindings/v8/V8Binding.h"
+#include "bindings/v8/V8Utilities.h"
+#include "core/dom/ExceptionCode.h"
+#include "core/inspector/InjectedScriptHost.h"
+#include "core/inspector/InspectorController.h"
+#include "core/inspector/InspectorValues.h"
+#include "core/loader/cache/MemoryCache.h"
+#include "core/page/Frame.h"
+#include "core/page/FrameView.h"
+#include "core/page/Page.h"
+#include "core/page/PageGroup.h"
+#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/network/ResourceError.h"
+#include "core/platform/network/ResourceRequest.h"
+#include "core/platform/network/ResourceResponse.h"
+#include "core/rendering/RenderView.h"
 #include <public/Platform.h>
 #include <public/WebRect.h>
 #include <public/WebString.h>
@@ -80,10 +81,6 @@ static const int highlight = 99;
 }
 
 namespace WebKit {
-
-namespace BrowserDataHintStringValues {
-static const char screenshot[] = "screenshot";
-}
 
 class ClientMessageLoopAdapter : public PageScriptDebugServer::ClientMessageLoop {
 public:
@@ -355,16 +352,6 @@ private:
     double m_originalZoomFactor;
 };
 
-class SerializingFrontendChannel : public InspectorFrontendChannel {
-public:
-    virtual bool sendMessageToFrontend(const String& message)
-    {
-        m_message = message;
-        return true;
-    }
-    String m_message;
-};
-
 WebDevToolsAgentImpl::WebDevToolsAgentImpl(
     WebViewImpl* webViewImpl,
     WebDevToolsAgentClient* client)
@@ -372,7 +359,6 @@ WebDevToolsAgentImpl::WebDevToolsAgentImpl(
     , m_client(client)
     , m_webViewImpl(webViewImpl)
     , m_attached(false)
-    , m_sendWithBrowserDataHint(BrowserDataHintNone)
 {
     ASSERT(m_hostId > 0);
 }
@@ -415,7 +401,6 @@ void WebDevToolsAgentImpl::detach()
     InspectorController* ic = inspectorController();
     ic->disconnectFrontend();
     ic->hideHighlight();
-    ic->close();
     m_attached = false;
 }
 
@@ -474,6 +459,24 @@ void WebDevToolsAgentImpl::webViewResized(const WebSize& size)
         m_metricsSupport->webViewResized();
     if (InspectorController* ic = inspectorController())
         ic->webViewResized(m_metricsSupport ? IntSize(size.width, size.height) : IntSize());
+}
+
+bool WebDevToolsAgentImpl::handleInputEvent(WebCore::Page* page, const WebInputEvent& inputEvent)
+{
+    InspectorController* ic = inspectorController();
+    if (!ic)
+        return false;
+
+    if (WebInputEvent::isMouseEventType(inputEvent.type) && inputEvent.type != WebInputEvent::MouseEnter) {
+        // PlatformMouseEventBuilder does not work with MouseEnter type, so we filter it out manually.
+        PlatformMouseEvent mouseEvent = PlatformMouseEventBuilder(page->mainFrame()->view(), *static_cast<const WebMouseEvent*>(&inputEvent));
+        return ic->handleMouseEvent(page->mainFrame(), mouseEvent);
+    }
+    if (WebInputEvent::isTouchEventType(inputEvent.type)) {
+        PlatformTouchEvent touchEvent = PlatformTouchEventBuilder(page->mainFrame()->view(), *static_cast<const WebTouchEvent*>(&inputEvent));
+        return ic->handleTouchEvent(page->mainFrame(), touchEvent);
+    }
+    return false;
 }
 
 void WebDevToolsAgentImpl::overrideDeviceMetrics(int width, int height, float fontScaleFactor, bool fitWindow)
@@ -598,20 +601,6 @@ void WebDevToolsAgentImpl::dumpUncountedAllocatedObjects(const HashMap<const voi
     m_client->dumpUncountedAllocatedObjects(&provider);
 }
 
-bool WebDevToolsAgentImpl::captureScreenshot(String* data)
-{
-    // Value is going to be substituted with the actual data in the browser process.
-    *data = "{screenshot-placeholder}";
-    m_sendWithBrowserDataHint = BrowserDataHintScreenshot;
-    return true;
-}
-
-bool WebDevToolsAgentImpl::handleJavaScriptDialog(bool accept, const String* promptText)
-{
-    // Operation was already performed in the browser process.
-    return true;
-}
-
 void WebDevToolsAgentImpl::setTraceEventCallback(TraceEventCallback callback)
 {
     m_client->setTraceEventCallback(callback);
@@ -641,32 +630,13 @@ Frame* WebDevToolsAgentImpl::mainFrame()
     return 0;
 }
 
-void WebDevToolsAgentImpl::inspectorDestroyed()
-{
-    // Our lifetime is bound to the WebViewImpl.
-}
-
-InspectorFrontendChannel* WebDevToolsAgentImpl::openInspectorFrontend(InspectorController*)
-{
-    return 0;
-}
-
-void WebDevToolsAgentImpl::closeInspectorFrontend()
-{
-}
-
-void WebDevToolsAgentImpl::bringFrontendToFront()
-{
-}
-
 // WebPageOverlay
 void WebDevToolsAgentImpl::paintPageOverlay(WebCanvas* canvas)
 {
     InspectorController* ic = inspectorController();
     if (ic) {
-        GraphicsContextBuilder builder(canvas);
-        GraphicsContext& context = builder.context();
-        context.platformContext()->setDrawingToImageBuffer(true);
+        GraphicsContext context(canvas);
+        context.setCertainlyOpaque(false);
         ic->drawHighlight(context);
     }
 }
@@ -691,39 +661,12 @@ void WebDevToolsAgentImpl::hideHighlight()
     m_webViewImpl->removePageOverlay(this);
 }
 
-static String browserHintToString(WebDevToolsAgent::BrowserDataHint dataHint)
-{
-    switch (dataHint) {
-    case WebDevToolsAgent::BrowserDataHintScreenshot:
-        return BrowserDataHintStringValues::screenshot;
-    case WebDevToolsAgent::BrowserDataHintNone:
-    default:
-        ASSERT_NOT_REACHED();
-    }
-    return String();
-}
-
-static WebDevToolsAgent::BrowserDataHint browserHintFromString(const String& value)
-{
-    if (value == BrowserDataHintStringValues::screenshot)
-        return WebDevToolsAgent::BrowserDataHintScreenshot;
-    ASSERT_NOT_REACHED();
-    return WebDevToolsAgent::BrowserDataHintNone;
-}
-
 bool WebDevToolsAgentImpl::sendMessageToFrontend(const String& message)
 {
     WebDevToolsAgentImpl* devToolsAgent = static_cast<WebDevToolsAgentImpl*>(m_webViewImpl->devToolsAgent());
     if (!devToolsAgent)
         return false;
-
-    if (m_sendWithBrowserDataHint != BrowserDataHintNone) {
-        String prefix = browserHintToString(m_sendWithBrowserDataHint);
-        m_client->sendMessageToInspectorFrontend(makeString("<", prefix, ">", message));
-    } else
-        m_client->sendMessageToInspectorFrontend(message);
-
-    m_sendWithBrowserDataHint = BrowserDataHintNone;
+    m_client->sendMessageToInspectorFrontend(message);
     return true;
 }
 
@@ -802,71 +745,6 @@ bool WebDevToolsAgent::shouldInterruptForMessage(const WebString& message)
 void WebDevToolsAgent::processPendingMessages()
 {
     PageScriptDebugServer::shared().runPendingTasks();
-}
-
-WebString WebDevToolsAgent::inspectorDetachedEvent(const WebString& reason)
-{
-    SerializingFrontendChannel channel;
-    InspectorFrontend::Inspector inspector(&channel);
-    inspector.detached(reason);
-    return channel.m_message;
-}
-
-WebString WebDevToolsAgent::workerDisconnectedFromWorkerEvent()
-{
-    SerializingFrontendChannel channel;
-#if ENABLE(WORKERS)
-    InspectorFrontend::Worker inspector(&channel);
-    inspector.disconnectedFromWorker();
-#endif
-    return channel.m_message;
-}
-
-WebDevToolsAgent::BrowserDataHint WebDevToolsAgent::shouldPatchWithBrowserData(const char* message, size_t messageLength)
-{
-    if (!messageLength || message[0] != '<')
-        return BrowserDataHintNone;
-
-    String messageString(message, messageLength);
-    size_t hintEnd = messageString.find(">", 1);
-    if (hintEnd == notFound)
-        return BrowserDataHintNone;
-    messageString = messageString.substring(1, hintEnd - 1);
-    return browserHintFromString(messageString);
-}
-
-WebString WebDevToolsAgent::patchWithBrowserData(const WebString& message, BrowserDataHint dataHint, const WebString& hintData)
-{
-    String messageString = message;
-    size_t hintEnd = messageString.find(">");
-    if (hintEnd == notFound) {
-        ASSERT_NOT_REACHED();
-        return message;
-    }
-
-    messageString = messageString.substring(hintEnd + 1);
-    RefPtr<InspectorValue> messageObject = InspectorValue::parseJSON(messageString);
-    if (!messageObject || messageObject->type() != InspectorValue::TypeObject) {
-        ASSERT_NOT_REACHED();
-        return messageString;
-    }
-
-    RefPtr<InspectorObject> resultObject = messageObject->asObject()->getObject("result");
-    if (!resultObject) {
-        ASSERT_NOT_REACHED();
-        return messageString;
-    }
-
-    // Patch message below.
-    switch (dataHint) {
-    case BrowserDataHintScreenshot:
-        resultObject->setString("data", hintData);
-        break;
-    case BrowserDataHintNone:
-    default:
-        ASSERT_NOT_REACHED();
-    }
-    return messageObject->toJSONString();
 }
 
 } // namespace WebKit

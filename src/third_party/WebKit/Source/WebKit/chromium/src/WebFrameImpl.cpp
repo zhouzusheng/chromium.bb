@@ -71,87 +71,17 @@
 #include "config.h"
 #include "WebFrameImpl.h"
 
+#include <algorithm>
 #include "AssociatedURLLoader.h"
-#include "AsyncFileSystem.h"
 #include "AsyncFileSystemChromium.h"
-#include "BackForwardController.h"
-#include "Chrome.h"
-#include "ClipboardUtilitiesChromium.h"
-#include "Console.h"
-#include "DOMFileSystem.h"
 #include "DOMUtilitiesPrivate.h"
-#include "DOMWindow.h"
-#include "DOMWrapperWorld.h"
-#include "DirectoryEntry.h"
-#include "Document.h"
-#include "DocumentLoader.h"
-#include "DocumentMarker.h"
-#include "DocumentMarkerController.h"
-#include "Editor.h"
-#include "EventHandler.h"
 #include "EventListenerWrapper.h"
-#include "FileEntry.h"
-#include "FileSystemType.h"
 #include "FindInPageCoordinates.h"
-#include "FocusController.h"
-#include "FontCache.h"
-#include "FormState.h"
-#include "FrameLoadRequest.h"
-#include "FrameLoader.h"
-#include "FrameSelection.h"
-#include "FrameTree.h"
-#include "FrameView.h"
-#include "HTMLCollection.h"
-#include "HTMLFormElement.h"
-#include "HTMLFrameOwnerElement.h"
-#include "HTMLHeadElement.h"
-#include "HTMLInputElement.h"
-#include "HTMLLinkElement.h"
 #include "HTMLNames.h"
-#include "HistoryItem.h"
-#include "HitTestResult.h"
-#include "IconURL.h"
-#include "InspectorController.h"
-#include "KURL.h"
-#include "MessagePort.h"
-#include "Node.h"
-#include "NodeTraversal.h"
-#include "Page.h"
 #include "PageOverlay.h"
-#include "Performance.h"
-#include "PlatformMessagePortChannelChromium.h"
-#include "PluginDocument.h"
-#include "PrintContext.h"
-#include "RenderBox.h"
-#include "RenderFrame.h"
-#include "RenderLayer.h"
-#include "RenderObject.h"
-#include "RenderTreeAsText.h"
-#include "RenderView.h"
-#include "ResourceHandle.h"
-#include "ResourceRequest.h"
-#include "SchemeRegistry.h"
-#include "ScriptCallStack.h"
-#include "ScriptController.h"
-#include "ScriptSourceCode.h"
-#include "ScriptValue.h"
-#include "ScrollTypes.h"
-#include "ScrollbarTheme.h"
-#include "SecurityPolicy.h"
-#include "Settings.h"
-#include "ShadowRoot.h"
-#include "SkiaUtils.h"
-#include "SpellChecker.h"
-#include "StyleInheritedData.h"
-#include "SubstituteData.h"
-#include "TextAffinity.h"
-#include "TextIterator.h"
-#include "TraceEvent.h"
-#include "UserGestureIndicator.h"
 #include "V8DOMFileSystem.h"
 #include "V8DirectoryEntry.h"
 #include "V8FileEntry.h"
-#include "V8GCController.h"
 #include "WebConsoleMessage.h"
 #include "WebDOMEvent.h"
 #include "WebDOMEventListener.h"
@@ -174,11 +104,81 @@
 #include "WebSecurityOrigin.h"
 #include "WebSerializedScriptValue.h"
 #include "WebViewImpl.h"
-#include "XPathResult.h"
-#include "htmlediting.h"
-#include "markup.h"
-#include "painting/GraphicsContextBuilder.h"
-#include <algorithm>
+#include "bindings/v8/DOMWrapperWorld.h"
+#include "bindings/v8/ScriptController.h"
+#include "bindings/v8/ScriptSourceCode.h"
+#include "bindings/v8/ScriptValue.h"
+#include "bindings/v8/V8GCController.h"
+#include "core/dom/Document.h"
+#include "core/dom/DocumentMarker.h"
+#include "core/dom/DocumentMarkerController.h"
+#include "core/dom/IconURL.h"
+#include "core/dom/MessagePort.h"
+#include "core/dom/Node.h"
+#include "core/dom/NodeTraversal.h"
+#include "core/dom/ShadowRoot.h"
+#include "core/dom/UserGestureIndicator.h"
+#include "core/dom/default/chromium/PlatformMessagePortChannelChromium.h"
+#include "core/editing/Editor.h"
+#include "core/editing/FrameSelection.h"
+#include "core/editing/SpellChecker.h"
+#include "core/editing/TextAffinity.h"
+#include "core/editing/TextIterator.h"
+#include "core/editing/htmlediting.h"
+#include "core/editing/markup.h"
+#include "core/history/BackForwardController.h"
+#include "core/history/HistoryItem.h"
+#include "core/html/HTMLCollection.h"
+#include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLFrameOwnerElement.h"
+#include "core/html/HTMLHeadElement.h"
+#include "core/html/HTMLInputElement.h"
+#include "core/html/HTMLLinkElement.h"
+#include "core/html/PluginDocument.h"
+#include "core/inspector/InspectorController.h"
+#include "core/inspector/ScriptCallStack.h"
+#include "core/loader/DocumentLoader.h"
+#include "core/loader/FormState.h"
+#include "core/loader/FrameLoadRequest.h"
+#include "core/loader/FrameLoader.h"
+#include "core/loader/SubstituteData.h"
+#include "core/page/Chrome.h"
+#include "core/page/Console.h"
+#include "core/page/DOMWindow.h"
+#include "core/page/EventHandler.h"
+#include "core/page/FocusController.h"
+#include "core/page/FrameTree.h"
+#include "core/page/FrameView.h"
+#include "core/page/Page.h"
+#include "core/page/Performance.h"
+#include "core/page/PrintContext.h"
+#include "core/page/SecurityPolicy.h"
+#include "core/page/Settings.h"
+#include "core/platform/AsyncFileSystem.h"
+#include "core/platform/KURL.h"
+#include "core/platform/SchemeRegistry.h"
+#include "core/platform/ScrollTypes.h"
+#include "core/platform/ScrollbarTheme.h"
+#include "core/platform/chromium/ClipboardUtilitiesChromium.h"
+#include "core/platform/chromium/TraceEvent.h"
+#include "core/platform/graphics/FontCache.h"
+#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/skia/SkiaUtils.h"
+#include "core/platform/network/ResourceHandle.h"
+#include "core/platform/network/ResourceRequest.h"
+#include "core/rendering/HitTestResult.h"
+#include "core/rendering/RenderBox.h"
+#include "core/rendering/RenderFrame.h"
+#include "core/rendering/RenderLayer.h"
+#include "core/rendering/RenderObject.h"
+#include "core/rendering/RenderTreeAsText.h"
+#include "core/rendering/RenderView.h"
+#include "core/rendering/style/StyleInheritedData.h"
+#include "core/xml/XPathResult.h"
+#include "modules/filesystem/DOMFileSystem.h"
+#include "modules/filesystem/DirectoryEntry.h"
+#include "modules/filesystem/FileEntry.h"
+#include "modules/filesystem/FileSystemType.h"
 #include <public/Platform.h>
 #include <public/WebFileSystem.h>
 #include <public/WebFileSystemType.h>
@@ -229,7 +229,7 @@ static void frameContentAsPlainText(size_t maxChars, Frame* frame, Vector<UChar>
 
     if (!exception) {
         // The text iterator will walk nodes giving us text. This is similar to
-        // the plainText() function in TextIterator.h, but we implement the maximum
+        // the plainText() function in core/editing/TextIterator.h, but we implement the maximum
         // size and also copy the results directly into a wstring, avoiding the
         // string conversion.
         for (TextIterator it(range.get()); !it.atEnd(); it.advance()) {
@@ -790,6 +790,7 @@ void WebFrameImpl::executeScript(const WebScriptSource& source)
 void WebFrameImpl::executeScriptInIsolatedWorld(int worldID, const WebScriptSource* sourcesIn, unsigned numSources, int extensionGroup)
 {
     ASSERT(frame());
+    ASSERT(worldID > 0);
 
     Vector<ScriptSourceCode> sources;
     for (unsigned i = 0; i < numSources; ++i) {
@@ -870,6 +871,7 @@ v8::Handle<v8::Value> WebFrameImpl::executeScriptAndReturnValue(const WebScriptS
 void WebFrameImpl::executeScriptInIsolatedWorld(int worldID, const WebScriptSource* sourcesIn, unsigned numSources, int extensionGroup, WebVector<v8::Local<v8::Value> >* results)
 {
     ASSERT(frame());
+    ASSERT(worldID > 0);
 
     Vector<ScriptSourceCode> sources;
 
@@ -1195,15 +1197,11 @@ bool WebFrameImpl::executeCommand(const WebString& name, const WebNode& node)
     if (command[command.length() - 1] == UChar(':'))
         command = command.substring(0, command.length() - 1);
 
-    if (command == "Copy") {
-        WebPluginContainerImpl* pluginContainer = pluginContainerFromFrame(frame());
-        if (!pluginContainer)
-            pluginContainer = static_cast<WebPluginContainerImpl*>(node.pluginContainer());
-        if (pluginContainer) {
-            pluginContainer->copy();
-            return true;
-        }
-    }
+    WebPluginContainerImpl* pluginContainer = pluginContainerFromFrame(frame());
+    if (!pluginContainer)
+        pluginContainer = static_cast<WebPluginContainerImpl*>(node.pluginContainer());
+    if (pluginContainer && pluginContainer->executeEditCommand(name))
+        return true;
 
     bool result = true;
 
@@ -1291,6 +1289,11 @@ void WebFrameImpl::replaceMisspelledRange(const WebString& text)
     frame()->editor()->replaceSelectionWithText(text, false, false);
 }
 
+void WebFrameImpl::removeSpellingMarkers()
+{
+    frame()->document()->markers()->removeMarkers(DocumentMarker::Spelling | DocumentMarker::Grammar);
+}
+
 bool WebFrameImpl::hasSelection() const
 {
     WebPluginContainerImpl* pluginContainer = pluginContainerFromFrame(frame());
@@ -1362,10 +1365,8 @@ void WebFrameImpl::selectRange(const WebPoint& base, const WebPoint& extent)
 {
     IntPoint unscaledBase = base;
     IntPoint unscaledExtent = extent;
-    if (frame()->page()->settings()->applyPageScaleFactorInCompositor()) {
-        unscaledExtent.scale(1 / view()->pageScaleFactor(), 1 / view()->pageScaleFactor());
-        unscaledBase.scale(1 / view()->pageScaleFactor(), 1 / view()->pageScaleFactor());
-    }
+    unscaledExtent.scale(1 / view()->pageScaleFactor(), 1 / view()->pageScaleFactor());
+    unscaledBase.scale(1 / view()->pageScaleFactor(), 1 / view()->pageScaleFactor());
     VisiblePosition basePosition = visiblePositionForWindowPoint(unscaledBase);
     VisiblePosition extentPosition = visiblePositionForWindowPoint(unscaledExtent);
     VisibleSelection newSelection = VisibleSelection(basePosition, extentPosition);
@@ -1382,8 +1383,7 @@ void WebFrameImpl::selectRange(const WebRange& webRange)
 void WebFrameImpl::moveCaretSelectionTowardsWindowPoint(const WebPoint& point)
 {
     IntPoint unscaledPoint(point);
-    if (frame()->page()->settings()->applyPageScaleFactorInCompositor())
-        unscaledPoint.scale(1 / view()->pageScaleFactor(), 1 / view()->pageScaleFactor());
+    unscaledPoint.scale(1 / view()->pageScaleFactor(), 1 / view()->pageScaleFactor());
 
     Element* editable = frame()->selection()->rootEditableElement();
     if (!editable)
@@ -1398,7 +1398,7 @@ void WebFrameImpl::moveCaretSelectionTowardsWindowPoint(const WebPoint& point)
 
 VisiblePosition WebFrameImpl::visiblePositionForWindowPoint(const WebPoint& point)
 {
-    HitTestRequest request = HitTestRequest::Move | HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::IgnoreClipping;
+    HitTestRequest request = HitTestRequest::Move | HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::IgnoreClipping | HitTestRequest::DisallowShadowContent;
     HitTestResult result(frame()->view()->windowToContents(IntPoint(point)));
 
     frame()->document()->renderView()->layer()->hitTest(request, result);
@@ -1450,9 +1450,8 @@ float WebFrameImpl::printPage(int page, WebCanvas* canvas)
 #if ENABLE(PRINTING)
     ASSERT(m_printContext && page >= 0 && frame() && frame()->document());
 
-    GraphicsContextBuilder builder(canvas);
-    GraphicsContext& graphicsContext = builder.context();
-    graphicsContext.platformContext()->setPrinting(true);
+    GraphicsContext graphicsContext(canvas);
+    graphicsContext.setPrinting(true);
     return m_printContext->spoolPage(graphicsContext, page);
 #else
     return 0;
@@ -2078,9 +2077,8 @@ void WebFrameImpl::printPagesWithBoundaries(WebCanvas* canvas, const WebSize& pa
 {
     ASSERT(m_printContext);
 
-    GraphicsContextBuilder builder(canvas);
-    GraphicsContext& graphicsContext = builder.context();
-    graphicsContext.platformContext()->setPrinting(true);
+    GraphicsContext graphicsContext(canvas);
+    graphicsContext.setPrinting(true);
 
     m_printContext->spoolAllPagesWithBoundaries(graphicsContext, FloatSize(pageSizeInPixels.width, pageSizeInPixels.height));
 }
@@ -2228,7 +2226,7 @@ void WebFrameImpl::createFrameView()
     if (isMainFrame)
         webView->suppressInvalidations(true);
  
-    frame()->createView(webView->size(), Color::white, webView->isTransparent(), webView->fixedLayoutSize(), IntRect(), isMainFrame ? webView->isFixedLayoutModeEnabled() : 0);
+    frame()->createView(webView->size(), Color::white, webView->isTransparent(), webView->fixedLayoutSize(), isMainFrame ? webView->isFixedLayoutModeEnabled() : 0);
     if (webView->shouldAutoResize() && isMainFrame)
         frame()->view()->enableAutoSizeMode(true, webView->minAutoSize(), webView->maxAutoSize());
 

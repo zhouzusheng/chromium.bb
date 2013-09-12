@@ -31,46 +31,33 @@
 #include "config.h"
 #include "WebKit.h"
 
-#include "CustomElementRegistry.h"
-#include "EventTracer.h"
-#include "ImageDecodingStore.h"
-#include "LayoutTestSupport.h"
-#include "Logging.h"
-#include "MutationObserver.h"
-#include "Page.h"
+#include "IDBFactoryBackendProxy.h"
+#include "WebMediaPlayerClientImpl.h"
+#include "WebWorkerClientImpl.h"
+#include "bindings/v8/V8Binding.h"
+#include "bindings/v8/V8RecursionScope.h"
+#include "core/dom/CustomElementRegistry.h"
+#include "core/dom/MutationObserver.h"
+#include "core/page/Frame.h"
+#include "core/page/Page.h"
 #include "RuntimeEnabledFeatures.h"
-#include "Settings.h"
-#include "TextEncoding.h"
-#include "V8Binding.h"
-#include "V8RecursionScope.h"
-#include "WebSocket.h"
+#include "core/page/Settings.h"
+#include "core/platform/EventTracer.h"
+#include "core/platform/LayoutTestSupport.h"
+#include "core/platform/Logging.h"
+#include "core/platform/graphics/chromium/ImageDecodingStore.h"
+#include "core/platform/graphics/chromium/MediaPlayerPrivateChromium.h"
+#include "core/platform/text/TextEncoding.h"
+#include "core/workers/WorkerContextProxy.h"
 #include "v8.h"
 #include <public/Platform.h>
 #include <public/WebPrerenderingSupport.h>
 #include <public/WebThread.h>
 #include <wtf/Assertions.h>
 #include <wtf/MainThread.h>
+#include <wtf/text/AtomicString.h>
 #include <wtf/Threading.h>
 #include <wtf/UnusedParam.h>
-#include <wtf/text/AtomicString.h>
-
-#if ENABLE(INDEXED_DATABASE)
-#include "IDBFactoryBackendProxy.h"
-#endif
-
-#if ENABLE(VIDEO)
-#include "MediaPlayerPrivateChromium.h"
-#include "WebMediaPlayerClientImpl.h"
-#endif
-
-#if ENABLE(WORKERS)
-#include "WebWorkerClientImpl.h"
-#include "WorkerContextProxyChromium.h"
-#endif
-
-#if OS(DARWIN)
-#include "WebSystemInterface.h"
-#endif
 
 namespace WebKit {
 
@@ -81,9 +68,7 @@ public:
     virtual void willProcessTask() { }
     virtual void didProcessTask()
     {
-#if ENABLE(CUSTOM_ELEMENTS)
         WebCore::CustomElementRegistry::deliverAllLifecycleCallbacks();
-#endif
         WebCore::MutationObserver::deliverAllMutations();
     }
 };
@@ -138,19 +123,15 @@ void initializeWithoutV8(Platform* webKitPlatformSupport)
     ASSERT(!s_webKitInitialized);
     s_webKitInitialized = true;
 
-#if OS(DARWIN)
-    InitWebCoreSystemInterface();
-#endif
-
     ASSERT(webKitPlatformSupport);
     ASSERT(!s_webKitPlatformSupport);
     s_webKitPlatformSupport = webKitPlatformSupport;
     Platform::initialize(s_webKitPlatformSupport);
-    WebCore::ImageDecodingStore::initializeOnce();
 
     WTF::initializeThreading();
     WTF::initializeMainThread();
-    WTF::AtomicString::init();
+    WebCore::init();
+    WebCore::ImageDecodingStore::initializeOnce();
 
     // There are some code paths (for example, running WebKit in the browser
     // process and calling into LocalStorage before anything else) where the
@@ -163,17 +144,11 @@ void initializeWithoutV8(Platform* webKitPlatformSupport)
 
     WebCore::EventTracer::initialize();
 
-#if ENABLE(INDEXED_DATABASE)
     WebCore::setIDBFactoryBackendInterfaceCreateFunction(WebKit::IDBFactoryBackendProxy::create);
-#endif
 
-#if ENABLE(VIDEO)
     WebCore::MediaPlayerPrivate::setMediaEngineRegisterSelfFunction(WebKit::WebMediaPlayerClientImpl::registerSelf);
-#endif
 
-#if ENABLE(WORKERS)
-    WebCore::setWorkerContextProxyCreateFunction(WebWorkerClientImpl::createWorkerContextProxy);
-#endif
+    WebCore::WorkerContextProxy::setCreateDelegate(WebWorkerClientImpl::createWorkerContextProxy);
 }
 
 

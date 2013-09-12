@@ -4,10 +4,6 @@
 
 #include "content/gpu/gpu_info_collector.h"
 
-// SHEZ: modified upstream code here to compile with Win7.1 SDK
-#include <stdint.h>         // include our stdint.h
-#define U_HAVE_INTTYPES_H 1 // use inttypes.h in third_party\icu\public\common\unicode/pwin32.h
-
 // This has to be included before windows.h.
 #include "third_party/re2/re2/re2.h"
 

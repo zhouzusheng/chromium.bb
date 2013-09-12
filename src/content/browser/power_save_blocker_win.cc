@@ -21,7 +21,10 @@ HANDLE CreatePowerRequest(POWER_REQUEST_TYPE type, const std::string& reason) {
   typedef HANDLE (WINAPI* PowerCreateRequestPtr)(PREASON_CONTEXT);
   typedef BOOL (WINAPI* PowerSetRequestPtr)(HANDLE, POWER_REQUEST_TYPE);
 
-  // SHEZ: Remove code to compile in Win7.1
+  if (type == PowerRequestExecutionRequired &&
+      base::win::GetVersion() < base::win::VERSION_WIN8) {
+    return INVALID_HANDLE_VALUE;
+  }
 
   static PowerCreateRequestPtr PowerCreateRequestFn = NULL;
   static PowerSetRequestPtr PowerSetRequestFn = NULL;
@@ -59,7 +62,10 @@ void DeletePowerRequest(POWER_REQUEST_TYPE type, HANDLE handle) {
   if (!request_handle.IsValid())
     return;
 
-  // SHEZ: Remove code to compile in Win7.1 SDK
+  if (type == PowerRequestExecutionRequired &&
+      base::win::GetVersion() < base::win::VERSION_WIN8) {
+    return;
+  }
 
   typedef BOOL (WINAPI* PowerClearRequestPtr)(HANDLE, POWER_REQUEST_TYPE);
   HMODULE module = GetModuleHandle(L"kernel32.dll");
@@ -145,8 +151,10 @@ POWER_REQUEST_TYPE PowerSaveBlockerImpl::Delegate::RequestType() {
   if (type_ == kPowerSaveBlockPreventDisplaySleep)
     return PowerRequestDisplayRequired;
 
-  // SHEZ: Remove PowerRequestExecutionRequired to compile in Win7.1 SDK
-  return PowerRequestSystemRequired;
+  if (base::win::GetVersion() < base::win::VERSION_WIN8)
+    return PowerRequestSystemRequired;
+
+  return PowerRequestExecutionRequired;
 }
 
 PowerSaveBlockerImpl::PowerSaveBlockerImpl(PowerSaveBlockerType type,

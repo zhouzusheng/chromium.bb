@@ -24,6 +24,7 @@ namespace net {
 class PartialData;
 struct HttpRequestInfo;
 class HttpTransactionDelegate;
+struct LoadTimingInfo;
 
 // This is the transaction that is returned by the HttpCache transaction
 // factory.
@@ -60,8 +61,7 @@ class HttpCache::Transaction : public HttpTransaction {
 
   Transaction(RequestPriority priority,
               HttpCache* cache,
-              HttpTransactionDelegate* transaction_delegate,
-              InfiniteCacheTransaction* infinite_cache_transaction);
+              HttpTransactionDelegate* transaction_delegate);
   virtual ~Transaction();
 
   Mode mode() const { return mode_; }
@@ -386,6 +386,10 @@ class HttpCache::Transaction : public HttpTransaction {
   void RunDelayedLoop(base::TimeTicks delay_start_time,
                       base::TimeDelta intended_delay, int result);
 
+  // Resets |network_trans_|, which must be non-NULL.  Also updates
+  // |old_network_trans_load_timing_|, which must be NULL when this is called.
+  void ResetNetworkTransaction();
+
   State next_state_;
   const HttpRequestInfo* request_;
   RequestPriority priority_;
@@ -399,7 +403,6 @@ class HttpCache::Transaction : public HttpTransaction {
   HttpCache::ActiveEntry* entry_;
   HttpCache::ActiveEntry* new_entry_;
   scoped_ptr<HttpTransaction> network_trans_;
-  scoped_ptr<InfiniteCacheTransaction> infinite_cache_transaction_;
   CompletionCallback callback_;  // Consumer's callback.
   HttpResponseInfo response_;
   HttpResponseInfo auth_response_;
@@ -449,6 +452,11 @@ class HttpCache::Transaction : public HttpTransaction {
   int sensitivity_analysis_percent_increase_;
 
   HttpTransactionDelegate* transaction_delegate_;
+
+  // Load timing information for the last network request, if any.  Set in the
+  // 304 and 206 response cases, as the network transaction may be destroyed
+  // before the caller requests load timing information.
+  scoped_ptr<LoadTimingInfo> old_network_trans_load_timing_;
 };
 
 }  // namespace net

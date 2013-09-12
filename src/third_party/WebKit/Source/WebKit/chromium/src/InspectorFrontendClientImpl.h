@@ -31,7 +31,7 @@
 #ifndef InspectorFrontendClientImpl_h
 #define InspectorFrontendClientImpl_h
 
-#include "InspectorFrontendClient.h"
+#include "core/inspector/InspectorFrontendClient.h"
 #include <wtf/Noncopyable.h>
 
 namespace WebCore {
@@ -52,11 +52,8 @@ public:
 
     // InspectorFrontendClient methods:
     virtual void windowObjectCleared();
-    virtual void frontendLoaded();
 
     virtual void moveWindowBy(float x, float y);
-
-    virtual WTF::String localizedStringsURL();
 
     virtual void bringToFront();
     virtual void closeWindow();
@@ -66,7 +63,6 @@ public:
 
     virtual void openInNewTab(const String& url);
 
-    virtual bool canSave();
     virtual void save(const WTF::String& urk, const WTF::String& content, bool forceSaveAs);
     virtual void append(const WTF::String& urk, const WTF::String& content);
 
@@ -74,7 +70,6 @@ public:
 
     virtual void sendMessageToBackend(const WTF::String&);
 
-    virtual bool supportsFileSystems();
     virtual void requestFileSystems();
     virtual void addFileSystem();
     virtual void removeFileSystem(const String& fileSystemPath);

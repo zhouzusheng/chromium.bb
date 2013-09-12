@@ -31,21 +31,21 @@
 #include "config.h"
 #include "WebSearchableFormData.h"
 
-#include "Document.h"
-#include "DocumentLoader.h"
-#include "FormDataBuilder.h"
-#include "FormDataList.h"
-#include "Frame.h"
-#include "HTMLFormControlElement.h"
-#include "HTMLFormElement.h"
-#include "HTMLInputElement.h"
 #include "HTMLNames.h"
-#include "HTMLOptionElement.h"
-#include "HTMLOptionsCollection.h"
-#include "HTMLSelectElement.h"
-#include "TextEncoding.h"
 #include "WebFormElement.h"
 #include "WebInputElement.h"
+#include "core/dom/Document.h"
+#include "core/html/FormDataList.h"
+#include "core/html/HTMLFormControlElement.h"
+#include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLInputElement.h"
+#include "core/html/HTMLOptionElement.h"
+#include "core/html/HTMLOptionsCollection.h"
+#include "core/html/HTMLSelectElement.h"
+#include "core/loader/DocumentLoader.h"
+#include "core/page/Frame.h"
+#include "core/platform/network/FormDataBuilder.h"
+#include "core/platform/text/TextEncoding.h"
 
 using namespace WebCore;
 using namespace HTMLNames;
@@ -162,7 +162,7 @@ HTMLInputElement* findSuitableSearchInputElement(const HTMLFormElement* form)
 
         HTMLFormControlElement* formElement = static_cast<HTMLFormControlElement*>(*i);
 
-        if (formElement->disabled() || formElement->name().isNull())
+        if (formElement->isDisabledFormControl() || formElement->name().isNull())
             continue;
 
         if (!IsInDefaultState(formElement) || formElement->hasTagName(HTMLNames::textareaTag))
@@ -205,7 +205,7 @@ bool buildSearchString(const HTMLFormElement* form, Vector<char>* encodedString,
 
         HTMLFormControlElement* formElement = static_cast<HTMLFormControlElement*>(*i);
 
-        if (formElement->disabled() || formElement->name().isNull())
+        if (formElement->isDisabledFormControl() || formElement->name().isNull())
             continue;
 
         FormDataList dataList(*encoding);

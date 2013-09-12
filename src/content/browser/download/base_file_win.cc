@@ -264,8 +264,7 @@ DownloadInterruptReason MapScanAndSaveErrorCodeToInterruptReason(
     return DOWNLOAD_INTERRUPT_REASON_NONE;
 
   switch (result) {
-    // SHEZ: Changed case in order to compile in Win7.1 SDK
-    case 0x800c000e:       // 0x800c000e
+    case INET_E_SECURITY_PROBLEM:       // 0x800c000e
       // This is returned if the download was blocked due to security
       // restrictions. E.g. if the source URL was in the Restricted Sites zone
       // and downloads are blocked on that zone, then the download would be

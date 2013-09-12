@@ -31,7 +31,7 @@
 #ifndef AutofillPopupMenuClient_h
 #define AutofillPopupMenuClient_h
 
-#include "PopupMenuClient.h"
+#include "core/platform/PopupMenuClient.h"
 
 namespace WebCore {
 class FontSelector;
@@ -92,7 +92,6 @@ public:
     virtual bool itemIsSeparator(unsigned listIndex) const;
     virtual bool itemIsLabel(unsigned listIndex) const { return false; }
     virtual bool itemIsSelected(unsigned listIndex) const { return false; }
-    virtual bool shouldPopOver() const { return false; }
     virtual bool valueShouldChangeOnHotTrack() const { return false; }
     virtual void setTextFromItem(unsigned listIndex);
     virtual WebCore::FontSelector* fontSelector() const;

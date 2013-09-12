@@ -15,6 +15,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/file_util.h"
 #include "base/format_macros.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
@@ -25,6 +26,8 @@
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/threading/worker_pool.h"
+#include "net/base/cache_type.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -38,13 +41,24 @@
 #include "net/http/http_response_info.h"
 #include "net/http/http_util.h"
 
+namespace {
+
+// Adaptor to delete a file on a worker thread.
+void DeletePath(base::FilePath path) {
+  file_util::Delete(path, false);
+}
+
+}  // namespace
+
 namespace net {
 
 HttpCache::DefaultBackend::DefaultBackend(CacheType type,
+                                          BackendType backend_type,
                                           const base::FilePath& path,
                                           int max_bytes,
                                           base::MessageLoopProxy* thread)
     : type_(type),
+      backend_type_(backend_type),
       path_(path),
       max_bytes_(max_bytes),
       thread_(thread) {
@@ -54,15 +68,17 @@ HttpCache::DefaultBackend::~DefaultBackend() {}
 
 // static
 HttpCache::BackendFactory* HttpCache::DefaultBackend::InMemory(int max_bytes) {
-  return new DefaultBackend(MEMORY_CACHE, base::FilePath(), max_bytes, NULL);
+  return new DefaultBackend(MEMORY_CACHE, net::CACHE_BACKEND_DEFAULT,
+                            base::FilePath(), max_bytes, NULL);
 }
 
 int HttpCache::DefaultBackend::CreateBackend(
     NetLog* net_log, disk_cache::Backend** backend,
     const CompletionCallback& callback) {
   DCHECK_GE(max_bytes_, 0);
-  return disk_cache::CreateCacheBackend(type_, path_, max_bytes_, true,
-                                        thread_, net_log, backend, callback);
+  return disk_cache::CreateCacheBackend(type_, backend_type_, path_, max_bytes_,
+                                        true, thread_, net_log, backend,
+                                        callback);
 }
 
 //-----------------------------------------------------------------------------
@@ -356,7 +372,7 @@ void HttpCache::WriteMetadata(const GURL& url,
   }
 
   HttpCache::Transaction* trans =
-      new HttpCache::Transaction(priority, this, NULL, NULL);
+      new HttpCache::Transaction(priority, this, NULL);
   MetadataWriter* writer = new MetadataWriter(trans);
 
   // The writer will self destruct when done.
@@ -394,8 +410,7 @@ void HttpCache::OnExternalCacheHit(const GURL& url,
 void HttpCache::InitializeInfiniteCache(const base::FilePath& path) {
   if (base::FieldTrialList::FindFullName("InfiniteCache") != "Yes")
     return;
-  // To be enabled after everything is fully wired.
-  infinite_cache_.Init(path);
+  base::WorkerPool::PostTask(FROM_HERE, base::Bind(&DeletePath, path), true);
 }
 
 int HttpCache::CreateTransaction(RequestPriority priority,
@@ -407,10 +422,7 @@ int HttpCache::CreateTransaction(RequestPriority priority,
     CreateBackend(NULL, net::CompletionCallback());
   }
 
-  InfiniteCacheTransaction* infinite_cache_transaction =
-      infinite_cache_.CreateInfiniteCacheTransaction();
-  trans->reset(new HttpCache::Transaction(priority, this, delegate,
-                                          infinite_cache_transaction));
+  trans->reset(new HttpCache::Transaction(priority, this, delegate));
   return OK;
 }
 
@@ -438,7 +450,7 @@ int HttpCache::CreateBackend(disk_cache::Backend** backend,
 
   // This is the only operation that we can do that is not related to any given
   // entry, so we use an empty key for it.
-  PendingOp* pending_op = GetPendingOp("");
+  PendingOp* pending_op = GetPendingOp(std::string());
   if (pending_op->writer) {
     if (!callback.is_null())
       pending_op->pending_queue.push_back(item.release());
@@ -470,7 +482,7 @@ int HttpCache::GetBackendForTransaction(Transaction* trans) {
 
   WorkItem* item = new WorkItem(
       WI_CREATE_BACKEND, trans, net::CompletionCallback(), NULL);
-  PendingOp* pending_op = GetPendingOp("");
+  PendingOp* pending_op = GetPendingOp(std::string());
   DCHECK(pending_op->writer);
   pending_op->pending_queue.push_back(item);
   return ERR_IO_PENDING;
@@ -715,7 +727,9 @@ int HttpCache::OpenEntry(const std::string& key, ActiveEntry** entry,
 
 int HttpCache::CreateEntry(const std::string& key, ActiveEntry** entry,
                            Transaction* trans) {
-  DCHECK(!FindActiveEntry(key));
+  if (FindActiveEntry(key)) {
+    return ERR_CACHE_RACE;
+  }
 
   WorkItem* item = new WorkItem(WI_CREATE_ENTRY, trans, entry);
   PendingOp* pending_op = GetPendingOp(key);
@@ -889,7 +903,7 @@ void HttpCache::RemovePendingTransaction(Transaction* trans) {
     return;
 
   if (building_backend_) {
-    PendingOpsMap::const_iterator j = pending_ops_.find("");
+    PendingOpsMap::const_iterator j = pending_ops_.find(std::string());
     if (j != pending_ops_.end())
       found = RemovePendingTransactionFromPendingOp(j->second, trans);
 

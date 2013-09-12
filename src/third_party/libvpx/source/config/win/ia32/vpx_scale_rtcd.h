@@ -1,5 +1,5 @@
-#ifndef VPX_SCALE_RTCD_
-#define VPX_SCALE_RTCD_
+#ifndef VPX_SCALE_RTCD_H_
+#define VPX_SCALE_RTCD_H_
 
 #ifdef RTCD_C
 #define RTCD_EXTERN

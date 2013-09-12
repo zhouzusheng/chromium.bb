@@ -201,7 +201,7 @@ string16 AudioManagerWin::GetAudioInputDeviceModel() {
     if (!interface_detail_size)
       continue;
 
-    scoped_array<char> interface_detail_buffer(new char[interface_detail_size]);
+    scoped_ptr<char[]> interface_detail_buffer(new char[interface_detail_size]);
     SP_DEVICE_INTERFACE_DETAIL_DATA* interface_detail =
         reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA*>(
             interface_detail_buffer.get());
@@ -367,6 +367,8 @@ AudioParameters AudioManagerWin::GetPreferredOutputStreamParameters(
     // which corresponds to an output delay of ~5.33ms.
     sample_rate = 48000;
     buffer_size = 256;
+    if (input_params.IsValid())
+      channel_layout = input_params.channel_layout();
   } else if (!use_input_params) {
     // Hardware sample-rate on Windows can be configured, so we must query.
     // TODO(henrika): improve possibility to specify an audio endpoint.
@@ -390,6 +392,22 @@ AudioParameters AudioManagerWin::GetPreferredOutputStreamParameters(
   }
 
   if (input_params.IsValid()) {
+    if (CoreAudioUtil::IsSupported()) {
+      // Check if it is possible to open up at the specified input channel
+      // layout but avoid checking if the specified layout is the same as the
+      // hardware (preferred) layout. We do this extra check to avoid the
+      // CoreAudioUtil::IsChannelLayoutSupported() overhead in most cases.
+      if (input_params.channel_layout() != channel_layout) {
+        if (CoreAudioUtil::IsChannelLayoutSupported(
+                eRender, eConsole, input_params.channel_layout())) {
+          // Open up using the same channel layout as the source if it is
+          // supported by the hardware.
+          channel_layout = input_params.channel_layout();
+          VLOG(1) << "Hardware channel layout is not used; using same layout"
+                  << " as the source instead (" << channel_layout << ")";
+        }
+      }
+    }
     input_channels = input_params.input_channels();
     if (use_input_params) {
       // If WASAPI isn't supported we'll fallback to WaveOut, which will take

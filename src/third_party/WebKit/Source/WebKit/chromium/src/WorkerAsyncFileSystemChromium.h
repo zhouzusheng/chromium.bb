@@ -31,10 +31,8 @@
 #ifndef WorkerAsyncFileSystemChromium_h
 #define WorkerAsyncFileSystemChromium_h
 
-#if ENABLE(FILE_SYSTEM) && ENABLE(WORKERS)
-
 #include "AsyncFileSystemChromium.h"
-#include "FileSystemType.h"
+#include "modules/filesystem/FileSystemType.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefPtr.h>
 
@@ -90,7 +88,5 @@ private:
 };
 
 } // namespace WebCore
-
-#endif // ENABLE(FILE_SYSTEM)
 
 #endif // WorkerAsyncFileSystemChromium_h

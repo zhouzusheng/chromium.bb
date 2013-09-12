@@ -11,14 +11,17 @@
 #include "GrContext.h"
 #include "GrDrawState.h"
 #include "GrDrawTargetCaps.h"
+#include "GrEffect.h"
 #include "GrGpu.h"
 #include "GrIndexBuffer.h"
 #include "GrPathUtils.h"
+#include "GrTBackendEffectFactory.h"
 #include "SkGeometry.h"
 #include "SkStroke.h"
 #include "SkTemplates.h"
 
-#include "effects/GrEdgeEffect.h"
+#include "gl/GrGLEffect.h"
+#include "gl/GrGLSL.h"
 
 namespace {
 // quadratics are rendered as 5-sided polys in order to bound the
@@ -160,7 +163,6 @@ int num_quad_subdivs(const SkPoint p[3]) {
         return -1;
     }
 
-    static const int kMaxSub = 4;
     // tolerance of triangle height in pixels
     // tuned on windows  Quadro FX 380 / Z600
     // trade off of fill vs cpu time on verts
@@ -170,6 +172,7 @@ int num_quad_subdivs(const SkPoint p[3]) {
     if (dsqd <= SkScalarMul(gSubdivTol, gSubdivTol)) {
         return 0;
     } else {
+        static const int kMaxSub = 4;
         // subdividing the quad reduces d by 4. so we want x = log4(d/tol)
         // = log4(d*d/tol*tol)/2
         // = log2(d*d/tol*tol)
@@ -492,6 +495,209 @@ void add_line(const SkPoint p[2],
 
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * The output of this effect is a hairline edge for quadratics.
+ * Quadratic specified by 0=u^2-v canonical coords. u and v are the first
+ * two components of the vertex attribute. Uses unsigned distance.
+ * Coverage is min(0, 1-distance). 3rd & 4th component unused.
+ * Requires shader derivative instruction support.
+ */
+class HairQuadEdgeEffect : public GrEffect {
+public:
+
+    static GrEffectRef* Create() {
+        GR_CREATE_STATIC_EFFECT(gHairQuadEdgeEffect, HairQuadEdgeEffect, ());
+        gHairQuadEdgeEffect->ref();
+        return gHairQuadEdgeEffect;
+    }
+
+    virtual ~HairQuadEdgeEffect() {}
+
+    static const char* Name() { return "HairQuadEdge"; }
+
+    virtual void getConstantColorComponents(GrColor* color,
+                                            uint32_t* validFlags) const SK_OVERRIDE {
+        *validFlags = 0;
+    }
+
+    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE {
+        return GrTBackendEffectFactory<HairQuadEdgeEffect>::getInstance();
+    }
+
+    class GLEffect : public GrGLEffect {
+    public:
+        GLEffect(const GrBackendEffectFactory& factory, const GrDrawEffect&)
+            : INHERITED (factory) {}
+
+        virtual void emitCode(GrGLShaderBuilder* builder,
+                              const GrDrawEffect& drawEffect,
+                              EffectKey key,
+                              const char* outputColor,
+                              const char* inputColor,
+                              const TextureSamplerArray& samplers) SK_OVERRIDE {
+            const char *vsName, *fsName;
+            const SkString* attrName =
+                builder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
+            builder->fsCodeAppendf("\t\tfloat edgeAlpha;\n");
+
+            SkAssertResult(builder->enableFeature(
+                                              GrGLShaderBuilder::kStandardDerivatives_GLSLFeature));
+            builder->addVarying(kVec4f_GrSLType, "HairQuadEdge", &vsName, &fsName);
+
+            builder->fsCodeAppendf("\t\tvec2 duvdx = dFdx(%s.xy);\n", fsName);
+            builder->fsCodeAppendf("\t\tvec2 duvdy = dFdy(%s.xy);\n", fsName);
+            builder->fsCodeAppendf("\t\tvec2 gF = vec2(2.0*%s.x*duvdx.x - duvdx.y,\n"
+                                   "\t\t               2.0*%s.x*duvdy.x - duvdy.y);\n",
+                                   fsName, fsName);
+            builder->fsCodeAppendf("\t\tedgeAlpha = (%s.x*%s.x - %s.y);\n", fsName, fsName,
+                                   fsName);
+            builder->fsCodeAppend("\t\tedgeAlpha = sqrt(edgeAlpha*edgeAlpha / dot(gF, gF));\n");
+            builder->fsCodeAppend("\t\tedgeAlpha = max(1.0 - edgeAlpha, 0.0);\n");
+
+            SkString modulate;
+            GrGLSLModulatef<4>(&modulate, inputColor, "edgeAlpha");
+            builder->fsCodeAppendf("\t%s = %s;\n", outputColor, modulate.c_str());
+
+            builder->vsCodeAppendf("\t%s = %s;\n", vsName, attrName->c_str());
+        }
+
+        static inline EffectKey GenKey(const GrDrawEffect& drawEffect, const GrGLCaps&) {
+            return 0x0;
+        }
+
+        virtual void setData(const GrGLUniformManager&, const GrDrawEffect&) SK_OVERRIDE {}
+
+    private:
+        typedef GrGLEffect INHERITED;
+    };
+
+private:
+    HairQuadEdgeEffect() {
+        this->addVertexAttrib(kVec4f_GrSLType);
+    }
+
+    virtual bool onIsEqual(const GrEffect& other) const SK_OVERRIDE {
+        return true;
+    }
+
+    GR_DECLARE_EFFECT_TEST;
+
+    typedef GrEffect INHERITED;
+};
+
+GR_DEFINE_EFFECT_TEST(HairQuadEdgeEffect);
+
+GrEffectRef* HairQuadEdgeEffect::TestCreate(SkMWCRandom* random,
+                                            GrContext*,
+                                            const GrDrawTargetCaps& caps,
+                                            GrTexture*[]) {
+    // Doesn't work without derivative instructions.
+    return caps.shaderDerivativeSupport() ? HairQuadEdgeEffect::Create() : NULL;}
+
+///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * The output of this effect is a 1-pixel wide line.
+ * Input is 2D implicit device coord line eq (a*x + b*y +c = 0). 4th component unused.
+ */
+class HairLineEdgeEffect : public GrEffect {
+public:
+
+    static GrEffectRef* Create() {
+        GR_CREATE_STATIC_EFFECT(gHairLineEdge, HairLineEdgeEffect, ());
+        gHairLineEdge->ref();
+        return gHairLineEdge;
+    }
+
+    virtual ~HairLineEdgeEffect() {}
+
+    static const char* Name() { return "HairLineEdge"; }
+
+    virtual void getConstantColorComponents(GrColor* color,
+                                            uint32_t* validFlags) const SK_OVERRIDE {
+        *validFlags = 0;
+    }
+
+    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE {
+        return GrTBackendEffectFactory<HairLineEdgeEffect>::getInstance();
+    }
+
+    class GLEffect : public GrGLEffect {
+    public:
+        GLEffect(const GrBackendEffectFactory& factory, const GrDrawEffect&)
+            : INHERITED (factory) {}
+
+        virtual void emitCode(GrGLShaderBuilder* builder,
+                              const GrDrawEffect& drawEffect,
+                              EffectKey key,
+                              const char* outputColor,
+                              const char* inputColor,
+                              const TextureSamplerArray& samplers) SK_OVERRIDE {
+            const char *vsName, *fsName;
+            const SkString* attrName =
+                builder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
+            builder->fsCodeAppendf("\t\tfloat edgeAlpha;\n");
+
+            builder->addVarying(kVec4f_GrSLType, "HairLineEdge", &vsName, &fsName);
+
+            builder->fsCodeAppendf("\t\tedgeAlpha = abs(dot(vec3(%s.xy,1), %s.xyz));\n",
+                                   builder->fragmentPosition(), fsName);
+            builder->fsCodeAppendf("\t\tedgeAlpha = max(1.0 - edgeAlpha, 0.0);\n");
+
+            SkString modulate;
+            GrGLSLModulatef<4>(&modulate, inputColor, "edgeAlpha");
+            builder->fsCodeAppendf("\t%s = %s;\n", outputColor, modulate.c_str());
+
+            builder->vsCodeAppendf("\t%s = %s;\n", vsName, attrName->c_str());
+        }
+
+        static inline EffectKey GenKey(const GrDrawEffect& drawEffect, const GrGLCaps&) {
+            return 0x0;
+        }
+
+        virtual void setData(const GrGLUniformManager&, const GrDrawEffect&) SK_OVERRIDE {}
+
+    private:
+        typedef GrGLEffect INHERITED;
+    };
+
+private:
+    HairLineEdgeEffect() {
+        this->addVertexAttrib(kVec4f_GrSLType);
+    }
+
+    virtual bool onIsEqual(const GrEffect& other) const SK_OVERRIDE {
+        return true;
+    }
+
+    GR_DECLARE_EFFECT_TEST;
+
+    typedef GrEffect INHERITED;
+};
+
+GR_DEFINE_EFFECT_TEST(HairLineEdgeEffect);
+
+GrEffectRef* HairLineEdgeEffect::TestCreate(SkMWCRandom* random,
+                                            GrContext*,
+                                            const GrDrawTargetCaps& caps,
+                                            GrTexture*[]) {
+    return HairLineEdgeEffect::Create();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+namespace {
+
+// position + edge
+extern const GrVertexAttrib gHairlineAttribs[] = {
+    {kVec2f_GrVertexAttribType, 0,                  kPosition_GrVertexAttribBinding},
+    {kVec4f_GrVertexAttribType, sizeof(GrPoint),    kEffect_GrVertexAttribBinding}
+};
+
+};
+
 bool GrAAHairLinePathRenderer::createGeom(
             const SkPath& path,
             GrDrawTarget* target,
@@ -505,11 +711,6 @@ bool GrAAHairLinePathRenderer::createGeom(
     target->getClip()->getConservativeBounds(drawState->getRenderTarget(),
                                              &devClipBounds);
 
-    // position + edge
-    static const GrVertexAttrib kAttribs[] = {
-        {kVec2f_GrVertexAttribType, 0},
-        {kVec4f_GrVertexAttribType, sizeof(GrPoint)}
-    };
     SkMatrix viewM = drawState->getViewMatrix();
 
     PREALLOC_PTARRAY(128) lines;
@@ -521,9 +722,7 @@ bool GrAAHairLinePathRenderer::createGeom(
     *lineCnt = lines.count() / 2;
     int vertCnt = kVertsPerLineSeg * *lineCnt + kVertsPerQuad * *quadCnt;
 
-    target->drawState()->setVertexAttribs(kAttribs, SK_ARRAY_COUNT(kAttribs));
-    target->drawState()->setAttribIndex(GrDrawState::kPosition_AttribIndex, 0);
-    target->drawState()->setAttribBindings(GrDrawState::kDefault_AttribBindings);
+    target->drawState()->setVertexAttribs<gHairlineAttribs>(SK_ARRAY_COUNT(gHairlineAttribs));
     GrAssert(sizeof(Vertex) == target->getDrawState().getVertexSize());
 
     if (!arg->set(target, vertCnt, 0)) {
@@ -613,9 +812,9 @@ bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
     };
     static const int kEdgeAttrIndex = 1;
 
-    GrEffectRef* hairLineEffect = GrEdgeEffect::Create(GrEdgeEffect::kHairLine_EdgeType);
-    GrEffectRef* hairQuadEffect = GrEdgeEffect::Create(GrEdgeEffect::kHairQuad_EdgeType);
- 
+    GrEffectRef* hairLineEffect = HairLineEdgeEffect::Create();
+    GrEffectRef* hairQuadEffect = HairQuadEdgeEffect::Create();
+
     target->setIndexSourceToBuffer(fLinesIndexBuffer);
     int lines = 0;
     int nBufLines = fLinesIndexBuffer->maxQuads();
@@ -642,6 +841,7 @@ bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
                             kIdxsPerQuad*n);                   // iCount
         quads += n;
     }
+    target->resetIndexSource();
 
     return true;
 }

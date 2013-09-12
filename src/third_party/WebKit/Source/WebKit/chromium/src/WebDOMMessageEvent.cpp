@@ -31,15 +31,15 @@
 #include "config.h"
 #include "WebDOMMessageEvent.h"
 
-#include "DOMWindow.h"
-#include "Document.h"
-#include "MessageEvent.h"
-#include "MessagePort.h"
-#include "PlatformMessagePortChannelChromium.h"
-#include "SerializedScriptValue.h"
 #include "WebFrame.h"
 #include "WebFrameImpl.h"
 #include "WebSerializedScriptValue.h"
+#include "bindings/v8/SerializedScriptValue.h"
+#include "core/dom/Document.h"
+#include "core/dom/MessageEvent.h"
+#include "core/dom/MessagePort.h"
+#include "core/dom/default/chromium/PlatformMessagePortChannelChromium.h"
+#include "core/page/DOMWindow.h"
 #include <public/WebString.h>
 
 using namespace WebCore;
@@ -59,7 +59,7 @@ void WebDOMMessageEvent::initMessageEvent(const WebString& type, bool canBubble,
 
 WebSerializedScriptValue WebDOMMessageEvent::data() const
 {
-    return WebSerializedScriptValue(constUnwrap<MessageEvent>()->data());
+    return WebSerializedScriptValue(constUnwrap<MessageEvent>()->dataAsSerializedScriptValue());
 }
 
 WebString WebDOMMessageEvent::origin() const

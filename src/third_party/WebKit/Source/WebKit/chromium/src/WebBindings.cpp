@@ -31,30 +31,25 @@
 #include "config.h"
 #include "WebBindings.h"
 
-#include "npruntime_impl.h"
-#include "npruntime_priv.h"
-
-#if USE(V8)
-#include "BindingState.h"
-#include "DOMWindow.h"
-#include "Frame.h"
-#include "NPV8Object.h"  // for PrivateIdentifier
-#include "Range.h"
 #include "V8ArrayBuffer.h"
 #include "V8ArrayBufferView.h"
-#include "V8DOMWrapper.h"
 #include "V8Element.h"
-#include "V8NPUtils.h"
 #include "V8Range.h"
-#include <wtf/ArrayBufferView.h>
-// FIXME: Remove the USE(JSC) ifdefs because we don't support USE(JSC) anymore.
-#elif USE(JSC)
-#include "bridge/c/c_utility.h"
-#endif
 #include "WebArrayBuffer.h"
 #include "WebArrayBufferView.h"
 #include "WebElement.h"
 #include "WebRange.h"
+#include "bindings/v8/BindingState.h"
+#include "bindings/v8/NPV8Object.h"  // for PrivateIdentifier
+#include "bindings/v8/ScriptController.h"
+#include "bindings/v8/V8DOMWrapper.h"
+#include "bindings/v8/V8NPUtils.h"
+#include "bindings/v8/npruntime_impl.h"
+#include "bindings/v8/npruntime_priv.h"
+#include "core/dom/Range.h"
+#include "core/page/DOMWindow.h"
+#include "core/page/Frame.h"
+#include <wtf/ArrayBufferView.h>
 
 using namespace WebCore;
 
@@ -127,11 +122,7 @@ int32_t WebBindings::intFromIdentifier(NPIdentifier identifier)
 
 void WebBindings::initializeVariantWithStringCopy(NPVariant* variant, const NPString* value)
 {
-#if USE(V8)
     _NPN_InitializeVariantWithStringCopy(variant, value);
-#else
-    NPN_InitializeVariantWithStringCopy(variant, value);
-#endif
 }
 
 bool WebBindings::invoke(NPP npp, NPObject* object, NPIdentifier method, const NPVariant* args, uint32_t argCount, NPVariant* result)
@@ -176,9 +167,7 @@ bool WebBindings::setProperty(NPP npp, NPObject* object, NPIdentifier identifier
 
 void WebBindings::unregisterObject(NPObject* object)
 {
-#if USE(V8)
     _NPN_UnregisterObject(object);
-#endif
 }
 
 NPUTF8* WebBindings::utf8FromIdentifier(NPIdentifier identifier)
@@ -201,8 +190,6 @@ void WebBindings::extractIdentifierData(const NPIdentifier& identifier, const NP
     else
         number = data->value.number;
 }
-
-#if USE(V8)
 
 static bool getRangeImpl(NPObject* object, WebRange* webRange, v8::Isolate* isolate)
 {
@@ -304,76 +291,39 @@ static NPObject* makeStringArrayImpl(const WebVector<WebString>& data)
     return npCreateV8ScriptObject(0, result, window);
 }
 
-#endif
-
 bool WebBindings::getRange(NPObject* range, WebRange* webRange)
 {
-#if USE(V8)
     return getRangeImpl(range, webRange, v8::Isolate::GetCurrent());
-#else
-    // Not supported on other ports (JSC, etc).
-    return false;
-#endif
 }
 
 bool WebBindings::getArrayBuffer(NPObject* arrayBuffer, WebArrayBuffer* webArrayBuffer)
 {
-#if USE(V8)
     return getArrayBufferImpl(arrayBuffer, webArrayBuffer, v8::Isolate::GetCurrent());
-#else
-    // Not supported on other ports (JSC, etc).
-    return false;
-#endif
 }
 
 bool WebBindings::getArrayBufferView(NPObject* arrayBufferView, WebArrayBufferView* webArrayBufferView)
 {
-#if USE(V8)
     return getArrayBufferViewImpl(arrayBufferView, webArrayBufferView, v8::Isolate::GetCurrent());
-#else
-    // Not supported on other ports (JSC, etc).
-    return false;
-#endif
 }
 
 bool WebBindings::getNode(NPObject* node, WebNode* webNode)
 {
-#if USE(V8)
     return getNodeImpl(node, webNode, v8::Isolate::GetCurrent());
-#else
-    // Not supported on other ports (JSC, etc.).
-    return false;
-#endif
 }
 
 bool WebBindings::getElement(NPObject* element, WebElement* webElement)
 {
-#if USE(V8)
     return getElementImpl(element, webElement, v8::Isolate::GetCurrent());
-#else
-    // Not supported on other ports (JSC, etc.).
-    return false;
-#endif
 }
 
 NPObject* WebBindings::makeIntArray(const WebVector<int>& data)
 {
-#if USE(V8)
     return makeIntArrayImpl(data);
-#else
-    // Not supported on other ports (JSC, etc.).
-    return 0;
-#endif
 }
 
 NPObject* WebBindings::makeStringArray(const WebVector<WebString>& data)
 {
-#if USE(V8)
     return makeStringArrayImpl(data);
-#else
-    // Not supported on other ports (JSC, etc.).
-    return 0;
-#endif
 }
 
 void WebBindings::pushExceptionHandler(ExceptionHandler handler, void* data)

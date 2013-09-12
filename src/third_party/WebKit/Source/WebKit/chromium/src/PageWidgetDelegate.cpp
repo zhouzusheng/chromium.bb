@@ -31,12 +31,13 @@
 #include "config.h"
 #include "PageWidgetDelegate.h"
 
-#include "Frame.h"
-#include "FrameView.h"
 #include "PageOverlayList.h"
 #include "WebInputEvent.h"
 #include "WebInputEventConversion.h"
-#include "painting/GraphicsContextBuilder.h"
+#include "core/page/EventHandler.h"
+#include "core/page/Frame.h"
+#include "core/page/FrameView.h"
+#include "core/platform/graphics/GraphicsContext.h"
 #include <wtf/CurrentTime.h>
 
 using namespace WebCore;
@@ -55,12 +56,10 @@ static inline FrameView* mainFrameView(Page* page)
 
 void PageWidgetDelegate::animate(Page* page, double monotonicFrameBeginTime)
 {
-#if ENABLE(REQUEST_ANIMATION_FRAME)
     FrameView* view = mainFrameView(page);
     if (!view)
         return;
     view->serviceScriptedAnimations(monotonicFrameBeginTime);
-#endif
 }
 
 void PageWidgetDelegate::layout(Page* page)
@@ -81,17 +80,14 @@ void PageWidgetDelegate::layout(Page* page)
     view->updateLayoutAndStyleIfNeededRecursive();
 }
 
-void PageWidgetDelegate::paint(Page* page, PageOverlayList* overlays, WebCanvas* canvas, const WebRect& rect, CanvasBackground background, bool applyDeviceScale)
+void PageWidgetDelegate::paint(Page* page, PageOverlayList* overlays, WebCanvas* canvas, const WebRect& rect, CanvasBackground background)
 {
     if (rect.isEmpty())
         return;
-    GraphicsContextBuilder builder(canvas);
-    GraphicsContext& gc = builder.context();
+    GraphicsContext gc(canvas);
     gc.setShouldSmoothFonts(background == Opaque);
-    if (applyDeviceScale) {
-        gc.applyDeviceScaleFactor(page->deviceScaleFactor());
-        gc.platformContext()->setDeviceScaleFactor(page->deviceScaleFactor());
-    }
+    gc.applyDeviceScaleFactor(page->deviceScaleFactor());
+    gc.setUseHighResMarkers(page->deviceScaleFactor() > 1.5f);
     IntRect dirtyRect(rect);
     gc.save();
     FrameView* view = mainFrameView(page);
@@ -147,8 +143,6 @@ bool PageWidgetDelegate::handleInputEvent(Page* page, PageWidgetEventHandler& ha
 
     case WebInputEvent::Char:
         return handler.handleCharEvent(*static_cast<const WebKeyboardEvent*>(&event));
-
-#if ENABLE(GESTURE_EVENTS)
     case WebInputEvent::GestureScrollBegin:
     case WebInputEvent::GestureScrollEnd:
     case WebInputEvent::GestureScrollUpdate:
@@ -156,6 +150,7 @@ bool PageWidgetDelegate::handleInputEvent(Page* page, PageWidgetEventHandler& ha
     case WebInputEvent::GestureFlingStart:
     case WebInputEvent::GestureFlingCancel:
     case WebInputEvent::GestureTap:
+    case WebInputEvent::GestureTapUnconfirmed:
     case WebInputEvent::GestureTapDown:
     case WebInputEvent::GestureTapCancel:
     case WebInputEvent::GestureDoubleTap:
@@ -163,9 +158,7 @@ bool PageWidgetDelegate::handleInputEvent(Page* page, PageWidgetEventHandler& ha
     case WebInputEvent::GestureLongPress:
     case WebInputEvent::GestureLongTap:
         return handler.handleGestureEvent(*static_cast<const WebGestureEvent*>(&event));
-#endif
 
-#if ENABLE(TOUCH_EVENTS)
     case WebInputEvent::TouchStart:
     case WebInputEvent::TouchMove:
     case WebInputEvent::TouchEnd:
@@ -173,9 +166,7 @@ bool PageWidgetDelegate::handleInputEvent(Page* page, PageWidgetEventHandler& ha
         if (!frame || !frame->view())
             return false;
         return handler.handleTouchEvent(*frame, *static_cast<const WebTouchEvent*>(&event));
-#endif
 
-#if ENABLE(GESTURE_EVENTS)
     case WebInputEvent::GesturePinchBegin:
     case WebInputEvent::GesturePinchEnd:
     case WebInputEvent::GesturePinchUpdate:
@@ -183,7 +174,6 @@ bool PageWidgetDelegate::handleInputEvent(Page* page, PageWidgetEventHandler& ha
         // should call handleGestureEvent, just like it currently does for
         // gesture scroll.
         return false;
-#endif
 
     default:
         return false;
@@ -221,11 +211,9 @@ bool PageWidgetEventHandler::handleMouseWheel(Frame& mainFrame, const WebMouseWh
     return mainFrame.eventHandler()->handleWheelEvent(PlatformWheelEventBuilder(mainFrame.view(), event));
 }
 
-#if ENABLE(TOUCH_EVENTS)
 bool PageWidgetEventHandler::handleTouchEvent(Frame& mainFrame, const WebTouchEvent& event)
 {
     return mainFrame.eventHandler()->handleTouchEvent(PlatformTouchEventBuilder(mainFrame.view(), event));
 }
-#endif
 
 }

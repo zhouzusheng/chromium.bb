@@ -60,7 +60,7 @@ class Factory {
   Handle<UnseededNumberDictionary> NewUnseededNumberDictionary(
       int at_least_space_for);
 
-  Handle<StringDictionary> NewStringDictionary(int at_least_space_for);
+  Handle<NameDictionary> NewNameDictionary(int at_least_space_for);
 
   Handle<ObjectHashSet> NewObjectHashSet(int at_least_space_for);
 
@@ -79,16 +79,16 @@ class Factory {
 
   Handle<TypeFeedbackInfo> NewTypeFeedbackInfo();
 
-  Handle<String> LookupUtf8Symbol(Vector<const char> str);
-  Handle<String> LookupUtf8Symbol(const char* str) {
-    return LookupUtf8Symbol(CStrVector(str));
+  Handle<String> InternalizeUtf8String(Vector<const char> str);
+  Handle<String> InternalizeUtf8String(const char* str) {
+    return InternalizeUtf8String(CStrVector(str));
   }
-  Handle<String> LookupSymbol(Handle<String> str);
-  Handle<String> LookupOneByteSymbol(Vector<const uint8_t> str);
-  Handle<String> LookupOneByteSymbol(Handle<SeqOneByteString>,
+  Handle<String> InternalizeString(Handle<String> str);
+  Handle<String> InternalizeOneByteString(Vector<const uint8_t> str);
+  Handle<String> InternalizeOneByteString(Handle<SeqOneByteString>,
                                    int from,
                                    int length);
-  Handle<String> LookupTwoByteSymbol(Vector<const uc16> str);
+  Handle<String> InternalizeTwoByteString(Vector<const uc16> str);
 
 
   // String creation functions.  Most of the string creation functions take
@@ -166,6 +166,9 @@ class Factory {
   Handle<String> NewExternalStringFromTwoByte(
       const ExternalTwoByteString::Resource* resource);
 
+  // Create a symbol.
+  Handle<Symbol> NewSymbol();
+
   // Create a global (but otherwise uninitialized) context.
   Handle<Context> NewNativeContext();
 
@@ -195,12 +198,14 @@ class Factory {
                                   Handle<Context> previous,
                                   Handle<ScopeInfo> scope_info);
 
-  // Return the Symbol matching the passed in string.
-  Handle<String> SymbolFromString(Handle<String> value);
+  // Return the internalized version of the passed in string.
+  Handle<String> InternalizedStringFromString(Handle<String> value);
 
   // Allocate a new struct.  The struct is pretenured (allocated directly in
   // the old generation).
   Handle<Struct> NewStruct(InstanceType type);
+
+  Handle<DeclaredAccessorDescriptor> NewDeclaredAccessorDescriptor();
 
   Handle<DeclaredAccessorInfo> NewDeclaredAccessorInfo();
 
@@ -278,7 +283,8 @@ class Factory {
 
   // JS objects are pretenured when allocated by the bootstrapper and
   // runtime.
-  Handle<JSObject> NewJSObjectFromMap(Handle<Map> map);
+  Handle<JSObject> NewJSObjectFromMap(Handle<Map> map,
+                                      PretenureFlag pretenure = NOT_TENURED);
 
   // JS modules are pretenured.
   Handle<JSModule> NewJSModule(Handle<Context> context,
@@ -306,6 +312,10 @@ class Factory {
                                 Handle<FixedArrayBase> elements,
                                 uint32_t length,
                                 EnsureElementsMode mode);
+
+  Handle<JSArrayBuffer> NewJSArrayBuffer();
+
+  Handle<JSTypedArray> NewJSTypedArray(ExternalArrayType type);
 
   Handle<JSProxy> NewJSProxy(Handle<Object> handler, Handle<Object> prototype);
 
@@ -341,7 +351,8 @@ class Factory {
   Handle<Code> NewCode(const CodeDesc& desc,
                        Code::Flags flags,
                        Handle<Object> self_reference,
-                       bool immovable = false);
+                       bool immovable = false,
+                       bool crankshafted = false);
 
   Handle<Code> CopyCode(Handle<Code> code);
 
@@ -433,21 +444,22 @@ class Factory {
   ROOT_LIST(ROOT_ACCESSOR)
 #undef ROOT_ACCESSOR_ACCESSOR
 
-#define SYMBOL_ACCESSOR(name, str)                                             \
+#define STRING_ACCESSOR(name, str)                                             \
   inline Handle<String> name() {                                               \
     return Handle<String>(BitCast<String**>(                                   \
         &isolate()->heap()->roots_[Heap::k##name##RootIndex]));                \
   }
-  SYMBOL_LIST(SYMBOL_ACCESSOR)
-#undef SYMBOL_ACCESSOR
+  INTERNALIZED_STRING_LIST(STRING_ACCESSOR)
+#undef STRING_ACCESSOR
 
-  Handle<String> hidden_symbol() {
-    return Handle<String>(&isolate()->heap()->hidden_symbol_);
+  Handle<String> hidden_string() {
+    return Handle<String>(&isolate()->heap()->hidden_string_);
   }
 
   Handle<SharedFunctionInfo> NewSharedFunctionInfo(
       Handle<String> name,
       int number_of_literals,
+      bool is_generator,
       Handle<Code> code,
       Handle<ScopeInfo> scope_info);
   Handle<SharedFunctionInfo> NewSharedFunctionInfo(Handle<String> name);

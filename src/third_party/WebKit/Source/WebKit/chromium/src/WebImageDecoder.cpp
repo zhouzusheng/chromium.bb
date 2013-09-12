@@ -31,9 +31,9 @@
 #include "config.h"
 #include "WebImageDecoder.h"
 
-#include "BMPImageDecoder.h"
-#include "ICOImageDecoder.h"
-#include "SharedBuffer.h"
+#include "core/platform/SharedBuffer.h"
+#include "core/platform/image-decoders/bmp/BMPImageDecoder.h"
+#include "core/platform/image-decoders/ico/ICOImageDecoder.h"
 #include <public/WebData.h>
 #include <public/WebImage.h>
 #include <public/WebSize.h>
@@ -107,7 +107,7 @@ WebImage WebImageDecoder::getFrameAtIndex(int index = 0) const
     ImageFrame* const frameBuffer = m_private->frameBufferAtIndex(index);
     if (!frameBuffer)
         return WebImage();
-    OwnPtr<NativeImageSkia> image = adoptPtr(frameBuffer->asNewNativeImage());
+    RefPtr<NativeImageSkia> image = frameBuffer->asNewNativeImage();
     return WebImage(image->bitmap());
 }
 

@@ -31,9 +31,9 @@
 #include "config.h"
 #include "WebDOMEvent.h"
 
-#include "Event.h"
-#include "EventNames.h"
-#include "Node.h"
+#include "core/dom/Event.h"
+#include "core/dom/EventNames.h"
+#include "core/dom/Node.h"
 #include <wtf/PassRefPtr.h>
 
 using WebCore::eventNames;
@@ -204,18 +204,6 @@ bool WebDOMEvent::isXMLHttpRequestProgressEvent() const
 {
     ASSERT(m_private);
     return m_private->hasInterface(eventNames().interfaceForXMLHttpRequestProgressEvent);
-}
-
-bool WebDOMEvent::isWebKitAnimationEvent() const
-{
-    ASSERT(m_private);
-    return m_private->hasInterface(eventNames().interfaceForWebKitAnimationEvent);
-}
-
-bool WebDOMEvent::isWebKitTransitionEvent() const
-{
-    ASSERT(m_private);
-    return m_private->hasInterface(eventNames().interfaceForWebKitTransitionEvent);
 }
 
 bool WebDOMEvent::isBeforeLoadEvent() const

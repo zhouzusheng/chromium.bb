@@ -29,10 +29,7 @@
 #ifndef WebIDBFactoryImpl_h
 #define WebIDBFactoryImpl_h
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "WebDOMStringList.h"
-#include "WebIDBFactory.h"
+#include <public/WebIDBFactory.h>
 #include <wtf/RefPtr.h>
 
 namespace WebCore { class IDBFactoryBackendInterface; }
@@ -44,16 +41,14 @@ public:
     WebIDBFactoryImpl();
     virtual ~WebIDBFactoryImpl();
 
-    virtual void getDatabaseNames(WebIDBCallbacks*, const WebSecurityOrigin&, WebFrame*, const WebString& dataDir);
-    virtual void open(const WebString& name, long long version, long long transactionId, WebIDBCallbacks*, WebIDBDatabaseCallbacks*, const WebSecurityOrigin&, WebFrame*, const WebString& dataDir);
-    virtual void deleteDatabase(const WebString& name, WebIDBCallbacks*, const WebSecurityOrigin&, WebFrame*, const WebString& dataDir);
+    virtual void getDatabaseNames(WebIDBCallbacks*, const WebString& databaseIdentifier, const WebString& dataDir);
+    virtual void open(const WebString& name, long long version, long long transactionId, WebIDBCallbacks*, WebIDBDatabaseCallbacks*, const WebString& databaseIdentifier, const WebString& dataDir);
+    virtual void deleteDatabase(const WebString& name, WebIDBCallbacks*, const WebString& databaseIdentifier, const WebString& dataDir);
 
 private:
     WTF::RefPtr<WebCore::IDBFactoryBackendInterface> m_idbFactoryBackend;
 };
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)
 
 #endif // WebIDBFactoryImpl_h

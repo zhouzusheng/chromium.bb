@@ -52,6 +52,8 @@
         '../webkit/support/webkit_support.gyp:webkit_resources',
         '../webkit/support/webkit_support.gyp:webkit_support',
         '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
+        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit_test_support',
+        '<(webkit_src_dir)/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.gyp:TestRunner',
       ],
       'include_dirs': [
         '..',
@@ -65,8 +67,16 @@
         'shell/geolocation/shell_access_token_store.h',
         'shell/minimal_ash.cc',
         'shell/minimal_ash.h',
+        'shell/notify_done_forwarder.cc',
+        'shell/notify_done_forwarder.h',
         'shell/paths_mac.h',
         'shell/paths_mac.mm',
+        'shell/renderer/shell_content_renderer_client.cc',
+        'shell/renderer/shell_content_renderer_client.h',
+        'shell/renderer/shell_render_process_observer.cc',
+        'shell/renderer/shell_render_process_observer.h',
+        'shell/renderer/webkit_test_runner.cc',
+        'shell/renderer/webkit_test_runner.h',
         'shell/shell.cc',
         'shell/shell.h',
         'shell/shell_android.cc',
@@ -87,8 +97,6 @@
         'shell/shell_content_browser_client.h',
         'shell/shell_content_client.cc',
         'shell/shell_content_client.h',
-        'shell/shell_content_renderer_client.cc',
-        'shell/shell_content_renderer_client.h',
         'shell/shell_devtools_delegate.cc',
         'shell/shell_devtools_delegate.h',
         'shell/shell_devtools_frontend.cc',
@@ -115,8 +123,6 @@
         'shell/shell_network_delegate.h',
         'shell/shell_quota_permission_context.cc',
         'shell/shell_quota_permission_context.h',
-        'shell/shell_render_process_observer.cc',
-        'shell/shell_render_process_observer.h',
         'shell/shell_resource_dispatcher_host_delegate.cc',
         'shell/shell_resource_dispatcher_host_delegate.h',
         'shell/shell_switches.cc',
@@ -131,6 +137,15 @@
         'shell/shell_web_contents_view_delegate_mac.mm',
         'shell/shell_web_contents_view_delegate_win.cc',
         'shell/shell_web_contents_view_delegate.h',
+        'shell/webkit_test_controller.cc',
+        'shell/webkit_test_controller.h',
+        'shell/webkit_test_helpers.cc',
+        'shell/webkit_test_helpers.h',
+        'shell/webkit_test_platform_support.h',
+        'shell/webkit_test_platform_support_android.cc',
+        'shell/webkit_test_platform_support_linux.cc',
+        'shell/webkit_test_platform_support_mac.mm',
+        'shell/webkit_test_platform_support_win.cc',
       ],
       'msvs_settings': {
         'VCLinkerTool': {
@@ -190,6 +205,7 @@
             '../ui/base/strings/ui_strings.gyp:ui_strings',
             '../ui/views/controls/webview/webview.gyp:webview',
             '../ui/views/views.gyp:views',
+            '../ui/views/views.gyp:views_test_support',
             '../ui/ui.gyp:ui_resources',
           ],
           'sources/': [
@@ -435,6 +451,13 @@
         }],  # OS=="mac"
       ],
     },
+    {
+      'target_name': 'content_shell_builder',
+      'type': 'none',
+      'dependencies': [
+        'content_shell',
+      ],
+    },
   ],
   'conditions': [
     ['OS=="mac"', {
@@ -467,6 +490,23 @@
                 '<(PRODUCT_DIR)/ffmpegsumo.so',
               ],
             },
+          ],
+          'conditions': [
+            ['enable_webrtc==1', {
+              'variables': {
+                'libpeer_target_type%': 'static_library',
+              },
+              'conditions': [
+                ['libpeer_target_type!="static_library"', {
+                  'copies': [{
+                   'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Libraries',
+                   'files': [
+                      '<(PRODUCT_DIR)/libpeerconnection.so',
+                    ],
+                  }],
+                }],
+              ],
+            }],
           ],
         },  # target content_shell_framework
         {
@@ -620,24 +660,7 @@
           'dependencies': [
             'content_shell_apk',
           ],
-          # This all_dependent_settings is used for java targets only. This will
-          # add the content_shell jar to the classpath of dependent java
-          # targets.
-          'all_dependent_settings': {
-            'variables': {
-              'input_jars_paths': ['>(apk_output_jar_path)'],
-            },
-          },
-          # Add an action with the appropriate output. This allows the generated
-          # buildfiles to determine which target the output corresponds to.
-          'actions': [
-            {
-              'action_name': 'fake_generate_jar',
-              'inputs': [],
-              'outputs': ['>(apk_output_jar_path)'],
-              'action': [],
-            },
-          ],
+          'includes': [ '../build/apk_fake_jar.gypi' ],
         },
         {
           'target_name': 'content_shell_apk',
@@ -655,8 +678,8 @@
             'apk_name': 'ContentShell',
             'manifest_package_name': 'org.chromium.content_shell_apk',
             'java_in_dir': 'shell/android/shell_apk',
-            'resource_dir': 'res',
-            'native_libs_paths': ['<(SHARED_LIB_DIR)/libcontent_shell_content_view.so'],
+            'resource_dir': 'shell/android/shell_apk/res',
+            'native_lib_target': 'libcontent_shell_content_view',
             'additional_input_paths': ['<(PRODUCT_DIR)/content_shell/assets/content_shell.pak'],
             'asset_location': '<(ant_build_out)/content_shell/assets',
           },

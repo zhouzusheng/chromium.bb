@@ -31,28 +31,28 @@
 #include "config.h"
 #include "WebPageSerializer.h"
 
-#include "DocumentLoader.h"
-#include "Element.h"
-#include "Frame.h"
-#include "HTMLAllCollection.h"
-#include "HTMLFrameOwnerElement.h"
-#include "HTMLInputElement.h"
 #include "HTMLNames.h"
-#include "KURL.h"
-#include "MHTMLArchive.h"
-#include "PageSerializer.h"
 #include "WebFrame.h"
 #include "WebFrameImpl.h"
 #include "WebPageSerializerClient.h"
 #include "WebPageSerializerImpl.h"
 #include "WebView.h"
 #include "WebViewImpl.h"
+#include "core/dom/Element.h"
+#include "core/html/HTMLAllCollection.h"
+#include "core/html/HTMLFrameOwnerElement.h"
+#include "core/html/HTMLInputElement.h"
+#include "core/loader/DocumentLoader.h"
+#include "core/loader/archive/MHTMLArchive.h"
+#include "core/page/Frame.h"
+#include "core/page/PageSerializer.h"
+#include "core/platform/KURL.h"
 #include <public/WebCString.h>
 #include <public/WebString.h>
 #include <public/WebURL.h>
 #include <public/WebVector.h>
-#include <wtf/Vector.h>
 #include <wtf/text/StringConcatenate.h>
+#include <wtf/Vector.h>
 
 using namespace WebCore;
 

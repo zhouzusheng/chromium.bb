@@ -29,9 +29,7 @@ static inline bool IsOutOfSync(const base::TimeDelta& timestamp_1,
   // Out of sync of 100ms would be pretty noticeable and we should keep any
   // drift below that.
   const int64 kOutOfSyncThresholdInMicroseconds = 100000;
-  // SHEZ: Changed upstream code here because VS2008 complains about ambiguous
-  //       abs overload.
-  return std::abs(long(timestamp_1.InMicroseconds() - timestamp_2.InMicroseconds())) >
+  return std::abs(timestamp_1.InMicroseconds() - timestamp_2.InMicroseconds()) >
          kOutOfSyncThresholdInMicroseconds;
 }
 
@@ -41,6 +39,7 @@ DecryptingAudioDecoder::DecryptingAudioDecoder(
     : message_loop_(message_loop),
       weak_factory_(this),
       state_(kUninitialized),
+      demuxer_stream_(NULL),
       set_decryptor_ready_cb_(set_decryptor_ready_cb),
       decryptor_(NULL),
       key_added_while_decode_pending_(false),
@@ -53,7 +52,7 @@ DecryptingAudioDecoder::DecryptingAudioDecoder(
 }
 
 void DecryptingAudioDecoder::Initialize(
-    const scoped_refptr<DemuxerStream>& stream,
+    DemuxerStream* stream,
     const PipelineStatusCB& status_cb,
     const StatisticsCB& statistics_cb) {
   DVLOG(2) << "Initialize()";

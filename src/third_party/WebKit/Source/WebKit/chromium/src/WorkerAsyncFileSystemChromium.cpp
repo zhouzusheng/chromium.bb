@@ -31,20 +31,18 @@
 #include "config.h"
 #include "WorkerAsyncFileSystemChromium.h"
 
-#if ENABLE(FILE_SYSTEM) && ENABLE(WORKERS)
-
-#include "AsyncFileSystemCallbacks.h"
-#include "BlobURL.h"
-#include "FileMetadata.h"
-#include "FileSystem.h"
-#include "NotImplemented.h"
 #include "WebFileSystemCallbacksImpl.h"
 #include "WebFileWriter.h"
 #include "WorkerAsyncFileWriterChromium.h"
-#include "WorkerContext.h"
 #include "WorkerFileSystemCallbacksBridge.h"
-#include "WorkerScriptController.h"
-#include "WorkerThread.h"
+#include "bindings/v8/WorkerScriptController.h"
+#include "core/fileapi/BlobURL.h"
+#include "core/platform/AsyncFileSystemCallbacks.h"
+#include "core/platform/FileMetadata.h"
+#include "core/platform/FileSystem.h"
+#include "core/platform/NotImplemented.h"
+#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerThread.h"
 #include <public/WebFileSystem.h>
 #include <wtf/text/CString.h>
 
@@ -194,5 +192,3 @@ PassRefPtr<WorkerFileSystemCallbacksBridge> WorkerAsyncFileSystemChromium::creat
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(FILE_SYSTEM)

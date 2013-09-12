@@ -11,6 +11,9 @@
 #include "ppapi/shared_impl/host_resource.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_buffer_api.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
 #include "webkit/plugins/ppapi/host_globals.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 
@@ -37,8 +40,7 @@ PepperVideoCaptureHost::PepperVideoCaptureHost(RendererPpapiHost* host,
       renderer_ppapi_host_(host),
       buffer_count_hint_(0),
       status_(PP_VIDEO_CAPTURE_STATUS_STOPPED),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          enumeration_helper_(this, this, PP_DEVICETYPE_DEV_VIDEOCAPTURE)) {
+      enumeration_helper_(this, this, PP_DEVICETYPE_DEV_VIDEOCAPTURE) {
 }
 
 PepperVideoCaptureHost::~PepperVideoCaptureHost() {
@@ -251,7 +253,7 @@ int32_t PepperVideoCaptureHost::OnOpen(
     const std::string& device_id,
     const PP_VideoCaptureDeviceInfo_Dev& requested_info,
     uint32_t buffer_count) {
-  if (platform_video_capture_.get())
+  if (platform_video_capture_)
     return PP_ERROR_FAILED;
 
   webkit::ppapi::PluginDelegate* plugin_delegate = GetPluginDelegate();
@@ -260,18 +262,16 @@ int32_t PepperVideoCaptureHost::OnOpen(
 
   SetRequestedInfo(requested_info, buffer_count);
 
+  webkit::ppapi::PluginInstance* instance =
+      renderer_ppapi_host_->GetPluginInstance(pp_instance());
+  if (!instance)
+    return PP_ERROR_FAILED;
+
   platform_video_capture_ =
-      plugin_delegate->CreateVideoCapture(device_id, this);
+      plugin_delegate->CreateVideoCapture(device_id,
+          instance->container()->element().document().url(), this);
 
   open_reply_context_ = context->MakeReplyMessageContext();
-
-  // It is able to complete synchronously if the default device is used.
-  bool sync_completion = device_id.empty();
-  if (sync_completion) {
-    // Send OpenACK directly, but still need to return PP_OK_COMPLETIONPENDING
-    // to make PluginResource happy.
-    OnInitialized(platform_video_capture_.get(), true);
-  }
 
   return PP_OK_COMPLETIONPENDING;
 }
@@ -323,7 +323,7 @@ int32_t PepperVideoCaptureHost::StopCapture() {
 }
 
 int32_t PepperVideoCaptureHost::Close() {
-  if (!platform_video_capture_.get())
+  if (!platform_video_capture_)
     return PP_OK;
 
   StopCapture();
@@ -361,7 +361,7 @@ void PepperVideoCaptureHost::SetRequestedInfo(
 }
 
 void PepperVideoCaptureHost::DetachPlatformVideoCapture() {
-  if (platform_video_capture_.get()) {
+  if (platform_video_capture_) {
     platform_video_capture_->DetachEventHandler();
     platform_video_capture_ = NULL;
   }

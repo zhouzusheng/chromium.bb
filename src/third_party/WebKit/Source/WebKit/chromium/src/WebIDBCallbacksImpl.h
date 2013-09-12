@@ -26,9 +26,7 @@
 #ifndef WebIDBCallbacksImpl_h
 #define WebIDBCallbacksImpl_h
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "WebIDBCallbacks.h"
+#include <public/WebIDBCallbacks.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 
@@ -47,7 +45,7 @@ public:
     virtual ~WebIDBCallbacksImpl();
 
     virtual void onError(const WebIDBDatabaseError&);
-    virtual void onSuccess(const WebDOMStringList&);
+    virtual void onSuccess(const WebVector<WebString>&);
     virtual void onSuccess(WebIDBCursor*, const WebIDBKey&, const WebIDBKey& primaryKey, const WebData&);
     virtual void onSuccess(WebIDBDatabase*, const WebIDBMetadata&);
     virtual void onSuccess(const WebIDBKey&);
@@ -65,7 +63,5 @@ private:
 };
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)
 
 #endif // WebIDBCallbacksImpl_h

@@ -31,11 +31,11 @@
 #include "config.h"
 #include "MediaSourcePrivateImpl.h"
 
-#if ENABLE(MEDIA_SOURCE)
-
 #include "SourceBufferPrivateImpl.h"
 #include "WebMediaSourceClient.h"
 #include "WebSourceBuffer.h"
+#include <algorithm>
+#include <limits>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/text/WTFString.h>
 
@@ -67,6 +67,7 @@ double MediaSourcePrivateImpl::duration()
 {
     if (!m_client)
         return std::numeric_limits<float>::quiet_NaN();
+
     return m_client->duration();
 }
 
@@ -83,5 +84,3 @@ void MediaSourcePrivateImpl::endOfStream(WebCore::MediaSourcePrivate::EndOfStrea
 }
 
 }
-
-#endif

@@ -653,7 +653,7 @@ static const ProcCoeff gProcCoeffs[] = {
 
     { plus_modeproc,    SkXfermode::kOne_Coeff,     SkXfermode::kOne_Coeff },
     { modulate_modeproc,SkXfermode::kZero_Coeff,    SkXfermode::kSC_Coeff },
-    { screen_modeproc,      CANNOT_USE_COEFF,       CANNOT_USE_COEFF },
+    { screen_modeproc,  SkXfermode::kOne_Coeff,     SkXfermode::kISC_Coeff },
     { overlay_modeproc,     CANNOT_USE_COEFF,       CANNOT_USE_COEFF },
     { darken_modeproc,      CANNOT_USE_COEFF,       CANNOT_USE_COEFF },
     { lighten_modeproc,     CANNOT_USE_COEFF,       CANNOT_USE_COEFF },
@@ -950,14 +950,21 @@ void SkProcXfermode::toString(SkString* str) const {
 #include "gl/GrGLEffect.h"
 
 /**
- * GrEffect that implements the kDarken_Mode Xfermode. It requires access to the dst pixel color
- * in the shader. TODO: Make this work for all non-Coeff SkXfermode::Mode values.
+ * GrEffect that implements the all the separable xfer modes that cannot be expressed as Coeffs.
  */
-class DarkenEffect : public GrEffect {
+class XferEffect : public GrEffect {
 public:
-    static GrEffectRef* Create() {
-        static AutoEffectUnref gEffect(SkNEW(DarkenEffect));
-        return CreateEffectRef(gEffect);
+    static bool IsSupportedMode(SkXfermode::Mode mode) {
+        return mode > SkXfermode::kLastCoeffMode && mode <= SkXfermode::kLastMode;
+    }
+
+    static GrEffectRef* Create(SkXfermode::Mode mode) {
+        if (!IsSupportedMode(mode)) {
+            return NULL;
+        } else {
+            AutoEffectUnref effect(SkNEW_ARGS(XferEffect, (mode)));
+            return CreateEffectRef(effect);
+        }
     }
 
     virtual void getConstantColorComponents(GrColor* color,
@@ -966,10 +973,12 @@ public:
     }
 
     virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE {
-        return GrTBackendEffectFactory<DarkenEffect>::getInstance();
+        return GrTBackendEffectFactory<XferEffect>::getInstance();
     }
 
-    static const char* Name() { return "XfermodeDarken"; }
+    static const char* Name() { return "XferEffect"; }
+
+    SkXfermode::Mode mode() const { return fMode; }
 
     class GLEffect : public GrGLEffect {
     public:
@@ -982,47 +991,389 @@ public:
                               const char* outputColor,
                               const char* inputColor,
                               const TextureSamplerArray& samplers) SK_OVERRIDE {
-            const char* dstColorName = builder->dstColor();
-            GrAssert(NULL != dstColorName);
+            const char* dstColor = builder->dstColor();
+            GrAssert(NULL != dstColor);
+
+            // We don't try to optimize for this case at all
             if (NULL == inputColor) {
-                // the input color is solid white
-                builder->fsCodeAppendf("\t\t%s.a = 1.0;\n", outputColor);
-                builder->fsCodeAppendf("\t\t%s.rgb = vec3(1.0, 1.0, 1.0) - %s.aaa + %s.rgb;\n",
-                                       outputColor, dstColorName, dstColorName);
-            } else {
-                builder->fsCodeAppendf("\t\t%s.a = 1.0 - (1.0 - %s.a) * (1.0 - %s.a);\n",
-                                       outputColor, dstColorName, inputColor);
-                builder->fsCodeAppendf("\t\t%s.rgb = min((1.0 - %s.a) * %s.rgb + %s.rgb,"
-                                                       " (1.0 - %s.a) * %s.rgb + %s.rgb);\n",
-                                       outputColor,
-                                       inputColor, dstColorName, inputColor,
-                                       dstColorName, inputColor, dstColorName);
+                builder->fsCodeAppendf("\t\tconst vec4 ones = %s;\n", GrGLSLOnesVecf(4));
+                inputColor = "ones";
+            }
+
+            SkXfermode::Mode mode = drawEffect.castEffect<XferEffect>().mode();
+            builder->fsCodeAppendf("\t\t// SkXfermode::Mode: %s\n", SkXfermode::ModeName(mode));
+
+            // These all perform src-over on the alpha channel.
+            builder->fsCodeAppendf("\t\t%s.a = %s.a + (1.0 - %s.a) * %s.a;\n",
+                                    outputColor, inputColor, inputColor, dstColor);
+
+            switch (mode) {
+                case SkXfermode::kOverlay_Mode:
+                    // Overlay is Hard-Light with the src and dst reversed
+                    HardLight(builder, outputColor, dstColor, inputColor);
+                    break;
+                case SkXfermode::kDarken_Mode:
+                    builder->fsCodeAppendf("\t\t%s.rgb = min((1.0 - %s.a) * %s.rgb + %s.rgb, "
+                                                            "(1.0 - %s.a) * %s.rgb + %s.rgb);\n",
+                                            outputColor,
+                                            inputColor, dstColor, inputColor,
+                                            dstColor, inputColor, dstColor);
+                    break;
+                case SkXfermode::kLighten_Mode:
+                    builder->fsCodeAppendf("\t\t%s.rgb = max((1.0 - %s.a) * %s.rgb + %s.rgb, "
+                                                            "(1.0 - %s.a) * %s.rgb + %s.rgb);\n",
+                                            outputColor,
+                                            inputColor, dstColor, inputColor,
+                                            dstColor, inputColor, dstColor);
+                    break;
+                case SkXfermode::kColorDodge_Mode:
+                    ColorDodgeComponent(builder, outputColor, inputColor, dstColor, 'r');
+                    ColorDodgeComponent(builder, outputColor, inputColor, dstColor, 'g');
+                    ColorDodgeComponent(builder, outputColor, inputColor, dstColor, 'b');
+                    break;
+                case SkXfermode::kColorBurn_Mode:
+                    ColorBurnComponent(builder, outputColor, inputColor, dstColor, 'r');
+                    ColorBurnComponent(builder, outputColor, inputColor, dstColor, 'g');
+                    ColorBurnComponent(builder, outputColor, inputColor, dstColor, 'b');
+                    break;
+                case SkXfermode::kHardLight_Mode:
+                    HardLight(builder, outputColor, inputColor, dstColor);
+                    break;
+                case SkXfermode::kSoftLight_Mode:
+                    builder->fsCodeAppendf("\t\tif (0.0 == %s.a) {\n", dstColor);
+                    builder->fsCodeAppendf("\t\t\t%s.rgba = %s;\n", outputColor, inputColor);
+                    builder->fsCodeAppendf("\t\t} else {\n");
+                    SoftLightComponentPosDstAlpha(builder, outputColor, inputColor, dstColor, 'r');
+                    SoftLightComponentPosDstAlpha(builder, outputColor, inputColor, dstColor, 'g');
+                    SoftLightComponentPosDstAlpha(builder, outputColor, inputColor, dstColor, 'b');
+                    builder->fsCodeAppendf("\t\t}\n");
+                    break;
+                case SkXfermode::kDifference_Mode:
+                    builder->fsCodeAppendf("\t\t%s.rgb = %s.rgb + %s.rgb -"
+                                                       "2.0 * min(%s.rgb * %s.a, %s.rgb * %s.a);\n",
+                                           outputColor, inputColor, dstColor, inputColor, dstColor,
+                                           dstColor, inputColor);
+                    break;
+                case SkXfermode::kExclusion_Mode:
+                    builder->fsCodeAppendf("\t\t%s.rgb = %s.rgb + %s.rgb - "
+                                                        "2.0 * %s.rgb * %s.rgb;\n",
+                                           outputColor, dstColor, inputColor, dstColor, inputColor);
+                    break;
+                case SkXfermode::kMultiply_Mode:
+                    builder->fsCodeAppendf("\t\t%s.rgb = (1.0 - %s.a) * %s.rgb + "
+                                                        "(1.0 - %s.a) * %s.rgb + "
+                                                         "%s.rgb * %s.rgb;\n",
+                                           outputColor, inputColor, dstColor, dstColor, inputColor,
+                                           inputColor, dstColor);
+                    break;
+                case SkXfermode::kHue_Mode: {
+                    //  SetLum(SetSat(S * Da, Sat(D * Sa)), Sa*Da, D*Sa) + (1 - Sa) * D + (1 - Da) * S
+                    SkString setSat, setLum;
+                    AddSatFunction(builder, &setSat);
+                    AddLumFunction(builder, &setLum);
+                    builder->fsCodeAppendf("\t\tvec4 dstSrcAlpha = %s * %s.a;\n",
+                                           dstColor, inputColor);
+                    builder->fsCodeAppendf("\t\t%s.rgb = %s(%s(%s.rgb * %s.a, dstSrcAlpha.rgb), dstSrcAlpha.a, dstSrcAlpha.rgb);\n",
+                                           outputColor, setLum.c_str(), setSat.c_str(), inputColor,
+                                           dstColor);
+                    builder->fsCodeAppendf("\t\t%s.rgb += (1.0 - %s.a) * %s.rgb + (1.0 - %s.a) * %s.rgb;\n",
+                                           outputColor, inputColor, dstColor, dstColor, inputColor);
+                    break;
+                }
+                case SkXfermode::kSaturation_Mode: {
+                    // SetLum(SetSat(D * Sa, Sat(S * Da)), Sa*Da, D*Sa)) + (1 - Sa) * D + (1 - Da) * S
+                    SkString setSat, setLum;
+                    AddSatFunction(builder, &setSat);
+                    AddLumFunction(builder, &setLum);
+                    builder->fsCodeAppendf("\t\tvec4 dstSrcAlpha = %s * %s.a;\n",
+                                           dstColor, inputColor);
+                    builder->fsCodeAppendf("\t\t%s.rgb = %s(%s(dstSrcAlpha.rgb, %s.rgb * %s.a), dstSrcAlpha.a, dstSrcAlpha.rgb);\n",
+                                           outputColor, setLum.c_str(), setSat.c_str(), inputColor,
+                                           dstColor);
+                    builder->fsCodeAppendf("\t\t%s.rgb += (1.0 - %s.a) * %s.rgb + (1.0 - %s.a) * %s.rgb;\n",
+                                           outputColor, inputColor, dstColor, dstColor, inputColor);
+                    break;
+                }
+                case SkXfermode::kColor_Mode: {
+                    //  SetLum(S * Da, Sa* Da, D * Sa) + (1 - Sa) * D + (1 - Da) * S
+                    SkString setLum;
+                    AddLumFunction(builder, &setLum);
+                    builder->fsCodeAppendf("\t\tvec4 srcDstAlpha = %s * %s.a;\n",
+                                           inputColor, dstColor);
+                    builder->fsCodeAppendf("\t\t%s.rgb = %s(srcDstAlpha.rgb, srcDstAlpha.a, %s.rgb * %s.a);\n",
+                                           outputColor, setLum.c_str(), dstColor, inputColor);
+                    builder->fsCodeAppendf("\t\t%s.rgb += (1.0 - %s.a) * %s.rgb + (1.0 - %s.a) * %s.rgb;\n",
+                                           outputColor, inputColor, dstColor, dstColor, inputColor);
+                    break;
+                }
+                case SkXfermode::kLuminosity_Mode: {
+                    //  SetLum(D * Sa, Sa* Da, S * Da) + (1 - Sa) * D + (1 - Da) * S
+                    SkString setLum;
+                    AddLumFunction(builder, &setLum);
+                    builder->fsCodeAppendf("\t\tvec4 srcDstAlpha = %s * %s.a;\n",
+                                           inputColor, dstColor);
+                    builder->fsCodeAppendf("\t\t%s.rgb = %s(%s.rgb * %s.a, srcDstAlpha.a, srcDstAlpha.rgb);\n",
+                                           outputColor, setLum.c_str(), dstColor, inputColor);
+                    builder->fsCodeAppendf("\t\t%s.rgb += (1.0 - %s.a) * %s.rgb + (1.0 - %s.a) * %s.rgb;\n",
+                                           outputColor, inputColor, dstColor, dstColor, inputColor);
+                    break;
+                }
+                default:
+                    GrCrash("Unknown XferEffect mode.");
+                    break;
             }
         }
 
-        static inline EffectKey GenKey(const GrDrawEffect&, const GrGLCaps&) { return 0; }
+        static inline EffectKey GenKey(const GrDrawEffect& drawEffect, const GrGLCaps&) {
+            return drawEffect.castEffect<XferEffect>().mode();
+        }
 
         virtual void setData(const GrGLUniformManager&, const GrDrawEffect&) SK_OVERRIDE {}
 
     private:
+        static void HardLight(GrGLShaderBuilder* builder,
+                              const char* final,
+                              const char* src,
+                              const char* dst) {
+            static const char kComponents[] = {'r', 'g', 'b'};
+            for (size_t i = 0; i < SK_ARRAY_COUNT(kComponents); ++i) {
+                char component = kComponents[i];
+                builder->fsCodeAppendf("\t\tif (2.0 * %s.%c <= %s.a) {\n", src, component, src);
+                builder->fsCodeAppendf("\t\t\t%s.%c = 2.0 * %s.%c * %s.%c;\n", final, component, src, component, dst, component);
+                builder->fsCodeAppend("\t\t} else {\n");
+                builder->fsCodeAppendf("\t\t\t%s.%c = %s.a * %s.a - 2.0 * (%s.a - %s.%c) * (%s.a - %s.%c);\n",
+                                       final, component, src, dst, dst, dst, component, src, src, component);
+                builder->fsCodeAppend("\t\t}\n");
+            }
+            builder->fsCodeAppendf("\t\t%s.rgb += %s.rgb * (1.0 - %s.a) + %s.rgb * (1.0 - %s.a);\n",
+                                   final, src, dst, dst, src);
+        }
+
+        // Does one component of color-dodge
+        static void ColorDodgeComponent(GrGLShaderBuilder* builder,
+                                        const char* final,
+                                        const char* src,
+                                        const char* dst,
+                                        const char component) {
+            builder->fsCodeAppendf("\t\tif (0.0 == %s.%c) {\n", dst, component);
+            builder->fsCodeAppendf("\t\t\t%s.%c = %s.%c * (1.0 - %s.a);\n",
+                                   final, component, src, component, dst);
+            builder->fsCodeAppend("\t\t} else {\n");
+            builder->fsCodeAppendf("\t\t\tfloat d = %s.a - %s.%c;\n", src, src, component);
+            builder->fsCodeAppend("\t\t\tif (0.0 == d) {\n");
+            builder->fsCodeAppendf("\t\t\t\t%s.%c = %s.a * %s.a + %s.%c * (1.0 - %s.a) + %s.%c * (1.0 - %s.a);\n",
+                                   final, component, src, dst, src, component, dst, dst, component,
+                                   src);
+            builder->fsCodeAppend("\t\t\t} else {\n");
+            builder->fsCodeAppendf("\t\t\t\td = min(%s.a, %s.%c * %s.a / d);\n",
+                                   dst, dst, component, src);
+            builder->fsCodeAppendf("\t\t\t\t%s.%c = d * %s.a + %s.%c * (1.0 - %s.a) + %s.%c * (1.0 - %s.a);\n",
+                                   final, component, src, src, component, dst, dst, component, src);
+            builder->fsCodeAppend("\t\t\t}\n");
+            builder->fsCodeAppend("\t\t}\n");
+        }
+
+        // Does one component of color-burn
+        static void ColorBurnComponent(GrGLShaderBuilder* builder,
+                                       const char* final,
+                                       const char* src,
+                                       const char* dst,
+                                       const char component) {
+            builder->fsCodeAppendf("\t\tif (%s.a == %s.%c) {\n", dst, dst, component);
+            builder->fsCodeAppendf("\t\t\t%s.%c = %s.a * %s.a + %s.%c * (1.0 - %s.a) + %s.%c * (1.0 - %s.a);\n",
+                                   final, component, src, dst, src, component, dst, dst, component,
+                                   src);
+            builder->fsCodeAppendf("\t\t} else if (0.0 == %s.%c) {\n", src, component);
+            builder->fsCodeAppendf("\t\t\t%s.%c = %s.%c * (1.0 - %s.a);\n",
+                                   final, component, dst, component, src);
+            builder->fsCodeAppend("\t\t} else {\n");
+            builder->fsCodeAppendf("\t\t\tfloat d = max(0.0, %s.a - (%s.a - %s.%c) * %s.a / %s.%c);\n",
+                                   dst, dst, dst, component, src, src, component);
+            builder->fsCodeAppendf("\t\t\t%s.%c = %s.a * d + %s.%c * (1.0 - %s.a) + %s.%c * (1.0 - %s.a);\n",
+                                   final, component, src, src, component, dst, dst, component, src);
+            builder->fsCodeAppend("\t\t}\n");
+        }
+
+        // Does one component of soft-light. Caller should have already checked that dst alpha > 0.
+        static void SoftLightComponentPosDstAlpha(GrGLShaderBuilder* builder,
+                                                  const char* final,
+                                                  const char* src,
+                                                  const char* dst,
+                                                  const char component) {
+            // if (2S < Sa)
+            builder->fsCodeAppendf("\t\t\tif (2.0 * %s.%c <= %s.a) {\n", src, component, src);
+            // (D^2 (Sa-2 S))/Da+(1-Da) S+D (-Sa+2 S+1)
+            builder->fsCodeAppendf("\t\t\t\t%s.%c = (%s.%c*%s.%c*(%s.a - 2.0*%s.%c)) / %s.a + (1.0 - %s.a) * %s.%c + %s.%c*(-%s.a + 2.0*%s.%c + 1.0);\n",
+                                   final, component, dst, component, dst, component, src, src,
+                                   component, dst, dst, src, component, dst, component, src, src,
+                                   component);
+            // else if (4D < Da)
+            builder->fsCodeAppendf("\t\t\t} else if (4.0 * %s.%c <= %s.a) {\n",
+                                   dst, component, dst);
+            builder->fsCodeAppendf("\t\t\t\tfloat DSqd = %s.%c * %s.%c;\n",
+                                   dst, component, dst, component);
+            builder->fsCodeAppendf("\t\t\t\tfloat DCub = DSqd * %s.%c;\n", dst, component);
+            builder->fsCodeAppendf("\t\t\t\tfloat DaSqd = %s.a * %s.a;\n", dst, dst);
+            builder->fsCodeAppendf("\t\t\t\tfloat DaCub = DaSqd * %s.a;\n", dst);
+            // (Da^3 (-S)+Da^2 (S-D (3 Sa-6 S-1))+12 Da D^2 (Sa-2 S)-16 D^3 (Sa-2 S))/Da^2
+            builder->fsCodeAppendf("\t\t\t\t%s.%c = (-DaCub*%s.%c + DaSqd*(%s.%c - %s.%c * (3.0*%s.a - 6.0*%s.%c - 1.0)) + 12.0*%s.a*DSqd*(%s.a - 2.0*%s.%c) - 16.0*DCub * (%s.a - 2.0*%s.%c)) / DaSqd;\n",
+                                   final, component, src, component, src, component, dst, component,
+                                   src, src, component, dst, src, src, component, src, src,
+                                   component);
+            builder->fsCodeAppendf("\t\t\t} else {\n");
+            // -sqrt(Da * D) (Sa-2 S)-Da S+D (Sa-2 S+1)+S
+            builder->fsCodeAppendf("\t\t\t\t%s.%c = -sqrt(%s.a*%s.%c)*(%s.a - 2.0*%s.%c) - %s.a*%s.%c + %s.%c*(%s.a - 2.0*%s.%c + 1.0) + %s.%c;\n",
+                                    final, component, dst, dst, component, src, src, component, dst,
+                                    src, component, dst, component, src, src, component, src,
+                                    component);
+            builder->fsCodeAppendf("\t\t\t}\n");
+        }
+
+        // Adds a function that takes two colors and an alpha as input. It produces a color with the
+        // hue and saturation of the first color, the luminosity of the second color, and the input
+        // alpha. It has this signature:
+        //      vec3 set_luminance(vec3 hueSatColor, float alpha, vec3 lumColor).
+        static void AddLumFunction(GrGLShaderBuilder* builder, SkString* setLumFunction) {
+            // Emit a helper that gets the luminance of a color.
+            SkString getFunction;
+            GrGLShaderVar getLumArgs[] = {
+                GrGLShaderVar("color", kVec3f_GrSLType),
+            };
+            SkString getLumBody("\treturn dot(vec3(0.3, 0.59, 0.11), color);\n");
+            builder->emitFunction(GrGLShaderBuilder::kFragment_ShaderType,
+                                  kFloat_GrSLType,
+                                  "luminance",
+                                   SK_ARRAY_COUNT(getLumArgs), getLumArgs,
+                                   getLumBody.c_str(),
+                                   &getFunction);
+
+            // Emit the set luminance function.
+            GrGLShaderVar setLumArgs[] = {
+                GrGLShaderVar("hueSat", kVec3f_GrSLType),
+                GrGLShaderVar("alpha", kFloat_GrSLType),
+                GrGLShaderVar("lumColor", kVec3f_GrSLType),
+            };
+            SkString setLumBody;
+            setLumBody.printf("\tfloat diff = %s(lumColor - hueSat);\n", getFunction.c_str());
+            setLumBody.append("\tvec3 outColor = hueSat + diff;\n");
+            setLumBody.appendf("\tfloat outLum = %s(outColor);\n", getFunction.c_str());
+            setLumBody.append("\tfloat minComp = min(min(outColor.r, outColor.g), outColor.b);\n"
+                              "\tfloat maxComp = max(max(outColor.r, outColor.g), outColor.b);\n"
+                              "\tif (minComp < 0.0) {\n"
+                              "\t\toutColor = outLum + ((outColor - vec3(outLum, outLum, outLum)) * outLum) / (outLum - minComp);\n"
+                              "\t}\n"
+                              "\tif (maxComp > alpha) {\n"
+                              "\t\toutColor = outLum + ((outColor - vec3(outLum, outLum, outLum)) * (alpha - outLum)) / (maxComp - outLum);\n"
+                              "\t}\n"
+                              "\treturn outColor;\n");
+            builder->emitFunction(GrGLShaderBuilder::kFragment_ShaderType,
+                        kVec3f_GrSLType,
+                        "set_luminance",
+                        SK_ARRAY_COUNT(setLumArgs), setLumArgs,
+                        setLumBody.c_str(),
+                        setLumFunction);
+        }
+
+        // Adds a function that creates a color with the hue and luminosity of one input color and
+        // the saturation of another color. It will have this signature:
+        //      float set_saturation(vec3 hueLumColor, vec3 satColor)
+        static void AddSatFunction(GrGLShaderBuilder* builder, SkString* setSatFunction) {
+            // Emit a helper that gets the saturation of a color
+            SkString getFunction;
+            GrGLShaderVar getSatArgs[] = { GrGLShaderVar("color", kVec3f_GrSLType) };
+            SkString getSatBody;
+            getSatBody.printf("\treturn max(max(color.r, color.g), color.b) - "
+                              "min(min(color.r, color.g), color.b);\n");
+            builder->emitFunction(GrGLShaderBuilder::kFragment_ShaderType,
+                                  kFloat_GrSLType,
+                                  "saturation",
+                                  SK_ARRAY_COUNT(getSatArgs), getSatArgs,
+                                  getSatBody.c_str(),
+                                  &getFunction);
+
+            // Emit a helper that sets the saturation given sorted input channels. This used
+            // to use inout params for min, mid, and max components but that seems to cause
+            // problems on PowerVR drivers. So instead it returns a vec3 where r, g ,b are the
+            // adjusted min, mid, and max inputs, respectively.
+            SkString helperFunction;
+            GrGLShaderVar helperArgs[] = {
+                GrGLShaderVar("minComp", kFloat_GrSLType),
+                GrGLShaderVar("midComp", kFloat_GrSLType),
+                GrGLShaderVar("maxComp", kFloat_GrSLType),
+                GrGLShaderVar("sat", kFloat_GrSLType),
+            };
+            static const char kHelperBody[] = "\tif (minComp < maxComp) {\n"
+                                              "\t\tvec3 result;\n"
+                                              "\t\tresult.r = 0.0;\n"
+                                              "\t\tresult.g = sat * (midComp - minComp) / (maxComp - minComp);\n"
+                                              "\t\tresult.b = sat;\n"
+                                              "\t\treturn result;\n"
+                                              "\t} else {\n"
+                                              "\t\treturn vec3(0, 0, 0);\n"
+                                              "\t}\n";
+            builder->emitFunction(GrGLShaderBuilder::kFragment_ShaderType,
+                                  kVec3f_GrSLType,
+                                  "set_saturation_helper",
+                                  SK_ARRAY_COUNT(helperArgs), helperArgs,
+                                  kHelperBody,
+                                  &helperFunction);
+
+            GrGLShaderVar setSatArgs[] = {
+                GrGLShaderVar("hueLumColor", kVec3f_GrSLType),
+                GrGLShaderVar("satColor", kVec3f_GrSLType),
+            };
+            const char* helpFunc = helperFunction.c_str();
+            SkString setSatBody;
+            setSatBody.appendf("\tfloat sat = %s(satColor);\n"
+                               "\tif (hueLumColor.r <= hueLumColor.g) {\n"
+                               "\t\tif (hueLumColor.g <= hueLumColor.b) {\n"
+                               "\t\t\thueLumColor.rgb = %s(hueLumColor.r, hueLumColor.g, hueLumColor.b, sat);\n"
+                               "\t\t} else if (hueLumColor.r <= hueLumColor.b) {\n"
+                               "\t\t\thueLumColor.rbg = %s(hueLumColor.r, hueLumColor.b, hueLumColor.g, sat);\n"
+                               "\t\t} else {\n"
+                               "\t\t\thueLumColor.brg = %s(hueLumColor.b, hueLumColor.r, hueLumColor.g, sat);\n"
+                               "\t\t}\n"
+                               "\t} else if (hueLumColor.r <= hueLumColor.b) {\n"
+                               "\t\thueLumColor.grb = %s(hueLumColor.g, hueLumColor.r, hueLumColor.b, sat);\n"
+                               "\t} else if (hueLumColor.g <= hueLumColor.b) {\n"
+                               "\t\thueLumColor.gbr = %s(hueLumColor.g, hueLumColor.b, hueLumColor.r, sat);\n"
+                               "\t} else {\n"
+                               "\t\thueLumColor.bgr = %s(hueLumColor.b, hueLumColor.g, hueLumColor.r, sat);\n"
+                               "\t}\n"
+                               "\treturn hueLumColor;\n",
+                               getFunction.c_str(), helpFunc, helpFunc, helpFunc, helpFunc,
+                               helpFunc, helpFunc);
+            builder->emitFunction(GrGLShaderBuilder::kFragment_ShaderType,
+                                  kVec3f_GrSLType,
+                                  "set_saturation",
+                                  SK_ARRAY_COUNT(setSatArgs), setSatArgs,
+                                  setSatBody.c_str(),
+                                  setSatFunction);
+
+        }
+
         typedef GrGLEffect INHERITED;
     };
 
     GR_DECLARE_EFFECT_TEST;
 
 private:
-    DarkenEffect() { this->setWillReadDst(); }
+    XferEffect(SkXfermode::Mode mode) : fMode(mode) { this->setWillReadDst(); }
     virtual bool onIsEqual(const GrEffect& other) const SK_OVERRIDE { return true; }
+
+    SkXfermode::Mode fMode;
 
     typedef GrEffect INHERITED;
 };
 
-GR_DEFINE_EFFECT_TEST(DarkenEffect);
-GrEffectRef* DarkenEffect::TestCreate(SkMWCRandom*,
-                                      GrContext*,
-                                      const GrDrawTargetCaps&,
-                                      GrTexture*[]) {
-    static AutoEffectUnref gEffect(SkNEW(DarkenEffect));
+GR_DEFINE_EFFECT_TEST(XferEffect);
+GrEffectRef* XferEffect::TestCreate(SkMWCRandom* rand,
+                                    GrContext*,
+                                    const GrDrawTargetCaps&,
+                                    GrTexture*[]) {
+    int mode = rand->nextRangeU(SkXfermode::kLastCoeffMode + 1, SkXfermode::kLastSeparableMode);
+
+    static AutoEffectUnref gEffect(SkNEW_ARGS(XferEffect, (static_cast<SkXfermode::Mode>(mode))));
     return CreateEffectRef(gEffect);
 }
 
@@ -1070,9 +1421,10 @@ public:
         if (this->asCoeff(src, dst)) {
             return true;
         }
-        if (kDarken_Mode == fMode) {
+        if (XferEffect::IsSupportedMode(fMode)) {
             if (NULL != effect) {
-                *effect = DarkenEffect::Create();
+                *effect = XferEffect::Create(fMode);
+                SkASSERT(NULL != *effect);
             }
             return true;
         }
@@ -1107,19 +1459,25 @@ private:
     typedef SkProcXfermode INHERITED;
 };
 
+const char* SkXfermode::ModeName(Mode mode) {
+    SkASSERT((unsigned) mode <= (unsigned)kLastMode);
+    const char* gModeStrings[] = {
+        "Clear", "Src", "Dst", "SrcOver", "DstOver", "SrcIn", "DstIn",
+        "SrcOut", "DstOut", "SrcATop", "DstATop", "Xor", "Plus",
+        "Modulate", "Screen", "Overlay", "Darken", "Lighten", "ColorDodge",
+        "ColorBurn", "HardLight", "SoftLight", "Difference", "Exclusion",
+        "Multiply", "Hue", "Saturation", "Color",  "Luminosity"
+    };
+    return gModeStrings[mode];
+    SK_COMPILE_ASSERT(SK_ARRAY_COUNT(gModeStrings) == kLastMode + 1, mode_count);
+}
+
 #ifdef SK_DEVELOPER
 void SkProcCoeffXfermode::toString(SkString* str) const {
     str->append("SkProcCoeffXfermode: ");
 
-    const char *gModeStrings[kLastMode+1] = {
-        "Clear", "Src", "Dst", "SrcOver", "DstOver", "SrcIn", "DstIn",
-        "SrcOut", "DstOut", "SrcATop", "DstATop", "Xor", "Plus",
-        "Modulate", "Screen", "Overlay", "Darken", "Lighten", "ColorDodge",
-        "ColorBurn", "HardLight", "SoftLight", "Difference", "Exclusion"
-    };
-
     str->append("mode: ");
-    str->append(gModeStrings[fMode]);
+    str->append(ModeName(fMode));
 
     static const char* gCoeffStrings[kCoeffCount] = {
         "Zero", "One", "SC", "ISC", "DC", "IDC", "SA", "ISA", "DA", "IDA"

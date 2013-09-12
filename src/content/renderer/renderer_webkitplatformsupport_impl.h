@@ -11,7 +11,7 @@
 #include "content/common/content_export.h"
 #include "content/common/webkitplatformsupport_impl.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBFactory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorkerRepository.h"
 
 namespace cc {
@@ -20,6 +20,10 @@ class ContextProvider;
 
 namespace webkit_glue {
 class WebClipboardImpl;
+}
+
+namespace WebKit {
+class WebGraphicsContext3DProvider;
 }
 
 namespace content {
@@ -46,6 +50,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual WebKit::WebCookieJar* cookieJar();
   virtual WebKit::WebHyphenator* hyphenator();
   virtual WebKit::WebThemeEngine* themeEngine();
+  virtual WebKit::WebSpeechSynthesizer* createSpeechSynthesizer(
+      WebKit::WebSpeechSynthesizerClient* client);
   virtual bool sandboxEnabled();
   virtual unsigned long long visitedLinkHash(
       const char* canonicalURL, size_t length);
@@ -111,6 +117,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       const WebKit::WebGraphicsContext3D::Attributes& attributes);
   virtual WebKit::WebGraphicsContext3D* sharedOffscreenGraphicsContext3D();
   virtual GrContext* sharedOffscreenGrContext();
+  virtual WebKit::WebGraphicsContext3DProvider*
+      createSharedOffscreenGraphicsContext3DProvider();
 
   // Disables the WebSandboxSupport implementation for testing.
   // Tests that do not set up a full sandbox environment should call

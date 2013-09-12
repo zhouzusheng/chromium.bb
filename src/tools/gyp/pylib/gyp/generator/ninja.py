@@ -919,8 +919,11 @@ class NinjaWriter:
     else:
       ldflags = config.get('ldflags', [])
       if is_executable and len(solibs):
-        ldflags.append('-Wl,-rpath=\$$ORIGIN/lib/')
-        ldflags.append('-Wl,-rpath-link=lib/')
+        rpath = 'lib/'
+        if self.toolset != 'target':
+          rpath += self.toolset
+        ldflags.append('-Wl,-rpath=\$$ORIGIN/%s' % rpath)
+        ldflags.append('-Wl,-rpath-link=%s' % rpath)
     self.WriteVariableList('ldflags',
                            gyp.common.uniquer(map(self.ExpandSpecial,
                                                   ldflags)))
@@ -1455,13 +1458,18 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
 
   master_ninja.newline()
 
+  deps = None
+  if int(generator_flags.get('use_deps', '0')) and flavor != 'win':
+    deps = 'gcc'
+
   if flavor != 'win':
     master_ninja.rule(
       'cc',
       description='CC $out',
       command=('$cc -MMD -MF $out.d $defines $includes $cflags $cflags_c '
               '$cflags_pch_c -c $in -o $out'),
-      depfile='$out.d')
+      depfile='$out.d',
+      deps=deps)
     master_ninja.rule(
       'cc_s',
       description='CC $out',
@@ -1472,7 +1480,8 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
       description='CXX $out',
       command=('$cxx -MMD -MF $out.d $defines $includes $cflags $cflags_cc '
               '$cflags_pch_cc -c $in -o $out'),
-      depfile='$out.d')
+      depfile='$out.d',
+      deps=deps)
   else:
     cc_command = ('ninja -t msvc -o $out -e $arch '
                   '-- '
@@ -1608,13 +1617,15 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
       description='OBJC $out',
       command=('$cc -MMD -MF $out.d $defines $includes $cflags $cflags_objc '
                '$cflags_pch_objc -c $in -o $out'),
-      depfile='$out.d')
+      depfile='$out.d',
+      deps=deps)
     master_ninja.rule(
       'objcxx',
       description='OBJCXX $out',
       command=('$cxx -MMD -MF $out.d $defines $includes $cflags $cflags_objcc '
                '$cflags_pch_objcc -c $in -o $out'),
-      depfile='$out.d')
+      depfile='$out.d',
+      deps=deps)
     master_ninja.rule(
       'alink',
       description='LIBTOOL-STATIC $out, POSTBUILDS',

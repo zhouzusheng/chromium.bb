@@ -1,0 +1,54 @@
+// This list is used to generate RuntimeEnabledFeatures.h/cpp which contains
+// a class that stores static enablers for all experimental features. Note that
+// the method names must line up with the JavaScript method they enable for code
+// generation to work properly.
+
+ApplicationCache default=true
+AudioContext condition=WEB_AUDIO
+AuthorShadowDOMForAnyElement
+CanvasPath
+CSSCompositing condition=CSS_COMPOSITING
+CSSExclusions
+CSSRegions
+CustomDOMElements
+Database default=true
+DeviceMotion default=true
+DeviceOrientation default=true
+DialogElement
+DirectoryUpload default=true
+EncryptedMedia condition=ENCRYPTED_MEDIA
+ExperimentalCanvasFeatures
+ExperimentalContentSecurityPolicyFeatures
+ExperimentalShadowDOM
+ExperimentalWebSocket
+FileSystem
+FontLoadEvents
+Fullscreen default=true
+Geolocation default=true
+IMEAPI
+IndexedDB
+InputTypeDateTime condition=INPUT_TYPE_DATETIME_INCOMPLETE
+InputTypeWeek default=true
+JavaScriptI18NAPI condition=JAVASCRIPT_I18N_API
+LangAttributeAwareFormControlUI
+LazyLayout
+LocalStorage default=true
+Media custom
+MediaSource
+MediaStream default=true
+PeerConnection default=true, depends_on=MediaStream
+Quota
+RequestAutocomplete
+ScriptedSpeech
+SeamlessIFrames
+SessionStorage default=true
+SharedWorker custom
+SpeechInput default=true
+SpeechSynthesis
+StyleScoped
+Touch default=true
+WebkitGetGamepads
+WebkitNotifications
+WebkitVideoTrack default=true
+WebMIDI
+WebPInAcceptHeader

@@ -73,8 +73,6 @@ void NumberFormat::DeleteNumberFormat(v8::Isolate* isolate,
 
 v8::Handle<v8::Value> NumberFormat::JSInternalFormat(
     const v8::Arguments& args) {
-  v8::HandleScope handle_scope;
-
   if (args.Length() != 2 || !args[0]->IsObject() || !args[1]->IsNumber()) {
     return v8::ThrowException(v8::Exception::Error(
         v8::String::New("Formatter and numeric value have to be specified.")));
@@ -97,8 +95,6 @@ v8::Handle<v8::Value> NumberFormat::JSInternalFormat(
 
 v8::Handle<v8::Value> NumberFormat::JSInternalParse(
     const v8::Arguments& args) {
-  v8::HandleScope handle_scope;
-
   if (args.Length() != 2 || !args[0]->IsObject() || !args[1]->IsString()) {
     return v8::ThrowException(v8::Exception::Error(
         v8::String::New("Formatter and string have to be specified.")));
@@ -150,8 +146,6 @@ v8::Handle<v8::Value> NumberFormat::JSInternalParse(
 
 v8::Handle<v8::Value> NumberFormat::JSCreateNumberFormat(
     const v8::Arguments& args) {
-  v8::HandleScope handle_scope;
-
   if (args.Length() != 3 ||
       !args[0]->IsString() ||
       !args[1]->IsObject() ||
@@ -203,8 +197,6 @@ static icu::DecimalFormat* InitializeNumberFormat(
     v8::Handle<v8::String> locale,
     v8::Handle<v8::Object> options,
     v8::Handle<v8::Object> resolved) {
-  v8::HandleScope handle_scope;
-
   // Convert BCP47 into ICU locale format.
   UErrorCode status = U_ZERO_ERROR;
   icu::Locale icu_locale;
@@ -338,8 +330,6 @@ static icu::DecimalFormat* CreateICUNumberFormat(
 static void SetResolvedSettings(const icu::Locale& icu_locale,
                                 icu::DecimalFormat* number_format,
                                 v8::Handle<v8::Object> resolved) {
-  v8::HandleScope handle_scope;
-
   icu::UnicodeString pattern;
   number_format->toPattern(pattern);
   resolved->Set(v8::String::New("pattern"),

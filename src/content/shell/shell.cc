@@ -22,6 +22,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/renderer_preferences.h"
+#include "content/shell/notify_done_forwarder.h"
 #include "content/shell/shell_browser_main_parts.h"
 #include "content/shell/shell_content_browser_client.h"
 #include "content/shell/shell_devtools_frontend.h"
@@ -50,8 +51,11 @@ Shell::Shell(WebContents* web_contents)
       default_edit_wnd_proc_(0),
 #endif
       headless_(false) {
-  // SHEZ: remove upstream code here, used only for testing
-
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kDumpRenderTree) &&
+      !command_line.HasSwitch(switches::kDisableHeadlessForLayoutTests)) {
+    headless_ = true;
+  }
   registrar_.Add(this, NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED,
       Source<WebContents>(web_contents));
   windows_.push_back(this);
@@ -73,7 +77,8 @@ Shell::~Shell() {
   }
 
   if (windows_.empty() && quit_message_loop_)
-    MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
 }
 
 Shell* Shell::CreateShell(WebContents* web_contents) {
@@ -87,7 +92,10 @@ Shell* Shell::CreateShell(WebContents* web_contents) {
 
   shell->PlatformResizeSubViews();
 
-  // SHEZ: remove upstream code here, used only for testing
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
+    web_contents->GetMutableRendererPrefs()->use_custom_colors = false;
+    web_contents->GetRenderViewHost()->SyncRendererPrefs();
+  }
 
   return shell;
 }
@@ -98,7 +106,7 @@ void Shell::CloseAllWindows() {
   std::vector<Shell*> open_windows(windows_);
   for (size_t i = 0; i < open_windows.size(); ++i)
     open_windows[i]->Close();
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 }
 
 void Shell::SetShellCreatedCallback(
@@ -183,17 +191,25 @@ void Shell::ShowDevTools() {
     return;
   }
   devtools_frontend_ = ShellDevToolsFrontend::Show(web_contents());
+  registrar_.Add(this,
+                 NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                 Source<WebContents>(
+                     devtools_frontend_->frontend_shell()->web_contents()));
 }
 
 void Shell::CloseDevTools() {
   if (!devtools_frontend_)
     return;
+  registrar_.Remove(this,
+                    NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                    Source<WebContents>(
+                        devtools_frontend_->frontend_shell()->web_contents()));
   devtools_frontend_->Close();
   devtools_frontend_ = NULL;
 }
 
 gfx::NativeView Shell::GetContentView() {
-  if (!web_contents_.get())
+  if (!web_contents_)
     return NULL;
   return web_contents_->GetView()->GetNativeView();
 }
@@ -217,7 +233,12 @@ void Shell::ToggleFullscreenModeForTab(WebContents* web_contents,
 #if defined(OS_ANDROID)
   PlatformToggleFullscreenModeForTab(web_contents, enter_fullscreen);
 #endif
-  // SHEZ: Removed code here, used only for testing.
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
+    return;
+  if (is_fullscreen_ != enter_fullscreen) {
+    is_fullscreen_ = enter_fullscreen;
+    web_contents->GetRenderViewHost()->WasResized();
+  }
 }
 
 bool Shell::IsFullscreenForTabOrPending(const WebContents* web_contents) const {
@@ -252,6 +273,8 @@ void Shell::WebContentsCreated(WebContents* source_contents,
                                const GURL& target_url,
                                WebContents* new_contents) {
   CreateShell(new_contents);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
+    NotifyDoneForwarder::CreateForWebContents(new_contents);
 }
 
 void Shell::DidNavigateMainFramePostCommit(WebContents* web_contents) {
@@ -259,7 +282,7 @@ void Shell::DidNavigateMainFramePostCommit(WebContents* web_contents) {
 }
 
 JavaScriptDialogManager* Shell::GetJavaScriptDialogManager() {
-  if (!dialog_manager_.get())
+  if (!dialog_manager_)
     dialog_manager_.reset(new ShellJavaScriptDialogManager());
   return dialog_manager_.get();
 }
@@ -269,12 +292,13 @@ bool Shell::AddMessageToConsole(WebContents* source,
                                 const string16& message,
                                 int32 line_no,
                                 const string16& source_id) {
-  // SHEZ: Remove upstream code here, used only for testing.
-  return false;
+  return CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree);
 }
 
 void Shell::RendererUnresponsive(WebContents* source) {
-  // SHEZ: Remove upstream code here, used only for testing.
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
+    return;
+  WebKitTestController::Get()->RendererUnresponsive();
 }
 
 void Shell::ActivateContents(WebContents* contents) {
@@ -296,6 +320,11 @@ void Shell::Observe(int type,
       string16 text = title->first->GetTitle();
       PlatformSetTitle(text);
     }
+  } else if (type == NOTIFICATION_WEB_CONTENTS_DESTROYED) {
+    devtools_frontend_ = NULL;
+    registrar_.Remove(this, NOTIFICATION_WEB_CONTENTS_DESTROYED, source);
+  } else {
+    NOTREACHED();
   }
 }
 

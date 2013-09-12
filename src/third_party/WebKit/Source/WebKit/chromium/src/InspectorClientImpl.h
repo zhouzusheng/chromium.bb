@@ -31,9 +31,9 @@
 #ifndef InspectorClientImpl_h
 #define InspectorClientImpl_h
 
-#include "InspectorClient.h"
-#include "InspectorController.h"
-#include "InspectorFrontendChannel.h"
+#include "core/inspector/InspectorClient.h"
+#include "core/inspector/InspectorController.h"
+#include "core/inspector/InspectorFrontendChannel.h"
 #include <wtf/OwnPtr.h>
 
 namespace WebKit {
@@ -49,34 +49,22 @@ public:
     ~InspectorClientImpl();
 
     // InspectorClient methods:
-    virtual void inspectorDestroyed();
-    virtual WebCore::InspectorFrontendChannel* openInspectorFrontend(WebCore::InspectorController*);
-    virtual void closeInspectorFrontend();
-    virtual void bringFrontendToFront();
-
     virtual void highlight();
     virtual void hideHighlight();
 
     virtual bool sendMessageToFrontend(const WTF::String&);
 
-    virtual bool supportsInspectorStateUpdates() const { return true; }
     virtual void updateInspectorStateCookie(const WTF::String&);
 
-    virtual bool canClearBrowserCache();
     virtual void clearBrowserCache();
-    virtual bool canClearBrowserCookies();
     virtual void clearBrowserCookies();
 
-    virtual bool canMonitorMainThread();
-
-    virtual bool canOverrideDeviceMetrics();
     virtual void overrideDeviceMetrics(int, int, float, bool);
     virtual void autoZoomPageToFitWidth();
 
     virtual bool overridesShowPaintRects();
     virtual void setShowPaintRects(bool);
 
-    virtual bool canShowDebugBorders();
     virtual void setShowDebugBorders(bool);
 
     virtual bool canShowFPSCounter();
@@ -85,17 +73,10 @@ public:
     virtual bool canContinuouslyPaint();
     virtual void setContinuousPaintingEnabled(bool);
 
-    virtual bool supportsFrameInstrumentation();
-
     virtual void getAllocatedObjects(HashSet<const void*>&);
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&);
 
-    virtual bool captureScreenshot(WTF::String* data);
     virtual void setTraceEventCallback(TraceEventCallback);
-
-    virtual bool handleJavaScriptDialog(bool accept, const WTF::String* promptText);
-
-    virtual bool canSetFileInputFiles();
 
 private:
     WebDevToolsAgentImpl* devToolsAgent();

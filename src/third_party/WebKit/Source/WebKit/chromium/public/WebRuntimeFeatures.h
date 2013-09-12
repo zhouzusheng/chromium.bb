@@ -41,6 +41,10 @@ namespace WebKit {
 // certain level of maturity.
 class WebRuntimeFeatures {
 public:
+    WEBKIT_EXPORT static void enableStableFeatures(bool);
+    WEBKIT_EXPORT static void enableExperimentalFeatures(bool);
+    WEBKIT_EXPORT static void enableTestOnlyFeatures(bool);
+
     WEBKIT_EXPORT static void enableDatabase(bool);
     WEBKIT_EXPORT static bool isDatabaseEnabled();
 
@@ -53,17 +57,11 @@ public:
     WEBKIT_EXPORT static void enableMediaPlayer(bool);
     WEBKIT_EXPORT static bool isMediaPlayerEnabled();
 
-    WEBKIT_EXPORT static void enableSockets(bool);
-    WEBKIT_EXPORT static bool isSocketsEnabled();
-
     WEBKIT_EXPORT static void enableNotifications(bool);
     WEBKIT_EXPORT static bool isNotificationsEnabled();
 
     WEBKIT_EXPORT static void enableApplicationCache(bool);
     WEBKIT_EXPORT static bool isApplicationCacheEnabled();
-
-    WEBKIT_EXPORT static void enableDataTransferItems(bool);
-    WEBKIT_EXPORT static bool isDataTransferItemsEnabled();
 
     WEBKIT_EXPORT static void enableGeolocation(bool);
     WEBKIT_EXPORT static bool isGeolocationEnabled();
@@ -122,8 +120,8 @@ public:
     WEBKIT_EXPORT static void enableGamepad(bool);
     WEBKIT_EXPORT static bool isGamepadEnabled();
 
-    WEBKIT_EXPORT static void enableShadowDOM(bool);
-    WEBKIT_EXPORT static bool isShadowDOMEnabled();
+    WEBKIT_EXPORT static void enableExperimentalShadowDOM(bool);
+    WEBKIT_EXPORT static bool isExperimentalShadowDOMEnabled();
 
     WEBKIT_EXPORT static void enableCustomDOMElements(bool);
     WEBKIT_EXPORT static bool isCustomDOMElementsEnabled();
@@ -131,20 +129,8 @@ public:
     WEBKIT_EXPORT static void enableStyleScoped(bool);
     WEBKIT_EXPORT static bool isStyleScopedEnabled();
 
-    WEBKIT_EXPORT static void enableInputTypeDate(bool);
-    WEBKIT_EXPORT static bool isInputTypeDateEnabled();
-
     WEBKIT_EXPORT static void enableInputTypeDateTime(bool);
     WEBKIT_EXPORT static bool isInputTypeDateTimeEnabled();
-
-    WEBKIT_EXPORT static void enableInputTypeDateTimeLocal(bool);
-    WEBKIT_EXPORT static bool isInputTypeDateTimeLocalEnabled();
-
-    WEBKIT_EXPORT static void enableInputTypeMonth(bool);
-    WEBKIT_EXPORT static bool isInputTypeMonthEnabled();
-
-    WEBKIT_EXPORT static void enableInputTypeTime(bool);
-    WEBKIT_EXPORT static bool isInputTypeTimeEnabled();
 
     WEBKIT_EXPORT static void enableInputTypeWeek(bool);
     WEBKIT_EXPORT static bool isInputTypeWeekEnabled();
@@ -152,9 +138,12 @@ public:
     WEBKIT_EXPORT static void enableDialogElement(bool);
     WEBKIT_EXPORT static bool isDialogElementEnabled();
 
+    WEBKIT_EXPORT static void enableLazyLayout(bool);
+    WEBKIT_EXPORT static bool isLazyLayoutEnabled();
+
     WEBKIT_EXPORT static void enableCanvasPath(bool);
     WEBKIT_EXPORT static bool isCanvasPathEnabled();
-    
+
     WEBKIT_EXPORT static void enableCSSExclusions(bool);
     WEBKIT_EXPORT static bool isCSSExclusionsEnabled();
 
@@ -163,7 +152,7 @@ public:
 
     WEBKIT_EXPORT static void enableCSSRegions(bool);
     WEBKIT_EXPORT static bool isCSSRegionsEnabled();
-    
+
     WEBKIT_EXPORT static void enableCSSCompositing(bool);
     WEBKIT_EXPORT static bool isCSSCompositingEnabled();
 
@@ -176,10 +165,26 @@ public:
     WEBKIT_EXPORT static void enableSeamlessIFrames(bool);
     WEBKIT_EXPORT static bool areSeamlessIFramesEnabled();
 
-    // If the flag is set, we use WebViewClient::showValidationMessage and
-    // hideVlidationMessage for interactive form validation.
-    WEBKIT_EXPORT static void enableNativeValidationMessage(bool);
-    WEBKIT_EXPORT static bool isNativeValidationMessageEnabled();
+    WEBKIT_EXPORT static void enableWebPInAcceptHeader(bool);
+    WEBKIT_EXPORT static bool isWebPInAcceptHeaderEnabled();
+
+    WEBKIT_EXPORT static void enableDirectoryUpload(bool);
+    WEBKIT_EXPORT static bool isDirectoryUploadEnabled();
+
+    WEBKIT_EXPORT static void enableExperimentalWebSocket(bool);
+    WEBKIT_EXPORT static bool isExperimentalWebSocketEnabled();
+
+    WEBKIT_EXPORT static void enableWebMIDI(bool);
+    WEBKIT_EXPORT static bool isWebMIDIEnabled();
+
+    WEBKIT_EXPORT static void enableIMEAPI(bool);
+    WEBKIT_EXPORT static bool isIMEAPIEnabled();
+
+    WEBKIT_EXPORT static void enableExperimentalCanvasFeatures(bool);
+    WEBKIT_EXPORT static bool areExperimentalCanvasFeaturesEnabled();
+
+    WEBKIT_EXPORT static void enableSpeechSynthesis(bool);
+    WEBKIT_EXPORT static bool isSpeechSynthesisEnabled();
 
 private:
     WebRuntimeFeatures();

@@ -13,7 +13,6 @@
 #include "base/metrics/histogram.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/scoped_propvariant.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/win/audio_manager_win.h"
 #include "media/audio/win/avrt_wrapper_win.h"
 #include "media/audio/win/core_audio_util_win.h"
@@ -47,11 +46,11 @@ static ChannelConfig GetChannelConfig() {
 // Note that bits_per_sample() is excluded from this comparison since Core
 // Audio can deal with most bit depths. As an example, if the native/mixing
 // bit depth is 32 bits (default), opening at 16 or 24 still works fine and
-// the audio engine will do the required conversion for us.
-static bool CompareAudioParametersNoBitDepth(const media::AudioParameters& a,
-                                             const media::AudioParameters& b) {
+// the audio engine will do the required conversion for us. Channel count is
+// excluded since Open() will fail anyways and it doesn't impact buffering.
+static bool CompareAudioParametersNoBitDepthOrChannels(
+    const media::AudioParameters& a, const media::AudioParameters& b) {
   return (a.format() == b.format() &&
-          a.channels() == b.channels() &&
           a.sample_rate() == b.sample_rate() &&
           a.frames_per_buffer() == b.frames_per_buffer());
 }
@@ -125,7 +124,7 @@ WASAPIAudioOutputStream::WASAPIAudioOutputStream(AudioManagerWin* manager,
     : creating_thread_id_(base::PlatformThread::CurrentId()),
       manager_(manager),
       opened_(false),
-      audio_parmeters_are_valid_(false),
+      audio_parameters_are_valid_(false),
       volume_(1.0),
       endpoint_buffer_size_frames_(0),
       device_role_(device_role),
@@ -139,15 +138,15 @@ WASAPIAudioOutputStream::WASAPIAudioOutputStream(AudioManagerWin* manager,
       << "Core Audio (WASAPI) EXCLUSIVE MODE is enabled.";
 
   if (share_mode_ == AUDCLNT_SHAREMODE_SHARED) {
-    // Verify that the input audio parameters are identical (bit depth is
-    // excluded) to the preferred (native) audio parameters. Open() will fail
-    // if this is not the case.
+    // Verify that the input audio parameters are identical (bit depth and
+    // channel count are excluded) to the preferred (native) audio parameters.
+    // Open() will fail if this is not the case.
     AudioParameters preferred_params;
     HRESULT hr = CoreAudioUtil::GetPreferredAudioParameters(
         eRender, device_role, &preferred_params);
-    audio_parmeters_are_valid_ = SUCCEEDED(hr) &&
-        CompareAudioParametersNoBitDepth(params, preferred_params);
-    LOG_IF(WARNING, !audio_parmeters_are_valid_)
+    audio_parameters_are_valid_ = SUCCEEDED(hr) &&
+        CompareAudioParametersNoBitDepthOrChannels(params, preferred_params);
+    LOG_IF(WARNING, !audio_parameters_are_valid_)
         << "Input and preferred parameters are not identical.";
   }
 
@@ -208,7 +207,7 @@ bool WASAPIAudioOutputStream::Open() {
   // Audio parameters must be identical to the preferred set of parameters
   // if shared mode (default) is utilized.
   if (share_mode_ == AUDCLNT_SHAREMODE_SHARED) {
-    if (!audio_parmeters_are_valid_) {
+    if (!audio_parameters_are_valid_) {
       LOG(ERROR) << "Audio parameters are not valid.";
       return false;
     }
@@ -285,7 +284,7 @@ void WASAPIAudioOutputStream::Start(AudioSourceCallback* callback) {
   CHECK(callback);
   CHECK(opened_);
 
-  if (render_thread_.get()) {
+  if (render_thread_) {
     CHECK_EQ(callback, source_);
     return;
   }
@@ -325,7 +324,7 @@ void WASAPIAudioOutputStream::Start(AudioSourceCallback* callback) {
 void WASAPIAudioOutputStream::Stop() {
   VLOG(1) << "WASAPIAudioOutputStream::Stop()";
   DCHECK_EQ(GetCurrentThreadId(), creating_thread_id_);
-  if (!render_thread_.get())
+  if (!render_thread_)
     return;
 
   // Stop output audio streaming.
@@ -581,15 +580,10 @@ void WASAPIAudioOutputStream::RenderAudioFromSource(
     // clipped and sanitized since it may come from an untrusted
     // source such as NaCl.
     const int bytes_per_sample = format_.Format.wBitsPerSample >> 3;
+    audio_bus_->Scale(volume_);
     audio_bus_->ToInterleaved(
         frames_filled, bytes_per_sample, audio_data);
 
-    // Perform in-place, software-volume adjustments.
-    media::AdjustVolume(audio_data,
-                        num_filled_bytes,
-                        audio_bus_->channels(),
-                        bytes_per_sample,
-                        volume_);
 
     // Release the buffer space acquired in the GetBuffer() call.
     // Render silence if we were not able to fill up the buffer totally.

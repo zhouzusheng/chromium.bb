@@ -1,5 +1,5 @@
-#ifndef VP__RTCD_
-#define VP__RTCD_
+#ifndef VP8_RTCD_H_
+#define VP8_RTCD_H_
 
 #ifdef RTCD_C
 #define RTCD_EXTERN
@@ -21,6 +21,10 @@ struct macroblock;
 struct variance_vtable;
 union int_mv;
 struct yv12_buffer_config;
+
+void vp8_clear_system_state_c();
+void vpx_reset_mmx_state();
+RTCD_EXTERN void (*vp8_clear_system_state)();
 
 void vp8_dequantize_b_c(struct blockd*, short *dqc);
 void vp8_dequantize_b_mmx(struct blockd*, short *dqc);
@@ -398,7 +402,6 @@ RTCD_EXTERN void (*vp8_short_walsh4x4)(short *input, short *output, int pitch);
 
 void vp8_regular_quantize_b_c(struct block *, struct blockd *);
 void vp8_regular_quantize_b_sse2(struct block *, struct blockd *);
-void vp8_regular_quantize_b_sse4(struct block *, struct blockd *);
 RTCD_EXTERN void (*vp8_regular_quantize_b)(struct block *, struct blockd *);
 
 void vp8_fast_quantize_b_c(struct block *, struct blockd *);
@@ -480,6 +483,9 @@ static void setup_rtcd_internal(void)
     int flags = x86_simd_caps();
 
     (void)flags;
+
+    vp8_clear_system_state = vp8_clear_system_state_c;
+    if (flags & HAS_MMX) vp8_clear_system_state = vpx_reset_mmx_state;
 
     vp8_dequantize_b = vp8_dequantize_b_c;
     if (flags & HAS_MMX) vp8_dequantize_b = vp8_dequantize_b_mmx;
@@ -770,7 +776,6 @@ static void setup_rtcd_internal(void)
 
     vp8_regular_quantize_b = vp8_regular_quantize_b_c;
     if (flags & HAS_SSE2) vp8_regular_quantize_b = vp8_regular_quantize_b_sse2;
-    if (flags & HAS_SSE4_1) vp8_regular_quantize_b = vp8_regular_quantize_b_sse4;
 
     vp8_fast_quantize_b = vp8_fast_quantize_b_c;
     if (flags & HAS_SSE2) vp8_fast_quantize_b = vp8_fast_quantize_b_sse2;

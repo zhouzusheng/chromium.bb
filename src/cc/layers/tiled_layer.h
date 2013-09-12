@@ -28,6 +28,7 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual bool BlocksPendingCommit() const OVERRIDE;
   virtual bool DrawsContent() const OVERRIDE;
+  virtual void ReduceMemoryUsage() OVERRIDE;
   virtual void SetNeedsDisplayRect(const gfx::RectF& dirty_rect) OVERRIDE;
   virtual void SetLayerTreeHost(LayerTreeHost* layer_tree_host) OVERRIDE;
   virtual void SetTexturePriorities(const PriorityCalculator& priority_calc)
@@ -139,5 +140,6 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
   DISALLOW_COPY_AND_ASSIGN(TiledLayer);
 };
 
-}
+}  // namespace cc
+
 #endif  // CC_LAYERS_TILED_LAYER_H_

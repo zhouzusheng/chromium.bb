@@ -13,12 +13,6 @@
 #include "base/string16.h"
 #include "sandbox/win/src/sandbox_types.h"
 
-// SHEZ: In order to compile using the Win7.1 SDK, the AppContainerAttributes
-//       class has been modified to not use SECURITY_CAPABILITIES.  This makes
-//       the class essentially non-functional, but in order to keep the patch
-//       minimal, it has been preserved and the capabilities_ data member has
-//       been replaced with app_container_sid_.
-
 namespace base {
 namespace win {
 class StartupInformation;
@@ -49,7 +43,7 @@ class AppContainerAttributes {
   bool HasAppContainer() const;
 
  private:
-  PSID app_container_sid_;
+  SECURITY_CAPABILITIES capabilities_;
   std::vector<SID_AND_ATTRIBUTES> attributes_;
 
   DISALLOW_COPY_AND_ASSIGN(AppContainerAttributes);

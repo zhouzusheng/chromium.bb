@@ -33,7 +33,7 @@ class GrTexture;
  *  change, if for example that image can be re-created via encoded data or
  *  other means.
  */
-class SkImage : public SkRefCnt {
+class SK_API SkImage : public SkRefCnt {
 public:
     SK_DECLARE_INST_COUNT(SkImage)
 
@@ -71,6 +71,13 @@ public:
     int width() const { return fWidth; }
     int height() const { return fHeight; }
     uint32_t uniqueID() const { return fUniqueID; }
+
+    /**
+     * Return the GrTexture that stores the image pixels. Calling getTexture
+     * does not affect the reference count of the GrTexture object.
+     * Will return NULL if the image does not use a texture.
+     */
+    GrTexture* getTexture();
 
     SkShader*   newShaderClamp() const;
     SkShader*   newShader(SkShader::TileMode, SkShader::TileMode) const;

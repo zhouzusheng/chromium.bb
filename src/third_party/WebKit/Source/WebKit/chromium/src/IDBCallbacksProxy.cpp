@@ -29,24 +29,21 @@
 #include "config.h"
 #include "IDBCallbacksProxy.h"
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "DOMStringList.h"
-#include "IDBCursorBackendInterface.h"
-#include "IDBDatabaseBackendInterface.h"
+#include <public/WebData.h>
+#include <public/WebIDBCallbacks.h>
+#include <public/WebIDBDatabaseCallbacks.h>
+#include <public/WebIDBDatabaseError.h>
+#include <public/WebIDBDatabaseException.h>
+#include <public/WebIDBKey.h>
+#include <public/WebIDBMetadata.h>
 #include "IDBDatabaseBackendProxy.h"
 #include "IDBDatabaseCallbacksProxy.h"
-#include "IDBDatabaseError.h"
-#include "IDBMetadata.h"
-#include "WebIDBCallbacks.h"
 #include "WebIDBCursorImpl.h"
-#include "WebIDBDatabaseCallbacks.h"
-#include "WebIDBDatabaseError.h"
-#include "WebIDBDatabaseException.h"
 #include "WebIDBDatabaseImpl.h"
-#include "WebIDBKey.h"
-#include "WebIDBMetadata.h"
-#include <public/WebData.h>
+#include "modules/indexeddb/IDBCursorBackendInterface.h"
+#include "modules/indexeddb/IDBDatabaseBackendInterface.h"
+#include "modules/indexeddb/IDBDatabaseError.h"
+#include "modules/indexeddb/IDBMetadata.h"
 
 using namespace WebCore;
 
@@ -97,10 +94,10 @@ void IDBCallbacksProxy::onSuccess(PassRefPtr<IDBKey> idbKey)
     m_callbacks->onSuccess(WebIDBKey(idbKey));
 }
 
-void IDBCallbacksProxy::onSuccess(PassRefPtr<DOMStringList> domStringList)
+void IDBCallbacksProxy::onSuccess(const Vector<String>& stringList)
 {
     m_didComplete = true;
-    m_callbacks->onSuccess(WebDOMStringList(domStringList));
+    m_callbacks->onSuccess(stringList);
 }
 
 void IDBCallbacksProxy::onSuccess(PassRefPtr<SharedBuffer> value)
@@ -170,6 +167,3 @@ void IDBCallbacksProxy::setDatabaseCallbacks(PassRefPtr<IDBDatabaseCallbacksProx
 }
 
 } // namespace WebKit
-
-
-#endif // ENABLE(INDEXED_DATABASE)

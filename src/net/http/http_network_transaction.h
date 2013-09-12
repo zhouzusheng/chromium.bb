@@ -87,6 +87,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
                                           HttpStreamBase* stream) OVERRIDE;
 
  private:
+  friend class HttpNetworkTransactionSSLTest;
+
   FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionSpdy2Test,
                            ResetStateForRestart);
   FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionSpdy3Test,
@@ -298,9 +300,6 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // the body, if present.
   base::TimeTicks send_start_time_;
   base::TimeTicks send_end_time_;
-
-  // When the transaction finished reading the request headers.
-  base::TimeTicks receive_headers_end_;
 
   // The next state in the state machine.
   State next_state_;

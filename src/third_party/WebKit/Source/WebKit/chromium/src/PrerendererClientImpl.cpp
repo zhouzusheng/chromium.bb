@@ -32,12 +32,12 @@
 #include "config.h"
 #include "PrerendererClientImpl.h"
 
-#include "Document.h"
-#include "Frame.h"
-#include "Prerender.h"
-#include "PrerenderHandle.h"
 #include "WebPrerendererClient.h"
 #include "WebViewImpl.h"
+#include "core/dom/Document.h"
+#include "core/page/Frame.h"
+#include "core/platform/PrerenderHandle.h"
+#include "core/platform/chromium/Prerender.h"
 #include <public/WebPrerender.h>
 #include <wtf/PassRefPtr.h>
 

@@ -30,11 +30,12 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <algorithm>
 #include <climits>
 
-#include "globals.h"
-#include "checks.h"
 #include "allocation.h"
+#include "checks.h"
+#include "globals.h"
 
 namespace v8 {
 namespace internal {
@@ -249,6 +250,7 @@ class BitField {
   // using a shift count of 32.
   static const uint32_t kMask = ((1U << shift) << size) - (1U << shift);
   static const uint32_t kShift = shift;
+  static const uint32_t kSize = size;
 
   // Value for the field with all bits set.
   static const T kMax = static_cast<T>((1U << size) - 1);
@@ -409,15 +411,11 @@ class Vector {
   }
 
   void Sort(int (*cmp)(const T*, const T*)) {
-    typedef int (*RawComparer)(const void*, const void*);
-    qsort(start(),
-          length(),
-          sizeof(T),
-          reinterpret_cast<RawComparer>(cmp));
+    std::sort(start(), start() + length(), RawComparer(cmp));
   }
 
   void Sort() {
-    Sort(PointerValueCompare<T>);
+    std::sort(start(), start() + length());
   }
 
   void Truncate(int length) {
@@ -453,6 +451,17 @@ class Vector {
  private:
   T* start_;
   int length_;
+
+  class RawComparer {
+   public:
+    explicit RawComparer(int (*cmp)(const T*, const T*)) : cmp_(cmp) {}
+    bool operator()(const T& a, const T& b) {
+      return cmp_(&a, &b) < 0;
+    }
+
+   private:
+    int (*cmp_)(const T*, const T*);
+  };
 };
 
 
@@ -493,6 +502,7 @@ class EmbeddedVector : public Vector<T> {
   // When copying, make underlying Vector to reference our buffer.
   EmbeddedVector(const EmbeddedVector& rhs)
       : Vector<T>(rhs) {
+    // TODO(jkummerow): Refactor #includes and use OS::MemCopy() instead.
     memcpy(buffer_, rhs.buffer_, sizeof(T) * kSize);
     set_start(buffer_);
   }
@@ -500,6 +510,7 @@ class EmbeddedVector : public Vector<T> {
   EmbeddedVector& operator=(const EmbeddedVector& rhs) {
     if (this == &rhs) return *this;
     Vector<T>::operator=(rhs);
+    // TODO(jkummerow): Refactor #includes and use OS::MemCopy() instead.
     memcpy(buffer_, rhs.buffer_, sizeof(T) * kSize);
     this->set_start(buffer_);
     return *this;
@@ -875,6 +886,7 @@ struct BitCastHelper {
 
   INLINE(static Dest cast(const Source& source)) {
     Dest dest;
+    // TODO(jkummerow): Refactor #includes and use OS::MemCopy() instead.
     memcpy(&dest, &source, sizeof(dest));
     return dest;
   }
@@ -1018,6 +1030,9 @@ class EnumSet {
   void Intersect(const EnumSet& set) { bits_ &= set.bits_; }
   T ToIntegral() const { return bits_; }
   bool operator==(const EnumSet& set) { return bits_ == set.bits_; }
+  EnumSet<E, T> operator|(const EnumSet& set) const {
+    return EnumSet<E, T>(bits_ | set.bits_);
+  }
 
  private:
   T Mask(E element) const {

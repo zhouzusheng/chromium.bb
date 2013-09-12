@@ -13,23 +13,32 @@
   'targets': [
     {
       'target_name': 'libyuv',
+      # Change type to 'shared_library' to build .so or .dll files.
       'type': 'static_library',
-      # 'type': 'shared_library',
+      # Allows libyuv.a redistributable library without external dependencies.
+      'standalone_static_library': 1,
       'conditions': [
-         ['use_system_libjpeg==0', {
-          'dependencies': [
-             '<(DEPTH)/third_party/libjpeg_turbo/libjpeg.gyp:libjpeg',
+        # TODO(fbarchard): Use gyp define to enable jpeg.
+        [ 'OS != "ios"', {
+          'defines': [
+            'HAVE_JPEG'
           ],
-        }, {
-          'link_settings': {
-            'libraries': [
-              '-ljpeg',
-            ],
-          },
+          'conditions': [
+            [ 'use_system_libjpeg==0', {
+              'dependencies': [
+                 '<(DEPTH)/third_party/libjpeg_turbo/libjpeg.gyp:libjpeg',
+              ],
+            }, {
+              'link_settings': {
+                'libraries': [
+                  '-ljpeg',
+                ],
+              },
+            }],
+          ],
         }],
       ],
       'defines': [
-        'HAVE_JPEG',
         # Enable the following 3 macros to turn off assembly for specified CPU.
         # 'LIBYUV_DISABLE_X86',
         # 'LIBYUV_DISABLE_NEON',
@@ -78,9 +87,13 @@
         'source/convert_argb.cc',
         'source/convert_from.cc',
         'source/convert_from_argb.cc',
+        'source/convert_jpeg.cc',
+        'source/convert_to_argb.cc',
+        'source/convert_to_i420.cc',
         'source/cpu_id.cc',
         'source/format_conversion.cc',
         'source/mjpeg_decoder.cc',
+        'source/mjpeg_validate.cc',
         'source/planar_functions.cc',
         'source/rotate.cc',
         'source/rotate_argb.cc',

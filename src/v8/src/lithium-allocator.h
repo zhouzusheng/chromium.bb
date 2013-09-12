@@ -244,13 +244,12 @@ class UseInterval: public ZoneObject {
 // Representation of a use position.
 class UsePosition: public ZoneObject {
  public:
-  UsePosition(LifetimePosition pos, LOperand* operand);
+  UsePosition(LifetimePosition pos, LOperand* operand, LOperand* hint);
 
   LOperand* operand() const { return operand_; }
   bool HasOperand() const { return operand_ != NULL; }
 
   LOperand* hint() const { return hint_; }
-  void set_hint(LOperand* hint) { hint_ = hint; }
   bool HasHint() const;
   bool RequiresRegister() const;
   bool RegisterIsBeneficial() const;
@@ -261,9 +260,9 @@ class UsePosition: public ZoneObject {
  private:
   void set_next(UsePosition* next) { next_ = next; }
 
-  LOperand* operand_;
-  LOperand* hint_;
-  LifetimePosition pos_;
+  LOperand* const operand_;
+  LOperand* const hint_;
+  LifetimePosition const pos_;
   UsePosition* next_;
   bool requires_reg_;
   bool register_beneficial_;
@@ -310,6 +309,10 @@ class LiveRange: public ZoneObject {
   // range and which follows both start and last processed use position
   // Modifies internal state of live range!
   UsePosition* NextUsePositionRegisterIsBeneficial(LifetimePosition start);
+
+  // Returns use position for which register is beneficial in this live
+  // range and which precedes start.
+  UsePosition* PreviousUsePositionRegisterIsBeneficial(LifetimePosition start);
 
   // Can this live range be spilled at this position.
   bool CanBeSpilled(LifetimePosition pos);
@@ -363,9 +366,10 @@ class LiveRange: public ZoneObject {
   void AddUseInterval(LifetimePosition start,
                       LifetimePosition end,
                       Zone* zone);
-  UsePosition* AddUsePosition(LifetimePosition pos,
-                              LOperand* operand,
-                              Zone* zone);
+  void AddUsePosition(LifetimePosition pos,
+                      LOperand* operand,
+                      LOperand* hint,
+                      Zone* zone);
 
   // Shorten the most recently added interval by setting a new start.
   void ShortenTo(LifetimePosition start);
@@ -423,11 +427,14 @@ class LAllocator BASE_EMBEDDED {
 
   LPlatformChunk* chunk() const { return chunk_; }
   HGraph* graph() const { return graph_; }
+  Isolate* isolate() const { return graph_->isolate(); }
   Zone* zone() const { return zone_; }
 
   int GetVirtualRegister() {
-    if (next_virtual_register_ > LUnallocated::kMaxVirtualRegisters) {
+    if (next_virtual_register_ >= LUnallocated::kMaxVirtualRegisters) {
       allocation_ok_ = false;
+      // Maintain the invariant that we return something below the maximum.
+      return 0;
     }
     return next_virtual_register_++;
   }
@@ -529,12 +536,24 @@ class LAllocator BASE_EMBEDDED {
   // Spill the given life range after position pos.
   void SpillAfter(LiveRange* range, LifetimePosition pos);
 
-  // Spill the given life range after position start and up to position end.
+  // Spill the given life range after position [start] and up to position [end].
   void SpillBetween(LiveRange* range,
                     LifetimePosition start,
                     LifetimePosition end);
 
+  // Spill the given life range after position [start] and up to position [end].
+  // Range is guaranteed to be spilled at least until position [until].
+  void SpillBetweenUntil(LiveRange* range,
+                         LifetimePosition start,
+                         LifetimePosition until,
+                         LifetimePosition end);
+
   void SplitAndSpillIntersecting(LiveRange* range);
+
+  // If we are trying to spill a range inside the loop try to
+  // hoist spill position out to the point just before the loop.
+  LifetimePosition FindOptimalSpillingPos(LiveRange* range,
+                                          LifetimePosition pos);
 
   void Spill(LiveRange* range);
   bool IsBlockBoundary(LifetimePosition pos);
@@ -612,6 +631,10 @@ class LAllocator BASE_EMBEDDED {
 
   // Indicates success or failure during register allocation.
   bool allocation_ok_;
+
+#ifdef DEBUG
+  LifetimePosition allocation_finger_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(LAllocator);
 };

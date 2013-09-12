@@ -26,8 +26,6 @@
 namespace v8_i18n {
 
 v8::Handle<v8::Value> JSCanonicalizeLanguageTag(const v8::Arguments& args) {
-  v8::HandleScope handle_scope;
-
   // Expect locale id which is a string.
   if (args.Length() != 1 || !args[0]->IsString()) {
     return v8::ThrowException(v8::Exception::SyntaxError(
@@ -66,8 +64,6 @@ v8::Handle<v8::Value> JSCanonicalizeLanguageTag(const v8::Arguments& args) {
 }
 
 v8::Handle<v8::Value> JSAvailableLocalesOf(const v8::Arguments& args) {
-  v8::HandleScope handle_scope;
-
   // Expect service name which is a string.
   if (args.Length() != 1 || !args[0]->IsString()) {
     return v8::ThrowException(v8::Exception::SyntaxError(
@@ -112,7 +108,7 @@ v8::Handle<v8::Value> JSAvailableLocalesOf(const v8::Arguments& args) {
     }
   }
 
-  return handle_scope.Close(locales);
+  return locales;
 }
 
 v8::Handle<v8::Value> JSGetDefaultICULocale(const v8::Arguments& args) {
@@ -131,7 +127,6 @@ v8::Handle<v8::Value> JSGetDefaultICULocale(const v8::Arguments& args) {
 }
 
 v8::Handle<v8::Value> JSGetLanguageTagVariants(const v8::Arguments& args) {
-  v8::HandleScope handle_scope;
   v8::TryCatch try_catch;
 
   // Expect an array of strings.
@@ -221,7 +216,7 @@ v8::Handle<v8::Value> JSGetLanguageTagVariants(const v8::Arguments& args) {
     }
   }
 
-  return handle_scope.Close(output);
+  return output;
 }
 
 }  // namespace v8_i18n

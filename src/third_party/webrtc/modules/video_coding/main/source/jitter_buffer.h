@@ -29,9 +29,6 @@ namespace webrtc {
 
 enum VCMNackMode {
   kNack,
-  // TODO(holmer): There is no longer a hybrid NACK mode. We should remove this
-  // and replace it with a jitter buffer API for setting allowing decode errors.
-  kNackHybrid,
   kNoNack
 };
 
@@ -107,13 +104,16 @@ class VCMJitterBuffer {
   // or more packets.
   bool CompleteSequenceWithNextFrame();
 
-  // TODO(mikhal/stefan): Merge all GetFrameForDecoding into one.
-  // Wait |max_wait_time_ms| for a complete frame to arrive. After timeout NULL
-  // is returned.
+  // Returns a complete frame ready for decoding. Allows max_wait_time_ms to
+  // wait for such a frame, if one is unavailable.
+  // Always starts with a key frame.
   VCMEncodedFrame* GetCompleteFrameForDecoding(uint32_t max_wait_time_ms);
 
-  // Get a frame for decoding (even an incomplete) without delay.
-  VCMEncodedFrame* GetFrameForDecoding();
+  // Get next frame for decoding without delay. If decoding with errors is not
+  // enabled, will return NULL. Actual returned frame will be the next one in
+  // the list, either complete or not.
+  // TODO(mikhal): Consider only allowing decodable/complete.
+  VCMEncodedFrame* MaybeGetIncompleteFrameForDecoding();
 
   // Releases a frame returned from the jitter buffer, should be called when
   // done with decoding.
@@ -161,17 +161,20 @@ class VCMJitterBuffer {
   // Returns a list of the sequence numbers currently missing.
   uint16_t* GetNackList(uint16_t* nack_list_size, bool* request_key_frame);
 
+  // Enable/disable decoding with errors.
+  void DecodeWithErrors(bool enable) {decode_with_errors_ = enable;}
   int64_t LastDecodedTimestamp() const;
+  bool decode_with_errors() const {return decode_with_errors_;}
+
+  // Returns size in time (milliseconds) of complete continuous frames.
+  int RenderBufferSizeMs();
 
  private:
   class SequenceNumberLessThan {
    public:
     bool operator() (const uint16_t& sequence_number1,
                      const uint16_t& sequence_number2) const {
-      if (sequence_number1 == sequence_number2)
-        return false;
-      return LatestSequenceNumber(sequence_number1, sequence_number2, NULL) ==
-          sequence_number2;
+      return IsNewerSequenceNumber(sequence_number2, sequence_number1);
     }
   };
   typedef std::set<uint16_t, SequenceNumberLessThan> SequenceNumberSet;
@@ -192,11 +195,6 @@ class VCMJitterBuffer {
   // Drops all packets in the NACK list up until |last_decoded_sequence_number|.
   void DropPacketsFromNackList(uint16_t last_decoded_sequence_number);
 
-  // In NACK-only mode this function doesn't return or release non-complete
-  // frames unless we have a complete key frame. In hybrid mode, we may release
-  // "decodable", incomplete frames.
-  VCMEncodedFrame* GetFrameForDecodingNACK();
-
   void ReleaseFrameIfNotDecoding(VCMFrameBuffer* frame);
 
   // Gets an empty frame, creating a new frame if necessary (i.e. increases
@@ -213,9 +211,11 @@ class VCMJitterBuffer {
   VCMFrameBufferEnum UpdateFrameState(VCMFrameBuffer* frame);
 
   // Finds the oldest complete frame, used for getting next frame to decode.
-  // Can return a decodable, incomplete frame if |enable_decodable| is true.
-  FrameList::iterator FindOldestCompleteContinuousFrame(bool enable_decodable);
+  // Can return a decodable, incomplete frame when enabled.
+  FrameList::iterator FindOldestCompleteContinuousFrame();
 
+  // Cleans the frame list in the JB from old/empty frames.
+  // Should only be called prior to actual use.
   void CleanUpOldOrEmptyFrames();
 
   // Sets the "decodable" and "frame loss" flags of a frame depending on which
@@ -285,7 +285,7 @@ class VCMJitterBuffer {
   // Calculates network delays used for jitter calculations.
   VCMInterFrameDelay inter_frame_delay_;
   VCMJitterSample waiting_for_completion_;
-  WebRtc_UWord32 rtt_ms_;
+  uint32_t rtt_ms_;
 
   // NACK and retransmissions.
   VCMNackMode nack_mode_;
@@ -297,8 +297,8 @@ class VCMJitterBuffer {
   std::vector<uint16_t> nack_seq_nums_;
   size_t max_nack_list_size_;
   int max_packet_age_to_nack_;  // Measured in sequence numbers.
-  bool waiting_for_key_frame_;
 
+  bool decode_with_errors_;
   DISALLOW_COPY_AND_ASSIGN(VCMJitterBuffer);
 };
 }  // namespace webrtc

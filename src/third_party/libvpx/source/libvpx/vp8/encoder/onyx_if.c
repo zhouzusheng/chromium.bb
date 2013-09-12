@@ -111,7 +111,7 @@ extern int skip_false_count;
 #endif
 
 
-#ifdef ENTROPY_STATS
+#ifdef VP8_ENTROPY_STATS
 extern int intra_mode_stats[10][10][10];
 #endif
 
@@ -641,7 +641,6 @@ void vp8_set_speed_features(VP8_COMP *cpi)
     for (i = 0; i < MAX_MODES; i ++)
     {
         cpi->mode_check_freq[i] = 0;
-        cpi->mode_chosen_counts[i] = 0;
     }
 
     cpi->mb.mbs_tested_so_far = 0;
@@ -826,7 +825,7 @@ void vp8_set_speed_features(VP8_COMP *cpi)
         {
             unsigned int sum = 0;
             unsigned int total_mbs = cm->MBs;
-            int i, thresh;
+            int thresh;
             unsigned int total_skip;
 
             int min = 2000;
@@ -1806,7 +1805,7 @@ struct VP8_COMP* vp8_create_compressor(VP8_CONFIG *oxcf)
     else
         cpi->cyclic_refresh_map = (signed char *) NULL;
 
-#ifdef ENTROPY_STATS
+#ifdef VP8_ENTROPY_STATS
     init_context_counters();
 #endif
 
@@ -1924,7 +1923,7 @@ struct VP8_COMP* vp8_create_compressor(VP8_CONFIG *oxcf)
         cpi->mb.rd_thresh_mult[i] = 128;
     }
 
-#ifdef ENTROPY_STATS
+#ifdef VP8_ENTROPY_STATS
     init_mv_ref_counts();
 #endif
 
@@ -2061,7 +2060,7 @@ void vp8_remove_compressor(VP8_COMP **ptr)
 
 #endif
 
-#ifdef ENTROPY_STATS
+#ifdef VP8_ENTROPY_STATS
         print_context_counters();
         print_tree_update_probs();
         print_mode_context();
@@ -2243,7 +2242,7 @@ void vp8_remove_compressor(VP8_COMP **ptr)
         }
 #endif
 
-#ifdef ENTROPY_STATS
+#ifdef VP8_ENTROPY_STATS
         {
             int i, j, k;
             FILE *fmode = fopen("modecontext.c", "w");
@@ -2816,6 +2815,8 @@ static void update_rd_ref_frame_probs(VP8_COMP *cpi)
         if (cpi->common.refresh_alt_ref_frame)
         {
             cpi->prob_intra_coded += 40;
+            if (cpi->prob_intra_coded > 255)
+                cpi->prob_intra_coded = 255;
             cpi->prob_last_coded = 200;
             cpi->prob_gf_coded = 1;
         }
@@ -4597,9 +4598,6 @@ static void encode_frame_to_data_rate
                         cpi->common.current_video_frame,
                         cm->frame_type, cm->refresh_golden_frame,
                         cm->refresh_alt_ref_frame);
-
-            for (i = 0; i < MAX_MODES; i++)
-                fprintf(fmodes, "%5d ", cpi->mode_chosen_counts[i]);
 
             fprintf(fmodes, "\n");
 

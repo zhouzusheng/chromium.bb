@@ -29,12 +29,10 @@
  */
 
 #include "config.h"
-#include "WebIDBDatabaseError.h"
+#include <public/WebIDBDatabaseError.h>
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "IDBDatabaseError.h"
 #include <public/WebString.h>
+#include "modules/indexeddb/IDBDatabaseError.h"
 
 using namespace WebCore;
 
@@ -87,5 +85,3 @@ WebIDBDatabaseError::operator PassRefPtr<IDBDatabaseError>() const
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)

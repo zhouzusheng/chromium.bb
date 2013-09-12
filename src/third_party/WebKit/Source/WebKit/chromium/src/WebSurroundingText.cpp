@@ -25,14 +25,14 @@
 #include "config.h"
 #include "WebSurroundingText.h"
 
-#include "Element.h"
-#include "Node.h"
-#include "Range.h"
-#include "RenderObject.h"
-#include "SurroundingText.h"
-#include "Text.h"
-#include "VisiblePosition.h"
 #include "WebHitTestResult.h"
+#include "core/dom/Element.h"
+#include "core/dom/Node.h"
+#include "core/dom/Range.h"
+#include "core/dom/Text.h"
+#include "core/editing/SurroundingText.h"
+#include "core/editing/VisiblePosition.h"
+#include "core/rendering/RenderObject.h"
 #include <public/WebPoint.h>
 
 using namespace WebCore;

@@ -87,7 +87,7 @@ void append_swizzle(SkString* outAppend,
 
 }
 
-static const char kDstColorName[] = "_dstColor";
+static const char kDstCopyColorName[] = "_dstColor";
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -104,6 +104,7 @@ GrGLShaderBuilder::GrGLShaderBuilder(const GrGLContextInfo& ctxInfo,
     , fCtxInfo(ctxInfo)
     , fUniformManager(uniformManager)
     , fCurrentStageIdx(kNonStageIdx)
+    , fFSFeaturesAddedMask(0)
 #if GR_GL_EXPERIMENTAL_GS
     , fUsesGS(desc.fExperimentalGS)
 #else
@@ -116,7 +117,7 @@ GrGLShaderBuilder::GrGLShaderBuilder(const GrGLContextInfo& ctxInfo,
 
     fPositionVar = &fVSAttrs.push_back();
     fPositionVar->set(kVec2f_GrSLType, GrGLShaderVar::kAttribute_TypeModifier, "aPosition");
-    if (desc.fAttribBindings & GrDrawState::kLocalCoords_AttribBindingsBit) {
+    if (-1 != desc.fLocalCoordAttributeIndex) {
         fLocalCoordsVar = &fVSAttrs.push_back();
         fLocalCoordsVar->set(kVec2f_GrSLType,
                              GrGLShaderVar::kAttribute_TypeModifier,
@@ -124,7 +125,9 @@ GrGLShaderBuilder::GrGLShaderBuilder(const GrGLContextInfo& ctxInfo,
     } else {
         fLocalCoordsVar = fPositionVar;
     }
-    if (kNoDstRead_DstReadKey != desc.fDstRead) {
+    // Emit code to read the dst copy textue if necessary.
+    if (kNoDstRead_DstReadKey != desc.fDstRead &&
+        GrGLCaps::kNone_FBFetchType == ctxInfo.caps()->fbFetchType()) {
         bool topDown = SkToBool(kTopLeftOrigin_DstReadKeyBit & desc.fDstRead);
         const char* dstCopyTopLeftName;
         const char* dstCopyCoordScaleName;
@@ -151,15 +154,78 @@ GrGLShaderBuilder::GrGLShaderBuilder(const GrGLContextInfo& ctxInfo,
         if (!topDown) {
             this->fsCodeAppend("\t_dstTexCoord.y = 1.0 - _dstTexCoord.y;\n");
         }
-        this->fsCodeAppendf("\tvec4 %s = ", kDstColorName);
+        this->fsCodeAppendf("\tvec4 %s = ", kDstCopyColorName);
         this->appendTextureLookup(kFragment_ShaderType, fDstCopySampler, "_dstTexCoord");
         this->fsCodeAppend(";\n\n");
     }
 }
 
-const char* GrGLShaderBuilder::dstColor() const {
-    if (fDstCopySampler.isInitialized()) {
-        return kDstColorName;
+bool GrGLShaderBuilder::enableFeature(GLSLFeature feature) {
+    switch (feature) {
+        case kStandardDerivatives_GLSLFeature:
+            if (!fCtxInfo.caps()->shaderDerivativeSupport()) {
+                return false;
+            }
+            if (kES2_GrGLBinding == fCtxInfo.binding()) {
+                this->addFSFeature(1 << kStandardDerivatives_GLSLFeature,
+                                   "GL_OES_standard_derivatives");
+            }
+            return true;
+        default:
+            GrCrash("Unexpected GLSLFeature requested.");
+            return false;
+    }
+}
+
+bool GrGLShaderBuilder::enablePrivateFeature(GLSLPrivateFeature feature) {
+    switch (feature) {
+        case kFragCoordConventions_GLSLPrivateFeature:
+            if (!fCtxInfo.caps()->fragCoordConventionsSupport()) {
+                return false;
+            }
+            if (fCtxInfo.glslGeneration() < k150_GrGLSLGeneration) {
+                this->addFSFeature(1 << kFragCoordConventions_GLSLPrivateFeature,
+                                   "GL_ARB_fragment_coord_conventions");
+            }
+            return true;
+        case kEXTShaderFramebufferFetch_GLSLPrivateFeature:
+            if (GrGLCaps::kEXT_FBFetchType != fCtxInfo.caps()->fbFetchType()) {
+                return false;
+            }
+            this->addFSFeature(1 << kEXTShaderFramebufferFetch_GLSLPrivateFeature,
+                               "GL_EXT_shader_framebuffer_fetch");
+            return true;
+        case kNVShaderFramebufferFetch_GLSLPrivateFeature:
+            if (GrGLCaps::kNV_FBFetchType != fCtxInfo.caps()->fbFetchType()) {
+                return false;
+            }
+            this->addFSFeature(1 << kNVShaderFramebufferFetch_GLSLPrivateFeature,
+                               "GL_NV_shader_framebuffer_fetch");
+            return true;
+        default:
+            GrCrash("Unexpected GLSLPrivateFeature requested.");
+            return false;
+    }
+}
+
+void GrGLShaderBuilder::addFSFeature(uint32_t featureBit, const char* extensionName) {
+    if (!(featureBit & fFSFeaturesAddedMask)) {
+        fFSExtensions.appendf("#extension %s: require\n", extensionName);
+        fFSFeaturesAddedMask |= featureBit;
+    }
+}
+
+const char* GrGLShaderBuilder::dstColor() {
+    static const char kFBFetchColorName[] = "gl_LastFragData[0]";
+    GrGLCaps::FBFetchType fetchType = fCtxInfo.caps()->fbFetchType();
+    if (GrGLCaps::kEXT_FBFetchType == fetchType) {
+        SkAssertResult(this->enablePrivateFeature(kEXTShaderFramebufferFetch_GLSLPrivateFeature));
+        return kFBFetchColorName;
+    } else if (GrGLCaps::kNV_FBFetchType == fetchType) {
+        SkAssertResult(this->enablePrivateFeature(kNVShaderFramebufferFetch_GLSLPrivateFeature));
+        return kFBFetchColorName;
+    } else if (fDstCopySampler.isInitialized()) {
+        return kDstCopyColorName;
     } else {
         return NULL;
     }
@@ -231,7 +297,7 @@ void GrGLShaderBuilder::appendTextureLookupAndModulate(
     GrAssert(kFragment_ShaderType == type);
     SkString lookup;
     this->appendTextureLookup(&lookup, sampler, coordName, varyingType);
-    GrGLSLModulate4f(&fFSCode, modulation, lookup.c_str());
+    GrGLSLModulatef<4>(&fFSCode, modulation, lookup.c_str());
 }
 
 GrBackendEffectFactory::EffectKey GrGLShaderBuilder::KeyForTextureAccess(
@@ -248,6 +314,10 @@ GrBackendEffectFactory::EffectKey GrGLShaderBuilder::KeyForTextureAccess(
 GrGLShaderBuilder::DstReadKey GrGLShaderBuilder::KeyForDstRead(const GrTexture* dstCopy,
                                                                const GrGLCaps& caps) {
     uint32_t key = kYesDstRead_DstReadKeyBit;
+    if (GrGLCaps::kNone_FBFetchType != caps.fbFetchType()) {
+        return key;
+    }
+    GrAssert(NULL != dstCopy);
     if (!caps.textureSwizzleSupport() && GrPixelConfigIsAlphaOnly(dstCopy->config())) {
         // The fact that the config is alpha-only must be considered when generating code.
         key |= kUseAlphaConfig_DstReadKeyBit;
@@ -344,7 +414,7 @@ void GrGLShaderBuilder::addVarying(GrSLType type,
                                    const char** fsInName) {
     fVSOutputs.push_back();
     fVSOutputs.back().setType(type);
-    fVSOutputs.back().setTypeModifier(GrGLShaderVar::kOut_TypeModifier);
+    fVSOutputs.back().setTypeModifier(GrGLShaderVar::kVaryingOut_TypeModifier);
     if (kNonStageIdx == fCurrentStageIdx) {
         fVSOutputs.back().accessName()->printf("v%s", name);
     } else {
@@ -360,12 +430,12 @@ void GrGLShaderBuilder::addVarying(GrSLType type,
         // and output as non-array.
         fGSInputs.push_back();
         fGSInputs.back().setType(type);
-        fGSInputs.back().setTypeModifier(GrGLShaderVar::kIn_TypeModifier);
+        fGSInputs.back().setTypeModifier(GrGLShaderVar::kVaryingIn_TypeModifier);
         fGSInputs.back().setUnsizedArray();
         *fGSInputs.back().accessName() = fVSOutputs.back().getName();
         fGSOutputs.push_back();
         fGSOutputs.back().setType(type);
-        fGSOutputs.back().setTypeModifier(GrGLShaderVar::kOut_TypeModifier);
+        fGSOutputs.back().setTypeModifier(GrGLShaderVar::kVaryingOut_TypeModifier);
         if (kNonStageIdx == fCurrentStageIdx) {
             fGSOutputs.back().accessName()->printf("g%s", name);
         } else {
@@ -377,7 +447,7 @@ void GrGLShaderBuilder::addVarying(GrSLType type,
     }
     fFSInputs.push_back();
     fFSInputs.back().setType(type);
-    fFSInputs.back().setTypeModifier(GrGLShaderVar::kIn_TypeModifier);
+    fFSInputs.back().setTypeModifier(GrGLShaderVar::kVaryingIn_TypeModifier);
     fFSInputs.back().setName(*fsName);
     if (fsInName) {
         *fsInName = fsName->c_str();
@@ -388,9 +458,7 @@ const char* GrGLShaderBuilder::fragmentPosition() {
 #if 1
     if (fCtxInfo.caps()->fragCoordConventionsSupport()) {
         if (!fSetupFragPosition) {
-            if (fCtxInfo.glslGeneration() < k150_GrGLSLGeneration) {
-                fFSHeader.append("#extension GL_ARB_fragment_coord_conventions: require\n");
-            }
+            SkAssertResult(this->enablePrivateFeature(kFragCoordConventions_GLSLPrivateFeature));
             fFSInputs.push_back().set(kVec4f_GrSLType,
                                       GrGLShaderVar::kIn_TypeModifier,
                                       "gl_FragCoord",
@@ -445,13 +513,13 @@ void GrGLShaderBuilder::emitFunction(ShaderType shader,
                                      const char* body,
                                      SkString* outName) {
     GrAssert(kFragment_ShaderType == shader);
-    fFSFunctions.append(GrGLShaderVar::TypeString(returnType));
+    fFSFunctions.append(GrGLSLTypeString(returnType));
     if (kNonStageIdx != fCurrentStageIdx) {
-        outName->printf(" %s_%d", name, fCurrentStageIdx);
+        outName->printf("%s_%d", name, fCurrentStageIdx);
     } else {
         *outName = name;
     }
-    fFSFunctions.append(*outName);
+    fFSFunctions.appendf(" %s", outName->c_str());
     fFSFunctions.append("(");
     for (int i = 0; i < argCnt; ++i) {
         args[i].appendDecl(fCtxInfo, &fFSFunctions);
@@ -507,9 +575,11 @@ void GrGLShaderBuilder::appendUniformDecls(ShaderType stype, SkString* out) cons
 }
 
 void GrGLShaderBuilder::getShader(ShaderType type, SkString* shaderStr) const {
+    const char* version = GrGetGLSLVersionDecl(fCtxInfo.binding(), fCtxInfo.glslGeneration());
+
     switch (type) {
         case kVertex_ShaderType:
-            *shaderStr = fHeader;
+            *shaderStr = version;
             this->appendUniformDecls(kVertex_ShaderType, shaderStr);
             this->appendDecls(fVSAttrs, shaderStr);
             this->appendDecls(fVSOutputs, shaderStr);
@@ -519,7 +589,7 @@ void GrGLShaderBuilder::getShader(ShaderType type, SkString* shaderStr) const {
             break;
         case kGeometry_ShaderType:
             if (fUsesGS) {
-                *shaderStr = fHeader;
+                *shaderStr = version;
                 shaderStr->append(fGSHeader);
                 this->appendDecls(fGSInputs, shaderStr);
                 this->appendDecls(fGSOutputs, shaderStr);
@@ -531,11 +601,11 @@ void GrGLShaderBuilder::getShader(ShaderType type, SkString* shaderStr) const {
             }
             break;
         case kFragment_ShaderType:
-            *shaderStr = fHeader;
+            *shaderStr = version;
+            shaderStr->append(fFSExtensions);
             append_default_precision_qualifier(kDefaultFragmentPrecision,
                                                fCtxInfo.binding(),
                                                shaderStr);
-            shaderStr->append(fFSHeader);
             this->appendUniformDecls(kFragment_ShaderType, shaderStr);
             this->appendDecls(fFSInputs, shaderStr);
             // We shouldn't have declared outputs on 1.10

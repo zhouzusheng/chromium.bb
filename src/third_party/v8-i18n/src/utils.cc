@@ -125,8 +125,6 @@ void Utils::AsciiToUChar(const char* source,
 // Chrome Linux doesn't like static initializers in class, so we create
 // template on demand.
 v8::Persistent<v8::ObjectTemplate> Utils::GetTemplate(v8::Isolate* isolate) {
-  v8::HandleScope handle_scope;
-
   static v8::Persistent<v8::ObjectTemplate> icu_template;
 
   if (icu_template.IsEmpty()) {
@@ -146,8 +144,6 @@ v8::Persistent<v8::ObjectTemplate> Utils::GetTemplate(v8::Isolate* isolate) {
 // Chrome Linux doesn't like static initializers in class, so we create
 // template on demand. This one has 2 internal fields.
 v8::Persistent<v8::ObjectTemplate> Utils::GetTemplate2(v8::Isolate* isolate) {
-  v8::HandleScope handle_scope;
-
   static v8::Persistent<v8::ObjectTemplate> icu_template_2;
 
   if (icu_template_2.IsEmpty()) {

@@ -91,7 +91,7 @@ class MediaEngineInterface {
 
   // Initialization
   // Starts the engine.
-  virtual bool Init() = 0;
+  virtual bool Init(talk_base::Thread* worker_thread) = 0;
   // Shuts down the engine.
   virtual void Terminate() = 0;
   // Returns what the engine is capable of, as a set of Capabilities, above.
@@ -191,10 +191,10 @@ class CompositeMediaEngine : public MediaEngineInterface {
  public:
   CompositeMediaEngine() {}
   virtual ~CompositeMediaEngine() {}
-  virtual bool Init() {
-    if (!voice_.Init())
+  virtual bool Init(talk_base::Thread* worker_thread) {
+    if (!voice_.Init(worker_thread))
       return false;
-    if (!video_.Init()) {
+    if (!video_.Init(worker_thread)) {
       voice_.Terminate();
       return false;
     }
@@ -317,7 +317,7 @@ class CompositeMediaEngine : public MediaEngineInterface {
 // a video engine is desired.
 class NullVoiceEngine {
  public:
-  bool Init() { return true; }
+  bool Init(talk_base::Thread* worker_thread) { return true; }
   void Terminate() {}
   int GetCapabilities() { return 0; }
   // If you need this to return an actual channel, use FakeMediaEngine instead.
@@ -360,7 +360,7 @@ class NullVoiceEngine {
 // a voice engine is desired.
 class NullVideoEngine {
  public:
-  bool Init() { return true; }
+  bool Init(talk_base::Thread* worker_thread) { return true; }
   void Terminate() {}
   int GetCapabilities() { return 0; }
   // If you need this to return an actual channel, use FakeMediaEngine instead.
@@ -396,7 +396,9 @@ typedef CompositeMediaEngine<NullVoiceEngine, NullVideoEngine> NullMediaEngine;
 class DataEngineInterface {
  public:
   virtual ~DataEngineInterface() {}
-  virtual DataMediaChannel* CreateChannel() = 0;
+  // codec_name == "" means use the default codec.
+  virtual DataMediaChannel* CreateChannel(
+      const std::string& codec_name) = 0;
   virtual const std::vector<DataCodec>& data_codecs() = 0;
 };
 

@@ -7,9 +7,11 @@
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "build/build_config.h"
+#include "media/audio/audio_silence_detector.h"
 #include "media/audio/audio_util.h"
 #include "media/audio/shared_memory_util.h"
 
@@ -17,6 +19,17 @@ using base::Time;
 using base::TimeDelta;
 
 namespace media {
+
+// Amount of contiguous time where all audio is silent before considering the
+// stream to have transitioned and EventHandler::OnAudible() should be called.
+static const int kQuestionableSilencePeriodMillis = 50;
+
+// Sample value range below which audio is considered indistinguishably silent.
+//
+// TODO(miu): This value should be specified in dbFS units rather than full
+// scale.  See TODO in audio_silence_detector.h.
+static const float kIndistinguishableSilenceThreshold =
+    1.0f / 4096.0f;  // Note: This is approximately -72 dbFS.
 
 // Polling-related constants.
 const int AudioOutputController::kPollNumAttempts = 3;
@@ -37,7 +50,7 @@ AudioOutputController::AudioOutputController(AudioManager* audio_manager,
       sync_reader_(sync_reader),
       message_loop_(audio_manager->GetMessageLoop()),
       number_polling_attempts_left_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_this_(this)) {
+      weak_this_(this) {
   DCHECK(audio_manager);
   DCHECK(handler_);
   DCHECK(sync_reader_);
@@ -77,11 +90,6 @@ void AudioOutputController::Pause() {
       &AudioOutputController::DoPause, this));
 }
 
-void AudioOutputController::Flush() {
-  message_loop_->PostTask(FROM_HERE, base::Bind(
-      &AudioOutputController::DoFlush, this));
-}
-
 void AudioOutputController::Close(const base::Closure& closed_task) {
   DCHECK(!closed_task.is_null());
   message_loop_->PostTaskAndReply(FROM_HERE, base::Bind(
@@ -107,14 +115,14 @@ void AudioOutputController::DoCreate(bool is_for_device_change) {
       audio_manager_->MakeAudioOutputStreamProxy(params_);
   if (!stream_) {
     state_ = kError;
-    handler_->OnError(this);
+    handler_->OnError();
     return;
   }
 
   if (!stream_->Open()) {
     DoStopCloseAndClearStream();
     state_ = kError;
-    handler_->OnError(this);
+    handler_->OnError();
     return;
   }
 
@@ -131,7 +139,7 @@ void AudioOutputController::DoCreate(bool is_for_device_change) {
 
   // And then report we have been created if we haven't done so already.
   if (!is_for_device_change)
-    handler_->OnCreated(this);
+    handler_->OnCreated();
 }
 
 void AudioOutputController::DoPlay() {
@@ -181,12 +189,20 @@ void AudioOutputController::StartStream() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   state_ = kPlaying;
 
+  silence_detector_.reset(new AudioSilenceDetector(
+      params_.sample_rate(),
+      TimeDelta::FromMilliseconds(kQuestionableSilencePeriodMillis),
+      kIndistinguishableSilenceThreshold));
+
   // We start the AudioOutputStream lazily.
   AllowEntryToOnMoreIOData();
   stream_->Start(this);
 
-  // Tell the event handler that we are now playing.
-  handler_->OnPlaying(this);
+  // Tell the event handler that we are now playing, and also start the silence
+  // detection notifications.
+  handler_->OnPlaying();
+  silence_detector_->Start(
+      base::Bind(&EventHandler::OnAudible, base::Unretained(handler_)));
 }
 
 void AudioOutputController::StopStream() {
@@ -199,6 +215,8 @@ void AudioOutputController::StopStream() {
   } else if (state_ == kPlaying) {
     stream_->Stop();
     DisallowEntryToOnMoreIOData();
+    silence_detector_->Stop(true);
+    silence_detector_.reset();
     state_ = kPaused;
   }
 }
@@ -214,13 +232,7 @@ void AudioOutputController::DoPause() {
   // Send a special pause mark to the low-latency audio thread.
   sync_reader_->UpdatePendingBytes(kPauseMark);
 
-  handler_->OnPaused(this);
-}
-
-void AudioOutputController::DoFlush() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-
-  // TODO(hclam): Actually flush the audio device.
+  handler_->OnPaused();
 }
 
 void AudioOutputController::DoClose() {
@@ -255,7 +267,7 @@ void AudioOutputController::DoSetVolume(double volume) {
 void AudioOutputController::DoReportError() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   if (state_ != kClosed)
-    handler_->OnError(this);
+    handler_->OnError();
 }
 
 int AudioOutputController::OnMoreData(AudioBus* dest,
@@ -284,20 +296,43 @@ int AudioOutputController::OnMoreIOData(AudioBus* source,
   sync_reader_->UpdatePendingBytes(
       buffers_state.total_bytes() + frames * params_.GetBytesPerFrame());
 
+  silence_detector_->Scan(dest, frames);
+
   AllowEntryToOnMoreIOData();
   return frames;
 }
 
 void AudioOutputController::WaitTillDataReady() {
-  base::Time start = base::Time::Now();
+  // Most of the time the data is ready already.
+  if (sync_reader_->DataReady())
+    return;
+
+  base::TimeTicks start = base::TimeTicks::Now();
+#if defined(OS_WIN)
   // Wait for up to 683ms for DataReady().  683ms was chosen because it's larger
   // than the playback time of the WaveOut buffer size using the minimum
   // supported sample rate: 2048 / 3000 = ~683ms.
+  // TODO(davemoore): We think this can be reduced to 20ms based on
+  // http://crrev.com/180102 but will do that in separate cl for mergability.
   const base::TimeDelta kMaxWait = base::TimeDelta::FromMilliseconds(683);
-  while (!sync_reader_->DataReady() &&
-         ((base::Time::Now() - start) < kMaxWait)) {
-    base::PlatformThread::YieldCurrentThread();
-  }
+  const base::TimeDelta kSleep = base::TimeDelta::FromMilliseconds(0);
+#else
+  const base::TimeDelta kMaxWait = base::TimeDelta::FromMilliseconds(20);
+  // We want to sleep for a bit here, as otherwise a backgrounded renderer won't
+  // get enough cpu to send the data and the high priority thread in the browser
+  // will use up a core causing even more skips.
+  const base::TimeDelta kSleep = base::TimeDelta::FromMilliseconds(2);
+#endif
+  base::TimeDelta time_since_start;
+  do {
+    base::PlatformThread::Sleep(kSleep);
+    time_since_start = base::TimeTicks::Now() - start;
+  } while (!sync_reader_->DataReady() && (time_since_start < kMaxWait));
+  UMA_HISTOGRAM_CUSTOM_TIMES("Media.AudioOutputControllerDataNotReady",
+                             time_since_start,
+                             base::TimeDelta::FromMilliseconds(1),
+                             base::TimeDelta::FromMilliseconds(1000),
+                             50);
 }
 
 void AudioOutputController::OnError(AudioOutputStream* stream) {

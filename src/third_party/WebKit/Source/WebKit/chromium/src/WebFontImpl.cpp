@@ -31,18 +31,17 @@
 #include "config.h"
 #include "WebFontImpl.h"
 
-#include "Font.h"
-#include "FontCache.h"
-#include "FontDescription.h"
-#include "GraphicsContext.h"
-#include "painting/GraphicsContextBuilder.h"
-#include "TextRun.h"
+#include <skia/ext/platform_canvas.h>
 #include "WebFontDescription.h"
 #include "WebTextRun.h"
+#include "core/platform/graphics/Font.h"
+#include "core/platform/graphics/FontCache.h"
+#include "core/platform/graphics/FontDescription.h"
+#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/TextRun.h"
 #include <public/WebFloatPoint.h>
 #include <public/WebFloatRect.h>
 #include <public/WebRect.h>
-#include <skia/ext/platform_canvas.h>
 
 using namespace WebCore;
 
@@ -94,9 +93,7 @@ void WebFontImpl::drawText(WebCanvas* canvas, const WebTextRun& run, const WebFl
                            int from, int to) const
 {
     FontCachePurgePreventer fontCachePurgePreventer;
-
-    GraphicsContextBuilder builder(canvas);
-    GraphicsContext& gc = builder.context();
+    GraphicsContext gc(canvas);
 
     gc.save();
     gc.setShouldSmoothFonts(canvasIsOpaque);

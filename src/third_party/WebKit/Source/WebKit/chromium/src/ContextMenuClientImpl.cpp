@@ -32,31 +32,7 @@
 #include "ContextMenuClientImpl.h"
 
 #include "CSSPropertyNames.h"
-#include "CSSStyleDeclaration.h"
-#include "ContextMenu.h"
-#include "ContextMenuController.h"
-#include "Document.h"
-#include "DocumentLoader.h"
-#include "DocumentMarkerController.h"
-#include "Editor.h"
-#include "EventHandler.h"
-#include "ExceptionCodePlaceholder.h"
-#include "FrameLoader.h"
-#include "FrameView.h"
-#include "HTMLFormElement.h"
-#include "HTMLInputElement.h"
-#include "HTMLMediaElement.h"
 #include "HTMLNames.h"
-#include "HTMLPlugInImageElement.h"
-#include "HistoryItem.h"
-#include "HitTestResult.h"
-#include "KURL.h"
-#include "MediaError.h"
-#include "Page.h"
-#include "RenderWidget.h"
-#include "Settings.h"
-#include "TextBreakIterator.h"
-#include "Widget.h"
 #include "WebContextMenuData.h"
 #include "WebDataSourceImpl.h"
 #include "WebFormElement.h"
@@ -68,6 +44,30 @@
 #include "WebSpellCheckClient.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
+#include "core/css/CSSStyleDeclaration.h"
+#include "core/dom/Document.h"
+#include "core/dom/DocumentMarkerController.h"
+#include "core/dom/ExceptionCodePlaceholder.h"
+#include "core/editing/Editor.h"
+#include "core/history/HistoryItem.h"
+#include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLInputElement.h"
+#include "core/html/HTMLMediaElement.h"
+#include "core/html/HTMLPlugInImageElement.h"
+#include "core/html/MediaError.h"
+#include "core/loader/DocumentLoader.h"
+#include "core/loader/FrameLoader.h"
+#include "core/page/ContextMenuController.h"
+#include "core/page/EventHandler.h"
+#include "core/page/FrameView.h"
+#include "core/page/Page.h"
+#include "core/page/Settings.h"
+#include "core/platform/ContextMenu.h"
+#include "core/platform/KURL.h"
+#include "core/platform/Widget.h"
+#include "core/platform/text/TextBreakIterator.h"
+#include "core/rendering/HitTestResult.h"
+#include "core/rendering/RenderWidget.h"
 #include <public/WebPoint.h>
 #include <public/WebString.h>
 #include <public/WebURL.h>
@@ -121,7 +121,7 @@ static String selectMisspelledWord(const ContextMenu* defaultMenu, Frame* select
 
     // Selection is empty, so change the selection to the word under the cursor.
     HitTestResult hitTestResult = selectedFrame->eventHandler()->
-        hitTestResultAtPoint(selectedFrame->page()->contextMenuController()->hitTestResult().pointInInnerNodeFrame(), HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::AllowShadowContent);
+        hitTestResultAtPoint(selectedFrame->page()->contextMenuController()->hitTestResult().pointInInnerNodeFrame(), HitTestRequest::ReadOnly | HitTestRequest::Active);
     Node* innerNode = hitTestResult.innerNode();
     VisiblePosition pos(innerNode->renderer()->positionForPoint(
         hitTestResult.localPoint()));
@@ -178,8 +178,7 @@ static String selectMisspellingAsync(Frame* selectedFrame, DocumentMarker& marke
     return markerRange->text();
 }
 
-PlatformMenuDescription ContextMenuClientImpl::getCustomMenuFromDefaultItems(
-    ContextMenu* defaultMenu)
+PassOwnPtr<WebCore::ContextMenu> ContextMenuClientImpl::customizeMenu(PassOwnPtr<WebCore::ContextMenu> defaultMenu)
 {
     // Displaying the context menu in this function is a big hack as we don't
     // have context, i.e. whether this is being invoked via a script or in
@@ -187,7 +186,7 @@ PlatformMenuDescription ContextMenuClientImpl::getCustomMenuFromDefaultItems(
     // Keyboard events KeyVK_APPS, Shift+F10). Check if this is being invoked
     // in response to the above input events before popping up the context menu.
     if (!m_webView->contextMenuAllowed())
-        return 0;
+        return defaultMenu;
 
     HitTestResult r = m_webView->page()->contextMenuController()->hitTestResult();
     Frame* selectedFrame = r.innerNodeFrame();
@@ -313,6 +312,7 @@ PlatformMenuDescription ContextMenuClientImpl::getCustomMenuFromDefaultItems(
         if (selectedFrame->settings() && selectedFrame->settings()->asynchronousSpellCheckingEnabled()) {
             DocumentMarker marker;
             data.misspelledWord = selectMisspellingAsync(selectedFrame, marker);
+            data.misspellingHash = marker.hash();
             if (marker.description().length()) {
                 Vector<String> suggestions;
                 marker.description().split('\n', suggestions);
@@ -326,7 +326,7 @@ PlatformMenuDescription ContextMenuClientImpl::getCustomMenuFromDefaultItems(
                 m_webView->focusedWebCoreFrame()->editor()->isContinuousSpellCheckingEnabled();
             // Spellchecking might be enabled for the field, but could be disabled on the node.
             if (m_webView->focusedWebCoreFrame()->editor()->isSpellCheckingEnabledInFocusedNode()) {
-                data.misspelledWord = selectMisspelledWord(defaultMenu, selectedFrame);
+                data.misspelledWord = selectMisspelledWord(defaultMenu.get(), selectedFrame);
                 if (m_webView->spellCheckClient()) {
                     int misspelledOffset, misspelledLength;
                     m_webView->spellCheckClient()->spellCheck(
@@ -338,7 +338,7 @@ PlatformMenuDescription ContextMenuClientImpl::getCustomMenuFromDefaultItems(
             }
         }
         HTMLFormElement* form = selectedFrame->selection()->currentForm();
-        if (form && form->checkValidity() && r.innerNonSharedNode()->hasTagName(HTMLNames::inputTag)) {
+        if (form && r.innerNonSharedNode()->hasTagName(HTMLNames::inputTag)) {
             HTMLInputElement* selectedElement = static_cast<HTMLInputElement*>(r.innerNonSharedNode());
             if (selectedElement) {
                 WebSearchableFormData ws = WebSearchableFormData(WebFormElement(form), WebInputElement(selectedElement));
@@ -364,7 +364,7 @@ PlatformMenuDescription ContextMenuClientImpl::getCustomMenuFromDefaultItems(
     data.referrerPolicy = static_cast<WebReferrerPolicy>(selectedFrame->document()->referrerPolicy());
 
     // Filter out custom menu elements and add them into the data.
-    populateCustomMenuItems(defaultMenu, &data);
+    populateCustomMenuItems(defaultMenu.get(), &data);
 
     data.node = r.innerNonSharedNode();
 
@@ -372,14 +372,14 @@ PlatformMenuDescription ContextMenuClientImpl::getCustomMenuFromDefaultItems(
     if (m_webView->client())
         m_webView->client()->showContextMenu(selected_web_frame, data);
 
-    return 0;
+    return defaultMenu;
 }
 
-static void populateSubMenuItems(PlatformMenuDescription inputMenu, WebVector<WebMenuItemInfo>& subMenuItems)
+static void populateSubMenuItems(const Vector<ContextMenuItem>& inputMenu, WebVector<WebMenuItemInfo>& subMenuItems)
 {
     Vector<WebMenuItemInfo> subItems;
-    for (size_t i = 0; i < inputMenu->size(); ++i) {
-        const ContextMenuItem* inputItem = &inputMenu->at(i);
+    for (size_t i = 0; i < inputMenu.size(); ++i) {
+        const ContextMenuItem* inputItem = &inputMenu.at(i);
         if (inputItem->action() < ContextMenuItemBaseCustomTag || inputItem->action() > ContextMenuItemLastCustomTag)
             continue;
 
@@ -400,7 +400,7 @@ static void populateSubMenuItems(PlatformMenuDescription inputMenu, WebVector<We
             break;
         case SubmenuType:
             outputItem.type = WebMenuItemInfo::SubMenu;
-            populateSubMenuItems(inputItem->platformSubMenu(), outputItem.subMenuItems);
+            populateSubMenuItems(inputItem->subMenuItems(), outputItem.subMenuItems);
             break;
         }
         subItems.append(outputItem);
@@ -414,7 +414,7 @@ static void populateSubMenuItems(PlatformMenuDescription inputMenu, WebVector<We
 
 void ContextMenuClientImpl::populateCustomMenuItems(WebCore::ContextMenu* defaultMenu, WebContextMenuData* data)
 {
-    populateSubMenuItems(defaultMenu->platformDescription(), data->customItems);
+    populateSubMenuItems(defaultMenu->items(), data->customItems);
 }
 
 } // namespace WebKit

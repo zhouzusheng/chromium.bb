@@ -31,13 +31,11 @@
 #include "config.h"
 #include "WebStorageQuotaCallbacksImpl.h"
 
-#if ENABLE(QUOTA)
-
-#include "DOMCoreException.h"
-#include "ExceptionCode.h"
-#include "StorageErrorCallback.h"
-#include "StorageQuotaCallback.h"
-#include "StorageUsageCallback.h"
+#include "core/dom/DOMCoreException.h"
+#include "core/dom/ExceptionCode.h"
+#include "modules/quota/StorageErrorCallback.h"
+#include "modules/quota/StorageQuotaCallback.h"
+#include "modules/quota/StorageUsageCallback.h"
 
 using namespace WebCore;
 
@@ -83,5 +81,3 @@ void WebStorageQuotaCallbacksImpl::didFail(WebStorageQuotaError error)
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(QUOTA)

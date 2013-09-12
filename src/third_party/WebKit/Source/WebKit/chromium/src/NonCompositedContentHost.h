@@ -26,8 +26,8 @@
 #ifndef NonCompositedContentHost_h
 #define NonCompositedContentHost_h
 
-#include "GraphicsLayerClient.h"
-#include "IntSize.h"
+#include "core/platform/graphics/GraphicsLayerClient.h"
+#include "core/platform/graphics/IntSize.h"
 
 #include <public/WebLayer.h>
 #include <wtf/Noncopyable.h>
@@ -70,7 +70,6 @@ protected:
 private:
     // GraphicsLayerClient
     virtual void notifyAnimationStarted(const WebCore::GraphicsLayer*, double time);
-    virtual void notifyFlushRequired(const WebCore::GraphicsLayer*);
     virtual void paintContents(const WebCore::GraphicsLayer*, WebCore::GraphicsContext&, WebCore::GraphicsLayerPaintingPhase, const WebCore::IntRect& clipRect);
     virtual bool isTrackingRepaints() const;
 

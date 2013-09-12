@@ -128,12 +128,13 @@ class FunctionTemplateInfo;
 class MemoryChunk;
 class SeededNumberDictionary;
 class UnseededNumberDictionary;
-class StringDictionary;
+class NameDictionary;
 template <typename T> class Handle;
 class Heap;
 class HeapObject;
 class IC;
 class InterceptorInfo;
+class JSReceiver;
 class JSArray;
 class JSFunction;
 class JSObject;
@@ -155,13 +156,12 @@ class Smi;
 template <typename Config, class Allocator = FreeStoreAllocationPolicy>
     class SplayTree;
 class String;
+class Name;
 class Struct;
 class Variable;
 class RelocInfo;
 class Deserializer;
 class MessageLocation;
-class ObjectGroup;
-class TickSample;
 class VirtualMemory;
 class Mutex;
 
@@ -276,6 +276,7 @@ enum InlineCacheState {
 enum CheckType {
   RECEIVER_MAP_CHECK,
   STRING_CHECK,
+  SYMBOL_CHECK,
   NUMBER_CHECK,
   BOOLEAN_CHECK
 };
@@ -361,7 +362,6 @@ enum StateTag {
   JS,
   GC,
   COMPILER,
-  PARALLEL_COMPILER,
   OTHER,
   EXTERNAL
 };
@@ -430,11 +430,10 @@ enum CpuFeature { SSE4_1 = 32 + 19,  // x86
                   CPUID = 10,  // x86
                   VFP3 = 1,    // ARM
                   ARMv7 = 2,   // ARM
-                  VFP2 = 3,    // ARM
-                  SUDIV = 4,   // ARM
-                  UNALIGNED_ACCESSES = 5,  // ARM
-                  MOVW_MOVT_IMMEDIATE_LOADS = 6,  // ARM
-                  VFP32DREGS = 7,  // ARM
+                  SUDIV = 3,   // ARM
+                  UNALIGNED_ACCESSES = 4,  // ARM
+                  MOVW_MOVT_IMMEDIATE_LOADS = 5,  // ARM
+                  VFP32DREGS = 6,  // ARM
                   SAHF = 0,    // x86
                   FPU = 1};    // MIPS
 
@@ -493,8 +492,8 @@ enum VariableMode {
   INTERNAL,        // like VAR, but not user-visible (may or may not
                    // be in a context)
 
-  TEMPORARY,       // temporary variables (not user-visible), never
-                   // in a context
+  TEMPORARY,       // temporary variables (not user-visible), stack-allocated
+                   // unless the scope as a whole has forced context allocation
 
   DYNAMIC,         // always require dynamic lookup (we don't know
                    // the declaration)

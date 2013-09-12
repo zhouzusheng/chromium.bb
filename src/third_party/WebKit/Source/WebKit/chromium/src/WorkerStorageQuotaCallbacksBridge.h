@@ -31,17 +31,15 @@
 #ifndef WorkerStorageQuotaCallbacksBridge_h
 #define WorkerStorageQuotaCallbacksBridge_h
 
-#if ENABLE(QUOTA) && ENABLE(WORKERS)
-
-#include "ScriptExecutionContext.h"
-#include "StorageArea.h"
 #include <WebStorageQuotaError.h>
 #include <WebStorageQuotaType.h>
+#include "core/dom/ScriptExecutionContext.h"
+#include "core/storage/StorageArea.h"
 #include <public/WebVector.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/PassRefPtr.h>
-#include <wtf/Threading.h>
 #include <wtf/text/WTFString.h>
+#include <wtf/Threading.h>
 
 namespace WebCore {
 class WorkerLoaderProxy;
@@ -118,7 +116,5 @@ private:
 };
 
 } // namespace WebCore
-
-#endif
 
 #endif // WorkerStorageQuotaCallbacksBridge_h

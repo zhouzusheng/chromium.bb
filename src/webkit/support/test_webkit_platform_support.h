@@ -29,6 +29,7 @@ class ContextProvider;
 
 namespace WebKit {
 class WebAudioDevice;
+class WebGraphicsContext3DProvider;
 class WebLayerTreeView;
 }
 
@@ -90,6 +91,8 @@ class TestWebKitPlatformSupport :
       const WebKit::WebGraphicsContext3D::Attributes&);
   virtual WebKit::WebGraphicsContext3D* sharedOffscreenGraphicsContext3D();
   virtual GrContext* sharedOffscreenGrContext();
+  virtual WebKit::WebGraphicsContext3DProvider*
+      createSharedOffscreenGraphicsContext3DProvider();
   virtual bool canAccelerate2dCanvas();
   virtual bool isThreadedCompositingEnabled();
 
@@ -119,7 +122,7 @@ class TestWebKitPlatformSupport :
   virtual void sampleGamepads(WebKit::WebGamepads& data);
   void setGamepadData(const WebKit::WebGamepads& data);
 
-  virtual string16 GetLocalizedString(int message_id) OVERRIDE;
+  virtual base::string16 GetLocalizedString(int message_id) OVERRIDE;
   virtual base::StringPiece GetDataResource(
       int resource_id,
       ui::ScaleFactor scale_factor) OVERRIDE;

@@ -72,7 +72,8 @@ ShellWebContentsViewDelegate::~ShellWebContentsViewDelegate() {
 void ShellWebContentsViewDelegate::ShowContextMenu(
     const ContextMenuParams& params,
     ContextMenuSourceType type) {
-  // SHEZ: Remove upstream DumpRenderTree code here, used only for testing.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
+    return;
 
   params_ = params;
   bool has_link = !params_.unfiltered_link_url.is_empty();
@@ -204,8 +205,7 @@ void ShellWebContentsViewDelegate::MenuItemSelected(int selection) {
       break;
     case ShellContextMenuItemOpenLinkId: {
       ShellBrowserContext* browser_context =
-          static_cast<ShellContentBrowserClient*>(
-            GetContentClient()->browser())->browser_context();
+          ShellContentBrowserClient::Get()->browser_context();
       Shell::CreateNewWindow(browser_context,
                              params_.link_url,
                              NULL,

@@ -19,8 +19,9 @@ ShellResourceDispatcherHostDelegate::~ShellResourceDispatcherHostDelegate() {
 bool ShellResourceDispatcherHostDelegate::AcceptAuthRequest(
     net::URLRequest* request,
     net::AuthChallengeInfo* auth_info) {
-  // SHEZ: Remove upstream DumpRenderTree code here, used only for testing.
-  return true;
+  bool accept_auth_request =
+      !CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree);
+  return accept_auth_request;
 }
 
 ResourceDispatcherHostLoginDelegate*

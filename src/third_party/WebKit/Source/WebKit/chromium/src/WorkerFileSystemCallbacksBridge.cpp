@@ -31,18 +31,16 @@
 #include "config.h"
 #include "WorkerFileSystemCallbacksBridge.h"
 
-#if ENABLE(FILE_SYSTEM) && ENABLE(WORKERS)
-
-#include "BlobData.h"
-#include "CrossThreadTask.h"
-#include "KURL.h"
 #include "WebCommonWorkerClient.h"
 #include "WebFileSystemCallbacksImpl.h"
 #include "WebWorkerBase.h"
-#include "WorkerContext.h"
-#include "WorkerLoaderProxy.h"
-#include "WorkerScriptController.h"
-#include "WorkerThread.h"
+#include "bindings/v8/WorkerScriptController.h"
+#include "core/dom/CrossThreadTask.h"
+#include "core/platform/KURL.h"
+#include "core/platform/network/BlobData.h"
+#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerLoaderProxy.h"
+#include "core/workers/WorkerThread.h"
 #include <public/WebFileInfo.h>
 #include <public/WebFileSystemEntry.h>
 #include <public/WebString.h>
@@ -489,5 +487,3 @@ void WorkerFileSystemCallbacksBridge::mayPostTaskToWorker(PassOwnPtr<ScriptExecu
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(FILE_SYSTEM)

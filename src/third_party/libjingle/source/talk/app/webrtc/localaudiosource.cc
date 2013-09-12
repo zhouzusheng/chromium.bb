@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "talk/media/base/mediaengine.h"
+#include "talk/app/webrtc/mediaconstraintsinterface.h"
 
 using webrtc::MediaConstraintsInterface;
 using webrtc::MediaSourceInterface;
@@ -37,7 +38,7 @@ using webrtc::MediaSourceInterface;
 namespace webrtc {
 
 // Constraint keys.
-// They are declared as static members in mediastreaminterface.h
+// They are declared as static members in mediaconstraintsinterface.h
 const char MediaConstraintsInterface::kEchoCancellation[] =
     "googEchoCancellation";
 const char MediaConstraintsInterface::kAutoGainControl[] =
@@ -51,18 +52,6 @@ const char MediaConstraintsInterface::kHighpassFilter[] =
 
 namespace {
 
-// Convert constraint value to a boolean. Return false if the value
-// is invalid.
-bool FromConstraint(const std::string& value, bool* output) {
-  if (value == MediaConstraintsInterface::kValueTrue)
-    *output = true;
-  else if (value == MediaConstraintsInterface::kValueFalse)
-    *output = false;
-  else
-    return false;
-  return true;
-}
-
 // Convert constraints to audio options. Return false if constraints are
 // invalid.
 bool FromConstraints(const MediaConstraintsInterface::Constraints& constraints,
@@ -70,10 +59,14 @@ bool FromConstraints(const MediaConstraintsInterface::Constraints& constraints,
   bool success = true;
   MediaConstraintsInterface::Constraints::const_iterator iter;
 
+  // This design relies on the fact that all the audio constraints are actually
+  // "options", i.e. boolean-valued and always satisfiable.  If the constraints
+  // are extended to include non-boolean values or actual format constraints,
+  // a different algorithm will be required.
   for (iter = constraints.begin(); iter != constraints.end(); ++iter) {
     bool value = false;
 
-    if (!FromConstraint(iter->value, &value)) {
+    if (!talk_base::FromString(iter->value, &value)) {
       success = false;
       continue;
     }

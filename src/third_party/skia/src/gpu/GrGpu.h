@@ -78,8 +78,7 @@ public:
      *
      * If kRenderTarget_TextureFlag is specified the GrRenderTarget is
      * accessible via GrTexture::asRenderTarget(). The texture will hold a ref
-     * on the render target until its releaseRenderTarget() is called or it is
-     * destroyed.
+     * on the render target until the texture is destroyed.
      *
      * @param desc        describes the texture to be created.
      * @param srcData     texel data to load texture. Begins with full-size
@@ -139,13 +138,6 @@ public:
      * @ return the quad index buffer
      */
     const GrIndexBuffer* getQuadIndexBuffer() const;
-
-    /**
-     * Returns a vertex buffer with four position-only vertices [(0,0), (1,0),
-     * (1,1), (0,1)].
-     * @ return unit square vertex buffer
-     */
-    const GrVertexBuffer* getUnitSquareVertexBuffer() const;
 
     /**
      * Resolves MSAA.
@@ -529,7 +521,6 @@ private:
     int                                                                 fVertexPoolUseCnt;
     int                                                                 fIndexPoolUseCnt;
     // these are mutable so they can be created on-demand
-    mutable GrVertexBuffer*                                             fUnitSquareVertexBuffer;
     mutable GrIndexBuffer*                                              fQuadIndexBuffer;
     bool                                                                fContextIsDirty;
     // Used to abandon/release all resources created by this GrGpu. TODO: Move this 

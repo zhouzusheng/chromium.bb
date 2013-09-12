@@ -31,12 +31,12 @@
 #ifndef WebInputEventConversion_h
 #define WebInputEventConversion_h
 
-#include "PlatformGestureEvent.h"
-#include "PlatformKeyboardEvent.h"
-#include "PlatformMouseEvent.h"
-#include "PlatformTouchEvent.h"
-#include "PlatformWheelEvent.h"
 #include "WebInputEvent.h"
+#include "core/platform/PlatformGestureEvent.h"
+#include "core/platform/PlatformKeyboardEvent.h"
+#include "core/platform/PlatformMouseEvent.h"
+#include "core/platform/PlatformTouchEvent.h"
+#include "core/platform/PlatformWheelEvent.h"
 
 namespace WebCore {
 class GestureEvent;
@@ -70,12 +70,10 @@ public:
     PlatformWheelEventBuilder(WebCore::Widget*, const WebMouseWheelEvent&);
 };
 
-#if ENABLE(GESTURE_EVENTS)
 class PlatformGestureEventBuilder : public WebCore::PlatformGestureEvent {
 public:
     PlatformGestureEventBuilder(WebCore::Widget*, const WebGestureEvent&);
 };
-#endif
 
 class PlatformKeyboardEventBuilder : public WebCore::PlatformKeyboardEvent {
 public:
@@ -84,7 +82,6 @@ public:
     bool isCharacterKey() const;
 };
 
-#if ENABLE(TOUCH_EVENTS)
 // Converts a WebTouchPoint to a WebCore::PlatformTouchPoint.
 class PlatformTouchPointBuilder : public WebCore::PlatformTouchPoint {
 public:
@@ -96,7 +93,6 @@ class PlatformTouchEventBuilder : public WebCore::PlatformTouchEvent {
 public:
     PlatformTouchEventBuilder(WebCore::Widget*, const WebTouchEvent&);
 };
-#endif
 
 // Converts a WebCore::MouseEvent to a corresponding WebMouseEvent.
 // NOTE: This is only implemented for mousemove, mouseover, mouseout,
@@ -123,7 +119,6 @@ public:
     WebKeyboardEventBuilder(const WebCore::KeyboardEvent&);
 };
 
-#if ENABLE(TOUCH_EVENTS)
 // Converts a WebCore::TouchEvent to a corresponding WebTouchEvent.
 // NOTE: WebTouchEvents have a cap on the number of WebTouchPoints. Any points
 // exceeding that cap will be dropped.
@@ -131,16 +126,13 @@ class WebTouchEventBuilder : public WebTouchEvent {
 public:
     WebTouchEventBuilder(const WebCore::Widget*, const WebCore::RenderObject*, const WebCore::TouchEvent&);
 };
-#endif // ENABLE(TOUCH_EVENTS)
 
-#if ENABLE(GESTURE_EVENTS)
 // Converts WebCore::GestureEvent to a corresponding WebGestureEvent.
 // NOTE: If event mapping fails, the type will be set to Undefined.
 class WebGestureEventBuilder : public WebGestureEvent {
 public:
     WebGestureEventBuilder(const WebCore::Widget*, const WebCore::RenderObject*, const WebCore::GestureEvent&);
 };
-#endif // ENABLE(GESTURE_EVENTS)
 
 } // namespace WebKit
 

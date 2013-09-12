@@ -29,9 +29,9 @@
  */
 
 #include "WebWorkerBase.h"
-#include "CrossThreadTask.h"
-#include "CrossThreadCopier.h"
-#include "WorkerContext.h"
+#include "core/dom/CrossThreadTask.h"
+#include "core/platform/CrossThreadCopier.h"
+#include "core/workers/WorkerContext.h"
 
 namespace WebKit {
 

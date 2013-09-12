@@ -29,22 +29,22 @@
  */
 
 #include "config.h"
-#include "ApplicationCacheHost.h"
+#include "core/loader/appcache/ApplicationCacheHost.h"
 
 #include "ApplicationCacheHostInternal.h"
-#include "DOMApplicationCache.h"
-#include "DocumentLoader.h"
-#include "Frame.h"
-#include "FrameLoader.h"
-#include "InspectorApplicationCacheAgent.h"
-#include "InspectorInstrumentation.h"
-#include "Page.h"
-#include "ProgressEvent.h"
-#include "SecurityOrigin.h"
-#include "Settings.h"
 #include "WebFrameImpl.h"
-#include "WrappedResourceRequest.h"
-#include "WrappedResourceResponse.h"
+#include "core/dom/ProgressEvent.h"
+#include "core/inspector/InspectorApplicationCacheAgent.h"
+#include "core/inspector/InspectorInstrumentation.h"
+#include "core/loader/DocumentLoader.h"
+#include "core/loader/FrameLoader.h"
+#include "core/loader/appcache/DOMApplicationCache.h"
+#include "core/page/Frame.h"
+#include "core/page/Page.h"
+#include "core/page/SecurityOrigin.h"
+#include "core/page/Settings.h"
+#include "core/platform/chromium/support/WrappedResourceRequest.h"
+#include "core/platform/chromium/support/WrappedResourceResponse.h"
 #include <public/WebURL.h>
 #include <public/WebURLError.h>
 #include <public/WebURLResponse.h>
@@ -70,7 +70,7 @@ ApplicationCacheHost::~ApplicationCacheHost()
 {
 }
 
-void ApplicationCacheHost::maybeLoadMainResource(ResourceRequest& request, SubstituteData&)
+void ApplicationCacheHost::willStartLoadingMainResource(ResourceRequest& request)
 {
     // We defer creating the outer host object to avoid spurious creation/destruction
     // around creating empty documents. At this point, we're initiating a main resource
@@ -114,27 +114,15 @@ void ApplicationCacheHost::selectCacheWithManifest(const KURL& manifestURL)
     }
 }
 
-void ApplicationCacheHost::maybeLoadMainResourceForRedirect(ResourceRequest&, SubstituteData&)
-{
-    // N/A to the chromium port
-}
-
-bool ApplicationCacheHost::maybeLoadFallbackForMainResponse(const ResourceRequest&, const ResourceResponse& response)
+void ApplicationCacheHost::didReceiveResponseForMainResource(const ResourceResponse& response)
 {
     if (m_internal) {
         WrappedResourceResponse wrapped(response);
         m_internal->m_outerHost->didReceiveResponseForMainResource(wrapped);
     }
-    return false;
 }
 
-bool ApplicationCacheHost::maybeLoadFallbackForMainError(const ResourceRequest&, const ResourceError& error)
-{
-    // N/A to the chromium port
-    return false;
-}
-
-void ApplicationCacheHost::mainResourceDataReceived(const char* data, int length, long long, bool)
+void ApplicationCacheHost::mainResourceDataReceived(const char* data, int length)
 {
     if (m_internal)
         m_internal->m_outerHost->didReceiveDataForMainResource(data, length);
@@ -152,54 +140,21 @@ void ApplicationCacheHost::finishedLoadingMainResource()
         m_internal->m_outerHost->didFinishLoadingMainResource(true);
 }
 
-bool ApplicationCacheHost::maybeLoadResource(ResourceLoader*, ResourceRequest& request, const KURL&)
+void ApplicationCacheHost::willStartLoadingResource(ResourceRequest& request)
 {
     // FIXME: look into the purpose of the unused KURL& originalURL parameter
     if (m_internal) {
         WrappedResourceRequest wrapped(request);
         m_internal->m_outerHost->willStartSubResourceRequest(wrapped);
     }
-    return false;
 }
 
-bool ApplicationCacheHost::maybeLoadFallbackForRedirect(ResourceLoader*, ResourceRequest&, const ResourceResponse&)
-{
-    // N/A to the chromium port
-    return false;
-}
-
-bool ApplicationCacheHost::maybeLoadFallbackForResponse(ResourceLoader*, const ResourceResponse&)
-{
-    // N/A to the chromium port
-    return false;
-}
-
-bool ApplicationCacheHost::maybeLoadFallbackForError(ResourceLoader*, const ResourceError&)
-{
-    // N/A to the chromium port
-    return false;
-}
-
-bool ApplicationCacheHost::maybeLoadSynchronously(ResourceRequest& request, ResourceError&, ResourceResponse&, Vector<char>&)
+void ApplicationCacheHost::willStartLoadingSynchronously(ResourceRequest& request)
 {
     if (m_internal) {
         WrappedResourceRequest wrapped(request);
         m_internal->m_outerHost->willStartSubResourceRequest(wrapped);
     }
-    return false;
-}
-
-void ApplicationCacheHost::maybeLoadFallbackSynchronously(const ResourceRequest&, ResourceError&, ResourceResponse&, Vector<char>&)
-{
-    // N/A to the chromium port
-}
-
-bool ApplicationCacheHost::canCacheInPageCache()
-{
-    // Chromium doesn't use the page cache, however, that's controlled by WebCore::Settings, which has usesPageCache() return
-    // false. So we return an hyptothetical here: Chromium won't end up using the PageCache, but the statistics in PageCache.cpp
-    // will be reported correctly for re-evaluating that decision.
-    return !isApplicationCacheEnabled() || status() == UNCACHED;
 }
 
 void ApplicationCacheHost::setDOMApplicationCache(DOMApplicationCache* domApplicationCache)
@@ -210,10 +165,8 @@ void ApplicationCacheHost::setDOMApplicationCache(DOMApplicationCache* domApplic
 
 void ApplicationCacheHost::notifyDOMApplicationCache(EventID id, int total, int done)
 {
-#if ENABLE(INSPECTOR)
     if (id != PROGRESS_EVENT)
         InspectorInstrumentation::updateApplicationCacheStatus(m_documentLoader->frame());
-#endif
 
     if (m_defersEvents) {
         // Event dispatching is deferred until document.onload has fired.
@@ -223,7 +176,6 @@ void ApplicationCacheHost::notifyDOMApplicationCache(EventID id, int total, int 
     dispatchDOMEvent(id, total, done);
 }
 
-#if ENABLE(INSPECTOR)
 ApplicationCacheHost::CacheInfo ApplicationCacheHost::applicationCacheInfo()
 {
     if (!m_internal)
@@ -247,7 +199,6 @@ void ApplicationCacheHost::fillResourceList(ResourceInfoList* resources)
             webResources[i].isForeign, webResources[i].isExplicit, webResources[i].size));
     }
 }
-#endif
 
 void ApplicationCacheHost::stopDeferringEvents()
 {
@@ -258,11 +209,6 @@ void ApplicationCacheHost::stopDeferringEvents()
     }
     m_deferredEvents.clear();
     m_defersEvents = false;
-}
-
-void ApplicationCacheHost::stopLoadingInFrame(Frame* frame)
-{
-    // N/A to the chromium port
 }
 
 void ApplicationCacheHost::dispatchDOMEvent(EventID id, int total, int done)

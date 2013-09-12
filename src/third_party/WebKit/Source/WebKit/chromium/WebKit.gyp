@@ -31,62 +31,39 @@
 {
     'includes': [
         'WinPrecompile.gypi',
-        '../../WebCore/WebCore.gypi',
+        '../../wtf/wtf.gypi',
+        '../../core/core.gypi',
         'WebKit.gypi',
-        'features.gypi',
+        '../../core/features.gypi',
     ],
-    'variables': {
-        'conditions': [
-            # Location of the chromium src directory and target type is different
-            # if webkit is built inside chromium or as standalone project.
-            ['inside_chromium_build==0', {
-                # Webkit is being built outside of the full chromium project.
-                # e.g. via build-webkit --chromium
-                'chromium_src_dir': '../../WebKit/chromium',
-            },{
-                # WebKit is checked out in src/chromium/third_party/WebKit
-                'chromium_src_dir': '../../../../..',
-            }],
-        ],
-
-        # If debug_devtools is set to 1, JavaScript files for DevTools are
-        # stored as is. Otherwise, a concatenated file is stored.
-        'debug_devtools%': 0,
-
-        # List of DevTools source files, ordered by dependencies. It is used both
-        # for copying them to resource dir, and for generating 'devtools.html' file.
-        'devtools_files': [
-            '<@(devtools_css_files)',
-            '<@(devtools_js_files)',
-        ],
-    },
     'targets': [
         {
             'target_name': 'webkit',
-            'type': 'static_library',
+            'type': '<(component)',
             'variables': { 'enable_wexit_time_destructors': 1, },
             'dependencies': [
                 '../../Platform/Platform.gyp/Platform.gyp:webkit_platform',
-                '../../WebCore/WebCore.gyp/WebCore.gyp:webcore',
-                '<(chromium_src_dir)/skia/skia.gyp:skia',
-                '<(chromium_src_dir)/third_party/angle/src/build_angle.gyp:translator_glsl',
-                '<(chromium_src_dir)/third_party/icu/icu.gyp:icuuc',
-                '<(chromium_src_dir)/third_party/npapi/npapi.gyp:npapi',
-                '<(chromium_src_dir)/v8/tools/gyp/v8.gyp:v8',
+                '../../core/core.gyp/core.gyp:webcore',
+                '../../modules/modules.gyp:modules',
+                '<(DEPTH)/skia/skia.gyp:skia',
+                '<(DEPTH)/third_party/angle/src/build_angle.gyp:translator_glsl',
+                '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+                '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
+                '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
                 'webkit_wtf_support',
             ],
             'export_dependent_settings': [
                 '../../Platform/Platform.gyp/Platform.gyp:webkit_platform',
-                '<(chromium_src_dir)/skia/skia.gyp:skia',
-                '<(chromium_src_dir)/third_party/icu/icu.gyp:icuuc',
-                '<(chromium_src_dir)/third_party/npapi/npapi.gyp:npapi',
-                '<(chromium_src_dir)/v8/tools/gyp/v8.gyp:v8',
+                '<(DEPTH)/skia/skia.gyp:skia',
+                '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+                '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
+                '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
             ],
             'include_dirs': [
                 'public',
                 'src',
-                '<(chromium_src_dir)/third_party/angle/include',
-                '<(chromium_src_dir)/third_party/skia/include/utils',
+                '<(DEPTH)/third_party/angle/include',
+                '<(DEPTH)/third_party/skia/include/utils',
             ],
             'defines': [
                 'WEBKIT_IMPLEMENTATION=1',
@@ -127,7 +104,6 @@
                 'public/WebDOMMessageEvent.h',
                 'public/WebDOMMouseEvent.h',
                 'public/WebDOMMutationEvent.h',
-                'public/WebDOMStringList.h',
                 'public/WebDataSource.h',
                 'public/WebDatabase.h',
                 'public/WebDatabaseObserver.h',
@@ -172,17 +148,6 @@
                 'public/WebHelperPlugin.h',
                 'public/WebHistoryItem.h',
                 'public/WebHitTestResult.h',
-                'public/WebIDBCallbacks.h',
-                'public/WebIDBCursor.h',
-                'public/WebIDBDatabase.h',
-                'public/WebIDBDatabaseCallbacks.h',
-                'public/WebIDBDatabaseError.h',
-                'public/WebIDBDatabaseException.h',
-                'public/WebIDBFactory.h',
-                'public/WebIDBKey.h',
-                'public/WebIDBKeyPath.h',
-                'public/WebIDBKeyRange.h',
-                'public/WebIDBMetadata.h',
                 'public/WebIconLoadingCompletion.h',
                 'public/WebIconURL.h',
                 'public/WebImageDecoder.h',
@@ -229,7 +194,6 @@
                 'public/WebPopupType.h',
                 'public/WebPrerendererClient.h',
                 'public/WebRange.h',
-                'public/WebRegularExpression.h',
                 'public/WebRuntimeFeatures.h',
                 'public/WebScopedMicrotaskSuppression.h',
                 'public/WebScopedUserGesture.h',
@@ -262,9 +226,7 @@
                 'public/WebStorageQuotaType.h',
                 'public/WebStorageQuotaError.h',
                 'public/WebSurroundingText.h',
-                'public/WebStreamTextureClient.h',
                 'public/WebTextAffinity.h',
-                'public/WebTextCaseSensitivity.h',
                 'public/WebTextCheckingCompletion.h',
                 'public/WebTextCheckingResult.h',
                 'public/WebTextDirection.h',
@@ -278,6 +240,7 @@
                 'public/WebUserGestureToken.h',
                 'public/WebUserMediaClient.h',
                 'public/WebUserMediaRequest.h',
+                'public/WebValidationMessageClient.h',
                 'public/WebView.h',
                 'public/WebViewBenchmarkSupport.h',
                 'public/WebViewClient.h',
@@ -309,8 +272,8 @@
                 'src/AsyncFileWriterChromium.h',
                 'src/AutofillPopupMenuClient.cpp',
                 'src/AutofillPopupMenuClient.h',
-                'src/BackForwardListChromium.cpp',
-                'src/BackForwardListChromium.h',
+                'src/BackForwardClientImpl.cpp',
+                'src/BackForwardClientImpl.h',
                 'src/BatteryClientImpl.cpp',
                 'src/BatteryClientImpl.h',
                 'src/DateTimeChooserImpl.cpp',
@@ -394,7 +357,6 @@
                 'src/NotificationPresenterImpl.cpp',
                 'src/painting/ContinuousPainter.h',
                 'src/painting/ContinuousPainter.cpp',
-                'src/painting/GraphicsContextBuilder.h',
                 'src/painting/PaintAggregator.h',
                 'src/painting/PaintAggregator.cpp',
                 'src/PageOverlay.cpp',
@@ -423,6 +385,8 @@
                 'src/UserMediaClientImpl.cpp',
                 'src/ValidationMessageClientImpl.cpp',
                 'src/ValidationMessageClientImpl.h',
+                'src/ViewportAnchor.cpp',
+                'src/ViewportAnchor.h',
                 'src/WebTextCheckingCompletionImpl.h',
                 'src/WebTextCheckingCompletionImpl.cpp',
                 'src/WebTextCheckingResult.cpp',
@@ -449,7 +413,6 @@
                 'src/WebDOMMessageEvent.cpp',
                 'src/WebDOMMouseEvent.cpp',
                 'src/WebDOMMutationEvent.cpp',
-                'src/WebDOMStringList.cpp',
                 'src/WebDatabase.cpp',
                 'src/WebDataSourceImpl.cpp',
                 'src/WebDataSourceImpl.h',
@@ -542,7 +505,6 @@
                 'src/WebPopupMenuImpl.cpp',
                 'src/WebPopupMenuImpl.h',
                 'src/WebRange.cpp',
-                'src/WebRegularExpression.cpp',
                 'src/WebRuntimeFeatures.cpp',
                 'src/WebScopedMicrotaskSuppression.cpp',
                 'src/WebScopedUserGesture.cpp',
@@ -604,104 +566,113 @@
                 'src/win/WebScreenInfoFactory.cpp',
             ],
             'conditions': [
-                ['inside_chromium_build==1', {
-                    'type': '<(component)',
-
+                ['component=="shared_library"', {
+                    'defines': [
+                        'WEBKIT_DLL',
+                        'WEBKIT_IMPLEMENTATION=1',
+                    ],
+                    'dependencies': [
+                        '../../core/core.gyp/core.gyp:webcore_derived',
+                        '../../core/core.gyp/core.gyp:webcore_test_support',
+                        '<(DEPTH)/base/base.gyp:test_support_base',
+                        '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
+                        '<(DEPTH)/testing/gtest.gyp:gtest',
+                        '<(DEPTH)/testing/gmock.gyp:gmock',
+                        '<(DEPTH)/third_party/icu/icu.gyp:*',
+                        '<(DEPTH)/third_party/libjpeg_turbo/libjpeg.gyp:libjpeg',
+                        '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
+                        '<(DEPTH)/third_party/libxml/libxml.gyp:libxml',
+                        '<(DEPTH)/third_party/libxslt/libxslt.gyp:libxslt',
+                        '<(DEPTH)/third_party/modp_b64/modp_b64.gyp:modp_b64',
+                        '<(DEPTH)/third_party/ots/ots.gyp:ots',
+                        '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
+                        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
+                        # We must not add webkit_support here because of cyclic dependency.
+                    ],
+                    'direct_dependent_settings': {
+                        'defines': [
+                            'WEBKIT_DLL',
+                        ],
+                    },
+                    'export_dependent_settings': [
+                        '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
+                        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
+                    ],
+                    'include_dirs': [
+                        # WARNING: Do not view this particular case as a precedent for
+                        # including WebCore headers in DumpRenderTree project.
+                        '../../core/testing/v8', # for WebCoreTestSupport.h, needed to link in window.internals code.
+                    ],
+                    'sources': [
+                        '<@(wtf_unittest_files)',
+                        '<@(core_unittest_files)',
+                        '<@(webkit_unittest_files)',
+                        'src/WebTestingSupport.cpp',
+                        'public/WebTestingSupport.h',
+                        'tests/WebUnitTests.cpp',   # Components test runner support.
+                    ],
+                    'sources!': [
+                        # We should not include files depending on webkit_support.
+                        # These tests depend on webkit_support and
+                        # functions defined only in !WEBKIT_IMPLEMENTATION.
+                        'tests/IDBBackingStoreTest.cpp',
+                        'tests/IDBCleanupOnIOErrorTest.cpp',
+                        'tests/LevelDBTest.cpp',
+                    ],
                     'conditions': [
-                        ['component=="shared_library"', {
-                            'defines': [
-                                'WEBKIT_DLL',
-                                'WEBKIT_IMPLEMENTATION=1',
-                            ],
+                        ['OS=="win" or OS=="mac"', {
                             'dependencies': [
-                                '../../WebCore/WebCore.gyp/WebCore.gyp:webcore_bindings',
-                                '../../WebCore/WebCore.gyp/WebCore.gyp:webcore_test_support',
-                                '<(chromium_src_dir)/base/base.gyp:test_support_base',
-                                '<(chromium_src_dir)/build/temp_gyp/googleurl.gyp:googleurl',
-                                '<(chromium_src_dir)/testing/gtest.gyp:gtest',
-                                '<(chromium_src_dir)/testing/gmock.gyp:gmock',
-                                '<(chromium_src_dir)/third_party/icu/icu.gyp:*',
-                                '<(chromium_src_dir)/third_party/libjpeg_turbo/libjpeg.gyp:libjpeg',
-                                '<(chromium_src_dir)/third_party/libpng/libpng.gyp:libpng',
-                                '<(chromium_src_dir)/third_party/libxml/libxml.gyp:libxml',
-                                '<(chromium_src_dir)/third_party/libxslt/libxslt.gyp:libxslt',
-                                '<(chromium_src_dir)/third_party/modp_b64/modp_b64.gyp:modp_b64',
-                                '<(chromium_src_dir)/third_party/ots/ots.gyp:ots',
-                                '<(chromium_src_dir)/third_party/zlib/zlib.gyp:zlib',
-                                '<(chromium_src_dir)/v8/tools/gyp/v8.gyp:v8',
-                                # We must not add webkit_support here because of cyclic dependency.
+                                '<(DEPTH)/third_party/nss/nss.gyp:*',
                             ],
-                            'direct_dependent_settings': {
-                                'defines': [
-                                    'WEBKIT_DLL',
-                                ],
-                            },
-                            'export_dependent_settings': [
-                                '<(chromium_src_dir)/build/temp_gyp/googleurl.gyp:googleurl',
-                                '<(chromium_src_dir)/v8/tools/gyp/v8.gyp:v8',
-                            ],
-                            # SHEZ: Removed upstream code here, used for testing only.
-                            'sources!': [
-                                # We should not include files depending on webkit_support.
-                                # These tests depend on webkit_support and
-                                # functions defined only in !WEBKIT_IMPLEMENTATION.
-                                'tests/IDBBackingStoreTest.cpp',
-                                'tests/IDBCleanupOnIOErrorTest.cpp',
-                                'tests/LevelDBTest.cpp',
-                            ],
-                            'conditions': [
-                                ['OS=="win" or OS=="mac"', {
-                                    'dependencies': [
-                                        '<(chromium_src_dir)/third_party/nss/nss.gyp:*',
-                                    ],
-                                }],
-                                ['clang==1', {
-                                    # FIXME: It would be nice to enable this in shared builds too,
-                                    # but the test files have global constructors from the GTEST macro
-                                    # and we pull in the test files into the webkit target in the
-                                    # shared build.
-                                    'cflags!': ['-Wglobal-constructors'],
-                                    'xcode_settings': {
-                                      'WARNING_CFLAGS!': ['-Wglobal-constructors'],
-                                    },
-                                }],
-                            ],
-                            'msvs_settings': {
-                              'VCLinkerTool': {
-                                'conditions': [
-                                  ['incremental_chrome_dll==1', {
-                                    'UseLibraryDependencyInputs': "true",
-                                  }],
-                                ],
-                              },
+                        }],
+                        ['clang==1', {
+                            # FIXME: It would be nice to enable this in shared builds too,
+                            # but the test files have global constructors from the GTEST macro
+                            # and we pull in the test files into the webkit target in the
+                            # shared build.
+                            'cflags!': ['-Wglobal-constructors'],
+                            'xcode_settings': {
+                              'WARNING_CFLAGS!': ['-Wglobal-constructors'],
                             },
                         }],
                     ],
-                }, { # else: inside_chromium_build==0
-                    'direct_dependent_settings': {
-                        'include_dirs': [
-                            '<(SHARED_INTERMEDIATE_DIR)/webkit', # in a chromium-inside-WebKit build, headers in the public WebKit API are copied beneath this directory so includes referencing third_party/WebKit work.
+                    'msvs_settings': {
+                      'VCLinkerTool': {
+                        'conditions': [
+                          ['incremental_chrome_dll==1', {
+                            'UseLibraryDependencyInputs': "true",
+                          }],
                         ],
+                      },
                     },
                 }],
-                ['use_x11 == 1', {
+                ['OS == "linux"', {
                     'dependencies': [
-                        '<(chromium_src_dir)/build/linux/system.gyp:fontconfig',
-                        '<(chromium_src_dir)/build/linux/system.gyp:x11',
+                        '<(DEPTH)/build/linux/system.gyp:fontconfig',
                     ],
                     'include_dirs': [
-                        'public/x11',
                         'public/linux',
                     ],
-                }, { # else: use_x11 != 1
+                }, {
                     'sources/': [
-                        ['exclude', '/x11/'],
                         ['exclude', '/linux/'],
                     ],
                 }],
+                ['use_x11 == 1', {
+                    'dependencies': [
+                        '<(DEPTH)/build/linux/system.gyp:x11',
+                    ],
+                    'include_dirs': [
+                        'public/x11',
+                    ],
+                }, {
+                    'sources/': [
+                        ['exclude', '/x11/'],
+                    ]
+                }],
                 ['toolkit_uses_gtk == 1', {
                     'dependencies': [
-                        '<(chromium_src_dir)/build/linux/system.gyp:gtk',
+                        '<(DEPTH)/build/linux/system.gyp:gtk',
                     ],
                     'include_dirs': [
                         'public/gtk',
@@ -782,7 +753,7 @@
             'target_name': 'webkit_wtf_support',
             'type': 'static_library',
             'dependencies': [
-                '../../WTF/WTF.gyp/WTF.gyp:wtf',
+                '../../wtf/wtf.gyp:wtf',
             ],
             'defines': [
                 'WEBKIT_IMPLEMENTATION=1',
@@ -806,17 +777,17 @@
         {
             'target_name': 'webkit_test_support',
             'conditions': [
-                ['inside_chromium_build==1 and component=="shared_library"', {
+                ['component=="shared_library"', {
                     'type': 'none',
-                }, { # else: inside_chromium_build==0 or component!="shared_library"
+                }, {
                     'type': 'static_library',
                     'dependencies': [
-                        '../../WTF/WTF.gyp/WTF.gyp:wtf',
-                        '../../WebCore/WebCore.gyp/WebCore.gyp:webcore_test_support',
+                        '../../wtf/wtf.gyp:wtf',
+                        '../../core/core.gyp/core.gyp:webcore_test_support',
                     ],
                     'include_dirs': [
                         'public',
-                        '../../WebCore/testing/v8', # for WebCoreTestSupport.h, needed to link in window.internals code.
+                        '../../core/testing/v8', # for WebCoreTestSupport.h, needed to link in window.internals code.
                         '../../Platform/chromium/',
                     ],
                     'sources': [
@@ -826,191 +797,9 @@
                 }],
             ],
         },
-        {
-            'target_name': 'inspector_resources',
-            'type': 'none',
-            'dependencies': [
-                'devtools_html',
-                '../../WebCore/WebCore.gyp/WebCore.gyp:inspector_protocol_sources',
-            ],
-            'conditions': [
-                ['debug_devtools==0', {
-                    'dependencies': ['concatenated_devtools_js',
-                                     'concatenated_devtools_elements_js',
-                                     'concatenated_devtools_resources_js',
-                                     'concatenated_devtools_network_js',
-                                     'concatenated_devtools_scripts_js',
-                                     'concatenated_devtools_timeline_js',
-                                     'concatenated_devtools_profiles_js',
-                                     'concatenated_devtools_audits_js',
-                                     'concatenated_devtools_codemirror_js',
-                                     'concatenated_devtools_ace_editor_js',
-                                     'concatenated_heap_snapshot_worker_js',
-                                     'concatenated_script_formatter_worker_js',
-                                     'concatenated_devtools_css'],
-                }],
-            ],
-            'copies': [
-                {
-                    'destination': '<(PRODUCT_DIR)/resources/inspector',
-                    'files': [
-                        '<@(devtools_files)',
-                        '<@(webinspector_files)',
-                        '<(SHARED_INTERMEDIATE_DIR)/webcore/InspectorBackendCommands.js',
-                    ],
-                    'conditions': [
-                        ['debug_devtools==0', {
-                            'files/': [['exclude', '\\.(js|css|html)$']],
-                        }],
-                    ],
-                },
-                {
-                    'destination': '<(PRODUCT_DIR)/resources/inspector/UglifyJS',
-                    'files': [
-                        '<@(webinspector_uglifyjs_files)',
-                    ],
-                    'conditions': [
-                        ['debug_devtools==0', {
-                            'files/': [['exclude', '\\.(js|css|html)$']],
-                        }],
-                    ],
-                },
-                {
-                    'destination': '<(PRODUCT_DIR)/resources/inspector/Images',
-                    'files': [
-                        '<@(webinspector_image_files)',
-                        '<@(devtools_image_files)',
-                    ],
-                },
-            ],
-        },
-        {
-            'target_name': 'devtools_html',
-            'type': 'none',
-            'sources': ['<(PRODUCT_DIR)/resources/inspector/devtools.html'],
-            'actions': [{
-                'action_name': 'devtools_html',
-                'script_name': 'scripts/generate_devtools_html.py',
-                'input_page': '../../WebCore/inspector/front-end/inspector.html',
-                'inputs': [
-                    '<@(_script_name)',
-                    '<@(_input_page)',
-                    '<@(devtools_files)',
-                ],
-                'outputs': ['<(PRODUCT_DIR)/resources/inspector/devtools.html'],
-                'action': ['python', '<@(_script_name)', '<@(_input_page)', '<@(_outputs)', '<@(debug_devtools)', '<@(devtools_files)'],
-            }],
-        },
-        {
-            'target_name': 'devtools_extension_api',
-            'type': 'none',
-            'actions': [{
-                'action_name': 'devtools_html',
-                'script_name': 'scripts/generate_devtools_extension_api.py',
-                'inputs': [
-                    '<@(_script_name)',
-                    '<@(devtools_extension_api_files)',
-                ],
-                'outputs': ['<(PRODUCT_DIR)/resources/inspector/devtools_extension_api.js'],
-                'action': ['python', '<@(_script_name)', '<@(_outputs)', '<@(devtools_extension_api_files)'],
-            }],
-        },
-        {
-            'target_name': 'generate_devtools_grd',
-            'type': 'none',
-            'dependencies': [
-                'devtools_html',
-                'devtools_extension_api'
-            ],
-            'conditions': [
-                ['debug_devtools==0', {
-                    'dependencies': ['concatenated_devtools_js',
-                                     'concatenated_devtools_elements_js',
-                                     'concatenated_devtools_resources_js',
-                                     'concatenated_devtools_network_js',
-                                     'concatenated_devtools_scripts_js',
-                                     'concatenated_devtools_timeline_js',
-                                     'concatenated_devtools_profiles_js',
-                                     'concatenated_devtools_audits_js',
-                                     'concatenated_devtools_codemirror_js',
-                                     'concatenated_devtools_ace_editor_js',
-                                     'concatenated_heap_snapshot_worker_js',
-                                     'concatenated_script_formatter_worker_js',
-                                     'concatenated_devtools_css'],
-                    'actions': [{
-                        'action_name': 'generate_devtools_grd',
-                        'script_name': 'scripts/generate_devtools_grd.py',
-                        'input_pages': [
-                            '<(PRODUCT_DIR)/resources/inspector/devtools.html',
-                            '<(PRODUCT_DIR)/resources/inspector/DevTools.js',
-                            '<(PRODUCT_DIR)/resources/inspector/ElementsPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/ResourcesPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/NetworkPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/ScriptsPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/TimelinePanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/ProfilesPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/AuditsPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/CodeMirrorTextEditor.js',
-                            '<(PRODUCT_DIR)/resources/inspector/AceTextEditor.js',
-                            '<(PRODUCT_DIR)/resources/inspector/HeapSnapshotWorker.js',
-                            '<(PRODUCT_DIR)/resources/inspector/ScriptFormatterWorker.js',
-                            '<(PRODUCT_DIR)/resources/inspector/devTools.css',
-                            '<(PRODUCT_DIR)/resources/inspector/devtools_extension_api.js',
-                            '<@(webinspector_standalone_files)',
-                        ],
-                        'images': [
-                            '<@(webinspector_image_files)',
-                            '<@(devtools_image_files)',
-                        ],
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(_input_pages)',
-                            '<@(_images)',
-                        ],
-                        'search_path': [
-                            '../../WebCore/inspector/front-end/Images',
-                            'src/js/Images',
-                        ],
-                        'outputs': ['<(SHARED_INTERMEDIATE_DIR)/devtools/devtools_resources.grd'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_pages)', '--images', '<@(_search_path)', '--output', '<@(_outputs)'],
-                    }],
-                },
-                {
-                    # If we're not concatenating devtools files, we want to
-                    # run after the original files have been copied to
-                    # <(PRODUCT_DIR)/resources/inspector.
-                    'dependencies': ['inspector_resources'],
-                    'actions': [{
-                        'action_name': 'generate_devtools_grd',
-                        'script_name': 'scripts/generate_devtools_grd.py',
-                        'input_pages': [
-                            '<@(webinspector_files)',
-                            '<@(devtools_files)',
-                            '<(SHARED_INTERMEDIATE_DIR)/webcore/InspectorBackendCommands.js',
-                            '<(PRODUCT_DIR)/resources/inspector/devtools.html',
-                        ],
-                        'images': [
-                            '<@(webinspector_image_files)',
-                            '<@(devtools_image_files)',
-                        ],
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(_input_pages)',
-                            '<@(_images)',
-                        ],
-                        'search_path': [
-                            '../../WebCore/inspector/front-end/Images',
-                            'src/js/Images',
-                        ],
-                        'outputs': ['<(SHARED_INTERMEDIATE_DIR)/devtools/devtools_resources.grd'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_pages)', '--images', '<@(_search_path)', '--output', '<@(_outputs)'],
-                    }],
-                }],
-            ],
-        },
     ], # targets
     'conditions': [
-        ['os_posix==1 and OS!="mac" and OS!="ios" and gcc_version>=46', {
+        ['gcc_version>=46', {
             'target_defaults': {
                 # Disable warnings about c++0x compatibility, as some names (such
                 # as nullptr) conflict with upcoming c++0x types.
@@ -1022,253 +811,10 @@
                 {
                     'target_name': 'copy_mesa',
                     'type': 'none',
-                    'dependencies': ['<(chromium_src_dir)/third_party/mesa/mesa.gyp:osmesa'],
+                    'dependencies': ['<(DEPTH)/third_party/mesa/mesa.gyp:osmesa'],
                     'copies': [{
                         'destination': '<(PRODUCT_DIR)/DumpRenderTree.app/Contents/MacOS/',
                         'files': ['<(PRODUCT_DIR)/osmesa.so'],
-                    }],
-                },
-            ],
-        }],
-        ['debug_devtools==0', {
-            'targets': [
-                {
-                    'target_name': 'concatenated_devtools_js',
-                    'type': 'none',
-                    'dependencies': [
-                        'devtools_html',
-                        '../../WebCore/WebCore.gyp/WebCore.gyp:inspector_protocol_sources'
-                    ],
-                    'actions': [{
-                        'action_name': 'concatenate_devtools_js',
-                        'script_name': 'scripts/concatenate_js_files.py',
-                        'input_page': '../../WebCore/inspector/front-end/inspector.html',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(_input_page)',
-                            '<@(webinspector_files)',
-                            '<@(devtools_files)',
-                            '<(SHARED_INTERMEDIATE_DIR)/webcore/InspectorBackendCommands.js'
-                        ],
-                        'search_path': [
-                            '../../WebCore/inspector/front-end',
-                            'src/js',
-                            '<(SHARED_INTERMEDIATE_DIR)/webcore',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/DevTools.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_page)', '<@(_search_path)', '<@(_outputs)'],
-                    }],
-                },
-                {
-                    'target_name': 'concatenated_devtools_elements_js',
-                    'type': 'none',
-                    'actions': [{
-                        'action_name': 'concatenate_devtools_elements_js',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': '../../WebCore/inspector/front-end/ElementsPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(webinspector_elements_js_files)',
-                        ],
-                        'search_path': '../../WebCore/inspector/front-end',
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/ElementsPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
-                    }],
-                },
-                {
-                    'target_name': 'concatenated_devtools_resources_js',
-                    'type': 'none',
-                    'actions': [{
-                        'action_name': 'concatenate_devtools_resources_js',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': '../../WebCore/inspector/front-end/ResourcesPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(webinspector_resources_js_files)',
-                        ],
-                        'search_path': '../../WebCore/inspector/front-end',
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/ResourcesPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
-                    }],
-                },
-                {
-                    'target_name': 'concatenated_devtools_network_js',
-                    'type': 'none',
-                    'actions': [{
-                        'action_name': 'concatenate_devtools_network_js',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': '../../WebCore/inspector/front-end/NetworkPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(webinspector_network_js_files)',
-                        ],
-                        'search_path': '../../WebCore/inspector/front-end',
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/NetworkPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
-                    }],
-                },
-                {
-                    'target_name': 'concatenated_devtools_scripts_js',
-                    'type': 'none',
-                    'actions': [{
-                        'action_name': 'concatenate_devtools_scripts_js',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': '../../WebCore/inspector/front-end/ScriptsPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(webinspector_scripts_js_files)',
-                        ],
-                        'search_path': '../../WebCore/inspector/front-end',
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/ScriptsPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
-                    }],
-                },
-                {
-                    'target_name': 'concatenated_devtools_timeline_js',
-                    'type': 'none',
-                    'actions': [{
-                        'action_name': 'concatenate_devtools_timeline_js',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': '../../WebCore/inspector/front-end/TimelinePanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(webinspector_timeline_js_files)',
-                        ],
-                        'search_path': '../../WebCore/inspector/front-end',
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/TimelinePanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
-                    }],
-                },
-                {
-                    'target_name': 'concatenated_devtools_profiles_js',
-                    'type': 'none',
-                    'actions': [{
-                        'action_name': 'concatenate_devtools_profiles_js',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': '../../WebCore/inspector/front-end/ProfilesPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(webinspector_profiles_js_files)',
-                        ],
-                        'search_path': '../../WebCore/inspector/front-end',
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/ProfilesPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
-                    }],
-                },
-                {
-                    'target_name': 'concatenated_devtools_audits_js',
-                    'type': 'none',
-                    'actions': [{
-                        'action_name': 'concatenate_devtools_audits_js',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': '../../WebCore/inspector/front-end/AuditsPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(webinspector_audits_js_files)',
-                        ],
-                        'search_path': '../../WebCore/inspector/front-end',
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/AuditsPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
-                    }],
-                },
-                {
-                    'target_name': 'concatenated_devtools_codemirror_js',
-                    'type': 'none',
-                    'actions': [{
-                        'action_name': 'concatenate_devtools_codemirror_js',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': '../../WebCore/inspector/front-end/CodeMirrorTextEditor.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(webinspector_codemirror_js_files)',
-                        ],
-                        'search_path': '../../WebCore/inspector/front-end',
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/CodeMirrorTextEditor.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)', 'true'],
-                    }],
-                },
-                {
-                    'target_name': 'concatenated_devtools_ace_editor_js',
-                    'type': 'none',
-                    'actions': [{
-                        'action_name': 'concatenate_devtools_ace_editor_js',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': '../../WebCore/inspector/front-end/AceTextEditor.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(webinspector_ace_editor_js_files)',
-                        ],
-                        'search_path': '../../WebCore/inspector/front-end',
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/AceTextEditor.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)', 'true'],
-                    }],
-                },
-                {
-                    'target_name': 'concatenated_heap_snapshot_worker_js',
-                    'type': 'none',
-                    'actions': [{
-                        'action_name': 'concatenate_heap_snapshot_worker_js',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': '../../WebCore/inspector/front-end/HeapSnapshotWorker.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(_input_file)',
-                            '../../WebCore/inspector/front-end/HeapSnapshot.js',
-                            '../../WebCore/inspector/front-end/HeapSnapshotLoader.js',
-                            '../../WebCore/inspector/front-end/HeapSnapshotWorkerDispatcher.js',
-                            '../../WebCore/inspector/front-end/JSHeapSnapshot.js',
-                            '../../WebCore/inspector/front-end/utilities.js',
-                        ],
-                        'search_path': '../../WebCore/inspector/front-end',
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/HeapSnapshotWorker.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
-                    }],
-                },
-                {
-                    'target_name': 'concatenated_script_formatter_worker_js',
-                    'type': 'none',
-                    'actions': [{
-                        'action_name': 'concatenate_script_formatter_worker_js',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': '../../WebCore/inspector/front-end/ScriptFormatterWorker.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(_input_file)',
-                            '<@(webinspector_uglifyjs_files)'
-                        ],
-                        'search_path': '../../WebCore/inspector/front-end',
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/ScriptFormatterWorker.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
-                    }],
-                },
-                {
-                    'target_name': 'concatenated_devtools_css',
-                    'type': 'none',
-                    'dependencies': [
-                        'devtools_html'
-                    ],
-                    'actions': [{
-                        'action_name': 'concatenate_devtools_css',
-                        'script_name': 'scripts/concatenate_css_files.py',
-                        'input_page': '../../WebCore/inspector/front-end/inspector.html',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(_input_page)',
-                            '<@(webinspector_files)',
-                            '<@(devtools_files)'
-                        ],
-                        'search_path': [
-                            '../../WebCore/inspector/front-end',
-                            'src/js',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/devTools.css'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_page)', '<@(_search_path)', '<@(_outputs)'],
-                    }],
-                    'copies': [{
-                        'destination': '<(PRODUCT_DIR)/resources/inspector',
-                        'files': [
-                            '<@(webinspector_standalone_files)',
-                        ],
                     }],
                 },
             ],

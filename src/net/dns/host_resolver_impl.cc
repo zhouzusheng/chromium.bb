@@ -44,6 +44,8 @@
 #include "net/dns/dns_response.h"
 #include "net/dns/dns_transaction.h"
 #include "net/dns/host_resolver_proc.h"
+#include "net/socket/client_socket_factory.h"
+#include "net/udp/datagram_client_socket.h"
 
 #if defined(OS_WIN)
 #include "net/base/winsock_init.h"
@@ -167,6 +169,35 @@ bool ResemblesMulticastDNSName(const std::string& hostname) {
                         kSuffix, kSuffixLenTrimmed);
 }
 
+// Attempts to connect a UDP socket to |dest|:80.
+bool IsGloballyReachable(const IPAddressNumber& dest) {
+  scoped_ptr<DatagramClientSocket> socket(
+      ClientSocketFactory::GetDefaultFactory()->CreateDatagramClientSocket(
+          DatagramSocket::DEFAULT_BIND,
+          RandIntCallback(),
+          NULL,
+          NetLog::Source()));
+  int rv = socket->Connect(IPEndPoint(dest, 80));
+  if (rv != OK)
+    return false;
+  IPEndPoint endpoint;
+  rv = socket->GetLocalAddress(&endpoint);
+  if (rv != OK)
+    return false;
+  DCHECK(endpoint.GetFamily() == ADDRESS_FAMILY_IPV6);
+  const IPAddressNumber& address = endpoint.address();
+  bool is_link_local = (address[0] == 0xFE) && ((address[1] & 0xC0) == 0x80);
+  if (is_link_local)
+    return false;
+  const uint8 kTeredoPrefix[] = { 0x20, 0x01, 0, 0 };
+  bool is_teredo = std::equal(kTeredoPrefix,
+                              kTeredoPrefix + arraysize(kTeredoPrefix),
+                              address.begin());
+  if (is_teredo)
+    return false;
+  return true;
+}
+
 // Provide a common macro to simplify code and readability. We must use a
 // macro as the underlying HISTOGRAM macro creates static variables.
 #define DNS_HISTOGRAM(name, time) UMA_HISTOGRAM_CUSTOM_TIMES(name, time, \
@@ -213,31 +244,29 @@ void RecordTTL(base::TimeDelta ttl) {
 
 //-----------------------------------------------------------------------------
 
-// Wraps call to SystemHostResolverProc as an instance of HostResolverProc.
-// TODO(szym): This should probably be declared in host_resolver_proc.h.
-class CallSystemHostResolverProc : public HostResolverProc {
- public:
-  CallSystemHostResolverProc() : HostResolverProc(NULL) {}
-  virtual int Resolve(const std::string& hostname,
-                      AddressFamily address_family,
-                      HostResolverFlags host_resolver_flags,
-                      AddressList* addr_list,
-                      int* os_error) OVERRIDE {
-    return SystemHostResolverProc(hostname,
-                                  address_family,
-                                  host_resolver_flags,
-                                  addr_list,
-                                  os_error);
-  }
-
- protected:
-  virtual ~CallSystemHostResolverProc() {}
-};
-
 AddressList EnsurePortOnAddressList(const AddressList& list, uint16 port) {
   if (list.empty() || list.front().port() == port)
     return list;
   return AddressList::CopyWithPort(list, port);
+}
+
+// Returns true if |addresses| contains only IPv4 loopback addresses.
+bool IsAllIPv4Loopback(const AddressList& addresses) {
+  for (unsigned i = 0; i < addresses.size(); ++i) {
+    const IPAddressNumber& address = addresses[i].address();
+    switch (addresses[i].GetFamily()) {
+      case ADDRESS_FAMILY_IPV4:
+        if (address[0] != 127)
+          return false;
+        break;
+      case ADDRESS_FAMILY_IPV6:
+        return false;
+      default:
+        NOTREACHED();
+        return false;
+    }
+  }
+  return true;
 }
 
 // Creates NetLog parameters when the resolve failed.
@@ -536,7 +565,7 @@ class HostResolverImpl::ProcTask
       params_.resolver_proc = HostResolverProc::GetDefault();
     // If default is unset, use the system proc.
     if (!params_.resolver_proc)
-      params_.resolver_proc = new CallSystemHostResolverProc();
+      params_.resolver_proc = new SystemHostResolverProc();
   }
 
   void Start() {
@@ -653,7 +682,11 @@ class HostResolverImpl::ProcTask
                         int error,
                         const int os_error) {
     DCHECK(origin_loop_->BelongsToCurrentThread());
-    DCHECK(error || !results.empty());
+    // If results are empty, we should return an error.
+    bool empty_list_on_ok = (error == OK && results.empty());
+    UMA_HISTOGRAM_BOOLEAN("DNS.EmptyAddressListAndNoError", empty_list_on_ok);
+    if (empty_list_on_ok)
+      error = ERR_NAME_NOT_RESOLVED;
 
     bool was_retry_attempt = attempt_number > 1;
 
@@ -776,18 +809,6 @@ class HostResolverImpl::ProcTask
     DCHECK_LT(category, static_cast<int>(RESOLVE_MAX));  // Be sure it was set.
 
     UMA_HISTOGRAM_ENUMERATION("DNS.ResolveCategory", category, RESOLVE_MAX);
-
-    static const bool show_parallelism_experiment_histograms =
-        base::FieldTrialList::TrialExists("DnsParallelism");
-    if (show_parallelism_experiment_histograms) {
-      UMA_HISTOGRAM_ENUMERATION(
-          base::FieldTrial::MakeName("DNS.ResolveCategory", "DnsParallelism"),
-          category, RESOLVE_MAX);
-      if (RESOLVE_SUCCESS == category) {
-        DNS_HISTOGRAM(base::FieldTrial::MakeName("DNS.ResolveSuccess",
-                                                 "DnsParallelism"), duration);
-      }
-    }
   }
 
   void RecordAttemptHistograms(const base::TimeTicks& start_time,
@@ -888,6 +909,7 @@ class HostResolverImpl::ProcTask
 
 // Wraps a call to TestIPv6Support to be executed on the WorkerPool as it takes
 // 40-100ms.
+// TODO(szym): Remove altogether, if IPv6ActiveProbe works.
 class HostResolverImpl::IPv6ProbeJob {
  public:
   IPv6ProbeJob(const base::WeakPtr<HostResolverImpl>& resolver, NetLog* net_log)
@@ -1858,6 +1880,7 @@ AddressFamily HostResolverImpl::GetDefaultAddressFamily() const {
   return default_address_family_;
 }
 
+// TODO(szym): Remove this API altogether if IPv6ActiveProbe works.
 void HostResolverImpl::ProbeIPv6Support() {
   DCHECK(CalledOnValidThread());
   DCHECK(!ipv6_probe_monitoring_);
@@ -1950,7 +1973,6 @@ bool HostResolverImpl::ServeFromHosts(const Key& key,
   DCHECK(addresses);
   if (!HaveDnsConfig())
     return false;
-
   addresses->clear();
 
   // HOSTS lookups are case-insensitive.
@@ -1979,6 +2001,17 @@ bool HostResolverImpl::ServeFromHosts(const Key& key,
       addresses->push_back(IPEndPoint(it->second, info.port()));
   }
 
+  // If got only loopback addresses and the family was restricted, resolve
+  // again, without restrictions. See SystemHostResolverCall for rationale.
+  if ((key.host_resolver_flags &
+          HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6) &&
+      IsAllIPv4Loopback(*addresses)) {
+    Key new_key(key);
+    new_key.address_family = ADDRESS_FAMILY_UNSPECIFIED;
+    new_key.host_resolver_flags &=
+        ~HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6;
+    return ServeFromHosts(new_key, info, addresses);
+  }
   return !addresses->empty();
 }
 
@@ -2023,12 +2056,35 @@ HostResolverImpl::Key HostResolverImpl::GetEffectiveKeyForRequest(
   HostResolverFlags effective_flags =
       info.host_resolver_flags() | additional_resolver_flags_;
   AddressFamily effective_address_family = info.address_family();
-  if (effective_address_family == ADDRESS_FAMILY_UNSPECIFIED &&
-      default_address_family_ != ADDRESS_FAMILY_UNSPECIFIED) {
-    effective_address_family = default_address_family_;
-    if (ipv6_probe_monitoring_)
-      effective_flags |= HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6;
+
+  if (info.address_family() == ADDRESS_FAMILY_UNSPECIFIED) {
+    if (ipv6_probe_monitoring_) {
+      base::TimeTicks start_time = base::TimeTicks::Now();
+      // Google DNS address.
+      const uint8 kIPv6Address[] =
+          { 0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0x88 };
+      IPAddressNumber address(kIPv6Address,
+                              kIPv6Address + arraysize(kIPv6Address));
+      bool rv6 = IsGloballyReachable(address);
+
+      UMA_HISTOGRAM_TIMES("Net.IPv6ConnectDuration",
+                          base::TimeTicks::Now() - start_time);
+      if (rv6) {
+        UMA_HISTOGRAM_BOOLEAN("Net.IPv6ConnectSuccessMatch",
+            default_address_family_ == ADDRESS_FAMILY_UNSPECIFIED);
+      } else {
+        UMA_HISTOGRAM_BOOLEAN("Net.IPv6ConnectFailureMatch",
+            default_address_family_ != ADDRESS_FAMILY_UNSPECIFIED);
+
+        effective_address_family = ADDRESS_FAMILY_IPV4;
+        effective_flags |= HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6;
+      }
+    } else {
+      effective_address_family = default_address_family_;
+    }
   }
+
   return Key(info.hostname(), effective_address_family, effective_flags);
 }
 
@@ -2096,6 +2152,7 @@ void HostResolverImpl::OnIPAddressChanged() {
 void HostResolverImpl::OnDNSChanged() {
   DnsConfig dns_config;
   NetworkChangeNotifier::GetDnsConfig(&dns_config);
+
   if (net_log_) {
     net_log_->AddGlobalEntry(
         NetLog::TYPE_DNS_CONFIG_CHANGED,

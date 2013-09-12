@@ -52,10 +52,20 @@ Handle<T>::Handle(T* obj, Isolate* isolate) {
 
 
 template <typename T>
+inline bool Handle<T>::is_identical_to(const Handle<T> other) const {
+  ASSERT(location_ == NULL ||
+         reinterpret_cast<Address>(*location_) != kZapValue);
+  // Dereferencing deferred handles to check object equality is safe.
+  SLOW_ASSERT(IsDereferenceAllowed(true) && other.IsDereferenceAllowed(true));
+  return *location_ == *other.location_;
+}
+
+
+template <typename T>
 inline T* Handle<T>::operator*() const {
   ASSERT(location_ != NULL);
   ASSERT(reinterpret_cast<Address>(*location_) != kHandleZapValue);
-  SLOW_ASSERT(ISOLATE->allow_handle_deref());
+  SLOW_ASSERT(IsDereferenceAllowed(false));
   return *BitCast<T**>(location_);
 }
 
@@ -63,9 +73,43 @@ template <typename T>
 inline T** Handle<T>::location() const {
   ASSERT(location_ == NULL ||
          reinterpret_cast<Address>(*location_) != kZapValue);
-  SLOW_ASSERT(ISOLATE->allow_handle_deref());
+  SLOW_ASSERT(IsDereferenceAllowed(false));
   return location_;
 }
+
+#ifdef DEBUG
+template <typename T>
+bool Handle<T>::IsDereferenceAllowed(bool allow_deferred) const {
+  if (location_ == NULL) return true;
+  Object* object = *BitCast<T**>(location_);
+  if (object->IsSmi()) return true;
+  HeapObject* heap_object = HeapObject::cast(object);
+  Isolate* isolate = heap_object->GetIsolate();
+  Object** handle = reinterpret_cast<Object**>(location_);
+  Object** roots_array_start = isolate->heap()->roots_array_start();
+  if (roots_array_start <= handle &&
+      handle < roots_array_start + Heap::kStrongRootListLength) {
+    return true;
+  }
+  if (isolate->optimizing_compiler_thread()->IsOptimizerThread() &&
+      !Heap::RelocationLock::IsLockedByOptimizerThread(isolate->heap())) {
+    return false;
+  }
+  switch (isolate->HandleDereferenceGuardState()) {
+    case HandleDereferenceGuard::ALLOW:
+      return true;
+    case HandleDereferenceGuard::DISALLOW:
+      return false;
+    case HandleDereferenceGuard::DISALLOW_DEFERRED:
+      // Accessing maps and internalized strings is safe.
+      if (heap_object->IsMap()) return true;
+      if (heap_object->IsInternalizedString()) return true;
+      return allow_deferred || !isolate->IsDeferredHandle(handle);
+  }
+  return false;
+}
+#endif
+
 
 
 HandleScope::HandleScope(Isolate* isolate) {
@@ -91,7 +135,7 @@ void HandleScope::CloseScope() {
     current->limit = prev_limit_;
     DeleteExtensions(isolate_);
   }
-#ifdef DEBUG
+#ifdef ENABLE_EXTRA_CHECKS
   ZapRange(prev_next_, prev_limit_);
 #endif
 }
@@ -164,38 +208,18 @@ inline NoHandleAllocation::~NoHandleAllocation() {
 }
 
 
-NoHandleDereference::NoHandleDereference(Isolate* isolate)
+HandleDereferenceGuard::HandleDereferenceGuard(Isolate* isolate, State state)
     : isolate_(isolate) {
-  // The guard is set on a per-isolate basis, so it affects all threads.
-  // That's why we can only use it when running without parallel recompilation.
-  if (FLAG_parallel_recompilation) return;
-  old_state_ = isolate->allow_handle_deref();
-  isolate_->set_allow_handle_deref(false);
+  old_state_ = isolate_->HandleDereferenceGuardState();
+  isolate_->SetHandleDereferenceGuardState(state);
 }
 
 
-NoHandleDereference::~NoHandleDereference() {
-  if (FLAG_parallel_recompilation) return;
-  isolate_->set_allow_handle_deref(old_state_);
+HandleDereferenceGuard::~HandleDereferenceGuard() {
+  isolate_->SetHandleDereferenceGuardState(old_state_);
 }
 
-
-AllowHandleDereference::AllowHandleDereference(Isolate* isolate)
-    : isolate_(isolate) {
-  // The guard is set on a per-isolate basis, so it affects all threads.
-  // That's why we can only use it when running without parallel recompilation.
-  if (FLAG_parallel_recompilation) return;
-  old_state_ = isolate->allow_handle_deref();
-  isolate_->set_allow_handle_deref(true);
-}
-
-
-AllowHandleDereference::~AllowHandleDereference() {
-  if (FLAG_parallel_recompilation) return;
-  isolate_->set_allow_handle_deref(old_state_);
-}
 #endif
-
 
 } }  // namespace v8::internal
 

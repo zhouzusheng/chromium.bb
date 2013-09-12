@@ -26,14 +26,12 @@
 #ifndef IDBCursorBackendProxy_h
 #define IDBCursorBackendProxy_h
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "IDBCursorBackendInterface.h"
-#include "WebIDBCursor.h"
+#include <public/WebIDBCursor.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
+#include "modules/indexeddb/IDBCursorBackendInterface.h"
 
 namespace WebKit {
 
@@ -42,10 +40,10 @@ public:
     static PassRefPtr<WebCore::IDBCursorBackendInterface> create(PassOwnPtr<WebIDBCursor>);
     virtual ~IDBCursorBackendProxy();
 
-    virtual void advance(unsigned long, PassRefPtr<WebCore::IDBCallbacks>, WebCore::ExceptionCode&);
-    virtual void continueFunction(PassRefPtr<WebCore::IDBKey>, PassRefPtr<WebCore::IDBCallbacks>, WebCore::ExceptionCode&);
-    virtual void deleteFunction(PassRefPtr<WebCore::IDBCallbacks>, WebCore::ExceptionCode&);
-    virtual void prefetchContinue(int numberToFetch, PassRefPtr<WebCore::IDBCallbacks>, WebCore::ExceptionCode&) { ASSERT_NOT_REACHED(); } // Only used in the backend.
+    virtual void advance(unsigned long, PassRefPtr<WebCore::IDBCallbacks>);
+    virtual void continueFunction(PassRefPtr<WebCore::IDBKey>, PassRefPtr<WebCore::IDBCallbacks>);
+    virtual void deleteFunction(PassRefPtr<WebCore::IDBCallbacks>) { ASSERT_NOT_REACHED(); } // FIXME: Remove: http://crbug.com/241526
+    virtual void prefetchContinue(int numberToFetch, PassRefPtr<WebCore::IDBCallbacks>) { ASSERT_NOT_REACHED(); } // Only used in the backend.
     virtual void prefetchReset(int usedPrefetches, int unusedPrefetches) { ASSERT_NOT_REACHED(); } // Only used in the backend.
     virtual void postSuccessHandlerCallback();
 
@@ -56,7 +54,5 @@ private:
 };
 
 } // namespace WebKit
-
-#endif
 
 #endif // IDBCursorBackendProxy_h

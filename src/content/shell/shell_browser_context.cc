@@ -62,7 +62,7 @@ ShellBrowserContext::ShellBrowserContext(bool off_the_record)
 }
 
 ShellBrowserContext::~ShellBrowserContext() {
-  if (resource_context_.get()) {
+  if (resource_context_) {
     BrowserThread::DeleteSoon(
       BrowserThread::IO, FROM_HERE, resource_context_.release());
   }
@@ -70,8 +70,8 @@ ShellBrowserContext::~ShellBrowserContext() {
 
 void ShellBrowserContext::InitWhileIOAllowed() {
   CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  // SHEZ: Removed upstream DumpRenderTree code here, used only for testing.
-  if (cmd_line->HasSwitch(switches::kIgnoreCertificateErrors)) {
+  if (cmd_line->HasSwitch(switches::kIgnoreCertificateErrors) ||
+      cmd_line->HasSwitch(switches::kDumpRenderTree)) {
     ignore_certificate_errors_ = true;
   }
   if (cmd_line->HasSwitch(switches::kContentShellDataPath)) {
@@ -113,10 +113,14 @@ bool ShellBrowserContext::IsOffTheRecord() const {
 DownloadManagerDelegate* ShellBrowserContext::GetDownloadManagerDelegate()  {
   DownloadManager* manager = BrowserContext::GetDownloadManager(this);
 
-  if (!download_manager_delegate_.get()) {
+  if (!download_manager_delegate_) {
     download_manager_delegate_ = new ShellDownloadManagerDelegate();
     download_manager_delegate_->SetDownloadManager(manager);
-    // SHEZ: remove upstream code here, used only for testing
+    CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+    if (cmd_line->HasSwitch(switches::kDumpRenderTree)) {
+      download_manager_delegate_->SetDownloadBehaviorForTesting(
+          path_.Append(FILE_PATH_LITERAL("downloads")));
+    }
   }
 
   return download_manager_delegate_.get();

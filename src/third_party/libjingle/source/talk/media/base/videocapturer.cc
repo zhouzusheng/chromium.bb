@@ -34,6 +34,7 @@
 #endif
 #include "talk/base/common.h"
 #include "talk/base/logging.h"
+#include "talk/base/systeminfo.h"
 #include "talk/media/base/videoprocessor.h"
 
 #if defined(HAVE_WEBRTC_VIDEO)
@@ -48,6 +49,7 @@ const uint32 kStateChange = 0;
 static const int64 kMaxDistance = ~(static_cast<int64>(1) << 63);
 static const int64 kMinDesirableFps = static_cast<int64>(14);
 static const int kYU12Penalty = 16;  // Needs to be higher than MJPG index.
+static const int kDefaultScreencastFps = 5;
 typedef talk_base::TypedMessageData<CaptureState> StateChangeParams;
 
 /////////////////////////////////////////////////////////////////////
@@ -90,6 +92,8 @@ void VideoCapturer::Construct() {
   enable_camera_list_ = false;
   capture_state_ = CS_STOPPED;
   SignalFrameCaptured.connect(this, &VideoCapturer::OnFrameCaptured);
+  scaled_width_ = 0;
+  scaled_height_ = 0;
 }
 
 const std::vector<VideoFormat>* VideoCapturer::GetSupportedFormats() const {
@@ -121,6 +125,20 @@ void VideoCapturer::UpdateAspectRatio(int ratio_w, int ratio_h) {
 void VideoCapturer::ClearAspectRatio() {
   ratio_w_ = 0;
   ratio_h_ = 0;
+}
+
+bool VideoCapturer::Restart(const VideoFormat& capture_format) {
+  if (!IsRunning()) {
+    return StartCapturing(capture_format);
+  }
+
+  if (GetCaptureFormat() != NULL && *GetCaptureFormat() == capture_format) {
+    // The reqested format is the same; nothing to do.
+    return true;
+  }
+
+  Stop();
+  return StartCapturing(capture_format);
 }
 
 void VideoCapturer::SetSupportedFormats(
@@ -188,6 +206,7 @@ bool VideoCapturer::RemoveVideoProcessor(VideoProcessor* video_processor) {
 
 void VideoCapturer::ConstrainSupportedFormats(const VideoFormat& max_format) {
   max_format_.reset(new VideoFormat(max_format));
+  LOG(LS_VERBOSE) << " ConstrainSupportedFormats " << max_format.ToString();
   UpdateFilteredSupportedFormats();
 }
 
@@ -220,8 +239,27 @@ void VideoCapturer::OnFrameCaptured(VideoCapturer*,
 #if defined(HAVE_YUV)
   if (IsScreencast()) {
     int scaled_width, scaled_height;
-    ComputeScale(captured_frame->width, captured_frame->height, &scaled_width,
-                 &scaled_height);
+    int desired_screencast_fps = capture_format_.get() ?
+        VideoFormat::IntervalToFps(capture_format_->interval) :
+        kDefaultScreencastFps;
+#if defined(HAVE_YUV)
+    talk_base::SystemInfo system_info;
+    int num_cores = system_info.GetMaxPhysicalCpus();
+#else
+    const int num_cores = 4;
+#endif
+    ComputeScale(captured_frame->width, captured_frame->height,
+                 desired_screencast_fps, num_cores,
+                 &scaled_width, &scaled_height);
+
+    if (scaled_width != scaled_width_ || scaled_height != scaled_height_) {
+      LOG(LS_VERBOSE) << "Scaling Screencast from "
+                      << captured_frame->width << "x"
+                      << captured_frame->height << " to "
+                      << scaled_width << "x" << scaled_height;
+      scaled_width_ = scaled_width;
+      scaled_height_ = scaled_height;
+    }
     if (FOURCC_ARGB == captured_frame->fourcc &&
         (scaled_width != captured_frame->height ||
          scaled_height != captured_frame->height)) {

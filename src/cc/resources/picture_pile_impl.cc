@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <algorithm>
+#include <limits>
+
 #include "base/debug/trace_event.h"
 #include "cc/base/region.h"
 #include "cc/debug/debug_colors.h"
@@ -75,7 +78,7 @@ void PicturePileImpl::Raster(
     SkCanvas* canvas,
     gfx::Rect canvas_rect,
     float contents_scale,
-    int64* total_pixels_rasterized) {
+    RasterStats* raster_stats) {
 
   DCHECK(contents_scale >= min_contents_scale_);
 
@@ -120,6 +123,13 @@ void PicturePileImpl::Raster(
   canvas->clipRect(gfx::RectToSkRect(content_rect),
                    SkRegion::kReplace_Op);
   Region unclipped(content_rect);
+
+  if (raster_stats) {
+    raster_stats->total_pixels_rasterized = 0;
+    raster_stats->total_rasterize_time = base::TimeDelta::FromSeconds(0);
+    raster_stats->best_rasterize_time = base::TimeDelta::FromSeconds(0);
+  }
+
   for (TilingData::Iterator tile_iter(&tiling_, layer_rect);
        tile_iter; ++tile_iter) {
     PictureListMap::iterator map_iter =
@@ -145,11 +155,49 @@ void PicturePileImpl::Raster(
       if (!unclipped.Intersects(content_clip))
         continue;
 
-      if (slow_down_raster_scale_factor_for_debug_) {
-        for (int j = 0; j < slow_down_raster_scale_factor_for_debug_; ++j)
-          (*i)->Raster(canvas, content_clip, contents_scale, enable_lcd_text_);
-      } else {
+      base::TimeDelta total_duration =
+          base::TimeDelta::FromInternalValue(0);
+      base::TimeDelta best_duration =
+          base::TimeDelta::FromInternalValue(std::numeric_limits<int64>::max());
+      int repeat_count = std::max(1, slow_down_raster_scale_factor_for_debug_);
+
+      for (int j = 0; j < repeat_count; ++j) {
+        base::TimeTicks start_time;
+        if (raster_stats)
+          start_time = base::TimeTicks::HighResNow();
+
         (*i)->Raster(canvas, content_clip, contents_scale, enable_lcd_text_);
+
+        if (raster_stats) {
+          base::TimeDelta duration = base::TimeTicks::HighResNow() - start_time;
+          total_duration += duration;
+          best_duration = std::min(best_duration, duration);
+        }
+      }
+
+      if (raster_stats) {
+        gfx::Rect raster_rect = canvas_rect;
+        raster_rect.Intersect(content_clip);
+        raster_stats->total_pixels_rasterized +=
+            repeat_count * raster_rect.width() * raster_rect.height();
+        raster_stats->total_rasterize_time += total_duration;
+        raster_stats->best_rasterize_time += best_duration;
+      }
+
+      if (show_debug_picture_borders_) {
+        gfx::Rect border = content_clip;
+        border.Inset(0, 0, 1, 1);
+
+        SkPaint picture_border_paint;
+        picture_border_paint.setColor(DebugColors::PictureBorderColor());
+        canvas->drawLine(border.x(), border.y(), border.right(), border.y(),
+                         picture_border_paint);
+        canvas->drawLine(border.right(), border.y(), border.right(),
+                         border.bottom(), picture_border_paint);
+        canvas->drawLine(border.right(), border.bottom(), border.x(),
+                         border.bottom(), picture_border_paint);
+        canvas->drawLine(border.x(), border.bottom(), border.x(), border.y(),
+                         picture_border_paint);
       }
 
       // Don't allow pictures underneath to draw where this picture did.
@@ -157,9 +205,6 @@ void PicturePileImpl::Raster(
           gfx::RectToSkRect(content_clip),
           SkRegion::kDifference_Op);
       unclipped.Subtract(content_clip);
-
-      *total_pixels_rasterized +=
-          content_clip.width() * content_clip.height();
     }
   }
 
@@ -179,31 +224,6 @@ void PicturePileImpl::Raster(
   canvas->restore();
 }
 
-void PicturePileImpl::GatherPixelRefs(
-    gfx::Rect content_rect,
-    float contents_scale,
-    std::list<skia::LazyPixelRef*>& pixel_refs) {
-  std::list<skia::LazyPixelRef*> result;
-
-  gfx::Rect layer_rect = gfx::ToEnclosingRect(
-      gfx::ScaleRect(content_rect, 1.f / contents_scale));
-
-  for (TilingData::Iterator tile_iter(&tiling_, layer_rect);
-       tile_iter; ++tile_iter) {
-    PictureListMap::iterator map_iter =
-        picture_list_map_.find(tile_iter.index());
-    if (map_iter == picture_list_map_.end())
-      continue;
-
-    PictureList& pic_list = map_iter->second;
-    for (PictureList::const_iterator i = pic_list.begin();
-         i != pic_list.end(); ++i) {
-      (*i)->GatherPixelRefs(layer_rect, result);
-      pixel_refs.splice(pixel_refs.end(), result);
-    }
-  }
-}
-
 skia::RefPtr<SkPicture> PicturePileImpl::GetFlattenedPicture() {
   TRACE_EVENT0("cc", "PicturePileImpl::GetFlattenedPicture");
 
@@ -217,44 +237,101 @@ skia::RefPtr<SkPicture> PicturePileImpl::GetFlattenedPicture() {
       layer_rect.height(),
       SkPicture::kUsePathBoundsForClip_RecordingFlag);
 
-  int64 total_pixels_rasterized = 0;
-  Raster(canvas, layer_rect, 1.0, &total_pixels_rasterized);
+  Raster(canvas, layer_rect, 1.0, NULL);
   picture->endRecording();
 
   return picture;
 }
 
-void PicturePileImpl::AnalyzeInRect(const gfx::Rect& content_rect,
+void PicturePileImpl::AnalyzeInRect(gfx::Rect content_rect,
                                     float contents_scale,
                                     PicturePileImpl::Analysis* analysis) {
   DCHECK(analysis);
   TRACE_EVENT0("cc", "PicturePileImpl::AnalyzeInRect");
 
-  gfx::Rect layer_rect = gfx::ToEnclosingRect(
-      gfx::ScaleRect(content_rect, 1.f / contents_scale));
+  content_rect.Intersect(gfx::Rect(gfx::ToCeiledSize(
+      gfx::ScaleSize(tiling_.total_size(), contents_scale))));
 
   SkBitmap empty_bitmap;
-  empty_bitmap.setConfig(SkBitmap::kNo_Config, content_rect.width(),
-                        content_rect.height());
+  empty_bitmap.setConfig(SkBitmap::kNo_Config,
+                         content_rect.width(),
+                         content_rect.height());
   skia::AnalysisDevice device(empty_bitmap);
   skia::AnalysisCanvas canvas(&device);
 
-  int64 total_pixels_rasterized = 0;
-  Raster(&canvas, content_rect, contents_scale, &total_pixels_rasterized);
+  Raster(&canvas, content_rect, contents_scale, NULL);
 
-  analysis->is_transparent = canvas.isTransparent();
   analysis->is_solid_color = canvas.getColorIfSolid(&analysis->solid_color);
-  analysis->is_cheap_to_raster = canvas.isCheap();
-  canvas.consumeLazyPixelRefs(&analysis->lazy_pixel_refs);
+  analysis->has_text = canvas.hasText();
 }
 
-PicturePileImpl::Analysis::Analysis() :
-    is_solid_color(false),
-    is_transparent(false),
-    is_cheap_to_raster(false) {
+PicturePileImpl::Analysis::Analysis()
+    : is_solid_color(false),
+      has_text(false) {
 }
 
 PicturePileImpl::Analysis::~Analysis() {
+}
+
+PicturePileImpl::PixelRefIterator::PixelRefIterator(
+    gfx::Rect content_rect,
+    float contents_scale,
+    const PicturePileImpl* picture_pile)
+    : picture_pile_(picture_pile),
+      layer_rect_(gfx::ToEnclosingRect(
+          gfx::ScaleRect(content_rect, 1.f / contents_scale))),
+      tile_iterator_(&picture_pile_->tiling_, layer_rect_),
+      picture_list_(NULL) {
+  // Early out if there isn't a single tile.
+  if (!tile_iterator_)
+    return;
+
+  if (AdvanceToTileWithPictures())
+    AdvanceToPictureWithPixelRefs();
+}
+
+PicturePileImpl::PixelRefIterator::~PixelRefIterator() {
+}
+
+PicturePileImpl::PixelRefIterator&
+    PicturePileImpl::PixelRefIterator::operator++() {
+  ++pixel_ref_iterator_;
+  if (pixel_ref_iterator_)
+    return *this;
+
+  ++picture_list_iterator_;
+  AdvanceToPictureWithPixelRefs();
+  return *this;
+}
+
+bool PicturePileImpl::PixelRefIterator::AdvanceToTileWithPictures() {
+  for (; tile_iterator_; ++tile_iterator_) {
+    PictureListMap::const_iterator map_iterator =
+        picture_pile_->picture_list_map_.find(tile_iterator_.index());
+    if (map_iterator != picture_pile_->picture_list_map_.end()) {
+      picture_list_ = &map_iterator->second;
+      picture_list_iterator_ = picture_list_->begin();
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void PicturePileImpl::PixelRefIterator::AdvanceToPictureWithPixelRefs() {
+  DCHECK(tile_iterator_);
+  do {
+    for (;
+         picture_list_iterator_ != picture_list_->end();
+         ++picture_list_iterator_) {
+      pixel_ref_iterator_ = Picture::PixelRefIterator(
+          layer_rect_,
+          *picture_list_iterator_);
+      if (pixel_ref_iterator_)
+        return;
+    }
+    ++tile_iterator_;
+  } while (AdvanceToTileWithPictures());
 }
 
 }  // namespace cc

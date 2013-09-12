@@ -31,17 +31,7 @@
 #include "config.h"
 #include "WebPagePopupImpl.h"
 
-#include "Chrome.h"
-#include "ContextFeatures.h"
-#include "DOMWindowPagePopup.h"
-#include "DocumentLoader.h"
-#include "EmptyClients.h"
-#include "FocusController.h"
-#include "FrameView.h"
-#include "Page.h"
-#include "PagePopupClient.h"
 #include "PageWidgetDelegate.h"
-#include "Settings.h"
 #include "WebCursorInfo.h"
 #include "WebInputEventConversion.h"
 #include "WebPagePopup.h"
@@ -49,6 +39,17 @@
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
 #include "WebWidgetClient.h"
+#include "core/dom/ContextFeatures.h"
+#include "core/loader/DocumentLoader.h"
+#include "core/loader/EmptyClients.h"
+#include "core/page/Chrome.h"
+#include "core/page/DOMWindowPagePopup.h"
+#include "core/page/EventHandler.h"
+#include "core/page/FocusController.h"
+#include "core/page/FrameView.h"
+#include "core/page/Page.h"
+#include "core/page/PagePopupClient.h"
+#include "core/page/Settings.h"
 
 using namespace WebCore;
 using namespace std;
@@ -57,7 +58,7 @@ namespace WebKit {
 
 #if ENABLE(PAGE_POPUP)
 
-class PagePopupChromeClient : public EmptyChromeClient, public WebCore::PageClientChromium {
+class PagePopupChromeClient : public EmptyChromeClient {
     WTF_MAKE_NONCOPYABLE(PagePopupChromeClient);
     WTF_MAKE_FAST_ALLOCATED;
 
@@ -95,7 +96,7 @@ private:
 #endif
     }
 
-    virtual void invalidateContentsAndRootView(const IntRect& paintRect, bool) OVERRIDE
+    virtual void invalidateContentsAndRootView(const IntRect& paintRect) OVERRIDE
     {
         if (paintRect.isEmpty())
             return;
@@ -107,14 +108,19 @@ private:
         m_popup->widgetClient()->didScrollRect(scrollDelta.width(), scrollDelta.height(), intersection(scrollRect, clipRect));
     }
 
-    virtual void invalidateContentsForSlowScroll(const IntRect& updateRect, bool immediate) OVERRIDE
+    virtual void invalidateContentsForSlowScroll(const IntRect& updateRect) OVERRIDE
     {
-        invalidateContentsAndRootView(updateRect, immediate);
+        invalidateContentsAndRootView(updateRect);
     }
 
     virtual void scheduleAnimation() OVERRIDE
     {
         m_popup->widgetClient()->scheduleAnimation();
+    }
+
+    virtual WebScreenInfo screenInfo() const OVERRIDE
+    {
+        return m_popup->m_webView->client() ? m_popup->m_webView->client()->screenInfo() : WebScreenInfo();
     }
 
     virtual void* webView() const OVERRIDE
@@ -127,21 +133,15 @@ private:
         return FloatSize(0, 0);
     }
 
-    virtual PlatformPageClient platformPageClient() const OVERRIDE
-    {
-        return PlatformPageClient(this);
-    }
-
     virtual void setCursor(const WebCore::Cursor& cursor) OVERRIDE
     {
         if (m_popup->m_webView->client())
             m_popup->m_webView->client()->didChangeCursor(WebCursorInfo(cursor));
     }
 
-    // PageClientChromium methods:
-    virtual WebKit::WebScreenInfo screenInfo() OVERRIDE
+    virtual void needTouchEvents(bool needsTouchEvents) OVERRIDE
     {
-        return m_popup->m_webView->client()->screenInfo();
+        m_popup->widgetClient()->hasTouchEventHandlers(needsTouchEvents);
     }
 
     WebPagePopupImpl* m_popup;
@@ -254,7 +254,7 @@ void WebPagePopupImpl::layout()
 void WebPagePopupImpl::paint(WebCanvas* canvas, const WebRect& rect, PaintOptions)
 {
     if (!m_closing)
-        PageWidgetDelegate::paint(m_page.get(), 0, canvas, rect, PageWidgetDelegate::Opaque, m_webView->settingsImpl()->applyDeviceScaleFactorInCompositor());
+        PageWidgetDelegate::paint(m_page.get(), 0, canvas, rect, PageWidgetDelegate::Opaque);
 }
 
 void WebPagePopupImpl::resize(const WebSize& newSize)
@@ -281,7 +281,6 @@ bool WebPagePopupImpl::handleCharEvent(const WebKeyboardEvent&)
     return false;
 }
 
-#if ENABLE(GESTURE_EVENTS)
 bool WebPagePopupImpl::handleGestureEvent(const WebGestureEvent& event)
 {
     if (m_closing || !m_page || !m_page->mainFrame() || !m_page->mainFrame()->view())
@@ -289,7 +288,6 @@ bool WebPagePopupImpl::handleGestureEvent(const WebGestureEvent& event)
     Frame& frame = *m_page->mainFrame();
     return frame.eventHandler()->handleGestureEvent(PlatformGestureEventBuilder(frame.view(), event));
 }
-#endif
 
 bool WebPagePopupImpl::handleInputEvent(const WebInputEvent& event)
 {
@@ -325,7 +323,7 @@ void WebPagePopupImpl::close()
 void WebPagePopupImpl::closePopup()
 {
     if (m_page) {
-        m_page->setGroupName(String());
+        m_page->clearPageGroup();
         m_page->mainFrame()->loader()->stopAllLoaders();
         m_page->mainFrame()->loader()->stopLoading(UnloadEventPolicyNone);
         DOMWindowPagePopup::uninstall(m_page->mainFrame()->document()->domWindow());

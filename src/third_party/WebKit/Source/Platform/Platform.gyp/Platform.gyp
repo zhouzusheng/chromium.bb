@@ -36,14 +36,13 @@
     'targets': [
         {
             'target_name': 'webkit_platform',
-            'type': 'static_library',
+            'type': 'none',
             'dependencies': [
-                '../../WTF/WTF.gyp/WTF.gyp:wtf',
+                '../../wtf/wtf.gyp:wtf',
                 '<(DEPTH)/skia/skia.gyp:skia',
             ],
             'include_dirs': [
                 '../chromium',
-                '<(output_dir)',
             ],
             'defines': [
                 'WEBKIT_IMPLEMENTATION=1',
@@ -51,39 +50,15 @@
             'sources': [
                 '<@(platform_files)',
             ],
-            'variables': {
-                # List of headers that are #included in Platform API headers that exist inside
-                # the WebCore directory. These are only included when WEBKIT_IMPLEMENTATION=1.
-                # Since Platform/ can't add WebCore/* to the include path, this build step
-                # copies these headers into the shared intermediate directory and adds that to the include path.
-                # This is temporary, the better solution is to move these headers into the Platform
-                # directory for all ports and just use them as normal.
-                'webcore_headers': [
-                    '../../WebCore/platform/graphics/FloatPoint.h',
-                    '../../WebCore/platform/graphics/FloatPoint3D.h',
-                    '../../WebCore/platform/graphics/FloatQuad.h',
-                    '../../WebCore/platform/graphics/FloatRect.h',
-                    '../../WebCore/platform/graphics/FloatSize.h',
-                    '../../WebCore/platform/graphics/IntPoint.h',
-                    '../../WebCore/platform/graphics/IntRect.h',
-                    '../../WebCore/platform/graphics/IntSize.h',
-                ],
-                'output_dir': '<(SHARED_INTERMEDIATE_DIR)/webcore_headers'
-            },
             'direct_dependent_settings': {
                 'include_dirs': [
                     '../chromium',
-                    '<(output_dir)'
                 ],
             },
             'conditions': [
-                ['inside_chromium_build==1', {
-                    'conditions': [
-                        ['component=="shared_library"', {
-                            'defines': [
-                                'WEBKIT_DLL',
-                            ],
-                        }],
+                ['component=="shared_library"', {
+                    'defines': [
+                        'WEBKIT_DLL',
                     ],
                 }],
                 ['OS=="win"', {
@@ -91,15 +66,6 @@
                     'msvs_disabled_warnings': [4267, ],
                 }],
             ],
-            'copies': [
-                {
-                    'destination': '<(output_dir)',
-                    'files': [
-                        '<@(webcore_headers)'
-                    ]
-                }
-            ]
         }
     ]
 }
-

@@ -26,27 +26,27 @@
 #ifndef ValidationMessageClientImpl_h
 #define ValidationMessageClientImpl_h
 
-#include "Timer.h"
-#include "ValidationMessageClient.h"
+#include "core/page/ValidationMessageClient.h"
+#include "core/platform/Timer.h"
 
 namespace WebKit {
 
-class WebViewClient;
+class WebValidationMessageClient;
 
 class ValidationMessageClientImpl : public WebCore::ValidationMessageClient {
 public:
-    static PassOwnPtr<ValidationMessageClientImpl> create(WebViewClient&);
+    static PassOwnPtr<ValidationMessageClientImpl> create(WebValidationMessageClient&);
     virtual ~ValidationMessageClientImpl();
 
 private:
-    explicit ValidationMessageClientImpl(WebViewClient&);
+    explicit ValidationMessageClientImpl(WebValidationMessageClient&);
     void hideCurrentValidationMessage(WebCore::Timer<ValidationMessageClientImpl>*);
 
     virtual void showValidationMessage(const WebCore::Element& anchor, const String& message) OVERRIDE;
     virtual void hideValidationMessage(const WebCore::Element& anchor) OVERRIDE;
     virtual bool isValidationMessageVisible(const WebCore::Element& anchor) OVERRIDE;
 
-    WebViewClient& m_client;
+    WebValidationMessageClient& m_client;
     const WebCore::Element* m_currentAnchor;
     WebCore::Timer<ValidationMessageClientImpl> m_timer;
 };

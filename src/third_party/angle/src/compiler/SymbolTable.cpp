@@ -17,8 +17,7 @@
 
 #include <stdio.h>
 #include <algorithm>
-
-#include "common/angleutils.h"
+#include <climits>
 
 TType::TType(const TPublicType &p) :
             type(p.type), precision(p.precision), qualifier(p.qualifier), size(p.size), matrix(p.matrix), array(p.array), arraySize(p.arraySize),
@@ -54,7 +53,7 @@ void TType::buildMangledName(TString& mangledName)
         {// support MSVC++6.0
             for (unsigned int i = 0; i < structure->size(); ++i) {
                 mangledName += '-';
-                (*structure)[i].type->buildMangledName(mangledName);
+                (*structure)[i]->buildMangledName(mangledName);
             }
         }
     default:
@@ -71,16 +70,44 @@ void TType::buildMangledName(TString& mangledName)
     }
 }
 
-int TType::getStructSize() const
+size_t TType::getObjectSize() const
+{
+    size_t totalSize = 0;
+
+    if (getBasicType() == EbtStruct)
+        totalSize = getStructSize();
+    else if (matrix)
+        totalSize = size * size;
+    else
+        totalSize = size;
+
+    if (isArray()) {
+        size_t arraySize = std::max(getArraySize(), getMaxArraySize());
+        if (arraySize > INT_MAX / totalSize)
+            totalSize = INT_MAX;
+        else
+            totalSize *= arraySize;
+    }
+
+    return totalSize;
+}
+
+size_t TType::getStructSize() const
 {
     if (!getStruct()) {
         assert(false && "Not a struct");
         return 0;
     }
 
-    if (structureSize == 0)
-        for (TTypeList::const_iterator tl = getStruct()->begin(); tl != getStruct()->end(); tl++)
-            structureSize += ((*tl).type)->getObjectSize();
+    if (structureSize == 0) {
+        for (TTypeList::const_iterator tl = getStruct()->begin(); tl != getStruct()->end(); tl++) {
+            size_t fieldSize = (*tl)->getObjectSize();
+            if (fieldSize > INT_MAX - structureSize)
+                structureSize = INT_MAX;
+            else
+                structureSize += fieldSize;
+        }
+    }
 
     return structureSize;
 }
@@ -93,7 +120,7 @@ void TType::computeDeepestStructNesting()
 
     int maxNesting = 0;
     for (TTypeList::const_iterator tl = getStruct()->begin(); tl != getStruct()->end(); ++tl) {
-        maxNesting = std::max(maxNesting, ((*tl).type)->getDeepestStructNesting());
+        maxNesting = std::max(maxNesting, (*tl)->getDeepestStructNesting());
     }
 
     deepestStructNesting = 1 + maxNesting;
@@ -108,8 +135,8 @@ bool TType::isStructureContainingArrays() const
 
     for (TTypeList::const_iterator member = structure->begin(); member != structure->end(); member++)
     {
-        if (member->type->isArray() ||
-            member->type->isStructureContainingArrays())
+        if ((*member)->isArray() ||
+            (*member)->isStructureContainingArrays())
         {
             return true;
         }
@@ -201,79 +228,5 @@ void TSymbolTableLevel::relateToExtension(const char* name, const TString& ext)
             if (function->getName() == name)
                 function->relateToExtension(ext);
         }
-    }
-}
-
-TSymbol::TSymbol(const TSymbol& copyOf)
-{
-    name = NewPoolTString(copyOf.name->c_str());
-    uniqueId = copyOf.uniqueId;
-}
-
-TVariable::TVariable(const TVariable& copyOf, TStructureMap& remapper) : TSymbol(copyOf)
-{
-    type.copyType(copyOf.type, remapper);
-    userType = copyOf.userType;
-    // for builtIn symbol table level, unionArray and arrayInformation pointers should be NULL
-    assert(copyOf.arrayInformationType == 0);
-    arrayInformationType = 0;
-
-    if (copyOf.unionArray) {
-        assert(!copyOf.type.getStruct());
-        assert(copyOf.type.getObjectSize() == 1);
-        unionArray = new ConstantUnion[1];
-        unionArray[0] = copyOf.unionArray[0];
-    } else
-        unionArray = 0;
-}
-
-TVariable* TVariable::clone(TStructureMap& remapper)
-{
-    TVariable *variable = new TVariable(*this, remapper);
-
-    return variable;
-}
-
-TFunction::TFunction(const TFunction& copyOf, TStructureMap& remapper) : TSymbol(copyOf)
-{
-    for (unsigned int i = 0; i < copyOf.parameters.size(); ++i) {
-        TParameter param;
-        parameters.push_back(param);
-        parameters.back().copyParam(copyOf.parameters[i], remapper);
-    }
-
-    returnType.copyType(copyOf.returnType, remapper);
-    mangledName = copyOf.mangledName;
-    op = copyOf.op;
-    defined = copyOf.defined;
-}
-
-TFunction* TFunction::clone(TStructureMap& remapper)
-{
-    TFunction *function = new TFunction(*this, remapper);
-
-    return function;
-}
-
-TSymbolTableLevel* TSymbolTableLevel::clone(TStructureMap& remapper)
-{
-    TSymbolTableLevel *symTableLevel = new TSymbolTableLevel();
-    tLevel::iterator iter;
-    for (iter = level.begin(); iter != level.end(); ++iter) {
-        symTableLevel->insert(*iter->second->clone(remapper));
-    }
-
-    return symTableLevel;
-}
-
-void TSymbolTable::copyTable(const TSymbolTable& copyOf)
-{
-    TStructureMap remapper;
-    uniqueId = copyOf.uniqueId;
-    for (unsigned int i = 0; i < copyOf.table.size(); ++i) {
-        table.push_back(copyOf.table[i]->clone(remapper));
-    }
-    for( unsigned int i = 0; i < copyOf.precisionStack.size(); i++) {
-        precisionStack.push_back( copyOf.precisionStack[i] );
     }
 }

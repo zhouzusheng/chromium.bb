@@ -26,13 +26,11 @@
 #include "config.h"
 #include "WebIDBCursorImpl.h"
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "IDBAny.h"
+#include <public/WebIDBKey.h>
 #include "IDBCallbacksProxy.h"
-#include "IDBCursorBackendInterface.h"
-#include "IDBKey.h"
-#include "WebIDBKey.h"
+#include "modules/indexeddb/IDBAny.h"
+#include "modules/indexeddb/IDBCursorBackendInterface.h"
+#include "modules/indexeddb/IDBKey.h"
 
 using namespace WebCore;
 
@@ -47,24 +45,19 @@ WebIDBCursorImpl::~WebIDBCursorImpl()
 {
 }
 
-void WebIDBCursorImpl::advance(unsigned long count, WebIDBCallbacks* callbacks, WebExceptionCode& ec)
+void WebIDBCursorImpl::advance(unsigned long count, WebIDBCallbacks* callbacks)
 {
-    m_idbCursorBackend->advance(count, IDBCallbacksProxy::create(adoptPtr(callbacks)), ec);
+    m_idbCursorBackend->advance(count, IDBCallbacksProxy::create(adoptPtr(callbacks)));
 }
 
-void WebIDBCursorImpl::continueFunction(const WebIDBKey& key, WebIDBCallbacks* callbacks, WebExceptionCode& ec)
+void WebIDBCursorImpl::continueFunction(const WebIDBKey& key, WebIDBCallbacks* callbacks)
 {
-    m_idbCursorBackend->continueFunction(key, IDBCallbacksProxy::create(adoptPtr(callbacks)), ec);
+    m_idbCursorBackend->continueFunction(key, IDBCallbacksProxy::create(adoptPtr(callbacks)));
 }
 
-void WebIDBCursorImpl::deleteFunction(WebIDBCallbacks* callbacks, WebExceptionCode& ec)
+void WebIDBCursorImpl::prefetchContinue(int numberToFetch, WebIDBCallbacks* callbacks)
 {
-    m_idbCursorBackend->deleteFunction(IDBCallbacksProxy::create(adoptPtr(callbacks)), ec);
-}
-
-void WebIDBCursorImpl::prefetchContinue(int numberToFetch, WebIDBCallbacks* callbacks, WebExceptionCode& ec)
-{
-    m_idbCursorBackend->prefetchContinue(numberToFetch, IDBCallbacksProxy::create(adoptPtr(callbacks)), ec);
+    m_idbCursorBackend->prefetchContinue(numberToFetch, IDBCallbacksProxy::create(adoptPtr(callbacks)));
 }
 
 void WebIDBCursorImpl::prefetchReset(int usedPrefetches, int unusedPrefetches)
@@ -73,5 +66,3 @@ void WebIDBCursorImpl::prefetchReset(int usedPrefetches, int unusedPrefetches)
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)

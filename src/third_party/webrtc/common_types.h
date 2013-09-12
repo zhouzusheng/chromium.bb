@@ -136,27 +136,6 @@ enum ProcessingTypes
     kRecordingPreprocessing
 };
 
-// Encryption enums
-enum CipherTypes
-{
-    kCipherNull               = 0,
-    kCipherAes128CounterMode  = 1
-};
-
-enum AuthenticationTypes
-{
-    kAuthNull       = 0,
-    kAuthHmacSha1   = 3
-};
-
-enum SecurityLevels
-{
-    kNoProtection                    = 0,
-    kEncryption                      = 1,
-    kAuthentication                  = 2,
-    kEncryptionAndAuthentication     = 3
-};
-
 // Interface for encrypting and decrypting regular data and rtp/rtcp packets.
 // Implement this interface if you wish to provide an encryption scheme to
 // the voice or video engines.
@@ -545,6 +524,8 @@ struct SimulcastStream
     unsigned short      height;
     unsigned char       numberOfTemporalLayers;
     unsigned int        maxBitrate;
+    unsigned int        targetBitrate;
+    unsigned int        minBitrate;
     unsigned int        qpMax; // minimum quality
 };
 
@@ -552,6 +533,11 @@ enum VideoCodecMode {
   kRealtimeVideo,
   kScreensharing
 };
+
+// When using an external encoder/decoder one may need to specify extra
+// options. This struct definition is left for the external implementation.
+// TODO(andresp): Support for multiple external encoder/decoders.
+struct ExtraCodecOptions;
 
 // Common video codec properties
 struct VideoCodec
@@ -575,6 +561,7 @@ struct VideoCodec
     SimulcastStream     simulcastStream[kMaxSimulcastStreams];
 
     VideoCodecMode      mode;
+    ExtraCodecOptions*  extra_options;
 };
 
 // Bandwidth over-use detector options.  These are used to drive

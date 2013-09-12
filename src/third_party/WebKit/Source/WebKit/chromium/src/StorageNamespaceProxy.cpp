@@ -26,23 +26,23 @@
 #include "config.h"
 #include "StorageNamespaceProxy.h"
 
-#include "Chrome.h"
 #include "ChromeClientImpl.h"
-#include "Page.h"
-#include "SecurityOrigin.h"
 #include "StorageAreaProxy.h"
 #include "WebKit.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
+#include "core/page/Chrome.h"
+#include "core/page/Page.h"
+#include "core/page/SecurityOrigin.h"
 #include <public/Platform.h>
 #include <public/WebStorageNamespace.h>
 #include <public/WebString.h>
 
 namespace WebCore {
 
-PassRefPtr<StorageNamespace> StorageNamespace::localStorageNamespace(const String& path, unsigned quota)
+PassRefPtr<StorageNamespace> StorageNamespace::localStorageNamespace(unsigned quota)
 {
-    return adoptRef(new StorageNamespaceProxy(WebKit::Platform::current()->createLocalStorageNamespace(path, quota), LocalStorage));
+    return adoptRef(new StorageNamespaceProxy(WebKit::Platform::current()->createLocalStorageNamespace("", quota), LocalStorage));
 }
 
 PassRefPtr<StorageNamespace> StorageNamespace::sessionStorageNamespace(Page* page, unsigned quota)

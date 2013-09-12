@@ -609,7 +609,7 @@ static void CompileScriptForTracker(Isolate* isolate, Handle<Script> script) {
   CompilationInfoWithZone info(script);
   info.MarkAsGlobal();
   // Parse and don't allow skipping lazy functions.
-  if (ParserApi::Parse(&info, kNoParsingFlags)) {
+  if (Parser::Parse(&info)) {
     // Compile the code.
     LiveEditFunctionTracker tracker(info.isolate(), info.function());
     if (Compiler::MakeCodeForLiveEdit(&info)) {
@@ -966,14 +966,14 @@ JSArray* LiveEdit::GatherCompileInfo(Handle<Script> script,
       rethrow_exception = Handle<JSObject>::cast(exception);
 
       Factory* factory = isolate->factory();
-      Handle<String> start_pos_key =
-          factory->LookupOneByteSymbol(STATIC_ASCII_VECTOR("startPosition"));
-      Handle<String> end_pos_key =
-          factory->LookupOneByteSymbol(STATIC_ASCII_VECTOR("endPosition"));
-      Handle<String> script_obj_key =
-          factory->LookupOneByteSymbol(STATIC_ASCII_VECTOR("scriptObject"));
-      Handle<Smi> start_pos(Smi::FromInt(message_location.start_pos()),
-                            isolate);
+      Handle<String> start_pos_key = factory->InternalizeOneByteString(
+          STATIC_ASCII_VECTOR("startPosition"));
+      Handle<String> end_pos_key = factory->InternalizeOneByteString(
+          STATIC_ASCII_VECTOR("endPosition"));
+      Handle<String> script_obj_key = factory->InternalizeOneByteString(
+          STATIC_ASCII_VECTOR("scriptObject"));
+      Handle<Smi> start_pos(
+          Smi::FromInt(message_location.start_pos()), isolate);
       Handle<Smi> end_pos(Smi::FromInt(message_location.end_pos()), isolate);
       Handle<JSValue> script_obj = GetScriptWrapper(message_location.script());
       JSReceiver::SetProperty(
@@ -1260,7 +1260,7 @@ static void DeoptimizeDependentFunctions(SharedFunctionInfo* function_info) {
   AssertNoAllocation no_allocation;
 
   DependentFunctionFilter filter(function_info);
-  Deoptimizer::DeoptimizeAllFunctionsWith(&filter);
+  Deoptimizer::DeoptimizeAllFunctionsWith(function_info->GetIsolate(), &filter);
 }
 
 
@@ -1435,8 +1435,8 @@ class RelocInfoBuffer {
     // Copy the data.
     int curently_used_size =
         static_cast<int>(buffer_ + buffer_size_ - reloc_info_writer_.pos());
-    memmove(new_buffer + new_buffer_size - curently_used_size,
-            reloc_info_writer_.pos(), curently_used_size);
+    OS::MemMove(new_buffer + new_buffer_size - curently_used_size,
+                reloc_info_writer_.pos(), curently_used_size);
 
     reloc_info_writer_.Reposition(
         new_buffer + new_buffer_size - curently_used_size,
@@ -1488,7 +1488,7 @@ static Handle<Code> PatchPositionsInCode(
 
   if (buffer.length() == code->relocation_size()) {
     // Simply patch relocation area of code.
-    memcpy(code->relocation_start(), buffer.start(), buffer.length());
+    OS::MemCopy(code->relocation_start(), buffer.start(), buffer.length());
     return code;
   } else {
     // Relocation info section now has different size. We cannot simply
@@ -1761,9 +1761,9 @@ static const char* DropFrames(Vector<StackFrame*> frames,
 
       StackFrame* pre_pre_frame = frames[top_frame_index - 2];
 
-      memmove(padding_start + kPointerSize - shortage_bytes,
-          padding_start + kPointerSize,
-          Debug::FramePaddingLayout::kFrameBaseSize * kPointerSize);
+      OS::MemMove(padding_start + kPointerSize - shortage_bytes,
+                  padding_start + kPointerSize,
+                  Debug::FramePaddingLayout::kFrameBaseSize * kPointerSize);
 
       pre_top_frame->UpdateFp(pre_top_frame->fp() - shortage_bytes);
       pre_pre_frame->SetCallerFp(pre_top_frame->fp());

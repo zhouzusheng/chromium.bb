@@ -8,7 +8,7 @@
 #include <list>
 
 #include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/win/scoped_variant.h"
 #include "media/video/capture/win/video_capture_device_mf_win.h"
 
@@ -88,14 +88,7 @@ bool PinMatchesCategory(IPin* pin, REFGUID category) {
     hr = ks_property->Get(AMPROPSETID_Pin, AMPROPERTY_PIN_CATEGORY, NULL, 0,
                           &pin_category, sizeof(pin_category), &return_value);
     if (SUCCEEDED(hr) && (return_value == sizeof(pin_category))) {
-      // SHEZ: Changed upstream code here to disable warning 4800.  GUID has
-      //       operator== defined to return int in VS2008, which is being
-      //       forced to bool.  The warning breaks the build because warnings
-      //       are treated as errors.
-#pragma warning(push)
-#pragma warning(disable:4800)
       found = (pin_category == category);
-#pragma warning(pop)
     }
   }
   return found;
@@ -538,7 +531,7 @@ bool VideoCaptureDeviceWin::CreateCapabilityMap() {
       time_per_frame = h->AvgTimePerFrame;
 
       // Try to get the max frame rate from IAMVideoControl.
-      if (video_control.get()) {
+      if (video_control) {
         LONGLONG* max_fps_ptr;
         LONG list_size;
         SIZE size;

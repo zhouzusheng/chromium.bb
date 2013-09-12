@@ -31,15 +31,15 @@
 #include "config.h"
 #include "WebSettingsImpl.h"
 
-#include "DeferredImageDecoder.h"
-#include "FontRenderingMode.h"
-#include "Settings.h"
+#include "core/page/Settings.h"
+#include "core/platform/graphics/FontRenderingMode.h"
+#include "core/platform/graphics/chromium/DeferredImageDecoder.h"
 #include <public/WebString.h>
 #include <public/WebURL.h>
 #include <wtf/UnusedParam.h>
 
 #if defined(OS_WIN)
-#include "RenderThemeChromiumWin.h"
+#include "core/rendering/RenderThemeChromiumWin.h"
 #endif
 
 using namespace WebCore;
@@ -53,10 +53,12 @@ WebSettingsImpl::WebSettingsImpl(Settings* settings)
     , m_renderVSyncNotificationEnabled(false)
     , m_viewportEnabled(false)
     , m_initializeAtMinimumPageScale(true)
+    , m_useWideViewport(true)
     , m_gestureTapHighlightEnabled(true)
     , m_autoZoomFocusedNodeToLegibleScale(false)
     , m_deferredImageDecodingEnabled(false)
     , m_doubleTapToZoomEnabled(false)
+    , m_supportDeprecatedTargetDensityDPI(false)
 {
     ASSERT(settings);
 }
@@ -141,16 +143,6 @@ bool WebSettingsImpl::deviceSupportsTouch()
     return m_settings->deviceSupportsTouch();
 }
 
-void WebSettingsImpl::setApplyDeviceScaleFactorInCompositor(bool applyDeviceScaleFactorInCompositor)
-{
-    m_settings->setApplyDeviceScaleFactorInCompositor(applyDeviceScaleFactorInCompositor);
-}
-
-void WebSettingsImpl::setApplyPageScaleFactorInCompositor(bool applyPageScaleFactorInCompositor)
-{
-    m_settings->setApplyPageScaleFactorInCompositor(applyPageScaleFactorInCompositor);
-}
-
 void WebSettingsImpl::setAutoZoomFocusedNodeToLegibleScale(bool autoZoomFocusedNodeToLegibleScale)
 {
     m_autoZoomFocusedNodeToLegibleScale = autoZoomFocusedNodeToLegibleScale;
@@ -158,20 +150,12 @@ void WebSettingsImpl::setAutoZoomFocusedNodeToLegibleScale(bool autoZoomFocusedN
 
 void WebSettingsImpl::setTextAutosizingEnabled(bool enabled)
 {
-#if ENABLE(TEXT_AUTOSIZING)
     m_settings->setTextAutosizingEnabled(enabled);
-#else
-    UNUSED_PARAM(enabled);
-#endif
 }
 
 void WebSettingsImpl::setTextAutosizingFontScaleFactor(float fontScaleFactor)
 {
-#if ENABLE(TEXT_AUTOSIZING)
     m_settings->setTextAutosizingFontScaleFactor(fontScaleFactor);
-#else
-    UNUSED_PARAM(fontScaleFactor);
-#endif
 }
 
 void WebSettingsImpl::setDefaultTextEncodingName(const WebString& encoding)
@@ -192,6 +176,11 @@ void WebSettingsImpl::setWebSecurityEnabled(bool enabled)
 void WebSettingsImpl::setJavaScriptCanOpenWindowsAutomatically(bool canOpenWindows)
 {
     m_settings->setJavaScriptCanOpenWindowsAutomatically(canOpenWindows);
+}
+
+void WebSettingsImpl::setSupportDeprecatedTargetDensityDPI(bool supportDeprecatedTargetDensityDPI)
+{
+    m_supportDeprecatedTargetDensityDPI = supportDeprecatedTargetDensityDPI;
 }
 
 void WebSettingsImpl::setSupportsMultipleWindows(bool supportsMultipleWindows)
@@ -224,11 +213,6 @@ void WebSettingsImpl::setDOMPasteAllowed(bool enabled)
     m_settings->setDOMPasteAllowed(enabled);
 }
 
-void WebSettingsImpl::setDeveloperExtrasEnabled(bool enabled)
-{
-    m_settings->setDeveloperExtrasEnabled(enabled);
-}
-
 void WebSettingsImpl::setNeedsSiteSpecificQuirks(bool enabled)
 {
     m_settings->setNeedsSiteSpecificQuirks(enabled);
@@ -237,6 +221,11 @@ void WebSettingsImpl::setNeedsSiteSpecificQuirks(bool enabled)
 void WebSettingsImpl::setShrinksStandaloneImagesToFit(bool shrinkImages)
 {
     m_settings->setShrinksStandaloneImagesToFit(shrinkImages);
+}
+
+void WebSettingsImpl::setSpatialNavigationEnabled(bool enabled)
+{
+    m_settings->setSpatialNavigationEnabled(enabled);
 }
 
 void WebSettingsImpl::setUsesEncodingDetector(bool usesDetector)
@@ -269,14 +258,9 @@ void WebSettingsImpl::setAuthorAndUserStylesEnabled(bool enabled)
     m_settings->setAuthorAndUserStylesEnabled(enabled);
 }
 
-void WebSettingsImpl::setUsesPageCache(bool usesPageCache)
+void WebSettingsImpl::setUseWideViewport(bool useWideViewport)
 {
-    m_settings->setUsesPageCache(usesPageCache);
-}
-
-void WebSettingsImpl::setPageCacheSupportsPlugins(bool pageCacheSupportsPlugins)
-{
-    m_settings->setPageCacheSupportsPlugins(pageCacheSupportsPlugins);
+    m_useWideViewport = useWideViewport;
 }
 
 void WebSettingsImpl::setDoubleTapToZoomEnabled(bool doubleTapToZoomEnabled)
@@ -307,11 +291,6 @@ void WebSettingsImpl::setUnsafePluginPastingEnabled(bool enabled)
 void WebSettingsImpl::setDNSPrefetchingEnabled(bool enabled)
 {
     m_settings->setDNSPrefetchingEnabled(enabled);
-}
-
-void WebSettingsImpl::setFixedElementsLayoutRelativeToFrame(bool fixedElementsLayoutRelativeToFrame)
-{
-    m_settings->setFixedElementsLayoutRelativeToFrame(fixedElementsLayoutRelativeToFrame);
 }
 
 void WebSettingsImpl::setLocalStorageEnabled(bool enabled)
@@ -363,11 +342,14 @@ void WebSettingsImpl::setTouchDragDropEnabled(bool enabled)
     m_settings->setTouchDragDropEnabled(enabled);
 }
 
+void WebSettingsImpl::setTouchEditingEnabled(bool enabled)
+{
+    m_settings->setTouchEditingEnabled(enabled);
+}
+
 void WebSettingsImpl::setThreadedHTMLParser(bool enabled)
 {
-#if ENABLE(THREADED_HTML_PARSER)
     m_settings->setThreadedHTMLParser(enabled);
-#endif
 }
 
 void WebSettingsImpl::setOfflineWebApplicationCacheEnabled(bool enabled)
@@ -574,16 +556,12 @@ void WebSettingsImpl::setValidationMessageTimerMagnification(int newValue)
 
 void WebSettingsImpl::setMinimumTimerInterval(double interval)
 {
-    m_settings->setMinDOMTimerInterval(interval);
+    // FIXME: remove this once the embedder is no longer calling it.
 }
 
 void WebSettingsImpl::setFullScreenEnabled(bool enabled)
 {
-#if ENABLE(FULLSCREEN_API)
     m_settings->setFullScreenEnabled(enabled);
-#else
-    UNUSED_PARAM(enabled);
-#endif
 }
 
 void WebSettingsImpl::setAllowDisplayOfInsecureContent(bool enabled)
@@ -618,11 +596,7 @@ void WebSettingsImpl::setShouldPrintBackgrounds(bool enabled)
 
 void WebSettingsImpl::setEnableScrollAnimator(bool enabled)
 {
-#if ENABLE(SMOOTH_SCROLLING)
-    m_settings->setEnableScrollAnimator(enabled);
-#else
-    UNUSED_PARAM(enabled);
-#endif
+    m_settings->setScrollAnimatorEnabled(enabled);
 }
 
 void WebSettingsImpl::setEnableTouchAdjustment(bool enabled)
@@ -632,11 +606,12 @@ void WebSettingsImpl::setEnableTouchAdjustment(bool enabled)
 
 bool WebSettingsImpl::scrollAnimatorEnabled() const
 {
-#if ENABLE(SMOOTH_SCROLLING)
     return m_settings->scrollAnimatorEnabled();
-#else
-    return false;
-#endif
+}
+
+bool WebSettingsImpl::touchEditingEnabled() const
+{
+    return m_settings->touchEditingEnabled();
 }
 
 void WebSettingsImpl::setVisualWordMovementEnabled(bool enabled)
@@ -646,29 +621,17 @@ void WebSettingsImpl::setVisualWordMovementEnabled(bool enabled)
 
 void WebSettingsImpl::setShouldDisplaySubtitles(bool enabled)
 {
-#if ENABLE(VIDEO_TRACK)
     m_settings->setShouldDisplaySubtitles(enabled);
-#else
-    UNUSED_PARAM(enabled);
-#endif
 }
 
 void WebSettingsImpl::setShouldDisplayCaptions(bool enabled)
 {
-#if ENABLE(VIDEO_TRACK)
     m_settings->setShouldDisplayCaptions(enabled);
-#else
-    UNUSED_PARAM(enabled);
-#endif
 }
 
 void WebSettingsImpl::setShouldDisplayTextDescriptions(bool enabled)
 {
-#if ENABLE(VIDEO_TRACK)
     m_settings->setShouldDisplayTextDescriptions(enabled);
-#else
-    UNUSED_PARAM(enabled);
-#endif
 }
 
 void WebSettingsImpl::setShouldRespectImageOrientation(bool enabled)
@@ -706,16 +669,6 @@ void WebSettingsImpl::setGestureTapHighlightEnabled(bool enableHighlight)
     m_gestureTapHighlightEnabled = enableHighlight;
 }
 
-bool WebSettingsImpl::applyDeviceScaleFactorInCompositor() const
-{
-    return m_settings->applyDeviceScaleFactorInCompositor();
-}
-
-bool WebSettingsImpl::applyPageScaleFactorInCompositor() const
-{
-    return m_settings->applyPageScaleFactorInCompositor();
-}
-
 void WebSettingsImpl::setAllowCustomScrollbarInMainFrame(bool enabled)
 {
     m_settings->setAllowCustomScrollbarInMainFrame(enabled);
@@ -729,6 +682,11 @@ void WebSettingsImpl::setCompositedScrollingForFramesEnabled(bool enabled)
 void WebSettingsImpl::setSelectTrailingWhitespaceEnabled(bool enabled)
 {
     m_settings->setSelectTrailingWhitespaceEnabled(enabled);
+}
+
+void WebSettingsImpl::setSelectionIncludesAltImageText(bool enabled)
+{
+    m_settings->setSelectionIncludesAltImageText(enabled);
 }
 
 void WebSettingsImpl::setSmartInsertDeleteEnabled(bool enabled)

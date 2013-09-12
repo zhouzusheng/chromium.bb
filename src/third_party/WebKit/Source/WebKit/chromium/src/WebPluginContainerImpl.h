@@ -31,14 +31,14 @@
 #ifndef WebPluginContainerImpl_h
 #define WebPluginContainerImpl_h
 
-#include "PluginViewBase.h"
 #include "WebPluginContainer.h"
-#include "Widget.h"
+#include "core/platform/Widget.h"
+#include "core/plugins/PluginView.h"
 
 #include <wtf/OwnPtr.h>
 #include <wtf/PassRefPtr.h>
-#include <wtf/Vector.h>
 #include <wtf/text/WTFString.h>
+#include <wtf/Vector.h>
 
 struct NPObject;
 
@@ -48,14 +48,11 @@ class HTMLPlugInElement;
 class IntRect;
 class KeyboardEvent;
 class MouseEvent;
+class PlatformGestureEvent;
 class ResourceError;
 class ResourceResponse;
 class TouchEvent;
 class WheelEvent;
-
-#if ENABLE(GESTURE_EVENTS)
-class PlatformGestureEvent;
-#endif
 }
 
 namespace WebKit {
@@ -67,18 +64,20 @@ class WebPlugin;
 class WebPluginLoadObserver;
 class WebExternalTextureLayer;
 
-class WebPluginContainerImpl : public WebCore::PluginViewBase, public WebPluginContainer {
+class WebPluginContainerImpl : public WebCore::PluginView, public WebPluginContainer {
 public:
     static PassRefPtr<WebPluginContainerImpl> create(WebCore::HTMLPlugInElement* element, WebPlugin* webPlugin)
     {
         return adoptRef(new WebPluginContainerImpl(element, webPlugin));
     }
 
-    // PluginViewBase methods
-    virtual bool getFormValue(String&);
-    virtual bool supportsKeyboardFocus() const;
-    virtual bool canProcessDrag() const;
-    virtual bool wantsWheelEvents();
+    // PluginView methods
+    virtual WebLayer* platformLayer() const OVERRIDE;
+    virtual NPObject* scriptableObject() OVERRIDE;
+    virtual bool getFormValue(String&) OVERRIDE;
+    virtual bool supportsKeyboardFocus() const OVERRIDE;
+    virtual bool canProcessDrag() const OVERRIDE;
+    virtual bool wantsWheelEvents() OVERRIDE;
 
     // Widget methods
     virtual void setFrameRect(const WebCore::IntRect&);
@@ -139,19 +138,16 @@ public:
     // Copy the selected text.
     void copy();
 
+    // Pass the edit command to the plugin.
+    bool executeEditCommand(const WebString& name);
+
     // Resource load events for the plugin's source data:
     void didReceiveResponse(const WebCore::ResourceResponse&);
     void didReceiveData(const char *data, int dataLength);
     void didFinishLoading();
     void didFailLoading(const WebCore::ResourceError&);
 
-    virtual NPObject* scriptableObject() OVERRIDE;
-
     void willDestroyPluginLoadObserver(WebPluginLoadObserver*);
-
-#if USE(ACCELERATED_COMPOSITING)
-    virtual WebLayer* platformLayer() const;
-#endif
 
     ScrollbarGroup* scrollbarGroup();
 

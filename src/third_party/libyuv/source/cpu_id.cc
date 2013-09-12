@@ -26,6 +26,9 @@
 
 #include "libyuv/basic_types.h"  // For CPU_X86
 
+// TODO(fbarchard): Consider cpu functionality for breakpoints, timer and cache.
+// arm - bkpt vs intel int 3
+
 // TODO(fbarchard): Use cpuid.h when gcc 4.4 is used on OSX and Linux.
 #if (defined(__pic__) || defined(__APPLE__)) && defined(__i386__)
 static __inline void __cpuid(int cpu_info[4], int info_type) {
@@ -77,7 +80,9 @@ __declspec(naked) __declspec(align(16))
 static uint32 XGetBV(unsigned int xcr) {
   __asm {
     mov        ecx, [esp + 4]    // xcr
+    push       edx
     _asm _emit 0x0f _asm _emit 0x01 _asm _emit 0xd0  // xgetbv for vs2005.
+    pop        edx
     ret
   }
 }
@@ -156,22 +161,21 @@ static bool TestEnv(const char* name) {
 LIBYUV_API
 int InitCpuFlags(void) {
 #if !defined(__CLR_VER) && defined(CPU_X86)
-  int cpu_info[4] = { 0, 0, 0, 0 };
-  __cpuid(cpu_info, 1);
-  cpu_info_ = ((cpu_info[3] & 0x04000000) ? kCpuHasSSE2 : 0) |
-              ((cpu_info[2] & 0x00000200) ? kCpuHasSSSE3 : 0) |
-              ((cpu_info[2] & 0x00080000) ? kCpuHasSSE41 : 0) |
-              ((cpu_info[2] & 0x00100000) ? kCpuHasSSE42 : 0) |
-              ((cpu_info[2] & 0x00400000) ? kCpuHasMOVBE : 0) |
-              (((cpu_info[2] & 0x18000000) == 0x18000000) ? kCpuHasAVX : 0) |
+  int cpu_info1[4] = { 0, 0, 0, 0 };
+  int cpu_info7[4] = { 0, 0, 0, 0 };
+  __cpuid(cpu_info1, 1);
+  __cpuid(cpu_info7, 7);
+  cpu_info_ = ((cpu_info1[3] & 0x04000000) ? kCpuHasSSE2 : 0) |
+              ((cpu_info1[2] & 0x00000200) ? kCpuHasSSSE3 : 0) |
+              ((cpu_info1[2] & 0x00080000) ? kCpuHasSSE41 : 0) |
+              ((cpu_info1[2] & 0x00100000) ? kCpuHasSSE42 : 0) |
+              ((cpu_info7[1] & 0x00000200) ? kCpuHasERMS : 0) |
               kCpuHasX86;
 #ifdef HAS_XGETBV
-  if (cpu_info_ & kCpuHasAVX) {
-    __cpuid(cpu_info, 7);
-    if ((cpu_info[1] & 0x00000020) &&
-        ((XGetBV(kXCR_XFEATURE_ENABLED_MASK) & 0x06) == 0x06)) {
-      cpu_info_ |= kCpuHasAVX2;
-    }
+  if ((cpu_info1[2] & 0x18000000) == 0x18000000 &&  // AVX and OSSave
+      (XGetBV(kXCR_XFEATURE_ENABLED_MASK) & 0x06) == 0x06) {  // Saves YMM.
+    cpu_info_ |= ((cpu_info7[1] & 0x00000020) ? kCpuHasAVX2 : 0) |
+                 kCpuHasAVX;
   }
 #endif
   // Environment variable overrides for testing.
@@ -190,14 +194,14 @@ int InitCpuFlags(void) {
   if (TestEnv("LIBYUV_DISABLE_SSE42")) {
     cpu_info_ &= ~kCpuHasSSE42;
   }
-  if (TestEnv("LIBYUV_DISABLE_MOVBE")) {
-    cpu_info_ &= ~kCpuHasMOVBE;
-  }
   if (TestEnv("LIBYUV_DISABLE_AVX")) {
     cpu_info_ &= ~kCpuHasAVX;
   }
   if (TestEnv("LIBYUV_DISABLE_AVX2")) {
     cpu_info_ &= ~kCpuHasAVX2;
+  }
+  if (TestEnv("LIBYUV_DISABLE_ERMS")) {
+    cpu_info_ &= ~kCpuHasERMS;
   }
 #elif defined(__mips__) && defined(__linux__)
   // Linux mips parse text file for dsp detect.

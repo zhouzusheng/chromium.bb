@@ -31,12 +31,12 @@
 #include "config.h"
 #include "WebHistoryItem.h"
 
-#include "FormController.h"
-#include "FormData.h"
-#include "HistoryItem.h"
-#include "KURL.h"
-#include "SerializedScriptValue.h"
 #include "WebSerializedScriptValue.h"
+#include "bindings/v8/SerializedScriptValue.h"
+#include "core/history/HistoryItem.h"
+#include "core/html/FormController.h"
+#include "core/platform/KURL.h"
+#include "core/platform/network/FormData.h"
 #include <public/WebHTTPBody.h>
 #include <public/WebPoint.h>
 #include <public/WebString.h>

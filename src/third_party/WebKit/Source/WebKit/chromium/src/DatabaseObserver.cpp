@@ -29,16 +29,8 @@
  */
 
 #include "config.h"
-#include "DatabaseObserver.h"
+#include "modules/webdatabase/chromium/DatabaseObserver.h"
 
-#if ENABLE(SQL_DATABASE)
-
-#include "CrossThreadCopier.h"
-#include "CrossThreadTask.h"
-#include "DatabaseBackendBase.h"
-#include "DatabaseBackendContext.h"
-#include "Document.h"
-#include "ScriptExecutionContext.h"
 #include "WebCommonWorkerClient.h"
 #include "WebDatabase.h"
 #include "WebDatabaseObserver.h"
@@ -49,16 +41,20 @@
 #include "WebViewImpl.h"
 #include "WebWorkerBase.h"
 #include "WorkerAllowMainThreadBridgeBase.h"
-#include "WorkerContext.h"
-#include "WorkerLoaderProxy.h"
-#include "WorkerScriptController.h"
-#include "WorkerThread.h"
+#include "bindings/v8/WorkerScriptController.h"
+#include "core/dom/CrossThreadTask.h"
+#include "core/dom/Document.h"
+#include "core/dom/ScriptExecutionContext.h"
+#include "core/platform/CrossThreadCopier.h"
+#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerLoaderProxy.h"
+#include "core/workers/WorkerThread.h"
+#include "modules/webdatabase/DatabaseBackendBase.h"
+#include "modules/webdatabase/DatabaseBackendContext.h"
 
 using namespace WebKit;
 
 namespace {
-
-#if ENABLE(WORKERS)
 
 static const char allowDatabaseMode[] = "allowDatabaseMode";
 
@@ -128,8 +124,6 @@ bool allowDatabaseForWorker(WebFrame* frame, const WebString& name, const WebStr
     return bridge->result();
 }
 
-#endif
-
 }
 
 namespace WebCore {
@@ -149,16 +143,12 @@ bool DatabaseObserver::canEstablishDatabase(ScriptExecutionContext* scriptExecut
         if (webView->permissionClient())
             return webView->permissionClient()->allowDatabase(webFrame, name, displayName, estimatedSize);
     } else {
-#if ENABLE(WORKERS)
         WorkerContext* workerContext = static_cast<WorkerContext*>(scriptExecutionContext);
         WebWorkerBase* webWorker = static_cast<WebWorkerBase*>(workerContext->thread()->workerLoaderProxy().toWebWorkerBase());
         WebView* view = webWorker->view();
         if (!view)
             return false;
         return allowDatabaseForWorker(view->mainFrame(), name, displayName, estimatedSize);
-#else
-        ASSERT_NOT_REACHED();
-#endif
     }
 
     return true;
@@ -213,5 +203,3 @@ void DatabaseObserver::reportVacuumDatabaseResult(DatabaseBackendBase* database,
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(SQL_DATABASE)

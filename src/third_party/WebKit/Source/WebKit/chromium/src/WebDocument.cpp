@@ -31,23 +31,6 @@
 #include "config.h"
 #include "WebDocument.h"
 
-#include "AXObjectCache.h"
-#include "CSSParserMode.h"
-#include "Document.h"
-#include "DocumentLoader.h"
-#include "DocumentStyleSheetCollection.h"
-#include "DocumentType.h"
-#include "Element.h"
-#include "HTMLAllCollection.h"
-#include "HTMLBodyElement.h"
-#include "HTMLCollection.h"
-#include "HTMLElement.h"
-#include "HTMLFormElement.h"
-#include "HTMLHeadElement.h"
-#include "NodeList.h"
-#include "RenderObject.h"
-#include "SecurityOrigin.h"
-#include "StyleSheetContents.h"
 #include "WebAccessibilityObject.h"
 #include "WebDOMEvent.h"
 #include "WebDocumentType.h"
@@ -56,6 +39,23 @@
 #include "WebFrameImpl.h"
 #include "WebNodeCollection.h"
 #include "WebNodeList.h"
+#include "core/accessibility/AXObjectCache.h"
+#include "core/css/CSSParserMode.h"
+#include "core/css/StyleSheetContents.h"
+#include "core/dom/Document.h"
+#include "core/dom/DocumentStyleSheetCollection.h"
+#include "core/dom/DocumentType.h"
+#include "core/dom/Element.h"
+#include "core/dom/NodeList.h"
+#include "core/html/HTMLAllCollection.h"
+#include "core/html/HTMLBodyElement.h"
+#include "core/html/HTMLCollection.h"
+#include "core/html/HTMLElement.h"
+#include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLHeadElement.h"
+#include "core/loader/DocumentLoader.h"
+#include "core/page/SecurityOrigin.h"
+#include "core/rendering/RenderObject.h"
 #include <public/WebURL.h>
 #include <wtf/PassRefPtr.h>
 
@@ -209,17 +209,13 @@ void WebDocument::insertUserStyleSheet(const WebString& sourceCode, UserStyleLev
 
 void WebDocument::cancelFullScreen()
 {
-#if ENABLE(FULLSCREEN_API)
     unwrap<Document>()->webkitCancelFullScreen();
-#endif
 }
 
 WebElement WebDocument::fullScreenElement() const
 {
     Element* fullScreenElement = 0;
-#if ENABLE(FULLSCREEN_API)
     fullScreenElement = constUnwrap<Document>()->webkitCurrentFullScreenElement();
-#endif
     return WebElement(fullScreenElement);
 }
 
@@ -263,7 +259,6 @@ WebAccessibilityObject WebDocument::accessibilityObjectFromID(int axID) const
 WebVector<WebDraggableRegion> WebDocument::draggableRegions() const
 {
     WebVector<WebDraggableRegion> draggableRegions;
-#if ENABLE(DRAGGABLE_REGION)
     const Document* document = constUnwrap<Document>();
     if (document->hasAnnotatedRegions()) {
         const Vector<AnnotatedRegionValue>& regions = document->annotatedRegions();
@@ -274,7 +269,6 @@ WebVector<WebDraggableRegion> WebDocument::draggableRegions() const
             draggableRegions[i].bounds = WebCore::IntRect(value.bounds);
         }
     }
-#endif
     return draggableRegions;
 }
 

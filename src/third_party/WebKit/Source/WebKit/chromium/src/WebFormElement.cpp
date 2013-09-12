@@ -31,13 +31,13 @@
 #include "config.h"
 #include "WebFormElement.h"
 
-#include "FormState.h"
-#include "HTMLFormControlElement.h"
-#include "HTMLFormElement.h"
-#include "HTMLInputElement.h"
 #include "HTMLNames.h"
 #include "WebFormControlElement.h"
 #include "WebInputElement.h"
+#include "core/html/HTMLFormControlElement.h"
+#include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLInputElement.h"
+#include "core/loader/FormState.h"
 #include <public/WebString.h>
 #include <public/WebURL.h>
 #include <wtf/PassRefPtr.h>
@@ -104,9 +104,7 @@ void WebFormElement::getFormControlElements(WebVector<WebFormControlElement>& re
 
 void WebFormElement::finishRequestAutocomplete(WebFormElement::AutocompleteResult result)
 {
-#if ENABLE(REQUEST_AUTOCOMPLETE)
     unwrap<HTMLFormElement>()->finishRequestAutocomplete(static_cast<HTMLFormElement::AutocompleteResult>(result));
-#endif
 }
 
 WebFormElement::WebFormElement(const PassRefPtr<HTMLFormElement>& e)

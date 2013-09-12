@@ -43,12 +43,10 @@
 #include "config.h"
 #include "WebPasswordFormUtils.h"
 
-#include "HTMLFormElement.h"
-#include "HTMLInputElement.h"
 #include "HTMLNames.h"
-#include "KURL.h"
-
-#include "DOMUtilitiesPrivate.h"
+#include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLInputElement.h"
+#include "core/platform/KURL.h"
 
 using namespace WebCore;
 
@@ -72,11 +70,11 @@ void findPasswordFormFields(HTMLFormElement* form, PasswordFormFields* fields)
         if (formElement->isActivatedSubmit())
             fields->submit = formElement;
 
-        if (!formElement->hasLocalName(HTMLNames::inputTag))
+        if (!formElement->hasTagName(HTMLNames::inputTag))
             continue;
 
-        HTMLInputElement* inputElement = toHTMLInputElement(formElement);
-        if (!inputElement->isEnabledFormControl())
+        HTMLInputElement* inputElement = formElement->toInputElement();
+        if (inputElement->isDisabledFormControl())
             continue;
 
         if ((fields->passwords.size() < maxPasswords)

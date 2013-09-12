@@ -15,7 +15,8 @@
 #include "content/public/common/url_constants.h"
 #include "content/shell/shell_network_delegate.h"
 #include "content/shell/shell_switches.h"
-#include "net/base/cert_verifier.h"
+#include "net/base/cache_type.h"
+#include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/mapped_host_resolver.h"
@@ -56,8 +57,8 @@ void InstallProtocolHandlers(net::URLRequestJobFactoryImpl* job_factory,
 ShellURLRequestContextGetter::ShellURLRequestContextGetter(
     bool ignore_certificate_errors,
     const base::FilePath& base_path,
-    MessageLoop* io_loop,
-    MessageLoop* file_loop,
+    base::MessageLoop* io_loop,
+    base::MessageLoop* file_loop,
     ProtocolHandlerMap* protocol_handlers)
     : ignore_certificate_errors_(ignore_certificate_errors),
       base_path_(base_path),
@@ -71,8 +72,7 @@ ShellURLRequestContextGetter::ShellURLRequestContextGetter(
   // We must create the proxy config service on the UI loop on Linux because it
   // must synchronously run on the glib message loop. This will be passed to
   // the URLRequestContextStorage on the IO thread in GetURLRequestContext().
-  // SHEZ: remove upstream code here, used only for testing
-  {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
     proxy_config_service_.reset(
         net::ProxyService::CreateSystemProxyConfigService(
             io_loop_->message_loop_proxy(), file_loop_));
@@ -85,12 +85,13 @@ ShellURLRequestContextGetter::~ShellURLRequestContextGetter() {
 net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  if (!url_request_context_.get()) {
+  if (!url_request_context_) {
     const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
     url_request_context_.reset(new net::URLRequestContext());
     network_delegate_.reset(new ShellNetworkDelegate);
-    // SHEZ: remove upstream code here, used only for testing
+    if (command_line.HasSwitch(switches::kDumpRenderTree))
+      ShellNetworkDelegate::SetAcceptAllCookies(false);
     url_request_context_->set_network_delegate(network_delegate_.get());
     storage_.reset(
         new net::URLRequestContextStorage(url_request_context_.get()));
@@ -105,8 +106,9 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
         net::HostResolver::CreateDefaultResolver(NULL));
 
     storage_->set_cert_verifier(net::CertVerifier::CreateDefault());
-    // SHEZ: remove upstream code here, used only for testing
-    {
+    if (command_line.HasSwitch(switches::kDumpRenderTree)) {
+      storage_->set_proxy_service(net::ProxyService::CreateDirect());
+    } else {
       // TODO(jam): use v8 if possible, look at chrome code.
       storage_->set_proxy_service(
           net::ProxyService::CreateUsingSystemProxyResolver(
@@ -123,6 +125,7 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
     net::HttpCache::DefaultBackend* main_backend =
         new net::HttpCache::DefaultBackend(
             net::DISK_CACHE,
+            net::CACHE_BACKEND_DEFAULT,
             cache_path,
             0,
             BrowserThread::GetMessageLoopProxyForThread(

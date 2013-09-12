@@ -1,5 +1,5 @@
 # This file is generated. Do not edit.
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright (c) 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -174,6 +174,8 @@
     '<(libvpx_source)/vp9/common/vp9_blockd.h',
     '<(libvpx_source)/vp9/common/vp9_coefupdateprobs.h',
     '<(libvpx_source)/vp9/common/vp9_common.h',
+    '<(libvpx_source)/vp9/common/vp9_convolve.c',
+    '<(libvpx_source)/vp9/common/vp9_convolve.h',
     '<(libvpx_source)/vp9/common/vp9_debugmodes.c',
     '<(libvpx_source)/vp9/common/vp9_default_coef_probs.h',
     '<(libvpx_source)/vp9/common/vp9_entropy.c',
@@ -189,7 +191,8 @@
     '<(libvpx_source)/vp9/common/vp9_findnearmv.c',
     '<(libvpx_source)/vp9/common/vp9_findnearmv.h',
     '<(libvpx_source)/vp9/common/vp9_header.h',
-    '<(libvpx_source)/vp9/common/vp9_idctllm.c',
+    '<(libvpx_source)/vp9/common/vp9_idct.c',
+    '<(libvpx_source)/vp9/common/vp9_idct.h',
     '<(libvpx_source)/vp9/common/vp9_invtrans.c',
     '<(libvpx_source)/vp9/common/vp9_invtrans.h',
     '<(libvpx_source)/vp9/common/vp9_loopfilter.c',
@@ -216,7 +219,6 @@
     '<(libvpx_source)/vp9/common/vp9_reconinter.c',
     '<(libvpx_source)/vp9/common/vp9_reconinter.h',
     '<(libvpx_source)/vp9/common/vp9_reconintra4x4.c',
-    '<(libvpx_source)/vp9/common/vp9_reconintra4x4.h',
     '<(libvpx_source)/vp9/common/vp9_reconintra.c',
     '<(libvpx_source)/vp9/common/vp9_reconintra.h',
     '<(libvpx_source)/vp9/common/vp9_rtcd.c',
@@ -226,11 +228,12 @@
     '<(libvpx_source)/vp9/common/vp9_setupintrarecon.c',
     '<(libvpx_source)/vp9/common/vp9_setupintrarecon.h',
     '<(libvpx_source)/vp9/common/vp9_subpelvar.h',
-    '<(libvpx_source)/vp9/common/vp9_subpixel.h',
     '<(libvpx_source)/vp9/common/vp9_swapyv12buffer.c',
     '<(libvpx_source)/vp9/common/vp9_swapyv12buffer.h',
     '<(libvpx_source)/vp9/common/vp9_systemdependent.h',
     '<(libvpx_source)/vp9/common/vp9_textblit.h',
+    '<(libvpx_source)/vp9/common/vp9_tile_common.c',
+    '<(libvpx_source)/vp9/common/vp9_tile_common.h',
     '<(libvpx_source)/vp9/common/vp9_treecoder.c',
     '<(libvpx_source)/vp9/common/vp9_treecoder.h',
     '<(libvpx_source)/vp9/decoder/vp9_dboolhuff.c',
@@ -249,6 +252,7 @@
     '<(libvpx_source)/vp9/decoder/vp9_onyxd_int.h',
     '<(libvpx_source)/vp9/decoder/vp9_treereader.h',
     '<(libvpx_source)/vp9/vp9_dx_iface.c',
+    '<(libvpx_source)/vp9/vp9_iface_common.h',
     '<(libvpx_source)/vpx/internal/vpx_codec_internal.h',
     '<(libvpx_source)/vpx_mem/include/vpx_mem_intrnl.h',
     '<(libvpx_source)/vpx_mem/vpx_mem.c',

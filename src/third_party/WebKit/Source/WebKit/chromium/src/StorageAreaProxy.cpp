@@ -27,18 +27,18 @@
 #include "config.h"
 #include "StorageAreaProxy.h"
 
-#include "DOMWindow.h"
-#include "Document.h"
-#include "EventNames.h"
-#include "ExceptionCode.h"
-#include "Frame.h"
-#include "InspectorInstrumentation.h"
-#include "Page.h"
-#include "PageGroup.h"
-#include "SecurityOrigin.h"
-#include "Storage.h"
-#include "StorageEvent.h"
 #include "StorageNamespaceProxy.h"
+#include "core/dom/Document.h"
+#include "core/dom/EventNames.h"
+#include "core/dom/ExceptionCode.h"
+#include "core/inspector/InspectorInstrumentation.h"
+#include "core/page/DOMWindow.h"
+#include "core/page/Frame.h"
+#include "core/page/Page.h"
+#include "core/page/PageGroup.h"
+#include "core/page/SecurityOrigin.h"
+#include "core/storage/Storage.h"
+#include "core/storage/StorageEvent.h"
 
 #include "WebFrameImpl.h"
 #include "WebPermissionClient.h"
@@ -151,10 +151,11 @@ size_t StorageAreaProxy::memoryBytesUsedByCache()
     return m_storageArea->memoryBytesUsedByCache();
 }
 
-void StorageAreaProxy::dispatchLocalStorageEvent(PageGroup* pageGroup, const String& key, const String& oldValue, const String& newValue,
+void StorageAreaProxy::dispatchLocalStorageEvent(const String& key, const String& oldValue, const String& newValue,
                                                  SecurityOrigin* securityOrigin, const KURL& pageURL, WebKit::WebStorageArea* sourceAreaInstance, bool originatedInProcess)
 {
-    const HashSet<Page*>& pages = pageGroup->pages();
+    // FIXME: This looks suspicious. Why doesn't this use allPages instead?
+    const HashSet<Page*>& pages = PageGroup::sharedGroup()->pages();
     for (HashSet<Page*>::const_iterator it = pages.begin(); it != pages.end(); ++it) {
         for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
             Storage* storage = frame->document()->domWindow()->optionalLocalStorage();
@@ -165,9 +166,10 @@ void StorageAreaProxy::dispatchLocalStorageEvent(PageGroup* pageGroup, const Str
     }
 }
 
-static Page* findPageWithSessionStorageNamespace(PageGroup* pageGroup, const WebKit::WebStorageNamespace& sessionNamespace)
+static Page* findPageWithSessionStorageNamespace(const WebKit::WebStorageNamespace& sessionNamespace)
 {
-    const HashSet<Page*>& pages = pageGroup->pages();
+    // FIXME: This looks suspicious. Why doesn't this use allPages instead?
+    const HashSet<Page*>& pages = PageGroup::sharedGroup()->pages();
     for (HashSet<Page*>::const_iterator it = pages.begin(); it != pages.end(); ++it) {
         const bool dontCreateIfMissing = false;
         StorageNamespaceProxy* proxy = static_cast<StorageNamespaceProxy*>((*it)->sessionStorage(dontCreateIfMissing));
@@ -177,11 +179,11 @@ static Page* findPageWithSessionStorageNamespace(PageGroup* pageGroup, const Web
     return 0;
 }
 
-void StorageAreaProxy::dispatchSessionStorageEvent(PageGroup* pageGroup, const String& key, const String& oldValue, const String& newValue,
+void StorageAreaProxy::dispatchSessionStorageEvent(const String& key, const String& oldValue, const String& newValue,
                                                    SecurityOrigin* securityOrigin, const KURL& pageURL, const WebKit::WebStorageNamespace& sessionNamespace,
                                                    WebKit::WebStorageArea* sourceAreaInstance, bool originatedInProcess)
 {
-    Page* page = findPageWithSessionStorageNamespace(pageGroup, sessionNamespace);
+    Page* page = findPageWithSessionStorageNamespace(sessionNamespace);
     if (!page)
         return;
 

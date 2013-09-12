@@ -11,12 +11,15 @@
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "content/shell/renderer/shell_content_renderer_client.h"
 #include "content/shell/shell_browser_main.h"
 #include "content/shell/shell_content_browser_client.h"
-#include "content/shell/shell_content_renderer_client.h"
 #include "content/shell/shell_switches.h"
 #include "content/shell/webkit_test_platform_support.h"
-// SHEZ: upstream include here, used only for testing
+
+// SHEZ: Disable the following (used for test only)
+//#include "content/public/test/layouttest_support.h"
+
 #include "net/cookies/cookie_monster.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
@@ -102,7 +105,30 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 #endif  // OS_MACOSX
 
   InitLogging();
-  // SHEZ: Removed upstream DumpRenderTree code here, used only for testing.
+  CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kDumpRenderTree)) {
+    command_line.AppendSwitch(switches::kProcessPerTab);
+    command_line.AppendSwitch(switches::kAllowFileAccessFromFiles);
+    command_line.AppendSwitchASCII(
+        switches::kUseGL, gfx::kGLImplementationOSMesaName);
+    // SHEZ: Disable the following (used for test only)
+    //SetAllowOSMesaImageTransportForTesting();
+    //DisableSystemDragDrop();
+    command_line.AppendSwitch(switches::kSkipGpuDataLoading);
+    command_line.AppendSwitch(switches::kEnableExperimentalWebKitFeatures);
+    command_line.AppendSwitch(switches::kEnableCssShaders);
+    command_line.AppendSwitchASCII(switches::kTouchEvents,
+                                   switches::kTouchEventsEnabled);
+    if (command_line.HasSwitch(switches::kEnableSoftwareCompositing))
+      command_line.AppendSwitch(switches::kEnableSoftwareCompositingGLAdapter);
+
+    net::CookieMonster::EnableFileScheme();
+    if (!WebKitTestPlatformInitialize()) {
+      if (exit_code)
+        *exit_code = 1;
+      return true;
+    }
+  }
   SetContentClient(&content_client_);
   return false;
 }

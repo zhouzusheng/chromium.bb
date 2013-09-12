@@ -13,13 +13,14 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/shell/shell.h"
 #include "content/shell/shell_switches.h"
 #include "content/shell/webkit_test_controller.h"
+#include "content/shell/webkit_test_helpers.h"
 #include "net/base/net_util.h"
 #include "webkit/support/webkit_support.h"
 
@@ -60,8 +61,11 @@ GURL GetURLForLayoutTest(const std::string& test_name,
 #else
     base::FilePath local_file(path_or_url);
 #endif
-    file_util::AbsolutePath(&local_file);
-    test_url = net::FilePathToFileURL(local_file);
+    if (!file_util::PathExists(local_file)) {
+      local_file = content::GetWebKitRootDirFilePath()
+          .Append(FILE_PATH_LITERAL("LayoutTests")).Append(local_file);
+    }
+    test_url = net::FilePathToFileURL(base::MakeAbsoluteFilePath(local_file));
   }
   base::FilePath local_path;
   if (current_working_directory) {
@@ -94,7 +98,17 @@ bool GetNextTest(const CommandLine::StringVector& args,
 
 // Main routine for running as the Browser process.
 int ShellBrowserMain(const content::MainFunctionParams& parameters) {
-  // SHEZ: Removed a bunch of upstream code in this function for DumpRenderTree, used only for testing.
+  bool layout_test_mode =
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree);
+  base::ScopedTempDir browser_context_path_for_layout_tests;
+
+  if (layout_test_mode) {
+    CHECK(browser_context_path_for_layout_tests.CreateUniqueTempDir());
+    CHECK(!browser_context_path_for_layout_tests.path().MaybeAsASCII().empty());
+    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        switches::kContentShellDataPath,
+        browser_context_path_for_layout_tests.path().MaybeAsASCII());
+  }
 
   scoped_ptr<content::BrowserMainRunner> main_runner_(
       content::BrowserMainRunner::Create());
@@ -104,7 +118,67 @@ int ShellBrowserMain(const content::MainFunctionParams& parameters) {
   if (exit_code >= 0)
     return exit_code;
 
-  exit_code = main_runner_->Run();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kCheckLayoutTestSysDeps)) {
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
+    main_runner_->Run();
+    content::Shell::CloseAllWindows();
+    main_runner_->Shutdown();
+    return 0;
+  }
+
+  if (layout_test_mode) {
+    content::WebKitTestController test_controller;
+    {
+      // We're outside of the message loop here, and this is a test.
+      base::ThreadRestrictions::ScopedAllowIO allow_io;
+      base::FilePath temp_path;
+      file_util::GetTempDir(&temp_path);
+      test_controller.SetTempPath(temp_path);
+    }
+    std::string test_string;
+    CommandLine::StringVector args =
+        CommandLine::ForCurrentProcess()->GetArgs();
+    size_t command_line_position = 0;
+    bool ran_at_least_once = false;
+
+#if defined(OS_ANDROID)
+    std::cout << "#READY\n";
+    std::cout.flush();
+#endif
+
+    while (GetNextTest(args, &command_line_position, &test_string)) {
+      if (test_string.empty())
+        continue;
+      if (test_string == "QUIT")
+        break;
+
+      bool enable_pixel_dumps;
+      std::string pixel_hash;
+      base::FilePath cwd;
+      GURL test_url = GetURLForLayoutTest(
+          test_string, &cwd, &enable_pixel_dumps, &pixel_hash);
+      if (!content::WebKitTestController::Get()->PrepareForLayoutTest(
+              test_url, cwd, enable_pixel_dumps, pixel_hash)) {
+        break;
+      }
+
+      ran_at_least_once = true;
+      main_runner_->Run();
+
+      if (!content::WebKitTestController::Get()->ResetAfterLayoutTest())
+        break;
+    }
+    if (!ran_at_least_once) {
+      base::MessageLoop::current()->PostTask(FROM_HERE,
+                                             base::MessageLoop::QuitClosure());
+      main_runner_->Run();
+    }
+    exit_code = 0;
+  } else {
+    exit_code = main_runner_->Run();
+  }
 
   main_runner_->Shutdown();
 

@@ -33,55 +33,27 @@
 
 #include "config.h"
 
-#include "AXObjectCache.h"
-#include "AccessibilityObject.h"
-#include "ApplicationCacheHost.h"
-#include "ContentSecurityPolicy.h"
-#include "Cursor.h"
-#include "DocumentMarker.h"
-#include "EditorInsertAction.h"
-#include "ExceptionCode.h"
-#include "FileError.h"
-#include "FileMetadata.h"
-#include "FileSystemType.h"
-#include "FilterOperation.h"
-#include "FontDescription.h"
-#include "FontSmoothingMode.h"
-#include "GeolocationError.h"
-#include "GeolocationPosition.h"
-#if ENABLE(REQUEST_AUTOCOMPLETE)
-#include "HTMLFormElement.h"
-#endif
-#include "HTMLInputElement.h"
-#include "IDBCursor.h"
-#include "IDBDatabaseBackendInterface.h"
-#include "IDBDatabaseException.h"
-#include "IDBFactoryBackendInterfaceChromium.h"
-#include "IDBKey.h"
-#include "IDBKeyPath.h"
-#include "IDBMetadata.h"
-#include "IconURL.h"
-#include "MediaPlayer.h"
-#if ENABLE(MEDIA_SOURCE)
-#include "MediaSourcePrivate.h"
-#endif
-#include "MediaStreamSource.h"
-#include "NotificationClient.h"
-#include "PageVisibilityState.h"
-#include "RTCDataChannelHandlerClient.h"
-#include "RTCPeerConnectionHandlerClient.h"
-#include "ReferrerPolicy.h"
-#include "ResourceLoadPriority.h"
-#include "ResourceResponse.h"
-#include "Settings.h"
-#include "SpeechRecognitionError.h"
-#include "StorageQuota.h"
-#include "TextAffinity.h"
-#include "TextChecking.h"
-#include "TextControlInnerElements.h"
-#include "UserContentTypes.h"
-#include "UserScriptTypes.h"
-#include "UserStyleSheetTypes.h"
+#include <public/WebClipboard.h>
+#include <public/WebFileError.h>
+#include <public/WebFileInfo.h>
+#include <public/WebFileSystem.h>
+#include <public/WebFilterOperation.h>
+#include <public/WebIDBCursor.h>
+#include <public/WebIDBDatabase.h>
+#include <public/WebIDBDatabaseException.h>
+#include <public/WebIDBFactory.h>
+#include <public/WebIDBKey.h>
+#include <public/WebIDBKeyPath.h>
+#include <public/WebIDBMetadata.h>
+#include <public/WebMediaStreamSource.h>
+#include <public/WebReferrerPolicy.h>
+#include <public/WebRTCDataChannelHandlerClient.h>
+#include <public/WebRTCPeerConnectionHandlerClient.h>
+#include <public/WebScrollbar.h>
+#include <public/WebURLRequest.h>
+#include <public/WebURLResponse.h>
+#include <wtf/Assertions.h>
+#include <wtf/text/StringImpl.h>
 #include "WebAccessibilityNotification.h"
 #include "WebAccessibilityObject.h"
 #include "WebApplicationCacheHost.h"
@@ -90,18 +62,9 @@
 #include "WebCursorInfo.h"
 #include "WebEditingAction.h"
 #include "WebFontDescription.h"
-#if ENABLE(REQUEST_AUTOCOMPLETE)
 #include "WebFormElement.h"
-#endif
 #include "WebGeolocationError.h"
 #include "WebGeolocationPosition.h"
-#include "WebIDBCursor.h"
-#include "WebIDBDatabase.h"
-#include "WebIDBDatabaseException.h"
-#include "WebIDBFactory.h"
-#include "WebIDBKey.h"
-#include "WebIDBKeyPath.h"
-#include "WebIDBMetadata.h"
 #include "WebIconURL.h"
 #include "WebInputElement.h"
 #include "WebMediaPlayer.h"
@@ -114,24 +77,53 @@
 #include "WebStorageQuotaError.h"
 #include "WebStorageQuotaType.h"
 #include "WebTextAffinity.h"
-#include "WebTextCaseSensitivity.h"
 #include "WebTextCheckingResult.h"
 #include "WebTextCheckingType.h"
 #include "WebView.h"
-#include <public/WebClipboard.h>
-#include <public/WebFileError.h>
-#include <public/WebFileInfo.h>
-#include <public/WebFileSystem.h>
-#include <public/WebFilterOperation.h>
-#include <public/WebMediaStreamSource.h>
-#include <public/WebRTCDataChannelHandlerClient.h>
-#include <public/WebRTCPeerConnectionHandlerClient.h>
-#include <public/WebReferrerPolicy.h>
-#include <public/WebScrollbar.h>
-#include <public/WebURLRequest.h>
-#include <public/WebURLResponse.h>
-#include <wtf/Assertions.h>
-#include <wtf/text/StringImpl.h>
+#include "core/accessibility/AXObjectCache.h"
+#include "core/accessibility/AccessibilityObject.h"
+#include "core/dom/DocumentMarker.h"
+#include "core/dom/ExceptionCode.h"
+#include "core/dom/IconURL.h"
+#include "core/editing/EditorInsertAction.h"
+#include "core/editing/TextAffinity.h"
+#include "core/fileapi/FileError.h"
+#include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLInputElement.h"
+#include "core/html/shadow/TextControlInnerElements.h"
+#include "core/loader/appcache/ApplicationCacheHost.h"
+#include "core/page/ContentSecurityPolicy.h"
+#include "core/page/PageVisibilityState.h"
+#include "core/page/Settings.h"
+#include "core/page/UserContentTypes.h"
+#include "core/page/UserStyleSheetTypes.h"
+#include "core/platform/Cursor.h"
+#include "core/platform/FileMetadata.h"
+#include "core/platform/ReferrerPolicy.h"
+#include "core/platform/graphics/FontDescription.h"
+#include "core/platform/graphics/FontSmoothingMode.h"
+#include "core/platform/graphics/MediaPlayer.h"
+#include "core/platform/graphics/MediaSourcePrivate.h"
+#include "core/platform/graphics/filters/FilterOperation.h"
+#include "core/platform/mediastream/MediaStreamSource.h"
+#include "core/platform/mediastream/RTCDataChannelHandlerClient.h"
+#include "core/platform/mediastream/RTCPeerConnectionHandlerClient.h"
+#include "core/platform/network/ResourceLoadPriority.h"
+#include "core/platform/network/ResourceResponse.h"
+#include "core/platform/text/TextChecking.h"
+#include "modules/filesystem/FileSystemType.h"
+#include "modules/geolocation/GeolocationError.h"
+#include "modules/geolocation/GeolocationPosition.h"
+#include "modules/indexeddb/IDBCursor.h"
+#include "modules/indexeddb/IDBDatabaseBackendInterface.h"
+#include "modules/indexeddb/IDBDatabaseException.h"
+#include "modules/indexeddb/IDBKey.h"
+#include "modules/indexeddb/IDBKeyPath.h"
+#include "modules/indexeddb/IDBMetadata.h"
+#include "modules/indexeddb/chromium/IDBFactoryBackendInterfaceChromium.h"
+#include "modules/notifications/NotificationClient.h"
+#include "modules/quota/StorageQuota.h"
+#include "modules/speech/SpeechRecognitionError.h"
 
 #define COMPILE_ASSERT_MATCHING_ENUM(webkit_name, webcore_name) \
     COMPILE_ASSERT(int(WebKit::webkit_name) == int(WebCore::webcore_name), mismatching_enums)
@@ -388,7 +380,6 @@ COMPILE_ASSERT_MATCHING_ENUM(WebNode::DocumentFragmentNode, Node::DOCUMENT_FRAGM
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::NotationNode, Node::NOTATION_NODE);
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::XPathNamespaceNode, Node::XPATH_NAMESPACE_NODE);
 
-#if ENABLE(VIDEO)
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::NetworkStateEmpty, MediaPlayer::Empty);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::NetworkStateIdle, MediaPlayer::Idle);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::NetworkStateLoading, MediaPlayer::Loading);
@@ -412,7 +403,6 @@ COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::PreloadNone, MediaPlayer::None);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::PreloadMetaData, MediaPlayer::MetaData);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::PreloadAuto, MediaPlayer::Auto);
 
-#if ENABLE(MEDIA_SOURCE)
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::AddStatusOk, MediaSourcePrivate::Ok);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::AddStatusNotSupported, MediaSourcePrivate::NotSupported);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::AddStatusReachedIdLimit, MediaSourcePrivate::ReachedIdLimit);
@@ -420,7 +410,6 @@ COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::AddStatusReachedIdLimit, Medi
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::EndOfStreamStatusNoError, MediaSourcePrivate::EosNoError);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::EndOfStreamStatusNetworkError, MediaSourcePrivate::EosNetworkError);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaSourceClient::EndOfStreamStatusDecodeError, MediaSourcePrivate::EosDecodeError);
-#endif
 
 #if ENABLE(ENCRYPTED_MEDIA)
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::MediaKeyExceptionNoError, MediaPlayer::NoError);
@@ -433,8 +422,6 @@ COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayerClient::MediaKeyErrorCodeService, Med
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayerClient::MediaKeyErrorCodeOutput, MediaPlayerClient::OutputError);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayerClient::MediaKeyErrorCodeHardwareChange, MediaPlayerClient::HardwareChangeError);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayerClient::MediaKeyErrorCodeDomain, MediaPlayerClient::DomainError);
-#endif
-
 #endif
 
 #if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
@@ -476,17 +463,11 @@ COMPILE_ASSERT_MATCHING_ENUM(WebSettings::EditingBehaviorAndroid, EditingAndroid
 COMPILE_ASSERT_MATCHING_ENUM(WebTextAffinityUpstream, UPSTREAM);
 COMPILE_ASSERT_MATCHING_ENUM(WebTextAffinityDownstream, DOWNSTREAM);
 
-COMPILE_ASSERT_MATCHING_ENUM(WebTextCaseSensitive, TextCaseSensitive);
-COMPILE_ASSERT_MATCHING_ENUM(WebTextCaseInsensitive, TextCaseInsensitive);
-
-COMPILE_ASSERT_MATCHING_ENUM(WebView::UserScriptInjectAtDocumentStart, InjectAtDocumentStart);
-COMPILE_ASSERT_MATCHING_ENUM(WebView::UserScriptInjectAtDocumentEnd, InjectAtDocumentEnd);
 COMPILE_ASSERT_MATCHING_ENUM(WebView::UserContentInjectInAllFrames, InjectInAllFrames);
 COMPILE_ASSERT_MATCHING_ENUM(WebView::UserContentInjectInTopFrameOnly, InjectInTopFrameOnly);
 COMPILE_ASSERT_MATCHING_ENUM(WebView::UserStyleInjectInExistingDocuments, InjectInExistingDocuments);
 COMPILE_ASSERT_MATCHING_ENUM(WebView::UserStyleInjectInSubsequentDocuments, InjectInSubsequentDocuments);
 
-#if ENABLE(INDEXED_DATABASE)
 COMPILE_ASSERT_MATCHING_ENUM(WebIDBDatabaseExceptionUnknownError, IDBDatabaseException::UnknownError);
 COMPILE_ASSERT_MATCHING_ENUM(WebIDBDatabaseExceptionDataError, IDBDatabaseException::DataError);
 COMPILE_ASSERT_MATCHING_ENUM(WebIDBDatabaseExceptionAbortError, IDBDatabaseException::AbortError);
@@ -511,9 +492,7 @@ COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::PrevNoDuplicate, IndexedDB::CursorPre
 
 COMPILE_ASSERT_MATCHING_ENUM(WebIDBDatabase::PreemptiveTask, IDBDatabaseBackendInterface::PreemptiveTask);
 COMPILE_ASSERT_MATCHING_ENUM(WebIDBDatabase::NormalTask, IDBDatabaseBackendInterface::NormalTask);
-#endif
 
-#if ENABLE(FILE_SYSTEM)
 COMPILE_ASSERT_MATCHING_ENUM(WebFileSystem::TypeTemporary, FileSystemTypeTemporary);
 COMPILE_ASSERT_MATCHING_ENUM(WebFileSystem::TypePersistent, FileSystemTypePersistent);
 COMPILE_ASSERT_MATCHING_ENUM(WebFileSystem::TypeExternal, FileSystemTypeExternal);
@@ -521,7 +500,6 @@ COMPILE_ASSERT_MATCHING_ENUM(WebFileSystem::TypeIsolated, FileSystemTypeIsolated
 COMPILE_ASSERT_MATCHING_ENUM(WebFileInfo::TypeUnknown, FileMetadata::TypeUnknown);
 COMPILE_ASSERT_MATCHING_ENUM(WebFileInfo::TypeFile, FileMetadata::TypeFile);
 COMPILE_ASSERT_MATCHING_ENUM(WebFileInfo::TypeDirectory, FileMetadata::TypeDirectory);
-#endif
 
 COMPILE_ASSERT_MATCHING_ENUM(WebFileErrorNotFound, FileError::NOT_FOUND_ERR);
 COMPILE_ASSERT_MATCHING_ENUM(WebFileErrorSecurity, FileError::SECURITY_ERR);
@@ -548,7 +526,6 @@ COMPILE_ASSERT_MATCHING_ENUM(WebTextCheckingTypeReplacement, TextCheckingTypeRep
 COMPILE_ASSERT_MATCHING_ENUM(WebTextCheckingTypeCorrection, TextCheckingTypeCorrection);
 COMPILE_ASSERT_MATCHING_ENUM(WebTextCheckingTypeShowCorrectionPanel, TextCheckingTypeShowCorrectionPanel);
 
-#if ENABLE(QUOTA)
 COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaErrorNotSupported, NOT_SUPPORTED_ERR);
 COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaErrorInvalidModification, INVALID_MODIFICATION_ERR);
 COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaErrorInvalidAccess, INVALID_ACCESS_ERR);
@@ -556,14 +533,12 @@ COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaErrorAbort, ABORT_ERR);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaTypeTemporary, StorageQuota::Temporary);
 COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaTypePersistent, StorageQuota::Persistent);
-#endif
 
 COMPILE_ASSERT_MATCHING_ENUM(WebPageVisibilityStateVisible, PageVisibilityStateVisible);
 COMPILE_ASSERT_MATCHING_ENUM(WebPageVisibilityStateHidden, PageVisibilityStateHidden);
 COMPILE_ASSERT_MATCHING_ENUM(WebPageVisibilityStatePrerender, PageVisibilityStatePrerender);
 COMPILE_ASSERT_MATCHING_ENUM(WebPageVisibilityStatePreview, PageVisibilityStatePreview);
 
-#if ENABLE(MEDIA_STREAM)
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaStreamSource::TypeAudio, MediaStreamSource::TypeAudio);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaStreamSource::TypeVideo, MediaStreamSource::TypeVideo);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaStreamSource::ReadyStateLive, MediaStreamSource::ReadyStateLive);
@@ -594,9 +569,7 @@ COMPILE_ASSERT_MATCHING_ENUM(WebRTCDataChannelHandlerClient::ReadyStateConnectin
 COMPILE_ASSERT_MATCHING_ENUM(WebRTCDataChannelHandlerClient::ReadyStateOpen, RTCDataChannelHandlerClient::ReadyStateOpen);
 COMPILE_ASSERT_MATCHING_ENUM(WebRTCDataChannelHandlerClient::ReadyStateClosing, RTCDataChannelHandlerClient::ReadyStateClosing);
 COMPILE_ASSERT_MATCHING_ENUM(WebRTCDataChannelHandlerClient::ReadyStateClosed, RTCDataChannelHandlerClient::ReadyStateClosed);
-#endif
 
-#if ENABLE(SCRIPTED_SPEECH)
 COMPILE_ASSERT_MATCHING_ENUM(WebSpeechRecognizerClient::OtherError, SpeechRecognitionError::ErrorCodeOther);
 COMPILE_ASSERT_MATCHING_ENUM(WebSpeechRecognizerClient::NoSpeechError, SpeechRecognitionError::ErrorCodeNoSpeech);
 COMPILE_ASSERT_MATCHING_ENUM(WebSpeechRecognizerClient::AbortedError, SpeechRecognitionError::ErrorCodeAborted);
@@ -606,7 +579,6 @@ COMPILE_ASSERT_MATCHING_ENUM(WebSpeechRecognizerClient::NotAllowedError, SpeechR
 COMPILE_ASSERT_MATCHING_ENUM(WebSpeechRecognizerClient::ServiceNotAllowedError, SpeechRecognitionError::ErrorCodeServiceNotAllowed);
 COMPILE_ASSERT_MATCHING_ENUM(WebSpeechRecognizerClient::BadGrammarError, SpeechRecognitionError::ErrorCodeBadGrammar);
 COMPILE_ASSERT_MATCHING_ENUM(WebSpeechRecognizerClient::LanguageNotSupportedError, SpeechRecognitionError::ErrorCodeLanguageNotSupported);
-#endif
 
 COMPILE_ASSERT_MATCHING_ENUM(WebReferrerPolicyAlways, ReferrerPolicyAlways);
 COMPILE_ASSERT_MATCHING_ENUM(WebReferrerPolicyDefault, ReferrerPolicyDefault);
@@ -627,12 +599,10 @@ COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::CORSModeUnspecified, MediaPlayerCli
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::CORSModeAnonymous, MediaPlayerClient::Anonymous);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::CORSModeUseCredentials, MediaPlayerClient::UseCredentials);
 
-#if ENABLE(REQUEST_AUTOCOMPLETE)
 COMPILE_ASSERT_MATCHING_ENUM(WebFormElement::AutocompleteResultSuccess, HTMLFormElement::AutocompleteResultSuccess);
 COMPILE_ASSERT_MATCHING_ENUM(WebFormElement::AutocompleteResultErrorDisabled, HTMLFormElement::AutocompleteResultErrorDisabled);
 COMPILE_ASSERT_MATCHING_ENUM(WebFormElement::AutocompleteResultErrorCancel, HTMLFormElement::AutocompleteResultErrorCancel);
 COMPILE_ASSERT_MATCHING_ENUM(WebFormElement::AutocompleteResultErrorInvalid, HTMLFormElement::AutocompleteResultErrorInvalid);
-#endif
 
 COMPILE_ASSERT_MATCHING_ENUM(WebURLRequest::PriorityUnresolved, ResourceLoadPriorityUnresolved);
 COMPILE_ASSERT_MATCHING_ENUM(WebURLRequest::PriorityVeryLow, ResourceLoadPriorityVeryLow);

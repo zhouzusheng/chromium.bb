@@ -24,14 +24,12 @@
  */
 
 #include "config.h"
-#include "WebIDBMetadata.h"
+#include <public/WebIDBMetadata.h>
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "IDBMetadata.h"
-#include "WebIDBKeyPath.h"
+#include <public/WebIDBKeyPath.h>
 #include <public/WebString.h>
 #include <public/WebVector.h>
+#include "modules/indexeddb/IDBMetadata.h"
 
 using namespace WebCore;
 
@@ -89,5 +87,3 @@ WebIDBMetadata::operator IDBDatabaseMetadata() const
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)

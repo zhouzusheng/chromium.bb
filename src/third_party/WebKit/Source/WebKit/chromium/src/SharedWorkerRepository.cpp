@@ -29,29 +29,26 @@
  */
 
 #include "config.h"
+#include "core/workers/SharedWorkerRepository.h"
 
-#if ENABLE(SHARED_WORKERS)
-
-#include "SharedWorkerRepository.h"
-
-#include "ContentSecurityPolicy.h"
-#include "Event.h"
-#include "EventNames.h"
-#include "ExceptionCode.h"
-#include "InspectorInstrumentation.h"
-#include "MessagePortChannel.h"
-#include "PlatformMessagePortChannelChromium.h"
-#include "ResourceResponse.h"
-#include "ScriptExecutionContext.h"
-#include "SharedWorker.h"
 #include "WebContentSecurityPolicy.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
 #include "WebKit.h"
 #include "WebSharedWorker.h"
 #include "WebSharedWorkerRepository.h"
-#include "WorkerScriptLoader.h"
-#include "WorkerScriptLoaderClient.h"
+#include "core/dom/Event.h"
+#include "core/dom/EventNames.h"
+#include "core/dom/ExceptionCode.h"
+#include "core/dom/MessagePortChannel.h"
+#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/default/chromium/PlatformMessagePortChannelChromium.h"
+#include "core/inspector/InspectorInstrumentation.h"
+#include "core/page/ContentSecurityPolicy.h"
+#include "core/platform/network/ResourceResponse.h"
+#include "core/workers/SharedWorker.h"
+#include "core/workers/WorkerScriptLoader.h"
+#include "core/workers/WorkerScriptLoaderClient.h"
 
 #include <public/Platform.h>
 #include <public/WebMessagePortChannel.h>
@@ -269,5 +266,3 @@ bool SharedWorkerRepository::hasSharedWorkers(Document* document)
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(SHARED_WORKERS)

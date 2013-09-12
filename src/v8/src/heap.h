@@ -28,7 +28,7 @@
 #ifndef V8_HEAP_H_
 #define V8_HEAP_H_
 
-#include <math.h>
+#include <cmath>
 
 #include "allocation.h"
 #include "globals.h"
@@ -61,8 +61,6 @@ namespace internal {
   V(Map, global_property_cell_map, GlobalPropertyCellMap)                      \
   V(Map, shared_function_info_map, SharedFunctionInfoMap)                      \
   V(Map, meta_map, MetaMap)                                                    \
-  V(Map, ascii_symbol_map, AsciiSymbolMap)                                     \
-  V(Map, ascii_string_map, AsciiStringMap)                                     \
   V(Map, heap_number_map, HeapNumberMap)                                       \
   V(Map, native_context_map, NativeContextMap)                                 \
   V(Map, fixed_array_map, FixedArrayMap)                                       \
@@ -74,7 +72,6 @@ namespace internal {
   V(Map, hash_table_map, HashTableMap)                                         \
   V(FixedArray, empty_fixed_array, EmptyFixedArray)                            \
   V(ByteArray, empty_byte_array, EmptyByteArray)                               \
-  V(String, empty_string, EmptyString)                                         \
   V(DescriptorArray, empty_descriptor_array, EmptyDescriptorArray)             \
   V(Smi, stack_limit, StackLimit)                                              \
   V(Oddball, arguments_marker, ArgumentsMarker)                                \
@@ -90,29 +87,44 @@ namespace internal {
   V(FixedArray, regexp_multiple_cache, RegExpMultipleCache)                    \
   V(Object, termination_exception, TerminationException)                       \
   V(Smi, hash_seed, HashSeed)                                                  \
-  V(Map, string_map, StringMap)                                                \
   V(Map, symbol_map, SymbolMap)                                                \
+  V(Map, string_map, StringMap)                                                \
+  V(Map, ascii_string_map, AsciiStringMap)                                     \
   V(Map, cons_string_map, ConsStringMap)                                       \
   V(Map, cons_ascii_string_map, ConsAsciiStringMap)                            \
   V(Map, sliced_string_map, SlicedStringMap)                                   \
   V(Map, sliced_ascii_string_map, SlicedAsciiStringMap)                        \
-  V(Map, cons_symbol_map, ConsSymbolMap)                                       \
-  V(Map, cons_ascii_symbol_map, ConsAsciiSymbolMap)                            \
-  V(Map, external_symbol_map, ExternalSymbolMap)                               \
-  V(Map, external_symbol_with_ascii_data_map, ExternalSymbolWithAsciiDataMap)  \
-  V(Map, external_ascii_symbol_map, ExternalAsciiSymbolMap)                    \
   V(Map, external_string_map, ExternalStringMap)                               \
-  V(Map, external_string_with_ascii_data_map, ExternalStringWithAsciiDataMap)  \
-  V(Map, external_ascii_string_map, ExternalAsciiStringMap)                    \
-  V(Map, short_external_symbol_map, ShortExternalSymbolMap)                    \
   V(Map,                                                                       \
-    short_external_symbol_with_ascii_data_map,                                 \
-    ShortExternalSymbolWithAsciiDataMap)                                       \
-  V(Map, short_external_ascii_symbol_map, ShortExternalAsciiSymbolMap)         \
+    external_string_with_one_byte_data_map,                                    \
+    ExternalStringWithOneByteDataMap)                                          \
+  V(Map, external_ascii_string_map, ExternalAsciiStringMap)                    \
   V(Map, short_external_string_map, ShortExternalStringMap)                    \
   V(Map,                                                                       \
-    short_external_string_with_ascii_data_map,                                 \
-    ShortExternalStringWithAsciiDataMap)                                       \
+    short_external_string_with_one_byte_data_map,                              \
+    ShortExternalStringWithOneByteDataMap)                                     \
+  V(Map, internalized_string_map, InternalizedStringMap)                       \
+  V(Map, ascii_internalized_string_map, AsciiInternalizedStringMap)            \
+  V(Map, cons_internalized_string_map, ConsInternalizedStringMap)              \
+  V(Map, cons_ascii_internalized_string_map, ConsAsciiInternalizedStringMap)   \
+  V(Map,                                                                       \
+    external_internalized_string_map,                                          \
+    ExternalInternalizedStringMap)                                             \
+  V(Map,                                                                       \
+    external_internalized_string_with_one_byte_data_map,                       \
+    ExternalInternalizedStringWithOneByteDataMap)                              \
+  V(Map,                                                                       \
+    external_ascii_internalized_string_map,                                    \
+    ExternalAsciiInternalizedStringMap)                                        \
+  V(Map,                                                                       \
+    short_external_internalized_string_map,                                    \
+    ShortExternalInternalizedStringMap)                                        \
+  V(Map,                                                                       \
+    short_external_internalized_string_with_one_byte_data_map,                 \
+    ShortExternalInternalizedStringWithOneByteDataMap)                         \
+  V(Map,                                                                       \
+    short_external_ascii_internalized_string_map,                              \
+    ShortExternalAsciiInternalizedStringMap)                                   \
   V(Map, short_external_ascii_string_map, ShortExternalAsciiStringMap)         \
   V(Map, undetectable_string_map, UndetectableStringMap)                       \
   V(Map, undetectable_ascii_string_map, UndetectableAsciiStringMap)            \
@@ -140,7 +152,6 @@ namespace internal {
   V(HeapNumber, minus_zero_value, MinusZeroValue)                              \
   V(Map, neander_map, NeanderMap)                                              \
   V(JSObject, message_listeners, MessageListeners)                             \
-  V(Foreign, prototype_accessors, PrototypeAccessors)                          \
   V(UnseededNumberDictionary, code_stubs, CodeStubs)                           \
   V(UnseededNumberDictionary, non_monomorphic_cache, NonMonomorphicCache)      \
   V(PolymorphicCodeCache, polymorphic_code_cache, PolymorphicCodeCache)        \
@@ -150,7 +161,7 @@ namespace internal {
   V(Object, last_script_id, LastScriptId)                                      \
   V(Script, empty_script, EmptyScript)                                         \
   V(Smi, real_stack_limit, RealStackLimit)                                     \
-  V(StringDictionary, intrinsic_function_names, IntrinsicFunctionNames)        \
+  V(NameDictionary, intrinsic_function_names, IntrinsicFunctionNames)        \
   V(Smi, arguments_adaptor_deopt_pc_offset, ArgumentsAdaptorDeoptPCOffset)     \
   V(Smi, construct_stub_deopt_pc_offset, ConstructStubDeoptPCOffset)           \
   V(Smi, getter_stub_deopt_pc_offset, GetterStubDeoptPCOffset)                 \
@@ -160,103 +171,109 @@ namespace internal {
 
 #define ROOT_LIST(V)                                  \
   STRONG_ROOT_LIST(V)                                 \
-  V(SymbolTable, symbol_table, SymbolTable)
+  V(StringTable, string_table, StringTable)
 
-#define SYMBOL_LIST(V)                                                   \
-  V(Array_symbol, "Array")                                               \
-  V(Object_symbol, "Object")                                             \
-  V(Proto_symbol, "__proto__")                                           \
-  V(StringImpl_symbol, "StringImpl")                                     \
-  V(arguments_symbol, "arguments")                                       \
-  V(Arguments_symbol, "Arguments")                                       \
-  V(call_symbol, "call")                                                 \
-  V(apply_symbol, "apply")                                               \
-  V(caller_symbol, "caller")                                             \
-  V(boolean_symbol, "boolean")                                           \
-  V(Boolean_symbol, "Boolean")                                           \
-  V(callee_symbol, "callee")                                             \
-  V(constructor_symbol, "constructor")                                   \
-  V(code_symbol, ".code")                                                \
-  V(result_symbol, ".result")                                            \
-  V(dot_for_symbol, ".for.")                                             \
-  V(catch_var_symbol, ".catch-var")                                      \
-  V(empty_symbol, "")                                                    \
-  V(eval_symbol, "eval")                                                 \
-  V(function_symbol, "function")                                         \
-  V(length_symbol, "length")                                             \
-  V(module_symbol, "module")                                             \
-  V(name_symbol, "name")                                                 \
-  V(native_symbol, "native")                                             \
-  V(null_symbol, "null")                                                 \
-  V(number_symbol, "number")                                             \
-  V(Number_symbol, "Number")                                             \
-  V(nan_symbol, "NaN")                                                   \
-  V(RegExp_symbol, "RegExp")                                             \
-  V(source_symbol, "source")                                             \
-  V(global_symbol, "global")                                             \
-  V(ignore_case_symbol, "ignoreCase")                                    \
-  V(multiline_symbol, "multiline")                                       \
-  V(input_symbol, "input")                                               \
-  V(index_symbol, "index")                                               \
-  V(last_index_symbol, "lastIndex")                                      \
-  V(object_symbol, "object")                                             \
-  V(prototype_symbol, "prototype")                                       \
-  V(string_symbol, "string")                                             \
-  V(String_symbol, "String")                                             \
-  V(Date_symbol, "Date")                                                 \
-  V(this_symbol, "this")                                                 \
-  V(to_string_symbol, "toString")                                        \
-  V(char_at_symbol, "CharAt")                                            \
-  V(undefined_symbol, "undefined")                                       \
-  V(value_of_symbol, "valueOf")                                          \
-  V(stack_symbol, "stack")                                               \
-  V(InitializeVarGlobal_symbol, "InitializeVarGlobal")                   \
-  V(InitializeConstGlobal_symbol, "InitializeConstGlobal")               \
-  V(KeyedLoadElementMonomorphic_symbol,                                  \
+#define INTERNALIZED_STRING_LIST(V)                                      \
+  V(Array_string, "Array")                                               \
+  V(Object_string, "Object")                                             \
+  V(proto_string, "__proto__")                                           \
+  V(StringImpl_string, "StringImpl")                                     \
+  V(arguments_string, "arguments")                                       \
+  V(Arguments_string, "Arguments")                                       \
+  V(call_string, "call")                                                 \
+  V(apply_string, "apply")                                               \
+  V(caller_string, "caller")                                             \
+  V(boolean_string, "boolean")                                           \
+  V(Boolean_string, "Boolean")                                           \
+  V(callee_string, "callee")                                             \
+  V(constructor_string, "constructor")                                   \
+  V(code_string, ".code")                                                \
+  V(result_string, ".result")                                            \
+  V(dot_for_string, ".for.")                                             \
+  V(catch_var_string, ".catch-var")                                      \
+  V(empty_string, "")                                                    \
+  V(eval_string, "eval")                                                 \
+  V(function_string, "function")                                         \
+  V(length_string, "length")                                             \
+  V(module_string, "module")                                             \
+  V(name_string, "name")                                                 \
+  V(native_string, "native")                                             \
+  V(null_string, "null")                                                 \
+  V(number_string, "number")                                             \
+  V(Number_string, "Number")                                             \
+  V(nan_string, "NaN")                                                   \
+  V(RegExp_string, "RegExp")                                             \
+  V(source_string, "source")                                             \
+  V(global_string, "global")                                             \
+  V(ignore_case_string, "ignoreCase")                                    \
+  V(multiline_string, "multiline")                                       \
+  V(input_string, "input")                                               \
+  V(index_string, "index")                                               \
+  V(last_index_string, "lastIndex")                                      \
+  V(object_string, "object")                                             \
+  V(payload_string, "payload")                                           \
+  V(prototype_string, "prototype")                                       \
+  V(string_string, "string")                                             \
+  V(String_string, "String")                                             \
+  V(unknown_field_string, "unknownField")                                \
+  V(symbol_string, "symbol")                                             \
+  V(Symbol_string, "Symbol")                                             \
+  V(Date_string, "Date")                                                 \
+  V(this_string, "this")                                                 \
+  V(to_string_string, "toString")                                        \
+  V(char_at_string, "CharAt")                                            \
+  V(undefined_string, "undefined")                                       \
+  V(value_of_string, "valueOf")                                          \
+  V(stack_string, "stack")                                               \
+  V(toJSON_string, "toJSON")                                             \
+  V(InitializeVarGlobal_string, "InitializeVarGlobal")                   \
+  V(InitializeConstGlobal_string, "InitializeConstGlobal")               \
+  V(KeyedLoadElementMonomorphic_string,                                  \
     "KeyedLoadElementMonomorphic")                                       \
-  V(KeyedStoreElementMonomorphic_symbol,                                 \
+  V(KeyedStoreElementMonomorphic_string,                                 \
     "KeyedStoreElementMonomorphic")                                      \
-  V(KeyedStoreAndGrowElementMonomorphic_symbol,                          \
-    "KeyedStoreAndGrowElementMonomorphic")                               \
-  V(stack_overflow_symbol, "kStackOverflowBoilerplate")                  \
-  V(illegal_access_symbol, "illegal access")                             \
-  V(out_of_memory_symbol, "out-of-memory")                               \
-  V(illegal_execution_state_symbol, "illegal execution state")           \
-  V(get_symbol, "get")                                                   \
-  V(set_symbol, "set")                                                   \
-  V(map_field_symbol, "%map")                                            \
-  V(elements_field_symbol, "%elements")                                  \
-  V(length_field_symbol, "%length")                                      \
-  V(function_class_symbol, "Function")                                   \
-  V(illegal_argument_symbol, "illegal argument")                         \
-  V(MakeReferenceError_symbol, "MakeReferenceError")                     \
-  V(MakeSyntaxError_symbol, "MakeSyntaxError")                           \
-  V(MakeTypeError_symbol, "MakeTypeError")                               \
-  V(invalid_lhs_in_assignment_symbol, "invalid_lhs_in_assignment")       \
-  V(invalid_lhs_in_for_in_symbol, "invalid_lhs_in_for_in")               \
-  V(invalid_lhs_in_postfix_op_symbol, "invalid_lhs_in_postfix_op")       \
-  V(invalid_lhs_in_prefix_op_symbol, "invalid_lhs_in_prefix_op")         \
-  V(illegal_return_symbol, "illegal_return")                             \
-  V(illegal_break_symbol, "illegal_break")                               \
-  V(illegal_continue_symbol, "illegal_continue")                         \
-  V(unknown_label_symbol, "unknown_label")                               \
-  V(redeclaration_symbol, "redeclaration")                               \
-  V(failure_symbol, "<failure>")                                         \
-  V(space_symbol, " ")                                                   \
-  V(exec_symbol, "exec")                                                 \
-  V(zero_symbol, "0")                                                    \
-  V(global_eval_symbol, "GlobalEval")                                    \
-  V(identity_hash_symbol, "v8::IdentityHash")                            \
-  V(closure_symbol, "(closure)")                                         \
-  V(use_strict, "use strict")                                            \
-  V(dot_symbol, ".")                                                     \
-  V(anonymous_function_symbol, "(anonymous function)")                   \
-  V(compare_ic_symbol, "==")                                             \
-  V(strict_compare_ic_symbol, "===")                                     \
-  V(infinity_symbol, "Infinity")                                         \
-  V(minus_infinity_symbol, "-Infinity")                                  \
-  V(hidden_stack_trace_symbol, "v8::hidden_stack_trace")                 \
-  V(query_colon_symbol, "(?:)")
+  V(stack_overflow_string, "kStackOverflowBoilerplate")                  \
+  V(illegal_access_string, "illegal access")                             \
+  V(out_of_memory_string, "out-of-memory")                               \
+  V(illegal_execution_state_string, "illegal execution state")           \
+  V(get_string, "get")                                                   \
+  V(set_string, "set")                                                   \
+  V(map_field_string, "%map")                                            \
+  V(elements_field_string, "%elements")                                  \
+  V(length_field_string, "%length")                                      \
+  V(function_class_string, "Function")                                   \
+  V(properties_field_symbol, "%properties")                              \
+  V(payload_field_symbol, "%payload")                                    \
+  V(illegal_argument_string, "illegal argument")                         \
+  V(MakeReferenceError_string, "MakeReferenceError")                     \
+  V(MakeSyntaxError_string, "MakeSyntaxError")                           \
+  V(MakeTypeError_string, "MakeTypeError")                               \
+  V(invalid_lhs_in_assignment_string, "invalid_lhs_in_assignment")       \
+  V(invalid_lhs_in_for_in_string, "invalid_lhs_in_for_in")               \
+  V(invalid_lhs_in_postfix_op_string, "invalid_lhs_in_postfix_op")       \
+  V(invalid_lhs_in_prefix_op_string, "invalid_lhs_in_prefix_op")         \
+  V(illegal_return_string, "illegal_return")                             \
+  V(illegal_break_string, "illegal_break")                               \
+  V(illegal_continue_string, "illegal_continue")                         \
+  V(unknown_label_string, "unknown_label")                               \
+  V(redeclaration_string, "redeclaration")                               \
+  V(failure_string, "<failure>")                                         \
+  V(space_string, " ")                                                   \
+  V(exec_string, "exec")                                                 \
+  V(zero_string, "0")                                                    \
+  V(global_eval_string, "GlobalEval")                                    \
+  V(identity_hash_string, "v8::IdentityHash")                            \
+  V(closure_string, "(closure)")                                         \
+  V(use_strict_string, "use strict")                                     \
+  V(dot_string, ".")                                                     \
+  V(anonymous_function_string, "(anonymous function)")                   \
+  V(compare_ic_string, "==")                                             \
+  V(strict_compare_ic_string, "===")                                     \
+  V(infinity_string, "Infinity")                                         \
+  V(minus_infinity_string, "-Infinity")                                  \
+  V(hidden_stack_trace_string, "v8::hidden_stack_trace")                 \
+  V(query_colon_string, "(?:)")                                          \
+  V(Generator_string, "Generator")
 
 // Forward declarations.
 class GCTracer;
@@ -512,6 +529,7 @@ class Heap {
   int InitialSemiSpaceSize() { return initial_semispace_size_; }
   intptr_t MaxOldGenerationSize() { return max_old_generation_size_; }
   intptr_t MaxExecutableSize() { return max_executable_size_; }
+  int MaxNewSpaceAllocationSize() { return InitialSemiSpaceSize() * 3/4; }
 
   // Returns the capacity of the heap in bytes w/o growing. Heap grows when
   // more spaces are needed until it reaches the limit.
@@ -582,6 +600,20 @@ class Heap {
     return new_space_.allocation_limit_address();
   }
 
+  Address* OldPointerSpaceAllocationTopAddress() {
+    return old_pointer_space_->allocation_top_address();
+  }
+  Address* OldPointerSpaceAllocationLimitAddress() {
+    return old_pointer_space_->allocation_limit_address();
+  }
+
+  Address* OldDataSpaceAllocationTopAddress() {
+    return old_data_space_->allocation_top_address();
+  }
+  Address* OldDataSpaceAllocationLimitAddress() {
+    return old_data_space_->allocation_limit_address();
+  }
+
   // Uncommit unused semi space.
   bool UncommitFromSpace() { return new_space_.UncommitFromSpace(); }
 
@@ -591,7 +623,15 @@ class Heap {
   // failed.
   // Please note this does not perform a garbage collection.
   MUST_USE_RESULT MaybeObject* AllocateJSObject(
-      JSFunction* constructor, PretenureFlag pretenure = NOT_TENURED);
+      JSFunction* constructor,
+      PretenureFlag pretenure = NOT_TENURED);
+
+  MUST_USE_RESULT MaybeObject* AllocateJSObjectWithAllocationSite(
+      JSFunction* constructor,
+      Handle<Object> allocation_site_info_payload);
+
+  MUST_USE_RESULT MaybeObject* AllocateJSGeneratorObject(
+      JSFunction* function);
 
   MUST_USE_RESULT MaybeObject* AllocateJSModule(Context* context,
                                                 ScopeInfo* scope_info);
@@ -605,6 +645,10 @@ class Heap {
                                      pretenure);
   }
 
+  inline MUST_USE_RESULT MaybeObject* AllocateEmptyJSArrayWithAllocationSite(
+      ElementsKind elements_kind,
+      Handle<Object> allocation_site_payload);
+
   // Allocate a JSArray with a specified length but elements that are left
   // uninitialized.
   MUST_USE_RESULT MaybeObject* AllocateJSArrayAndStorage(
@@ -613,6 +657,19 @@ class Heap {
       int capacity,
       ArrayStorageAllocationMode mode = DONT_INITIALIZE_ARRAY_ELEMENTS,
       PretenureFlag pretenure = NOT_TENURED);
+
+  MUST_USE_RESULT MaybeObject* AllocateJSArrayAndStorageWithAllocationSite(
+      ElementsKind elements_kind,
+      int length,
+      int capacity,
+      Handle<Object> allocation_site_payload,
+      ArrayStorageAllocationMode mode = DONT_INITIALIZE_ARRAY_ELEMENTS);
+
+  MUST_USE_RESULT MaybeObject* AllocateJSArrayStorage(
+      JSArray* array,
+      int length,
+      int capacity,
+      ArrayStorageAllocationMode mode = DONT_INITIALIZE_ARRAY_ELEMENTS);
 
   // Allocate a JSArray with no elements
   MUST_USE_RESULT MaybeObject* AllocateJSArrayWithElements(
@@ -630,15 +687,21 @@ class Heap {
   // Returns a deep copy of the JavaScript object.
   // Properties and elements are copied too.
   // Returns failure if allocation failed.
-  MUST_USE_RESULT MaybeObject* CopyJSObject(
-      JSObject* source,
-      AllocationSiteMode mode = DONT_TRACK_ALLOCATION_SITE);
+  MUST_USE_RESULT MaybeObject* CopyJSObject(JSObject* source);
+
+  MUST_USE_RESULT MaybeObject* CopyJSObjectWithAllocationSite(JSObject* source);
 
   // Allocates the function prototype.
   // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
   // failed.
   // Please note this does not perform a garbage collection.
   MUST_USE_RESULT MaybeObject* AllocateFunctionPrototype(JSFunction* function);
+
+  // Allocates a JS ArrayBuffer object.
+  // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
+  // failed.
+  // Please note this does not perform a garbage collection.
+  MUST_USE_RESULT MaybeObject* AllocateJSArrayBuffer();
 
   // Allocates a Harmony proxy or function proxy.
   // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
@@ -675,11 +738,17 @@ class Heap {
   MUST_USE_RESULT MaybeObject* AllocateJSObjectFromMap(
       Map* map, PretenureFlag pretenure = NOT_TENURED);
 
+  MUST_USE_RESULT MaybeObject* AllocateJSObjectFromMapWithAllocationSite(
+      Map* map, Handle<Object> allocation_site_info_payload);
+
   // Allocates a heap object based on the map.
   // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
   // failed.
   // Please note this function does not perform a garbage collection.
   MUST_USE_RESULT MaybeObject* Allocate(Map* map, AllocationSpace space);
+
+  MUST_USE_RESULT MaybeObject* AllocateWithAllocationSite(Map* map,
+      AllocationSpace space, Handle<Object> allocation_site_info_payload);
 
   // Allocates a JS Map in the heap.
   // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
@@ -763,20 +832,20 @@ class Heap {
       Vector<const uc16> str,
       PretenureFlag pretenure = NOT_TENURED);
 
-  // Allocates a symbol in old space based on the character stream.
-  // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
-  // failed.
+  // Allocates an internalized string in old space based on the character
+  // stream. Returns Failure::RetryAfterGC(requested_bytes, space) if the
+  // allocation failed.
   // Please note this function does not perform a garbage collection.
-  MUST_USE_RESULT inline MaybeObject* AllocateSymbolFromUtf8(
+  MUST_USE_RESULT inline MaybeObject* AllocateInternalizedStringFromUtf8(
       Vector<const char> str,
       int chars,
       uint32_t hash_field);
 
-  MUST_USE_RESULT inline MaybeObject* AllocateOneByteSymbol(
+  MUST_USE_RESULT inline MaybeObject* AllocateOneByteInternalizedString(
         Vector<const uint8_t> str,
         uint32_t hash_field);
 
-  MUST_USE_RESULT inline MaybeObject* AllocateTwoByteSymbol(
+  MUST_USE_RESULT inline MaybeObject* AllocateTwoByteInternalizedString(
         Vector<const uc16> str,
         uint32_t hash_field);
 
@@ -784,11 +853,11 @@ class Heap {
   static inline bool IsOneByte(T t, int chars);
 
   template<typename T>
-  MUST_USE_RESULT inline MaybeObject* AllocateInternalSymbol(
+  MUST_USE_RESULT inline MaybeObject* AllocateInternalizedStringImpl(
       T t, int chars, uint32_t hash_field);
 
   template<bool is_one_byte, typename T>
-  MUST_USE_RESULT MaybeObject* AllocateInternalSymbol(
+  MUST_USE_RESULT MaybeObject* AllocateInternalizedStringImpl(
       T t, int chars, uint32_t hash_field);
 
   // Allocates and partially initializes a String.  There are two String
@@ -834,6 +903,12 @@ class Heap {
       ExternalArrayType array_type,
       void* external_pointer,
       PretenureFlag pretenure);
+
+  // Allocate a symbol in old space.
+  // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
+  // failed.
+  // Please note this does not perform a garbage collection.
+  MUST_USE_RESULT MaybeObject* AllocateSymbol();
 
   // Allocate a tenured JS global property cell.
   // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
@@ -1077,7 +1152,8 @@ class Heap {
   MUST_USE_RESULT MaybeObject* CreateCode(const CodeDesc& desc,
                                           Code::Flags flags,
                                           Handle<Object> self_reference,
-                                          bool immovable = false);
+                                          bool immovable = false,
+                                          bool crankshafted = false);
 
   MUST_USE_RESULT MaybeObject* CopyCode(Code* code);
 
@@ -1085,27 +1161,28 @@ class Heap {
   // the provided data as the relocation information.
   MUST_USE_RESULT MaybeObject* CopyCode(Code* code, Vector<byte> reloc_info);
 
-  // Finds the symbol for string in the symbol table.
-  // If not found, a new symbol is added to the table and returned.
+  // Finds the internalized copy for string in the string table.
+  // If not found, a new string is added to the table and returned.
   // Returns Failure::RetryAfterGC(requested_bytes, space) if allocation
   // failed.
   // Please note this function does not perform a garbage collection.
-  MUST_USE_RESULT MaybeObject* LookupUtf8Symbol(Vector<const char> str);
-  MUST_USE_RESULT MaybeObject* LookupUtf8Symbol(const char* str) {
-    return LookupUtf8Symbol(CStrVector(str));
+  MUST_USE_RESULT MaybeObject* InternalizeUtf8String(Vector<const char> str);
+  MUST_USE_RESULT MaybeObject* InternalizeUtf8String(const char* str) {
+    return InternalizeUtf8String(CStrVector(str));
   }
-  MUST_USE_RESULT MaybeObject* LookupOneByteSymbol(Vector<const uint8_t> str);
-  MUST_USE_RESULT MaybeObject* LookupTwoByteSymbol(Vector<const uc16> str);
-  MUST_USE_RESULT MaybeObject* LookupSymbol(String* str);
-  MUST_USE_RESULT MaybeObject* LookupOneByteSymbol(
+  MUST_USE_RESULT MaybeObject* InternalizeOneByteString(
+      Vector<const uint8_t> str);
+  MUST_USE_RESULT MaybeObject* InternalizeTwoByteString(Vector<const uc16> str);
+  MUST_USE_RESULT MaybeObject* InternalizeString(String* str);
+  MUST_USE_RESULT MaybeObject* InternalizeOneByteString(
       Handle<SeqOneByteString> string, int from, int length);
 
-  bool LookupSymbolIfExists(String* str, String** symbol);
-  bool LookupTwoCharsSymbolIfExists(String* str, String** symbol);
+  bool InternalizeStringIfExists(String* str, String** result);
+  bool InternalizeTwoCharsStringIfExists(String* str, String** result);
 
-  // Compute the matching symbol map for a string if possible.
+  // Compute the matching internalized string map for a string if possible.
   // NULL is returned if string is in new space or not flattened.
-  Map* SymbolMapForString(String* str);
+  Map* InternalizedStringMapForString(String* str);
 
   // Tries to flatten a string before compare operation.
   //
@@ -1233,15 +1310,15 @@ class Heap {
   STRUCT_LIST(STRUCT_MAP_ACCESSOR)
 #undef STRUCT_MAP_ACCESSOR
 
-#define SYMBOL_ACCESSOR(name, str) String* name() {                            \
+#define STRING_ACCESSOR(name, str) String* name() {                            \
     return String::cast(roots_[k##name##RootIndex]);                           \
   }
-  SYMBOL_LIST(SYMBOL_ACCESSOR)
-#undef SYMBOL_ACCESSOR
+  INTERNALIZED_STRING_LIST(STRING_ACCESSOR)
+#undef STRING_ACCESSOR
 
-  // The hidden_symbol is special because it is the empty string, but does
+  // The hidden_string is special because it is the empty string, but does
   // not match the empty string.
-  String* hidden_symbol() { return hidden_symbol_; }
+  String* hidden_string() { return hidden_string_; }
 
   void set_native_contexts_list(Object* object) {
     native_contexts_list_ = object;
@@ -1266,10 +1343,18 @@ class Heap {
 
   // Returns whether the object resides in new space.
   inline bool InNewSpace(Object* object);
-  inline bool InNewSpace(Address addr);
-  inline bool InNewSpacePage(Address addr);
+  inline bool InNewSpace(Address address);
+  inline bool InNewSpacePage(Address address);
   inline bool InFromSpace(Object* object);
   inline bool InToSpace(Object* object);
+
+  // Returns whether the object resides in old pointer space.
+  inline bool InOldPointerSpace(Address address);
+  inline bool InOldPointerSpace(Object* object);
+
+  // Returns whether the object resides in old data space.
+  inline bool InOldDataSpace(Address address);
+  inline bool InOldDataSpace(Object* object);
 
   // Checks whether an address/object in the heap (including auxiliary
   // area and unused area).
@@ -1367,13 +1452,13 @@ class Heap {
   // Print short heap statistics.
   void PrintShortHeapStatistics();
 
-  // Makes a new symbol object
+  // Makes a new internalized string object
   // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
   // failed.
   // Please note this function does not perform a garbage collection.
-  MUST_USE_RESULT MaybeObject* CreateSymbol(
+  MUST_USE_RESULT MaybeObject* CreateInternalizedString(
       const char* str, int length, int hash);
-  MUST_USE_RESULT MaybeObject* CreateSymbol(String* str);
+  MUST_USE_RESULT MaybeObject* CreateInternalizedString(String* str);
 
   // Write barrier support for address[offset] = o.
   INLINE(void RecordWrite(Address address, int offset));
@@ -1439,6 +1524,12 @@ class Heap {
   MUST_USE_RESULT MaybeObject* AllocateRawFixedArray(int length,
                                                      PretenureFlag pretenure);
 
+  // Predicate that governs global pre-tenuring decisions based on observed
+  // promotion rates of previous collections.
+  inline bool ShouldGloballyPretenure() {
+    return new_space_high_promotion_mode_active_;
+  }
+
   inline intptr_t PromotedTotalSize() {
     return PromotedSpaceSizeOfObjects() + PromotedExternalMemorySize();
   }
@@ -1462,7 +1553,8 @@ class Heap {
       8 * (Page::kPageSize > MB ? Page::kPageSize : MB);
 
   intptr_t OldGenPromotionLimit(intptr_t old_gen_size) {
-    const int divisor = FLAG_stress_compaction ? 10 : 3;
+    const int divisor = FLAG_stress_compaction ? 10 :
+        new_space_high_promotion_mode_active_ ? 1 : 3;
     intptr_t limit =
         Max(old_gen_size + old_gen_size / divisor, kMinimumPromotionLimit);
     limit += new_space_.Capacity();
@@ -1472,7 +1564,8 @@ class Heap {
   }
 
   intptr_t OldGenAllocationLimit(intptr_t old_gen_size) {
-    const int divisor = FLAG_stress_compaction ? 8 : 2;
+    const int divisor = FLAG_stress_compaction ? 8 :
+        new_space_high_promotion_mode_active_ ? 1 : 2;
     intptr_t limit =
         Max(old_gen_size + old_gen_size / divisor, kMinimumAllocationLimit);
     limit += new_space_.Capacity();
@@ -1490,17 +1583,17 @@ class Heap {
     STRONG_ROOT_LIST(ROOT_INDEX_DECLARATION)
 #undef ROOT_INDEX_DECLARATION
 
-#define SYMBOL_INDEX_DECLARATION(name, str) k##name##RootIndex,
-    SYMBOL_LIST(SYMBOL_INDEX_DECLARATION)
-#undef SYMBOL_DECLARATION
+#define STRING_INDEX_DECLARATION(name, str) k##name##RootIndex,
+    INTERNALIZED_STRING_LIST(STRING_INDEX_DECLARATION)
+#undef STRING_DECLARATION
 
     // Utility type maps
 #define DECLARE_STRUCT_MAP(NAME, Name, name) k##Name##MapRootIndex,
     STRUCT_LIST(DECLARE_STRUCT_MAP)
 #undef DECLARE_STRUCT_MAP
 
-    kSymbolTableRootIndex,
-    kStrongRootListLength = kSymbolTableRootIndex,
+    kStringTableRootIndex,
+    kStrongRootListLength = kStringTableRootIndex,
     kRootListLength
   };
 
@@ -1508,7 +1601,7 @@ class Heap {
   STATIC_CHECK(kNullValueRootIndex == Internals::kNullValueRootIndex);
   STATIC_CHECK(kTrueValueRootIndex == Internals::kTrueValueRootIndex);
   STATIC_CHECK(kFalseValueRootIndex == Internals::kFalseValueRootIndex);
-  STATIC_CHECK(kempty_symbolRootIndex == Internals::kEmptySymbolRootIndex);
+  STATIC_CHECK(kempty_stringRootIndex == Internals::kEmptyStringRootIndex);
 
   // Generated code can embed direct references to non-writable roots if
   // they are in new space.
@@ -1651,6 +1744,12 @@ class Heap {
     return sweeping_complete;
   }
 
+  bool EnsureSweepersProgressed(int step_size) {
+    bool sweeping_complete = old_data_space()->EnsureSweeperProgress(step_size);
+    sweeping_complete &= old_pointer_space()->EnsureSweeperProgress(step_size);
+    return sweeping_complete;
+  }
+
   ExternalStringTable* external_string_table() {
     return &external_string_table_;
   }
@@ -1666,7 +1765,7 @@ class Heap {
 
   inline Isolate* isolate();
 
-  void CallGCPrologueCallbacks(GCType gc_type);
+  void CallGCPrologueCallbacks(GCType gc_type, GCCallbackFlags flags);
   void CallGCEpilogueCallbacks(GCType gc_type);
 
   inline bool OldGenerationAllocationLimitReached();
@@ -1765,16 +1864,22 @@ class Heap {
   // only when FLAG_parallel_recompilation is true.
   class RelocationLock {
    public:
-    explicit RelocationLock(Heap* heap) : heap_(heap) {
-      if (FLAG_parallel_recompilation) {
-        heap_->relocation_mutex_->Lock();
-      }
-    }
+    explicit RelocationLock(Heap* heap);
+
     ~RelocationLock() {
       if (FLAG_parallel_recompilation) {
+#ifdef DEBUG
+        heap_->relocation_mutex_locked_by_optimizer_thread_ = false;
+#endif  // DEBUG
         heap_->relocation_mutex_->Unlock();
       }
     }
+
+#ifdef DEBUG
+    static bool IsLockedByOptimizerThread(Heap* heap) {
+      return heap->relocation_mutex_locked_by_optimizer_thread_;
+    }
+#endif  // DEBUG
 
    private:
     Heap* heap_;
@@ -1914,7 +2019,7 @@ class Heap {
     RootListIndex index;
   };
 
-  struct ConstantSymbolTable {
+  struct ConstantStringTable {
     const char* contents;
     RootListIndex index;
   };
@@ -1926,12 +2031,12 @@ class Heap {
   };
 
   static const StringTypeTable string_type_table[];
-  static const ConstantSymbolTable constant_symbol_table[];
+  static const ConstantStringTable constant_string_table[];
   static const StructTable struct_table[];
 
-  // The special hidden symbol which is an empty string, but does not match
+  // The special hidden string which is an empty string, but does not match
   // any string when looked up in properties.
-  String* hidden_symbol_;
+  String* hidden_string_;
 
   // GC callback function, called before and after mark-compact GC.
   // Allocations in the callback function are disallowed.
@@ -2016,6 +2121,10 @@ class Heap {
   MUST_USE_RESULT MaybeObject* AllocateJSArray(
       ElementsKind elements_kind,
       PretenureFlag pretenure = NOT_TENURED);
+
+  MUST_USE_RESULT MaybeObject* AllocateJSArrayWithAllocationSite(
+      ElementsKind elements_kind,
+      Handle<Object> allocation_site_info_payload);
 
   // Allocate empty fixed array.
   MUST_USE_RESULT MaybeObject* AllocateEmptyFixedArray();
@@ -2173,7 +2282,7 @@ class Heap {
 
   void ClearObjectStats(bool clear_last_time_stats = false);
 
-  static const int kInitialSymbolTableSize = 2048;
+  static const int kInitialStringTableSize = 2048;
   static const int kInitialEvalCacheSize = 64;
   static const int kInitialNumberStringCacheSize = 256;
 
@@ -2223,6 +2332,11 @@ class Heap {
   unsigned int gc_count_at_last_idle_gc_;
   int scavenges_since_last_idle_round_;
 
+  // If the --deopt_every_n_garbage_collections flag is set to a positive value,
+  // this variable holds the number of garbage collections since the last
+  // deoptimization triggered by garbage collection.
+  int gcs_since_last_deopt_;
+
 #ifdef VERIFY_HEAP
   int no_weak_embedded_maps_verification_scope_depth_;
 #endif
@@ -2246,6 +2360,9 @@ class Heap {
   MemoryChunk* chunks_queued_for_free_;
 
   Mutex* relocation_mutex_;
+#ifdef DEBUG
+  bool relocation_mutex_locked_by_optimizer_thread_;
+#endif  // DEBUG;
 
   friend class Factory;
   friend class GCTracer;
@@ -2446,10 +2563,10 @@ class HeapIterator BASE_EMBEDDED {
 class KeyedLookupCache {
  public:
   // Lookup field offset for (map, name). If absent, -1 is returned.
-  int Lookup(Map* map, String* name);
+  int Lookup(Map* map, Name* name);
 
   // Update an element in the cache.
-  void Update(Map* map, String* name, int field_offset);
+  void Update(Map* map, Name* name, int field_offset);
 
   // Clear the cache.
   void Clear();
@@ -2474,7 +2591,7 @@ class KeyedLookupCache {
     }
   }
 
-  static inline int Hash(Map* map, String* name);
+  static inline int Hash(Map* map, Name* name);
 
   // Get the address of the keys and field_offsets arrays.  Used in
   // generated code to perform cache lookups.
@@ -2488,7 +2605,7 @@ class KeyedLookupCache {
 
   struct Key {
     Map* map;
-    String* name;
+    Name* name;
   };
 
   Key keys_[kLength];
@@ -2508,8 +2625,8 @@ class DescriptorLookupCache {
  public:
   // Lookup descriptor index for (map, name).
   // If absent, kAbsent is returned.
-  int Lookup(Map* source, String* name) {
-    if (!StringShape(name).IsSymbol()) return kAbsent;
+  int Lookup(Map* source, Name* name) {
+    if (!name->IsUniqueName()) return kAbsent;
     int index = Hash(source, name);
     Key& key = keys_[index];
     if ((key.source == source) && (key.name == name)) return results_[index];
@@ -2517,9 +2634,9 @@ class DescriptorLookupCache {
   }
 
   // Update an element in the cache.
-  void Update(Map* source, String* name, int result) {
+  void Update(Map* source, Name* name, int result) {
     ASSERT(result != kAbsent);
-    if (StringShape(name).IsSymbol()) {
+    if (name->IsUniqueName()) {
       int index = Hash(source, name);
       Key& key = keys_[index];
       key.source = source;
@@ -2542,7 +2659,7 @@ class DescriptorLookupCache {
     }
   }
 
-  static int Hash(Object* source, String* name) {
+  static int Hash(Object* source, Name* name) {
     // Uses only lower 32 bits if pointers are larger.
     uint32_t source_hash =
         static_cast<uint32_t>(reinterpret_cast<uintptr_t>(source))
@@ -2556,7 +2673,7 @@ class DescriptorLookupCache {
   static const int kLength = 64;
   struct Key {
     Map* source;
-    String* name;
+    Name* name;
   };
 
   Key keys_[kLength];

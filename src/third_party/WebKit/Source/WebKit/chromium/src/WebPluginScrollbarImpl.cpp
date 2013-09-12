@@ -25,19 +25,18 @@
 #include "config.h"
 #include "WebPluginScrollbarImpl.h"
 
-#include "GraphicsContext.h"
-#include "KeyboardCodes.h"
-#include "ScrollAnimator.h"
-#include "ScrollTypes.h"
-#include "Scrollbar.h"
 #include "ScrollbarGroup.h"
-#include "ScrollbarTheme.h"
 #include "WebInputEvent.h"
 #include "WebInputEventConversion.h"
 #include "WebPluginContainerImpl.h"
 #include "WebPluginScrollbarClient.h"
 #include "WebViewImpl.h"
-#include "painting/GraphicsContextBuilder.h"
+#include "core/platform/ScrollAnimator.h"
+#include "core/platform/ScrollTypes.h"
+#include "core/platform/Scrollbar.h"
+#include "core/platform/ScrollbarTheme.h"
+#include "core/platform/chromium/KeyboardCodes.h"
+#include "core/platform/graphics/GraphicsContext.h"
 #include <public/WebCanvas.h>
 #include <public/WebRect.h>
 #include <public/WebVector.h>
@@ -235,7 +234,8 @@ void WebPluginScrollbarImpl::scroll(ScrollDirection direction, ScrollGranularity
 
 void WebPluginScrollbarImpl::paint(WebCanvas* canvas, const WebRect& rect)
 {
-    m_scrollbar->paint(&GraphicsContextBuilder(canvas).context(), rect);
+    GraphicsContext context(canvas);
+    m_scrollbar->paint(&context, rect);
 }
 
 bool WebPluginScrollbarImpl::handleInputEvent(const WebInputEvent& event)
@@ -296,7 +296,8 @@ bool WebPluginScrollbarImpl::onMouseUp(const WebInputEvent& event)
     if (m_scrollbar->pressedPart() == WebCore::NoPart)
         return false;
 
-    return m_scrollbar->mouseUp(PlatformMouseEventBuilder(m_scrollbar.get(), mouseup));
+    m_scrollbar->mouseUp(PlatformMouseEventBuilder(m_scrollbar.get(), mouseup));
+    return true;
 }
 
 bool WebPluginScrollbarImpl::onMouseMove(const WebInputEvent& event)
@@ -306,7 +307,8 @@ bool WebPluginScrollbarImpl::onMouseMove(const WebInputEvent& event)
         || m_scrollbar->pressedPart() != WebCore::NoPart) {
         mousemove.x -= m_scrollbar->x();
         mousemove.y -= m_scrollbar->y();
-        return m_scrollbar->mouseMoved(PlatformMouseEventBuilder(m_scrollbar.get(), mousemove));
+        m_scrollbar->mouseMoved(PlatformMouseEventBuilder(m_scrollbar.get(), mousemove));
+        return true;
     }
 
     if (m_scrollbar->hoveredPart() != WebCore::NoPart && !m_scrollbar->isOverlayScrollbar())

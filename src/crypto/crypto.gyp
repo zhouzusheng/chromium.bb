@@ -28,11 +28,6 @@
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
       ],
-      'include_dirs': [
-        # SHEZ: include the path to our stdint.h.  This is in order to compile
-        #       with VS2008.
-        '../third_party/ffmpeg/chromium/include/win',
-      ],
       'defines': [
         'CRYPTO_IMPLEMENTATION',
       ],

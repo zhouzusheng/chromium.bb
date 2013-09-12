@@ -407,17 +407,10 @@ bool GrDrawTarget::checkDraw(GrPrimitiveType type, int startVertex,
 }
 
 bool GrDrawTarget::setupDstReadIfNecessary(DrawInfo* info) {
-    if (!this->getDrawState().willEffectReadDst()) {
+    if (this->caps()->dstReadInShaderSupport() || !this->getDrawState().willEffectReadDst()) {
         return true;
     }
     GrRenderTarget* rt = this->drawState()->getRenderTarget();
-    // If the dst is not a texture then we don't currently have a way of copying the
-    // texture. TODO: make copying RT->Tex (or Surface->Surface) a GrDrawTarget operation that can
-    // be built on top of GL/D3D APIs.
-    if (NULL == rt->asTexture()) {
-        GrPrintf("Reading Dst of non-texture render target is not currently supported.\n");
-        return false;
-    }
 
     const GrClipData* clip = this->getClip();
     GrIRect copyRect;
@@ -435,20 +428,13 @@ bool GrDrawTarget::setupDstReadIfNecessary(DrawInfo* info) {
         //GrPrintf("No dev bounds when dst copy is made.\n");
 #endif
     }
-    
-    GrDrawTarget::AutoGeometryAndStatePush agasp(this, kReset_ASRInit);
 
-    // The draw will resolve dst if it has MSAA. Two things to consider in the future:
-    // 1) to make the dst values be pre-resolve we'd need to be able to copy to MSAA
-    // texture and sample it correctly in the shader. 2) If 1 isn't available then we
-    // should just resolve and use the resolved texture directly rather than making a
-    // copy of it.
+    // MSAA consideration: When there is support for reading MSAA samples in the shader we could
+    // have per-sample dst values by making the copy multisampled.
     GrTextureDesc desc;
-    desc.fFlags = kRenderTarget_GrTextureFlagBit | kNoStencil_GrTextureFlagBit;
+    this->initCopySurfaceDstDesc(rt, &desc);
     desc.fWidth = copyRect.width();
     desc.fHeight = copyRect.height();
-    desc.fSampleCnt = 0;
-    desc.fConfig = rt->config();
 
     GrAutoScratchTexture ast(fContext, desc, GrContext::kApprox_ScratchTexMatch);
 
@@ -456,21 +442,14 @@ bool GrDrawTarget::setupDstReadIfNecessary(DrawInfo* info) {
         GrPrintf("Failed to create temporary copy of destination texture.\n");
         return false;
     }
-    this->drawState()->disableState(GrDrawState::kClip_StateBit);
-    this->drawState()->setRenderTarget(ast.texture()->asRenderTarget());
-    static const int kTextureStage = 0;
-    SkMatrix matrix;
-    matrix.setIDiv(rt->width(), rt->height());
-    this->drawState()->createTextureEffect(kTextureStage, rt->asTexture(), matrix);
-    
-    SkRect srcRect = SkRect::MakeFromIRect(copyRect);
-    SkRect dstRect = SkRect::MakeWH(SkIntToScalar(copyRect.width()),
-                                    SkIntToScalar(copyRect.height()));
-    this->drawRect(dstRect, NULL, &srcRect, NULL);
-    
-    info->fDstCopy.setTexture(ast.texture());
-    info->fDstCopy.setOffset(copyRect.fLeft, copyRect.fTop);
-    return true;
+    SkIPoint dstPoint = {0, 0};
+    if (this->copySurface(ast.texture(), rt, copyRect, dstPoint)) {
+        info->fDstCopy.setTexture(ast.texture());
+        info->fDstCopy.setOffset(copyRect.fLeft, copyRect.fTop);
+        return true;
+    } else {
+        return false;
+    }
 }
 
 void GrDrawTarget::drawIndexed(GrPrimitiveType type,
@@ -611,32 +590,36 @@ void GrDrawTarget::drawIndexedInstances(GrPrimitiveType type,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void GrDrawTarget::drawRect(const GrRect& rect,
-                            const SkMatrix* matrix,
-                            const GrRect* localRect,
-                            const SkMatrix* localMatrix) {
-    GrAttribBindings bindings = 0;
-    // position + (optional) texture coord
-    static const GrVertexAttrib kAttribs[] = {
-        {kVec2f_GrVertexAttribType, 0},
-        {kVec2f_GrVertexAttribType, sizeof(GrPoint)}
-    };
-    int attribCount = 1;
+namespace {
 
-    if (NULL != localRect) {
-        bindings |= GrDrawState::kLocalCoords_AttribBindingsBit;
-        attribCount = 2;
-        this->drawState()->setAttribIndex(GrDrawState::kLocalCoords_AttribIndex, 1);
+// position + (optional) texture coord
+extern const GrVertexAttrib gBWRectPosUVAttribs[] = {
+    {kVec2f_GrVertexAttribType, 0,               kPosition_GrVertexAttribBinding},
+    {kVec2f_GrVertexAttribType, sizeof(GrPoint), kLocalCoord_GrVertexAttribBinding}
+};
+
+void set_vertex_attributes(GrDrawState* drawState, bool hasUVs) {
+    if (hasUVs) {
+        drawState->setVertexAttribs<gBWRectPosUVAttribs>(2);
+    } else {
+        drawState->setVertexAttribs<gBWRectPosUVAttribs>(1);
     }
+}
+
+};
+
+void GrDrawTarget::onDrawRect(const GrRect& rect,
+                              const SkMatrix* matrix,
+                              const GrRect* localRect,
+                              const SkMatrix* localMatrix) {
 
     GrDrawState::AutoViewMatrixRestore avmr;
     if (NULL != matrix) {
         avmr.set(this->drawState(), *matrix);
     }
 
-    this->drawState()->setVertexAttribs(kAttribs, attribCount);
-    this->drawState()->setAttribIndex(GrDrawState::kPosition_AttribIndex, 0);
-    this->drawState()->setAttribBindings(bindings);
+    set_vertex_attributes(this->drawState(), NULL != localRect);
+
     AutoReleaseGeometry geo(this, 4, 0);
     if (!geo.succeeded()) {
         GrPrintf("Failed to get space for vertices!\n");
@@ -646,9 +629,8 @@ void GrDrawTarget::drawRect(const GrRect& rect,
     size_t vsize = this->drawState()->getVertexSize();
     geo.positions()->setRectFan(rect.fLeft, rect.fTop, rect.fRight, rect.fBottom, vsize);
     if (NULL != localRect) {
-        GrAssert(attribCount == 2);
         GrPoint* coords = GrTCast<GrPoint*>(GrTCast<intptr_t>(geo.vertices()) +
-                                            kAttribs[1].fOffset);
+                                            sizeof(GrPoint));
         coords->setRectFan(localRect->fLeft, localRect->fTop,
                            localRect->fRight, localRect->fBottom,
                            vsize);
@@ -766,6 +748,152 @@ GrDrawTarget::AutoClipRestore::AutoClipRestore(GrDrawTarget* target, const SkIRe
     target->setClip(&fReplacementClip);
 }
 
+namespace {
+// returns true if the read/written rect intersects the src/dst and false if not.
+bool clip_srcrect_and_dstpoint(const GrSurface* dst,
+                               const GrSurface* src,
+                               const SkIRect& srcRect,
+                               const SkIPoint& dstPoint,
+                               SkIRect* clippedSrcRect,
+                               SkIPoint* clippedDstPoint) {
+    *clippedSrcRect = srcRect;
+    *clippedDstPoint = dstPoint;
+
+    // clip the left edge to src and dst bounds, adjusting dstPoint if necessary
+    if (clippedSrcRect->fLeft < 0) {
+        clippedDstPoint->fX -= clippedSrcRect->fLeft;
+        clippedSrcRect->fLeft = 0;
+    }
+    if (clippedDstPoint->fX < 0) {
+        clippedSrcRect->fLeft -= clippedDstPoint->fX;
+        clippedDstPoint->fX = 0;
+    }
+
+    // clip the top edge to src and dst bounds, adjusting dstPoint if necessary
+    if (clippedSrcRect->fTop < 0) {
+        clippedDstPoint->fY -= clippedSrcRect->fTop;
+        clippedSrcRect->fTop = 0;
+    }
+    if (clippedDstPoint->fY < 0) {
+        clippedSrcRect->fTop -= clippedDstPoint->fY;
+        clippedDstPoint->fY = 0;
+    }
+
+    // clip the right edge to the src and dst bounds.
+    if (clippedSrcRect->fRight > src->width()) {
+        clippedSrcRect->fRight = src->width();
+    }
+    if (clippedDstPoint->fX + clippedSrcRect->width() > dst->width()) {
+        clippedSrcRect->fRight = clippedSrcRect->fLeft + dst->width() - clippedDstPoint->fX;
+    }
+
+    // clip the bottom edge to the src and dst bounds.
+    if (clippedSrcRect->fBottom > src->height()) {
+        clippedSrcRect->fBottom = src->height();
+    }
+    if (clippedDstPoint->fY + clippedSrcRect->height() > dst->height()) {
+        clippedSrcRect->fBottom = clippedSrcRect->fTop + dst->height() - clippedDstPoint->fY;
+    }
+
+    // The above clipping steps may have inverted the rect if it didn't intersect either the src or
+    // dst bounds.
+    return !clippedSrcRect->isEmpty();
+}
+}
+
+bool GrDrawTarget::copySurface(GrSurface* dst,
+                               GrSurface* src,
+                               const SkIRect& srcRect,
+                               const SkIPoint& dstPoint) {
+    GrAssert(NULL != dst);
+    GrAssert(NULL != src);
+
+    SkIRect clippedSrcRect;
+    SkIPoint clippedDstPoint;
+    // If the rect is outside the src or dst then we've already succeeded.
+    if (!clip_srcrect_and_dstpoint(dst,
+                                   src,
+                                   srcRect,
+                                   dstPoint,
+                                   &clippedSrcRect,
+                                   &clippedDstPoint)) {
+        GrAssert(this->canCopySurface(dst, src, srcRect, dstPoint));
+        return true;
+    }
+
+    bool result = this->onCopySurface(dst, src, clippedSrcRect, clippedDstPoint);
+    GrAssert(result == this->canCopySurface(dst, src, clippedSrcRect, clippedDstPoint));
+    return result;
+}
+
+bool GrDrawTarget::canCopySurface(GrSurface* dst,
+                                  GrSurface* src,
+                                  const SkIRect& srcRect,
+                                  const SkIPoint& dstPoint) {
+    GrAssert(NULL != dst);
+    GrAssert(NULL != src);
+
+    SkIRect clippedSrcRect;
+    SkIPoint clippedDstPoint;
+    // If the rect is outside the src or dst then we're guaranteed success
+    if (!clip_srcrect_and_dstpoint(dst,
+                                   src,
+                                   srcRect,
+                                   dstPoint,
+                                   &clippedSrcRect,
+                                   &clippedDstPoint)) {
+        return true;
+    }
+    return this->onCanCopySurface(dst, src, clippedSrcRect, clippedDstPoint);
+}
+
+bool GrDrawTarget::onCanCopySurface(GrSurface* dst,
+                                    GrSurface* src,
+                                    const SkIRect& srcRect,
+                                    const SkIPoint& dstPoint) {
+    // Check that the read/write rects are contained within the src/dst bounds.
+    GrAssert(!srcRect.isEmpty());
+    GrAssert(SkIRect::MakeWH(src->width(), src->height()).contains(srcRect));
+    GrAssert(dstPoint.fX >= 0 && dstPoint.fY >= 0);
+    GrAssert(dstPoint.fX + srcRect.width() <= dst->width() &&
+             dstPoint.fY + srcRect.height() <= dst->height());
+
+    return !dst->isSameAs(src) && NULL != dst->asRenderTarget() && NULL != src->asTexture();
+}
+
+bool GrDrawTarget::onCopySurface(GrSurface* dst,
+                                 GrSurface* src,
+                                 const SkIRect& srcRect,
+                                 const SkIPoint& dstPoint) {
+    if (!GrDrawTarget::onCanCopySurface(dst, src, srcRect, dstPoint)) {
+        return false;
+    }
+
+    GrRenderTarget* rt = dst->asRenderTarget();
+    GrTexture* tex = src->asTexture();
+
+    GrDrawTarget::AutoStateRestore asr(this, kReset_ASRInit);
+    this->drawState()->setRenderTarget(rt);
+    SkMatrix matrix;
+    matrix.setTranslate(SkIntToScalar(srcRect.fLeft - dstPoint.fX),
+                        SkIntToScalar(srcRect.fTop - dstPoint.fY));
+    matrix.postIDiv(tex->width(), tex->height());
+    this->drawState()->createTextureEffect(0, tex, matrix);
+    SkIRect dstRect = SkIRect::MakeXYWH(dstPoint.fX,
+                                        dstPoint.fY,
+                                        srcRect.width(),
+                                        srcRect.height());
+    this->drawSimpleRect(dstRect);
+    return true;
+}
+
+void GrDrawTarget::initCopySurfaceDstDesc(const GrSurface* src, GrTextureDesc* desc) {
+    // Make the dst of the copy be a render target because the default copySurface draws to the dst.
+    desc->fOrigin = kDefault_GrSurfaceOrigin;
+    desc->fFlags = kRenderTarget_GrTextureFlagBit | kNoStencil_GrTextureFlagBit;
+    desc->fConfig = src->config();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 SK_DEFINE_INST_COUNT(GrDrawTargetCaps)
@@ -778,7 +906,7 @@ void GrDrawTargetCaps::reset() {
     fHWAALineSupport = false;
     fShaderDerivativeSupport = false;
     fGeometryShaderSupport = false;
-    fDualSourceBlendingSupport = false; 
+    fDualSourceBlendingSupport = false;
     fBufferLockSupport = false;
     fPathStencilingSupport = false;
 
@@ -818,6 +946,7 @@ void GrDrawTargetCaps::print() const {
     GrPrintf("Dual Source Blending Support: %s\n", gNY[fDualSourceBlendingSupport]);
     GrPrintf("Buffer Lock Support         : %s\n", gNY[fBufferLockSupport]);
     GrPrintf("Path Stenciling Support     : %s\n", gNY[fPathStencilingSupport]);
+    GrPrintf("Dst Read In Shader Support  : %s\n", gNY[fDstReadInShaderSupport]);
     GrPrintf("Max Texture Size            : %d\n", fMaxTextureSize);
     GrPrintf("Max Render Target Size      : %d\n", fMaxRenderTargetSize);
     GrPrintf("Max Sample Count            : %d\n", fMaxSampleCount);

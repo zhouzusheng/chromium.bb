@@ -178,10 +178,12 @@ void VideoCaptureController::StopCapture(
     return;
 
   // Take back all buffers held by the |client|.
-  for (std::set<int>::iterator buffer_it = client->buffers.begin();
-       buffer_it != client->buffers.end(); ++buffer_it) {
-    int buffer_id = *buffer_it;
-    buffer_pool_->RelinquishConsumerHold(buffer_id, 1);
+  if (buffer_pool_) {
+    for (std::set<int>::iterator buffer_it = client->buffers.begin();
+         buffer_it != client->buffers.end(); ++buffer_it) {
+      int buffer_id = *buffer_it;
+      buffer_pool_->RelinquishConsumerHold(buffer_id, 1);
+    }
   }
   client->buffers.clear();
 
@@ -190,7 +192,9 @@ void VideoCaptureController::StopCapture(
   controller_clients_.remove(client);
 
   // No more clients. Stop device.
-  if (controller_clients_.empty() && state_ == VIDEO_CAPTURE_STATE_STARTED) {
+  if (controller_clients_.empty() &&
+      (state_ == VIDEO_CAPTURE_STATE_STARTED ||
+       state_ == VIDEO_CAPTURE_STATE_ERROR)) {
     video_capture_manager_->Stop(session_id,
         base::Bind(&VideoCaptureController::OnDeviceStopped, this));
     frame_info_available_ = false;
@@ -209,7 +213,7 @@ void VideoCaptureController::StopSession(
 
   if (client) {
     client->session_closed = true;
-    client->event_handler->OnPaused(client->controller_id);
+    client->event_handler->OnEnded(client->controller_id);
   }
 }
 
@@ -257,9 +261,9 @@ void VideoCaptureController::OnIncomingCapturedFrame(
     int rotation,
     bool flip_vert,
     bool flip_horiz) {
-  DCHECK (frame_info_.color == media::VideoCaptureCapability::kI420 ||
-          frame_info_.color == media::VideoCaptureCapability::kYV12 ||
-          (rotation == 0 && !flip_vert && !flip_horiz));
+  DCHECK(frame_info_.color == media::VideoCaptureCapability::kI420 ||
+         frame_info_.color == media::VideoCaptureCapability::kYV12 ||
+         (rotation == 0 && !flip_vert && !flip_horiz));
 
   scoped_refptr<media::VideoFrame> dst;
   {
@@ -396,6 +400,7 @@ void VideoCaptureController::OnIncomingCapturedVideoFrame(
   const int kYPlane = media::VideoFrame::kYPlane;
   const int kUPlane = media::VideoFrame::kUPlane;
   const int kVPlane = media::VideoFrame::kVPlane;
+  const int kAPlane = media::VideoFrame::kAPlane;
   const int kRGBPlane = media::VideoFrame::kRGBPlane;
 
   // Do color conversion from the camera format to I420.
@@ -425,6 +430,26 @@ void VideoCaptureController::OnIncomingCapturedVideoFrame(
       media::CopyVPlane(frame->data(kVPlane),
                         frame->stride(kVPlane),
                         frame->rows(kVPlane),
+                        target);
+      break;
+    }
+    case media::VideoFrame::YV12A: {
+      DCHECK(!chopped_width_ && !chopped_height_);
+      media::CopyYPlane(frame->data(kYPlane),
+                        frame->stride(kYPlane),
+                        frame->rows(kYPlane),
+                        target);
+      media::CopyUPlane(frame->data(kUPlane),
+                        frame->stride(kUPlane),
+                        frame->rows(kUPlane),
+                        target);
+      media::CopyVPlane(frame->data(kVPlane),
+                        frame->stride(kVPlane),
+                        frame->rows(kVPlane),
+                        target);
+      media::CopyAPlane(frame->data(kAPlane),
+                        frame->stride(kAPlane),
+                        frame->rows(kAPlane),
                         target);
       break;
     }
@@ -584,6 +609,9 @@ void VideoCaptureController::SendFrameInfoAndBuffers(ControllerClient* client) {
   client->event_handler->OnFrameInfo(client->controller_id,
                                      frame_info_.width, frame_info_.height,
                                      frame_info_.frame_rate);
+  if (!buffer_pool_)
+    return;
+
   for (int buffer_id = 1; buffer_id <= buffer_pool_->count(); ++buffer_id) {
     base::SharedMemoryHandle remote_handle =
         buffer_pool_->ShareToProcess(buffer_id, client->render_process_handle);
@@ -632,7 +660,8 @@ void VideoCaptureController::PostStopping() {
 
   // When clients still have some buffers, or device has not been stopped yet,
   // do nothing.
-  if (buffer_pool_->IsAnyBufferHeldForConsumers() || device_in_use_)
+  if ((buffer_pool_ && buffer_pool_->IsAnyBufferHeldForConsumers()) ||
+      device_in_use_)
     return;
 
   {

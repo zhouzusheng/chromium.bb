@@ -26,11 +26,9 @@
  */
 
 #include "config.h"
-#include "WebIDBKey.h"
+#include <public/WebIDBKey.h>
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "IDBKey.h"
+#include "modules/indexeddb/IDBKey.h"
 
 using namespace WebCore;
 
@@ -231,5 +229,3 @@ WebIDBKey::operator PassRefPtr<IDBKey>() const
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)

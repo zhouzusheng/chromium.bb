@@ -31,34 +31,34 @@
 #include "config.h"
 #include "WebDevToolsFrontendImpl.h"
 
-#include "ContextMenuController.h"
-#include "ContextMenuItem.h"
-#include "DOMWindow.h"
-#include "Document.h"
-#include "Event.h"
-#include "Frame.h"
-#include "InspectorController.h"
 #include "InspectorFrontendClientImpl.h"
-#include "InspectorFrontendHost.h"
-#include "Node.h"
-#include "Page.h"
-#include "Pasteboard.h"
-#include "ScriptController.h"
-#include "SecurityOrigin.h"
-#include "Settings.h"
-#include "V8Binding.h"
-#include "V8DOMWrapper.h"
 #include "V8InspectorFrontendHost.h"
 #include "V8MouseEvent.h"
 #include "V8Node.h"
-#include "V8Utilities.h"
 #include "WebDevToolsFrontendClient.h"
 #include "WebFrameImpl.h"
 #include "WebScriptSource.h"
 #include "WebViewImpl.h"
+#include "bindings/v8/ScriptController.h"
+#include "bindings/v8/V8Binding.h"
+#include "bindings/v8/V8DOMWrapper.h"
+#include "bindings/v8/V8Utilities.h"
+#include "core/dom/Document.h"
+#include "core/dom/Event.h"
+#include "core/dom/Node.h"
+#include "core/inspector/InspectorController.h"
+#include "core/inspector/InspectorFrontendHost.h"
+#include "core/page/ContextMenuController.h"
+#include "core/page/DOMWindow.h"
+#include "core/page/Frame.h"
+#include "core/page/Page.h"
+#include "core/page/SecurityOrigin.h"
+#include "core/page/Settings.h"
+#include "core/platform/ContextMenuItem.h"
+#include "core/platform/Pasteboard.h"
 #include <wtf/OwnPtr.h>
-#include <wtf/Vector.h>
 #include <wtf/text/WTFString.h>
+#include <wtf/Vector.h>
 
 using namespace WebCore;
 
@@ -94,9 +94,9 @@ WebDevToolsFrontendImpl::WebDevToolsFrontendImpl(
     InspectorController* ic = m_webViewImpl->page()->inspectorController();
     ic->setInspectorFrontendClient(adoptPtr(new InspectorFrontendClientImpl(m_webViewImpl->page(), m_client, this)));
 
-    // Put each DevTools frontend Page into its own (single page) group so that it's not
+    // Put each DevTools frontend Page into a private group so that it's not
     // deferred along with the inspected page.
-    m_webViewImpl->page()->setGroupName(String());
+    m_webViewImpl->page()->setGroupType(Page::PrivatePageGroup);
 }
 
 WebDevToolsFrontendImpl::~WebDevToolsFrontendImpl()

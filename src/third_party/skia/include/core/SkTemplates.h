@@ -80,15 +80,21 @@ private:
     T* fObj;
 };
 
-// See also SkTScopedPtr.
 template <typename T> class SkAutoTDelete : SkNoncopyable {
 public:
-    SkAutoTDelete(T* obj) : fObj(obj) {}
+    SkAutoTDelete(T* obj = NULL) : fObj(obj) {}
     ~SkAutoTDelete() { delete fObj; }
 
     T* get() const { return fObj; }
     T& operator*() const { SkASSERT(fObj); return *fObj; }
     T* operator->() const { SkASSERT(fObj); return fObj; }
+
+    void reset(T* obj) {
+        if (fObj != obj) {
+            delete fObj;
+            fObj = obj;
+        }
+    }
 
     /**
      *  Delete the owned object, setting the internal pointer to NULL.
@@ -108,6 +114,24 @@ public:
         fObj = NULL;
         return obj;
     }
+
+private:
+    T*  fObj;
+};
+
+// Calls ~T() in the destructor.
+template <typename T> class SkAutoTDestroy : SkNoncopyable {
+public:
+    SkAutoTDestroy(T* obj = NULL) : fObj(obj) {}
+    ~SkAutoTDestroy() {
+        if (NULL != fObj) {
+            fObj->~T();
+        }
+    }
+
+    T* get() const { return fObj; }
+    T& operator*() const { SkASSERT(fObj); return *fObj; }
+    T* operator->() const { SkASSERT(fObj); return fObj; }
 
 private:
     T*  fObj;
@@ -271,11 +295,17 @@ private:
 
 template <size_t N, typename T> class SK_API SkAutoSTMalloc : SkNoncopyable {
 public:
+    SkAutoSTMalloc() {
+        fPtr = NULL;
+    }
+
     SkAutoSTMalloc(size_t count) {
-        if (count <= N) {
+        if (count > N) {
+            fPtr = (T*)sk_malloc_flags(count * sizeof(T), SK_MALLOC_THROW | SK_MALLOC_TEMP);
+        } else if (count) {
             fPtr = fTStorage;
         } else {
-            fPtr = (T*)sk_malloc_flags(count * sizeof(T), SK_MALLOC_THROW | SK_MALLOC_TEMP);
+            fPtr = NULL;
         }
     }
 
@@ -290,10 +320,12 @@ public:
         if (fPtr != fTStorage) {
             sk_free(fPtr);
         }
-        if (count <= N) {
+        if (count > N) {
+            fPtr = (T*)sk_malloc_flags(count * sizeof(T), SK_MALLOC_THROW | SK_MALLOC_TEMP);
+        } else if (count) {
             fPtr = fTStorage;
         } else {
-            fPtr = (T*)sk_malloc_flags(count * sizeof(T), SK_MALLOC_THROW | SK_MALLOC_TEMP);
+            fPtr = NULL;
         }
     }
 

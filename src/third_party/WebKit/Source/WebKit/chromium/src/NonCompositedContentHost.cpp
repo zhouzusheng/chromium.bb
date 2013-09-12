@@ -27,13 +27,13 @@
 
 #include "NonCompositedContentHost.h"
 
-#include "FloatPoint.h"
-#include "FloatRect.h"
-#include "GraphicsLayer.h"
-#include "GraphicsLayerChromium.h"
-#include "PlatformContextSkia.h"
-#include "Settings.h"
 #include "WebViewImpl.h"
+#include "core/page/Settings.h"
+#include "core/platform/graphics/FloatPoint.h"
+#include "core/platform/graphics/FloatRect.h"
+#include "core/platform/graphics/GraphicsLayer.h"
+#include "core/platform/graphics/chromium/GraphicsLayerChromium.h"
+#include "core/platform/graphics/skia/PlatformContextSkia.h"
 #include <public/WebContentLayer.h>
 #include <public/WebFloatPoint.h>
 
@@ -142,11 +142,6 @@ void NonCompositedContentHost::invalidateRect(const WebCore::IntRect& rect)
 void NonCompositedContentHost::notifyAnimationStarted(const WebCore::GraphicsLayer*, double /* time */)
 {
     // Intentionally left empty since we don't support animations on the non-composited content.
-}
-
-void NonCompositedContentHost::notifyFlushRequired(const WebCore::GraphicsLayer*)
-{
-    m_webView->scheduleCompositingLayerSync();
 }
 
 void NonCompositedContentHost::paintContents(const WebCore::GraphicsLayer*, WebCore::GraphicsContext& context, WebCore::GraphicsLayerPaintingPhase, const WebCore::IntRect& clipRect)

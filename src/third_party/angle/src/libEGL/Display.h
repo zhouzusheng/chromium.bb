@@ -102,6 +102,7 @@ class Display
 
     bool isD3d9ExDevice() const { return mD3d9Ex != NULL; }
     const char *getExtensionString() const;
+    const char *getVendorString() const;
     bool shareHandleSupported() const;
 
     virtual IDirect3DVertexShader9 *createVertexShader(const DWORD *function, size_t length);
@@ -125,6 +126,7 @@ class Display
     
     UINT mAdapter;
     D3DDEVTYPE mDeviceType;
+    D3DDISPLAYMODE mDisplayMode;
     IDirect3D9 *mD3d9;  // Always valid after successful initialization.
     IDirect3D9Ex *mD3d9Ex;  // Might be null if D3D9Ex is not supported.
     IDirect3DDevice9 *mDevice;
@@ -161,6 +163,9 @@ class Display
 
     void initExtensionString();
     std::string mExtensionString;
+
+    void initVendorString();
+    std::string mVendorString;
 
     typedef HRESULT (WINAPI *D3DCompileFunc)(LPCVOID pSrcData,
                                              SIZE_T SrcDataSize,

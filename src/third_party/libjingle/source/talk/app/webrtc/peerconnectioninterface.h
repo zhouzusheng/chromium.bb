@@ -89,6 +89,7 @@ class WebRtcVideoDecoderFactory;
 
 namespace webrtc {
 class AudioDeviceModule;
+class MediaConstraintsInterface;
 
 // MediaStream container interface.
 class StreamCollectionInterface : public talk_base::RefCountInterface {
@@ -158,6 +159,7 @@ class PeerConnectionInterface : public talk_base::RefCountInterface {
 
   struct IceServer {
     std::string uri;
+    std::string username;
     std::string password;
   };
   typedef std::vector<IceServer> IceServers;
@@ -311,13 +313,16 @@ class PortAllocatorFactoryInterface : public talk_base::RefCountInterface {
     TurnConfiguration(const std::string& address,
                       int port,
                       const std::string& username,
-                      const std::string& password)
+                      const std::string& password,
+                      const std::string& transport_type)
         : server(address, port),
           username(username),
-          password(password) {}
+          password(password),
+          transport_type(transport_type) {}
     talk_base::SocketAddress server;
     std::string username;
     std::string password;
+    std::string transport_type;
   };
 
   virtual cricket::PortAllocator* CreatePortAllocator(

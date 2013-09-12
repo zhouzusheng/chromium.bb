@@ -9,10 +9,10 @@
 #include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/cookies/cookie_store.h"
-#include "net/base/io_buffer.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_util.h"
@@ -80,8 +80,10 @@ WebSocketJob::WebSocketJob(SocketStream::Delegate* delegate)
       handshake_request_sent_(0),
       response_cookies_save_index_(0),
       spdy_protocol_version_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_for_send_pending_(this)) {
+      save_next_cookie_running_(false),
+      callback_pending_(false),
+      weak_ptr_factory_(this),
+      weak_ptr_factory_for_send_pending_(this) {
 }
 
 WebSocketJob::~WebSocketJob() {
@@ -295,7 +297,7 @@ void WebSocketJob::OnCreatedSpdyStream(int result) {
   CompleteIO(result);
 }
 
-void WebSocketJob::OnSentSpdyHeaders(int result) {
+void WebSocketJob::OnSentSpdyHeaders() {
   DCHECK_NE(INITIALIZED, state_);
   if (state_ != CONNECTING)
     return;
@@ -316,28 +318,33 @@ int WebSocketJob::OnReceivedSpdyResponseHeader(
                                                 challenge_,
                                                 spdy_protocol_version_);
 
-  SaveCookiesAndNotifyHeaderComplete();
+  SaveCookiesAndNotifyHeadersComplete();
   return OK;
 }
 
-void WebSocketJob::OnSentSpdyData(int amount_sent) {
+void WebSocketJob::OnSentSpdyData(size_t bytes_sent) {
   DCHECK_NE(INITIALIZED, state_);
   DCHECK_NE(CONNECTING, state_);
   if (state_ == CLOSED)
     return;
   if (!spdy_websocket_stream_.get())
     return;
-  OnSentData(socket_, amount_sent);
+  OnSentData(socket_, static_cast<int>(bytes_sent));
 }
 
-void WebSocketJob::OnReceivedSpdyData(const char* data, int length) {
+void WebSocketJob::OnReceivedSpdyData(scoped_ptr<SpdyBuffer> buffer) {
   DCHECK_NE(INITIALIZED, state_);
   DCHECK_NE(CONNECTING, state_);
   if (state_ == CLOSED)
     return;
   if (!spdy_websocket_stream_.get())
     return;
-  OnReceivedData(socket_, data, length);
+  if (buffer) {
+    OnReceivedData(socket_, buffer->GetRemainingData(),
+                   buffer->GetRemainingSize());
+  } else {
+    OnReceivedData(socket_, NULL, 0);
+  }
 }
 
 void WebSocketJob::OnCloseSpdyStream() {
@@ -449,13 +456,14 @@ void WebSocketJob::OnReceivedHandshakeResponse(
     DCHECK(received_data_after_handshake_.empty());
     received_data_after_handshake_.assign(data + response_length, data + len);
   }
-  SaveCookiesAndNotifyHeaderComplete();
+  SaveCookiesAndNotifyHeadersComplete();
 }
 
-void WebSocketJob::SaveCookiesAndNotifyHeaderComplete() {
+void WebSocketJob::SaveCookiesAndNotifyHeadersComplete() {
   // handshake message is completed.
   DCHECK(handshake_response_->HasResponse());
 
+  // Extract cookies from the handshake response into a temporary vector.
   response_cookies_.clear();
   response_cookies_save_index_ = 0;
 
@@ -466,59 +474,90 @@ void WebSocketJob::SaveCookiesAndNotifyHeaderComplete() {
   SaveNextCookie();
 }
 
-void WebSocketJob::SaveNextCookie() {
-  if (response_cookies_save_index_ == response_cookies_.size()) {
-    response_cookies_.clear();
-    response_cookies_save_index_ = 0;
+void WebSocketJob::NotifyHeadersComplete() {
+  // Remove cookie headers, with malformed headers preserved.
+  // Actual handshake should be done in WebKit.
+  handshake_response_->RemoveHeaders(
+      kSetCookieHeaders, arraysize(kSetCookieHeaders));
+  std::string handshake_response = handshake_response_->GetResponse();
+  std::vector<char> received_data(handshake_response.begin(),
+                                  handshake_response.end());
+  received_data.insert(received_data.end(),
+                       received_data_after_handshake_.begin(),
+                       received_data_after_handshake_.end());
+  received_data_after_handshake_.clear();
 
-    // Remove cookie headers, with malformed headers preserved.
-    // Actual handshake should be done in WebKit.
-    handshake_response_->RemoveHeaders(
-        kSetCookieHeaders, arraysize(kSetCookieHeaders));
-    std::string handshake_response = handshake_response_->GetResponse();
-    std::vector<char> received_data(handshake_response.begin(),
-                                    handshake_response.end());
-    received_data.insert(received_data.end(),
-                         received_data_after_handshake_.begin(),
-                         received_data_after_handshake_.end());
-    received_data_after_handshake_.clear();
+  state_ = OPEN;
 
-    state_ = OPEN;
+  DCHECK(!received_data.empty());
+  if (delegate_)
+    delegate_->OnReceivedData(
+        socket_, &received_data.front(), received_data.size());
 
-    DCHECK(!received_data.empty());
-    if (delegate_)
-      delegate_->OnReceivedData(
-          socket_, &received_data.front(), received_data.size());
+  handshake_response_.reset();
 
-    handshake_response_.reset();
-
-    WebSocketThrottle::GetInstance()->RemoveFromQueue(this);
-    WebSocketThrottle::GetInstance()->WakeupSocketIfNecessary();
-    return;
-  }
-
-  bool allow = true;
-  CookieOptions options;
-  GURL url = GetURLForCookies();
-  std::string cookie = response_cookies_[response_cookies_save_index_];
-  if (delegate_ && !delegate_->CanSetCookie(socket_, url, cookie, &options))
-    allow = false;
-
-  if (socket_ && delegate_ && state_ == CONNECTING) {
-    response_cookies_save_index_++;
-    if (allow && socket_->context()->cookie_store()) {
-      options.set_include_httponly();
-      socket_->context()->cookie_store()->SetCookieWithOptionsAsync(
-          url, cookie, options,
-          base::Bind(&WebSocketJob::SaveCookieCallback,
-                     weak_ptr_factory_.GetWeakPtr()));
-    } else {
-      SaveNextCookie();
-    }
-  }
+  WebSocketThrottle::GetInstance()->RemoveFromQueue(this);
+  WebSocketThrottle::GetInstance()->WakeupSocketIfNecessary();
 }
 
-void WebSocketJob::SaveCookieCallback(bool cookie_status) {
+void WebSocketJob::SaveNextCookie() {
+  if (!socket_ || !delegate_ || state_ != CONNECTING)
+    return;
+
+  callback_pending_ = false;
+  save_next_cookie_running_ = true;
+
+  if (socket_->context()->cookie_store()) {
+    GURL url_for_cookies = GetURLForCookies();
+
+    CookieOptions options;
+    options.set_include_httponly();
+
+    // Loop as long as SetCookieWithOptionsAsync completes synchronously. Since
+    // CookieMonster's asynchronous operation APIs queue the callback to run it
+    // on the thread where the API was called, there won't be race. I.e. unless
+    // the callback is run synchronously, it won't be run in parallel with this
+    // method.
+    while (!callback_pending_ &&
+           response_cookies_save_index_ < response_cookies_.size()) {
+      std::string cookie = response_cookies_[response_cookies_save_index_];
+      response_cookies_save_index_++;
+
+      if (!delegate_->CanSetCookie(socket_, url_for_cookies, cookie, &options))
+        continue;
+
+      callback_pending_ = true;
+      socket_->context()->cookie_store()->SetCookieWithOptionsAsync(
+          url_for_cookies, cookie, options,
+          base::Bind(&WebSocketJob::OnCookieSaved,
+                     weak_ptr_factory_.GetWeakPtr()));
+    }
+  }
+
+  save_next_cookie_running_ = false;
+
+  if (callback_pending_)
+    return;
+
+  response_cookies_.clear();
+  response_cookies_save_index_ = 0;
+  
+  NotifyHeadersComplete();
+}
+
+void WebSocketJob::OnCookieSaved(bool cookie_status) {
+  // Tell the caller of SetCookieWithOptionsAsync() that this completion
+  // callback is invoked.
+  // - If the caller checks callback_pending earlier than this callback, the
+  //   caller exits to let this method continue iteration.
+  // - Otherwise, the caller continues iteration.
+  callback_pending_ = false;
+
+  // Resume SaveNextCookie if the caller of SetCookieWithOptionsAsync() exited
+  // the loop. Otherwise, return.
+  if (save_next_cookie_running_)
+    return;
+
   SaveNextCookie();
 }
 

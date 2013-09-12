@@ -19,8 +19,8 @@ namespace gpu {
 namespace gles2 {
 
 class BufferManager;
+class ErrorState;
 class FeatureInfo;
-class GLES2Decoder;
 
 // Info about Buffers currently in the system.
 class GPU_EXPORT Buffer : public base::RefCounted<Buffer> {
@@ -159,7 +159,7 @@ class GPU_EXPORT Buffer : public base::RefCounted<Buffer> {
 
   // A copy of the data in the buffer. This data is only kept if the target
   // is backed_ = true.
-  scoped_array<int8> shadow_;
+  scoped_ptr<int8[]> shadow_;
 
   // A map of ranges to the highest value in that range of a certain type.
   typedef std::map<Range, GLuint, Range::Less> RangeToMaxValueMap;
@@ -194,7 +194,7 @@ class GPU_EXPORT BufferManager {
   // Does a glBufferData and updates the approprate accounting. Currently
   // assume the values have already been validated.
   void DoBufferData(
-      GLES2Decoder* decoder,
+      ErrorState* error_state,
       Buffer* buffer,
       GLsizeiptr size,
       GLenum usage,
@@ -202,7 +202,7 @@ class GPU_EXPORT BufferManager {
 
   // Does a glBufferSubData and updates the approrate accounting.
   void DoBufferSubData(
-      GLES2Decoder* decoder,
+      ErrorState* error_state,
       Buffer* buffer,
       GLintptr offset,
       GLsizeiptr size,
@@ -219,8 +219,12 @@ class GPU_EXPORT BufferManager {
     return memory_tracker_->GetMemRepresented();
   }
 
-  // Tell's for a given usage if this would be a client side array.
+  // Tells for a given usage if this would be a client side array.
   bool IsUsageClientSideArray(GLenum usage);
+
+  // Tells whether a buffer that is emulated using client-side arrays should be
+  // set to a non-zero size.
+  bool UseNonZeroSizeForClientSideArrayBuffer();
 
  private:
   friend class Buffer;

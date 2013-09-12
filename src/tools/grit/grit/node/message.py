@@ -20,8 +20,6 @@ from grit import lazy_re
 from grit import tclib
 from grit import util
 
-BINARY, UTF8, UTF16 = range(3)
-
 # Finds whitespace at the start and end of a string which can be multiline.
 _WHITESPACE = lazy_re.compile('(?P<start>\s*)(?P<body>.+?)(?P<end>\s*)\Z',
                               re.DOTALL | re.MULTILINE)
@@ -216,23 +214,15 @@ class MessageNode(base.ContentNode):
 
   def GetDataPackPair(self, lang, encoding):
     '''Returns a (id, string) pair that represents the string id and the string
-    in utf8.  This is used to generate the data pack data file.
+    in the specified encoding, where |encoding| is one of the encoding values
+    accepted by util.Encode.  This is used to generate the data pack data file.
     '''
     from grit.format import rc_header
     id_map = rc_header.GetIds(self.GetRoot())
     id = id_map[self.GetTextualIds()[0]]
 
     message = self.ws_at_start + self.Translate(lang) + self.ws_at_end
-
-    # |message| is a python unicode string, so convert to a byte stream that
-    # has the correct encoding requested for the datapacks. We skip the first
-    # 2 bytes of text resources because it is the BOM.
-    if encoding == UTF8:
-      return id, message.encode('utf8')
-    if encoding == UTF16:
-      return id, message.encode('utf16')[2:]
-    # Default is BINARY
-    return id, message
+    return id, util.Encode(message, encoding)
 
   @staticmethod
   def Construct(parent, message, name, desc='', meaning='', translateable=True):

@@ -31,19 +31,19 @@
 #include "config.h"
 #include "AutofillPopupMenuClient.h"
 
-#include "CSSFontSelector.h"
 #include "CSSValueKeywords.h"
-#include "Chrome.h"
-#include "Frame.h"
-#include "FrameView.h"
-#include "HTMLInputElement.h"
-#include "Page.h"
-#include "RenderTheme.h"
-#include "StyleResolver.h"
 #include "WebAutofillClient.h"
 #include "WebNode.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
+#include "core/css/CSSFontSelector.h"
+#include "core/css/StyleResolver.h"
+#include "core/html/HTMLInputElement.h"
+#include "core/page/Chrome.h"
+#include "core/page/Frame.h"
+#include "core/page/FrameView.h"
+#include "core/page/Page.h"
+#include "core/rendering/RenderTheme.h"
 #include <public/WebString.h>
 #include <public/WebVector.h>
 

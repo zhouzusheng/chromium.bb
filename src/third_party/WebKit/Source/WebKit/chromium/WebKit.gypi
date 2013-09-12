@@ -30,27 +30,6 @@
 
 {
     'variables': {
-        # List of DevTools source files, ordered by dependencies. It is used both
-        # for copying them to resource dir, and for generating 'devtools.html' file.
-        'devtools_js_files': [
-            'src/js/DevTools.js',
-            'src/js/DevToolsExtensionAPI.js',
-            'src/js/Tests.js',
-        ],
-        'devtools_css_files': [
-            'src/js/devTools.css',
-        ],
-        'devtools_extension_api_files': [
-            '../../WebCore/inspector/front-end/ExtensionAPI.js',
-            'src/js/DevToolsExtensionAPI.js'
-        ],
-        'devtools_image_files': [
-            'src/js/Images/segmentChromium.png',
-            'src/js/Images/segmentHoverChromium.png',
-            'src/js/Images/segmentHoverEndChromium.png',
-            'src/js/Images/segmentSelectedChromium.png',
-            'src/js/Images/segmentSelectedEndChromium.png',
-        ],
         'webkit_unittest_files': [
             'tests/AnimationTranslationUtilTest.cpp',
             'tests/ArenaTestHelpers.h',
@@ -64,6 +43,7 @@
             'tests/DecimalTest.cpp',
             'tests/DeferredImageDecoderTest.cpp',
             'tests/DragImageTest.cpp',
+            'tests/DrawingBufferTest.cpp',
             'tests/FakeWebPlugin.cpp',
             'tests/FakeWebPlugin.h',
             'tests/FakeWebGraphicsContext3D.h',
@@ -82,6 +62,7 @@
             'tests/IDBKeyPathTest.cpp',
             'tests/IDBLevelDBCodingTest.cpp',
             'tests/IDBRequestTest.cpp',
+            'tests/IDBTransactionTest.cpp',
             'tests/ImageDecodingStoreTest.cpp',
             'tests/ImageFrameGeneratorTest.cpp',
             'tests/ImageLayerChromiumTest.cpp',
@@ -102,12 +83,13 @@
             'tests/PlatformContextSkiaTest.cpp',
             'tests/PopupContainerTest.cpp',
             'tests/PrerenderingTest.cpp',
+            'tests/ProgrammaticScrollTest.cpp',
             'tests/RegionTest.cpp',
+            'tests/RenderLayerBackingTest.cpp',
             'tests/RenderTableCellTest.cpp',
             'tests/RenderTableRowTest.cpp',
             'tests/ScrollingCoordinatorChromiumTest.cpp',
             'tests/ThreadSafeDataTransportTest.cpp',
-            'tests/TilingDataTest.cpp',
             'tests/TreeTestHelpers.cpp',
             'tests/TreeTestHelpers.h',
             'tests/URLTestHelpers.cpp',
@@ -118,7 +100,6 @@
             'tests/WebImageTest.cpp',
             'tests/WebInputEventConversionTest.cpp',
             'tests/WebInputEventFactoryTestMac.mm',
-            'tests/WebMediaPlayerClientImplTest.cpp',
             'tests/WebPageNewSerializerTest.cpp',
             'tests/WebPageSerializerTest.cpp',
             'tests/WebPluginContainerTest.cpp',

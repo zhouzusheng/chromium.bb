@@ -472,7 +472,7 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
       UNCLASSIFIED,
       37,
       "LDoubleConstant::one_half");
-  Add(ExternalReference::isolate_address().address(),
+  Add(ExternalReference::isolate_address(isolate).address(),
       UNCLASSIFIED,
       38,
       "isolate");
@@ -544,6 +544,20 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
       UNCLASSIFIED,
       55,
       "Runtime::AllocateInNewSpace");
+  Add(ExternalReference::old_pointer_space_allocation_top_address(
+      isolate).address(),
+      UNCLASSIFIED,
+      56,
+      "Heap::OldPointerSpaceAllocationTopAddress");
+  Add(ExternalReference::old_pointer_space_allocation_limit_address(
+      isolate).address(),
+      UNCLASSIFIED,
+      57,
+      "Heap::OldPointerSpaceAllocationLimitAddress");
+  Add(ExternalReference(Runtime::kAllocateInOldPointerSpace, isolate).address(),
+      UNCLASSIFIED,
+      58,
+      "Runtime::AllocateInOldPointerSpace");
 
   // Add a small set of deopt entry addresses to encoder without generating the
   // deopt table code, which isn't possible at deserialization time.
@@ -554,7 +568,7 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
         entry,
         Deoptimizer::LAZY,
         Deoptimizer::CALCULATE_ENTRY_ADDRESS);
-    Add(address, LAZY_DEOPTIMIZATION, 56 + entry, "lazy_deopt");
+    Add(address, LAZY_DEOPTIMIZATION, 59 + entry, "lazy_deopt");
   }
 }
 
@@ -1356,9 +1370,9 @@ void PartialSerializer::SerializeObject(
   // should go through the root array or through the partial snapshot cache.
   // If this is not the case you may have to add something to the root array.
   ASSERT(!startup_serializer_->address_mapper()->IsMapped(heap_object));
-  // All the symbols that the partial snapshot needs should be either in the
-  // root table or in the partial snapshot cache.
-  ASSERT(!heap_object->IsSymbol());
+  // All the internalized strings that the partial snapshot needs should be
+  // either in the root table or in the partial snapshot cache.
+  ASSERT(!heap_object->IsInternalizedString());
 
   if (address_mapper_.IsMapped(heap_object)) {
     int space = SpaceOfObject(heap_object);

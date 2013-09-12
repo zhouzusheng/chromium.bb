@@ -29,13 +29,13 @@
  */
 
 #include "config.h"
-#include "WebElement.h"
 #include "WebDocument.h"
-#include "Element.h"
-#include "NamedNodeMap.h"
-#include "RenderBoxModelObject.h"
-#include "RenderObject.h"
-#include "ShadowRoot.h"
+#include "WebElement.h"
+#include "core/dom/Element.h"
+#include "core/dom/NamedNodeMap.h"
+#include "core/dom/ShadowRoot.h"
+#include "core/rendering/RenderBoxModelObject.h"
+#include "core/rendering/RenderObject.h"
 #include <public/WebRect.h>
 #include <wtf/PassRefPtr.h>
 
@@ -137,9 +137,7 @@ WebString WebElement::computeInheritedLanguage() const
 
 void WebElement::requestFullScreen()
 {
-#if ENABLE(FULLSCREEN_API)
     unwrap<Element>()->webkitRequestFullScreen(Element::ALLOW_KEYBOARD_INPUT);
-#endif
 }
 
 WebDocument WebElement::document() const

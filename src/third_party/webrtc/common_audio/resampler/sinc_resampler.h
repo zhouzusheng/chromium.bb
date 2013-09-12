@@ -17,7 +17,7 @@
 #include "webrtc/system_wrappers/interface/aligned_malloc.h"
 #include "webrtc/system_wrappers/interface/constructor_magic.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
-// SHEZ: remove include here, used only for testing
+#include "webrtc/test/testsupport/gtest_prod_util.h"
 
 namespace webrtc {
 
@@ -49,11 +49,17 @@ class SincResampler {
   // single call to |read_cb_| for more data.
   int ChunkSize();
 
+  // The number of source frames requested per processing pass (and equal to
+  // |block_size| if provided at construction).  The first pass will request
+  // more to prime the buffer.
+  int BlockSize();
+
   // Flush all buffered data and reset internal indices.
   void Flush();
 
  private:
-  // SHEZ: remove code here, used only for testing
+  FRIEND_TEST_ALL_PREFIXES(SincResamplerTest, Convolve);
+  FRIEND_TEST_ALL_PREFIXES(SincResamplerTest, ConvolveBenchmark);
 
   void Initialize();
   void InitializeKernel();

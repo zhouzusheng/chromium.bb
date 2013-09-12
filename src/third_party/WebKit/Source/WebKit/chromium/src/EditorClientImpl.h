@@ -31,9 +31,9 @@
 #ifndef EditorClientImpl_h
 #define EditorClientImpl_h
 
-#include "EditorClient.h"
-#include "TextCheckerClient.h"
-#include "Timer.h"
+#include "core/page/EditorClient.h"
+#include "core/platform/Timer.h"
+#include "core/platform/text/TextCheckerClient.h"
 #include <wtf/Deque.h>
 #include <wtf/HashSet.h>
 

@@ -31,29 +31,26 @@
 #include "config.h"
 #include "WebPopupMenuImpl.h"
 
-#include "Cursor.h"
-#include "FrameView.h"
-#include "FramelessScrollView.h"
-#include "IntRect.h"
-#include "NotImplemented.h"
-#include "PlatformKeyboardEvent.h"
-#include "PlatformMouseEvent.h"
-#include "PlatformWheelEvent.h"
-#include "PopupContainer.h"
-#include "PopupMenuChromium.h"
-#include "SkiaUtils.h"
+#include <skia/ext/platform_canvas.h>
 #include "WebInputEvent.h"
 #include "WebInputEventConversion.h"
 #include "WebRange.h"
 #include "WebViewClient.h"
 #include "WebWidgetClient.h"
-#include "painting/GraphicsContextBuilder.h"
+#include "core/page/FrameView.h"
+#include "core/platform/Cursor.h"
+#include "core/platform/NotImplemented.h"
+#include "core/platform/PlatformGestureEvent.h"
+#include "core/platform/PlatformKeyboardEvent.h"
+#include "core/platform/PlatformMouseEvent.h"
+#include "core/platform/PlatformWheelEvent.h"
+#include "core/platform/chromium/FramelessScrollView.h"
+#include "core/platform/chromium/PopupContainer.h"
+#include "core/platform/chromium/PopupMenuChromium.h"
+#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/IntRect.h"
+#include "core/platform/graphics/skia/SkiaUtils.h"
 #include <public/WebRect.h>
-#include <skia/ext/platform_canvas.h>
-
-#if ENABLE(GESTURE_EVENTS)
-#include "PlatformGestureEvent.h"
-#endif
 
 using namespace WebCore;
 
@@ -133,7 +130,6 @@ bool WebPopupMenuImpl::handleGestureEvent(const WebGestureEvent& event)
     return m_widget->handleGestureEvent(PlatformGestureEventBuilder(m_widget, event));
 }
 
-#if ENABLE(TOUCH_EVENTS)
 bool WebPopupMenuImpl::handleTouchEvent(const WebTouchEvent& event)
 {
 
@@ -141,7 +137,6 @@ bool WebPopupMenuImpl::handleTouchEvent(const WebTouchEvent& event)
     bool defaultPrevented(m_widget->handleTouchEvent(touchEventBuilder));
     return defaultPrevented;
 }
-#endif
 
 bool WebPopupMenuImpl::handleKeyEvent(const WebKeyboardEvent& event)
 {
@@ -199,8 +194,7 @@ void WebPopupMenuImpl::paint(WebCanvas* canvas, const WebRect& rect, PaintOption
         return;
 
     if (!rect.isEmpty()) {
-        GraphicsContextBuilder builder(canvas);
-        GraphicsContext& context = builder.context();
+        GraphicsContext context(canvas);
         context.applyDeviceScaleFactor(m_client->deviceScaleFactor());
         m_widget->paint(&context, rect);
     }
@@ -267,6 +261,7 @@ bool WebPopupMenuImpl::handleInputEvent(const WebInputEvent& inputEvent)
     case WebInputEvent::GestureFlingStart:
     case WebInputEvent::GestureFlingCancel:
     case WebInputEvent::GestureTap:
+    case WebInputEvent::GestureTapUnconfirmed:
     case WebInputEvent::GestureTapDown:
     case WebInputEvent::GestureTapCancel:
     case WebInputEvent::GestureDoubleTap:
@@ -341,12 +336,7 @@ void WebPopupMenuImpl::setTextDirection(WebTextDirection)
 //-----------------------------------------------------------------------------
 // WebCore::HostWindow
 
-void WebPopupMenuImpl::invalidateRootView(const IntRect&, bool)
-{
-    notImplemented();
-}
-
-void WebPopupMenuImpl::invalidateContentsAndRootView(const IntRect& paintRect, bool /*immediate*/)
+void WebPopupMenuImpl::invalidateContentsAndRootView(const IntRect& paintRect)
 {
     if (paintRect.isEmpty())
         return;
@@ -354,9 +344,9 @@ void WebPopupMenuImpl::invalidateContentsAndRootView(const IntRect& paintRect, b
         m_client->didInvalidateRect(paintRect);
 }
 
-void WebPopupMenuImpl::invalidateContentsForSlowScroll(const IntRect& updateRect, bool immediate)
+void WebPopupMenuImpl::invalidateContentsForSlowScroll(const IntRect& updateRect)
 {
-    invalidateContentsAndRootView(updateRect, immediate);
+    invalidateContentsAndRootView(updateRect);
 }
 
 void WebPopupMenuImpl::scheduleAnimation()
@@ -382,6 +372,11 @@ IntRect WebPopupMenuImpl::rootViewToScreen(const IntRect& rect) const
 {
     notImplemented();
     return IntRect();
+}
+
+WebScreenInfo WebPopupMenuImpl::screenInfo() const
+{
+    return WebScreenInfo();
 }
 
 void WebPopupMenuImpl::scrollbarsModeDidChange() const

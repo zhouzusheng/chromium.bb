@@ -31,9 +31,7 @@
 #include "config.h"
 #include "WebPluginContainerImpl.h"
 
-#include "Chrome.h"
 #include "ChromeClientImpl.h"
-#include "ClipboardChromium.h"
 #include "ScrollbarGroup.h"
 #include "WebCursorInfo.h"
 #include "WebDataSourceImpl.h"
@@ -42,36 +40,41 @@
 #include "WebInputEventConversion.h"
 #include "WebPlugin.h"
 #include "WebViewImpl.h"
-#include "WrappedResourceResponse.h"
+#include "core/page/Chrome.h"
+#include "core/page/EventHandler.h"
+#include "core/platform/chromium/ClipboardChromium.h"
+#include "core/platform/chromium/support/WrappedResourceResponse.h"
 
-#include "EventNames.h"
-#include "FocusController.h"
-#include "FormState.h"
-#include "Frame.h"
-#include "FrameLoadRequest.h"
-#include "FrameView.h"
-#include "GestureEvent.h"
-#include "GraphicsContext.h"
-#include "GraphicsLayerChromium.h"
-#include "HitTestResult.h"
-#include "HostWindow.h"
-#include "HTMLFormElement.h"
 #include "HTMLNames.h"
-#include "HTMLPlugInElement.h"
-#include "IFrameShimSupport.h"
-#include "KeyboardCodes.h"
-#include "KeyboardEvent.h"
-#include "MouseEvent.h"
-#include "Page.h"
-#include "RenderBox.h"
-#include "ScrollAnimator.h"
-#include "ScrollView.h"
-#include "ScrollbarTheme.h"
-#include "ScrollingCoordinator.h"
-#include "TouchEvent.h"
-#include "UserGestureIndicator.h"
 #include "WebPrintParams.h"
-#include "WheelEvent.h"
+#include "bindings/v8/ScriptController.h"
+#include "core/dom/EventNames.h"
+#include "core/dom/GestureEvent.h"
+#include "core/dom/KeyboardEvent.h"
+#include "core/dom/MouseEvent.h"
+#include "core/dom/TouchEvent.h"
+#include "core/dom/UserGestureIndicator.h"
+#include "core/dom/WheelEvent.h"
+#include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLPlugInElement.h"
+#include "core/loader/FormState.h"
+#include "core/loader/FrameLoadRequest.h"
+#include "core/page/FocusController.h"
+#include "core/page/Frame.h"
+#include "core/page/FrameView.h"
+#include "core/page/Page.h"
+#include "core/page/scrolling/ScrollingCoordinator.h"
+#include "core/platform/HostWindow.h"
+#include "core/platform/PlatformGestureEvent.h"
+#include "core/platform/ScrollAnimator.h"
+#include "core/platform/ScrollView.h"
+#include "core/platform/ScrollbarTheme.h"
+#include "core/platform/chromium/KeyboardCodes.h"
+#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/chromium/GraphicsLayerChromium.h"
+#include "core/plugins/IFrameShimSupport.h"
+#include "core/rendering/HitTestResult.h"
+#include "core/rendering/RenderBox.h"
 #include <public/Platform.h>
 #include <public/WebClipboard.h>
 #include <public/WebCompositorSupport.h>
@@ -84,11 +87,7 @@
 #include <public/WebURLRequest.h>
 #include <public/WebVector.h>
 
-#if ENABLE(GESTURE_EVENTS)
-#include "PlatformGestureEvent.h"
-#endif
-
-#include "PlatformContextSkia.h"
+#include "core/platform/graphics/skia/PlatformContextSkia.h"
 
 using namespace WebCore;
 
@@ -118,13 +117,8 @@ void WebPluginContainerImpl::paint(GraphicsContext* gc, const IntRect& damageRec
     if (!parent())
         return;
 
-    FloatRect scaledDamageRect = damageRect;
-    float frameScaleFactor = m_element->document()->frame()->frameScaleFactor();
-    scaledDamageRect.scale(frameScaleFactor);
-    scaledDamageRect.move(-frameRect().x() * (frameScaleFactor - 1), -frameRect().y() * (frameScaleFactor - 1));
-
     // Don't paint anything if the plugin doesn't intersect the damage rect.
-    if (!frameRect().intersects(enclosingIntRect(scaledDamageRect)))
+    if (!frameRect().intersects(damageRect))
         return;
 
     gc->save();
@@ -139,7 +133,7 @@ void WebPluginContainerImpl::paint(GraphicsContext* gc, const IntRect& damageRec
 
     WebCanvas* canvas = gc->platformContext()->canvas();
 
-    IntRect windowRect = view->contentsToWindow(enclosingIntRect(scaledDamageRect));
+    IntRect windowRect = view->contentsToWindow(damageRect);
     m_webPlugin->paint(canvas, windowRect);
 
     gc->restore();
@@ -344,6 +338,18 @@ void WebPluginContainerImpl::copy()
     WebKit::Platform::current()->clipboard()->writeHTML(m_webPlugin->selectionAsMarkup(), WebURL(), m_webPlugin->selectionAsText(), false);
 }
 
+bool WebPluginContainerImpl::executeEditCommand(const WebString& name)
+{
+    if (m_webPlugin->executeEditCommand(name))
+        return true;
+
+    if (name != "Copy")
+        return false;
+
+    copy();
+    return true;
+}
+
 WebElement WebPluginContainerImpl::element()
 {
     return WebElement(m_element);
@@ -467,7 +473,7 @@ bool WebPluginContainerImpl::isRectTopmost(const WebRect& rect)
     LayoutPoint center = documentRect.center();
     // Make the rect we're checking (the point surrounded by padding rects) contained inside the requested rect. (Note that -1/2 is 0.)
     LayoutSize padding((documentRect.width() - 1) / 2, (documentRect.height() - 1) / 2);
-    HitTestResult result = frame->eventHandler()->hitTestResultAtPoint(center, HitTestRequest::ReadOnly | HitTestRequest::Active, padding);
+    HitTestResult result = frame->eventHandler()->hitTestResultAtPoint(center, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent, padding);
     const HitTestResult::NodeSet& nodes = result.rectBasedTestResult();
     if (nodes.size() != 1)
         return false;
@@ -533,6 +539,11 @@ void WebPluginContainerImpl::didFailLoading(const ResourceError& error)
     m_webPlugin->didFailLoading(error);
 }
 
+WebLayer* WebPluginContainerImpl::platformLayer() const
+{
+    return m_webLayer;
+}
+
 NPObject* WebPluginContainerImpl::scriptableObject()
 {
     return m_webPlugin->scriptableObject();
@@ -571,13 +582,6 @@ void WebPluginContainerImpl::willDestroyPluginLoadObserver(WebPluginLoadObserver
     m_pluginLoadObservers.remove(pos);
 }
 
-#if USE(ACCELERATED_COMPOSITING)
-WebLayer* WebPluginContainerImpl::platformLayer() const
-{
-    return m_webLayer;
-}
-#endif
-
 ScrollbarGroup* WebPluginContainerImpl::scrollbarGroup()
 {
     if (!m_scrollbarGroup)
@@ -610,8 +614,7 @@ bool WebPluginContainerImpl::paintCustomOverhangArea(GraphicsContext* context, c
 // Private methods -------------------------------------------------------------
 
 WebPluginContainerImpl::WebPluginContainerImpl(WebCore::HTMLPlugInElement* element, WebPlugin* webPlugin)
-    : WebCore::PluginViewBase(0)
-    , m_element(element)
+    : m_element(element)
     , m_webPlugin(webPlugin)
     , m_webLayer(0)
     , m_touchEventRequestType(TouchEventRequestTypeNone)
@@ -627,10 +630,8 @@ WebPluginContainerImpl::~WebPluginContainerImpl()
     for (size_t i = 0; i < m_pluginLoadObservers.size(); ++i)
         m_pluginLoadObservers[i]->clearPluginContainer();
     m_webPlugin->destroy();
-#if USE(ACCELERATED_COMPOSITING)
     if (m_webLayer)
         GraphicsLayerChromium::unregisterContentsLayer(m_webLayer);
-#endif
 }
 
 void WebPluginContainerImpl::handleMouseEvent(MouseEvent* event)

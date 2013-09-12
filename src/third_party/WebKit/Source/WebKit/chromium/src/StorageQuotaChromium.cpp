@@ -29,31 +29,27 @@
  */
 
 #include "config.h"
-#include "StorageQuota.h"
+#include "modules/quota/StorageQuota.h"
 
-#if ENABLE(QUOTA)
-
-#include "Document.h"
-#include "ExceptionCode.h"
-#include "ScriptExecutionContext.h"
-#include "StorageErrorCallback.h"
-#include "StorageQuotaCallback.h"
-#include "StorageUsageCallback.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
 #include "WebStorageQuotaCallbacksImpl.h"
 #include "WebStorageQuotaType.h"
 #include "WebWorkerBase.h"
-#include "WorkerContext.h"
 #include "WorkerStorageQuotaCallbacksBridge.h"
-#include "WorkerThread.h"
+#include "core/dom/Document.h"
+#include "core/dom/ExceptionCode.h"
+#include "core/dom/ScriptExecutionContext.h"
+#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerThread.h"
+#include "modules/quota/StorageErrorCallback.h"
+#include "modules/quota/StorageQuotaCallback.h"
+#include "modules/quota/StorageUsageCallback.h"
 #include <wtf/Threading.h>
 
 using namespace WebKit;
 
 namespace WebCore {
-
-#if ENABLE(WORKERS)
 
 static void queryUsageAndQuotaFromWorker(WebCommonWorkerClient* commonClient, WebStorageQuotaType storageType, WebStorageQuotaCallbacksImpl* callbacks)
 {
@@ -69,8 +65,6 @@ static void queryUsageAndQuotaFromWorker(WebCommonWorkerClient* commonClient, We
     bridge->postQueryUsageAndQuotaToMainThread(commonClient, storageType, mode);
 }
 
-#endif // ENABLE(WORKERS)
-
 void StorageQuota::queryUsageAndQuota(ScriptExecutionContext* scriptExecutionContext, PassRefPtr<StorageUsageCallback> successCallback, PassRefPtr<StorageErrorCallback> errorCallback)
 {
     ASSERT(scriptExecutionContext);
@@ -85,13 +79,9 @@ void StorageQuota::queryUsageAndQuota(ScriptExecutionContext* scriptExecutionCon
         WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
         webFrame->client()->queryStorageUsageAndQuota(webFrame, storageType, new WebStorageQuotaCallbacksImpl(successCallback, errorCallback));
     } else {
-#if ENABLE(WORKERS)
         WorkerContext* workerContext = static_cast<WorkerContext*>(scriptExecutionContext);
         WebWorkerBase* webWorker = static_cast<WebWorkerBase*>(workerContext->thread()->workerLoaderProxy().toWebWorkerBase());
         queryUsageAndQuotaFromWorker(webWorker->commonClient(), storageType, new WebStorageQuotaCallbacksImpl(successCallback, errorCallback));
-#else
-        ASSERT_NOT_REACHED();
-#endif
     }
 }
 
@@ -115,5 +105,3 @@ void StorageQuota::requestQuota(ScriptExecutionContext* scriptExecutionContext, 
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(QUOTA)

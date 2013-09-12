@@ -48,13 +48,19 @@ const char kForceGLFinishWorkaround[]       = "force-glfinish-workaround";
 // Sets the total amount of memory that may be allocated for GPU resources
 const char kForceGpuMemAvailableMb[]        = "force-gpu-mem-available-mb";
 
+// Force the synchronous copy path in compositing_iosurface_mac.
+const char kForceSynchronousGLReadPixels[]  = "force-synchronous-glreadpixels";
+
+// Pass a set of GpuDriverBugWorkaroundType ids, seperated by ','.
+const char kGpuDriverBugWorkarounds[] = "gpu-driver-bug-workarounds";
+
 // Sets the maximum size of the in-memory gpu program cache, in kb
 const char kGpuProgramCacheSizeKb[]         = "gpu-program-cache-size-kb";
 
 const char kTraceGL[]       = "trace-gl";
 
 // Disables the GPU shader on disk cache.
-const char kEnableGpuShaderDiskCache[]      = "enable-gpu-shader-disk-cache";
+const char kDisableGpuShaderDiskCache[]     = "disable-gpu-shader-disk-cache";
 
 const char* kGpuSwitches[] = {
   kCompileShaderAlwaysSucceeds,
@@ -69,9 +75,11 @@ const char* kGpuSwitches[] = {
   kEnforceGLMinimums,
   kForceGLFinishWorkaround,
   kForceGpuMemAvailableMb,
+  kForceSynchronousGLReadPixels,
+  kGpuDriverBugWorkarounds,
   kGpuProgramCacheSizeKb,
   kTraceGL,
-  kEnableGpuShaderDiskCache,
+  kDisableGpuShaderDiskCache,
 };
 
 const int kNumGpuSwitches = arraysize(kGpuSwitches);

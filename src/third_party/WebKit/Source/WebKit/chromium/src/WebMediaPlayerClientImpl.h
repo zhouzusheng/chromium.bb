@@ -31,14 +31,15 @@
 #ifndef WebMediaPlayerClientImpl_h
 #define WebMediaPlayerClientImpl_h
 
-#if ENABLE(VIDEO)
-
-#include "AudioSourceProvider.h"
-#include "MediaPlayerPrivate.h"
+#include "core/platform/audio/AudioSourceProvider.h"
+#include "core/platform/graphics/MediaPlayerPrivate.h"
+#if defined(OS_ANDROID)
+#include "GrTexture.h"
+#include "SkBitmap.h"
+#include "SkRefCnt.h"
+#endif
 #include "WebAudioSourceProviderClient.h"
 #include "WebMediaPlayerClient.h"
-#include "WebStreamTextureClient.h"
-#include <public/WebVideoFrameProvider.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 
@@ -49,16 +50,10 @@ namespace WebKit {
 class WebHelperPluginImpl;
 class WebAudioSourceProvider;
 class WebMediaPlayer;
-class WebVideoLayer;
 
 // This class serves as a bridge between WebCore::MediaPlayer and
 // WebKit::WebMediaPlayer.
-class WebMediaPlayerClientImpl : public WebCore::MediaPlayerPrivateInterface
-#if USE(ACCELERATED_COMPOSITING)
-                               , public WebVideoFrameProvider
-#endif
-                               , public WebMediaPlayerClient
-                               , public WebStreamTextureClient {
+class WebMediaPlayerClientImpl : public WebCore::MediaPlayerPrivateInterface, public WebMediaPlayerClient {
 
 public:
     static bool isEnabled();
@@ -72,7 +67,7 @@ public:
     virtual ~WebMediaPlayerClientImpl();
     virtual void networkStateChanged();
     virtual void readyStateChanged();
-    virtual void volumeChanged(float);
+    virtual void volumeChanged(double);
     virtual void muteChanged(bool);
     virtual void timeChanged();
     virtual void repaint();
@@ -81,7 +76,7 @@ public:
     virtual void sizeChanged();
     virtual void setOpaque(bool);
     virtual void sawUnsupportedTracks();
-    virtual float volume() const;
+    virtual double volume() const;
     virtual void playbackStateChanged();
     virtual WebMediaPlayer::Preload preload() const;
     virtual void keyAdded(const WebString& keySystem, const WebString& sessionId);
@@ -90,17 +85,15 @@ public:
     virtual void keyNeeded(const WebString& keySystem, const WebString& sessionId, const unsigned char* initData, unsigned initDataLength);
     virtual WebPlugin* createHelperPlugin(const WebString& pluginType, WebFrame*);
     virtual void closeHelperPlugin();
-    virtual void disableAcceleratedCompositing();
+    virtual bool needsWebLayerForVideo() const;
+    virtual void setWebLayer(WebLayer*);
 
     // MediaPlayerPrivateInterface methods:
     virtual void load(const WTF::String& url);
-#if ENABLE(MEDIA_SOURCE)
     virtual void load(const WTF::String& url, PassRefPtr<WebCore::MediaSource>);
-#endif
+
     virtual void cancelLoad();
-#if USE(ACCELERATED_COMPOSITING)
     virtual WebKit::WebLayer* platformLayer() const;
-#endif
     virtual WebCore::PlatformMedia platformMedia() const;
     virtual void play();
     virtual void pause();
@@ -111,17 +104,16 @@ public:
     virtual bool hasVideo() const;
     virtual bool hasAudio() const;
     virtual void setVisible(bool);
-    virtual float duration() const;
-    virtual float currentTime() const;
-    virtual void seek(float time);
+    virtual double duration() const;
+    virtual double currentTime() const;
+    virtual void seek(double time);
     virtual bool seeking() const;
-    virtual void setEndTime(float time);
-    virtual void setRate(float);
+    virtual void setRate(double);
     virtual bool paused() const;
-    virtual void setVolume(float);
+    virtual void setVolume(double);
     virtual WebCore::MediaPlayer::NetworkState networkState() const;
     virtual WebCore::MediaPlayer::ReadyState readyState() const;
-    virtual float maxTimeSeekable() const;
+    virtual double maxTimeSeekable() const;
     virtual WTF::PassRefPtr<WebCore::TimeRanges> buffered() const;
     virtual int dataRate() const;
     virtual bool totalBytesKnown() const;
@@ -135,7 +127,7 @@ public:
     virtual bool hasSingleSecurityOrigin() const;
     virtual bool didPassCORSAccessCheck() const;
     virtual WebCore::MediaPlayer::MovieLoadType movieLoadType() const;
-    virtual float mediaTimeForTimeValue(float timeValue) const;
+    virtual double mediaTimeForTimeValue(double timeValue) const;
     virtual unsigned decodedFrameCount() const;
     virtual unsigned droppedFrameCount() const;
     virtual unsigned audioDecodedByteCount() const;
@@ -150,24 +142,13 @@ public:
     virtual WebCore::AudioSourceProvider* audioSourceProvider();
 #endif
 
-#if USE(ACCELERATED_COMPOSITING)
     virtual bool supportsAcceleratedRendering() const;
-
-    // WebVideoFrameProvider methods:
-    virtual void setVideoFrameProviderClient(WebVideoFrameProvider::Client*);
-    virtual WebVideoFrame* getCurrentFrame();
-    virtual void putCurrentFrame(WebVideoFrame*);
-#endif
 
 #if ENABLE(ENCRYPTED_MEDIA)
     virtual WebCore::MediaPlayer::MediaKeyException generateKeyRequest(const String& keySystem, const unsigned char* initData, unsigned initDataLength) OVERRIDE;
     virtual WebCore::MediaPlayer::MediaKeyException addKey(const String& keySystem, const unsigned char* key, unsigned keyLength, const unsigned char* initData, unsigned initDataLength, const String& sessionId) OVERRIDE;
     virtual WebCore::MediaPlayer::MediaKeyException cancelKeyRequest(const String& keySystem, const String& sessionId) OVERRIDE;
 #endif
-
-    // WebStreamTextureClient methods:
-    virtual void didReceiveFrame();
-    virtual void didUpdateMatrix(const float*);
 
 protected:
     WebMediaPlayerClientImpl();
@@ -185,24 +166,26 @@ private:
     static WebCore::MediaPlayer::SupportsType supportsType(
         const WTF::String& type, const WTF::String& codecs, const WebCore::KURL&);
 #endif
-#if USE(ACCELERATED_COMPOSITING)
     bool acceleratedRenderingInUse();
+
+#if defined(OS_ANDROID)
+    // FIXME: This path "only works" on Android. It is a workaround for the problem that Skia could not handle Android's GL_TEXTURE_EXTERNAL_OES
+    // texture internally. It should be removed and replaced by the normal paint path.
+    // https://code.google.com/p/skia/issues/detail?id=1189
+    void paintOnAndroid(WebCore::GraphicsContext* context, WebCore::GraphicsContext3D* context3D, const WebCore::IntRect& rect, uint8_t alpha);
+    SkAutoTUnref<GrTexture> m_texture;
+    SkBitmap m_bitmap;
 #endif
 
-    Mutex m_webMediaPlayerMutex; // Guards the m_webMediaPlayer
     WebCore::MediaPlayer* m_mediaPlayer;
     OwnPtr<WebMediaPlayer> m_webMediaPlayer;
-    WebVideoFrame* m_currentVideoFrame;
     WebCore::KURL m_url;
     bool m_delayingLoad;
     WebCore::MediaPlayer::Preload m_preload;
     RefPtr<WebHelperPluginImpl> m_helperPlugin;
-#if USE(ACCELERATED_COMPOSITING)
-    OwnPtr<WebVideoLayer> m_videoLayer;
-    bool m_supportsAcceleratedCompositing;
+    WebLayer* m_videoLayer;
     bool m_opaque;
-    WebVideoFrameProvider::Client* m_videoFrameProviderClient;
-#endif
+    bool m_needsWebLayerForVideo;
     static bool m_isEnabled;
 
 #if ENABLE(WEB_AUDIO)
@@ -253,13 +236,9 @@ private:
     AudioSourceProviderImpl m_audioSourceProvider;
 #endif
 
-#if ENABLE(MEDIA_SOURCE)
     RefPtr<WebCore::MediaSource> m_mediaSource;
-#endif
 };
 
 } // namespace WebKit
-
-#endif
 
 #endif

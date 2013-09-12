@@ -60,9 +60,7 @@ bool AudioSplicer::AddInput(const scoped_refptr<DataBuffer>& input){
   base::TimeDelta expected_timestamp = output_timestamp_helper_.GetTimestamp();
   base::TimeDelta delta = timestamp - expected_timestamp;
 
-  // SHEZ: Changed upstream code here because VS2008 complains about ambiguous
-  //       abs overload.
-  if (std::abs(long(delta.InMilliseconds())) > kMaxTimeDeltaInMilliseconds) {
+  if (std::abs(delta.InMilliseconds()) > kMaxTimeDeltaInMilliseconds) {
     DVLOG(1) << "Timestamp delta too large: " << delta.InMicroseconds() << "us";
     return false;
   }

@@ -30,13 +30,11 @@
 #include "config.h"
 #include "WebFileSystemCallbacksImpl.h"
 
-#if ENABLE(FILE_SYSTEM)
-
-#include "AsyncFileSystemCallbacks.h"
 #include "AsyncFileSystemChromium.h"
-#include "FileMetadata.h"
-#include "ScriptExecutionContext.h"
 #include "WorkerAsyncFileSystemChromium.h"
+#include "core/dom/ScriptExecutionContext.h"
+#include "core/platform/AsyncFileSystemCallbacks.h"
+#include "core/platform/FileMetadata.h"
 #include <public/WebFileInfo.h>
 #include <public/WebFileSystem.h>
 #include <public/WebFileSystemEntry.h>
@@ -110,12 +108,10 @@ void WebFileSystemCallbacksImpl::didOpenFileSystem(const WebString& name, const 
     // This object is intended to delete itself on exit.
     OwnPtr<WebFileSystemCallbacksImpl> callbacks = adoptPtr(this);
 
-#if ENABLE(WORKERS)
     if (m_context && m_context->isWorkerContext()) {
         m_callbacks->didOpenFileSystem(name, rootURL, WorkerAsyncFileSystemChromium::create(m_context, m_synchronousType));
         return;
     }
-#endif
     m_callbacks->didOpenFileSystem(name, rootURL, AsyncFileSystemChromium::create());
 }
 
@@ -126,5 +122,3 @@ void WebFileSystemCallbacksImpl::didFail(WebFileError error)
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(FILE_SYSTEM)

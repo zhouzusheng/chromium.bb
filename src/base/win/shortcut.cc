@@ -135,8 +135,10 @@ bool CreateOrUpdateShortcutLink(const FilePath& shortcut_path,
         !SetAppIdForPropertyStore(property_store, properties.app_id.c_str())) {
       return false;
     }
-    // SHEZ: Removed upstream code here because it doesn't compile in VS2008.
-    if (has_dual_mode) {
+    if (has_dual_mode &&
+        !SetBooleanValueForPropertyStore(property_store,
+                                         PKEY_AppUserModel_IsDualMode,
+                                         properties.dual_mode)) {
       return false;
     }
   }

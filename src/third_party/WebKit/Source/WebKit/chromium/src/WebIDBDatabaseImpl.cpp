@@ -26,22 +26,19 @@
 #include "config.h"
 #include "WebIDBDatabaseImpl.h"
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "DOMStringList.h"
+#include <public/WebIDBCallbacks.h>
+#include <public/WebIDBDatabaseCallbacks.h>
+#include <public/WebIDBDatabaseError.h>
+#include <public/WebIDBKey.h>
+#include <public/WebIDBKeyRange.h>
+#include <public/WebIDBMetadata.h>
 #include "IDBCallbacksProxy.h"
-#include "IDBCursor.h"
-#include "IDBDatabaseBackendInterface.h"
 #include "IDBDatabaseCallbacksProxy.h"
-#include "IDBKeyRange.h"
-#include "IDBMetadata.h"
-#include "SharedBuffer.h"
-#include "WebIDBCallbacks.h"
-#include "WebIDBDatabaseCallbacks.h"
-#include "WebIDBDatabaseError.h"
-#include "WebIDBKey.h"
-#include "WebIDBKeyRange.h"
-#include "WebIDBMetadata.h"
+#include "core/platform/SharedBuffer.h"
+#include "modules/indexeddb/IDBCursor.h"
+#include "modules/indexeddb/IDBDatabaseBackendInterface.h"
+#include "modules/indexeddb/IDBKeyRange.h"
+#include "modules/indexeddb/IDBMetadata.h"
 #include "public/WebData.h"
 
 using namespace WebCore;
@@ -69,13 +66,14 @@ void WebIDBDatabaseImpl::deleteObjectStore(long long transactionId, long long ob
 }
 
 
-void WebIDBDatabaseImpl::createTransaction(long long id, WebIDBDatabaseCallbacks* callbacks, const WebVector<long long>& objectStoreIds, unsigned short mode)
+void WebIDBDatabaseImpl::createTransaction(long long id, WebIDBDatabaseCallbacks*, const WebVector<long long>& objectStoreIds, unsigned short mode)
 {
+    if (!m_databaseCallbacks)
+        return;
     Vector<int64_t> objectStoreIdList(objectStoreIds.size());
     for (size_t i = 0; i < objectStoreIds.size(); ++i)
         objectStoreIdList[i] = objectStoreIds[i];
-    RefPtr<IDBDatabaseCallbacksProxy> databaseCallbacksProxy = IDBDatabaseCallbacksProxy::create(adoptPtr(callbacks));
-    m_databaseBackend->createTransaction(id, databaseCallbacksProxy.get(), objectStoreIdList, mode);
+    m_databaseBackend->createTransaction(id, m_databaseCallbacks.get(), objectStoreIdList, mode);
 }
 
 void WebIDBDatabaseImpl::close()
@@ -211,5 +209,3 @@ void WebIDBDatabaseImpl::deleteIndex(long long transactionId, long long objectSt
 }
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)

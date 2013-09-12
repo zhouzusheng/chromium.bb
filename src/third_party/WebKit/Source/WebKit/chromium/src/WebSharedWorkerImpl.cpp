@@ -31,22 +31,6 @@
 #include "config.h"
 #include "WebSharedWorkerImpl.h"
 
-#include "CrossThreadTask.h"
-#include "DatabaseTask.h"
-#include "Document.h"
-#include "FrameLoadRequest.h"
-#include "FrameLoader.h"
-#include "GroupSettings.h"
-#include "KURL.h"
-#include "MessageEvent.h"
-#include "MessagePortChannel.h"
-#include "Page.h"
-#include "PageGroup.h"
-#include "PlatformMessagePortChannelChromium.h"
-#include "SecurityOrigin.h"
-#include "ScriptExecutionContext.h"
-#include "SharedWorkerContext.h"
-#include "SharedWorkerThread.h"
 #include "WebDataSourceImpl.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
@@ -54,11 +38,27 @@
 #include "WebSettings.h"
 #include "WebSharedWorkerClient.h"
 #include "WebView.h"
-#include "WorkerContext.h"
-#include "WorkerDebuggerAgent.h"
-#include "WorkerInspectorController.h"
-#include "WorkerLoaderProxy.h"
-#include "WorkerThread.h"
+#include "core/dom/CrossThreadTask.h"
+#include "core/dom/Document.h"
+#include "core/dom/MessageEvent.h"
+#include "core/dom/MessagePortChannel.h"
+#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/default/chromium/PlatformMessagePortChannelChromium.h"
+#include "core/inspector/WorkerDebuggerAgent.h"
+#include "core/inspector/WorkerInspectorController.h"
+#include "core/loader/FrameLoadRequest.h"
+#include "core/loader/FrameLoader.h"
+#include "core/page/GroupSettings.h"
+#include "core/page/Page.h"
+#include "core/page/PageGroup.h"
+#include "core/page/SecurityOrigin.h"
+#include "core/platform/KURL.h"
+#include "core/workers/SharedWorkerContext.h"
+#include "core/workers/SharedWorkerThread.h"
+#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerLoaderProxy.h"
+#include "core/workers/WorkerThread.h"
+#include "modules/webdatabase/DatabaseTask.h"
 #include <public/WebFileError.h>
 #include <public/WebMessagePortChannel.h>
 #include <public/WebString.h>
@@ -69,7 +69,6 @@ using namespace WebCore;
 
 namespace WebKit {
 
-#if ENABLE(SHARED_WORKERS)
 // This function is called on the main thread to force to initialize some static
 // values used in WebKit before any worker thread is started. This is because in
 // our worker processs, we do not run any WebKit code in main thread and thus
@@ -459,6 +458,5 @@ WebSharedWorker* WebSharedWorker::create(WebSharedWorkerClient* client)
 {
     return new WebSharedWorkerImpl(client);
 }
-#endif // ENABLE(SHARED_WORKERS)
 
 } // namespace WebKit

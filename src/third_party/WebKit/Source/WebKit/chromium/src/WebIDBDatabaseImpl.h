@@ -26,14 +26,11 @@
 #ifndef WebIDBDatabaseImpl_h
 #define WebIDBDatabaseImpl_h
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "IDBDatabaseCallbacksProxy.h"
-#include "WebExceptionCode.h"
-#include "WebIDBDatabase.h"
 #include <public/WebCommon.h>
+#include <public/WebIDBDatabase.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
+#include "IDBDatabaseCallbacksProxy.h"
 
 namespace WebCore { class IDBDatabaseBackendInterface; }
 
@@ -77,5 +74,3 @@ private:
 } // namespace WebKit
 
 #endif // WebIDBDatabaseImpl_h
-
-#endif // ENABLE(INDEXED_DATABASE)

@@ -32,11 +32,11 @@
 #ifndef ChromeClientImpl_h
 #define ChromeClientImpl_h
 
-#include "ChromeClientChromium.h"
-#include "NavigatorContentUtilsClient.h"
-#include "PopupMenu.h"
-#include "SearchPopupMenu.h"
 #include "WebNavigationPolicy.h"
+#include "core/page/ChromeClient.h"
+#include "core/platform/PopupMenu.h"
+#include "core/platform/SearchPopupMenu.h"
+#include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
 #include <public/WebColor.h>
 #include <wtf/PassOwnPtr.h>
 
@@ -61,11 +61,10 @@ class WebColorChooser;
 class WebColorChooserClient;
 class WebViewImpl;
 struct WebCursorInfo;
-struct WebScreenInfo;
 struct WebPopupMenuInfo;
 
 // Handles window-level notifications from WebCore on behalf of a WebView.
-class ChromeClientImpl : public WebCore::ChromeClientChromium, public WebCore::PageClientChromium {
+class ChromeClientImpl : public WebCore::ChromeClient {
 public:
     explicit ChromeClientImpl(WebViewImpl* webView);
     virtual ~ChromeClientImpl();
@@ -82,7 +81,6 @@ public:
     virtual bool canTakeFocus(WebCore::FocusDirection);
     virtual void takeFocus(WebCore::FocusDirection);
     virtual void focusedNodeChanged(WebCore::Node*);
-    virtual void focusedFrameChanged(WebCore::Frame*);
     virtual WebCore::Page* createWindow(
         WebCore::Frame*, const WebCore::FrameLoadRequest&, const WebCore::WindowFeatures&, const WebCore::NavigationAction&);
     virtual void show();
@@ -111,104 +109,67 @@ public:
         WebCore::Frame*, const WTF::String& message,
         const WTF::String& defaultValue, WTF::String& result);
     virtual void setStatusbarText(const WTF::String& message);
-    virtual bool shouldInterruptJavaScript();
-    virtual WebCore::KeyboardUIMode keyboardUIMode();
+    virtual bool tabsToLinks();
     virtual WebCore::IntRect windowResizerRect() const;
-    virtual void invalidateRootView(const WebCore::IntRect&, bool);
-    virtual void invalidateContentsAndRootView(const WebCore::IntRect&, bool);
-    virtual void invalidateContentsForSlowScroll(const WebCore::IntRect&, bool);
-#if ENABLE(REQUEST_ANIMATION_FRAME)
+    virtual void invalidateContentsAndRootView(const WebCore::IntRect&);
+    virtual void invalidateContentsForSlowScroll(const WebCore::IntRect&);
     virtual void scheduleAnimation();
-#endif
     virtual void scroll(
         const WebCore::IntSize& scrollDelta, const WebCore::IntRect& rectToScroll,
         const WebCore::IntRect& clipRect);
     virtual WebCore::IntPoint screenToRootView(const WebCore::IntPoint&) const;
     virtual WebCore::IntRect rootViewToScreen(const WebCore::IntRect&) const;
-    virtual PlatformPageClient platformPageClient() const { return PlatformPageClient(this); }
+    virtual WebScreenInfo screenInfo() const;
     virtual void contentsSizeChanged(WebCore::Frame*, const WebCore::IntSize&) const;
+    virtual void deviceOrPageScaleFactorChanged() const;
+    virtual void didProgrammaticallyScroll(WebCore::Frame*, const WebCore::IntPoint&) const;
     virtual void layoutUpdated(WebCore::Frame*) const;
-    virtual void scrollRectIntoView(
-        const WebCore::IntRect&) const { }
     virtual void scrollbarsModeDidChange() const;
     virtual void mouseDidMoveOverElement(
         const WebCore::HitTestResult& result, unsigned modifierFlags);
     virtual void setToolTip(const WTF::String& tooltipText, WebCore::TextDirection);
     virtual void dispatchViewportPropertiesDidChange(const WebCore::ViewportArguments&) const;
     virtual void print(WebCore::Frame*);
-#if ENABLE(SQL_DATABASE)
-    virtual void exceededDatabaseQuota(
-        WebCore::Frame*, const WTF::String& databaseName, WebCore::DatabaseDetails);
-#endif
-    virtual void reachedMaxAppCacheSize(int64_t spaceNeeded);
-    virtual void reachedApplicationCacheOriginQuota(WebCore::SecurityOrigin*, int64_t totalSpaceNeeded);
-#if ENABLE(DRAGGABLE_REGION)
     virtual void annotatedRegionsChanged();
-#endif
     virtual bool paintCustomOverhangArea(WebCore::GraphicsContext*, const WebCore::IntRect&, const WebCore::IntRect&, const WebCore::IntRect&);
 #if ENABLE(INPUT_TYPE_COLOR)
     virtual PassOwnPtr<WebCore::ColorChooser> createColorChooser(WebCore::ColorChooserClient*, const WebCore::Color&) OVERRIDE;
     PassOwnPtr<WebColorChooser> createWebColorChooser(WebColorChooserClient*, const WebColor&);
 #endif
-#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
     virtual PassRefPtr<WebCore::DateTimeChooser> openDateTimeChooser(WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&) OVERRIDE;
-#endif
     virtual void runOpenPanel(WebCore::Frame*, PassRefPtr<WebCore::FileChooser>);
     virtual void loadIconForFiles(const Vector<WTF::String>&, WebCore::FileIconLoader*);
-#if ENABLE(DIRECTORY_UPLOAD)
     virtual void enumerateChosenDirectory(WebCore::FileChooser*);
-#endif
     virtual void setCursor(const WebCore::Cursor&);
     virtual void setCursorHiddenUntilMouseMoves(bool);
     virtual void formStateDidChange(const WebCore::Node*);
-#if ENABLE(TOUCH_EVENTS)
     virtual void needTouchEvents(bool needTouchEvents) OVERRIDE;
-#endif
 
-#if USE(ACCELERATED_COMPOSITING)
     virtual WebCore::GraphicsLayerFactory* graphicsLayerFactory() const OVERRIDE;
 
     // Pass 0 as the GraphicsLayer to detatch the root layer.
     virtual void attachRootGraphicsLayer(WebCore::Frame*, WebCore::GraphicsLayer*);
-
-    // Sets a flag to specify that the next time content is drawn to the window,
-    // the changes appear on the screen in synchrony with updates to GraphicsLayers.
-    virtual void setNeedsOneShotDrawingSynchronization() { }
 
     // Sets a flag to specify that the view needs to be updated, so we need
     // to do an eager layout before the drawing.
     virtual void scheduleCompositingLayerFlush();
 
     virtual CompositingTriggerFlags allowedCompositingTriggers() const;
-#endif
 
-    virtual bool supportsFullscreenForNode(const WebCore::Node*);
-    virtual void enterFullscreenForNode(WebCore::Node*);
-    virtual void exitFullscreenForNode(WebCore::Node*);
-
-#if ENABLE(FULLSCREEN_API)
-    virtual bool supportsFullScreenForElement(const WebCore::Element*, bool withKeyboard);
     virtual void enterFullScreenForElement(WebCore::Element*);
     virtual void exitFullScreenForElement(WebCore::Element*);
-    virtual void fullScreenRendererChanged(WebCore::RenderBox*);
-#endif
 
-    // ChromeClientChromium methods:
+    // ChromeClient methods:
     virtual void popupOpened(WebCore::PopupContainer* popupContainer,
                              const WebCore::IntRect& bounds,
                              bool handleExternally);
     virtual void popupClosed(WebCore::PopupContainer* popupContainer);
     virtual void postAccessibilityNotification(WebCore::AccessibilityObject*, WebCore::AXObjectCache::AXNotification);
 
-    // PageClientChromium methods:
-    virtual WebScreenInfo screenInfo();
-
     // ChromeClientImpl:
     void setCursorForPlugin(const WebCursorInfo&);
     void setNewWindowNavigationPolicy(WebNavigationPolicy);
 
-    virtual bool selectItemWritingDirectionIsNatural();
-    virtual bool selectItemAlignmentFollowsMenuWritingDirection();
     virtual bool hasOpenedPopup() const OVERRIDE;
     virtual PassRefPtr<WebCore::PopupMenu> createPopupMenu(WebCore::PopupMenuClient*) const;
     virtual PassRefPtr<WebCore::SearchPopupMenu> createSearchPopupMenu(WebCore::PopupMenuClient*) const;
@@ -226,13 +187,11 @@ public:
     virtual bool shouldRubberBandInDirection(WebCore::ScrollDirection) const;
     virtual void numWheelEventHandlersChanged(unsigned);
 
-    virtual bool shouldAutoscrollForDragAndDrop(WebCore::RenderBox* scrollable) const OVERRIDE;
-
-#if ENABLE(POINTER_LOCK)
     virtual bool requestPointerLock();
     virtual void requestPointerUnlock();
     virtual bool isPointerLocked();
-#endif
+
+    virtual void didAssociateFormControls(const Vector<RefPtr<WebCore::Element> >&) OVERRIDE;
 
 private:
     WebNavigationPolicy getNavigationPolicy();

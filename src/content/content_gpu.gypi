@@ -12,9 +12,9 @@
   'sources': [
     'gpu/gpu_dx_diagnostics_win.cc',
     'gpu/gpu_info_collector_android.cc',
-    'gpu/gpu_info_collector_linux.cc',
     'gpu/gpu_info_collector_mac.mm',
     'gpu/gpu_info_collector_win.cc',
+    'gpu/gpu_info_collector_x11.cc',
     'gpu/gpu_info_collector.cc',
     'gpu/gpu_info_collector.h',
     'gpu/gpu_main.cc',
@@ -27,9 +27,6 @@
   ],
   'include_dirs': [
     '..',
-    # SHEZ: modified upstream code here, include path
-    #       to our stdint.h
-    '../third_party/ffmpeg/chromium/include/win',
   ],
   'conditions': [
     ['OS=="win"', {
@@ -48,8 +45,14 @@
           '-lsetupapi.lib',
         ],
       },
-      # SHEZ: remove copying "d3dcompiler_46.dll" from upstream here
-      #       in order to build with Win7.1 SDK
+      'copies': [
+        {
+          'destination': '<(PRODUCT_DIR)',
+          'files': [
+            '<(windows_sdk_path)/Redist/D3D/x86/d3dcompiler_46.dll',
+          ],
+        },
+      ],
     }],
     ['OS=="win" and directxsdk_exists=="True"', {
       'actions': [
@@ -82,7 +85,7 @@
         '../third_party/amd/amd_videocard_info_win.cc',
       ],
     }],
-    ['OS=="linux"', {
+    ['OS=="linux" and use_x11==1', {
       'dependencies': [
         '../build/linux/system.gyp:libpci',
         '../third_party/libXNVCtrl/libXNVCtrl.gyp:libXNVCtrl',

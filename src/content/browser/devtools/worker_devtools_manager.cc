@@ -9,8 +9,10 @@
 
 #include "base/bind.h"
 #include "base/lazy_instance.h"
-#include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/browser/devtools/devtools_manager_impl.h"
+#include "content/browser/devtools/devtools_protocol.h"
+#include "content/browser/devtools/devtools_protocol_constants.h"
+#include "content/browser/devtools/ipc_devtools_agent_host.h"
 #include "content/browser/devtools/worker_devtools_message_filter.h"
 #include "content/browser/worker_host/worker_service_impl.h"
 #include "content/common/devtools_messages.h"
@@ -56,7 +58,7 @@ struct WorkerDevToolsManager::TerminatedInspectedWorker {
 
 
 class WorkerDevToolsManager::WorkerDevToolsAgentHost
-    : public DevToolsAgentHostImpl {
+    : public IPCDevToolsAgentHost {
  public:
   explicit WorkerDevToolsAgentHost(WorkerId worker_id)
       : has_worker_id_(false) {
@@ -115,7 +117,7 @@ class WorkerDevToolsManager::WorkerDevToolsAgentHost
         worker_process_id, worker_route_id, *message);
   }
 
-  // DevToolsAgentHostImpl implementation.
+  // IPCDevToolsAgentHost implementation.
   virtual void SendMessageToAgent(IPC::Message* message) OVERRIDE {
     if (!has_worker_id_) {
       delete message;
@@ -130,8 +132,8 @@ class WorkerDevToolsManager::WorkerDevToolsAgentHost
             base::Owned(message)));
   }
 
-  virtual void NotifyClientAttaching() OVERRIDE {}
-  virtual void NotifyClientDetaching() OVERRIDE {}
+  virtual void OnClientAttached() OVERRIDE {}
+  virtual void OnClientDetached() OVERRIDE {}
 
   bool has_worker_id_;
   WorkerId worker_id_;
@@ -164,19 +166,16 @@ class WorkerDevToolsManager::DetachedClientHosts {
 
     WorkerDevToolsAgentHost* agent = it->second;
     DevToolsManagerImpl* devtools_manager = DevToolsManagerImpl::GetInstance();
-    DevToolsClientHost* client_host =
-        devtools_manager->GetDevToolsClientHostFor(agent);
-
-    if (!client_host) {
+    if (!agent->IsAttached()) {
       // Agent has no client hosts -> delete it.
       RemovePendingWorkerData(id);
       return;
     }
 
     // Client host is debugging this worker agent host.
-    devtools_manager->DispatchOnInspectorFrontend(
-        agent,
-        WebDevToolsAgent::workerDisconnectedFromWorkerEvent().utf8());
+    std::string notification = DevToolsProtocol::CreateNotification(
+        devtools::Worker::disconnectedFromWorker::kName, NULL)->Serialize();
+    devtools_manager->DispatchOnInspectorFrontend(agent, notification);
     g_orphan_map.Get()[id] = agent;
     agent->ResetWorkerId();
   }

@@ -31,11 +31,9 @@
 #include "config.h"
 #include "AsyncFileWriterChromium.h"
 
-#if ENABLE(FILE_SYSTEM)
-
-#include "AsyncFileWriterClient.h"
-#include "Blob.h"
 #include "WebFileWriter.h"
+#include "core/fileapi/Blob.h"
+#include "modules/filesystem/AsyncFileWriterClient.h"
 #include <public/WebURL.h>
 
 namespace WebCore {
@@ -89,5 +87,3 @@ void AsyncFileWriterChromium::didFail(WebKit::WebFileError error)
 }
 
 } // namespace
-
-#endif // ENABLE(FILE_SYSTEM)

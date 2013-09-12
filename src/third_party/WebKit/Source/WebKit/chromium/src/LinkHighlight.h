@@ -26,10 +26,10 @@
 #ifndef LinkHighlight_h
 #define LinkHighlight_h
 
-#include "FloatPoint.h"
-#include "GraphicsLayerChromium.h"
-#include "IntPoint.h"
-#include "Path.h"
+#include "core/platform/graphics/FloatPoint.h"
+#include "core/platform/graphics/IntPoint.h"
+#include "core/platform/graphics/Path.h"
+#include "core/platform/graphics/chromium/GraphicsLayerChromium.h"
 #include <public/WebAnimationDelegate.h>
 #include <public/WebContentLayer.h>
 #include <public/WebContentLayerClient.h>
@@ -90,6 +90,7 @@ private:
     OwnPtr<WebAnimation> m_animation;
     WebViewImpl* m_owningWebViewImpl;
     WebCore::GraphicsLayerChromium* m_currentGraphicsLayer;
+    bool m_usingNonCompositedContentHost;
 
     bool m_geometryNeedsUpdate;
     bool m_isAnimating;

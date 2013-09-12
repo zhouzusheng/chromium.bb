@@ -26,10 +26,7 @@
 #ifndef WebIDBDatabaseCallbacksImpl_h
 #define WebIDBDatabaseCallbacksImpl_h
 
-#if ENABLE(INDEXED_DATABASE)
-
-#include "WebDOMStringList.h"
-#include "WebIDBDatabaseCallbacks.h"
+#include <public/WebIDBDatabaseCallbacks.h>
 #include <public/WebString.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
@@ -53,7 +50,5 @@ private:
 };
 
 } // namespace WebKit
-
-#endif // ENABLE(INDEXED_DATABASE)
 
 #endif // WebIDBDatabaseCallbacksImpl_h

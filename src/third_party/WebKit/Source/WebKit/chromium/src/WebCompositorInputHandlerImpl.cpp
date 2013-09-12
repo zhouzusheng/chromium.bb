@@ -27,9 +27,9 @@
 
 #include "WebCompositorInputHandlerImpl.h"
 
-#include "TraceEvent.h"
 #include "WebCompositorInputHandlerClient.h"
 #include "WebInputEvent.h"
+#include "core/platform/chromium/TraceEvent.h"
 #include <public/Platform.h>
 #include <public/WebInputHandlerClient.h>
 #include <wtf/PassOwnPtr.h>
@@ -112,24 +112,22 @@ void WebCompositorInputHandlerImpl::handleInputEvent(const WebInputEvent& event)
         break;
     }
     if (event.modifiers & WebInputEvent::IsLastInputEventForCurrentVSync)
-        m_inputHandlerClient->didReceiveLastInputEventForVSync();
+        m_inputHandlerClient->didReceiveLastInputEventForVSync(event.timeStampSeconds);
 }
 
 WebCompositorInputHandlerImpl::EventDisposition WebCompositorInputHandlerImpl::handleInputEventInternal(const WebInputEvent& event)
 {
     if (event.type == WebInputEvent::MouseWheel) {
         const WebMouseWheelEvent& wheelEvent = *static_cast<const WebMouseWheelEvent*>(&event);
+        if (wheelEvent.scrollByPage) {
+            // FIXME: We don't properly handle scroll by page in the compositor thread, to punt it to the main thread. http://crbug.com/236639
+            return DidNotHandle;
+        }
         WebInputHandlerClient::ScrollStatus scrollStatus = m_inputHandlerClient->scrollBegin(WebPoint(wheelEvent.x, wheelEvent.y), WebInputHandlerClient::ScrollInputTypeWheel);
         switch (scrollStatus) {
         case WebInputHandlerClient::ScrollStatusStarted: {
             TRACE_EVENT_INSTANT2("webkit", "WebCompositorInputHandlerImpl::handleInput wheel scroll", "deltaX", -wheelEvent.deltaX, "deltaY", -wheelEvent.deltaY);
-            bool didScroll = false;
-            if (wheelEvent.scrollByPage) {
-                ASSERT(!wheelEvent.deltaX);
-                WebScrollbar::ScrollDirection direction = (wheelEvent.deltaY < 0) ? WebScrollbar::ScrollForward : WebScrollbar::ScrollBackward;
-                didScroll = m_inputHandlerClient->scrollVerticallyByPageIfPossible(WebPoint(wheelEvent.x, wheelEvent.y), direction);
-            } else
-                didScroll = m_inputHandlerClient->scrollByIfPossible(WebPoint(wheelEvent.x, wheelEvent.y), WebFloatSize(-wheelEvent.deltaX, -wheelEvent.deltaY));
+            bool didScroll = m_inputHandlerClient->scrollByIfPossible(WebPoint(wheelEvent.x, wheelEvent.y), WebFloatSize(-wheelEvent.deltaX, -wheelEvent.deltaY));
             m_inputHandlerClient->scrollEnd();
             return didScroll ? DidHandle : DropEvent;
         }
@@ -207,12 +205,10 @@ WebCompositorInputHandlerImpl::EventDisposition WebCompositorInputHandlerImpl::h
             return DidHandle;
         else if (!m_flingActiveOnMainThread)
             return DropEvent;
-#if ENABLE(TOUCH_EVENT_TRACKING)
     } else if (event.type == WebInputEvent::TouchStart) {
         const WebTouchEvent& touchEvent = *static_cast<const WebTouchEvent*>(&event);
         if (!m_inputHandlerClient->haveTouchEventHandlersAt(touchEvent.touches[0].position))
             return DropEvent;
-#endif
     } else if (WebInputEvent::isKeyboardEventType(event.type)) {
          cancelCurrentFling();
     }
@@ -222,11 +218,26 @@ WebCompositorInputHandlerImpl::EventDisposition WebCompositorInputHandlerImpl::h
 
 WebCompositorInputHandlerImpl::EventDisposition WebCompositorInputHandlerImpl::handleGestureFling(const WebGestureEvent& gestureEvent)
 {
-    WebInputHandlerClient::ScrollStatus scrollStatus = m_inputHandlerClient->scrollBegin(WebPoint(gestureEvent.x, gestureEvent.y), WebInputHandlerClient::ScrollInputTypeNonBubblingGesture);
+    WebInputHandlerClient::ScrollStatus scrollStatus;
+
+    if (gestureEvent.sourceDevice == WebGestureEvent::Touchpad) {
+        scrollStatus = m_inputHandlerClient->scrollBegin(WebPoint(gestureEvent.x, gestureEvent.y), WebInputHandlerClient::ScrollInputTypeNonBubblingGesture);
+    } else {
+        if (!m_gestureScrollOnImplThread) {
+            scrollStatus = WebInputHandlerClient::ScrollStatusOnMainThread;
+        } else {
+            scrollStatus = m_inputHandlerClient->flingScrollBegin();
+        }
+    }
+
     switch (scrollStatus) {
     case WebInputHandlerClient::ScrollStatusStarted: {
-        if (gestureEvent.sourceDevice == WebGestureEvent::Touchpad)
+        if (gestureEvent.sourceDevice == WebGestureEvent::Touchpad) {
             m_inputHandlerClient->scrollEnd();
+#ifndef NDEBUG
+            m_expectScrollUpdateEnd = false;
+#endif
+        }
         m_flingCurve = adoptPtr(Platform::current()->createFlingAnimationCurve(gestureEvent.sourceDevice, WebFloatPoint(gestureEvent.data.flingStart.velocityX, gestureEvent.data.flingStart.velocityY), WebSize()));
         TRACE_EVENT_ASYNC_BEGIN0("webkit", "WebCompositorInputHandlerImpl::handleGestureFling::started", this);
         m_flingParameters.delta = WebFloatPoint(gestureEvent.data.flingStart.velocityX, gestureEvent.data.flingStart.velocityY);
@@ -292,6 +303,9 @@ bool WebCompositorInputHandlerImpl::cancelCurrentFling()
     if (hadFlingAnimation && m_flingParameters.sourceDevice == WebGestureEvent::Touchscreen) {
         m_inputHandlerClient->scrollEnd();
         TRACE_EVENT_ASYNC_END0("webkit", "WebCompositorInputHandlerImpl::handleGestureFling::started", this);
+#ifndef NDEBUG
+        m_expectScrollUpdateEnd = false;
+#endif
     }
 
     TRACE_EVENT_INSTANT1("webkit", "WebCompositorInputHandlerImpl::cancelCurrentFling", "hadFlingAnimation", hadFlingAnimation);
@@ -337,6 +351,10 @@ bool WebCompositorInputHandlerImpl::touchpadFlingScroll(const WebFloatSize& incr
     return false;
 }
 
+static WebFloatSize toClientScrollIncrement(const WebFloatSize& increment) {
+    return WebFloatSize(-increment.width, -increment.height);
+}
+
 void WebCompositorInputHandlerImpl::scrollBy(const WebFloatSize& increment)
 {
     if (increment == WebFloatSize())
@@ -351,7 +369,8 @@ void WebCompositorInputHandlerImpl::scrollBy(const WebFloatSize& increment)
         didScroll = touchpadFlingScroll(increment);
         break;
     case WebGestureEvent::Touchscreen:
-        didScroll = m_inputHandlerClient->scrollByIfPossible(m_flingParameters.point, WebFloatSize(-increment.width, -increment.height));
+        didScroll = m_inputHandlerClient->scrollByIfPossible(m_flingParameters.point,
+                                                             toClientScrollIncrement(increment));
         break;
     }
 
@@ -359,6 +378,12 @@ void WebCompositorInputHandlerImpl::scrollBy(const WebFloatSize& increment)
         m_flingParameters.cumulativeScroll.width += increment.width;
         m_flingParameters.cumulativeScroll.height += increment.height;
     }
+}
+
+void WebCompositorInputHandlerImpl::notifyCurrentFlingVelocity(const WebFloatSize& velocity)
+{
+    TRACE_EVENT2("webkit", "WebCompositorInputHandlerImpl::notifyCurrentFlingVelocity", "vx", velocity.width, "vy", velocity.height);
+    m_inputHandlerClient->notifyCurrentFlingVelocity(toClientScrollIncrement(velocity));
 }
 
 void WebCompositorInputHandlerImpl::mainThreadHasStoppedFlinging()

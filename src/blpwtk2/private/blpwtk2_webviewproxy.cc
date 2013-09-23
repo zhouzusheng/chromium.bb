@@ -391,6 +391,13 @@ void WebViewProxy::handleExternalProtocol(WebView* source, const StringRef& url)
         base::Bind(&WebViewProxy::proxyHandleExternalProtocol, this, surl));
 }
 
+void WebViewProxy::moveView(WebView* source, int x, int y, int width, int height)
+{
+    DCHECK(source == d_impl);
+    d_proxyDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::proxyMoveView, this, x, y, width, height));
+}
+
 void WebViewProxy::updateRendererInfo(bool isInProcess, int routingId)
 {
     d_proxyDispatcher->PostTask(FROM_HERE,
@@ -630,6 +637,13 @@ void WebViewProxy::proxyHandleExternalProtocol(const std::string& url)
 {
     if (d_delegate && !d_wasDestroyed)
         d_delegate->handleExternalProtocol(this, url);
+}
+
+void WebViewProxy::proxyMoveView(int x, int y, int width, int height)
+{
+    if (d_delegate && !d_wasDestroyed) {
+        d_delegate->moveView(this, x, y, width, height);
+    }
 }
 
 void WebViewProxy::proxyMoveAck(int left, int top, int width, int height, bool repaint)

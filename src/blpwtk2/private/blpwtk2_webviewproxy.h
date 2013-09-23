@@ -109,6 +109,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void showContextMenu(WebView* source, const ContextMenuParams& params) OVERRIDE;
     virtual void handleMediaRequest(WebView* source, MediaRequest* request) OVERRIDE;
     virtual void handleExternalProtocol(WebView* source, const StringRef& url) OVERRIDE;
+    virtual void moveView(WebView* source, int x, int y, int width, int height) OVERRIDE;
 
     // ========== WebViewImplClient overrides ================
 
@@ -159,6 +160,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void proxyShowContextMenu(const ContextMenuParams& params);
     void proxyHandleMediaRequest(MediaRequest* request);
     void proxyHandleExternalProtocol(const std::string& url);
+    void proxyMoveView(int x, int y, int width, int height);
 
     void proxyMoveAck(int left, int top, int width, int height, bool repaint);
 

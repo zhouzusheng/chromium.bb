@@ -123,6 +123,9 @@ class BLPWTK2_EXPORT WebViewDelegate {
     // that cannot be used withing the browser, such as 'mailto:'.
     virtual void handleExternalProtocol(WebView* source,
                                         const StringRef& url) {}
+
+    // Invoked when a request has been made to move the webview.
+    virtual void moveView(WebView* source, int x, int y, int width, int height) {}
 };
 
 }  // close namespace blpwtk2

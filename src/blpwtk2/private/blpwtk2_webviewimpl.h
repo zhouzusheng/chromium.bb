@@ -150,6 +150,14 @@ class WebViewImpl : public WebView,
     // Handle external protocol url such as 'mailto:'
     virtual void HandleExternalProtocol(const GURL& url) OVERRIDE;
 
+    // Request the delegate to move this WebContents to the specified position
+    // in screen coordinates.
+    virtual void MoveContents(content::WebContents* source, const gfx::Rect& pos) OVERRIDE;
+
+    // Called to determine if the WebContents is contained in a popup window
+    // or a panel window.
+    virtual bool IsPopupOrPanel(const content::WebContents* source) const OVERRIDE;
+
     /////// WebContentsObserver overrides
 
     // This method is invoked when the navigation is done, i.e. the spinner of
@@ -186,6 +194,7 @@ class WebViewImpl : public WebView,
     bool d_isReadyForDelete;  // when the underlying WebContents can be deleted
     bool d_wasDestroyed;      // if destroy() has been called
     bool d_isDeletingSoon;    // when DeleteSoon has been called
+    bool d_isPopup;           // if this view is a popup view
     content::CustomContextMenuContext d_customContext; //for calling performCustomContextMenuAction()
 
     DISALLOW_COPY_AND_ASSIGN(WebViewImpl);

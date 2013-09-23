@@ -63,6 +63,7 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 , d_isReadyForDelete(false)
 , d_wasDestroyed(false)
 , d_isDeletingSoon(false)
+, d_isPopup(false)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(profile);
@@ -95,6 +96,7 @@ WebViewImpl::WebViewImpl(content::WebContents* contents)
 , d_isReadyForDelete(false)
 , d_wasDestroyed(false)
 , d_isDeletingSoon(false)
+, d_isPopup(false)
 {
     DCHECK(Statics::isInBrowserMainThread());
 
@@ -445,6 +447,7 @@ void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
         break;
     case NEW_POPUP:
         delegateParams.setDisposition(NewViewDisposition::NEW_POPUP);
+        newView->d_isPopup = true;
         break;
     case NEW_WINDOW:
     default:
@@ -504,6 +507,21 @@ void WebViewImpl::HandleExternalProtocol(const GURL& url)
     if (d_wasDestroyed || !d_delegate) return;
 
     d_delegate->handleExternalProtocol(this, url.spec());
+}
+
+void WebViewImpl::MoveContents(content::WebContents* source_contents, const gfx::Rect& pos)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(source_contents == d_webContents);
+    if (d_wasDestroyed) return;
+    if (d_delegate) {
+        d_delegate->moveView(this, pos.x(), pos.y(), pos.width(), pos.height());
+    }
+}
+
+bool WebViewImpl::IsPopupOrPanel(const content::WebContents* source) const
+{
+    return d_isPopup;
 }
 
 /////// WebContentsObserver overrides

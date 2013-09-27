@@ -25,6 +25,7 @@
 #include <blpwtk2_contextmenuparams.h>
 #include <blpwtk2_contextmenuitem.h>
 #include <blpwtk2_webviewimpl.h>
+#include <blpwtk2_textdirection.h>
 
 #include <content/public/browser/web_contents.h>
 #include <content/public/common/context_menu_params.h>
@@ -63,7 +64,7 @@ void convertItem(const WebMenuItem& item1, blpwtk2::ContextMenuItem& item2)
     case WebKit::WebMenuItemInfo::SubMenu: item2.setType(blpwtk2::ContextMenuItem::SUBMENU); break;
     }
     item2.setAction(item1.action);
-    item2.setRtl(item1.rtl);
+    item2.setTextDirection(item1.rtl ? blpwtk2::TextDirection::RIGHT_TO_LEFT : blpwtk2::TextDirection::LEFT_TO_RIGHT);
     item2.setHasDirectionalOverride(item1.has_directional_override);
     item2.setEnabled(item1.enabled);
     item2.setChecked(item1.checked);

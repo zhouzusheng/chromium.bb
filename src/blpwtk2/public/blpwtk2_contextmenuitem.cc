@@ -58,7 +58,7 @@ ContextMenuItem::ContextMenuItem(const ContextMenuItem& other)
 , d_tooltip(other.d_tooltip)
 , d_type(other.d_type)
 , d_action(other.d_action)
-, d_rtl(other.d_rtl)
+, d_textDirection(other.d_textDirection)
 , d_hasDirectionalOverride(other.d_hasDirectionalOverride)
 , d_enabled(other.d_enabled)
 , d_checked(other.d_checked)
@@ -79,7 +79,7 @@ ContextMenuItem& ContextMenuItem::operator= (const ContextMenuItem& other)
     d_tooltip = other.d_tooltip;
     d_type = other.d_type;
     d_action = other.d_action;
-    d_rtl = other.d_rtl;
+    d_textDirection = other.d_textDirection;
     d_hasDirectionalOverride = other.d_hasDirectionalOverride;
     d_enabled = other.d_enabled;
     d_checked = other.d_checked;

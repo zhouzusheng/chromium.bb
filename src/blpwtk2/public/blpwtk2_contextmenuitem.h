@@ -25,6 +25,7 @@
 
 #include <blpwtk2_config.h>
 #include <blpwtk2_string.h>
+#include <blpwtk2_textdirection.h>
 
 namespace blpwtk2 {
 
@@ -59,8 +60,8 @@ class BLPWTK2_EXPORT ContextMenuItem {
     unsigned action() const { return d_action; }
     void setAction(unsigned action) { d_action = action; }
 
-    bool rtl() const { return d_rtl; }
-    void setRtl(bool rtl) { d_rtl = rtl; }
+    TextDirection::Value textDirection() const { return d_textDirection; }
+    void setTextDirection(TextDirection::Value textDirection) { d_textDirection = textDirection; }
 
     bool hasDirectionalOverride() const { return d_hasDirectionalOverride; }
     void setHasDirectionalOverride(bool hasDirectionalOverride) { d_hasDirectionalOverride = hasDirectionalOverride; }
@@ -82,7 +83,7 @@ class BLPWTK2_EXPORT ContextMenuItem {
     String d_tooltip;
     Type d_type;
     unsigned d_action;
-    bool d_rtl;
+    TextDirection::Value d_textDirection;
     bool d_hasDirectionalOverride;
     bool d_enabled;
     bool d_checked;

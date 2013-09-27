@@ -285,6 +285,14 @@ void WebViewProxy::performCustomContextMenuAction(int actionId)
         base::Bind(&WebViewProxy::implPerformCustomContextMenuAction, this, actionId));
 }
 
+void WebViewProxy::enableCustomTooltip(bool enabled)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_implDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::implEnableCustomTooltip, this, enabled));
+}
+
 void WebViewProxy::updateTargetURL(WebView* source, const StringRef& url)
 {
     DCHECK(source == d_impl);
@@ -396,6 +404,13 @@ void WebViewProxy::moveView(WebView* source, int x, int y, int width, int height
     DCHECK(source == d_impl);
     d_proxyDispatcher->PostTask(FROM_HERE,
         base::Bind(&WebViewProxy::proxyMoveView, this, x, y, width, height));
+}
+
+void WebViewProxy::showTooltip(WebView* source, const String& tooltipText, TextDirection::Value direction)
+{
+    DCHECK(source == d_impl);
+    d_proxyDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::proxyShowTooltip, this, tooltipText, direction));
 }
 
 void WebViewProxy::updateRendererInfo(bool isInProcess, int routingId)
@@ -545,6 +560,12 @@ void WebViewProxy::implPerformCustomContextMenuAction(int actionId)
     d_impl->performCustomContextMenuAction(actionId);
 }
 
+void WebViewProxy::implEnableCustomTooltip(bool enabled)
+{
+    DCHECK(d_impl);
+    d_impl->enableCustomTooltip(enabled);
+}
+
 void WebViewProxy::proxyUpdateTargetURL(const std::string& url)
 {
     if (d_delegate && !d_wasDestroyed)
@@ -644,6 +665,13 @@ void WebViewProxy::proxyMoveView(int x, int y, int width, int height)
     if (d_delegate && !d_wasDestroyed) {
         d_delegate->moveView(this, x, y, width, height);
     }
+}
+
+void WebViewProxy::proxyShowTooltip(const String& tooltipText, TextDirection::Value direction)
+{
+    if (d_delegate && !d_wasDestroyed) {
+        d_delegate->showTooltip(this, tooltipText, direction);
+    } 
 }
 
 void WebViewProxy::proxyMoveAck(int left, int top, int width, int height, bool repaint)

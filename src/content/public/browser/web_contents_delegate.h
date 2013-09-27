@@ -17,6 +17,7 @@
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/window_container_type.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect_f.h"
@@ -426,6 +427,15 @@ class CONTENT_EXPORT WebContentsDelegate {
 
   // Handle external protocol such as 'mailto:'
   virtual void HandleExternalProtocol(const GURL& url) {}
+
+  // Allows delegate to show a custom tooltip. If the delegate doesn't want a
+  // custom tooltip, it should just return 'false'. Otherwise, it should show
+  // the tooltip and return 'true'. By default, the delegate doesn't provide a
+  // custom tooltip.
+  virtual bool ShowTooltip(
+        WebContents* web_contents,
+        const string16& tooltip_text, 
+        WebKit::WebTextDirection text_direction_hint) { return false; }
 
  protected:
   virtual ~WebContentsDelegate();

@@ -215,6 +215,7 @@ public:
 
         d_webView->enableFocusBefore(true);
         d_webView->enableFocusAfter(true);
+        d_webView->enableCustomTooltip(true);
 
         SetWindowLongPtr(d_mainWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
         SetWindowLongPtr(d_urlEntryWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
@@ -441,6 +442,18 @@ public:
 
         ShellExecuteA(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);        
     }
+
+    virtual void showTooltip(blpwtk2::WebView* source, 
+                             const blpwtk2::String& tooltipText, 
+                             blpwtk2::TextDirection::Value direction){
+        assert(source == d_webView);
+        if (!tooltipText.isEmpty()) {
+            char buf[1024];
+            sprintf_s(buf, sizeof(buf), "DELEGATE: showTooltip '%s'\n", tooltipText.c_str());
+            OutputDebugStringA(buf);
+        }
+    }
+
 };
 std::set<Shell*> Shell::s_shells;
 

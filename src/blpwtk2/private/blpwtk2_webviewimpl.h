@@ -31,6 +31,7 @@
 #include <content/public/browser/web_contents_observer.h>
 #include <content/public/common/context_menu_params.h>
 #include <ui/gfx/native_widget_types.h>
+#include <third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h>
 
 namespace content {
     class WebContents;
@@ -99,7 +100,7 @@ class WebViewImpl : public WebView,
     virtual void enableFocusBefore(bool enabled) OVERRIDE;
     virtual void enableFocusAfter(bool enabled) OVERRIDE;
     virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
-
+    virtual void enableCustomTooltip(bool enabled) OVERRIDE;
 
     /////// WebContentsDelegate overrides
 
@@ -158,6 +159,14 @@ class WebViewImpl : public WebView,
     // or a panel window.
     virtual bool IsPopupOrPanel(const content::WebContents* source) const OVERRIDE;
 
+    // Allows delegate to show a custom tooltip. If the delegate doesn't want a
+    // custom tooltip, it should just return 'false'. Otherwise, it should show
+    // the tooltip and return 'true'. By default, the delegate doesn't provide a
+    // custom tooltip.
+    virtual bool ShowTooltip(content::WebContents* source, 
+                             const string16& tooltip_text, 
+                             WebKit::WebTextDirection text_direction_hint) OVERRIDE;
+
     /////// WebContentsObserver overrides
 
     // This method is invoked when the navigation is done, i.e. the spinner of
@@ -195,6 +204,7 @@ class WebViewImpl : public WebView,
     bool d_wasDestroyed;      // if destroy() has been called
     bool d_isDeletingSoon;    // when DeleteSoon has been called
     bool d_isPopup;           // if this view is a popup view
+    bool d_customTooltipEnabled;
     content::CustomContextMenuContext d_customContext; //for calling performCustomContextMenuAction()
 
     DISALLOW_COPY_AND_ASSIGN(WebViewImpl);

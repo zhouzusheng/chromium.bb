@@ -1519,6 +1519,14 @@ void RenderWidgetHostImpl::OnSetTooltipText(
   // trying to detect the directionality from the tooltip text rather than the
   // element direction.  One could argue that would be a preferable solution
   // but we use the current approach to match Fx & IE's behavior.
+
+  if (delegate_) {
+    const bool showTooltipHandled = delegate_->ShowTooltip(tooltip_text, 
+                                                           text_direction_hint);
+    if (showTooltipHandled) {
+        return;
+    }
+  }
   string16 wrapped_tooltip_text = tooltip_text;
   if (!tooltip_text.empty()) {
     if (text_direction_hint == WebKit::WebTextDirectionLeftToRight) {

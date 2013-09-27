@@ -133,6 +133,11 @@ public:
     // item in the conext menu has been selected.
     virtual void performCustomContextMenuAction(int actionId) = 0;
 
+    // If set to 'true', the default tooltip will not be used and the 
+    // corresponding WebViewDelegate will be expected to provide a custom 
+    // tooltip. Otherwise, the default tooltip will be used.
+    virtual void enableCustomTooltip(bool enabled) = 0;
+
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the
     // 'destroy()' method, instead of deleting the object directly.

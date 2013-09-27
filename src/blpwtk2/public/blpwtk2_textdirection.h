@@ -20,27 +20,20 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_H
-#define INCLUDED_BLPWTK2_H
+#ifndef INCLUDED_BLPWTK2_TEXTDIRECTION_H
+#define INCLUDED_BLPWTK2_TEXTDIRECTION_H
 
-#include <blpwtk2_toolkit.h>
-#include <blpwtk2_stringref.h>
-#include <blpwtk2_string.h>
-#include <blpwtk2_webnode.h>
-#include <blpwtk2_webelement.h>
-#include <blpwtk2_webdocument.h>
-#include <blpwtk2_webview.h>
-#include <blpwtk2_webviewdelegate.h>
-#include <blpwtk2_webframe.h>
-#include <blpwtk2_contextmenuparams.h>
-#include <blpwtk2_httptransaction.h>
-#include <blpwtk2_httptransactionhandler.h>
-#include <blpwtk2_newviewparams.h>
-#include <blpwtk2_mediarequest.h>
-#include <blpwtk2_profile.h>
-#include <blpwtk2_proxyconfig.h>
-#include <blpwtk2_textdirection.h>
+namespace blpwtk2 {
 
-#endif  // INCLUDED_BLPWTK2_H
+struct TextDirection {
 
+    enum Value {
+        LEFT_TO_RIGHT,
+        RIGHT_TO_LEFT,
+    };
 
+};
+
+}  // close namespace blpwtk2
+
+#endif  // INCLUDED_BLPWTK2_TEXTDIRECTION_H

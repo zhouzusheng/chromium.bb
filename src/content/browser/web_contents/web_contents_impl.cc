@@ -1285,6 +1285,15 @@ bool WebContentsImpl::PreHandleWheelEvent(
   return false;
 }
 
+bool WebContentsImpl::ShowTooltip(
+        const string16& tooltip_text, 
+        WebKit::WebTextDirection text_direction_hint) {
+    if (delegate_) {
+        return delegate_->ShowTooltip(this, tooltip_text, text_direction_hint);
+    }
+    return false;
+}
+
 void WebContentsImpl::HandleMouseDown() {
   if (delegate_)
     delegate_->HandleMouseDown();

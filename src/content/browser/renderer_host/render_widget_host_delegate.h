@@ -6,6 +6,8 @@
 #define CONTENT_BROWSER_RENDER_WIDGET_HOST_DELEGATE_H_
 
 #include "content/common/content_export.h"
+#include "base/string16.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
 
 namespace WebKit {
 class WebMouseWheelEvent;
@@ -43,6 +45,13 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // event before sending it to the renderer.
   // Returns true if the |event| was handled.
   virtual bool PreHandleWheelEvent(const WebKit::WebMouseWheelEvent& event);
+
+  // Allows delegate to show a custom tooltip. If the delegate doesn't want a
+  // custom tooltip, it should just return 'false'. Otherwise, it should show
+  // the tooltip and return 'true'. By default, the delegate doesn't provide a
+  // custom tooltip.
+  virtual bool ShowTooltip(const string16& tooltip_text, 
+                           WebKit::WebTextDirection text_direction_hint) {return false;}
 
  protected:
   virtual ~RenderWidgetHostDelegate() {}

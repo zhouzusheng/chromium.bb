@@ -24,6 +24,7 @@
 #define INCLUDED_BLPWTK2_WEBVIEWDELEGATE_H
 
 #include <blpwtk2_config.h>
+#include <blpwtk2_textdirection.h>
 
 namespace blpwtk2 {
 
@@ -32,6 +33,7 @@ class NewViewParams;
 class StringRef;
 class WebView;
 class MediaRequest;
+class String;
 
 // This class can be implemented by the application to receive notifications
 // for various events pertaining to a particular WebView.  The delegate is
@@ -126,6 +128,11 @@ class BLPWTK2_EXPORT WebViewDelegate {
 
     // Invoked when a request has been made to move the webview.
     virtual void moveView(WebView* source, int x, int y, int width, int height) {}
+
+    // Show custom tooltip. 
+    virtual void showTooltip(WebView* source, 
+                             const String& tooltipText, 
+                             TextDirection::Value direction) {}
 };
 
 }  // close namespace blpwtk2

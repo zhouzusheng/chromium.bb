@@ -64,6 +64,7 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 , d_wasDestroyed(false)
 , d_isDeletingSoon(false)
 , d_isPopup(false)
+, d_customTooltipEnabled(false)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(profile);
@@ -97,6 +98,7 @@ WebViewImpl::WebViewImpl(content::WebContents* contents)
 , d_wasDestroyed(false)
 , d_isDeletingSoon(false)
 , d_isPopup(false)
+, d_customTooltipEnabled(false)
 {
     DCHECK(Statics::isInBrowserMainThread());
 
@@ -347,6 +349,13 @@ void WebViewImpl::performCustomContextMenuAction(int actionId)
     d_webContents->GetRenderViewHost()->ExecuteCustomContextMenuCommand(actionId, d_customContext);
 }
 
+void WebViewImpl::enableCustomTooltip(bool enabled)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_customTooltipEnabled = enabled;
+}
+
 void WebViewImpl::UpdateTargetURL(content::WebContents* source,
                                   int32 page_id,
                                   const GURL& url)
@@ -522,6 +531,30 @@ void WebViewImpl::MoveContents(content::WebContents* source_contents, const gfx:
 bool WebViewImpl::IsPopupOrPanel(const content::WebContents* source) const
 {
     return d_isPopup;
+}
+
+bool WebViewImpl::ShowTooltip(content::WebContents* source_contents, 
+                              const string16& tooltip_text, 
+                              WebKit::WebTextDirection text_direction_hint)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(source_contents == d_webContents);
+    if (d_wasDestroyed) return false;
+    if (!d_customTooltipEnabled) return false;
+    if (d_delegate) {
+        TextDirection::Value direction;
+        switch (text_direction_hint) {
+            case WebKit::WebTextDirectionLeftToRight: 
+                direction = TextDirection::LEFT_TO_RIGHT; break; 
+            case WebKit::WebTextDirectionRightToLeft:
+                direction = TextDirection::RIGHT_TO_LEFT; break; 
+            default:
+                direction = TextDirection::LEFT_TO_RIGHT;
+        }
+        d_delegate->showTooltip(this, String(tooltip_text.c_str(), tooltip_text.length()), direction);
+        return true;
+    }
+    return false;
 }
 
 /////// WebContentsObserver overrides

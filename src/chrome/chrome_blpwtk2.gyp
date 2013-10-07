@@ -31,7 +31,7 @@
   'targets': [
     {
       'target_name': 'chrome_blpwtk2',
-      'type': 'shared_library',
+      'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
@@ -53,7 +53,6 @@
       'include_dirs': [ '..' ],
       'defines': [ 'IS_CHROME_BLPWTK2' ],
       'sources': [
-        '../base/win/dllmain.cc',
         'browser/spellchecker/spellcheck_custom_dictionary.cc',
         'browser/spellchecker/spellcheck_custom_dictionary.h',
         'browser/spellchecker/spellcheck_dictionary.h',

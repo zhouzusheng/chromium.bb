@@ -66,6 +66,7 @@
       'type': 'shared_library',
       'dependencies': [
         'blpwtk2_gen_version',
+        '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
         '../content/content.gyp:content_app',
         '../content/content.gyp:content_browser',
         '../content/content.gyp:content_common',

@@ -48,7 +48,7 @@ BindingState* BindingState::instance()
 static v8::Handle<v8::Context> activeContext()
 {
     v8::Handle<v8::Context> context = v8::Context::GetCalling();
-    if (!context.IsEmpty())
+    if (!context.IsEmpty() && DOMWrapperWorld::contextHasCorrectPrototype(context))
         return context;
     // Unfortunately, when processing script from a plug-in, we might not
     // have a calling context. In those cases, we fall back to the

@@ -435,12 +435,18 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
         if (killRing && selection.isCaret() && granularity != CharacterGranularity)
             selection.modify(FrameSelection::AlterationExtend, DirectionBackward, CharacterGranularity);
 
-        if (endingSelection().visibleStart().previous(CannotCrossEditingBoundary).isNull()) {
-            // When the caret is at the start of the editable area in an empty list item, break out of the list item.
+        VisiblePosition previousPosition = endingSelection().visibleStart().previous(CannotCrossEditingBoundary);
+        Node* enclosingTableCell = enclosingNodeOfType(endingSelection().visibleStart().deepEquivalent(), &isTableCell);
+        Node* enclosingTableCellForPreviousPosition = enclosingNodeOfType(previousPosition.deepEquivalent(), &isTableCell);
+        if (previousPosition.isNull() || enclosingTableCell != enclosingTableCellForPreviousPosition) {
+            // When the caret is at the start of the editable area, or cell, in an empty list item, break out of the list item.
             if (breakOutOfEmptyListItem()) {
                 typingAddedToOpenCommand(DeleteKey);
                 return;
             }
+        }
+
+        if (previousPosition.isNull()) {
             // When there are no visible positions in the editing root, delete its entire contents.
             if (endingSelection().visibleStart().next(CannotCrossEditingBoundary).isNull() && makeEditableRootEmpty()) {
                 typingAddedToOpenCommand(DeleteKey);
@@ -450,19 +456,16 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
 
         VisiblePosition visibleStart(endingSelection().visibleStart());
         // If we have a caret selection at the beginning of a cell, we have nothing to do.
-        Node* enclosingTableCell = enclosingNodeOfType(visibleStart.deepEquivalent(), &isTableCell);
+        enclosingTableCell = enclosingNodeOfType(visibleStart.deepEquivalent(), &isTableCell);
         if (enclosingTableCell && visibleStart == firstPositionInNode(enclosingTableCell))
             return;
 
-        // If the caret is at the start of a paragraph after a table, move content into the last table cell.
-        if (isStartOfParagraph(visibleStart) && isFirstPositionAfterTable(visibleStart.previous(CannotCrossEditingBoundary))) {
-            // Unless the caret is just before a table.  We don't want to move a table into the last table cell.
-            if (isLastPositionBeforeTable(visibleStart))
-                return;
-            // Extend the selection backward into the last cell, then deletion will handle the move.
-            selection.modify(FrameSelection::AlterationExtend, DirectionBackward, granularity);
+        // If the caret is at the beginning of a cell, we have nothing to do.
+        if (enclosingTableCell && visibleStart == firstPositionInNode(enclosingTableCell))
+            return;
+
         // If the caret is just after a table, select the table and don't delete anything.
-        } else if (Node* table = isFirstPositionAfterTable(visibleStart)) {
+        if (Node* table = isFirstPositionAfterTable(visibleStart)) {
             setEndingSelection(VisibleSelection(positionBeforeNode(table), endingSelection().start(), DOWNSTREAM, endingSelection().isDirectional()));
             typingAddedToOpenCommand(DeleteKey);
             return;
@@ -542,6 +545,12 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
         Node* enclosingTableCell = enclosingNodeOfType(visibleEnd.deepEquivalent(), &isTableCell);
         if (enclosingTableCell && visibleEnd == lastPositionInNode(enclosingTableCell))
             return;
+
+        // If the caret is at the end of a cell, we have nothing to do.
+        enclosingTableCell = enclosingNodeOfType(visibleEnd.deepEquivalent(), &isTableCell);
+        if (enclosingTableCell && visibleEnd == lastPositionInNode(enclosingTableCell))
+            return;
+
         if (visibleEnd == endOfParagraph(visibleEnd))
             downstreamEnd = visibleEnd.next(CannotCrossEditingBoundary).deepEquivalent().downstream();
         // When deleting tables: Select the table first, then perform the deletion

@@ -43,6 +43,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
+#include "core/editing/Editor.h"
 #include "core/editing/TextIterator.h"
 #include "core/editing/markup.h"
 #include "core/html/DOMSettableTokenList.h"

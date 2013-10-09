@@ -21,8 +21,8 @@
  */
 
 #include "config.h"
-#include "BBDragData.h"
-#include "Clipboard.h"
+#include "core/page/BBDragData.h"
+#include "core/dom/Clipboard.h"
 
 namespace WebCore {
 

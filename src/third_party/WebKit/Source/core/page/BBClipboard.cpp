@@ -21,11 +21,11 @@
  */
 
 #include "config.h"
-#include "BBClipboard.h"
+#include "core/page/BBClipboard.h"
 
-#include "BBClipboardUtil.h"
-#include "BbUtfUtil.h"
-#include "Frame.h"
+#include "core/platform/win/BBClipboardUtil.h"
+#include "core/platform/win/BbUtfUtil.h"
+#include "core/page/Frame.h"
 
 namespace WebCore {
 

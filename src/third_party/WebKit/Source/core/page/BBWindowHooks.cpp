@@ -21,24 +21,24 @@
  */
 
 #include "config.h"
-#include "BBWindowHooks.h"
+#include "core/page/BBWindowHooks.h"
 
-#include "editing/TextIterator.h"
-#include "editing/Editor.h"
 #include "bindings/v8/V8BindingMacros.h"
-#include "dom/CharacterData.h"
-#include "dom/Document.h"
-#include "dom/DocumentMarkerController.h"
-#include "dom/Element.h"
-#include "dom/Node.h"
-#include "page/Frame.h"
-#include "page/FrameView.h"
-#include "rendering/PaintPhase.h"
-#include "platform/graphics/GraphicsContext.h"
-#include "editing/htmlediting.h"
-#include "page/Settings.h"
-#include "dom/Range.h"
-#include "dom/ClientRect.h"
+#include "core/editing/TextIterator.h"
+#include "core/editing/Editor.h"
+#include "core/dom/CharacterData.h"
+#include "core/dom/Document.h"
+#include "core/dom/DocumentMarkerController.h"
+#include "core/dom/Element.h"
+#include "core/dom/Node.h"
+#include "core/page/Frame.h"
+#include "core/page/FrameView.h"
+#include "core/rendering/PaintPhase.h"
+#include "core/platform/graphics/GraphicsContext.h"
+#include "core/editing/htmlediting.h"
+#include "core/page/Settings.h"
+#include "core/dom/Range.h"
+#include "core/dom/ClientRect.h"
 
 namespace WebCore {
 
@@ -117,7 +117,7 @@ void BBWindowHooks::fakePaint(Document* document)
         document->updateLayout();  // Ensure layout is up to date.
         LayoutRect visibleRect = frame->view()->visibleContentRect();
         if (!visibleRect.isEmpty()) {
-            GraphicsContext context(static_cast<PlatformGraphicsContext*>(0));
+            GraphicsContext context(static_cast<SkCanvas*>(0));
             context.setPaintingDisabled(true);
 
             PaintBehavior oldBehavior = frame->view()->paintBehavior();

@@ -22,7 +22,7 @@
 
 // BbUtfUtil.cpp                                                      -*-C++-*-
 
-#include <BbUtfUtil.h>
+#include "core/platform/win/BbUtfUtil.h"
 
 #include <string>
 #include <windows.h>

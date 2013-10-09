@@ -21,9 +21,9 @@
  */
 
 // BbClipboardUtil.cpp                                                -*-C++-*-
-#include <BbClipboardUtil.h>
+#include "core/platform/win/BbClipboardUtil.h"
 
-#include <BbUtfUtil.h>
+#include "core/platform/win/BbUtfUtil.h"
 
 #include <string>
 #include <vector>

@@ -26,9 +26,9 @@
 
     //Clipboard
     void empty();
-    void setCustomString(in DOMString format, in DOMString data, in [Optional] boolean useUtf8);
-    DOMString getCustomString(in DOMString format, in [Optional] boolean useUtf8);
-    boolean hasCustomFormat(in DOMString format);
-    void setCustomBinaryData(in DOMString format, in ArrayBuffer array);
+    void setCustomString(DOMString format, DOMString data, optional boolean useUtf8);
+    DOMString getCustomString(DOMString format, optional boolean useUtf8);
+    boolean hasCustomFormat(DOMString format);
+    void setCustomBinaryData(DOMString format, ArrayBuffer array);
 };
 

@@ -39,14 +39,20 @@ void BBDragData::setClipboard(Clipboard* clipboard)
 
 void BBDragData::setHtml(const String& html)
 {
-    d_clipboard->setAccessPolicy(ClipboardWritable);
-    d_clipboard->setData("text/html", html);
-    d_clipboard->setAccessPolicy(ClipboardImageWritable);
+    if (d_clipboard) {
+        d_clipboard->setAccessPolicy(ClipboardWritable);
+        d_clipboard->setData("text/html", html);
+        d_clipboard->setAccessPolicy(ClipboardImageWritable);
+    }
 }
 
 String BBDragData::html() const
 {
-    return d_clipboard->getData("text/html");
+    if (d_clipboard) {
+        return d_clipboard->getData("text/html");
+    }
+
+    return String();
 }
 
 } // namespace WebCore

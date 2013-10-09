@@ -89,7 +89,8 @@ static void setupPaintForFont(SkPaint* paint, PlatformContextSkia* pcs,
     paint->setTextSize(SkFloatToScalar(size));
     paint->setTypeface(face);
 
-    if (!pcs->couldUseLCDRenderedText()) {
+    // SHEZ: don't remove cleartype if it was explicitly requested
+    if (quality != CLEARTYPE_QUALITY && !pcs->couldUseLCDRenderedText()) {
         textFlags &= ~SkPaint::kLCDRenderText_Flag;
         // If we *just* clear our request for LCD, then GDI seems to
         // sometimes give us AA text, and sometimes give us BW text. Since the
@@ -176,6 +177,19 @@ void paintSkiaText(GraphicsContext* context,
                    const SkPoint* origin)
 {
     paintSkiaText(context, data.hfont(), data.typeface(), data.size(), data.paintTextFlags(),
+                  numGlyphs, glyphs, advances, offsets, origin);
+}
+
+void paintSkiaText(GraphicsContext* context,
+                   const FontPlatformData& data,
+                   int quality,
+                   int numGlyphs,
+                   const WORD* glyphs,
+                   const int* advances,
+                   const GOFFSET* offsets,
+                   const SkPoint* origin)
+{
+    paintSkiaText(context, data.hfont(), data.typeface(), data.size(), quality,
                   numGlyphs, glyphs, advances, offsets, origin);
 }
 

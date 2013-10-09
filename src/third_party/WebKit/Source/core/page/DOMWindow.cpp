@@ -66,6 +66,9 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/appcache/DOMApplicationCache.h"
 #include "core/page/BarInfo.h"
+#include "core/page/BBClipboard.h"
+#include "core/page/BBWindowHooks.h"
+#include "core/page/BBDragData.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Console.h"
@@ -395,6 +398,7 @@ DOMWindow::DOMWindow(Document* document)
     : ContextDestructionObserver(document)
     , FrameDestructionObserver(document->frame())
     , m_shouldPrintWhenFinishedLoading(false)
+    , m_bbDragData(0)
 {
     ASSERT(frame());
     ASSERT(DOMWindow::document());
@@ -424,6 +428,9 @@ DOMWindow::~DOMWindow()
     ASSERT(!m_sessionStorage);
     ASSERT(!m_localStorage);
     ASSERT(!m_applicationCache);
+    ASSERT(!m_bbClipboard);
+    ASSERT(!m_bbWindowHooks);
+    ASSERT(!m_bbDragData);
 
     willDestroyDocumentInFrame();
 
@@ -529,6 +536,9 @@ void DOMWindow::resetDOMWindowProperties()
     m_sessionStorage = 0;
     m_localStorage = 0;
     m_applicationCache = 0;
+    m_bbClipboard = 0;
+    m_bbWindowHooks = 0;
+    m_bbDragData = 0;
 }
 
 bool DOMWindow::isCurrentlyDisplayedInFrame() const
@@ -1881,6 +1891,33 @@ void DOMWindow::showModalDialog(const String& urlString, const String& dialogFea
         return;
     UserGestureIndicatorDisabler disabler;
     dialogFrame->page()->chrome()->runModal();
+}
+
+BBClipboard* DOMWindow::bbClipboard() const
+{
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
+    if (!m_bbClipboard)
+        m_bbClipboard = BBClipboard::create(m_frame);
+    return m_bbClipboard.get();
+}
+
+BBWindowHooks* DOMWindow::bbWindowHooks() const
+{
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
+    if (!m_bbWindowHooks)
+        m_bbWindowHooks = BBWindowHooks::create(m_frame);
+    return m_bbWindowHooks.get();
+}
+
+PassRefPtr<BBDragData> DOMWindow::bbDragData()
+{
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
+    if (!m_bbDragData)
+        m_bbDragData = BBDragData::create();
+    return m_bbDragData;
 }
 
 } // namespace WebCore

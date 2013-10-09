@@ -70,6 +70,11 @@ DragSourceAction DragClientImpl::dragSourceActionMaskForPoint(const IntPoint& wi
     return DragSourceActionAny;
 }
 
+void DragClientImpl::willDrag()
+{
+    m_webView->willDrag();
+}
+
 void DragClientImpl::startDrag(DragImageRef dragImage,
                                const IntPoint& dragImageOrigin,
                                const IntPoint& eventPos,

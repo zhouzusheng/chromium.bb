@@ -36,6 +36,7 @@
 namespace WebCore {
 
     class BarInfo;
+    class BBDragData;
     class CSSRuleList;
     class CSSStyleDeclaration;
     class Console;
@@ -72,6 +73,8 @@ namespace WebCore {
     class Storage;
     class StyleMedia;
     class DOMWindowCSS;
+    class BBClipboard;
+    class BBWindowHooks;
 
     struct WindowFeatures;
 
@@ -386,6 +389,11 @@ namespace WebCore {
 
         void willDetachDocumentFromFrame();
 
+        // Bloomberg specific objects/methods
+        BBClipboard* bbClipboard() const;
+        BBWindowHooks* bbWindowHooks() const;
+        PassRefPtr<BBDragData> bbDragData();
+
     private:
         explicit DOMWindow(Document*);
 
@@ -424,6 +432,9 @@ namespace WebCore {
         mutable RefPtr<Navigator> m_navigator;
         mutable RefPtr<Location> m_location;
         mutable RefPtr<StyleMedia> m_media;
+        mutable RefPtr<BBClipboard> m_bbClipboard;
+        mutable RefPtr<BBWindowHooks> m_bbWindowHooks;
+        mutable RefPtr<BBDragData> m_bbDragData;
 
         EventTargetData m_eventTargetData;
 

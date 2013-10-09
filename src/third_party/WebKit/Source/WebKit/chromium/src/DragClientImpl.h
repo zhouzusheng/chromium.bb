@@ -55,6 +55,7 @@ public:
     virtual WebCore::DragDestinationAction actionMaskForDrag(WebCore::DragData*);
     virtual WebCore::DragSourceAction dragSourceActionMaskForPoint(
         const WebCore::IntPoint& windowPoint);
+    virtual void willDrag();
     virtual void startDrag(
         WebCore::DragImageRef dragImage,
         const WebCore::IntPoint& dragImageOrigin,

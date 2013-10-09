@@ -84,7 +84,9 @@ void UseCounter::count(Document* document, Feature feature)
 
 void UseCounter::count(DOMWindow* domWindow, Feature feature)
 {
-    ASSERT(domWindow);
+    if (!domWindow)
+        return;
+
     count(domWindow->document(), feature);
 }
 

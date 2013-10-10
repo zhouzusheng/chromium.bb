@@ -502,8 +502,8 @@ static bool executeInsertHTML(Frame* frame, Event*, EditorCommandSource, const S
 
 static bool executeInsertHTMLNested(Frame* frame, Event*, EditorCommandSource, const String& value)
 {
-	applyCommand(ReplaceSelectionCommand::create(frame->document(), createFragmentFromMarkup(frame->document(), value, ""), ReplaceSelectionCommand::InsertNested, EditActionUnspecified));
-	return true;
+    applyCommand(ReplaceSelectionCommand::create(frame->document(), createFragmentFromMarkup(frame->document(), value, ""), ReplaceSelectionCommand::InsertNested, EditActionUnspecified));
+    return true;
 }
 
 static bool executeInsertImage(Frame* frame, Event*, EditorCommandSource, const String& value)
@@ -1482,7 +1482,7 @@ static const CommandMap& createCommandMap()
         { "Indent", { executeIndent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertBacktab", { executeInsertBacktab, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertHTML", { executeInsertHTML, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-		{ "InsertHTMLNested", { executeInsertHTMLNested, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertHTMLNested", { executeInsertHTMLNested, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertHorizontalRule", { executeInsertHorizontalRule, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertImage", { executeInsertImage, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertLineBreak", { executeInsertLineBreak, supported, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },

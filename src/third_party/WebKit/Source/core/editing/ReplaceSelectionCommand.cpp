@@ -375,7 +375,7 @@ ReplaceSelectionCommand::ReplaceSelectionCommand(Document* document, PassRefPtr<
     , m_editAction(editAction)
     , m_sanitizeFragment(options & SanitizeFragment)
     , m_shouldMergeEnd(false)
-	, m_insertNested(options & InsertNested)
+    , m_insertNested(options & InsertNested)
 {
 }
 
@@ -1021,8 +1021,8 @@ void ReplaceSelectionCommand::doApply()
     // We don't want the destination to end up inside nodes that weren't selected.  To avoid that, we move the
     // position forward without changing the visible position so we're still at the same visible location, but
     // outside of preceding tags.
-	if (!m_insertNested)
-		insertionPos = positionAvoidingPrecedingNodes(insertionPos);
+    if (!m_insertNested)
+        insertionPos = positionAvoidingPrecedingNodes(insertionPos);
 
     // Paste into run of tabs splits the tab span.
     insertionPos = positionOutsideTabSpan(insertionPos);

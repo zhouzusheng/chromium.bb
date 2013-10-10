@@ -24,13 +24,13 @@
  */
 
 #include "config.h"
-#include "OutdentBlockCommand.h"
+#include "core/editing/OutdentBlockCommand.h"
 
-#include "Document.h"
-#include "HTMLElement.h"
+#include "core/dom/Document.h"
+#include "core/dom/NodeTraversal.h"
+#include "core/editing/htmlediting.h"
+#include "core/html/HTMLElement.h"
 #include "HTMLNames.h"
-#include "htmlediting.h"
-#include "NodeTraversal.h"
 
 namespace WebCore {
 

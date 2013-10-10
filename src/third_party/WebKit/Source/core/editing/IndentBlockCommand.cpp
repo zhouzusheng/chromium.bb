@@ -24,12 +24,12 @@
  */
 
 #include "config.h"
-#include "IndentBlockCommand.h"
+#include "core/editing/IndentBlockCommand.h"
 
-#include "Document.h"
-#include "HTMLElement.h"
+#include "core/dom/Document.h"
+#include "core/editing/htmlediting.h"
+#include "core/html/HTMLElement.h"
 #include "HTMLNames.h"
-#include "htmlediting.h"
 
 namespace WebCore {
 

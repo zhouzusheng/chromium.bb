@@ -21,8 +21,7 @@ interface CharacterData : Node {
 
     [TreatNullAs=NullString, SetterRaisesException] attribute DOMString data;
 
-    void bbSetDataNoRelayout(in [Optional=DefaultIsUndefined] DOMString data)
-        raises(DOMException);
+    [RaisesException] void bbSetDataNoRelayout([Default=Undefined] optional DOMString data);
 
     readonly attribute unsigned long length;
     

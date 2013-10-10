@@ -1471,7 +1471,7 @@ void RenderText::setText(PassRefPtr<StringImpl> text, bool force)
 
     setTextInternal(text);
     if (shouldSkipRelayoutOnSetText(this))
-        parent()->repaint(false);
+        parent()->repaint();
     else
         setNeedsLayoutAndPrefWidthsRecalc();
     m_knownToHaveNoOverflowAndNoFallbackFonts = false;

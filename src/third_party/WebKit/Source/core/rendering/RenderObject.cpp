@@ -2032,7 +2032,7 @@ void RenderObject::propagateStyleToAnonymousChildren(bool blockChildrenOnly)
             if (child->style()->hasSpanAllColumns())
                 newStyle->setHasSpanAllColumns();
             else
-                newStyle->setColumnSpan(child->style()->columnSpan());
+                newStyle->setColumnSpanCount(child->style()->columnSpanCount());
         }
 
         // Preserve the position style of anonymous block continuations as they can have relative or sticky position when

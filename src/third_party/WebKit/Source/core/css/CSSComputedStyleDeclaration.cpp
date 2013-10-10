@@ -1787,9 +1787,9 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
         case CSSPropertyWebkitColumnSpan:
             if (style->hasSpanAllColumns())
                 return cssValuePool().createIdentifierValue(CSSValueAll);
-            if (1 == style->columnSpan())
+            if (1 == style->columnSpanCount())
                 return cssValuePool().createIdentifierValue(CSSValueNone);
-            return cssValuePool().createValue(style->columnSpan(), CSSPrimitiveValue::CSS_NUMBER);
+            return cssValuePool().createValue(style->columnSpanCount(), CSSPrimitiveValue::CSS_NUMBER);
         case CSSPropertyWebkitColumnBreakAfter:
             return cssValuePool().createValue(style->columnBreakAfter());
         case CSSPropertyWebkitColumnBreakBefore:

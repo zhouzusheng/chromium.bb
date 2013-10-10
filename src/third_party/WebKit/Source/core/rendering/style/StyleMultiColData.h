@@ -55,7 +55,7 @@ public:
 
     float m_width;
     unsigned short m_count;
-    unsigned short m_columnSpan;
+    unsigned short m_columnSpanCount;
     float m_gap;
     BorderValue m_rule;
     Color m_visitedLinkColumnRuleColor;

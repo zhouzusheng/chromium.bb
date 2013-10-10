@@ -200,7 +200,7 @@ RenderBlock::MarginInfo::MarginInfo(RenderBlock* block, LayoutUnit beforeBorderP
 
 static bool isSpanningHeader(RenderObject* ro)
 {
-    return ro->style()->columnSpan() > 1 && !ro->style()->hasSpanAllColumns();
+    return ro->style()->columnSpanCount() > 1 && !ro->style()->hasSpanAllColumns();
 }
 
 static bool isWithinSpanningHeader(RenderBox* box)
@@ -2591,7 +2591,7 @@ void RenderBlock::layoutBlockChild(RenderBox* child, MarginInfo& marginInfo, Lay
     RenderBox* previousBox = child->previousSiblingBox();
     bool previousBoxWasFirst = (previousBox == firstChildBox());
     bool shouldSetSpanningHeaderInfo = hasColumns() && columnInfo && previousBoxWasFirst;
-    bool previousBoxIsSpanningHeader = previousBox && previousBox->style()->columnSpan() > 1 && !previousBox->style()->hasSpanAllColumns();
+    bool previousBoxIsSpanningHeader = previousBox && previousBox->style()->columnSpanCount() > 1 && !previousBox->style()->hasSpanAllColumns();
 
     LayoutUnit oldPosMarginBefore = maxPositiveMarginBefore();
     LayoutUnit oldNegMarginBefore = maxNegativeMarginBefore();
@@ -2619,7 +2619,7 @@ void RenderBlock::layoutBlockChild(RenderBox* child, MarginInfo& marginInfo, Lay
         // of the current child as the header "height".  The first line in any column within the column span
         // will be pushed down by the logicalTop of the current child (this takes into account margin before/after
         // from the previous child).
-        columnInfo->setSpanningHeaderColumnCount(previousBoxIsSpanningHeader ? previousBox->style()->columnSpan() : 1);
+        columnInfo->setSpanningHeaderColumnCount(previousBoxIsSpanningHeader ? previousBox->style()->columnSpanCount() : 1);
         columnInfo->setSpanningHeaderHeight(previousBoxIsSpanningHeader ? logicalTopEstimate : 0);
     }
 

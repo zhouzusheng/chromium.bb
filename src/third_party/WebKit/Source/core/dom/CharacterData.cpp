@@ -41,6 +41,8 @@ using namespace std;
 
 namespace WebCore {
 
+bool g_bbNoRelayoutOnSetCharacterData = false;
+
 void CharacterData::setData(const String& data, ExceptionCode&)
 {
     const String& nonNullData = !data.isNull() ? data : emptyString();
@@ -53,6 +55,13 @@ void CharacterData::setData(const String& data, ExceptionCode&)
 
     setDataAndUpdate(nonNullData, 0, oldLength, nonNullData.length());
     document()->textRemoved(this, 0, oldLength);
+}
+
+void CharacterData::bbSetDataNoRelayout(const String& data, ExceptionCode& ec)
+{
+    g_bbNoRelayoutOnSetCharacterData = true;
+    setData(data, ec);
+    g_bbNoRelayoutOnSetCharacterData = false;
 }
 
 String CharacterData::substringData(unsigned offset, unsigned count, ExceptionCode& ec)

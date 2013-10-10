@@ -22,7 +22,7 @@
 #define break_lines_h
 
 #include <wtf/unicode/Unicode.h>
-#include "RenderStyleConstants.h"
+#include "core/rendering/style/RenderStyleConstants.h"
 
 namespace WebCore {
 

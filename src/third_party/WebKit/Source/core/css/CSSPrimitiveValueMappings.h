@@ -175,37 +175,6 @@ template<> inline CSSPrimitiveValue::operator CSSReflectionDirection() const
     return ReflectionBelow;
 }
 
-template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ColumnSpan columnSpan)
-    : CSSValue(PrimitiveClass)
-{
-    m_primitiveUnitType = CSS_IDENT;
-    switch (columnSpan) {
-    case ColumnSpanAll:
-        m_value.ident = CSSValueAll;
-        break;
-    case ColumnSpanNone:
-        m_value.ident = CSSValueNone;
-        break;
-    }
-}
-
-template<> inline CSSPrimitiveValue::operator ColumnSpan() const
-{
-    // Map 1 to none for compatibility reasons.
-    if (m_primitiveUnitType == CSS_NUMBER && m_value.num == 1)
-        return ColumnSpanNone;
-
-    switch (m_value.ident) {
-    case CSSValueAll:
-        return ColumnSpanAll;
-    case CSSValueNone:
-        return ColumnSpanNone;
-    }
-
-    ASSERT_NOT_REACHED();
-    return ColumnSpanNone;
-}
-
 
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(PrintColorAdjust value)
     : CSSValue(PrimitiveClass)

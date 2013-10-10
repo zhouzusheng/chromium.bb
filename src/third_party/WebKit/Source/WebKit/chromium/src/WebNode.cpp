@@ -53,8 +53,23 @@
 #include "core/rendering/RenderWidget.h"
 #include <public/WebString.h>
 #include <public/WebVector.h>
+#include <bindings/V8Node.h>
 
 using namespace WebCore;
+
+namespace {
+
+class OptionalContextScope {
+public:
+    explicit inline OptionalContextScope(v8::Handle<v8::Context>* context) : context_(context) {
+        if (context_) (*context_)->Enter();
+    }
+    inline ~OptionalContextScope() { if (context_) (*context_)->Exit(); }
+private:
+    v8::Handle<v8::Context>* context_;
+};
+
+};
 
 namespace WebKit {
 
@@ -140,10 +155,30 @@ WebNodeList WebNode::childNodes()
     return WebNodeList(m_private->childNodes());
 }
 
-bool WebNode::appendChild(const WebNode& child) 
+bool WebNode::insertBefore(const WebNode& newChild, const WebNode& refChild, bool shouldLazyAttach)
 {
     ExceptionCode exceptionCode = 0;
-    m_private->appendChild(child, exceptionCode);
+    WebCore::AttachBehavior attachBehavior =
+        shouldLazyAttach ? WebCore::AttachLazily : WebCore::AttachNow;
+    m_private->insertBefore(newChild, refChild.m_private.get(), exceptionCode, attachBehavior);
+    return !exceptionCode;
+}
+
+bool WebNode::replaceChild(const WebNode& newChild, const WebNode& oldChild, bool shouldLazyAttach)
+{
+    ExceptionCode exceptionCode = 0;
+    WebCore::AttachBehavior attachBehavior =
+        shouldLazyAttach ? WebCore::AttachLazily : WebCore::AttachNow;
+    m_private->replaceChild(newChild, oldChild.m_private.get(), exceptionCode, attachBehavior);
+    return !exceptionCode;
+}
+
+bool WebNode::appendChild(const WebNode& child, bool shouldLazyAttach)
+{
+    ExceptionCode exceptionCode = 0;
+    WebCore::AttachBehavior attachBehavior =
+        shouldLazyAttach ? WebCore::AttachLazily : WebCore::AttachNow;
+    m_private->appendChild(child, exceptionCode, attachBehavior);
     return !exceptionCode;
 }
 
@@ -229,6 +264,25 @@ bool WebNode::remove()
     return !exceptionCode;
 }
 
+bool WebNode::setTextContent(const WebString& text)
+{
+    ExceptionCode exceptionCode = 0;
+    m_private->setTextContent(text, exceptionCode);
+    return !exceptionCode;
+}
+
+bool WebNode::removeChild(const WebNode& oldChild)
+{
+    ExceptionCode exceptionCode = 0;
+    m_private->removeChild(oldChild.m_private.get(), exceptionCode);
+    return !exceptionCode;
+}
+
+WebString WebNode::textContent() const
+{
+    return m_private->textContent();
+}
+
 bool WebNode::hasNonEmptyBoundingBox() const
 {
     m_private->document()->updateLayoutIgnorePendingStylesheets();
@@ -257,6 +311,39 @@ WebElement WebNode::shadowHost() const
         return WebElement();
     const Node* coreNode = constUnwrap<Node>();
     return WebElement(coreNode->shadowHost());
+}
+
+v8::Handle<v8::Value> WebNode::toV8Handle() const
+{
+    v8::Handle<v8::Context> context = WebCore::ScriptController::mainWorldContext(m_private->document()->frame());
+    v8::Handle<v8::Context>* v8ContextToOpen = 0;
+    if (!v8::Context::InContext()) {
+        // If there is no current context, toV8 will crash, so force
+        // our context to open if we aren't in a context.
+        v8ContextToOpen = &context;
+    }
+
+    OptionalContextScope contextScope(v8ContextToOpen);
+    return  WebCore::toV8(m_private.get(), context->Global(), context->GetIsolate());
+}
+
+bool WebNode::isWebNode(v8::Handle<v8::Value> handle)
+{
+    if (!handle->IsObject()) {
+        return false;
+    }
+    v8::TryCatch tryCatch;
+    v8::Handle<v8::Object> obj = handle->ToObject();
+    if (!WebCore::V8Node::HasInstance(obj, obj->CreationContext()->GetIsolate(), WebCore::MainWorld)) {
+        return false;
+    }
+    WebCore::V8Node::toNative(obj);
+    return !tryCatch.HasCaught();
+}
+
+WebNode WebNode::fromV8Handle(v8::Handle<v8::Value> handle)
+{
+    return WebCore::V8Node::toNative(handle->ToObject());
 }
 
 WebNode::WebNode(const PassRefPtr<Node>& node)

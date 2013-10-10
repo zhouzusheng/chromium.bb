@@ -50,20 +50,28 @@ void MessagePumpWin::DidProcessMessage(const MSG& msg) {
   FOR_EACH_OBSERVER(MessagePumpObserver, observers_, DidProcessEvent(msg));
 }
 
+void MessagePumpWin::PushRunState(
+    RunState* run_state,
+    Delegate* delegate,
+    MessagePumpDispatcher* dispatcher) {
+  run_state->delegate = delegate;
+  run_state->dispatcher = dispatcher;
+  run_state->should_quit = false;
+  run_state->run_depth = state_ ? state_->run_depth + 1 : 1;
+  run_state->previous_state = state_;
+  state_ = run_state;
+}
+
 void MessagePumpWin::RunWithDispatcher(
     Delegate* delegate, MessagePumpDispatcher* dispatcher) {
   RunState s;
-  s.delegate = delegate;
-  s.dispatcher = dispatcher;
-  s.should_quit = false;
-  s.run_depth = state_ ? state_->run_depth + 1 : 1;
-
-  RunState* previous_state = state_;
-  state_ = &s;
-
+  PushRunState(&s, delegate, dispatcher);
   DoRunLoop();
+  PopRunState();
+}
 
-  state_ = previous_state;
+void MessagePumpWin::PopRunState() {
+  state_ = state_->previous_state;
 }
 
 void MessagePumpWin::Quit() {
@@ -95,15 +103,17 @@ int MessagePumpWin::GetCurrentDelay() const {
 //-----------------------------------------------------------------------------
 // MessagePumpForUI public:
 
-MessagePumpForUI::MessagePumpForUI()
+MessagePumpForUI::MessagePumpForUI(WNDPROC wnd_proc, const wchar_t* wnd_class_name)
     : instance_(NULL),
+      wnd_class_name_(wnd_class_name ? wnd_class_name : kWndClass),
       message_filter_(new MessageFilter) {
-  InitMessageWnd();
+  InitMessageWnd(
+      wnd_proc ? wnd_proc : base::win::WrappedWindowProc<WndProcThunk>);
 }
 
 MessagePumpForUI::~MessagePumpForUI() {
   DestroyWindow(message_hwnd_);
-  UnregisterClass(kWndClass, instance_);
+  UnregisterClass(wnd_class_name_, instance_);
 }
 
 void MessagePumpForUI::ScheduleWork() {
@@ -267,17 +277,17 @@ void MessagePumpForUI::DoRunLoop() {
   }
 }
 
-void MessagePumpForUI::InitMessageWnd() {
+void MessagePumpForUI::InitMessageWnd(WNDPROC wnd_proc) {
   WNDCLASSEX wc = {0};
   wc.cbSize = sizeof(wc);
-  wc.lpfnWndProc = base::win::WrappedWindowProc<WndProcThunk>;
+  wc.lpfnWndProc = wnd_proc;
   wc.hInstance = base::GetModuleFromAddress(wc.lpfnWndProc);
-  wc.lpszClassName = kWndClass;
+  wc.lpszClassName = wnd_class_name_;
   instance_ = wc.hInstance;
   RegisterClassEx(&wc);
 
-  message_hwnd_ =
-      CreateWindow(kWndClass, 0, 0, 0, 0, 0, 0, HWND_MESSAGE, 0, instance_, 0);
+  message_hwnd_ = CreateWindow(wnd_class_name_, 0, 0, 0, 0, 0, 0, HWND_MESSAGE,
+                               0, instance_, 0);
   DCHECK(message_hwnd_);
 }
 

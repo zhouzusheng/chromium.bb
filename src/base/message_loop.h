@@ -393,8 +393,9 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   // Can only be called from the thread that owns the MessageLoop.
   bool is_running() const;
 
+  void PrepareRunInternal();
+
   //----------------------------------------------------------------------------
- protected:
 
 #if defined(OS_WIN)
   base::MessagePumpWin* pump_win() {
@@ -406,6 +407,7 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   }
 #endif
 
+ protected:
   scoped_refptr<base::MessagePump> pump_;
 
  private:

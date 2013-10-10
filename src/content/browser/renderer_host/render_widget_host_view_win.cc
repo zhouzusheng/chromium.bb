@@ -556,7 +556,8 @@ void RenderWidgetHostViewWin::CreateBrowserAccessibilityManagerIfNeeded() {
 void RenderWidgetHostViewWin::MovePluginWindows(
     const gfx::Vector2d& scroll_offset,
     const std::vector<webkit::npapi::WebPluginGeometry>& plugin_window_moves) {
-  MovePluginWindowsHelper(m_hWnd, plugin_window_moves);
+  bool ipp = GetRenderWidgetHost()->GetProcess()->UsesInProcessPlugins();
+  MovePluginWindowsHelper(m_hWnd, plugin_window_moves, ipp);
 }
 
 static BOOL CALLBACK AddChildWindowToVector(HWND hwnd, LPARAM lparam) {
@@ -1252,6 +1253,8 @@ void RenderWidgetHostViewWin::OnDestroy() {
 
 void RenderWidgetHostViewWin::OnPaint(HDC unused_dc) {
   TRACE_EVENT0("browser", "RenderWidgetHostViewWin::OnPaint");
+  if (is_hidden_)
+    return;
 
   // Grab the region to paint before creation of paint_dc since it clears the
   // damage region.

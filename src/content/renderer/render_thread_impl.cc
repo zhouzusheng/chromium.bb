@@ -229,7 +229,25 @@ void AddTraceEvent(char phase,
 }
 #endif
 
+RenderProcessImpl* g_render_process = 0;
+
 }  // namespace
+
+// static
+void RenderThread::InitInProcessRenderer(const std::string& channel_id)
+{
+  g_render_process = new RenderProcessImpl();
+  new RenderThreadImpl(channel_id);
+}
+
+// static
+void RenderThread::CleanUpInProcessRenderer()
+{
+  if (g_render_process) {
+    delete g_render_process;
+    g_render_process = 0;
+  }
+}
 
 class RenderThreadImpl::GpuVDAContextLostCallback
     : public WebKit::WebGraphicsContext3D::WebGraphicsContextLostCallback {

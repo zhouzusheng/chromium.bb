@@ -33,6 +33,7 @@ namespace {
 
 typedef std::map<HWND, WebContentsViewWin*> HwndToWcvMap;
 HwndToWcvMap hwnd_to_wcv_map;
+bool disable_hook_on_root = false;
 
 void RemoveHwndToWcvMapEntry(WebContentsViewWin* wcv) {
   HwndToWcvMap::iterator it;
@@ -78,6 +79,7 @@ class PositionChangedMessageFilter : public ui::HWNDMessageFilter {
 };
 
 void AddFilterToParentHwndSubclass(HWND hwnd, ui::HWNDMessageFilter* filter) {
+  DCHECK(!disable_hook_on_root);
   HWND parent = ::GetAncestor(hwnd, GA_ROOT);
   if (parent) {
     ui::HWNDSubclass::RemoveFilterFromAllTargets(filter);
@@ -86,6 +88,24 @@ void AddFilterToParentHwndSubclass(HWND hwnd, ui::HWNDMessageFilter* filter) {
 }
 
 }  // namespace namespace
+
+// static
+void WebContentsViewWin::disableHookOnRoot()
+{
+  disable_hook_on_root = true;
+}
+
+// static
+void WebContentsViewWin::onRootWindowPositionChanged(gfx::NativeView root)
+{
+  EnumChildWindows(root, EnumChildProc, 0);
+}
+
+// static
+void WebContentsViewWin::onRootWindowSettingChange(gfx::NativeView root)
+{
+  EnumChildWindows(root, EnumChildProc, 0);
+}
 
 WebContentsViewWin::WebContentsViewWin(WebContentsImpl* web_contents,
                                        WebContentsViewDelegate* delegate)
@@ -304,7 +324,8 @@ void WebContentsViewWin::CloseTab() {
 LRESULT WebContentsViewWin::OnCreate(
     UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
   hwnd_to_wcv_map.insert(std::make_pair(hwnd(), this));
-  AddFilterToParentHwndSubclass(hwnd(), hwnd_message_filter_.get());
+  if (!disable_hook_on_root)
+    AddFilterToParentHwndSubclass(hwnd(), hwnd_message_filter_.get());
   return 0;
 }
 
@@ -325,7 +346,8 @@ LRESULT WebContentsViewWin::OnWindowPosChanged(
     UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
 
   // Our parent might have changed. So we re-install our hwnd message filter.
-  AddFilterToParentHwndSubclass(hwnd(), hwnd_message_filter_.get());
+  if (!disable_hook_on_root)
+    AddFilterToParentHwndSubclass(hwnd(), hwnd_message_filter_.get());
 
   WINDOWPOS* window_pos = reinterpret_cast<WINDOWPOS*>(lparam);
   if (window_pos->flags & SWP_HIDEWINDOW) {

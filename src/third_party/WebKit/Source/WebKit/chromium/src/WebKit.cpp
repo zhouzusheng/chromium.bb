@@ -110,7 +110,7 @@ void initialize(Platform* webKitPlatformSupport)
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
     if (WebThread* currentThread = webKitPlatformSupport->currentThread()) {
 #ifndef NDEBUG
-        v8::V8::AddCallCompletedCallback(&assertV8RecursionScope);
+        //v8::V8::AddCallCompletedCallback(&assertV8RecursionScope);
 #endif
         ASSERT(!s_endOfTaskRunner);
         s_endOfTaskRunner = new EndOfTaskRunner;
@@ -158,7 +158,7 @@ void shutdown()
     // V8 specific functions, if V8 was not properly initialized.
     if (s_endOfTaskRunner) {
 #ifndef NDEBUG
-        v8::V8::RemoveCallCompletedCallback(&assertV8RecursionScope);
+        //v8::V8::RemoveCallCompletedCallback(&assertV8RecursionScope);
 #endif
         ASSERT(s_webKitPlatformSupport->currentThread());
         s_webKitPlatformSupport->currentThread()->removeTaskObserver(s_endOfTaskRunner);

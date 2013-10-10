@@ -106,11 +106,16 @@ class CONTENT_EXPORT RenderViewHostManager
   // RenderWidgetHostDelegate are what will be installed into all
   // RenderViewHosts that are created.
   //
+  // The |render_process_affinity| argument can be
+  // SiteInstance::kNoProcessAffinity, in which case, the default process
+  // affinity will be used.
+  //
   // You must call Init() before using this class.
   RenderViewHostManager(
       RenderViewHostDelegate* render_view_delegate,
       RenderWidgetHostDelegate* render_widget_delegate,
-      Delegate* delegate);
+      Delegate* delegate,
+      int render_process_affinity);
   virtual ~RenderViewHostManager();
 
   // For arguments, see WebContentsImpl constructor.
@@ -223,6 +228,10 @@ class CONTENT_EXPORT RenderViewHostManager
   // Returns the swapped out RenderViewHost for the given SiteInstance, if any.
   RenderViewHostImpl* GetSwappedOutRenderViewHost(SiteInstance* instance);
 
+  // Returns the render process affinity, or SiteInstance::kNoProcessAffinity
+  // if there is no affinity.
+  int RenderProcessAffinity() const { return render_process_affinity_; }
+
  private:
   friend class RenderViewHostManagerTest;
   friend class TestWebContents;
@@ -317,6 +326,10 @@ class CONTENT_EXPORT RenderViewHostManager
   // The intersitial page currently shown if any, not own by this class
   // (the InterstitialPage is self-owned, it deletes itself when hidden).
   InterstitialPageImpl* interstitial_page_;
+
+  // Render process affinity, or SiteInstance::kNoProcessAffinity if there is
+  // no affinity.
+  int render_process_affinity_;
 
   NotificationRegistrar registrar_;
 

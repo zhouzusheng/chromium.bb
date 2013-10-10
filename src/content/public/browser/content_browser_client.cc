@@ -237,6 +237,10 @@ bool ContentBrowserClient::IsFastShutdownPossible() {
   return true;
 }
 
+bool ContentBrowserClient::SupportsInProcessRenderer() {
+  return false;
+}
+
 base::FilePath ContentBrowserClient::GetDefaultDownloadDirectory() {
   return base::FilePath();
 }

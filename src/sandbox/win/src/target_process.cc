@@ -45,10 +45,28 @@ SANDBOX_INTERCEPT size_t g_shared_policy_size;
 
 // Returns the address of the main exe module in memory taking in account
 // address space layout randomization.
+#if SANDBOX_DLL
+void* GetBaseAddress(const wchar_t* exe_name, void* entry_point,
+                     bool* has_sandbox) {
+#else
 void* GetBaseAddress(const wchar_t* exe_name, void* entry_point) {
+#endif
   HMODULE exe = ::LoadLibrary(exe_name);
   if (NULL == exe)
     return exe;
+
+#if SANDBOX_DLL
+  *has_sandbox =
+      GetProcAddress(exe, "g_handles_to_close") != NULL &&
+      GetProcAddress(exe, "g_interceptions") != NULL &&
+      GetProcAddress(exe, "g_nt") != NULL &&
+      GetProcAddress(exe, "g_originals") != NULL &&
+      GetProcAddress(exe, "g_shared_IPC_size") != NULL &&
+      GetProcAddress(exe, "g_shared_delayed_integrity_level") != NULL &&
+      GetProcAddress(exe, "g_shared_delayed_mitigations") != NULL &&
+      GetProcAddress(exe, "g_shared_policy_size") != NULL &&
+      GetProcAddress(exe, "g_shared_section") != NULL;
+#endif
 
   base::win::PEImage pe(exe);
   if (!pe.VerifyMagic()) {
@@ -73,6 +91,9 @@ TargetProcess::TargetProcess(HANDLE initial_token, HANDLE lockdown_token,
       initial_token_(initial_token),
       job_(job),
       thread_pool_(thread_pool),
+#if SANDBOX_DLL
+      module_base_address_(NULL),
+#endif
       base_address_(NULL) {
 }
 
@@ -171,7 +192,15 @@ DWORD TargetProcess::Create(const wchar_t* exe_path,
       ::TerminateProcess(process_info.process_handle(), 0);
       return win_result;
     }
+
+    // If sandbox is implemented as a DLL, impersonation token cannot be closed
+    // here as the impersonation token should be used to inject dll in the
+    // target process. DLL is injected by creating a remote thread and this
+    // thread handle requires higher privileges to load DLL. The broker will
+    // explicitly close the initial token after the dll is injected.
+#if !SANDBOX_DLL
     initial_token_.Close();
+#endif
   }
 
   CONTEXT context;
@@ -198,10 +227,107 @@ DWORD TargetProcess::Create(const wchar_t* exe_path,
     return win_result;
   }
 
+#if SANDBOX_DLL
+  base_address_ = GetBaseAddress(exe_path, entry_point, &exe_has_sandbox_);
+#else
   base_address_ = GetBaseAddress(exe_path, entry_point);
+#endif
   sandbox_process_info_.Set(process_info.Take());
   return win_result;
 }
+
+#if SANDBOX_DLL
+// This function injects sandbox DLL to target process. The function runs
+// LoadLibrary function in a remote thread with DLL path as parameter.
+// The thread should be created in suspended mode and the impersonation token
+// should be assigned as loading library required additional privileges.
+DWORD TargetProcess::InjectSandboxDll(const wchar_t* module_path)
+{
+  module_path_.reset(_wcsdup(module_path));
+
+  DWORD win_result = 0;
+  LPVOID load_library_addr =
+      (LPVOID)::GetProcAddress(GetModuleHandle(L"kernel32.dll"),
+                               "LoadLibraryW");
+  if (NULL == load_library_addr) {
+    return ::GetLastError();
+  }
+
+  int length  = (wcslen(module_path_.get()) + 1)* sizeof(wchar_t);
+  LPVOID param =
+      (LPVOID)::VirtualAllocEx(sandbox_process_info_.process_handle(),
+                               NULL,
+                               length,
+                               MEM_RESERVE | MEM_COMMIT,
+                               PAGE_READWRITE);
+  if (NULL == param){
+    return ::GetLastError();
+  }
+
+  if (!::WriteProcessMemory(sandbox_process_info_.process_handle(),
+                            param, module_path_.get(), length, NULL)) {
+    win_result = ::GetLastError();
+    ::VirtualFreeEx(sandbox_process_info_.process_handle(),
+                    param, length, MEM_RELEASE);
+    return win_result;
+  }
+
+  HANDLE remote_thread_handle = ::CreateRemoteThread(
+                                    sandbox_process_info_.process_handle(),
+                                    NULL,
+                                    NULL,
+                                    (LPTHREAD_START_ROUTINE)load_library_addr,
+                                    param,
+                                    CREATE_SUSPENDED,
+                                    NULL);
+
+  if (NULL == remote_thread_handle) {
+    win_result = ::GetLastError();
+    ::VirtualFreeEx(sandbox_process_info_.process_handle(),
+                    param, length, MEM_RELEASE);
+    return win_result;
+  }
+
+  if (!::SetThreadToken(&remote_thread_handle, initial_token_)) {
+    win_result = ::GetLastError();
+    ::CloseHandle(remote_thread_handle);
+    ::VirtualFreeEx(sandbox_process_info_.process_handle(),
+                    param, length, MEM_RELEASE);
+    return win_result;
+  }
+
+  if (!::ResumeThread(remote_thread_handle)) {
+    win_result = ::GetLastError();
+    ::CloseHandle(remote_thread_handle);
+    ::VirtualFreeEx(sandbox_process_info_.process_handle(),
+                    param, length, MEM_RELEASE);
+    return win_result;
+  }
+
+  if (WAIT_OBJECT_0 != ::WaitForSingleObject(remote_thread_handle, 1000)) {
+    CloseHandle(remote_thread_handle);
+    ::VirtualFreeEx(sandbox_process_info_.process_handle(),
+                    param, length, MEM_RELEASE);
+    return SBOX_ERROR_GENERIC;
+  }
+
+  ::VirtualFreeEx(sandbox_process_info_.process_handle(),
+                  param, length, MEM_RELEASE);
+  if (!::GetExitCodeThread(remote_thread_handle,
+                           (LPDWORD)&module_base_address_)) {
+    win_result = ::GetLastError();
+    ::CloseHandle(remote_thread_handle);
+    return win_result;
+  }
+  ::CloseHandle(remote_thread_handle);
+  return ERROR_SUCCESS;
+}
+
+void TargetProcess::CloseInitialToken()
+{
+  initial_token_.Close();
+}
+#endif
 
 ResultCode TargetProcess::TransferVariable(const char* name, void* address,
                                            size_t size) {
@@ -211,7 +337,7 @@ ResultCode TargetProcess::TransferVariable(const char* name, void* address,
   void* child_var = address;
 
 #if SANDBOX_EXPORTS
-  HMODULE module = ::LoadLibrary(exe_name_.get());
+  HMODULE module = ::LoadLibrary(SandboxModuleName());
   if (NULL == module)
     return SBOX_ERROR_GENERIC;
 
@@ -223,7 +349,7 @@ ResultCode TargetProcess::TransferVariable(const char* name, void* address,
 
   size_t offset = reinterpret_cast<char*>(child_var) -
                   reinterpret_cast<char*>(module);
-  child_var = reinterpret_cast<char*>(MainModule()) + offset;
+  child_var = reinterpret_cast<char*>(SandboxModule()) + offset;
 #else
   UNREFERENCED_PARAMETER(name);
 #endif

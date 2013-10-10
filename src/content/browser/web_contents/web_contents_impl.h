@@ -431,6 +431,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void RequestMediaAccessPermission(
       const MediaStreamRequest& request,
       const MediaResponseCallback& callback) OVERRIDE;
+  virtual void HandleExternalProtocol(const GURL& url) OVERRIDE;
 
   // RenderWidgetHostDelegate --------------------------------------------------
 
@@ -443,6 +444,9 @@ class CONTENT_EXPORT WebContentsImpl
       const NativeWebKeyboardEvent& event) OVERRIDE;
   virtual bool PreHandleWheelEvent(
       const WebKit::WebMouseWheelEvent& event) OVERRIDE;
+  virtual bool ShowTooltip(
+      const string16& tooltip_text, 
+      WebKit::WebTextDirection text_direction_hint) OVERRIDE;
 #if defined(OS_WIN) && defined(USE_AURA)
   virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() OVERRIDE;
 #endif
@@ -500,7 +504,8 @@ class CONTENT_EXPORT WebContentsImpl
 
   // See WebContents::Create for a description of these parameters.
   WebContentsImpl(BrowserContext* browser_context,
-                  WebContentsImpl* opener);
+                  WebContentsImpl* opener,
+                  int render_process_affinity);
 
   // Add and remove observers for page navigation notifications. Adding or
   // removing multiple times has no effect. The order in which notifications

@@ -271,6 +271,7 @@ void Shell::WebContentsCreated(WebContents* source_contents,
                                int64 source_frame_id,
                                const string16& frame_name,
                                const GURL& target_url,
+                               const ContentCreatedParams& params,
                                WebContents* new_contents) {
   CreateShell(new_contents);
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))

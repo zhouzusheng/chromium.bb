@@ -95,6 +95,7 @@ box-sizing
 -webkit-box-sizing = box-sizing
 caption-side
 -epub-caption-side = caption-side
+-webkit-caret-color
 clear
 clip
 -webkit-clip-path

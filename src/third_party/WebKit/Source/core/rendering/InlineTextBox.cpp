@@ -23,6 +23,7 @@
 #include "config.h"
 #include "core/rendering/InlineTextBox.h"
 
+#include "core/css/CSSParser.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/RenderedDocumentMarker.h"
@@ -49,8 +50,6 @@
 #include "core/rendering/break_lines.h"
 #include "core/rendering/svg/SVGTextRunRenderingContext.h"
 #include <wtf/text/CString.h>
-
-#include "CSSParser.h"
 
 using namespace std;
 
@@ -1350,7 +1349,7 @@ void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPoint& b
             }
         }
     }
-    pt->drawLineForDocumentMarker(FloatPoint(boxOrigin.x() + start, boxOrigin.y() + underlineOffset), width, lineStyleForMarkerType(marker->type()), markerColor);
+    pt->drawLineForDocumentMarker(FloatPoint(boxOrigin.x() + start, boxOrigin.y() + underlineOffset), width, markerColor);
 }
 
 void InlineTextBox::paintTextMatchMarker(GraphicsContext* pt, const FloatPoint& boxOrigin, DocumentMarker* marker, RenderStyle* style, const Font& font)

@@ -324,7 +324,7 @@ namespace WebCore {
             DocumentMarkerAutocorrectionReplacementLineStyle,
             DocumentMarkerDictationAlternativesLineStyle
         };
-        void drawLineForDocumentMarker(const FloatPoint&, float width, DocumentMarkerLineStyle, const Color& markerColor);
+        void drawLineForDocumentMarker(const FloatPoint&, float width, const Color& markerColor);
 
         bool paintingDisabled() const;
         void setPaintingDisabled(bool);
@@ -412,7 +412,7 @@ namespace WebCore {
         static const SkPMColor lineColors(int);
         static const SkPMColor antiColors1(int);
         static const SkPMColor antiColors2(int);
-        static void draw1xMarker(SkBitmap*, int);
+        static void draw1xMarker(SkBitmap*, const uint32_t, const uint32_t);
         static void draw2xMarker(SkBitmap*, int);
 #endif
 

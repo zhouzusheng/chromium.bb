@@ -6,6 +6,7 @@
 #define SANDBOX_WIN_SRC_TARGET_PROCESS_H_
 
 #include <windows.h>
+#include <psapi.h>
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
@@ -62,10 +63,6 @@ class TargetProcess {
   // Injects sandbox DLL to target process, while target process is in
   // suspended state.
   DWORD InjectSandboxDll(const wchar_t* module_path);
-
-  // Close the initial token. This is normally done in Create(), but for
-  // sandbox dll mode, we need to wait until after InjectSandboxDll.
-  void CloseInitialToken();
 #endif
 
   // Returns the target exe name or sandbox DLL name (if the sandbox.lib is

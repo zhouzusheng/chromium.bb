@@ -50,6 +50,8 @@
 #include "core/rendering/svg/SVGTextRunRenderingContext.h"
 #include <wtf/text/CString.h>
 
+#include "CSSParser.h"
+
 using namespace std;
 
 namespace WebCore {
@@ -1319,7 +1321,36 @@ void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPoint& b
         // In larger fonts, though, place the underline up near the baseline to prevent a big gap.
         underlineOffset = baseline + 2;
     }
-    pt->drawLineForDocumentMarker(FloatPoint(boxOrigin.x() + start, boxOrigin.y() + underlineOffset), width, lineStyleForMarkerType(marker->type()));
+
+    Color markerColor(255,0,0,255);
+    if (textRenderer()->node()) {
+        const Element *element = textRenderer()->node()->rootEditableElement();
+        if (element && element->hasAttributes()) {
+            static const String fallback = "data-marker-color-default";
+            static const String spelling = "data-marker-color-spelling";
+            static const String grammar = "data-marker-color-grammar";
+
+            AtomicString colorAttr = nullAtom;
+
+            if (colorAttr == nullAtom && marker->type() & DocumentMarker::Spelling) {
+                colorAttr = element->getAttribute(spelling);
+            }
+            if (colorAttr == nullAtom && marker->type() & DocumentMarker::Grammar) {
+                colorAttr = element->getAttribute(grammar);
+            }
+            if (colorAttr == nullAtom) {
+                colorAttr = element->getAttribute(fallback);
+            }
+
+            if (colorAttr != nullAtom) {
+                RGBA32 rgba;
+                if (CSSParser::fastParseColorAtomicString(rgba, colorAttr, false)) {
+                    markerColor.setRGB(rgba);
+                }
+            }
+        }
+    }
+    pt->drawLineForDocumentMarker(FloatPoint(boxOrigin.x() + start, boxOrigin.y() + underlineOffset), width, lineStyleForMarkerType(marker->type()), markerColor);
 }
 
 void InlineTextBox::paintTextMatchMarker(GraphicsContext* pt, const FloatPoint& boxOrigin, DocumentMarker* marker, RenderStyle* style, const Font& font)

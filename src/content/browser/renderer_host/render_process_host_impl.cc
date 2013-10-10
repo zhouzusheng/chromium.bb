@@ -143,8 +143,6 @@ static const char* kSiteProcessMapKeyName = "content_site_process_map";
 namespace content {
 namespace {
 
-base::MessageLoop* g_in_process_thread;
-
 void CacheShaderInfo(int32 id, base::FilePath path) {
   ShaderCacheFactory::GetInstance()->SetCacheInfo(id, path);
 }
@@ -1504,11 +1502,6 @@ void RenderProcessHostImpl::RegisterProcessHostForSite(
       .possibly_invalid_spec();
   if (!site.empty())
     map->RegisterProcess(site, process);
-}
-
-base::MessageLoop*
-    RenderProcessHostImpl::GetInProcessRendererThreadForTesting() {
-  return g_in_process_thread;
 }
 
 void RenderProcessHostImpl::ProcessDied(bool already_dead) {

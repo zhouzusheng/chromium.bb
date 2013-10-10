@@ -188,8 +188,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       RenderProcessHost* process,
       const GURL& url);
 
-  static base::MessageLoop* GetInProcessRendererThreadForTesting();
-
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
   // browser_process.h)

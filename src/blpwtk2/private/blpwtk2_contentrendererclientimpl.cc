@@ -48,6 +48,7 @@ void ContentRendererClientImpl::RenderViewCreated(
 }
 
 void ContentRendererClientImpl::GetNavigationErrorStrings(
+    WebKit::WebFrame* frame,
     const WebKit::WebURLRequest& failed_request,
     const WebKit::WebURLError& error,
     std::string* error_html,

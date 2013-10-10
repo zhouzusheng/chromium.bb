@@ -22,7 +22,7 @@
 
 #include "config.h"
 #include "WebBBPrintInfo.h"
-#include "BBPrintInfo.h"
+#include "core/page/BBPrintInfo.h"
 
 #include <public/WebString.h>
 

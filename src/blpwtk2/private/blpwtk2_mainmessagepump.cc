@@ -81,9 +81,9 @@ static LRESULT CALLBACK MsgFilterHookProc(int code, WPARAM wParam, LPARAM lParam
     if (!s_isInModal && isModalCode(code)) {
         s_isInModal = true;
         DebugWithTime("ENTERING MODAL LOOP\n");
-        MessageLoop::current()->SetNestableTasksAllowed(true);
-        MessageLoop::current()->set_os_modal_loop(true);
-        MessageLoop::current()->pump_win()->ScheduleWork();
+        base::MessageLoop::current()->SetNestableTasksAllowed(true);
+        base::MessageLoop::current()->set_os_modal_loop(true);
+        base::MessageLoop::current()->pump_win()->ScheduleWork();
     }
     return CallNextHookEx(s_msgHook, code, wParam, lParam);
 }
@@ -95,24 +95,24 @@ static LRESULT CALLBACK CallWndHookProc(int code, WPARAM wParam, LPARAM lParam)
     case WM_ENTERSIZEMOVE:
         DebugWithTime("HOOK ENTER SIZEMOVE\n");
         s_isMovingOrResizing = true;
-        MessageLoop::current()->SetNestableTasksAllowed(true);
-        MessageLoop::current()->set_os_modal_loop(true);
-        MessageLoop::current()->pump_win()->ScheduleWork();
+        base::MessageLoop::current()->SetNestableTasksAllowed(true);
+        base::MessageLoop::current()->set_os_modal_loop(true);
+        base::MessageLoop::current()->pump_win()->ScheduleWork();
         break;
     case WM_EXITSIZEMOVE:
         DebugWithTime("HOOK EXIT SIZEMOVE\n");
         s_isMovingOrResizing = false;
-        MessageLoop::current()->set_os_modal_loop(false);
+        base::MessageLoop::current()->set_os_modal_loop(false);
         break;
     case WM_ENTERMENULOOP:
         DebugWithTime("HOOK ENTER MENU\n");
-        MessageLoop::current()->SetNestableTasksAllowed(true);
-        MessageLoop::current()->set_os_modal_loop(true);
-        MessageLoop::current()->pump_win()->ScheduleWork();
+        base::MessageLoop::current()->SetNestableTasksAllowed(true);
+        base::MessageLoop::current()->set_os_modal_loop(true);
+        base::MessageLoop::current()->pump_win()->ScheduleWork();
         break;
     case WM_EXITMENULOOP:
         DebugWithTime("HOOK EXIT MENU\n");
-        MessageLoop::current()->set_os_modal_loop(false);
+        base::MessageLoop::current()->set_os_modal_loop(false);
         break;
     }
     return CallNextHookEx(s_callWndHook, code, wParam, lParam);
@@ -160,7 +160,7 @@ static bool shouldStopDoingWork(bool stopForTimers)
             // we exit our work loop and relinquish control to Windows.  Note
             // that if we have more work to do, a WM_TIMER will be scheduled
             // to handle that work (with a lower priority).
-            DCHECK(MessageLoop::current()->os_modal_loop());
+            DCHECK(base::MessageLoop::current()->os_modal_loop());
             return true;
         }
         if (PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE | PM_QS_INPUT | PM_QS_SENDMESSAGE))
@@ -174,8 +174,8 @@ static bool shouldStopDoingWork(bool stopForTimers)
 // static
 MainMessagePump* MainMessagePump::current()
 {
-    MessageLoop* loop = MessageLoop::current();
-    DCHECK_EQ(MessageLoop::TYPE_UI, loop->type());
+    base::MessageLoop* loop = base::MessageLoop::current();
+    DCHECK_EQ(base::MessageLoop::TYPE_UI, loop->type());
     return static_cast<MainMessagePump*>(loop->pump_win());
 }
 
@@ -204,8 +204,8 @@ void MainMessagePump::init()
 
     d_runLoop.reset(new base::RunLoop());
     d_runLoop->BeforeRun();
-    MessageLoop::current()->PrepareRunInternal();
-    PushRunState(&d_runState, MessageLoop::current(), 0);
+    base::MessageLoop::current()->PrepareRunInternal();
+    PushRunState(&d_runState, base::MessageLoop::current(), 0);
 }
 
 void MainMessagePump::cleanup()
@@ -262,7 +262,7 @@ void MainMessagePump::postHandleMessage(const MSG& msg)
     // if it was set.
     if (s_isInModal) {
         DebugWithTime("EXITING MODAL LOOP\n");
-        MessageLoop::current()->set_os_modal_loop(false);
+        base::MessageLoop::current()->set_os_modal_loop(false);
         s_isInModal = false;
     }
 
@@ -382,7 +382,7 @@ void MainMessagePump::scheduleMoreWorkIfNecessary()
         MSG msg;
         bool shouldUseAutoPumpTimer =
             PumpMode::AUTOMATIC == Statics::pumpMode
-            || MessageLoop::current()->os_modal_loop()
+            || base::MessageLoop::current()->os_modal_loop()
             || FALSE == ::PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE);
 
         if (shouldUseAutoPumpTimer) {
@@ -471,7 +471,7 @@ LRESULT CALLBACK MainMessagePump::wndProcThunk(HWND hwnd,
 void MainMessagePump::ScheduleDelayedWork(const base::TimeTicks& delayed_work_time)
 {
     // Verify that we never get called outside the main thread.
-    DCHECK(this == MessageLoop::current()->pump_win());
+    DCHECK(this == base::MessageLoop::current()->pump_win());
 
     if (!d_hasAutoPumpTimer) {
         if (PumpMode::AUTOMATIC == Statics::pumpMode) {

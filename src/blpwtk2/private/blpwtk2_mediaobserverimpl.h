@@ -44,19 +44,6 @@ public:
 
     /////// content::MediaObserver overrides
 
-    // Called when capture devices are opened.
-    virtual void OnCaptureDevicesOpened(
-        int render_process_id,
-        int render_view_id,
-        const content::MediaStreamDevices& devices,
-        const base::Closure& close_callback) OVERRIDE;
-
-    // Called when the opened capture devices are closed.
-    virtual void OnCaptureDevicesClosed(
-        int render_process_id,
-        int render_view_id,
-        const content::MediaStreamDevices& devices) OVERRIDE;
-
     // Called when a audio capture device is plugged in or unplugged.
     virtual void OnAudioCaptureDevicesChanged(
         const content::MediaStreamDevices& devices) OVERRIDE;

@@ -54,18 +54,18 @@ ProfileImpl::~ProfileImpl()
 
 void ProfileImpl::initFromBrowserUIThread(
     content::BrowserContext* browserContext,
-    MessageLoop* ioLoop,
-    MessageLoop* fileLoop)
+    base::MessageLoop* ioLoop,
+    base::MessageLoop* fileLoop)
 {
     base::AutoLock guard(d_lock);
 
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
     DCHECK(!d_browserContext && !d_uiLoop && !d_ioLoop && !d_fileLoop);
-    DCHECK(browserContext && MessageLoop::current() && ioLoop && fileLoop);
+    DCHECK(browserContext && base::MessageLoop::current() && ioLoop && fileLoop);
 
     d_browserContext = browserContext;
-    d_uiLoop = MessageLoop::current();
+    d_uiLoop = base::MessageLoop::current();
     d_ioLoop = ioLoop;
     d_fileLoop = fileLoop;
 

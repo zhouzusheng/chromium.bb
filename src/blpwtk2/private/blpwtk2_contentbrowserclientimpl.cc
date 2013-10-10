@@ -48,7 +48,7 @@ public:
     , d_channelId(channelId)
     {
         base::Thread::Options options;
-        options.message_loop_type = MessageLoop::TYPE_UI;
+        options.message_loop_type = base::MessageLoop::TYPE_UI;
         StartWithOptions(options);
     }
     ~InProcessRendererThread()

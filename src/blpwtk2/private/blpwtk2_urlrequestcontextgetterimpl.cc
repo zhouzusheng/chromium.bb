@@ -34,7 +34,7 @@
 #include <content/public/browser/browser_thread.h>
 #include <content/public/common/content_switches.h>
 #include <content/public/common/url_constants.h>
-#include <net/base/cert_verifier.h>
+#include <net/cert/cert_verifier.h>
 #include <net/cookies/cookie_monster.h>
 #include <net/dns/mapped_host_resolver.h>
 #include <net/http/http_auth_handler_factory.h>
@@ -166,6 +166,7 @@ void URLRequestContextGetterImpl::initialize()
     bool useCache = d_browserContext->profile()->diskCacheEnabled();
     net::HttpCache::BackendFactory* backendFactory =
         useCache ? new net::HttpCache::DefaultBackend(net::DISK_CACHE,
+                                                      net::CACHE_BACKEND_DEFAULT,
                                                       d_browserContext->GetPath().Append(FILE_PATH_LITERAL("Cache")),
                                                       0,
                                                       content::BrowserThread::GetMessageLoopProxyForThread(content::BrowserThread::CACHE))

@@ -28,7 +28,9 @@
 #include <base/compiler_specific.h>  // for OVERRIDE
 #include <base/threading/platform_thread.h>
 
+namespace base {
 class MessageLoop;
+}  // close namespace base
 
 namespace sandbox {
     struct SandboxInterfaceInfo;
@@ -53,7 +55,7 @@ class BrowserThread : private base::PlatformThread::Delegate {
     void sync();
 
     BrowserMainRunner* mainRunner() const;
-    MessageLoop* messageLoop() const;
+    base::MessageLoop* messageLoop() const;
 
   private:
     virtual void ThreadMain() OVERRIDE;

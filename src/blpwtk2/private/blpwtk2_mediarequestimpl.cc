@@ -25,8 +25,22 @@
 #include <blpwtk2_stringref.h>
 
 #include <base/logging.h>
+#include <content/public/common/media_stream_request.h>
 
 namespace blpwtk2 {
+
+// TODO: Somehow expose this to clients of blpwtk2.
+class MediaStreamUIImpl : public content::MediaStreamUI {
+  public:
+    MediaStreamUIImpl() {}
+
+    // Called when MediaStream capturing is started. Chrome layer can call |stop|
+    // to stop the stream.
+    virtual void OnStarted(const base::Closure& stop) {}
+
+  private:
+    DISALLOW_COPY_AND_ASSIGN(MediaStreamUIImpl);
+};
 
 MediaRequestImpl::MediaRequestImpl(const content::MediaStreamDevices& devices,
                                    const content::MediaResponseCallback& callback)
@@ -77,7 +91,9 @@ void MediaRequestImpl::grantAccess(int *deviceIndices, int deviceCount)
         DCHECK(index < (int) d_mediaStreamDevices.size());
         devices.push_back(d_mediaStreamDevices[index]);
     }
-    d_mediaResponseCallback.Run(devices);
+
+    scoped_ptr<content::MediaStreamUI> mediaStreamUI(new MediaStreamUIImpl());
+    d_mediaResponseCallback.Run(devices, mediaStreamUI.Pass());
 }
 
 void MediaRequestImpl::addRef()

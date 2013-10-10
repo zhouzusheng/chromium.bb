@@ -36,13 +36,13 @@ namespace blpwtk2 {
 
 WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
                            gfx::NativeView parent,
-                           MessageLoop* implDispatcher,
+                           base::MessageLoop* implDispatcher,
                            Profile* profile,
                            int hostAffinity,
                            bool initiallyVisible)
 : d_impl(0)
 , d_implDispatcher(implDispatcher)
-, d_proxyDispatcher(MessageLoop::current())
+, d_proxyDispatcher(base::MessageLoop::current())
 , d_delegate(delegate)
 , d_routingId(0)
 , d_lastMoveRepaint(false)
@@ -64,8 +64,8 @@ WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
 }
 
 WebViewProxy::WebViewProxy(WebViewImpl* impl,
-                           MessageLoop* implDispatcher,
-                           MessageLoop* proxyDispatcher)
+                           base::MessageLoop* implDispatcher,
+                           base::MessageLoop* proxyDispatcher)
 : d_impl(impl)
 , d_implDispatcher(implDispatcher)
 , d_proxyDispatcher(proxyDispatcher)
@@ -78,7 +78,7 @@ WebViewProxy::WebViewProxy(WebViewImpl* impl,
 , d_isInProcess(false)
 , d_gotRendererInfo(false)
 {
-    DCHECK(MessageLoop::current() == implDispatcher);
+    DCHECK(base::MessageLoop::current() == implDispatcher);
     ++Statics::numWebViews;
 
     AddRef();  // this is balanced in destroy()

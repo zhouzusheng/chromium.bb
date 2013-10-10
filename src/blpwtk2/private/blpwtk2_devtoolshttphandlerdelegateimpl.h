@@ -44,6 +44,9 @@ class DevToolsHttpHandlerDelegateImpl
     virtual content::RenderViewHost* CreateNewTarget() OVERRIDE { return 0; }
     virtual TargetType GetTargetType(content::RenderViewHost*) OVERRIDE { return kTargetTypeTab; }
     virtual std::string GetViewDescription(content::RenderViewHost*) OVERRIDE { return ""; }
+    virtual scoped_refptr<net::StreamListenSocket> CreateSocketForTethering(
+        net::StreamListenSocket::Delegate* delegate,
+        std::string* name) OVERRIDE { return NULL; }
 };
 
 }  // close namespace blpwtk2

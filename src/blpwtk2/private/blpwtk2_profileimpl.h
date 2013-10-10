@@ -35,7 +35,9 @@
 
 #include <string>
 
+namespace base {
 class MessageLoop;
+}  // close namespace base
 
 namespace content {
 class BrowserContext;
@@ -86,8 +88,8 @@ class ProfileImpl : public Profile {
     virtual ~ProfileImpl();
 
     void initFromBrowserUIThread(content::BrowserContext* browserContext,
-                                 MessageLoop* ioLoop,
-                                 MessageLoop* fileLoop);
+                                 base::MessageLoop* ioLoop,
+                                 base::MessageLoop* fileLoop);
     net::ProxyService* initFromBrowserIOThread();
 
     // Occurs on the application-main thread when a WebView using this profile
@@ -123,9 +125,9 @@ class ProfileImpl : public Profile {
     base::Lock d_lock;
     std::string d_dataDir;
     content::BrowserContext* d_browserContext;
-    MessageLoop* d_uiLoop;
-    MessageLoop* d_ioLoop;
-    MessageLoop* d_fileLoop;
+    base::MessageLoop* d_uiLoop;
+    base::MessageLoop* d_ioLoop;
+    base::MessageLoop* d_fileLoop;
     net::ProxyService* d_proxyService;
     scoped_ptr<net::ProxyConfigService> d_proxyConfigService;
     net::ProxyConfig d_appProxyConfig;

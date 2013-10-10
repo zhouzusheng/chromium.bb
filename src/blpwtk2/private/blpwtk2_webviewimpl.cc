@@ -36,7 +36,6 @@
 #include <blpwtk2_statics.h>
 
 #include <base/message_loop.h>
-#include <content/public/browser/content_browser_client.h>
 #include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/devtools_http_handler.h>
 #include <content/public/browser/render_view_host.h>
@@ -44,7 +43,6 @@
 #include <content/public/browser/web_contents.h>
 #include <content/public/browser/web_contents_view.h>
 #include <content/public/browser/site_instance.h>
-#include <content/public/common/content_client.h>
 #include <content/public/renderer/render_view.h>
 #include <third_party/WebKit/Source/WebKit/chromium/public/WebView.h>
 
@@ -160,7 +158,7 @@ void WebViewImpl::destroy()
     d_wasDestroyed = true;
     if (d_isReadyForDelete) {
         d_isDeletingSoon = true;
-        MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+        base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
     }
 }
 
@@ -389,7 +387,7 @@ void WebViewImpl::DidNavigateMainFramePostCommit(content::WebContents* source)
     if (d_wasDestroyed) {
         if (!d_isDeletingSoon) {
             d_isDeletingSoon = true;
-            MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+            base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
         }
         return;
     }
@@ -496,8 +494,7 @@ void WebViewImpl::RequestMediaAccessPermission(content::WebContents* web_content
                                                const content::MediaResponseCallback& callback)
 {
     if (d_delegate) {
-        MediaObserverImpl* mediaObserver = static_cast<MediaObserverImpl*>(
-            content::GetContentClient()->browser()->GetMediaObserver());
+        MediaObserverImpl* mediaObserver = Statics::mediaObserver;
         content::MediaStreamDevices devices;
         if (content::IsAudioMediaType(request.audio_type)) {
             devices.insert(devices.end(), mediaObserver->getAudioDevices().begin(),  mediaObserver->getAudioDevices().end());

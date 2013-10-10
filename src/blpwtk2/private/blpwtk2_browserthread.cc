@@ -48,7 +48,7 @@ BrowserThread::BrowserThread(sandbox::SandboxInterfaceInfo* sandboxInfo)
 
 BrowserThread::~BrowserThread()
 {
-    messageLoop()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+    messageLoop()->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
     base::PlatformThread::Join(d_threadHandle);
 }
 
@@ -67,7 +67,7 @@ BrowserMainRunner* BrowserThread::mainRunner() const
     return d_mainRunner;
 }
 
-MessageLoop* BrowserThread::messageLoop() const
+base::MessageLoop* BrowserThread::messageLoop() const
 {
     DCHECK(Statics::browserMainMessageLoop);
     return Statics::browserMainMessageLoop;

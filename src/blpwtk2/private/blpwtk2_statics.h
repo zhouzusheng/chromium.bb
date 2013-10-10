@@ -32,7 +32,9 @@
 
 #include <vector>
 
+namespace base {
 class MessageLoop;
+}  // close namespace base
 
 namespace content {
     class DevToolsHttpHandler;
@@ -42,6 +44,7 @@ namespace blpwtk2 {
 
 class HttpTransactionHandler;
 class Profile;
+class MediaObserverImpl;
 
 // Hold any static variables.  This will be used to store global state that
 // may be setup before ToolkitImpl is instantiated, or any other global
@@ -71,10 +74,13 @@ struct Statics {
     static HttpTransactionHandler* httpTransactionHandler;
 
     // MessageLoop for the in-process renderer thread.
-    static MessageLoop* rendererMessageLoop;
+    static base::MessageLoop* rendererMessageLoop;
 
     // MessageLoop for the browser main thread.
-    static MessageLoop* browserMainMessageLoop;
+    static base::MessageLoop* browserMainMessageLoop;
+
+    // The single MediaObserverImpl instance.
+    static MediaObserverImpl* mediaObserver;
 
     // Whether or not devtools is available.
     static bool hasDevTools;

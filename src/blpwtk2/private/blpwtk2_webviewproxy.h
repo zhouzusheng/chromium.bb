@@ -34,7 +34,9 @@
 
 #include <string>
 
+namespace base {
 class MessageLoop;
+}  // close namespace base
 
 namespace blpwtk2 {
 
@@ -58,13 +60,13 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
   public:
     WebViewProxy(WebViewDelegate* delegate,
                  gfx::NativeView parent,
-                 MessageLoop* implDispatcher,
+                 base::MessageLoop* implDispatcher,
                  Profile* profile,
                  int hostAffinity,
                  bool initiallyVisible);
     WebViewProxy(WebViewImpl* impl,
-                 MessageLoop* implDispatcher,
-                 MessageLoop* proxyDispatcher);
+                 base::MessageLoop* implDispatcher,
+                 base::MessageLoop* proxyDispatcher);
 
     // ========== WebView overrides ================
 
@@ -171,8 +173,8 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void proxyUpdateRendererInfo(bool isInProcess, int routingId);
 
     WebViewImpl* d_impl;
-    MessageLoop* d_implDispatcher;
-    MessageLoop* d_proxyDispatcher;
+    base::MessageLoop* d_implDispatcher;
+    base::MessageLoop* d_proxyDispatcher;
     WebViewDelegate* d_delegate;
     int d_routingId;
     RECT d_lastMoveRect;

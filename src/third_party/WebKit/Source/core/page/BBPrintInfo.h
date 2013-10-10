@@ -24,8 +24,8 @@
 #ifndef BBPrintInfo_h
 #define BBPrintInfo_h
 
-#include "ActiveDOMObject.h"
-#include "BBPrintHeader.h"
+#include "core/dom/ActiveDOMObject.h"
+#include "core/page/BBPrintHeader.h"
 #include <wtf/RefCounted.h>
 
 namespace WebCore {

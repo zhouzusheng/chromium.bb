@@ -72,7 +72,7 @@ ToolkitImpl::ToolkitImpl()
     DCHECK(!g_instance);
     g_instance = this;
 
-    MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);
+    base::MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);
 
     content::InitializeSandboxInfo(&d_sandboxInfo);
     d_mainRunner.reset(content::ContentMainRunner::Create());
@@ -80,7 +80,7 @@ ToolkitImpl::ToolkitImpl()
     DCHECK(-1 == rc);  // it returns -1 for success!!
 
     if (Statics::isRendererMainThreadMode()) {
-        Statics::rendererMessageLoop = new MessageLoop(MessageLoop::TYPE_UI);
+        Statics::rendererMessageLoop = new base::MessageLoop(MessageLoop::TYPE_UI);
 
         content::WebContentsViewWin::disableHookOnRoot();
         d_browserThread.reset(new BrowserThread(&d_sandboxInfo));

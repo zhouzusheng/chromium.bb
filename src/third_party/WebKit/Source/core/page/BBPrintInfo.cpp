@@ -21,8 +21,8 @@
  */
 
 #include "config.h"
-#include "BBPrintInfo.h"
-#include "Document.h"
+#include "core/page/BBPrintInfo.h"
+#include "core/dom/Document.h"
 
 namespace WebCore {
 

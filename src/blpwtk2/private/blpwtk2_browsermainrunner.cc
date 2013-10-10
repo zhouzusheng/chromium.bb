@@ -45,7 +45,7 @@ BrowserMainRunner::BrowserMainRunner(sandbox::SandboxInterfaceInfo* sandboxInfo)
 
     // The MessageLoop is created by content::BrowserMainRunner (inside
     // content::BrowserMainLoop).
-    Statics::browserMainMessageLoop = MessageLoop::current();
+    Statics::browserMainMessageLoop = base::MessageLoop::current();
 
     d_devToolsHttpHandlerDelegate.reset(
         new DevToolsHttpHandlerDelegateImpl());

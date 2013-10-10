@@ -21,34 +21,22 @@
  */
 
 #include <blpwtk2_mediaobserverimpl.h>
+#include <blpwtk2_statics.h>
+
+#include <base/logging.h>  // for DCHECK
 
 namespace blpwtk2 {
 
 MediaObserverImpl::MediaObserverImpl()
 {
-
+    DCHECK(!Statics::mediaObserver);
+    Statics::mediaObserver = this;
 }
 
 MediaObserverImpl::~MediaObserverImpl()
 {
-
-}
-
-void MediaObserverImpl::OnCaptureDevicesOpened(
-    int render_process_id,
-    int render_view_id,
-    const content::MediaStreamDevices& devices,
-    const base::Closure& close_callback)
-{
-    //LILIT: what should we do here?
-}
-
-void MediaObserverImpl::OnCaptureDevicesClosed(
-    int render_process_id,
-    int render_view_id,
-    const content::MediaStreamDevices& devices)
-{
-    //LILIT: what should we do here?
+    DCHECK(Statics::mediaObserver == this);
+    Statics::mediaObserver = 0;
 }
 
 void MediaObserverImpl::OnAudioCaptureDevicesChanged(

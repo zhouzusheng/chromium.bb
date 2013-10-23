@@ -10,6 +10,8 @@
 
 #include "libGLESv2/main.h"
 
+#define error libglesv2_error
+
 namespace gl
 {
 

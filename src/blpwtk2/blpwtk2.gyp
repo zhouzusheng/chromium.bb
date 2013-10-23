@@ -35,13 +35,14 @@
     ],
   },
   'variables': {
+    'angle_bindings_cc': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/private/blpangle_bindings.cc',
     'products_h': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_products.h',
     'version_h': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_version.h',
     'version_cc': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_version.cc',
   },
   'targets': [
     {
-      'target_name': 'blpwtk2_gen_version',
+      'target_name': 'blpwtk2_generate_sources',
       'type': 'none',
       'actions': [
         {
@@ -64,6 +65,23 @@
           ],
           'msvs_cygwin_shell': 1,
         },
+        {
+          'action_name': 'Generate angle bindings',
+          'inputs': [
+            'gen_angle_bindings.py',
+            '<(DEPTH)/third_party/angle/src/libGLESv2/libGLESv2.def',
+            '<(DEPTH)/third_party/angle/src/libEGL/libEGL.def',
+          ],
+          'outputs': [
+            '<(angle_bindings_cc)',
+          ],
+          'action': [
+            'python',
+            '<@(_inputs)',
+            '--output-bindings-cc', '<(angle_bindings_cc)',
+          ],
+          'msvs_cygwin_shell': 1,
+        },
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -76,7 +94,8 @@
       'target_name': 'blpwtk2',
       'type': 'shared_library',
       'dependencies': [
-        'blpwtk2_gen_version',
+        'blpwtk2_generate_sources',
+        'blpangle',
         '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
         '../content/content.gyp:content_app',
         '../content/content.gyp:content_browser',
@@ -256,6 +275,26 @@
       },
     },
     {
+      'target_name': 'blpangle',
+      'type': 'loadable_module',
+      'dependencies': [
+        'blpwtk2_generate_sources',
+        '../third_party/angle/src/build_angle.gyp:libGLESv2_static',
+        '../third_party/angle/src/build_angle.gyp:libEGL_static',
+      ],
+      'conditions': [
+        ['bb_version!=""', {
+          'product_name': 'blpangle.<(bb_version)',
+        }],
+      ],
+      'sources': [
+        '<(angle_bindings_cc)',
+        'angle/blpangle_dllmain.cc',
+        'angle/blpangle.def',
+        'angle/blpangle.rc',
+      ],
+    },
+    {
       'target_name': 'blpwtk2_subprocess',
       'type': 'executable',
       'msvs_settings': {
@@ -269,7 +308,7 @@
         }],
       ],
       'dependencies': [
-        'blpwtk2_gen_version',
+        'blpwtk2_generate_sources',
         '../sandbox/sandbox.gyp:sandbox',
       ],
       'include_dirs': [

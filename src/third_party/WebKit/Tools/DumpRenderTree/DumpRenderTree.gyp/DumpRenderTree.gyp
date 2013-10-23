@@ -268,7 +268,6 @@
                 ['OS=="win"', {
                     'dependencies': [
                         '<(DEPTH)/third_party/angle/src/build_angle.gyp:libEGL',
-                        '<(DEPTH)/third_party/angle/src/build_angle.gyp:libGLESv2',
                     ],
                     'resource_include_dirs': ['<(SHARED_INTERMEDIATE_DIR)/webkit'],
                     'sources': [

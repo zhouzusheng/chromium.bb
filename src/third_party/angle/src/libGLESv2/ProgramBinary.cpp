@@ -24,6 +24,8 @@
 #define ANGLE_COMPILE_OPTIMIZATION_LEVEL D3DCOMPILE_OPTIMIZATION_LEVEL3
 #endif
 
+#define error libglesv2_error
+
 namespace gl
 {
 std::string str(int i)
@@ -1101,6 +1103,7 @@ ID3D10Blob *ProgramBinary::compileToBinary(InfoLog &infoLog, const char *hlsl, c
 
         if (SUCCEEDED(result))
         {
+#undef error
             D3DConstantTable *table = new D3DConstantTable(binary->GetBufferPointer(), binary->GetBufferSize());
             if (table->error())
             {
@@ -1112,6 +1115,7 @@ ID3D10Blob *ProgramBinary::compileToBinary(InfoLog &infoLog, const char *hlsl, c
             *constantTable = table;
     
             return binary;
+#define error libglesv2_error
         }
         else
         {
@@ -1689,11 +1693,13 @@ bool ProgramBinary::load(InfoLog &infoLog, const void *binary, GLsizei length)
 
     size_t size;
     stream.read(&size);
+#undef error
     if (stream.error())
     {
         infoLog.append("Invalid program binary.");
         return false;
     }
+#define error libglesv2_error
 
     mUniforms.resize(size);
     for (unsigned int i = 0; i < size; ++i)
@@ -1720,11 +1726,13 @@ bool ProgramBinary::load(InfoLog &infoLog, const void *binary, GLsizei length)
     }
 
     stream.read(&size);
+#undef error
     if (stream.error())
     {
         infoLog.append("Invalid program binary.");
         return false;
     }
+#define error libglesv2_error
 
     mUniformIndex.resize(size);
     for (unsigned int i = 0; i < size; ++i)

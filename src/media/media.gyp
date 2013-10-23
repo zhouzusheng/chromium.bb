@@ -1410,7 +1410,6 @@
             ['OS=="win"', {
               'dependencies': [
                 '../third_party/angle/src/build_angle.gyp:libEGL',
-                '../third_party/angle/src/build_angle.gyp:libGLESv2',
               ],
               'sources': [
                 'tools/shader_bench/window_win.cc',

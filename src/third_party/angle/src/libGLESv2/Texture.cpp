@@ -22,6 +22,8 @@
 #include "libGLESv2/Blit.h"
 #include "libGLESv2/Framebuffer.h"
 
+#define error libglesv2_error
+
 namespace gl
 {
 unsigned int TextureStorage::mCurrentTextureSerial = 1;

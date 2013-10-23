@@ -37,12 +37,12 @@ IDirect3DDevice9 *getDevice();
 bool checkDeviceLost(HRESULT errorCode);
 }
 
-void error(GLenum errorCode);
+void libglesv2_error(GLenum errorCode);
 
 template<class T>
-const T &error(GLenum errorCode, const T &returnValue)
+const T &libglesv2_error(GLenum errorCode, const T &returnValue)
 {
-    error(errorCode);
+    libglesv2_error(errorCode);
 
     return returnValue;
 }

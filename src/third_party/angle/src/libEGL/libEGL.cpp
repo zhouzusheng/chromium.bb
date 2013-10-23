@@ -16,6 +16,7 @@
 #include "libEGL/main.h"
 #include "libEGL/Display.h"
 
+#define error libegl_error
 
 bool validateDisplay(egl::Display *display)
 {

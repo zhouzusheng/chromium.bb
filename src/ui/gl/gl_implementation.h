@@ -72,6 +72,14 @@ void UnloadGLNativeLibraries();
 // Set an additional function that will be called to find GL entry points.
 void SetGLGetProcAddressProc(GLGetProcAddressProc proc);
 
+// Sets the name of the blpangle DLL.  If this is set, then we will use this
+// DLL instead of libEGL.dll and libGLESv2.dll.
+GL_EXPORT void SetBLPAngleDLLName(const char* dllName);
+
+// Gets the name of the blpangle DLL.  If this is set, then we will use this
+// DLL instead of libEGL.dll and libGLESv2.dll.
+const char* GetBLPAngleDLLName();
+
 // Find a core (non-extension) entry point in the current GL implementation. On
 // EGL based implementations core entry points will not be queried through
 // GLGetProcAddressProc.

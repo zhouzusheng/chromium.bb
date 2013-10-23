@@ -63,7 +63,7 @@
                 '../../src/v8dll-main.cc',
               ],
               'dependencies': [
-                '../../../blpwtk2/blpwtk2.gyp:blpwtk2_gen_version',
+                '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
               ],
               'defines': [
                 'V8_SHARED',

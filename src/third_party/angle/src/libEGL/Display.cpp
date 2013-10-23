@@ -31,6 +31,8 @@
 #define ANGLE_ENABLE_D3D9EX 1
 #endif // !defined(ANGLE_ENABLE_D3D9EX)
 
+#define error libegl_error
+
 namespace egl
 {
 namespace

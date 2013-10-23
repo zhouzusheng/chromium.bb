@@ -34,6 +34,8 @@
 #undef near
 #undef far
 
+#define error libglesv2_error
+
 namespace gl
 {
 static const char* makeStaticString(const std::string& str)

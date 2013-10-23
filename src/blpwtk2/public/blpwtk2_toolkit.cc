@@ -22,10 +22,12 @@
 
 #include <blpwtk2_toolkit.h>
 
+#include <blpwtk2_products.h>
 #include <blpwtk2_statics.h>
 #include <blpwtk2_toolkitimpl.h>
 
 #include <base/logging.h>  // for DCHECK
+#include <ui/gl/gl_implementation.h>
 
 
 // dependencies needed for Toolkit::subProcessMain()
@@ -37,6 +39,13 @@ namespace blpwtk2 {
 
 static bool g_started = false;
 static bool g_shutdown = false;
+
+static void startToolkitImpl()
+{
+    gfx::SetBLPAngleDLLName(BLPANGLE_DLL_NAME);
+    g_started = true;
+    new ToolkitImpl();
+}
 
 void Toolkit::setThreadMode(ThreadMode::Value mode)
 {
@@ -132,8 +141,7 @@ WebView* Toolkit::createWebView(NativeView parent,
 
     DCHECK(!g_shutdown);
     if (!g_started) {
-        g_started = true;
-        new ToolkitImpl();
+        startToolkitImpl();
     }
     DCHECK(ToolkitImpl::instance());
     return ToolkitImpl::instance()->createWebView(parent,
@@ -191,6 +199,7 @@ extern "C" __declspec(dllexport)
 int SubProcessMain(HINSTANCE hInstance,
                    sandbox::SandboxInterfaceInfo* sandboxInfo)
 {
+    gfx::SetBLPAngleDLLName(BLPANGLE_DLL_NAME);
     blpwtk2::ContentMainDelegateImpl delegate;
     return content::ContentMain(hInstance, sandboxInfo, &delegate);
 }

@@ -40,6 +40,8 @@ const size_t g_shaderSize[] =
 };
 }
 
+#define error libglesv2_error
+
 namespace gl
 {
 Blit::Blit(Context *context)

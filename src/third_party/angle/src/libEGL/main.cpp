@@ -4,7 +4,7 @@
 // found in the LICENSE file.
 //
 
-// main.cpp: DLL entry point and management of thread-local data.
+// main.cpp: Management of thread-local data.
 
 #include "libEGL/main.h"
 
@@ -12,7 +12,7 @@
 
 static DWORD currentTLS = TLS_OUT_OF_INDEXES;
 
-extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
+extern "C" BOOL libEGLMain(DWORD reason)
 {
     switch (reason)
     {
@@ -159,7 +159,7 @@ EGLSurface getCurrentReadSurface()
 }
 }
 
-void error(EGLint errorCode)
+void libegl_error(EGLint errorCode)
 {
     egl::setCurrentError(errorCode);
 }

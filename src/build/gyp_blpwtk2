@@ -150,10 +150,6 @@ if 'GYP_DEFINES' in os.environ:
 else:
   origGypDefines = None
 
-def cleanFile(fname):
-  if os.path.isfile(fname):
-    os.remove(fname)
-
 def execGyp(args):
   print "Running gyp with this environment:"
   print "    GYP_GENERATORS = '" + os.environ['GYP_GENERATORS'] + "'"
@@ -238,12 +234,6 @@ def main(args):
     generatorsToUse.append('msvs')
     generatorsToUse.append('ninjaDebug')
     generatorsToUse.append('ninjaRelease')
-
-    # Delete the generated version files, so that they will be regenerated
-    # with the updated version info.
-    cleanFile(os.path.join(blpwtk2_dir, 'public', 'blpwtk2_version.h'))
-    cleanFile(os.path.join(blpwtk2_dir, 'public', 'blpwtk2_version.cc'))
-    cleanFile(os.path.join(blpwtk2_dir, 'public', 'blpwtk2_products.h'))
 
   args = filter(lambda x: x not in generatorsToUse, args)
 

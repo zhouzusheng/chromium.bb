@@ -34,7 +34,6 @@
 #endif
 
 #include <blpwtk2_version.h>
-#include <blpwtk2_products.h>
 
 namespace blpwtk2 {
 

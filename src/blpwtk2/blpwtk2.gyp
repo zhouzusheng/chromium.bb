@@ -34,6 +34,11 @@
       }],
     ],
   },
+  'variables': {
+    'products_h': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_products.h',
+    'version_h': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_version.h',
+    'version_cc': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_version.cc',
+  },
   'targets': [
     {
       'target_name': 'blpwtk2_gen_version',
@@ -45,21 +50,27 @@
             'gen_version.py',
           ],
           'outputs': [
-            'public/blpwtk2_products.h',
-            'public/blpwtk2_version.h',
-            'public/blpwtk2_version.cc',
+            '<(products_h)',
+            '<(version_h)',
+            '<(version_cc)',
           ],
           'action': [
             'python',
             '<@(_inputs)',
-            '--output-products', 'public/blpwtk2_products.h',
-            '--output-version-h', 'public/blpwtk2_version.h',
-            '--output-version-cc', 'public/blpwtk2_version.cc',
+            '--output-products', '<(products_h)',
+            '--output-version-h', '<(version_h)',
+            '--output-version-cc', '<(version_cc)',
             '--version', '<(bb_version)',
           ],
           'msvs_cygwin_shell': 1,
         },
       ],
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public',
+          '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/private',
+        ],
+      },
     },
     {
       'target_name': 'blpwtk2',
@@ -98,10 +109,10 @@
         }],
       ],
       'sources': [
+        '<(products_h)',
+        '<(version_h)',
+        '<(version_cc)',
         '../content/app/startup_helper_win.cc',
-        'public/blpwtk2_products.h',
-        'public/blpwtk2_version.h',
-        'public/blpwtk2_version.cc',
         'public/blpwtk2_config.h',
         'public/blpwtk2.h',
         'public/blpwtk2_string.cc',
@@ -232,6 +243,7 @@
         ],
         'include_dirs': [
           'public',
+          '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public',
         ],
         'include_dirs!': [
           '../third_party/wtl/include',

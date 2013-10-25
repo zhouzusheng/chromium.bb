@@ -21,7 +21,7 @@
  */
 
 #include <windows.h>  // NOLINT
-#include <blpwtk2/public/blpwtk2_products.h>
+#include <blpwtk2_products.h>
 #include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
 #include <sandbox/win/src/sandbox_types.h>  // for SandboxInterfaceInfo
 

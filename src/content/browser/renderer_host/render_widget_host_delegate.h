@@ -52,8 +52,8 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // custom tooltip, it should just return 'false'. Otherwise, it should show
   // the tooltip and return 'true'. By default, the delegate doesn't provide a
   // custom tooltip.
-  virtual bool ShowTooltip(const string16& tooltip_text, 
-                           WebKit::WebTextDirection text_direction_hint) {return false;}
+  virtual bool ShowTooltip(const string16& tooltip_text,
+                           WebKit::WebTextDirection text_direction_hint);
 
 #if defined(OS_WIN) && defined(USE_AURA)
   // Returns the widget's parent's NativeViewAccessible.

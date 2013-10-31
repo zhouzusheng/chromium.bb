@@ -17,6 +17,12 @@ bool RenderWidgetHostDelegate::PreHandleWheelEvent(
   return false;
 }
 
+bool RenderWidgetHostDelegate::ShowTooltip(
+    const string16& tooltip_text,
+    WebKit::WebTextDirection text_direction_hint) {
+  return false;
+}
+
 #if defined(OS_WIN) && defined(USE_AURA)
 gfx::NativeViewAccessible
 RenderWidgetHostDelegate::GetParentNativeViewAccessible() {

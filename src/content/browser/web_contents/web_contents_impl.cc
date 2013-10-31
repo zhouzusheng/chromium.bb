@@ -1285,12 +1285,12 @@ bool WebContentsImpl::PreHandleWheelEvent(
 }
 
 bool WebContentsImpl::ShowTooltip(
-        const string16& tooltip_text, 
-        WebKit::WebTextDirection text_direction_hint) {
-    if (delegate_) {
-        return delegate_->ShowTooltip(this, tooltip_text, text_direction_hint);
-    }
-    return false;
+    const string16& tooltip_text,
+    WebKit::WebTextDirection text_direction_hint) {
+  if (delegate_) {
+    return delegate_->ShowTooltip(this, tooltip_text, text_direction_hint);
+  }
+  return false;
 }
 
 #if defined(OS_WIN) && defined(USE_AURA)

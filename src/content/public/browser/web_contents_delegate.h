@@ -433,9 +433,9 @@ class CONTENT_EXPORT WebContentsDelegate {
   // the tooltip and return 'true'. By default, the delegate doesn't provide a
   // custom tooltip.
   virtual bool ShowTooltip(
-        WebContents* web_contents,
-        const string16& tooltip_text, 
-        WebKit::WebTextDirection text_direction_hint) { return false; }
+      WebContents* web_contents,
+      const string16& tooltip_text,
+      WebKit::WebTextDirection text_direction_hint);
 
  protected:
   virtual ~WebContentsDelegate();

@@ -163,8 +163,8 @@ class WebViewImpl : public WebView,
     // custom tooltip, it should just return 'false'. Otherwise, it should show
     // the tooltip and return 'true'. By default, the delegate doesn't provide a
     // custom tooltip.
-    virtual bool ShowTooltip(content::WebContents* source, 
-                             const string16& tooltip_text, 
+    virtual bool ShowTooltip(content::WebContents* source,
+                             const string16& tooltip_text,
                              WebKit::WebTextDirection text_direction_hint) OVERRIDE;
 
     /////// WebContentsObserver overrides

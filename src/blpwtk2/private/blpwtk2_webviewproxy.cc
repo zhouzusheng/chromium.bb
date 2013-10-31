@@ -671,7 +671,7 @@ void WebViewProxy::proxyShowTooltip(const String& tooltipText, TextDirection::Va
 {
     if (d_delegate && !d_wasDestroyed) {
         d_delegate->showTooltip(this, tooltipText, direction);
-    } 
+    }
 }
 
 void WebViewProxy::proxyMoveAck(int left, int top, int width, int height, bool repaint)

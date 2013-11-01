@@ -91,6 +91,8 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void deleteSelection() OVERRIDE;
     virtual void enableFocusBefore(bool enabled) OVERRIDE;
     virtual void enableFocusAfter(bool enabled) OVERRIDE;
+    virtual void enableNCHitTest(bool enabled) OVERRIDE;
+    virtual void onNCHitTestResult(int x, int y, int result) OVERRIDE;
     virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
     virtual void enableCustomTooltip(bool enabled) OVERRIDE;
     virtual void setZoomPercent(int value) OVERRIDE;
@@ -116,6 +118,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void handleMediaRequest(WebView* source, MediaRequest* request) OVERRIDE;
     virtual void handleExternalProtocol(WebView* source, const StringRef& url) OVERRIDE;
     virtual void moveView(WebView* source, int x, int y, int width, int height) OVERRIDE;
+    virtual void requestNCHitTest(WebView* source) OVERRIDE;
     virtual void showTooltip(WebView* source, const String& tooltipText, TextDirection::Value direction) OVERRIDE;
     virtual void findState(WebView* source,
                            int numberOfMatches,
@@ -159,6 +162,8 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void implDeleteSelection();
     void implEnableFocusBefore(bool enabled);
     void implEnableFocusAfter(bool enabled);
+    void implEnableNCHitTest(bool enabled);
+    void implOnNCHitTestResult(int x, int y, int result);
     void implPerformCustomContextMenuAction(int actionId);
     void implEnableCustomTooltip(bool enabled);
     void implSetZoomPercent(int value);
@@ -179,6 +184,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void proxyHandleMediaRequest(MediaRequest* request);
     void proxyHandleExternalProtocol(const std::string& url);
     void proxyMoveView(int x, int y, int width, int height);
+    void proxyRequestNCHitTest();
     void proxyShowTooltip(const String& tooltipText, TextDirection::Value direction); 
     void proxyFindState(int reqId,
                         int numberOfMatches,

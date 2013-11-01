@@ -428,6 +428,30 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Handle external protocol such as 'mailto:'
   virtual void HandleExternalProtocol(const GURL& url) {}
 
+  // Return true if an NC hit test result was set.  Returning false means the
+  // default NC hit test behavior should be performed.  The hit test should be
+  // performed using the most recent mouse coordinates.
+  virtual bool OnNCHitTest(int* result);
+
+  // Return true if a non-client drag operation should be initiated, in which
+  // case, the mouse will be captured and OnNCDragMove will be called
+  // continuously until OnNCDragEnd gets called.  Returning false means the
+  // default Windows dragging will be performed.  The specified 'point' is in
+  // screen coordinates.
+  virtual bool OnNCDragBegin(int hitTestCode, const gfx::Point& point);
+
+  // Invoked while the move moves during an NC drag event.  This only gets
+  // called if the previous call to OnNCDragBegin returned true.
+  virtual void OnNCDragMove() {}
+
+  // Invoked when an NC drag event ends.  This only gets called if the previous
+  // call to OnNCDragBegin returned true.
+  virtual void OnNCDragEnd() {}
+
+  // Return true if the cursor was set.  Returning false means the default
+  // cursor will be set.
+  virtual bool OnSetCursor(int hitTestCode);
+
   // Allows delegate to show a custom tooltip. If the delegate doesn't want a
   // custom tooltip, it should just return 'false'. Otherwise, it should show
   // the tooltip and return 'true'. By default, the delegate doesn't provide a

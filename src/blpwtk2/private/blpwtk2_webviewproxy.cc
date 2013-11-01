@@ -300,6 +300,22 @@ void WebViewProxy::enableFocusAfter(bool enabled)
         base::Bind(&WebViewProxy::implEnableFocusAfter, this, enabled));
 }
 
+void WebViewProxy::enableNCHitTest(bool enabled)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_implDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::implEnableNCHitTest, this, enabled));
+}
+
+void WebViewProxy::onNCHitTestResult(int x, int y, int result)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_implDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::implOnNCHitTestResult, this, x, y, result));
+}
+
 void WebViewProxy::performCustomContextMenuAction(int actionId)
 {
     DCHECK(Statics::isInApplicationMainThread());
@@ -435,6 +451,13 @@ void WebViewProxy::moveView(WebView* source, int x, int y, int width, int height
     DCHECK(source == d_impl);
     d_proxyDispatcher->PostTask(FROM_HERE,
         base::Bind(&WebViewProxy::proxyMoveView, this, x, y, width, height));
+}
+
+void WebViewProxy::requestNCHitTest(WebView* source)
+{
+    DCHECK(source == d_impl);
+    d_proxyDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::proxyRequestNCHitTest, this));
 }
 
 void WebViewProxy::showTooltip(WebView* source, const String& tooltipText, TextDirection::Value direction)
@@ -615,6 +638,18 @@ void WebViewProxy::implEnableFocusAfter(bool enabled)
     d_impl->enableFocusAfter(enabled);
 }
 
+void WebViewProxy::implEnableNCHitTest(bool enabled)
+{
+    DCHECK(d_impl);
+    d_impl->enableNCHitTest(enabled);
+}
+
+void WebViewProxy::implOnNCHitTestResult(int x, int y, int result)
+{
+    DCHECK(d_impl);
+    d_impl->onNCHitTestResult(x, y, result);
+}
+
 void WebViewProxy::implPerformCustomContextMenuAction(int actionId)
 {
     DCHECK(d_impl);
@@ -731,6 +766,17 @@ void WebViewProxy::proxyMoveView(int x, int y, int width, int height)
 {
     if (d_delegate && !d_wasDestroyed) {
         d_delegate->moveView(this, x, y, width, height);
+    }
+}
+
+void WebViewProxy::proxyRequestNCHitTest()
+{
+    if (d_wasDestroyed) return;
+    if (!d_delegate) {
+        onNCHitTestResult(0, 0, HTERROR);
+    }
+    else {
+        d_delegate->requestNCHitTest(this);
     }
 }
 

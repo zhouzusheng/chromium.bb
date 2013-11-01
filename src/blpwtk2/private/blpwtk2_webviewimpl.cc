@@ -25,6 +25,7 @@
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
 #include <blpwtk2_mediarequestimpl.h>
+#include <blpwtk2_ncdragutil.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_profileimpl.h>
 #include <blpwtk2_webframeimpl.h>
@@ -64,6 +65,9 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 , d_isDeletingSoon(false)
 , d_isPopup(false)
 , d_customTooltipEnabled(false)
+, d_ncHitTestEnabled(false)
+, d_ncHitTestPendingAck(false)
+, d_lastNCHitTestResult(HTCLIENT)
 , d_findReqId(0)
 , d_findNumberOfMatches(0)
 , d_findActiveMatchOrdinal(0)
@@ -101,6 +105,9 @@ WebViewImpl::WebViewImpl(content::WebContents* contents)
 , d_isDeletingSoon(false)
 , d_isPopup(false)
 , d_customTooltipEnabled(false)
+, d_ncHitTestEnabled(false)
+, d_ncHitTestPendingAck(false)
+, d_lastNCHitTestResult(HTCLIENT)
 , d_findReqId(0)
 , d_findNumberOfMatches(0)
 , d_findActiveMatchOrdinal(0)
@@ -399,6 +406,34 @@ void WebViewImpl::enableFocusAfter(bool enabled)
     d_focusAfterEnabled = enabled;
 }
 
+void WebViewImpl::enableNCHitTest(bool enabled)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_ncHitTestEnabled = enabled;
+    d_lastNCHitTestResult = HTCLIENT;
+}
+
+void WebViewImpl::onNCHitTestResult(int x, int y, int result)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    DCHECK(d_ncHitTestPendingAck);
+    d_lastNCHitTestResult = result;
+    d_ncHitTestPendingAck = false;
+
+    // Re-request it if the mouse position has changed, so that we
+    // always have the latest info.
+    if (d_delegate && d_ncHitTestEnabled) {
+        POINT ptNow;
+        ::GetCursorPos(&ptNow);
+        if (ptNow.x != x || ptNow.y != y) {
+            d_ncHitTestPendingAck = true;
+            d_delegate->requestNCHitTest(this);
+        }
+    }
+}
+
 void WebViewImpl::performCustomContextMenuAction(int actionId)
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -595,6 +630,83 @@ void WebViewImpl::MoveContents(content::WebContents* source_contents, const gfx:
 bool WebViewImpl::IsPopupOrPanel(const content::WebContents* source) const
 {
     return d_isPopup;
+}
+
+bool WebViewImpl::OnNCHitTest(int* result)
+{
+    if (d_ncHitTestEnabled && d_delegate) {
+        if (!d_ncHitTestPendingAck) {
+            d_ncHitTestPendingAck = true;
+            d_delegate->requestNCHitTest(this);
+        }
+        *result = d_lastNCHitTestResult;
+        return true;
+    }
+    return false;
+}
+
+bool WebViewImpl::OnNCDragBegin(int hitTestCode, const gfx::Point& point)
+{
+    if (!d_ncHitTestEnabled) {
+        return false;
+    }
+
+    switch (hitTestCode) {
+    case HTCAPTION:
+    case HTLEFT:
+    case HTTOP:
+    case HTRIGHT:
+    case HTBOTTOM:
+    case HTTOPLEFT:
+    case HTTOPRIGHT:
+    case HTBOTTOMRIGHT:
+    case HTBOTTOMLEFT:
+        NCDragUtil::onDragBegin(getNativeView(), hitTestCode, point.ToPOINT());
+        return true;
+    default:
+        return false;
+    }
+}
+
+void WebViewImpl::OnNCDragMove()
+{
+    NCDragUtil::onDragMove();
+}
+
+void WebViewImpl::OnNCDragEnd()
+{
+    NCDragUtil::onDragEnd();
+}
+
+bool WebViewImpl::OnSetCursor(int hitTestCode)
+{
+    static HCURSOR s_arrow = ::LoadCursor(NULL, IDC_ARROW);
+    static HCURSOR s_sizeNS = ::LoadCursor(NULL, IDC_SIZENS);
+    static HCURSOR s_sizeWE = ::LoadCursor(NULL, IDC_SIZEWE);
+    static HCURSOR s_sizeNWSE = ::LoadCursor(NULL, IDC_SIZENWSE);
+    static HCURSOR s_sizeNESW = ::LoadCursor(NULL, IDC_SIZENESW);
+    switch (hitTestCode) {
+    case HTCAPTION:
+        SetCursor(s_arrow);
+        return true;
+    case HTBOTTOM:
+    case HTTOP:
+        SetCursor(s_sizeNS);
+        return true;
+    case HTLEFT:
+    case HTRIGHT:
+        SetCursor(s_sizeWE);
+        return true;
+    case HTTOPLEFT:
+    case HTBOTTOMRIGHT:
+        SetCursor(s_sizeNWSE);
+        return true;
+    case HTTOPRIGHT:
+    case HTBOTTOMLEFT:
+        SetCursor(s_sizeNESW);
+        return true;
+    }
+    return false;
 }
 
 bool WebViewImpl::ShowTooltip(content::WebContents* source_contents, 

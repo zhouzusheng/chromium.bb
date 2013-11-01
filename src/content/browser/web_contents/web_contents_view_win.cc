@@ -111,6 +111,7 @@ WebContentsViewWin::WebContentsViewWin(WebContentsImpl* web_contents,
                                        WebContentsViewDelegate* delegate)
     : web_contents_(web_contents),
       delegate_(delegate),
+      is_delegate_nc_dragging_(false),
       hwnd_message_filter_(new PositionChangedMessageFilter) {
 }
 
@@ -395,6 +396,16 @@ LRESULT WebContentsViewWin::OnMouseDown(
 
 LRESULT WebContentsViewWin::OnMouseMove(
     UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
+  if (is_delegate_nc_dragging_) {
+    // When the delegate handles NC dragging, we ::SetCapture on our hwnd.
+    // This causes subsequent mouse moves to come in as WM_MOUSEMOVE instead of
+    // coming in as WM_NCMOUSEMOVE.
+    if (web_contents_->GetDelegate()) {
+      web_contents_->GetDelegate()->OnNCDragMove();
+    }
+    handled = TRUE;
+    return 0;
+  }
   // Let our delegate know that the mouse moved (useful for resetting status
   // bubble state).
   if (web_contents_->GetDelegate()) {
@@ -416,7 +427,75 @@ LRESULT WebContentsViewWin::OnNCCalcSize(
 
 LRESULT WebContentsViewWin::OnNCHitTest(
     UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
+  if (is_delegate_nc_dragging_) {
+    handled = TRUE;
+    return nc_dragging_hittest_code_;
+  }
+  if (web_contents_->GetDelegate()) {
+    int result;
+    if (web_contents_->GetDelegate()->OnNCHitTest(&result)) {
+      handled = TRUE;
+      return result;
+    }
+  }
   return HTTRANSPARENT;
+}
+
+LRESULT WebContentsViewWin::OnNCLButtonDown(
+    UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
+  DCHECK(!is_delegate_nc_dragging_);
+  if (web_contents_->GetDelegate()) {
+    is_delegate_nc_dragging_ = web_contents_->GetDelegate()->OnNCDragBegin(
+        wparam,
+        gfx::Screen::GetNativeScreen()->GetCursorScreenPoint());
+    if (is_delegate_nc_dragging_) {
+      nc_dragging_hittest_code_ = wparam;
+      SetCapture(GetNativeView());
+      handled = TRUE;
+      return 0;
+    }
+  }
+  handled = FALSE;
+  return 1;
+}
+
+LRESULT WebContentsViewWin::OnLButtonUp(
+    UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
+  if (is_delegate_nc_dragging_) {
+    is_delegate_nc_dragging_ = false;
+    ::ReleaseCapture();
+    if (web_contents_->GetDelegate()) {
+      web_contents_->GetDelegate()->OnNCDragEnd();
+    }
+    handled = TRUE;
+    return 0;
+  }
+  handled = FALSE;
+  return 1;
+}
+
+LRESULT WebContentsViewWin::OnCaptureChanged(
+    UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
+  if (is_delegate_nc_dragging_) {
+    is_delegate_nc_dragging_ = false;
+    if (web_contents_->GetDelegate()) {
+      web_contents_->GetDelegate()->OnNCDragEnd();
+    }
+    handled = TRUE;
+    return 0;
+  }
+  handled = FALSE;
+  return 1;
+}
+
+LRESULT WebContentsViewWin::OnSetCursor(
+    UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
+  if (web_contents_->GetDelegate()) {
+    if (web_contents_->GetDelegate()->OnSetCursor(LOWORD(lparam))) {
+      return 1;
+    }
+  }
+  return 0;
 }
 
 LRESULT WebContentsViewWin::OnScroll(

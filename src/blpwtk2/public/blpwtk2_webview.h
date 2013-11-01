@@ -129,6 +129,16 @@ public:
     virtual void enableFocusBefore(bool enabled) = 0;
     virtual void enableFocusAfter(bool enabled) = 0;
 
+    // If set to 'true', the WebViewDelegate will be requested to provide
+    // non-client hit testing.  Otherwise, WebViews assume they do not include
+    // non-client regions.
+    virtual void enableNCHitTest(bool enabled) = 0;
+
+    // When the WebViewDelegate's requestNCHitTest method is called, this
+    // method should be invoked to provide the hit test result.  This should
+    // only be called in response to 'requestNCHitTest' on the delegate.
+    virtual void onNCHitTestResult(int x, int y, int result) = 0;
+
     // Perform a custom context menu action. This should be called when a custom 
     // item in the conext menu has been selected.
     virtual void performCustomContextMenuAction(int actionId) = 0;

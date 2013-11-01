@@ -129,6 +129,14 @@ class BLPWTK2_EXPORT WebViewDelegate {
     // Invoked when a request has been made to move the webview.
     virtual void moveView(WebView* source, int x, int y, int width, int height) {}
 
+    // Invoked when the WebView requests a non-client hit test.  This is called
+    // only if non-client hit testing has been enabled via 'enableNCHitTest' on
+    // the WebView.  The delegate is expected to invoke 'onNCHitTestResult' on
+    // the WebView with the result of the hit test.  Note that there will only
+    // be one outstanding hit test per WebView.  The hit test should be
+    // performed using the current mouse coordinates.
+    virtual void requestNCHitTest(WebView* source) {}
+
     // Show custom tooltip. 
     virtual void showTooltip(WebView* source, 
                              const String& tooltipText, 

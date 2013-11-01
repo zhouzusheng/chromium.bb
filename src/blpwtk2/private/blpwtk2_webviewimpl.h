@@ -101,6 +101,8 @@ class WebViewImpl : public WebView,
     virtual void deleteSelection() OVERRIDE;
     virtual void enableFocusBefore(bool enabled) OVERRIDE;
     virtual void enableFocusAfter(bool enabled) OVERRIDE;
+    virtual void enableNCHitTest(bool enabled) OVERRIDE;
+    virtual void onNCHitTestResult(int x, int y, int result) OVERRIDE;
     virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
     virtual void enableCustomTooltip(bool enabled) OVERRIDE;
     virtual void setZoomPercent(int value) OVERRIDE;
@@ -163,6 +165,30 @@ class WebViewImpl : public WebView,
     // or a panel window.
     virtual bool IsPopupOrPanel(const content::WebContents* source) const OVERRIDE;
 
+    // Return true if an NC hit test result was set.  Returning false means the
+    // default NC hit test behavior should be performed.  The hit test should be
+    // performed using the most recent mouse coordinates.
+    virtual bool OnNCHitTest(int* result) OVERRIDE;
+
+    // Return true if a non-client drag operation should be initiated, in which
+    // case, the mouse will be captured and OnNCDragMove will be called
+    // continuously until OnNCDragEnd gets called.  Returning false means the
+    // default Windows dragging will be performed.  The specified 'point' is in
+    // screen coordinates.
+    virtual bool OnNCDragBegin(int hitTestCode, const gfx::Point& point) OVERRIDE;
+
+    // Invoked while the move moves during an NC drag event.  This only gets
+    // called if the previous call to OnNCDragBegin returned true.
+    virtual void OnNCDragMove() OVERRIDE;
+
+    // Invoked when an NC drag event ends.  This only gets called if the previous
+    // call to OnNCDragBegin returned true.
+    virtual void OnNCDragEnd() OVERRIDE;
+
+    // Return true if the cursor was set.  Returning false means the default
+    // cursor will be set.
+    virtual bool OnSetCursor(int hitTestCode) OVERRIDE;
+
     // Allows delegate to show a custom tooltip. If the delegate doesn't want a
     // custom tooltip, it should just return 'false'. Otherwise, it should show
     // the tooltip and return 'true'. By default, the delegate doesn't provide a
@@ -217,6 +243,9 @@ class WebViewImpl : public WebView,
     bool d_isDeletingSoon;    // when DeleteSoon has been called
     bool d_isPopup;           // if this view is a popup view
     bool d_customTooltipEnabled;
+    bool d_ncHitTestEnabled;
+    bool d_ncHitTestPendingAck;
+    int d_lastNCHitTestResult;
     content::CustomContextMenuContext d_customContext; //for calling performCustomContextMenuAction()
     String d_findText;
     int d_findReqId;

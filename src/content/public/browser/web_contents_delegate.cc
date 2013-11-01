@@ -149,6 +149,20 @@ bool WebContentsDelegate::RequestPpapiBrokerPermission(
   return false;
 }
 
+bool WebContentsDelegate::OnNCHitTest(int* result) {
+  return false;
+}
+
+bool WebContentsDelegate::OnNCDragBegin(
+    int hitTestCode,
+    const gfx::Point& point) {
+  return false;
+}
+
+bool WebContentsDelegate::OnSetCursor(int hitTestCode) {
+  return false;
+}
+
 bool WebContentsDelegate::ShowTooltip(
     WebContents* web_contents,
     const string16& tooltip_text,

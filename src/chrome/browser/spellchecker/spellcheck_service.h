@@ -8,6 +8,7 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/spellchecker/spellcheck_custom_dictionary.h"
@@ -91,9 +92,6 @@ class SpellcheckService : public BrowserContextKeyedService,
   // Returns the instance of the custom dictionary.
   SpellcheckCustomDictionary* GetCustomDictionary();
 
-  // Returns the instance of the Hunspell dictionary.
-  SpellcheckHunspellDictionary* GetHunspellDictionary();
-
   // Returns the instance of the spelling service feedback sender.
   SpellingServiceFeedback* GetFeedbackSender();
 
@@ -157,7 +155,7 @@ class SpellcheckService : public BrowserContextKeyedService,
 
   scoped_ptr<SpellcheckCustomDictionary> custom_dictionary_;
 
-  scoped_ptr<SpellcheckHunspellDictionary> hunspell_dictionary_;
+  ScopedVector<SpellcheckHunspellDictionary> hunspell_dictionaries_;
 
   SpellingServiceFeedback feedback_sender_;
 

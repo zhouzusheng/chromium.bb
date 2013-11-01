@@ -51,7 +51,6 @@
         '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
       ],
       'include_dirs': [ '..' ],
-      'defines': [ 'IS_CHROME_BLPWTK2' ],
       'sources': [
         'browser/spellchecker/spellcheck_custom_dictionary.cc',
         'browser/spellchecker/spellcheck_custom_dictionary.h',

@@ -25,6 +25,7 @@
 
 using content::BrowserThread;
 using chrome::spellcheck_common::WordList;
+using chrome::spellcheck_common::FileLanguagePair;
 
 // TODO(rlp): I do not like globals, but keeping these for now during
 // transition.
@@ -154,29 +155,38 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
     return;
 
   PrefService* prefs = components::UserPrefs::Get(context);
-  IPC::PlatformFileForTransit file = IPC::InvalidPlatformFileForTransit();
+  std::vector<FileLanguagePair> languages;
 
-  if (hunspell_dictionary_->GetDictionaryFile() !=
-      base::kInvalidPlatformFileValue) {
+  typedef ScopedVector<SpellcheckHunspellDictionary>::iterator DictIterator;
+
+  for (DictIterator it = hunspell_dictionaries_.begin();
+      it != hunspell_dictionaries_.end();
+      ++it) {
+    SpellcheckHunspellDictionary *d = *it;
+    IPC::PlatformFileForTransit file = IPC::InvalidPlatformFileForTransit();
+
+    if (d->GetDictionaryFile() != base::kInvalidPlatformFileValue) {
 #if defined(OS_POSIX)
-    file = base::FileDescriptor(hunspell_dictionary_->GetDictionaryFile(),
-                                false);
+      file = base::FileDescriptor(d->GetDictionaryFile(),
+                                  false);
 #elif defined(OS_WIN)
-    BOOL ok = ::DuplicateHandle(::GetCurrentProcess(),
-                                hunspell_dictionary_->GetDictionaryFile(),
-                                process->GetHandle(),
-                                &file,
-                                0,
-                                false,
-                                DUPLICATE_SAME_ACCESS);
-    DCHECK(ok) << ::GetLastError();
+      BOOL ok = ::DuplicateHandle(::GetCurrentProcess(),
+                                  d->GetDictionaryFile(),
+                                  process->GetHandle(),
+                                  &file,
+                                  0,
+                                  false,
+                                  DUPLICATE_SAME_ACCESS);
+      DCHECK(ok) << ::GetLastError();
 #endif
+    }
+
+    languages.push_back(FileLanguagePair(file, d->GetLanguage()));
   }
 
   process->Send(new SpellCheckMsg_Init(
-      file,
+      languages,
       custom_dictionary_->GetWords(),
-      hunspell_dictionary_->GetLanguage(),
       prefs->GetBoolean(prefs::kEnableAutoSpellCorrect)));
   process->Send(new SpellCheckMsg_EnableSpellCheck(
       prefs->GetBoolean(prefs::kEnableContinuousSpellcheck)));
@@ -188,10 +198,6 @@ SpellCheckHostMetrics* SpellcheckService::GetMetrics() const {
 
 SpellcheckCustomDictionary* SpellcheckService::GetCustomDictionary() {
   return custom_dictionary_.get();
-}
-
-SpellcheckHunspellDictionary* SpellcheckService::GetHunspellDictionary() {
-  return hunspell_dictionary_.get();
 }
 
 SpellingServiceFeedback* SpellcheckService::GetFeedbackSender() {
@@ -282,17 +288,32 @@ void SpellcheckService::OnEnableAutoSpellCorrectChanged() {
 }
 
 void SpellcheckService::OnSpellCheckDictionaryChanged() {
-  if (hunspell_dictionary_.get())
-    hunspell_dictionary_->RemoveObserver(this);
+  // Delete all the SpellcheckHunspellDictionary and unobserve them
+  typedef ScopedVector<SpellcheckHunspellDictionary>::iterator Iterator;
+  for (Iterator it = hunspell_dictionaries_.begin();
+      it != hunspell_dictionaries_.end();
+      ++it) {
+    SpellcheckHunspellDictionary *hunspell_dictionary = *it;
+    hunspell_dictionary->RemoveObserver(this);
+  }
+  hunspell_dictionaries_.clear();
+
+  // Create the new vector of dictionaries
   PrefService* prefs = components::UserPrefs::Get(context_);
   DCHECK(prefs);
+  std::vector<std::string> languages;
+  base::SplitString(prefs->GetString(prefs::kSpellCheckDictionary), ',', &languages);
 
-  std::string dictionary =
-      prefs->GetString(prefs::kSpellCheckDictionary);
-  hunspell_dictionary_.reset(new SpellcheckHunspellDictionary(
-      dictionary, context_->GetRequestContext(), this));
-  hunspell_dictionary_->AddObserver(this);
-  hunspell_dictionary_->Load();
+  for (size_t langIndex = 0; langIndex < languages.size(); ++langIndex) {
+    SpellcheckHunspellDictionary *hunspell_dictionary
+        = new SpellcheckHunspellDictionary(languages[langIndex],
+                                           context_->GetRequestContext(),
+                                           this);
+
+    hunspell_dictionary->AddObserver(this);
+    hunspell_dictionary->Load();
+    hunspell_dictionaries_.push_back(hunspell_dictionary);
+  }
 }
 
 void SpellcheckService::OnUseSpellingServiceChanged() {

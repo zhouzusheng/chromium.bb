@@ -10,13 +10,14 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/platform_file.h"
 #include "base/string16.h"
+#include "chrome/common/spellcheck_common.h"
 #include "chrome/renderer/spellchecker/custom_dictionary_engine.h"
 #include "chrome/renderer/spellchecker/spellcheck_language.h"
 #include "content/public/renderer/render_process_observer.h"
-#include "ipc/ipc_platform_file.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 
 struct SpellCheckResult;
@@ -44,9 +45,8 @@ class SpellCheck : public content::RenderProcessObserver,
   virtual ~SpellCheck();
 
   // TODO: Try to move that all to SpellcheckLanguage.
-  void Init(base::PlatformFile file,
-            const std::vector<std::string>& custom_words,
-            const std::string& language);
+  void Init(const std::vector<chrome::spellcheck_common::FileLanguagePair>& languages,
+            const std::vector<std::string>& custom_words);
 
   // If there is no dictionary file, then this requests one from the browser
   // and does not block. In this case it returns true.
@@ -118,9 +118,8 @@ class SpellCheck : public content::RenderProcessObserver,
   virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Message handlers.
-  void OnInit(IPC::PlatformFileForTransit bdict_file,
+  void OnInit(const std::vector<chrome::spellcheck_common::FileLanguagePair>& languages,
               const std::vector<std::string>& custom_words,
-              const std::string& language,
               bool auto_spell_correct);
   void OnCustomDictionaryChanged(
       const std::vector<std::string>& words_added,
@@ -145,7 +144,7 @@ class SpellCheck : public content::RenderProcessObserver,
   scoped_ptr<SpellcheckRequest> pending_request_param_;
 #endif
 
-  SpellcheckLanguage spellcheck_;  // Language-specific spellchecking code.
+  ScopedVector<SpellcheckLanguage> spellcheck_;  // Language-specific spellchecking code.
 
   // Custom dictionary spelling engine.
   CustomDictionaryEngine custom_dictionary_;

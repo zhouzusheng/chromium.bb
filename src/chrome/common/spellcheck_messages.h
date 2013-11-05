@@ -40,6 +40,8 @@ IPC_MESSAGE_CONTROL2(SpellCheckMsg_CustomDictionaryChanged,
                      std::vector<std::string> /* words_added */,
                      std::vector<std::string> /* words_removed */)
 
+IPC_MESSAGE_CONTROL0(SpellCheckMsg_ResetCustomDictionary)
+
 // Toggle the auto spell correct functionality.
 IPC_MESSAGE_CONTROL1(SpellCheckMsg_EnableAutoSpellCorrect,
                      bool /* enable */)

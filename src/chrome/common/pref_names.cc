@@ -1528,6 +1528,9 @@ const char kSpellCheckConfirmDialogShown[] = "spellcheck.confirm_dialog_shown";
 // String which represents whether we use the spelling service.
 const char kSpellCheckUseSpellingService[] = "spellcheck.use_spelling_service";
 
+// List which represents the user-specified words for our spell-checker.
+const char kSpellCheckCustomWords[] = "spellcheck.custom_words";
+
 // Dictionary of schemes used by the external protocol handler.
 // The value is true if the scheme must be ignored.
 const char kExcludedSchemes[] = "protocol_handler.excluded_schemes";

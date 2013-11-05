@@ -41,6 +41,10 @@ void CustomDictionaryEngine::OnCustomDictionaryChanged(
   }
 }
 
+void CustomDictionaryEngine::OnCustomDictionaryReset() {
+  dictionary_.clear();
+}
+
 bool CustomDictionaryEngine::SpellCheckWord(
     const char16* text,
     int misspelling_start,

@@ -119,6 +119,8 @@ bool SpellCheck::OnControlMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(SpellCheckMsg_Init, OnInit)
     IPC_MESSAGE_HANDLER(SpellCheckMsg_CustomDictionaryChanged,
                         OnCustomDictionaryChanged)
+    IPC_MESSAGE_HANDLER(SpellCheckMsg_ResetCustomDictionary,
+                        OnCustomDictionaryReset)
     IPC_MESSAGE_HANDLER(SpellCheckMsg_EnableAutoSpellCorrect,
                         OnEnableAutoSpellCorrect)
     IPC_MESSAGE_HANDLER(SpellCheckMsg_EnableSpellCheck, OnEnableSpellCheck)
@@ -144,6 +146,10 @@ void SpellCheck::OnCustomDictionaryChanged(
     const std::vector<std::string>& words_added,
     const std::vector<std::string>& words_removed) {
   custom_dictionary_.OnCustomDictionaryChanged(words_added, words_removed);
+}
+
+void SpellCheck::OnCustomDictionaryReset() {
+  custom_dictionary_.OnCustomDictionaryReset();
 }
 
 void SpellCheck::OnEnableAutoSpellCorrect(bool enable) {

@@ -142,6 +142,8 @@ class SpellcheckService : public BrowserContextKeyedService,
   // spellchecking.
   void OnSpellCheckDictionaryChanged();
 
+  void OnSpellCheckCustomWordsChanged();
+
   // Notification handler for changes to prefs::kSpellCheckUseSpellingService.
   void OnUseSpellingServiceChanged();
 

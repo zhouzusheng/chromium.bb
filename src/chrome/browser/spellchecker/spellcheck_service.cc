@@ -61,9 +61,19 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
 
   OnSpellCheckDictionaryChanged();
 
-  custom_dictionary_.reset(new SpellcheckCustomDictionary(context_->GetPath()));
-  custom_dictionary_->AddObserver(this);
-  custom_dictionary_->Load();
+  if (prefs->FindPreference(prefs::kSpellCheckCustomWords)) {
+    // Don't use SpellcheckCustomDictionary to read & write a words list to disk,
+    // just allow apps to set kSpellCheckCustomWords.
+    pref_change_registrar_.Add(
+        prefs::kSpellCheckCustomWords,
+        base::Bind(&SpellcheckService::OnSpellCheckCustomWordsChanged,
+                   base::Unretained(this)));
+  }
+  else {
+    custom_dictionary_.reset(new SpellcheckCustomDictionary(context_->GetPath()));
+    custom_dictionary_->AddObserver(this);
+    custom_dictionary_->Load();
+  }
 
   registrar_.Add(weak_ptr_factory_.GetWeakPtr(),
                  content::NOTIFICATION_RENDERER_PROCESS_CREATED,
@@ -184,9 +194,23 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
     languages.push_back(FileLanguagePair(file, d->GetLanguage()));
   }
 
+  std::vector<std::string> custom_words;
+  if (prefs->FindPreference(prefs::kSpellCheckCustomWords)) {
+    const base::ListValue *words = prefs->GetList(prefs::kSpellCheckCustomWords);
+    for (size_t wordIndex = 0; wordIndex < words->GetSize(); wordIndex++) {
+      std::string word;
+      words->GetString(wordIndex, &word);
+      custom_words.push_back(word);
+    }
+  }
+  else {
+    DCHECK(custom_dictionary_);
+    custom_words = custom_dictionary_->GetWords();
+  }
+
   process->Send(new SpellCheckMsg_Init(
       languages,
-      custom_dictionary_->GetWords(),
+      custom_words,
       prefs->GetBoolean(prefs::kEnableAutoSpellCorrect)));
   process->Send(new SpellCheckMsg_EnableSpellCheck(
       prefs->GetBoolean(prefs::kEnableContinuousSpellcheck)));
@@ -321,4 +345,30 @@ void SpellcheckService::OnUseSpellingServiceChanged() {
       prefs::kSpellCheckUseSpellingService);
   if (metrics_)
     metrics_->RecordSpellingServiceStats(enabled);
+}
+
+void SpellcheckService::OnSpellCheckCustomWordsChanged() {
+  PrefService* prefs = components::UserPrefs::Get(context_);
+  DCHECK(prefs);
+
+  const base::ListValue *words = prefs->GetList(prefs::kSpellCheckCustomWords);
+  chrome::spellcheck_common::WordList to_add;
+
+  for (size_t wordIndex = 0; wordIndex < words->GetSize(); wordIndex++) {
+    std::string word;
+    words->GetString(wordIndex, &word);
+    to_add.push_back(word);
+  }
+
+  for (content::RenderProcessHost::iterator i(
+          content::RenderProcessHost::AllHostsIterator());
+       !i.IsAtEnd(); i.Advance()) {
+    content::RenderProcessHost* process = i.GetCurrentValue();
+    if (!process || context_ != process->GetBrowserContext())
+      continue;
+    process->Send(new SpellCheckMsg_ResetCustomDictionary());
+    process->Send(new SpellCheckMsg_CustomDictionaryChanged(
+        to_add,
+        chrome::spellcheck_common::WordList()));
+  }
 }

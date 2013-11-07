@@ -173,17 +173,14 @@ void SpellCheckProvider::requestCheckingOfText(
     const WebVector<uint32>& markers,
     const WebVector<unsigned>& marker_offsets,
     WebTextCheckingCompletion* completion) {
-  RequestTextChecking(text, completion);
+  spellcheck_->RequestTextChecking(text, completion);
   UMA_HISTOGRAM_COUNTS("SpellCheck.api.async", text.length());
 }
 
 WebString SpellCheckProvider::autoCorrectWord(const WebString& word) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableSpellingAutoCorrect)) {
-    UMA_HISTOGRAM_COUNTS("SpellCheck.api.autocorrect", word.length());
-    return spellcheck_->GetAutoCorrectionWord(word, routing_id());
-  }
-  return string16();
+  UMA_HISTOGRAM_COUNTS("SpellCheck.api.autocorrect", word.length());
+  return spellcheck_->GetAutoCorrectionWord(word, routing_id());
 }
 
 void SpellCheckProvider::showSpellingUI(bool show) {

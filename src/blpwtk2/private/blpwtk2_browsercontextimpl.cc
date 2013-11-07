@@ -192,5 +192,10 @@ quota::SpecialStoragePolicy* BrowserContextImpl::GetSpecialStoragePolicy()
     return 0;
 }
 
+bool BrowserContextImpl::AllowDictionaryDownloads()
+{
+    return false;
+}
+
 }  // close namespace blpwtk2
 

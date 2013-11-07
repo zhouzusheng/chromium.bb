@@ -193,4 +193,8 @@ quota::SpecialStoragePolicy* ShellBrowserContext::GetSpecialStoragePolicy() {
   return NULL;
 }
 
+bool ShellBrowserContext::AllowDictionaryDownloads() {
+  return true;
+}
+
 }  // namespace content

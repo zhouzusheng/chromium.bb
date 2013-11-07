@@ -83,6 +83,7 @@ class BrowserContextImpl : public content::BrowserContext {
     virtual content::SpeechRecognitionPreferences*
     GetSpeechRecognitionPreferences() OVERRIDE;
     virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
+    virtual bool AllowDictionaryDownloads() OVERRIDE;
 
   private:
     scoped_ptr<ResourceContextImpl> d_resourceContext;

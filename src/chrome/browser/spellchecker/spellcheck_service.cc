@@ -331,7 +331,7 @@ void SpellcheckService::OnSpellCheckDictionaryChanged() {
   for (size_t langIndex = 0; langIndex < languages.size(); ++langIndex) {
     SpellcheckHunspellDictionary *hunspell_dictionary
         = new SpellcheckHunspellDictionary(languages[langIndex],
-                                           context_->GetRequestContext(),
+                                           context_->AllowDictionaryDownloads() ? context_->GetRequestContext() : 0,
                                            this);
 
     hunspell_dictionary->AddObserver(this);

@@ -69,6 +69,9 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
   // Returns the size of the view.
   virtual gfx::Size GetSize() const = 0;
 
+  // Resize the RenderView to the specified 'new_size'.
+  virtual void SetSize(const gfx::Size& new_size) = 0;
+
   // Gets WebKit related preferences associated with this view.
   virtual WebPreferences& GetWebkitPreferences() = 0;
 

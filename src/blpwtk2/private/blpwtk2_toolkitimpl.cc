@@ -137,6 +137,7 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     profile->disableDiskCacheChanges();
 
     int hostAffinity;
+    bool isInProcess = false;
     bool singleProcess = CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
     // Enforce in-process renderer if "--single-process" is specified on the
     // command line.  This is useful for debugging.
@@ -166,6 +167,7 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
 
         hostAffinity = Statics::rendererToHostId(Constants::IN_PROCESS_RENDERER);
         DCHECK(-1 != hostAffinity);
+        isInProcess = true;
     }
     else if (params.rendererAffinity() == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
         hostAffinity = content::SiteInstance::kNoProcessAffinity;
@@ -189,7 +191,8 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
                                 d_browserThread->messageLoop(),
                                 profile,
                                 hostAffinity,
-                                params.initiallyVisible());
+                                params.initiallyVisible(),
+                                isInProcess);
     }
     else if (Statics::isOriginalThreadMode()) {
         return new WebViewImpl(delegate,

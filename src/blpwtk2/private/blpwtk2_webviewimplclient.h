@@ -25,6 +25,10 @@
 
 #include <blpwtk2_config.h>
 
+namespace gfx {
+class Size;
+}
+
 namespace blpwtk2 {
 
 // This interface is used for WebViewImpl to communicate back to WebViewProxy.
@@ -35,7 +39,9 @@ class WebViewImplClient {
 public:
     virtual ~WebViewImplClient();
 
-    virtual void updateRendererInfo(bool isInProcess, int routingId) = 0;
+    virtual bool shouldDisableBrowserSideResize() = 0;
+    virtual void aboutToNativateRenderView(int routingId) = 0;
+    virtual void didUpdatedBackingStore(const gfx::Size& size) = 0;
     virtual void findStateWithReqId(int reqId,
                                     int numberOfMatches,
                                     int activeMatchOrdinal,

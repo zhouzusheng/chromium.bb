@@ -138,6 +138,14 @@ void WebViewImpl::setImplClient(WebViewImplClient* client)
     d_implClient = client;
 }
 
+bool WebViewImpl::rendererMatchesSize(const gfx::Size& newSize) const
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    DCHECK(d_webContents->GetRenderViewHost());
+    return newSize == d_webContents->GetRenderViewHost()->LastKnownRendererSize();
+}
+
 gfx::NativeView WebViewImpl::getNativeView() const
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -357,11 +365,11 @@ void WebViewImpl::setParent(NativeView parent)
     ::SetParent(getNativeView(), parent);
 }
 
-void WebViewImpl::move(int left, int top, int width, int height, bool repaint)
+void WebViewImpl::move(int left, int top, int width, int height)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    ::MoveWindow(getNativeView(), left, top, width, height, repaint);
+    ::MoveWindow(getNativeView(), left, top, width, height, FALSE);
 }
 
 void WebViewImpl::cutSelection()
@@ -709,6 +717,14 @@ bool WebViewImpl::OnSetCursor(int hitTestCode)
     return false;
 }
 
+void WebViewImpl::DidUpdateBackingStore()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    if (d_wasDestroyed || !d_implClient) return;
+    d_implClient->didUpdatedBackingStore(
+        d_webContents->GetRenderViewHost()->LastKnownRendererSize());
+}
+
 bool WebViewImpl::ShowTooltip(content::WebContents* source_contents, 
                               const string16& tooltip_text, 
                               WebKit::WebTextDirection text_direction_hint)
@@ -761,6 +777,23 @@ void WebViewImpl::FindReply(content::WebContents* source_contents,
 
 /////// WebContentsObserver overrides
 
+void WebViewImpl::RenderViewCreated(content::RenderViewHost* render_view_host)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    if (d_wasDestroyed || !d_implClient) return;
+    if (d_implClient->shouldDisableBrowserSideResize()) {
+        render_view_host->DisableBrowserSideResize();
+    }
+}
+
+void WebViewImpl::AboutToNavigateRenderView(content::RenderViewHost* render_view_host)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    if (d_wasDestroyed || !d_implClient) return;
+    int routingId = render_view_host->GetRoutingID();
+    d_implClient->aboutToNativateRenderView(routingId);
+}
+
 void WebViewImpl::DidFinishLoad(int64 frame_id,
                                 const GURL& validated_url,
                                 bool is_main_frame,
@@ -772,12 +805,6 @@ void WebViewImpl::DidFinishLoad(int64 frame_id,
     // TODO: figure out what to do for iframes
     if (is_main_frame) {
         d_delegate->didFinishLoad(this, validated_url.spec());
-
-        if (d_implClient) {
-            bool inProcess = d_webContents->GetRenderProcessHost()->IsInProcess();
-            int routingId = d_webContents->GetRoutingID();
-            d_implClient->updateRendererInfo(inProcess, routingId);
-        }
     }
 }
 
@@ -794,12 +821,6 @@ void WebViewImpl::DidFailLoad(int64 frame_id,
     // TODO: figure out what to do for iframes
     if (is_main_frame) {
         d_delegate->didFailLoad(this, validated_url.spec());
-
-        if (d_implClient) {
-            bool inProcess = d_webContents->GetRenderProcessHost()->IsInProcess();
-            int routingId = d_webContents->GetRoutingID();
-            d_implClient->updateRendererInfo(inProcess, routingId);
-        }
     }
 }
 

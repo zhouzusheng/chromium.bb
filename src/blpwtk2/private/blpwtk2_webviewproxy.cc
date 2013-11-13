@@ -23,6 +23,7 @@
 #include <blpwtk2_webviewproxy.h>
 
 #include <blpwtk2_contextmenuparams.h>
+#include <blpwtk2_mainmessagepump.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_statics.h>
 #include <blpwtk2_stringref.h>
@@ -31,6 +32,8 @@
 
 #include <base/bind.h>
 #include <base/message_loop.h>
+#include <content/public/renderer/render_view.h>
+#include <ui/gfx/size.h>
 
 namespace blpwtk2 {
 
@@ -39,17 +42,18 @@ WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
                            base::MessageLoop* implDispatcher,
                            Profile* profile,
                            int hostAffinity,
-                           bool initiallyVisible)
+                           bool initiallyVisible,
+                           bool isInProcess)
 : d_impl(0)
 , d_implDispatcher(implDispatcher)
 , d_proxyDispatcher(base::MessageLoop::current())
 , d_delegate(delegate)
 , d_routingId(0)
-, d_lastMoveRepaint(false)
-, d_isMoveAckPending(false)
+, d_implMoveAckPending(false)
+, d_moveAckPending(false)
 , d_wasDestroyed(false)
 , d_isMainFrameAccessible(false)
-, d_isInProcess(false)
+, d_isInProcess(isInProcess)
 , d_gotRendererInfo(false)
 , d_findReqId(0)
 , d_findNumberOfMatches(0)
@@ -68,17 +72,18 @@ WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
 
 WebViewProxy::WebViewProxy(WebViewImpl* impl,
                            base::MessageLoop* implDispatcher,
-                           base::MessageLoop* proxyDispatcher)
+                           base::MessageLoop* proxyDispatcher,
+                           bool isInProcess)
 : d_impl(impl)
 , d_implDispatcher(implDispatcher)
 , d_proxyDispatcher(proxyDispatcher)
 , d_delegate(0)
 , d_routingId(0)
-, d_lastMoveRepaint(false)
-, d_isMoveAckPending(false)
+, d_implMoveAckPending(false)
+, d_moveAckPending(false)
 , d_wasDestroyed(false)
 , d_isMainFrameAccessible(false)
-, d_isInProcess(false)
+, d_isInProcess(isInProcess)
 , d_gotRendererInfo(false)
 , d_findReqId(0)
 , d_findNumberOfMatches(0)
@@ -232,24 +237,63 @@ void WebViewProxy::setParent(NativeView parent)
         base::Bind(&WebViewProxy::implSetParent, this, parent));
 }
 
-void WebViewProxy::move(int left, int top, int width, int height, bool repaint)
+void WebViewProxy::move(int left, int top, int width, int height)
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_wasDestroyed);
-    d_lastMoveRect.left = left;
-    d_lastMoveRect.top = top;
-    d_lastMoveRect.right = left + width;
-    d_lastMoveRect.bottom = top + height;
-    d_lastMoveRepaint = d_lastMoveRepaint || repaint;
-    if (d_isMoveAckPending) {
-        // Wait for the impl thread to finish processing the previous move
-        // request.
+    DCHECK(0 <= width);
+    DCHECK(0 <= height);
+
+    gfx::Rect rc(left, top, width, height);
+
+    if (d_rect == rc) {
         return;
     }
-    d_isMoveAckPending = true;
+
+    DCHECK(!d_moveAckPending);
+    DCHECK(!d_implMoveAckPending);
+
+    d_rect = rc;
+
+    // The logic here is as follows:
+    // * If we haven't got any renderer info (e.g. if the renderer hasn't been
+    //   navigated to yet, or if it is out-of-process), then we will just do an
+    //   asynchronous move.
+    // * If we got the renderer info, that means it is in-process, and we can
+    //   resize the RenderView in our thread, and wait for an ack from the
+    //   browser thread before returning.  This ensures the move() method is
+    //   synchronous.  This prevents the noticeable lag when resizing a window,
+    //   and the contents update out-of-sync with the main window.
+    // * We get the ack in one of two ways:
+    //   * the browser thread sees that it already has a backing store with the
+    //     same size.
+    //   * the browser thread gets the backing store updated with the new size.
+
+    if (!d_gotRendererInfo) {
+        d_implDispatcher->PostTask(
+            FROM_HERE,
+            base::Bind(&WebViewProxy::implMove, this, left, top, width, height));
+        return;
+    }
+
+    DCHECK(d_isInProcess);
+
+    content::RenderView* rv = content::RenderView::FromRoutingID(d_routingId);
+    DCHECK(rv);
+
+    d_moveAckPending = true;
     d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implMove, this,
-                   left, top, width, height, repaint));
+                               base::Bind(&WebViewProxy::implSyncMove, this, d_rect));
+
+    if (!d_rect.IsEmpty()) {
+        rv->SetSize(d_rect.size());
+    }
+
+    // Wait for the move ack.
+    MainMessagePump::current()->pumpUntilConditionIsTrue(
+        base::Bind(&WebViewProxy::isMoveAckNotPending, base::Unretained(this)));
+
+    DCHECK(rv->GetSize() == d_rect.size() || d_rect.IsEmpty());
 }
 
 void WebViewProxy::cutSelection()
@@ -388,7 +432,8 @@ void WebViewProxy::didCreateNewView(WebView* source,
     DCHECK(source == d_impl);
     WebViewProxy* newProxy = new WebViewProxy(static_cast<WebViewImpl*>(newView),
                                               d_implDispatcher,
-                                              d_proxyDispatcher);
+                                              d_proxyDispatcher,
+                                              d_isInProcess);
     *newViewDelegate = newProxy;
     d_proxyDispatcher->PostTask(FROM_HERE,
         base::Bind(&WebViewProxy::proxyDidCreateNewView, this, newProxy, params));
@@ -475,11 +520,30 @@ void WebViewProxy::findState(WebView* source,
     NOTREACHED() << "findState should come in via findStateWithReqId";
 }
 
-void WebViewProxy::updateRendererInfo(bool isInProcess, int routingId)
+bool WebViewProxy::shouldDisableBrowserSideResize()
 {
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyUpdateRendererInfo, this, isInProcess,
-                   routingId));
+    return d_isInProcess;
+}
+
+void WebViewProxy::aboutToNativateRenderView(int routingId)
+{
+    if (d_isInProcess) {
+        d_proxyDispatcher->PostTask(FROM_HERE,
+            base::Bind(&WebViewProxy::proxyAboutToNavigateRenderView,
+                       this, routingId));
+    }
+}
+
+void WebViewProxy::didUpdatedBackingStore(const gfx::Size& size)
+{
+    if (d_implMoveAckPending && d_implRect.size() == size) {
+        DCHECK(d_isInProcess);
+        d_implMoveAckPending = false;
+        d_impl->move(d_implRect.x(), d_implRect.y(),
+                     d_implRect.width(), d_implRect.height());
+        d_proxyDispatcher->PostTask(FROM_HERE,
+            base::Bind(&WebViewProxy::proxyMoveAck, this));
+    }
 }
 
 void WebViewProxy::findStateWithReqId(int reqId,
@@ -590,16 +654,34 @@ void WebViewProxy::implSetParent(NativeView parent)
     d_impl->setParent(parent);
 }
 
-void WebViewProxy::implMove(int left, int top, int width, int height, bool repaint)
+void WebViewProxy::implSyncMove(const gfx::Rect& rc)
 {
     DCHECK(d_impl);
-    d_impl->move(left, top, width, height, repaint);
+    DCHECK(d_isInProcess);
+    DCHECK(!d_implMoveAckPending);
 
-    // Notify the proxy thread that the move has been processed, so that
-    // subsequent moves will be sent.
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyMoveAck, this, left, top, width, height,
-                   repaint));
+    // We don't get backing store updates for empty rectangles, so just move
+    // the WebView and send an ack back.  Also, if the browser-side renderer
+    // already matches the size before we get here, then we already have a
+    // backing store, so move the WebView and send an ack.  This can happen
+    // if the size didn't actually change, or if the browser thread pulled
+    // out the backing store update msg before we reach this point.
+    if (rc.IsEmpty() || d_impl->rendererMatchesSize(rc.size())) {
+        d_impl->move(rc.x(), rc.y(), rc.width(), rc.height());
+        d_proxyDispatcher->PostTask(FROM_HERE,
+            base::Bind(&WebViewProxy::proxyMoveAck, this));
+    }
+    else {
+        // We need to wait for didUpdatedBackingStore in order to ack the move.
+        d_implMoveAckPending = true;
+        d_implRect = rc;
+    }
+}
+
+void WebViewProxy::implMove(int left, int top, int width, int height)
+{
+    DCHECK(d_impl);
+    d_impl->move(left, top, width, height);
 }
 
 void WebViewProxy::implCutSelection()
@@ -803,36 +885,36 @@ void WebViewProxy::proxyFindState(int reqId,
     }
 }
 
-void WebViewProxy::proxyMoveAck(int left, int top, int width, int height, bool repaint)
+void WebViewProxy::proxyMoveAck()
 {
-    if (!d_wasDestroyed) {
-        d_isMoveAckPending = false;
-
-        // If the last requested move was different from what was just
-        // processed, then call move() again so that the impl thread gets the
-        // latest move request.
-        if (left != d_lastMoveRect.left ||
-            top != d_lastMoveRect.top ||
-            width != d_lastMoveRect.right - d_lastMoveRect.left ||
-            height != d_lastMoveRect.bottom - d_lastMoveRect.top ||
-            repaint != d_lastMoveRepaint)
-        {
-            move(d_lastMoveRect.left, d_lastMoveRect.top,
-                 d_lastMoveRect.right - d_lastMoveRect.left,
-                 d_lastMoveRect.bottom - d_lastMoveRect.top,
-                 d_lastMoveRepaint);
-        }
-        else {
-            d_lastMoveRepaint = false;
-        }
-    }
+    DCHECK(!d_wasDestroyed);
+    DCHECK(d_moveAckPending);
+    d_moveAckPending = false;
 }
 
-void WebViewProxy::proxyUpdateRendererInfo(bool isInProcess, int routingId)
+void WebViewProxy::proxyAboutToNavigateRenderView(int routingId)
 {
+    DCHECK(d_isInProcess);
+    if (d_wasDestroyed) return;
+
+    content::RenderView* rv = content::RenderView::FromRoutingID(routingId);
+    if (!rv) {
+        // The RenderView has not been created yet.  Keep reposting this task
+        // until the RenderView is available.
+        d_proxyDispatcher->PostTask(
+            FROM_HERE,
+            base::Bind(&WebViewProxy::proxyAboutToNavigateRenderView,
+                       this,
+                       routingId));
+        return;
+    }
+
     d_gotRendererInfo = true;
-    d_isInProcess = isInProcess;
     d_routingId = routingId;
+
+    if (!d_rect.IsEmpty()) {
+        rv->SetSize(d_rect.size());
+    }
 }
 
 }  // close namespace blpwtk2

@@ -60,6 +60,8 @@
 #include <base/win/wrapped_window_proc.h>
 #include <base/time.h>
 
+#include <content/public/renderer/render_thread.h>
+
 namespace blpwtk2 {
 
 static HHOOK s_msgHook;
@@ -170,6 +172,43 @@ static bool shouldStopDoingWork(bool stopForTimers)
 
     return queueStatus & mask;
 }
+
+// Guard to allow pumping nested MessageLoop tasks, and optionally setting the
+// os_modal_loop flag, and optionally suspending the WebKit shared timer.
+class ScopedNestedPumpGuard {
+  public:
+    ScopedNestedPumpGuard(bool osModalLoop, bool suspendWebKitSharedTimer)
+    : d_messageLoop(base::MessageLoop::current())
+    , d_allower(d_messageLoop)
+    , d_prevOsModalLoop(d_messageLoop->os_modal_loop())
+    , d_webkitSharedTimerSuspended(suspendWebKitSharedTimer)
+    {
+        d_messageLoop->set_os_modal_loop(osModalLoop);
+        if (suspendWebKitSharedTimer && Statics::isRendererMainThreadMode()) {
+            // Note that this is actually ref-counted.  Calling with true will
+            // suspend the shared timer, and it will be unsuspended when we
+            // call it an equal number of times using false.
+            content::RenderThread::Get()->ToggleWebKitSharedTimer(true);
+        }
+    }
+
+    ~ScopedNestedPumpGuard()
+    {
+        if (d_webkitSharedTimerSuspended && Statics::isRendererMainThreadMode()) {
+            // Note that this is actually ref-counted, see comment in ctor.
+            content::RenderThread::Get()->ToggleWebKitSharedTimer(false);
+        }
+        d_messageLoop->set_os_modal_loop(d_prevOsModalLoop);
+    }
+
+  private:
+    base::MessageLoop* d_messageLoop;
+    base::MessageLoop::ScopedNestableTaskAllower d_allower;
+    bool d_prevOsModalLoop;
+    bool d_webkitSharedTimerSuspended;
+
+    DISALLOW_COPY_AND_ASSIGN(ScopedNestedPumpGuard);
+};
 
 // static
 MainMessagePump* MainMessagePump::current()
@@ -284,6 +323,36 @@ void MainMessagePump::postHandleMessage(const MSG& msg)
         }
         ScheduleWork();
     }
+}
+
+bool MainMessagePump::pumpUntilConditionIsTrue(const Condition& condition)
+{
+    DCHECK(!condition.Run());
+
+    // Need to set os_modal_loop because we need to temporarily go into an
+    // automatic pump mode.
+    const bool osModalLoop = true;
+
+    // Suspend webkit shared timer to prevent asynchronous webkit events from
+    // firing during this modal loop.
+    const bool suspendWebKitSharedTimer = true;
+
+    ScopedNestedPumpGuard guard(osModalLoop, suspendWebKitSharedTimer);
+    MSG msg;
+    while (GetMessage(&msg, message_hwnd_, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+        if (condition.Run()) {
+            return true;
+        }
+    }
+
+    // In the unlikely event that GetMessage returns true while waiting for the
+    // condition, that means we got WM_QUIT.  We should repost WM_QUIT so that
+    // the main program can exit.
+    DCHECK(WM_QUIT == msg.message);
+    ::PostQuitMessage(msg.wParam);
+    return condition.Run();  // do one last check
 }
 
 void MainMessagePump::doWork()

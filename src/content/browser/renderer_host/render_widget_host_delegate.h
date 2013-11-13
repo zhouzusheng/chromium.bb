@@ -48,6 +48,9 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // Returns true if the |event| was handled.
   virtual bool PreHandleWheelEvent(const WebKit::WebMouseWheelEvent& event);
 
+  // Callback to notify the browser that the backing store has been updated.
+  virtual void DidUpdateBackingStore() {}
+
   // Allows delegate to show a custom tooltip. If the delegate doesn't want a
   // custom tooltip, it should just return 'false'. Otherwise, it should show
   // the tooltip and return 'true'. By default, the delegate doesn't provide a

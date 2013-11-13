@@ -97,10 +97,8 @@ public:
 
     // Move this WebView to the specified 'left' and the specified 'top'
     // position, and resize it to have the specified 'width' and the specified
-    // 'height'.  If the specified 'repaint' is 'true', the contents of the
-    // WebView will be painted immediately.
-    virtual void move(int left, int top, int width, int height,
-                      bool repaint) = 0;
+    // 'height'.
+    virtual void move(int left, int top, int width, int height) = 0;
 
     // Remove the current selection, placing its contents into the system
     // clipboard.  This method has no effect if there is no selected editable

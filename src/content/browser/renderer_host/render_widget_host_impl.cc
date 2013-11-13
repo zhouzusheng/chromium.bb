@@ -145,6 +145,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       resize_ack_pending_(false),
       overdraw_bottom_height_(0.f),
       should_auto_resize_(false),
+      is_browser_side_resize_disabled_(false),
       waiting_for_screen_rects_ack_(false),
       mouse_move_pending_(false),
       mouse_wheel_pending_(false),
@@ -484,7 +485,7 @@ void RenderWidgetHostImpl::WasShown() {
 
 void RenderWidgetHostImpl::WasResized() {
   if (resize_ack_pending_ || !process_->HasConnection() || !view_ ||
-      !renderer_initialized_ || should_auto_resize_) {
+      !renderer_initialized_ || should_auto_resize_ || is_browser_side_resize_disabled_) {
     return;
   }
 
@@ -519,6 +520,15 @@ void RenderWidgetHostImpl::WasResized() {
   } else {
     last_requested_size_ = new_size;
   }
+}
+
+void RenderWidgetHostImpl::DisableBrowserSideResize() {
+  DCHECK(!resize_ack_pending_);
+  is_browser_side_resize_disabled_ = true;
+}
+
+const gfx::Size& RenderWidgetHostImpl::LastKnownRendererSize() const {
+  return current_size_;
 }
 
 void RenderWidgetHostImpl::ResizeRectChanged(const gfx::Rect& new_rect) {
@@ -1761,6 +1771,9 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
   // view to be destroyed.
   if (view_)
     view_->MovePluginWindows(params.scroll_offset, params.plugin_window_moves);
+
+  if (delegate_)
+    delegate_->DidUpdateBackingStore();
 
   NotificationService::current()->Notify(
       NOTIFICATION_RENDER_WIDGET_HOST_DID_UPDATE_BACKING_STORE,

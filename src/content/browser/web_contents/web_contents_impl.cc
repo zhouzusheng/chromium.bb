@@ -1284,6 +1284,11 @@ bool WebContentsImpl::PreHandleWheelEvent(
   return false;
 }
 
+void WebContentsImpl::DidUpdateBackingStore() {
+  if (delegate_)
+    delegate_->DidUpdateBackingStore();
+}
+
 bool WebContentsImpl::ShowTooltip(
     const string16& tooltip_text,
     WebKit::WebTextDirection text_direction_hint) {

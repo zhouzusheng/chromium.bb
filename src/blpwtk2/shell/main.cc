@@ -266,7 +266,7 @@ public:
         GetClientRect(d_mainWnd, &rect);
         assert(0 == rect.left);
         assert(0 == rect.top);
-        d_webView->move(0, URLBAR_HEIGHT, rect.right, rect.bottom-URLBAR_HEIGHT, true);
+        d_webView->move(0, URLBAR_HEIGHT, rect.right, rect.bottom-URLBAR_HEIGHT);
 
         int x = NUM_BUTTONS * BUTTON_WIDTH;
         MoveWindow(d_urlEntryWnd, x, 0, rect.right-x, URLBAR_HEIGHT, TRUE);

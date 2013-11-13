@@ -4414,6 +4414,15 @@ gfx::Size RenderViewImpl::GetSize() const {
   return size();
 }
 
+void RenderViewImpl::SetSize(const gfx::Size& new_size) {
+  if (new_size == size()) {
+    return;
+  }
+  need_update_rect_for_auto_resize_ = true;
+  Resize(new_size, new_size, overdraw_bottom_height_,
+         resizer_rect_, is_fullscreen_, NO_RESIZE_ACK);
+}
+
 WebPreferences& RenderViewImpl::GetWebkitPreferences() {
   return webkit_preferences_;
 }

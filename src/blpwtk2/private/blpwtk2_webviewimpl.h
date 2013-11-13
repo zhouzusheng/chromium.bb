@@ -74,6 +74,7 @@ class WebViewImpl : public WebView,
     virtual ~WebViewImpl();
 
     void setImplClient(WebViewImplClient* client);
+    bool rendererMatchesSize(const gfx::Size& newSize) const;
     gfx::NativeView getNativeView() const;
     void showContextMenu(const ContextMenuParams& params);
     void saveCustomContextMenuContext(const content::CustomContextMenuContext& context);
@@ -94,7 +95,7 @@ class WebViewImpl : public WebView,
     virtual void show() OVERRIDE;
     virtual void hide() OVERRIDE;
     virtual void setParent(NativeView parent) OVERRIDE;
-    virtual void move(int left, int top, int width, int height, bool repaint) OVERRIDE;
+    virtual void move(int left, int top, int width, int height) OVERRIDE;
     virtual void cutSelection() OVERRIDE;
     virtual void copySelection() OVERRIDE;
     virtual void paste() OVERRIDE;
@@ -189,6 +190,9 @@ class WebViewImpl : public WebView,
     // cursor will be set.
     virtual bool OnSetCursor(int hitTestCode) OVERRIDE;
 
+    // Invoked when the RenderWidgetHost's backing store has been updated.
+    virtual void DidUpdateBackingStore() OVERRIDE;
+
     // Allows delegate to show a custom tooltip. If the delegate doesn't want a
     // custom tooltip, it should just return 'false'. Otherwise, it should show
     // the tooltip and return 'true'. By default, the delegate doesn't provide a
@@ -206,6 +210,15 @@ class WebViewImpl : public WebView,
                            bool final_update) OVERRIDE;
 
     /////// WebContentsObserver overrides
+
+    // Will be called when a non-intersitial RVH is created for a WebContents.
+    virtual void RenderViewCreated(
+        content::RenderViewHost* render_view_host) OVERRIDE;
+
+    // This method is invoked after the WebContents decided which RenderViewHost
+    // to use for the next navigation, but before the navigation starts.
+    virtual void AboutToNavigateRenderView(
+        content::RenderViewHost* render_view_host) OVERRIDE;
 
     // This method is invoked when the navigation is done, i.e. the spinner of
     // the tab will stop spinning, and the onload event was dispatched.

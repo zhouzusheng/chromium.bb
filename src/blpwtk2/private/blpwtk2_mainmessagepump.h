@@ -25,6 +25,7 @@
 
 #include <blpwtk2_config.h>
 
+#include <base/callback.h>
 #include <base/message_pump_win.h>
 
 namespace base {
@@ -37,6 +38,8 @@ namespace blpwtk2 {
 // facilitate integration with an application's main message loop.
 class MainMessagePump : public base::MessagePumpForUI {
   public:
+    typedef base::Callback<bool(void)> Condition;
+
     static MainMessagePump* current();
 
     MainMessagePump();
@@ -46,6 +49,12 @@ class MainMessagePump : public base::MessagePumpForUI {
     void cleanup();
     bool preHandleMessage(const MSG& msg);
     void postHandleMessage(const MSG& msg);
+
+    // Pump messages until the specified 'condition' returns true.  The
+    // condition must be initially false.  This method returns true when the
+    // condition is true, and false if the method returned even though the
+    // condition is not true (this can happen if WM_QUIT is received).
+    bool pumpUntilConditionIsTrue(const Condition& condition);
 
   private:
     void doWork();

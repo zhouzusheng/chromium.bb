@@ -32,6 +32,7 @@
 
 #include <base/memory/ref_counted.h>
 #include <ui/gfx/native_widget_types.h>
+#include <ui/gfx/rect.h>
 
 #include <string>
 
@@ -64,10 +65,14 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
                  base::MessageLoop* implDispatcher,
                  Profile* profile,
                  int hostAffinity,
-                 bool initiallyVisible);
+                 bool initiallyVisible,
+                 bool isInProcess);
     WebViewProxy(WebViewImpl* impl,
                  base::MessageLoop* implDispatcher,
-                 base::MessageLoop* proxyDispatcher);
+                 base::MessageLoop* proxyDispatcher,
+                 bool isInProcess);
+
+    bool isMoveAckNotPending() const { return !d_moveAckPending; }
 
     // ========== WebView overrides ================
 
@@ -84,7 +89,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void show() OVERRIDE;
     virtual void hide() OVERRIDE;
     virtual void setParent(NativeView parent) OVERRIDE;
-    virtual void move(int left, int top, int width, int height, bool repaint) OVERRIDE;
+    virtual void move(int left, int top, int width, int height) OVERRIDE;
     virtual void cutSelection() OVERRIDE;
     virtual void copySelection() OVERRIDE;
     virtual void paste() OVERRIDE;
@@ -127,7 +132,9 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
 
     // ========== WebViewImplClient overrides ================
 
-    virtual void updateRendererInfo(bool isInProcess, int routingId) OVERRIDE;
+    virtual bool shouldDisableBrowserSideResize() OVERRIDE;
+    virtual void aboutToNativateRenderView(int routingId) OVERRIDE;
+    virtual void didUpdatedBackingStore(const gfx::Size& size) OVERRIDE;
     virtual void findStateWithReqId(int reqId,
                                     int numberOfMatches,
                                     int activeMatchOrdinal,
@@ -155,7 +162,8 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void implShow();
     void implHide();
     void implSetParent(NativeView parent);
-    void implMove(int left, int top, int width, int height, bool repaint);
+    void implSyncMove(const gfx::Rect& rc);
+    void implMove(int left, int top, int width, int height);
     void implCutSelection();
     void implCopySelection();
     void implPaste();
@@ -191,18 +199,18 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
                         int activeMatchOrdinal,
                         bool finalUpdate);
 
-    void proxyMoveAck(int left, int top, int width, int height, bool repaint);
-
-    void proxyUpdateRendererInfo(bool isInProcess, int routingId);
+    void proxyMoveAck();
+    void proxyAboutToNavigateRenderView(int routingId);
 
     WebViewImpl* d_impl;
     base::MessageLoop* d_implDispatcher;
     base::MessageLoop* d_proxyDispatcher;
     WebViewDelegate* d_delegate;
     int d_routingId;
-    RECT d_lastMoveRect;
-    bool d_lastMoveRepaint;
-    bool d_isMoveAckPending;
+    gfx::Rect d_rect;
+    gfx::Rect d_implRect;       // touched only in the impl thread
+    bool d_implMoveAckPending;  // touched only in the impl thread
+    bool d_moveAckPending;
     bool d_wasDestroyed;
     bool d_isMainFrameAccessible;
     bool d_isInProcess;

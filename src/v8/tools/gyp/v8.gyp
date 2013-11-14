@@ -96,6 +96,12 @@
             ['bb_version!=""', {
               'product_name': 'blpv8.<(bb_version)',
             }],
+            ['OS=="win" and win_use_allocator_shim==1', {
+              'dependencies': [
+                '<(DEPTH)/base/allocator/allocator.gyp:allocator',
+                '<(DEPTH)/base/base.gyp:base',
+              ],
+            }],
             ['OS=="mac"', {
               'xcode_settings': {
                 'OTHER_LDFLAGS': ['-dynamiclib', '-all_load']

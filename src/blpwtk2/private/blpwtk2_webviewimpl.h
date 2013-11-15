@@ -101,6 +101,7 @@ class WebViewImpl : public WebView,
     virtual void enableFocusAfter(bool enabled) OVERRIDE;
     virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
     virtual void enableCustomTooltip(bool enabled) OVERRIDE;
+    virtual void setZoomPercent(int value) OVERRIDE;
 
     /////// WebContentsDelegate overrides
 

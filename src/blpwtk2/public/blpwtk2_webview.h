@@ -138,6 +138,11 @@ public:
     // tooltip. Otherwise, the default tooltip will be used.
     virtual void enableCustomTooltip(bool enabled) = 0;
 
+    // Set zoom percent for the WebView. 100 is the "original size" or 100%,
+    // 150 is 150% etc. up to default limits of 500% and 25% of original size,
+    // respectively.
+    virtual void setZoomPercent(int value) = 0;
+
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the
     // 'destroy()' method, instead of deleting the object directly.

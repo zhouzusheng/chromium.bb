@@ -293,6 +293,14 @@ void WebViewProxy::enableCustomTooltip(bool enabled)
         base::Bind(&WebViewProxy::implEnableCustomTooltip, this, enabled));
 }
 
+void WebViewProxy::setZoomPercent(int value)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_implDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::implSetZoomPercent, this, value));
+}
+
 void WebViewProxy::updateTargetURL(WebView* source, const StringRef& url)
 {
     DCHECK(source == d_impl);
@@ -564,6 +572,12 @@ void WebViewProxy::implEnableCustomTooltip(bool enabled)
 {
     DCHECK(d_impl);
     d_impl->enableCustomTooltip(enabled);
+}
+
+void WebViewProxy::implSetZoomPercent(int value)
+{
+    DCHECK(d_impl);
+    d_impl->setZoomPercent(value);
 }
 
 void WebViewProxy::proxyUpdateTargetURL(const std::string& url)

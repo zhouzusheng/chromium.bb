@@ -354,6 +354,14 @@ void WebViewImpl::enableCustomTooltip(bool enabled)
     d_customTooltipEnabled = enabled;
 }
 
+void WebViewImpl::setZoomPercent(int value)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_webContents->GetRenderViewHost()->SetZoomLevel(
+        WebKit::WebView::zoomFactorToZoomLevel((double)value/100));
+}
+
 void WebViewImpl::UpdateTargetURL(content::WebContents* source,
                                   int32 page_id,
                                   const GURL& url)

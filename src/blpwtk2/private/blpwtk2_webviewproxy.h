@@ -92,6 +92,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void enableFocusAfter(bool enabled) OVERRIDE;
     virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
     virtual void enableCustomTooltip(bool enabled) OVERRIDE;
+    virtual void setZoomPercent(int value) OVERRIDE;
 
     // ========== WebViewDelegate overrides ================
 
@@ -149,6 +150,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void implEnableFocusAfter(bool enabled);
     void implPerformCustomContextMenuAction(int actionId);
     void implEnableCustomTooltip(bool enabled);
+    void implSetZoomPercent(int value);
 
     // methods that get invoked in the proxy (main) thread
     void proxyUpdateTargetURL(const std::string& url);

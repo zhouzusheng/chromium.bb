@@ -67,6 +67,14 @@ enum {
     IDM_NEW_WINDOW,
     IDM_CLOSE_WINDOW,
     IDM_EXIT,
+    IDM_ZOOM,
+    IDM_ZOOM_025,
+    IDM_ZOOM_050,
+    IDM_ZOOM_075,
+    IDM_ZOOM_100,
+    IDM_ZOOM_125,
+    IDM_ZOOM_150,
+    IDM_ZOOM_200,
     IDM_TEST,
     IDM_TEST_APPEND_ELEMENT,
     IDM_TEST_APPEND_TABLE,
@@ -529,6 +537,17 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             shell->d_webView->reload();
             shell->d_webView->focus();
             break;
+        case IDM_ZOOM_025:
+        case IDM_ZOOM_050:
+        case IDM_ZOOM_075:
+        case IDM_ZOOM_100:
+        case IDM_ZOOM_125:
+        case IDM_ZOOM_150:
+        case IDM_ZOOM_200: {
+                static const int zoom_values[] = {25, 50, 75, 100, 125, 150, 200};
+                shell->d_webView->setZoomPercent(zoom_values[wmId - IDM_ZOOM_025]);
+            }
+            break;
         case IDC_STOP:
             shell->d_webView->stop();
             shell->d_webView->focus();
@@ -691,6 +710,15 @@ Shell* createShell(blpwtk2::WebView* webView)
     AppendMenu(fileMenu, MF_SEPARATOR, 0, 0);
     AppendMenu(fileMenu, MF_STRING, IDM_EXIT, L"E&xit");
     AppendMenu(menu, MF_POPUP, (UINT_PTR)fileMenu, L"&File");
+    HMENU zoomMenu = CreateMenu();
+    AppendMenu(zoomMenu, MF_STRING, IDM_ZOOM_025, L"25%");
+    AppendMenu(zoomMenu, MF_STRING, IDM_ZOOM_050, L"50%");
+    AppendMenu(zoomMenu, MF_STRING, IDM_ZOOM_075, L"75%");
+    AppendMenu(zoomMenu, MF_STRING, IDM_ZOOM_100, L"100%");
+    AppendMenu(zoomMenu, MF_STRING, IDM_ZOOM_125, L"125%");
+    AppendMenu(zoomMenu, MF_STRING, IDM_ZOOM_150, L"150%");
+    AppendMenu(zoomMenu, MF_STRING, IDM_ZOOM_200, L"200%");
+    AppendMenu(menu, MF_POPUP, (UINT_PTR)zoomMenu, L"&Zoom");
     HMENU testMenu = CreateMenu();
     AppendMenu(testMenu, MF_STRING, IDM_TEST_APPEND_ELEMENT, L"&Append Element");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_APPEND_TABLE, L"Append &Table");

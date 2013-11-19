@@ -24,6 +24,7 @@
 #define INCLUDED_BLPWTK2_WEBVIEWPROXY_H
 
 #include <blpwtk2_config.h>
+#include <blpwtk2_string.h>
 
 #include <blpwtk2_webview.h>
 #include <blpwtk2_webviewdelegate.h>
@@ -93,6 +94,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
     virtual void enableCustomTooltip(bool enabled) OVERRIDE;
     virtual void setZoomPercent(int value) OVERRIDE;
+    virtual void find(const StringRef& text, bool matchCase, bool forward) OVERRIDE;
 
     // ========== WebViewDelegate overrides ================
 
@@ -115,10 +117,18 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void handleExternalProtocol(WebView* source, const StringRef& url) OVERRIDE;
     virtual void moveView(WebView* source, int x, int y, int width, int height) OVERRIDE;
     virtual void showTooltip(WebView* source, const String& tooltipText, TextDirection::Value direction) OVERRIDE;
+    virtual void findState(WebView* source,
+                           int numberOfMatches,
+                           int activeMatchOrdinal,
+                           bool finalUpdate) OVERRIDE;
 
     // ========== WebViewImplClient overrides ================
 
     virtual void updateRendererInfo(bool isInProcess, int routingId) OVERRIDE;
+    virtual void findStateWithReqId(int reqId,
+                                    int numberOfMatches,
+                                    int activeMatchOrdinal,
+                                    bool finalUpdate) OVERRIDE;
 
   private:
     // only RefCountedThreadSafe should be able to delete this object
@@ -131,6 +141,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
                   int hostAffinity, bool initiallyVisible);
     void implDestroy();
     void implLoadUrl(const std::string& url);
+    void findWithReqId(int reqId, const String& text, bool matchCase, bool forward);
     void implLoadInspector(WebView* inspectedView);
     void implInspectElementAt(const POINT& point);
     void implReload(bool ignoreCache);
@@ -169,6 +180,10 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void proxyHandleExternalProtocol(const std::string& url);
     void proxyMoveView(int x, int y, int width, int height);
     void proxyShowTooltip(const String& tooltipText, TextDirection::Value direction); 
+    void proxyFindState(int reqId,
+                        int numberOfMatches,
+                        int activeMatchOrdinal,
+                        bool finalUpdate);
 
     void proxyMoveAck(int left, int top, int width, int height, bool repaint);
 
@@ -186,6 +201,10 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     bool d_isMainFrameAccessible;
     bool d_isInProcess;
     bool d_gotRendererInfo;
+    String d_findText;
+    int d_findReqId;
+    int d_findNumberOfMatches;
+    int d_findActiveMatchOrdinal;
 };
 
 

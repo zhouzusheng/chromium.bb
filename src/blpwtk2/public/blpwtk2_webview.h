@@ -143,6 +143,13 @@ public:
     // respectively.
     virtual void setZoomPercent(int value) = 0;
 
+    // Find text on the current page. To clear highlighted results send an
+    // empty search string. Sending the same search string again implies
+    // continuing the search forward or backward depending on the value of
+    // the third argument.
+    virtual void find(const StringRef& text, bool matchCase,
+                      bool forward = true) = 0;
+
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the
     // 'destroy()' method, instead of deleting the object directly.

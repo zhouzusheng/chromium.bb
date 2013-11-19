@@ -36,6 +36,10 @@ public:
     virtual ~WebViewImplClient();
 
     virtual void updateRendererInfo(bool isInProcess, int routingId) = 0;
+    virtual void findStateWithReqId(int reqId,
+                                    int numberOfMatches,
+                                    int activeMatchOrdinal,
+                                    bool finalUpdate) = 0;
 };
 
 }  // close namespace blpwtk2

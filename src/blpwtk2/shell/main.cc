@@ -56,6 +56,9 @@ enum {
     IDC_FORWARD,
     IDC_RELOAD,
     IDC_STOP,
+    IDC_FIND,
+    IDC_FIND_PREV,
+    IDC_FIND_NEXT,
     IDC_END_OF_BUTTONS,
     NUM_BUTTONS = IDC_END_OF_BUTTONS - IDC_START_OF_BUTTONS - 1
 };
@@ -199,14 +202,17 @@ public:
 
     HWND d_mainWnd;
     HWND d_urlEntryWnd;
+    HWND d_findEntryHwnd;
     blpwtk2::WebView* d_webView;
     Shell* d_inspectorShell;
     Shell* d_inspectorFor;
     POINT d_contextMenuPoint;
+    std::string d_findText;
 
-    Shell(HWND mainWnd, HWND urlEntryWnd, blpwtk2::WebView* webView = 0)
+    Shell(HWND mainWnd, HWND urlEntryWnd, HWND findEntryHwnd, blpwtk2::WebView* webView = 0)
     : d_mainWnd(mainWnd)
     , d_urlEntryWnd(urlEntryWnd)
+    , d_findEntryHwnd(findEntryHwnd)
     , d_webView(webView)
     , d_inspectorShell(0)
     , d_inspectorFor(0)
@@ -462,6 +468,28 @@ public:
         }
     }
 
+    void find()
+    {
+        char buf[200];
+        int len = ::GetWindowTextA(d_findEntryHwnd, buf, sizeof buf);
+
+        d_findText.assign(buf, len);
+        d_webView->find(d_findText, false, true);
+    }
+
+    void findNext(bool forward)
+    {
+        d_webView->find(d_findText, false, forward);
+    }
+
+    virtual void findState(blpwtk2::WebView* source, int numberOfMatches, int activeMatchOrdinal, bool finalUpdate) OVERRIDE
+    {
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "FIND: count:%d, current:%d, final:%s\n",
+                  numberOfMatches, activeMatchOrdinal, finalUpdate ? "yes" : "no");
+        OutputDebugStringA(buf);
+    }
+
 };
 std::set<Shell*> Shell::s_shells;
 
@@ -547,6 +575,15 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
                 static const int zoom_values[] = {25, 50, 75, 100, 125, 150, 200};
                 shell->d_webView->setZoomPercent(zoom_values[wmId - IDM_ZOOM_025]);
             }
+            break;
+        case IDC_FIND:
+            if (HIWORD(wParam) == EN_CHANGE) {
+                shell->find();
+            }
+            break;
+        case IDC_FIND_PREV:
+        case IDC_FIND_NEXT:
+            shell->findNext(wmId == IDC_FIND_NEXT);
             break;
         case IDC_STOP:
             shell->d_webView->stop();
@@ -759,6 +796,37 @@ Shell* createShell(blpwtk2::WebView* webView)
     assert(hwnd);
     x += BUTTON_WIDTH;
 
+    hwnd = CreateWindow(L"STATIC", L"Find: ",
+                        WS_CHILD | WS_VISIBLE | SS_RIGHT | SS_CENTERIMAGE,
+                        x, 0, BUTTON_WIDTH*3/4, URLBAR_HEIGHT,
+                        mainWnd, 0, g_instance, 0);
+    assert(hwnd);
+    x += BUTTON_WIDTH*3/4;
+
+    HWND findEntryHwnd = CreateWindow(L"EDIT", 0,
+                        WS_CHILD | WS_VISIBLE | WS_BORDER | ES_LEFT |
+                        ES_AUTOVSCROLL | ES_AUTOHSCROLL,  x, 0, BUTTON_WIDTH*6/4,
+                        URLBAR_HEIGHT, mainWnd, (HMENU)IDC_FIND, g_instance, 0);
+
+    assert(findEntryHwnd);
+    x += BUTTON_WIDTH*6/4;
+
+    hwnd = CreateWindow(L"BUTTON", L"\u2191",
+                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                        x, 0, BUTTON_WIDTH/4, URLBAR_HEIGHT,
+                        mainWnd, (HMENU)IDC_FIND_PREV, g_instance, 0);
+
+    assert(hwnd);
+    x += BUTTON_WIDTH/4;
+
+    hwnd = CreateWindow(L"BUTTON", L"\u2193",
+                        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                        x, 0, BUTTON_WIDTH/4, URLBAR_HEIGHT,
+                        mainWnd, (HMENU)IDC_FIND_NEXT, g_instance, 0);
+
+    assert(hwnd);
+    x += BUTTON_WIDTH/4;
+
     // This control is positioned by resizeSubViews.
     HWND urlEntryWnd = CreateWindow(L"EDIT", 0,
                                     WS_CHILD | WS_VISIBLE | WS_BORDER | ES_LEFT |
@@ -770,7 +838,7 @@ Shell* createShell(blpwtk2::WebView* webView)
         g_defaultEditWndProc = reinterpret_cast<WNDPROC>(GetWindowLongPtr(urlEntryWnd, GWLP_WNDPROC));
     SetWindowLongPtr(urlEntryWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(urlEntryWndProc));
 
-    return new Shell(mainWnd, urlEntryWnd, webView);
+    return new Shell(mainWnd, urlEntryWnd, findEntryHwnd, webView);
 }
 
 void populateSubmenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem& item);

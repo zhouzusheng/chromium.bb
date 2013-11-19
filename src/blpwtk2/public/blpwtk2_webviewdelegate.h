@@ -133,6 +133,13 @@ class BLPWTK2_EXPORT WebViewDelegate {
     virtual void showTooltip(WebView* source, 
                              const String& tooltipText, 
                              TextDirection::Value direction) {}
+
+    // Invoked response to a WebView::find method call to report find-on-page
+    // status update.
+    virtual void findState(WebView* source,
+                           int numberOfMatches,
+                           int activeMatchOrdinal,
+                           bool finalUpdate) {}
 };
 
 }  // close namespace blpwtk2

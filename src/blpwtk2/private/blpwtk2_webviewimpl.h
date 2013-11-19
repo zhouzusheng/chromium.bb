@@ -24,6 +24,7 @@
 #define INCLUDED_BLPWTK2_WEBVIEWIMPL_H
 
 #include <blpwtk2_config.h>
+#include <blpwtk2_string.h>
 
 #include <blpwtk2_webview.h>
 
@@ -76,6 +77,7 @@ class WebViewImpl : public WebView,
     gfx::NativeView getNativeView() const;
     void showContextMenu(const ContextMenuParams& params);
     void saveCustomContextMenuContext(const content::CustomContextMenuContext& context);
+    void findWithReqId(int reqId, const StringRef& text, bool matchCase, bool forward);
 
     /////////////// WebView overrides
 
@@ -102,6 +104,7 @@ class WebViewImpl : public WebView,
     virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
     virtual void enableCustomTooltip(bool enabled) OVERRIDE;
     virtual void setZoomPercent(int value) OVERRIDE;
+    virtual void find(const StringRef& text, bool matchCase, bool forward) OVERRIDE;
 
     /////// WebContentsDelegate overrides
 
@@ -168,6 +171,14 @@ class WebViewImpl : public WebView,
                              const string16& tooltip_text,
                              WebKit::WebTextDirection text_direction_hint) OVERRIDE;
 
+    // Information about current find request
+    virtual void FindReply(content::WebContents* source_contents,
+                           int request_id,
+                           int number_of_matches,
+                           const gfx::Rect& selection_rect,
+                           int active_match_ordinal,
+                           bool final_update) OVERRIDE;
+
     /////// WebContentsObserver overrides
 
     // This method is invoked when the navigation is done, i.e. the spinner of
@@ -207,6 +218,11 @@ class WebViewImpl : public WebView,
     bool d_isPopup;           // if this view is a popup view
     bool d_customTooltipEnabled;
     content::CustomContextMenuContext d_customContext; //for calling performCustomContextMenuAction()
+    String d_findText;
+    int d_findReqId;
+    int d_findNumberOfMatches;
+    int d_findActiveMatchOrdinal;
+
 
     DISALLOW_COPY_AND_ASSIGN(WebViewImpl);
 };

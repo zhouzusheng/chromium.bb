@@ -51,6 +51,9 @@ WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
 , d_isMainFrameAccessible(false)
 , d_isInProcess(false)
 , d_gotRendererInfo(false)
+, d_findReqId(0)
+, d_findNumberOfMatches(0)
+, d_findActiveMatchOrdinal(0)
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(profile);
@@ -77,6 +80,9 @@ WebViewProxy::WebViewProxy(WebViewImpl* impl,
 , d_isMainFrameAccessible(false)
 , d_isInProcess(false)
 , d_gotRendererInfo(false)
+, d_findReqId(0)
+, d_findNumberOfMatches(0)
+, d_findActiveMatchOrdinal(0)
 {
     DCHECK(base::MessageLoop::current() == implDispatcher);
     ++Statics::numWebViews;
@@ -123,6 +129,23 @@ void WebViewProxy::loadUrl(const StringRef& url)
     std::string surl(url.data(), url.length());
     d_implDispatcher->PostTask(FROM_HERE,
         base::Bind(&WebViewProxy::implLoadUrl, this, surl));
+}
+
+void WebViewProxy::find(const StringRef& text, bool matchCase, bool forward)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(!d_wasDestroyed);
+
+    if (!d_findText.equals(text)) {
+        d_findText.assign(text);
+        if (!text.isEmpty() && ++d_findReqId <= 0) {
+            d_findReqId = 1; // handle overflow
+        }
+    }
+    std::string stext(text.data(), text.length());
+    d_implDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::findWithReqId, this,
+                   d_findReqId, d_findText, matchCase, forward));
 }
 
 void WebViewProxy::loadInspector(WebView* inspectedView)
@@ -421,11 +444,32 @@ void WebViewProxy::showTooltip(WebView* source, const String& tooltipText, TextD
         base::Bind(&WebViewProxy::proxyShowTooltip, this, tooltipText, direction));
 }
 
+void WebViewProxy::findState(WebView* source,
+                             int numberOfMatches,
+                             int activeMatchOrdinal,
+                             bool finalUpdate)
+{
+    NOTREACHED() << "findState should come in via findStateWithReqId";
+}
+
 void WebViewProxy::updateRendererInfo(bool isInProcess, int routingId)
 {
     d_proxyDispatcher->PostTask(FROM_HERE,
         base::Bind(&WebViewProxy::proxyUpdateRendererInfo, this, isInProcess,
                    routingId));
+}
+
+void WebViewProxy::findStateWithReqId(int reqId,
+                                      int numberOfMatches,
+                                      int activeMatchOrdinal,
+                                      bool finalUpdate)
+{
+    d_proxyDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::proxyFindState,
+                   this, reqId,
+                   numberOfMatches,
+                   activeMatchOrdinal,
+                   finalUpdate));
 }
 
 void WebViewProxy::implInit(gfx::NativeView parent,
@@ -449,6 +493,15 @@ void WebViewProxy::implLoadUrl(const std::string& url)
 {
     DCHECK(d_impl);
     d_impl->loadUrl(url);
+}
+
+void WebViewProxy::findWithReqId(int reqId,
+                                 const String& text,
+                                 bool matchCase,
+                                 bool forward)
+{
+    DCHECK(d_impl);
+    d_impl->findWithReqId(reqId, text, matchCase, forward);
 }
 
 void WebViewProxy::implLoadInspector(WebView* inspectedView)
@@ -685,6 +738,22 @@ void WebViewProxy::proxyShowTooltip(const String& tooltipText, TextDirection::Va
 {
     if (d_delegate && !d_wasDestroyed) {
         d_delegate->showTooltip(this, tooltipText, direction);
+    }
+}
+
+void WebViewProxy::proxyFindState(int reqId,
+                                  int numberOfMatches,
+                                  int activeMatchOrdinal,
+                                  bool finalUpdate)
+{
+    if (d_delegate && !d_wasDestroyed && reqId == d_findReqId) {
+        if (numberOfMatches != -1) d_findNumberOfMatches = numberOfMatches;
+        if (activeMatchOrdinal != -1) d_findActiveMatchOrdinal = activeMatchOrdinal;
+
+        d_delegate->findState(this,
+                              d_findNumberOfMatches,
+                              d_findActiveMatchOrdinal - 1, // make it zero-based
+                              finalUpdate);
     }
 }
 

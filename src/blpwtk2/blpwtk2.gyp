@@ -161,6 +161,7 @@
         'public/blpwtk2_refcountedobject.h',
         'public/blpwtk2_textdirection.cc',
         'public/blpwtk2_textdirection.h',
+        'private/blpwtk2.rc',
         'private/blpwtk2_resourcecontextimpl.cc',
         'private/blpwtk2_resourcecontextimpl.h',
         'private/blpwtk2_urlrequestcontextgetterimpl.cc',
@@ -277,6 +278,7 @@
       'sources': [
         '../content/app/startup_helper_win.cc',
         'subprocess/main.cc',
+        'subprocess/resources.rc',
       ],
     },
     {

@@ -57,9 +57,13 @@
             ['component=="shared_library"', {
               'type': '<(component)',
               'sources': [
+                '../../src/blpv8.rc',
                 # Note: on non-Windows we still build this file so that gyp
                 # has some sources to link into the component.
                 '../../src/v8dll-main.cc',
+              ],
+              'dependencies': [
+                '../../../blpwtk2/blpwtk2.gyp:blpwtk2_gen_version',
               ],
               'defines': [
                 'V8_SHARED',

@@ -34,10 +34,9 @@ namespace content {
 
 namespace blpwtk2 {
 
-// This class sets up the "browser" side of the InProcessRenderer.  It opens a
-// dummy channel, which is used to send messages to the InProcessRenderer.
-// This object must be created in the browser's main thread before creating the
-// InProcessRenderer on the renderer thread.
+// This class sets up the "browser" side of the InProcessRenderer.  It creates
+// a RenderProcessHostImpl, which sets up a channel that is used to send
+// messages to the InProcessRenderer.
 class InProcessRendererHost {
   public:
     explicit InProcessRendererHost(content::BrowserContext* browserContext);

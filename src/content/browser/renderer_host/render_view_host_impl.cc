@@ -2065,12 +2065,6 @@ void RenderViewHostImpl::ClearPowerSaveBlockers() {
 
 bool RenderViewHostImpl::CanAccessFilesOfSerializedState(
     const std::string& state) const {
-  // SHEZ: Disable this because it calls into WebKit before we have initialized
-  // SHEZ: the renderer thread.  This started happening since chromium v28.  We
-  // SHEZ: will check this again whenever we upgrade to newer versions of
-  // SHEZ: chromium.
-  return true;
-#if 0
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
   const std::vector<base::FilePath>& file_paths =
@@ -2081,7 +2075,6 @@ bool RenderViewHostImpl::CanAccessFilesOfSerializedState(
       return false;
   }
   return true;
-#endif
 }
 
 }  // namespace content

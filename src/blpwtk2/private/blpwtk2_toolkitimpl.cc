@@ -27,6 +27,7 @@
 #include <blpwtk2_createparams.h>
 #include <blpwtk2_browserthread.h>
 #include <blpwtk2_browsercontextimpl.h>
+#include <blpwtk2_inprocessrenderer.h>
 #include <blpwtk2_inprocessrendererhost.h>
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_mainmessagepump.h>
@@ -42,7 +43,6 @@
 #include <content/public/browser/render_process_host.h>
 #include <content/public/browser/site_instance.h>
 #include <content/public/common/content_switches.h>
-#include <content/public/renderer/render_thread.h>
 #include <content/browser/web_contents/web_contents_view_win.h>
 #include <content/browser/renderer_host/render_process_host_impl.h>
 #include <sandbox/win/src/win_utils.h>
@@ -80,8 +80,7 @@ ToolkitImpl::ToolkitImpl()
     DCHECK(-1 == rc);  // it returns -1 for success!!
 
     if (Statics::isRendererMainThreadMode()) {
-        Statics::rendererMessageLoop = new base::MessageLoop(MessageLoop::TYPE_UI);
-
+        new base::MessageLoop(MessageLoop::TYPE_UI);
         content::WebContentsViewWin::disableHookOnRoot();
         d_browserThread.reset(new BrowserThread(&d_sandboxInfo));
     }
@@ -90,6 +89,7 @@ ToolkitImpl::ToolkitImpl()
         d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo));
     }
 
+    InProcessRenderer::init();
     MainMessagePump::current()->init();
 }
 
@@ -100,14 +100,17 @@ ToolkitImpl::~ToolkitImpl()
     if (Statics::isRendererMainThreadMode()) {
         d_browserThread->sync();  // make sure any WebView::destroy has been
                                   // handled by the browser-main thread
-        MainMessagePump::current()->cleanup();
-        content::RenderThread::CleanUpInProcessRenderer();
-        delete Statics::rendererMessageLoop;
-        Statics::rendererMessageLoop = 0;
+    }
+
+    MainMessagePump::current()->cleanup();
+    InProcessRenderer::cleanup();
+
+    if (Statics::isRendererMainThreadMode()) {
+        delete base::MessageLoop::current();
         d_browserThread.reset();
     }
     else {
-        MainMessagePump::current()->cleanup();
+        DCHECK(Statics::isOriginalThreadMode());
         d_browserMainRunner.reset();
     }
 

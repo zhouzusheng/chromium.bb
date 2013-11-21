@@ -191,7 +191,7 @@ void RenderProcessImpl::ReleaseTransportDIB(TransportDIB* mem) {
 }
 
 bool RenderProcessImpl::UseInProcessPlugins() const {
-  return in_process_plugins_;
+  return in_process_plugins_ || g_forceInProcessPlugins;
 }
 
 bool RenderProcessImpl::GetTransportDIBFromCache(TransportDIB** mem,

@@ -201,6 +201,8 @@
         'private/blpwtk2_contentmaindelegateimpl.h',
         'private/blpwtk2_browsermainrunner.cc',
         'private/blpwtk2_browsermainrunner.h',
+        'private/blpwtk2_inprocessrenderer.cc',
+        'private/blpwtk2_inprocessrenderer.h',
         'private/blpwtk2_inprocessrendererhost.cc',
         'private/blpwtk2_inprocessrendererhost.h',
         'private/blpwtk2_browserthread.cc',

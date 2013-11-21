@@ -24,6 +24,7 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_statics.h>
+#include <blpwtk2_inprocessrenderer.h>
 #include <blpwtk2_mediaobserverimpl.h>
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
 #include <blpwtk2_webcontentsviewdelegateimpl.h>
@@ -33,49 +34,12 @@
 #include <base/threading/platform_thread.h>
 #include <content/public/browser/render_view_host.h>
 #include <content/public/browser/render_process_host.h>
-#include <content/public/renderer/render_thread.h>
 #include <content/public/browser/resource_dispatcher_host.h>
 #include <content/public/browser/resource_dispatcher_host_delegate.h>
 
 namespace blpwtk2 {
 
 namespace {
-
-class InProcessRendererThread : public base::Thread {
-public:
-    InProcessRendererThread(const std::string& channelId)
-    : base::Thread("BlpInProcRenderer")
-    , d_channelId(channelId)
-    {
-        base::Thread::Options options;
-        options.message_loop_type = base::MessageLoop::TYPE_UI;
-        StartWithOptions(options);
-    }
-    ~InProcessRendererThread()
-    {
-        Stop();
-    }
-
-private:
-    // Called just prior to starting the message loop
-    virtual void Init() OVERRIDE
-    {
-        Statics::rendererMessageLoop = message_loop();
-        content::RenderThread::InitInProcessRenderer(d_channelId);
-    }
-
-    // Called just after the message loop ends
-    virtual void CleanUp()
-    {
-        content::RenderThread::CleanUpInProcessRenderer();
-        Statics::rendererMessageLoop = 0;
-    }
-
-    std::string d_channelId;
-
-    DISALLOW_COPY_AND_ASSIGN(InProcessRendererThread);
-};
-InProcessRendererThread* g_inProcessRendererThread = 0;
 
 class ResourceDispatcherHostDelegate : public content::ResourceDispatcherHostDelegate
 {
@@ -154,45 +118,22 @@ bool ContentBrowserClientImpl::SupportsInProcessRenderer()
 void ContentBrowserClientImpl::StartInProcessRendererThread(
     const std::string& channel_id)
 {
-    DCHECK(Statics::isInBrowserMainThread());
-
-    if (Statics::isRendererMainThreadMode()) {
-        DCHECK(Statics::rendererMessageLoop);
-        Statics::rendererMessageLoop->PostTask(
-            FROM_HERE,
-            base::Bind(&content::RenderThread::InitInProcessRenderer,
-                       channel_id));
-    }
-    else {
-        DCHECK(Statics::isOriginalThreadMode());
-        DCHECK(!g_inProcessRendererThread);
-        g_inProcessRendererThread = new InProcessRendererThread(channel_id);
-    }
-}
-
-void ContentBrowserClientImpl::ResourceDispatcherHostCreated() {
-    content::ResourceDispatcherHost::Get()->SetDelegate(
-        &ResourceDispatcherHostDelegate::Get());
+    // This does not actually start the thread.  The thread is started during
+    // ToolkitImpl startup.  What we do here is set the channel name that is
+    // used by the in-process renderer thread.
+    InProcessRenderer::setChannelName(channel_id);
 }
 
 void ContentBrowserClientImpl::StopInProcessRendererThread()
 {
-    DCHECK(Statics::isInBrowserMainThread());
+    // Don't actually stop the thread here.  That is done by ToolkitImpl's
+    // shutdown procedure.
+}
 
-    if (Statics::isRendererMainThreadMode()) {
-        // Don't do anything here, ToolkitImpl will directly call
-        // content::RenderThread::CleanUpInProcessRenderer when it shuts down,
-        // because the order of destruction needs to be very specific,
-        // otherwise all kinds of crashes occur.
-        // TODO: see if we can make RenderThread::CleanUpInProcessRenderer
-        // TODO: callable from here.
-    }
-    else {
-        DCHECK(Statics::isOriginalThreadMode());
-        DCHECK(g_inProcessRendererThread);
-        delete g_inProcessRendererThread;
-        g_inProcessRendererThread = 0;
-    }
+void ContentBrowserClientImpl::ResourceDispatcherHostCreated()
+{
+    content::ResourceDispatcherHost::Get()->SetDelegate(
+        &ResourceDispatcherHostDelegate::Get());
 }
 
 content::WebContentsViewDelegate*

@@ -27,6 +27,8 @@
 #include <blpwtk2_toolkitimpl.h>
 
 #include <base/logging.h>  // for DCHECK
+#include <net/http/http_network_session.h>
+#include <net/socket/client_socket_pool_manager.h>
 #include <ui/gl/gl_implementation.h>
 
 
@@ -69,6 +71,49 @@ void Toolkit::setPumpMode(PumpMode::Value mode)
     }
     DCHECK(!ToolkitImpl::instance());
     Statics::pumpMode = mode;
+}
+
+void Toolkit::setMaxSocketsPerProxy(int count)
+{
+    Statics::initApplicationMainThread();
+
+    const net::HttpNetworkSession::SocketPoolType POOL =
+        net::HttpNetworkSession::NORMAL_SOCKET_POOL;
+
+    if (g_started) {
+        DCHECK(count ==
+            net::ClientSocketPoolManager::max_sockets_per_proxy_server(POOL));
+        return;
+    }
+
+    DCHECK(!ToolkitImpl::instance());
+    DCHECK(1 <= count);
+    DCHECK(99 >= count);
+
+    // The max per group can never exceed the max per proxy.  Use the default
+    // max per group, unless count is less than the default.
+
+    int prevMaxPerProxy =
+        net::ClientSocketPoolManager::max_sockets_per_proxy_server(POOL);
+    int newMaxPerGroup = std::min(count,
+                                  (int)net::kDefaultMaxSocketsPerGroupNormal);
+
+    if (newMaxPerGroup > prevMaxPerProxy) {
+        net::ClientSocketPoolManager::set_max_sockets_per_proxy_server(
+            POOL,
+            count);
+        net::ClientSocketPoolManager::set_max_sockets_per_group(
+            POOL,
+            newMaxPerGroup);
+    }
+    else {
+        net::ClientSocketPoolManager::set_max_sockets_per_group(
+            POOL,
+            newMaxPerGroup);
+        net::ClientSocketPoolManager::set_max_sockets_per_proxy_server(
+            POOL,
+            count);
+    }
 }
 
 void Toolkit::registerPlugin(const char* pluginPath)

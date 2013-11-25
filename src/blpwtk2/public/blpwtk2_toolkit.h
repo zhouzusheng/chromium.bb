@@ -116,6 +116,14 @@ struct BLPWTK2_EXPORT Toolkit {
     // created (even if it has been destroyed).
     static void setPumpMode(PumpMode::Value mode);
 
+    // Set the maximum number of sockets per proxy, up to a maximum of 99.
+    // Note that each Profile maintains its own pool of connections, so this is
+    // actually the maximum number of sockets per proxy *per profile*.  The
+    // behavior is undefined if attempting to change the count after a WebView
+    // has been created (even if it has been destroyed).  The behavior is also
+    // undefined if 'count' is less than 1, or more than 99.
+    static void setMaxSocketsPerProxy(int count);
+
     // Register a plugin at the specified 'pluginPath'.  The 'pluginPath'
     // should point to a DLL that exports the standard NPAPI entry points.
     // This function can only be called before creating any WebViews, otherwise

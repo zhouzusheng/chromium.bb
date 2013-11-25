@@ -102,6 +102,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void enableCustomTooltip(bool enabled) OVERRIDE;
     virtual void setZoomPercent(int value) OVERRIDE;
     virtual void find(const StringRef& text, bool matchCase, bool forward) OVERRIDE;
+    virtual void replaceMisspelledRange(const StringRef& text) OVERRIDE;
 
     // ========== WebViewDelegate overrides ================
 
@@ -175,6 +176,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void implPerformCustomContextMenuAction(int actionId);
     void implEnableCustomTooltip(bool enabled);
     void implSetZoomPercent(int value);
+    void implReplaceMisspelledRange(const std::string& text);
 
     // methods that get invoked in the proxy (main) thread
     void proxyUpdateTargetURL(const std::string& url);

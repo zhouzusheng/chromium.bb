@@ -91,6 +91,7 @@ namespace blpwtk2 {
 
 class Profile;
 class HttpTransactionHandler;
+class StringRef;
 class WebView;
 class WebViewDelegate;
 
@@ -228,6 +229,13 @@ struct BLPWTK2_EXPORT Toolkit {
     // been set using 'Toolkit::setPumpMode'.
     static bool preHandleMessage(const NativeMsg* msg);
     static void postHandleMessage(const NativeMsg* msg);
+
+    // Set the path to look for the .bdic files in.  This function can only be
+    // called before creating any WebViews.  If this function is not called,
+    // the current working directory will be used.  The behavior is undefined
+    // if attempting to change the dictionary path after a WebView has been
+    // created (even if it has been destroyed).
+    static void setDictionaryPath(const StringRef& path);
 };
 
 }  // close namespace blpwtk2

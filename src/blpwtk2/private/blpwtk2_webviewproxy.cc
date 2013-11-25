@@ -384,6 +384,15 @@ void WebViewProxy::setZoomPercent(int value)
         base::Bind(&WebViewProxy::implSetZoomPercent, this, value));
 }
 
+void WebViewProxy::replaceMisspelledRange(const StringRef& text)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(!d_wasDestroyed);
+    std::string stext(text.data(), text.length());
+    d_implDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::implReplaceMisspelledRange, this, stext));
+}
+
 void WebViewProxy::updateTargetURL(WebView* source, const StringRef& url)
 {
     DCHECK(source == d_impl);
@@ -748,6 +757,12 @@ void WebViewProxy::implSetZoomPercent(int value)
 {
     DCHECK(d_impl);
     d_impl->setZoomPercent(value);
+}
+
+void WebViewProxy::implReplaceMisspelledRange(const std::string& text)
+{
+    DCHECK(d_impl);
+    d_impl->replaceMisspelledRange(text);
 }
 
 void WebViewProxy::proxyUpdateTargetURL(const std::string& url)

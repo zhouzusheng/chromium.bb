@@ -24,6 +24,7 @@
 
 #include <blpwtk2_products.h>
 #include <blpwtk2_statics.h>
+#include <blpwtk2_stringref.h>
 #include <blpwtk2_toolkitimpl.h>
 
 #include <base/logging.h>  // for DCHECK
@@ -234,6 +235,14 @@ void Toolkit::postHandleMessage(const NativeMsg* msg)
     DCHECK(ToolkitImpl::instance());
     DCHECK(PumpMode::MANUAL == Statics::pumpMode);
     ToolkitImpl::instance()->postHandleMessage(msg);
+}
+
+void Toolkit::setDictionaryPath(const StringRef& path)
+{
+    Statics::initApplicationMainThread();
+
+    DCHECK(!g_started && !g_shutdown);
+    Statics::getDictionaryPath().assign(path.data(), path.length());
 }
 
 }  // close namespace blpwtk2

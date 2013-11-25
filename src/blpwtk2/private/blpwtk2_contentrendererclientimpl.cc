@@ -28,6 +28,9 @@
 #include <net/base/net_errors.h>
 #include <third_party/WebKit/Source/Platform/chromium/public/WebURLError.h>
 #include <third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h>
+#include <content/public/renderer/render_thread.h>
+#include <chrome/renderer/spellchecker/spellcheck_provider.h>
+#include <chrome/renderer/spellchecker/spellcheck.h>
 
 namespace blpwtk2 {
 
@@ -39,12 +42,24 @@ ContentRendererClientImpl::~ContentRendererClientImpl()
 {
 }
 
+void ContentRendererClientImpl::RenderThreadStarted()
+{
+    content::RenderThread* thread = content::RenderThread::Get();
+
+    if (!d_spellcheck) {
+        d_spellcheck.reset(new SpellCheck());
+        thread->AddObserver(d_spellcheck.get());
+    }
+}
+
 void ContentRendererClientImpl::RenderViewCreated(
     content::RenderView* render_view)
 {
     // Note that RenderViewObserverImpl automatically gets deleted when the
     // RenderView is destroyed.
     new RenderViewObserverImpl(render_view);
+
+    new SpellCheckProvider(render_view, d_spellcheck.get());
 }
 
 void ContentRendererClientImpl::GetNavigationErrorStrings(

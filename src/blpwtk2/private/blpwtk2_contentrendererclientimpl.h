@@ -27,6 +27,8 @@
 
 #include <content/public/renderer/content_renderer_client.h>
 
+class SpellCheck;
+
 namespace blpwtk2 {
 
 // This interface allows us to add hooks to the "renderer" portion of the
@@ -35,6 +37,9 @@ class ContentRendererClientImpl : public content::ContentRendererClient {
   public:
     ContentRendererClientImpl();
     virtual ~ContentRendererClientImpl();
+
+    // Notifies us that the RenderThread has been created.
+    virtual void RenderThreadStarted() OVERRIDE;
 
     // Notifies that a new RenderView has been created.
     virtual void RenderViewCreated(content::RenderView* render_view) OVERRIDE;
@@ -56,6 +61,8 @@ class ContentRendererClientImpl : public content::ContentRendererClient {
 
   private:
     DISALLOW_COPY_AND_ASSIGN(ContentRendererClientImpl);
+
+    scoped_ptr<SpellCheck> d_spellcheck;
 };
 
 }  // close namespace blpwtk2

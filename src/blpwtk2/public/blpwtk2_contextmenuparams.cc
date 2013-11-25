@@ -28,6 +28,10 @@
 
 namespace blpwtk2 {
 
+struct SpellSuggestionsData {
+    std::vector<String> d_suggestions;
+};
+
 class CustomItems {
 public:
     CustomItems(int count) : d_items(count) {}
@@ -39,7 +43,8 @@ private:
 };
 
 ContextMenuParams::ContextMenuParams()
-:d_customItems(0)
+: d_customItems(0)
+, d_suggestions(0)
 {
 }
 
@@ -54,6 +59,12 @@ ContextMenuParams::ContextMenuParams(const ContextMenuParams& other)
         d_customItems = 0;
     } else {
         d_customItems = new CustomItems(*other.d_customItems);
+    }
+
+    if (!other.d_suggestions) {
+        d_suggestions = 0;
+    } else {
+        d_suggestions = new SpellSuggestionsData(*other.d_suggestions);
     }
 }
 
@@ -75,14 +86,26 @@ ContextMenuParams& ContextMenuParams::operator=(const ContextMenuParams& other)
     } else {
         d_customItems = new CustomItems(*other.d_customItems);
     }
+    if (d_suggestions) {
+        delete d_suggestions;
+    }
+    if (!other.d_suggestions) {
+        d_suggestions = 0;
+    } else {
+        d_suggestions = new SpellSuggestionsData(*other.d_suggestions);
+    }
     return *this;
 }
 
 ContextMenuParams::~ContextMenuParams()
 {
-    if (d_customItems){
+    if (d_customItems) {
         delete d_customItems;
         d_customItems = 0;
+    }
+    if (d_suggestions) {
+        delete d_suggestions;
+        d_suggestions = 0;
     }
 }
 
@@ -114,6 +137,34 @@ ContextMenuItem& ContextMenuParams::customItem(const int index)
     DCHECK(d_customItems != 0);
     DCHECK(index >= 0 && index < d_customItems->count());
     return d_customItems->item(index);
+}
+
+int ContextMenuParams::numSpellSuggestions() const
+{
+    return d_suggestions ? d_suggestions->d_suggestions.size() : 0;
+}
+
+void ContextMenuParams::setNumSpellSuggestions(int count)
+{
+    DCHECK(d_suggestions == 0);
+    if (count > 0) {
+        d_suggestions = new SpellSuggestionsData();
+        d_suggestions->d_suggestions.resize(count);
+    }
+}
+
+const String& ContextMenuParams::spellSuggestion(int index) const
+{
+    DCHECK(d_suggestions != 0);
+    DCHECK(index >= 0 && index < (int)d_suggestions->d_suggestions.size());
+    return d_suggestions->d_suggestions[index];
+}
+
+String& ContextMenuParams::spellSuggestion(int index)
+{
+    DCHECK(d_suggestions != 0);
+    DCHECK(index >= 0 && index < (int)d_suggestions->d_suggestions.size());
+    return d_suggestions->d_suggestions[index];
 }
 
 }

@@ -37,6 +37,7 @@
 #include <blpwtk2_statics.h>
 
 #include <base/message_loop.h>
+#include <base/utf_string_conversions.h>
 #include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/devtools_http_handler.h>
 #include <content/public/browser/render_view_host.h>
@@ -462,6 +463,15 @@ void WebViewImpl::setZoomPercent(int value)
     DCHECK(!d_wasDestroyed);
     d_webContents->GetRenderViewHost()->SetZoomLevel(
         WebKit::WebView::zoomFactorToZoomLevel((double)value/100));
+}
+
+void WebViewImpl::replaceMisspelledRange(const StringRef& text)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    base::string16 text16;
+    UTF8ToUTF16(text.data(), text.length(), &text16);
+    d_webContents->GetRenderViewHost()->ReplaceMisspelling(text16);
 }
 
 void WebViewImpl::UpdateTargetURL(content::WebContents* source,

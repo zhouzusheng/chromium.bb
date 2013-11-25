@@ -39,6 +39,7 @@
 #include <blpwtk2_mediarequest.h>
 #include <blpwtk2_profile.h>
 #include <blpwtk2_proxyconfig.h>
+#include <blpwtk2_spellcheckconfig.h>
 #include <blpwtk2_textdirection.h>
 
 #endif  // INCLUDED_BLPWTK2_H

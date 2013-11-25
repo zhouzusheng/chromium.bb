@@ -30,6 +30,7 @@
 #include <base/files/file_path.h>
 #include <base/threading/platform_thread.h>
 
+#include <string>
 #include <vector>
 
 namespace base {
@@ -91,6 +92,8 @@ struct Statics {
 
 
     // ====== some utility functions =============
+
+    static std::string& getDictionaryPath();
 
     static std::vector<base::FilePath>& getPluginPaths();
     static void registerPlugin(const char* pluginPath);

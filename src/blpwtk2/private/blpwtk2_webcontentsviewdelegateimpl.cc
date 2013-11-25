@@ -71,6 +71,14 @@ void convertItem(const WebMenuItem& item1, blpwtk2::ContextMenuItem& item2)
     convertSubmenus(item1, item2);
 }
 
+void convertSpellcheck(const content::ContextMenuParams& params, blpwtk2::ContextMenuParams& params2)
+{
+    params2.setNumSpellSuggestions(params.dictionary_suggestions.size());
+    for (std::size_t i = 0; i < params.dictionary_suggestions.size(); ++i) {
+        params2.spellSuggestion(i) = blpwtk2::String(params.dictionary_suggestions[i]);
+    }
+}
+
 } // close unnamed namespace
 
 namespace blpwtk2 {
@@ -106,6 +114,7 @@ void WebContentsViewDelegateImpl::ShowContextMenu(
     params2.setCanDelete(params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanDelete));
 
     convertCustomItems(params, params2);
+    convertSpellcheck(params, params2);
 
     webViewImpl->showContextMenu(params2);
 }

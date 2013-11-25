@@ -108,6 +108,7 @@ class WebViewImpl : public WebView,
     virtual void enableCustomTooltip(bool enabled) OVERRIDE;
     virtual void setZoomPercent(int value) OVERRIDE;
     virtual void find(const StringRef& text, bool matchCase, bool forward) OVERRIDE;
+    virtual void replaceMisspelledRange(const StringRef& text) OVERRIDE;
 
     /////// WebContentsDelegate overrides
 

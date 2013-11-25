@@ -36,6 +36,7 @@
 #include <content/public/browser/render_process_host.h>
 #include <content/public/browser/resource_dispatcher_host.h>
 #include <content/public/browser/resource_dispatcher_host_delegate.h>
+#include <chrome/browser/spellchecker/spellcheck_message_filter.h>
 
 namespace blpwtk2 {
 
@@ -104,10 +105,12 @@ void ContentBrowserClientImpl::RenderProcessHostCreated(
     content::RenderProcessHost* host)
 {
     DCHECK(Statics::isInBrowserMainThread());
-    int renderer = Statics::hostIdToRenderer(host->GetID());
+    int id = host->GetID();
+    int renderer = Statics::hostIdToRenderer(id);
     if (Statics::rendererUsesInProcessPlugins(renderer)) {
         host->SetUsesInProcessPlugins();
     }
+    host->GetChannel()->AddFilter(new SpellCheckMessageFilter(id));
 }
 
 bool ContentBrowserClientImpl::SupportsInProcessRenderer()

@@ -90,14 +90,17 @@ enum {
     IDM_DELETE,
     IDM_INSPECT,
     IDM_CONTEXT_MENU_BASE_CUSTOM_TAG = 5000,
-    IDM_CONTEXT_MENU_END_CUSTOM_TAG = 6000
+    IDM_CONTEXT_MENU_END_CUSTOM_TAG = 5999,
+    IDM_CONTEXT_MENU_BASE_SPELL_TAG = 6000,
+    IDM_CONTEXT_MENU_END_SPELL_TAG = 6999
 };
 
 class Shell;
 int registerShellWindowClass();
-Shell* createShell(blpwtk2::WebView* webView = 0);
-HMENU createContextMenu(const blpwtk2::ContextMenuParams& params);
+Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView = 0);
 blpwtk2::HttpTransactionHandler* createHttpTransactionHandler();
+void populateSubmenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem& item);
+void populateContextMenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuParams& params);
 
 void appendElement(blpwtk2::WebView* webView)
 {
@@ -204,16 +207,19 @@ public:
     HWND d_urlEntryWnd;
     HWND d_findEntryHwnd;
     blpwtk2::WebView* d_webView;
+    blpwtk2::Profile* d_profile;
     Shell* d_inspectorShell;
     Shell* d_inspectorFor;
     POINT d_contextMenuPoint;
     std::string d_findText;
+    std::vector<blpwtk2::String> d_contextMenuSpellReplacements;
 
-    Shell(HWND mainWnd, HWND urlEntryWnd, HWND findEntryHwnd, blpwtk2::WebView* webView = 0)
+    Shell(HWND mainWnd, HWND urlEntryWnd, HWND findEntryHwnd, blpwtk2::Profile* profile, blpwtk2::WebView* webView = 0)
     : d_mainWnd(mainWnd)
     , d_urlEntryWnd(urlEntryWnd)
     , d_findEntryHwnd(findEntryHwnd)
     , d_webView(webView)
+    , d_profile(profile)
     , d_inspectorShell(0)
     , d_inspectorFor(0)
     {
@@ -221,6 +227,7 @@ public:
 
         if (!d_webView) {
             blpwtk2::CreateParams params;
+            params.setProfile(d_profile);
             //params.setRendererAffinity(blpwtk2::Constants::IN_PROCESS_RENDERER);
             d_webView = blpwtk2::Toolkit::createWebView(d_mainWnd, this, params);
         }
@@ -361,7 +368,7 @@ public:
                   params.targetUrl().c_str());
         OutputDebugStringA(buf);
 
-        Shell* newShell = createShell(newView);
+        Shell* newShell = createShell(d_profile, newView);
         *newViewDelegate = newShell;
         ShowWindow(newShell->d_mainWnd, SW_SHOW);
         UpdateWindow(newShell->d_mainWnd);
@@ -490,6 +497,48 @@ public:
         OutputDebugStringA(buf);
     }
 
+    HMENU createContextMenu(const blpwtk2::ContextMenuParams& params)
+    {
+        bool addSeparator = false;
+        if (params.canCut() || params.canCopy() || params.canPaste() || params.canDelete())
+            addSeparator = true;
+
+        HMENU menu = CreatePopupMenu();
+
+        if (params.numCustomItems() > 0) {
+            populateContextMenu(menu, IDM_CONTEXT_MENU_BASE_CUSTOM_TAG, params);
+            AppendMenuA(menu, MF_SEPARATOR, 0, NULL);
+        }
+
+        if (params.canCut())
+            AppendMenu(menu, MF_STRING, IDM_CUT, L"C&ut");
+        if (params.canCopy())
+            AppendMenu(menu, MF_STRING, IDM_COPY, L"&Copy");
+        if (params.canPaste())
+            AppendMenu(menu, MF_STRING, IDM_PASTE, L"&Paste");
+        if (params.canDelete())
+            AppendMenu(menu, MF_STRING, IDM_DELETE, L"&Delete");
+
+        if (addSeparator)
+            AppendMenu(menu, MF_SEPARATOR, 0, NULL);
+
+        AppendMenu(menu, MF_STRING, IDM_INSPECT, L"I&nspect Element");
+
+        d_contextMenuSpellReplacements.clear();
+
+        if (params.numSpellSuggestions() > 0) {
+            AppendMenu(menu, MF_SEPARATOR, 0, NULL);
+
+            for (int i = 0; i < params.numSpellSuggestions(); ++i) {
+                int index = d_contextMenuSpellReplacements.size();
+                const blpwtk2::String& text = params.spellSuggestion(i);
+                d_contextMenuSpellReplacements.push_back(text);
+                AppendMenuA(menu, MF_STRING, IDM_CONTEXT_MENU_BASE_SPELL_TAG + index, text.c_str());
+            }
+        }
+
+        return menu;
+    }
 };
 std::set<Shell*> Shell::s_shells;
 
@@ -506,7 +555,32 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     blpwtk2::Toolkit::setPumpMode(blpwtk2::PumpMode::AUTOMATIC);
 #endif
 
-    Shell* firstShell = createShell();
+    blpwtk2::Profile* profile = blpwtk2::Toolkit::createIncognitoProfile();
+
+    {
+        // Turn on spellcheck
+        blpwtk2::SpellCheckConfig config;
+
+        config.enableSpellCheck(true);
+        config.enableAutoCorrect(true);
+
+        std::vector<blpwtk2::StringRef> languages;
+        languages.push_back("en-US");
+        //languages.push_back("en-GB");
+        //languages.push_back("fr");
+        //languages.push_back("de");
+        config.setLanguages(&languages[0], languages.size());
+
+        std::vector<blpwtk2::StringRef> customWords;
+        customWords.push_back("foo");
+        customWords.push_back("zzzx");
+        customWords.push_back("Bloomberg");
+        config.setCustomWords(&customWords[0], customWords.size());
+
+        profile->setSpellCheckConfig(config);
+    }
+
+    Shell* firstShell = createShell(profile);
     firstShell->d_webView->loadUrl("http://www.google.com");
     //firstShell->d_webView->loadUrl("file://c:/stuff/test.html");
     //firstShell->d_webView->loadUrl("http://get.webgl.org");
@@ -552,6 +626,11 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             shell->d_webView->performCustomContextMenuAction(wmId - IDM_CONTEXT_MENU_BASE_CUSTOM_TAG);
             return 0;
         }
+        if (wmId >= IDM_CONTEXT_MENU_BASE_SPELL_TAG && wmId < IDM_CONTEXT_MENU_END_SPELL_TAG) {
+            int idx = (wmId - IDM_CONTEXT_MENU_BASE_SPELL_TAG);
+            shell->d_webView->replaceMisspelledRange(shell->d_contextMenuSpellReplacements[idx]);
+            return 0;
+        }
         switch (wmId) {
         case IDC_BACK:
             shell->d_webView->goBack();
@@ -590,7 +669,7 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             shell->d_webView->focus();
             break;
         case IDM_NEW_WINDOW:
-            newShell = createShell();
+            newShell = createShell(shell->d_profile);
             ShowWindow(newShell->d_mainWnd, SW_SHOW);
             UpdateWindow(newShell->d_mainWnd);
             SetFocus(newShell->d_urlEntryWnd);
@@ -632,7 +711,7 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
                 shell->d_inspectorShell->d_webView->focus();
                 return 0;
             }
-            shell->d_inspectorShell = createShell();
+            shell->d_inspectorShell = createShell(shell->d_profile);
             shell->d_inspectorShell->d_inspectorFor = shell;
             ShowWindow(shell->d_inspectorShell->d_mainWnd, SW_SHOW);
             UpdateWindow(shell->d_inspectorShell->d_mainWnd);
@@ -724,7 +803,7 @@ int registerShellWindowClass()
     return RegisterClassEx(&wcx) == 0 ? -1 : 0;
 }
 
-Shell* createShell(blpwtk2::WebView* webView)
+Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
 {
     // Create the main window.
     HWND mainWnd = CreateWindow(L"ShellWClass",      // name of window class
@@ -838,10 +917,8 @@ Shell* createShell(blpwtk2::WebView* webView)
         g_defaultEditWndProc = reinterpret_cast<WNDPROC>(GetWindowLongPtr(urlEntryWnd, GWLP_WNDPROC));
     SetWindowLongPtr(urlEntryWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(urlEntryWndProc));
 
-    return new Shell(mainWnd, urlEntryWnd, findEntryHwnd, webView);
+    return new Shell(mainWnd, urlEntryWnd, findEntryHwnd, profile, webView);
 }
-
-void populateSubmenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem& item);
 
 void populateMenuItem(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem& item)
 {
@@ -875,38 +952,6 @@ void populateSubmenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem
         populateMenuItem(menu, menuIdStart,item.subMenuItem(i));
     }
 }
-
-
-HMENU createContextMenu(const blpwtk2::ContextMenuParams& params)
-{
-    bool addSeparator = false;
-    if (params.canCut() || params.canCopy() || params.canPaste() || params.canDelete())
-        addSeparator = true;
-
-    HMENU menu = CreatePopupMenu();
-
-    if (params.numCustomItems() > 0){
-        const int customContextMenuItemId = 5000;
-        populateContextMenu(menu, customContextMenuItemId, params);
-        AppendMenuA(menu, MF_SEPARATOR, 0, NULL);
-    }
-
-    if (params.canCut())
-        AppendMenu(menu, MF_STRING, IDM_CUT, L"C&ut");
-    if (params.canCopy())
-        AppendMenu(menu, MF_STRING, IDM_COPY, L"&Copy");
-    if (params.canPaste())
-        AppendMenu(menu, MF_STRING, IDM_PASTE, L"&Paste");
-    if (params.canDelete())
-        AppendMenu(menu, MF_STRING, IDM_DELETE, L"&Delete");
-
-    if (addSeparator)
-        AppendMenu(menu, MF_SEPARATOR, 0, NULL);
-
-    AppendMenu(menu, MF_STRING, IDM_INSPECT, L"I&nspect Element");
-    return menu;
-}
-
 
 class DummyHttpTransactionHandler : public blpwtk2::HttpTransactionHandler {
     // This dummy HttpTransactionHandler handles all "http://cdrive/" requests

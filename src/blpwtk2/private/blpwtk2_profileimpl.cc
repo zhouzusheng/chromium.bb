@@ -24,7 +24,12 @@
 
 #include <blpwtk2_proxyconfig.h>
 #include <blpwtk2_proxyconfigimpl.h>
+#include <blpwtk2_stringref.h>
 
+#include <base/prefs/pref_service.h>
+#include <chrome/browser/spellchecker/spellcheck_factory.h>
+#include <chrome/common/pref_names.h>
+#include <components/user_prefs/user_prefs.h>
 #include <content/public/browser/browser_thread.h>
 #include <net/proxy/proxy_service.h>
 #include <net/proxy/proxy_config_service.h>
@@ -70,6 +75,7 @@ void ProfileImpl::initFromBrowserUIThread(
     d_fileLoop = fileLoop;
 
     createProxyConfigService();
+    updateSpellCheckUserPrefs();
 }
 
 net::ProxyService* ProfileImpl::initFromBrowserIOThread()
@@ -135,6 +141,23 @@ void ProfileImpl::useSystemProxyConfig()
     }
 }
 
+void ProfileImpl::setSpellCheckConfig(const SpellCheckConfig& config)
+{
+    // Auto-correct cannot be enabled if spellcheck is disabled.
+    DCHECK(!config.isAutoCorrectEnabled() || config.isSpellCheckEnabled());
+
+    base::AutoLock guard(d_lock);
+
+    d_spellCheckConfig = config;
+
+    if (d_uiLoop) {
+        d_uiLoop->PostTask(
+            FROM_HERE,
+            base::Bind(&ProfileImpl::uiOnUpdateSpellCheckConfig,
+                       base::Unretained(this)));
+    }
+}
+
 void ProfileImpl::createProxyConfigService()
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
@@ -150,6 +173,39 @@ void ProfileImpl::createProxyConfigService()
         d_proxyConfigService.reset(
             net::ProxyService::CreateSystemProxyConfigService(
                 d_ioLoop->message_loop_proxy(), d_fileLoop));
+    }
+}
+
+void ProfileImpl::updateSpellCheckUserPrefs()
+{
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+    PrefService* prefs = components::UserPrefs::Get(d_browserContext);
+
+    bool wasEnabled = prefs->GetBoolean(prefs::kEnableContinuousSpellcheck);
+
+    std::string languages;
+    base::ListValue customWords;
+    for (size_t i = 0; i < d_spellCheckConfig.numLanguages(); ++i) {
+        StringRef str = d_spellCheckConfig.languageAt(i);
+        if (!languages.empty()) {
+            languages.append(",");
+        }
+        languages.append(str.data(), str.length());
+    }
+    for (size_t i = 0; i < d_spellCheckConfig.numCustomWords(); ++i) {
+        StringRef str = d_spellCheckConfig.customWordAt(i);
+        customWords.AppendString(std::string(str.data(), str.length()));
+    }
+    prefs->SetBoolean(prefs::kEnableContinuousSpellcheck, d_spellCheckConfig.isSpellCheckEnabled());
+    prefs->SetBoolean(prefs::kEnableAutoSpellCorrect, d_spellCheckConfig.isAutoCorrectEnabled());
+    prefs->SetString(prefs::kSpellCheckDictionary, languages);
+    prefs->Set(prefs::kSpellCheckCustomWords, customWords);
+
+    if (!wasEnabled && d_spellCheckConfig.isSpellCheckEnabled()) {
+        // Ensure the spellcheck service is created for this context if we just
+        // turned it on.
+        SpellcheckServiceFactory::GetForContext(d_browserContext);
     }
 }
 
@@ -171,6 +227,12 @@ void ProfileImpl::ioOnUpdateProxyConfig()
     base::AutoLock guard(d_lock);
     DCHECK(d_proxyService);
     d_proxyService->ResetConfigService(d_proxyConfigService.release());
+}
+
+void ProfileImpl::uiOnUpdateSpellCheckConfig()
+{
+    base::AutoLock guard(d_lock);
+    updateSpellCheckUserPrefs();
 }
 
 }  // close namespace blpwtk2

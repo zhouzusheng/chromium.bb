@@ -28,6 +28,7 @@
 namespace blpwtk2 {
 
 class ProxyConfig;
+class SpellCheckConfig;
 
 // A profile represents a collection of settings that are used to control how
 // WebViews operate.  In a browser, multiple profiles may exist simultaneously,
@@ -60,6 +61,10 @@ class Profile {
     // called even after WebViews have been created, and the new proxy settings
     // will be used for subsequent network requests.
     virtual void useSystemProxyConfig() = 0;
+
+    // Set the spellcheck configuration for this profile.  This method may be
+    // called even after WebViews have been created.
+    virtual void setSpellCheckConfig(const SpellCheckConfig& config) = 0;
 
   protected:
     // Destroy this profile.  Note that clients of blpwtk2 should not delete

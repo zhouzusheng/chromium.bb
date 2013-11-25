@@ -29,6 +29,7 @@ namespace blpwtk2 {
 
 class StringRef;
 class WebFrame;
+class Profile;
 
 // This class represents a single WebView.  Instances of this class can be
 // created using blpwtk2::Toolkit::createWebView().
@@ -138,7 +139,7 @@ public:
     virtual void onNCHitTestResult(int x, int y, int result) = 0;
 
     // Perform a custom context menu action. This should be called when a custom 
-    // item in the conext menu has been selected.
+    // item in the context menu has been selected.
     virtual void performCustomContextMenuAction(int actionId) = 0;
 
     // If set to 'true', the default tooltip will not be used and the 
@@ -157,6 +158,10 @@ public:
     // the third argument.
     virtual void find(const StringRef& text, bool matchCase,
                       bool forward = true) = 0;
+
+    // Replace current misspelling with 'text'. This should be called by
+    // context menu handlers.
+    virtual void replaceMisspelledRange(const StringRef& text) = 0;
 
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the

@@ -30,8 +30,15 @@
 #include <base/memory/scoped_ptr.h>
 #include <content/public/browser/browser_context.h>
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
+class PrefService;
+
 namespace blpwtk2 {
 
+class PrefStore;
 class ProfileImpl;
 class ResourceContextImpl;
 
@@ -88,6 +95,9 @@ class BrowserContextImpl : public content::BrowserContext {
   private:
     scoped_ptr<ResourceContextImpl> d_resourceContext;
     scoped_refptr<net::URLRequestContextGetter> d_requestContextGetter;
+    scoped_refptr<user_prefs::PrefRegistrySyncable> d_prefRegistry;
+    scoped_ptr<PrefService> d_prefService;
+    scoped_refptr<PrefStore> d_userPrefs;
     ProfileImpl* d_profile;
     base::FilePath d_path;
 

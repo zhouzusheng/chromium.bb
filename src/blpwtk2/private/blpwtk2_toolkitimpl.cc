@@ -37,7 +37,10 @@
 
 #include <base/command_line.h>
 #include <base/message_loop.h>
+#include <base/path_service.h>
 #include <base/synchronization/waitable_event.h>
+#include <base/threading/thread_restrictions.h>
+#include <chrome/common/chrome_paths.h>
 #include <content/public/app/content_main_runner.h>
 #include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
 #include <content/public/browser/render_process_host.h>
@@ -78,6 +81,11 @@ ToolkitImpl::ToolkitImpl()
     d_mainRunner.reset(content::ContentMainRunner::Create());
     int rc = d_mainRunner->Initialize((HINSTANCE)g_instDLL, &d_sandboxInfo, &d_mainDelegate);
     DCHECK(-1 == rc);  // it returns -1 for success!!
+
+    if (!Statics::getDictionaryPath().empty()) {
+        base::ThreadRestrictions::ScopedAllowIO allowIO;
+        PathService::Override(chrome::DIR_APP_DICTIONARIES, base::FilePath::FromUTF8Unsafe(Statics::getDictionaryPath()));
+    }
 
     if (Statics::isRendererMainThreadMode()) {
         new base::MessageLoop(MessageLoop::TYPE_UI);

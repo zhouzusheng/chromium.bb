@@ -94,6 +94,12 @@ MediaObserverImpl* Statics::mediaObserver = 0;
 bool Statics::hasDevTools = false;
 int Statics::numWebViews = 0;
 
+std::string& Statics::getDictionaryPath()
+{
+    static std::string path;
+    return path;
+}
+
 std::vector<base::FilePath>& Statics::getPluginPaths()
 {
     // The plugins registered via blpwtk2::Toolkit::registerPlugin need to be

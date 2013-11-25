@@ -22,15 +22,23 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 
+#include <blpwtk2_prefstore.h>
 #include <blpwtk2_profileimpl.h>
 #include <blpwtk2_resourcecontextimpl.h>
 
 #include <base/files/file_path.h>
 #include <base/file_util.h>
 #include <base/logging.h>  // for CHECK
+#include <base/prefs/pref_service_builder.h>
+#include <base/prefs/pref_service.h>
 #include <base/threading/thread_restrictions.h>
+#include <chrome/browser/spellchecker/spellcheck_factory.h>
+#include <chrome/common/pref_names.h>
 #include <content/public/browser/browser_thread.h>
 #include <content/public/browser/storage_partition.h>
+#include <components/browser_context_keyed_service/browser_context_dependency_manager.h>
+#include <components/user_prefs/pref_registry_syncable.h>
+#include <components/user_prefs/user_prefs.h>
 #include <net/url_request/url_request_context_getter.h>
 
 namespace blpwtk2 {
@@ -71,6 +79,26 @@ BrowserContextImpl::BrowserContextImpl(ProfileImpl* profile)
         file_util::CreateNewTempDirectory(L"blpwtk2_", &d_path);
     }
 
+    {
+        // Initialize prefs for this context.
+        d_prefRegistry = new user_prefs::PrefRegistrySyncable();
+        d_userPrefs = new PrefStore();
+
+        d_prefRegistry->RegisterListPref(prefs::kSpellCheckCustomWords,
+                                         new base::ListValue(),
+                                         user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+
+        PrefServiceBuilder builder;
+        builder.WithUserPrefs(d_userPrefs);
+        d_prefService.reset(builder.Create(d_prefRegistry.get()));
+        components::UserPrefs::Set(this, d_prefService.get());
+    }
+
+    SpellcheckServiceFactory::GetInstance();  // This needs to be initialized before
+                                              // calling CreateBrowserContextServices.
+
+    BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(this, false);
+
     d_profile->initFromBrowserUIThread(
         this,
         content::BrowserThread::UnsafeGetMessageLoopForThread(content::BrowserThread::IO),
@@ -87,6 +115,8 @@ BrowserContextImpl::~BrowserContextImpl()
         DCHECK(file_util::PathExists(d_path));
         file_util::Delete(d_path, true);
     }
+
+    BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(this);
 
     if (d_resourceContext.get()) {
         content::BrowserThread::DeleteSoon(content::BrowserThread::IO,

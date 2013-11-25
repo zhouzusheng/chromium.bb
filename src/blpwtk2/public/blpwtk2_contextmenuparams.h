@@ -29,6 +29,7 @@
 namespace blpwtk2 {
 
 class CustomItems;
+struct SpellSuggestionsData;
 
 // This class contains parameters that are passed to the application whenever
 // the user right clicks or presses the "Show Menu" key inside a WebView.  The
@@ -62,6 +63,12 @@ class BLPWTK2_EXPORT ContextMenuParams {
     const ContextMenuItem& customItem(int index) const;
     ContextMenuItem& customItem(int index);
 
+    int numSpellSuggestions() const;
+    void setNumSpellSuggestions(int count);
+
+    const String& spellSuggestion(int index) const;
+    String& spellSuggestion(int index);
+
   private:
     POINT d_pointOnScreen;
     bool d_canCut;
@@ -69,6 +76,7 @@ class BLPWTK2_EXPORT ContextMenuParams {
     bool d_canPaste;
     bool d_canDelete;
     CustomItems* d_customItems;
+    SpellSuggestionsData *d_suggestions;
 };
 
 }  // close namespace blpwtk2

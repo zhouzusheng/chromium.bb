@@ -26,6 +26,7 @@
 #include <blpwtk2_config.h>
 
 #include <blpwtk2_profile.h>
+#include <blpwtk2_spellcheckconfig.h>
 
 #include <base/basictypes.h>
 #include <base/compiler_specific.h>
@@ -114,13 +115,17 @@ class ProfileImpl : public Profile {
     virtual void setDiskCacheEnabled(bool enabled) OVERRIDE;
     virtual void setProxyConfig(const ProxyConfig& config) OVERRIDE;
     virtual void useSystemProxyConfig() OVERRIDE;
+    virtual void setSpellCheckConfig(const SpellCheckConfig& config) OVERRIDE;
 
   private:
     void createProxyConfigService();
+    void updateSpellCheckUserPrefs();
     // called on the UI thread when a proxy config change happens
     void uiOnUpdateProxyConfig();
     // called on the IO thread when a proxy config change happens
     void ioOnUpdateProxyConfig();
+    // called on the UI thread when a spell check config change happens
+    void uiOnUpdateSpellCheckConfig();
 
     base::Lock d_lock;
     std::string d_dataDir;
@@ -134,6 +139,7 @@ class ProfileImpl : public Profile {
     bool d_useAppProxyConfig;
     bool d_diskCacheEnabled;
     bool d_canChangeDiskCacheEnablement;
+    SpellCheckConfig d_spellCheckConfig;
 
     DISALLOW_COPY_AND_ASSIGN(ProfileImpl);
 };

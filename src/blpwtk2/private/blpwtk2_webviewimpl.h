@@ -24,8 +24,8 @@
 #define INCLUDED_BLPWTK2_WEBVIEWIMPL_H
 
 #include <blpwtk2_config.h>
-#include <blpwtk2_string.h>
 
+#include <blpwtk2_findonpage.h>
 #include <blpwtk2_webview.h>
 
 #include <content/public/browser/web_contents_delegate.h>
@@ -78,7 +78,7 @@ class WebViewImpl : public WebView,
     gfx::NativeView getNativeView() const;
     void showContextMenu(const ContextMenuParams& params);
     void saveCustomContextMenuContext(const content::CustomContextMenuContext& context);
-    void findWithReqId(int reqId, const StringRef& text, bool matchCase, bool forward);
+    void handleFindRequest(const FindOnPage::Request& request);
 
     /////////////// WebView overrides
 
@@ -247,6 +247,7 @@ class WebViewImpl : public WebView,
     scoped_ptr<DevToolsFrontendHostDelegateImpl> d_devToolsFrontEndHost;
     scoped_ptr<content::WebContents> d_webContents;
     scoped_ptr<WebFrameImpl> d_mainFrame;
+    scoped_ptr<FindOnPage> d_find;
     WebViewDelegate* d_delegate;
     WebViewImplClient* d_implClient;
     gfx::NativeView d_originalParent;
@@ -261,10 +262,6 @@ class WebViewImpl : public WebView,
     bool d_ncHitTestPendingAck;
     int d_lastNCHitTestResult;
     content::CustomContextMenuContext d_customContext; //for calling performCustomContextMenuAction()
-    String d_findText;
-    int d_findReqId;
-    int d_findNumberOfMatches;
-    int d_findActiveMatchOrdinal;
 
 
     DISALLOW_COPY_AND_ASSIGN(WebViewImpl);

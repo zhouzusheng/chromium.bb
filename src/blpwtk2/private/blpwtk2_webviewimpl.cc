@@ -47,7 +47,6 @@
 #include <content/public/browser/site_instance.h>
 #include <content/public/renderer/render_view.h>
 #include <third_party/WebKit/Source/WebKit/chromium/public/WebView.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebFindOptions.h>
 
 namespace blpwtk2 {
 
@@ -69,9 +68,6 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 , d_ncHitTestEnabled(false)
 , d_ncHitTestPendingAck(false)
 , d_lastNCHitTestResult(HTCLIENT)
-, d_findReqId(0)
-, d_findNumberOfMatches(0)
-, d_findActiveMatchOrdinal(0)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(profile);
@@ -109,9 +105,6 @@ WebViewImpl::WebViewImpl(content::WebContents* contents)
 , d_ncHitTestEnabled(false)
 , d_ncHitTestPendingAck(false)
 , d_lastNCHitTestResult(HTCLIENT)
-, d_findReqId(0)
-, d_findNumberOfMatches(0)
-, d_findActiveMatchOrdinal(0)
 {
     DCHECK(Statics::isInBrowserMainThread());
 
@@ -166,28 +159,14 @@ void WebViewImpl::saveCustomContextMenuContext(const content::CustomContextMenuC
     d_customContext = context;
 }
 
-void WebViewImpl::findWithReqId(int reqId, const StringRef& text, bool matchCase, bool forward)
+void WebViewImpl::handleFindRequest(const FindOnPage::Request& request)
 {
     DCHECK(Statics::isRendererMainThreadMode()) <<  "original thread mode should use find";
     DCHECK(Statics::isInBrowserMainThread());
 
     if (d_wasDestroyed) return;
 
-    if (text.isEmpty()) {
-        d_findText.assign(text);
-        d_webContents->GetRenderViewHost()->StopFinding(content::STOP_FIND_ACTION_CLEAR_SELECTION);
-        return;
-    }
-    bool findNext = d_findText.equals(text);
-    if (!findNext) {
-        d_findText.assign(text);
-    }
-    WebKit::WebFindOptions options;
-    options.findNext = findNext;
-    options.forward = forward;
-    options.matchCase = matchCase;
-    WebKit::WebString textStr = toWebString(text);
-    d_webContents->GetRenderViewHost()->Find(reqId, textStr, options);
+    request.executeOn(d_webContents->GetRenderViewHost());
 }
 
 void WebViewImpl::destroy()
@@ -252,24 +231,10 @@ void WebViewImpl::find(const StringRef& text, bool matchCase, bool forward)
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
 
-    if (text.isEmpty()) {
-        d_findText.assign(text);
-        d_webContents->GetRenderViewHost()->StopFinding(content::STOP_FIND_ACTION_CLEAR_SELECTION);
-        return;
-    }
-    bool findNext = d_findText.equals(text);
-    if (!findNext) {
-        d_findText.assign(text);
-        if (++d_findReqId <= 0) {
-            d_findReqId = 1; // handle overflow
-        }
-    }
-    WebKit::WebFindOptions options;
-    options.findNext = findNext;
-    options.forward = forward;
-    options.matchCase = matchCase;
-    WebKit::WebString textStr = toWebString(text);
-    d_webContents->GetRenderViewHost()->Find(d_findReqId, textStr, options);
+    if (!d_find) d_find.reset(new FindOnPage());
+
+    FindOnPage::Request request = d_find->makeRequest(text, matchCase, forward);
+    request.executeOn(d_webContents->GetRenderViewHost());
 }
 
 void WebViewImpl::loadInspector(WebView* inspectedView)
@@ -768,19 +733,21 @@ void WebViewImpl::FindReply(content::WebContents* source_contents,
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(source_contents == d_webContents);
+
+    DCHECK(d_find.get() || Statics::isRendererMainThreadMode())
+        << "d_find must be set unless in RENDERER_MAIN thread mode";
+
     if (d_wasDestroyed) return;
 
     if (d_implClient) {
         d_implClient->findStateWithReqId(request_id, number_of_matches,
                                          active_match_ordinal, final_update);
     }
-    else if (d_delegate && request_id == d_findReqId) {
-        if (number_of_matches != -1) d_findNumberOfMatches = number_of_matches;
-        if (active_match_ordinal != -1) d_findActiveMatchOrdinal = active_match_ordinal;
-
+    else if (d_delegate &&
+        d_find->applyUpdate(request_id, number_of_matches, active_match_ordinal)) {
         d_delegate->findState(this,
-                              d_findNumberOfMatches,
-                              d_findActiveMatchOrdinal - 1, // make it zero-based
+                              d_find->numberOfMatches(),
+                              d_find->activeMatchIndex(),
                               final_update);
     }
 }

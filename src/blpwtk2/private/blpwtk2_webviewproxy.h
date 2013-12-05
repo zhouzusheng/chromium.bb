@@ -24,13 +24,14 @@
 #define INCLUDED_BLPWTK2_WEBVIEWPROXY_H
 
 #include <blpwtk2_config.h>
-#include <blpwtk2_string.h>
 
+#include <blpwtk2_findonpage.h>
 #include <blpwtk2_webview.h>
 #include <blpwtk2_webviewdelegate.h>
 #include <blpwtk2_webviewimplclient.h>
 
 #include <base/memory/ref_counted.h>
+#include <base/memory/scoped_ptr.h>
 #include <ui/gfx/native_widget_types.h>
 #include <ui/gfx/rect.h>
 
@@ -152,7 +153,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
                   int hostAffinity, bool initiallyVisible);
     void implDestroy();
     void implLoadUrl(const std::string& url);
-    void findWithReqId(int reqId, const String& text, bool matchCase, bool forward);
+    void implFind(const FindOnPage::Request& request);
     void implLoadInspector(WebView* inspectedView);
     void implInspectElementAt(const POINT& point);
     void implReload(bool ignoreCache);
@@ -208,6 +209,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     base::MessageLoop* d_implDispatcher;
     base::MessageLoop* d_proxyDispatcher;
     WebViewDelegate* d_delegate;
+    scoped_ptr<FindOnPage> d_find;
     int d_routingId;
     gfx::Rect d_rect;
     gfx::Rect d_implRect;       // touched only in the impl thread
@@ -217,10 +219,6 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     bool d_isMainFrameAccessible;
     bool d_isInProcess;
     bool d_gotRendererInfo;
-    String d_findText;
-    int d_findReqId;
-    int d_findNumberOfMatches;
-    int d_findActiveMatchOrdinal;
 };
 
 

@@ -246,6 +246,8 @@
         'private/blpwtk2_prefstore.h',
         'private/blpwtk2_printutil.cc',
         'private/blpwtk2_printutil.h',
+        'private/blpwtk2_findonpage.cc',
+        'private/blpwtk2_findonpage.h',
       ],
       'include_dirs': [
         'public',

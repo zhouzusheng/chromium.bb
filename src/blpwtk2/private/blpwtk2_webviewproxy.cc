@@ -55,9 +55,6 @@ WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
 , d_isMainFrameAccessible(false)
 , d_isInProcess(isInProcess)
 , d_gotRendererInfo(false)
-, d_findReqId(0)
-, d_findNumberOfMatches(0)
-, d_findActiveMatchOrdinal(0)
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(profile);
@@ -85,9 +82,6 @@ WebViewProxy::WebViewProxy(WebViewImpl* impl,
 , d_isMainFrameAccessible(false)
 , d_isInProcess(isInProcess)
 , d_gotRendererInfo(false)
-, d_findReqId(0)
-, d_findNumberOfMatches(0)
-, d_findActiveMatchOrdinal(0)
 {
     DCHECK(base::MessageLoop::current() == implDispatcher);
     ++Statics::numWebViews;
@@ -141,16 +135,11 @@ void WebViewProxy::find(const StringRef& text, bool matchCase, bool forward)
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_wasDestroyed);
 
-    if (!d_findText.equals(text)) {
-        d_findText.assign(text);
-        if (!text.isEmpty() && ++d_findReqId <= 0) {
-            d_findReqId = 1; // handle overflow
-        }
-    }
-    std::string stext(text.data(), text.length());
+    if (!d_find) d_find.reset(new FindOnPage());
+
     d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::findWithReqId, this,
-                   d_findReqId, d_findText, matchCase, forward));
+        base::Bind(&WebViewProxy::implFind, this,
+                   d_find->makeRequest(text, matchCase, forward)));
 }
 
 void WebViewProxy::loadInspector(WebView* inspectedView)
@@ -591,13 +580,10 @@ void WebViewProxy::implLoadUrl(const std::string& url)
     d_impl->loadUrl(url);
 }
 
-void WebViewProxy::findWithReqId(int reqId,
-                                 const String& text,
-                                 bool matchCase,
-                                 bool forward)
+void WebViewProxy::implFind(const FindOnPage::Request& request)
 {
     DCHECK(d_impl);
-    d_impl->findWithReqId(reqId, text, matchCase, forward);
+    d_impl->handleFindRequest(request);
 }
 
 void WebViewProxy::implLoadInspector(WebView* inspectedView)
@@ -889,13 +875,12 @@ void WebViewProxy::proxyFindState(int reqId,
                                   int activeMatchOrdinal,
                                   bool finalUpdate)
 {
-    if (d_delegate && !d_wasDestroyed && reqId == d_findReqId) {
-        if (numberOfMatches != -1) d_findNumberOfMatches = numberOfMatches;
-        if (activeMatchOrdinal != -1) d_findActiveMatchOrdinal = activeMatchOrdinal;
-
+    DCHECK(d_find);
+    if (d_delegate && !d_wasDestroyed &&
+        d_find->applyUpdate(reqId, numberOfMatches, activeMatchOrdinal)) {
         d_delegate->findState(this,
-                              d_findNumberOfMatches,
-                              d_findActiveMatchOrdinal - 1, // make it zero-based
+                              d_find->numberOfMatches(),
+                              d_find->activeMatchIndex(),
                               finalUpdate);
     }
 }

@@ -69,11 +69,10 @@ struct TextCheckingResult;
 struct CompositionUnderline {
     CompositionUnderline() 
         : startOffset(0), endOffset(0), thick(false) { }
-    CompositionUnderline(unsigned s, unsigned e, const Color& c, bool t) 
-        : startOffset(s), endOffset(e), color(c), thick(t) { }
+    CompositionUnderline(unsigned s, unsigned e, bool t)
+        : startOffset(s), endOffset(e), thick(t) { }
     unsigned startOffset;
     unsigned endOffset;
-    Color color;
     bool thick;
 };
 

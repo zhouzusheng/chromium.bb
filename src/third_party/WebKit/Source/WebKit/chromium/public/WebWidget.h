@@ -32,6 +32,7 @@
 #define WebWidget_h
 
 #include "../../../Platform/chromium/public/WebCanvas.h"
+#include "../../../Platform/chromium/public/WebColor.h"
 #include "../../../Platform/chromium/public/WebCommon.h"
 #include "../../../Platform/chromium/public/WebRect.h"
 #include "../../../Platform/chromium/public/WebSize.h"

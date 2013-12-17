@@ -30,6 +30,7 @@
 #include <base/logging.h>  // for DCHECK
 #include <net/http/http_network_session.h>
 #include <net/socket/client_socket_pool_manager.h>
+#include <third_party/WebKit/Source/WebKit/chromium/public/WebKit.h>
 #include <ui/gl/gl_implementation.h>
 
 
@@ -243,6 +244,11 @@ void Toolkit::setDictionaryPath(const StringRef& path)
 
     DCHECK(!g_started && !g_shutdown);
     Statics::getDictionaryPath().assign(path.data(), path.length());
+}
+
+void Toolkit::allowNonWindowContexts_Unsafe()
+{
+    WebKit::allowNonWindowContexts_Unsafe();
 }
 
 }  // close namespace blpwtk2

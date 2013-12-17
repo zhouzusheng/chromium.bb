@@ -236,6 +236,13 @@ struct BLPWTK2_EXPORT Toolkit {
     // if attempting to change the dictionary path after a WebView has been
     // created (even if it has been destroyed).
     static void setDictionaryPath(const StringRef& path);
+
+    // Do not use this function unless you know what you're doing.  It relaxes
+    // a bunch of security checks in the V8 binding layer in order to allow non
+    // window contexts.  Note that it has been explicitly marked 'Unsafe' in
+    // order to discourage its use except in cases where it is absolutely
+    // necessary.
+    static void allowNonWindowContexts_Unsafe();
 };
 
 }  // close namespace blpwtk2

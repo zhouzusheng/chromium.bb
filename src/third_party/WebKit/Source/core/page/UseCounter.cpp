@@ -26,6 +26,7 @@
 #include "config.h"
 #include "core/page/UseCounter.h"
 
+#include "bindings/v8/V8Binding.h"
 #include "core/dom/Document.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/page/DOMWindow.h"
@@ -84,9 +85,9 @@ void UseCounter::count(Document* document, Feature feature)
 
 void UseCounter::count(DOMWindow* domWindow, Feature feature)
 {
-    if (!domWindow)
+    if (isNonWindowContextsAllowed() && !domWindow)
         return;
-
+    ASSERT(domWindow);
     count(domWindow->document(), feature);
 }
 

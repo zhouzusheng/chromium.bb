@@ -32,6 +32,7 @@
 #include "bindings/v8/BindingSecurity.h"
 
 #include "bindings/v8/BindingState.h"
+#include "bindings/v8/V8Binding.h"
 #include "core/dom/Document.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -49,7 +50,7 @@ static bool canAccessDocument(BindingState* state, Document* targetDocument, Sec
 
     DOMWindow* active = activeDOMWindow(state);
     if (!active)
-        return true;
+        return isNonWindowContextsAllowed();
 
     if (active->document()->securityOrigin()->canAccess(targetDocument->securityOrigin()))
         return true;

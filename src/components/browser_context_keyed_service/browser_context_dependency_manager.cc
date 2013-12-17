@@ -57,11 +57,7 @@ void BrowserContextDependencyManager::CreateBrowserContextServices(
     BrowserContextKeyedBaseFactory* factory =
         static_cast<BrowserContextKeyedBaseFactory*>(construction_order[i]);
 
-    if (!context->IsOffTheRecord()) {
-      // We only register preferences on normal contexts because the incognito
-      // context shares the pref service with the normal one.
-      factory->RegisterUserPrefsOnBrowserContext(context);
-    }
+    factory->RegisterUserPrefsOnBrowserContext(context);
 
     if (is_testing_context && factory->ServiceIsNULLWhileTesting()) {
       factory->SetEmptyTestingFactory(context);

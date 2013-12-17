@@ -149,7 +149,7 @@ void URLRequestContextGetterImpl::initialize()
         d_urlRequestContext->network_delegate();
     networkSessionParams.http_server_properties =
         d_urlRequestContext->http_server_properties();
-    networkSessionParams.ignore_certificate_errors = true;
+    networkSessionParams.ignore_certificate_errors = false;
     if (cmdline.HasSwitch(switches::kHostResolverRules)) {
         scoped_ptr<net::MappedHostResolver> mappedHostResolver(
             new net::MappedHostResolver(hostResolver.Pass()));

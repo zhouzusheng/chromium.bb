@@ -23,33 +23,15 @@
 
 import sys, os
 
-def writeProductsFile(f, version):
-  productAppend = ""
-  if version != "":
-    productAppend = "." + version
-  f.write('// generated file -- DO NOT EDIT\n')
-  f.write('#ifndef INCLUDED_GENERATED_BLPWTK2_PRODUCTS\n')
-  f.write('#define INCLUDED_GENERATED_BLPWTK2_PRODUCTS\n')
-  f.write('\n')
-  f.write('#define BLPWTK2_VERSION "' + version + '"\n')
-  f.write('#define BLPWTK2_DLL_NAME "blpwtk2' + productAppend + '.dll"\n')
-  f.write('#define BLPWTK2_SUBPROCESS_EXE_NAME "blpwtk2_subprocess' + productAppend + '.exe"\n')
-  f.write('#define BLPWTK2_DEVTOOLS_PAK_NAME "blpwtk2_devtools' + productAppend + '.pak"\n')
-  f.write('#define BLPANGLE_DLL_NAME "blpangle' + productAppend + '.dll"\n')
-  f.write('#define BLPV8_DLL_NAME "blpv8' + productAppend + '.dll"\n')
-  f.write('\n')
-  f.write('#endif  // INCLUDED_GENERATED_BLPWTK2_PRODUCTS\n')
-
 def getChromiumVersion():
   scriptDir = os.path.dirname(os.path.realpath(__file__))
   chromiumDir = os.path.abspath(os.path.join(scriptDir, os.pardir, os.pardir))
   for path in os.listdir(chromiumDir):
     if path.count('.') == 3:
       return path
-  # Return a "dummy" version that is sufficiently new.
-  return "27.1.2.3"
+  raise Exception("Could not find chromium version directory!")
 
-def writeVersionFiles(fH, fCC, version):
+def getVersionParts(version):
   chromiumVersion = getChromiumVersion()
 
   components = version.split('_')
@@ -60,10 +42,53 @@ def writeVersionFiles(fH, fCC, version):
           + chromiumVersion + ")")
     bbPatch = components[1]
   else:
-    bbPatch = "bb1"
+    bbPatch = "bb0"
+    version = chromiumVersion + "_" + bbPatch
 
-  exportedSymbol =  'd_version_' + chromiumVersion.replace('.', '_') \
-      + '_' + bbPatch.replace('.', '_')
+  return version, chromiumVersion, bbPatch
+
+def writeProductsFile(f, version):
+  productAppend = ""
+  if version != "":
+    productAppend = "." + version
+
+  version, chromiumVersion, bbPatch = getVersionParts(version)
+  chromiumVersionNumbers = chromiumVersion.split('.')
+  bbPatchNumber = bbPatch[2:]
+
+  # Make sure they are integers, otherwise we cannot embed them inside
+  # FileVersion in the DLL rc files.
+  int(chromiumVersionNumbers[0])
+  int(chromiumVersionNumbers[1])
+  int(chromiumVersionNumbers[2])
+  int(chromiumVersionNumbers[3])
+  int(bbPatchNumber)
+
+  f.write('// generated file -- DO NOT EDIT\n')
+  f.write('#ifndef INCLUDED_GENERATED_BLPWTK2_PRODUCTS\n')
+  f.write('#define INCLUDED_GENERATED_BLPWTK2_PRODUCTS\n')
+  f.write('\n')
+  f.write('// Naming scheme based on http://www.chromium.org/developers/version-numbers\n')
+  f.write('#define CHROMIUM_VERSION_MAJOR ' + chromiumVersionNumbers[0] + '\n')
+  f.write('#define CHROMIUM_VERSION_MINOR ' + chromiumVersionNumbers[1] + '\n')
+  f.write('#define CHROMIUM_VERSION_BUILD ' + chromiumVersionNumbers[2] + '\n')
+  f.write('#define CHROMIUM_VERSION_PATCH ' + chromiumVersionNumbers[3] + '\n')
+  f.write('\n')
+  f.write('#define BB_PATCH_NUMBER ' + bbPatchNumber + '\n')
+  f.write('\n')
+  f.write('#define BLPWTK2_VERSION "' + version + '"\n')
+  f.write('#define BLPWTK2_DLL_NAME "blpwtk2' + productAppend + '.dll"\n')
+  f.write('#define BLPWTK2_SUBPROCESS_EXE_NAME "blpwtk2_subprocess' + productAppend + '.exe"\n')
+  f.write('#define BLPWTK2_DEVTOOLS_PAK_NAME "blpwtk2_devtools' + productAppend + '.pak"\n')
+  f.write('#define BLPANGLE_DLL_NAME "blpangle' + productAppend + '.dll"\n')
+  f.write('#define BLPV8_DLL_NAME "blpv8' + productAppend + '.dll"\n')
+  f.write('\n')
+  f.write('#endif  // INCLUDED_GENERATED_BLPWTK2_PRODUCTS\n')
+
+def writeVersionFiles(fH, fCC, version):
+  version, chromiumVersion, bbPatch = getVersionParts(version)
+
+  exportedSymbol =  'version_' + version.replace('.', '_')
 
   fH.write('// generated file -- DO NOT EDIT\n')
   fH.write('#ifndef INCLUDED_GENERATED_BLPWTK2_VERSION\n')
@@ -75,14 +100,14 @@ def writeVersionFiles(fH, fCC, version):
   fH.write('namespace blpwtk2 {\n')
   fH.write('\n')
   fH.write('struct Version {\n')
-  fH.write('    static const char *d_chromiumVersion;\n')
-  fH.write('    static const char *d_bbPatchVersion;\n')
-  fH.write('    BLPWTK2_EXPORT static const char *' + exportedSymbol + ';\n')
+  fH.write('    static const char* d_chromiumVersion;\n')
+  fH.write('    static const char* d_bbPatchVersion;\n')
+  fH.write('    BLPWTK2_EXPORT static const char* ' + exportedSymbol + '();\n')
   fH.write('};  // Version\n')
   fH.write('\n')
   fH.write('// Force linker to pull in this component\'s object file.\n')
   fH.write('namespace {\n')
-  fH.write('    extern const char **const blpwtk2_version_assertion = \n')
+  fH.write('    extern const char* (*blpwtk2_version_assertion)() = \n')
   fH.write('        &Version::' + exportedSymbol + ';\n')
   fH.write('}\n')
   fH.write('\n')
@@ -94,9 +119,9 @@ def writeVersionFiles(fH, fCC, version):
   fCC.write('#include <blpwtk2_config.h>\n')
   fCC.write('#include <blpwtk2_version.h>\n')
   fCC.write('namespace blpwtk2 {\n')
-  fCC.write('const char *Version::d_chromiumVersion = CHROMIUM_VERSION;\n')
-  fCC.write('const char *Version::d_bbPatchVersion = BB_PATCH_VERSION;\n')
-  fCC.write('const char *Version::' + exportedSymbol + ' = "' + version + '";\n')
+  fCC.write('const char* Version::d_chromiumVersion = "' + chromiumVersion + '";\n')
+  fCC.write('const char* Version::d_bbPatchVersion = "' + bbPatch + '";\n')
+  fCC.write('const char* Version::' + exportedSymbol + '() { return "' + version + '"; }\n')
   fCC.write('}  // blpwtk2\n')
 
 

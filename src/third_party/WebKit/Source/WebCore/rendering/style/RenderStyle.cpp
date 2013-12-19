@@ -665,6 +665,7 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
         || visual->textDecoration != other->visual->textDecoration
         || rareInheritedData->userModify != other->rareInheritedData->userModify
         || rareInheritedData->userSelect != other->rareInheritedData->userSelect
+        || rareInheritedData->rubberbandable != other->rareInheritedData->rubberbandable
         || rareNonInheritedData->userDrag != other->rareNonInheritedData->userDrag
         || rareNonInheritedData->m_borderFit != other->rareNonInheritedData->m_borderFit
 #if ENABLE(CSS3_TEXT)

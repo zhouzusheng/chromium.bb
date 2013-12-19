@@ -71,6 +71,7 @@ ToolkitImpl* ToolkitImpl::instance()
 }
 
 ToolkitImpl::ToolkitImpl()
+: d_mainDelegate(false)
 {
     DCHECK(!g_instance);
     g_instance = this;

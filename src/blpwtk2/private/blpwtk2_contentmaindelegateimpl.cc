@@ -55,7 +55,7 @@ static void InitLogging()
     logging::SetLogItems(true, true, true, true);
 }
 
-static void InitResourceBundle()
+static void InitDevToolsBundle()
 {
     base::FilePath pak_file;
     base::FilePath pak_dir;
@@ -95,7 +95,8 @@ base::StringPiece ContentClient::GetDataResource(
         resource_id, scale_factor);
 }
 
-ContentMainDelegateImpl::ContentMainDelegateImpl()
+ContentMainDelegateImpl::ContentMainDelegateImpl(bool isSubProcess)
+: d_isSubProcess(isSubProcess)
 {
 }
 
@@ -131,7 +132,9 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
 
 void ContentMainDelegateImpl::PreSandboxStartup()
 {
-    InitResourceBundle();
+    if (!d_isSubProcess) {
+        InitDevToolsBundle();
+    }
 }
 
 content::ContentBrowserClient*

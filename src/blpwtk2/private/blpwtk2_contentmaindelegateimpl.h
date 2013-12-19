@@ -54,7 +54,7 @@ class ContentClient : public content::ContentClient {
 // content::ContentMainRunner class).
 class ContentMainDelegateImpl : public content::ContentMainDelegate {
   public:
-    ContentMainDelegateImpl();
+    explicit ContentMainDelegateImpl(bool isSubProcess);
     virtual ~ContentMainDelegateImpl();
 
     // ContentMainDelegate implementation
@@ -69,6 +69,7 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
     ContentClient d_contentClient;
     scoped_ptr<content::ContentBrowserClient> d_contentBrowserClient;
     scoped_ptr<content::ContentRendererClient> d_contentRendererClient;
+    bool d_isSubProcess;
 
     DISALLOW_COPY_AND_ASSIGN(ContentMainDelegateImpl);
 };

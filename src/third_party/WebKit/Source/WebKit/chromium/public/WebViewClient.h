@@ -307,6 +307,10 @@ public:
     // Hide notifation popup for form validation messages.
     virtual void hideValidationMessage() { }
 
+    // Called when a rubberband rectangle should be displayed or hidden.
+    virtual void setRubberbandRect(const WebRect&) { }
+    virtual void hideRubberbandRect() { }
+
     // Session history -----------------------------------------------------
 
     // Tells the embedder to navigate back or forward in session history by

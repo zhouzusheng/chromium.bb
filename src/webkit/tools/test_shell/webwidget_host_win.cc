@@ -191,6 +191,24 @@ void WebWidgetHost::SetCursor(HCURSOR cursor) {
   ::SetCursor(cursor);
 }
 
+void WebWidgetHost::SetRubberbandRect(const gfx::Rect& rect) {
+  if (rect != rubberband_rect_) {
+    RECT rc = rect.ToRECT();
+    ::InvalidateRect(view_, &rc, FALSE);
+    rc = rubberband_rect_.ToRECT();
+    ::InvalidateRect(view_, &rc, FALSE);
+    rubberband_rect_ = rect;
+  }
+}
+
+void WebWidgetHost::HideRubberbandRect() {
+  if (!rubberband_rect_.IsEmpty()) {
+    RECT rc = rubberband_rect_.ToRECT();
+    ::InvalidateRect(view_, &rc, FALSE);
+    rubberband_rect_ = gfx::Rect();
+  }
+}
+
 void WebWidgetHost::DiscardBackingStore() {
   canvas_.reset();
 }
@@ -281,6 +299,10 @@ void WebWidgetHost::Paint() {
   BeginPaint(view_, &ps);
   skia::DrawToNativeContext(canvas_.get(), ps.hdc, ps.rcPaint.left,
                             ps.rcPaint.top, &ps.rcPaint);
+  if (!rubberband_rect_.IsEmpty()) {
+    RECT rc = rubberband_rect_.ToRECT();
+    ::DrawFocusRect(ps.hdc, &rc);
+  }
   EndPaint(view_, &ps);
 
   // Draw children

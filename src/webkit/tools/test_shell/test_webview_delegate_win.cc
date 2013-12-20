@@ -74,6 +74,18 @@ void TestWebViewDelegate::didChangeCursor(const WebCursorInfo& cursor_info) {
   }
 }
 
+void TestWebViewDelegate::setRubberbandRect(const WebRect& rc) {
+  if (WebWidgetHost* host = GetWidgetHost()) {
+    host->SetRubberbandRect(rc);
+  }
+}
+
+void TestWebViewDelegate::hideRubberbandRect() {
+  if (WebWidgetHost* host = GetWidgetHost()) {
+    host->HideRubberbandRect();
+  }
+}
+
 WebRect TestWebViewDelegate::windowRect() {
   if (WebWidgetHost* host = GetWidgetHost()) {
     RECT rect;

@@ -46,6 +46,7 @@ WebViewHost* WebViewHost::Create(HWND parent_view,
   host->webview()->setDevToolsAgentClient(dev_tools_client);
   prefs.Apply(host->webview());
   host->webview()->settings()->setExperimentalCSSGridLayoutEnabled(true);
+  host->webview()->enableAltDragRubberbanding(true);
   host->webview()->initializeMainFrame(delegate);
 
   return host;

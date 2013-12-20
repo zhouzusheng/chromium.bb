@@ -584,6 +584,7 @@
                 'src/WebViewBenchmarkSupportImpl.h',
                 'src/WebViewImpl.cpp',
                 'src/WebViewImpl.h',
+                'src/WebViewImplRubberband.cpp',
                 'src/WebWorkerBase.cpp',
                 'src/WebWorkerBase.h',
                 'src/WebWorkerClientImpl.cpp',

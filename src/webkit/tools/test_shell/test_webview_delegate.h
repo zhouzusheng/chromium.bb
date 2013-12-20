@@ -154,6 +154,8 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
   virtual void closeWidgetSoon();
   virtual void show(WebKit::WebNavigationPolicy policy);
   virtual void runModal();
+  virtual void setRubberbandRect(const WebKit::WebRect&);
+  virtual void hideRubberbandRect();
   virtual WebKit::WebRect windowRect();
   virtual void setWindowRect(const WebKit::WebRect& rect);
   virtual WebKit::WebRect rootWindowRect();

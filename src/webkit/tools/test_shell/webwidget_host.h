@@ -52,6 +52,8 @@ class WebWidgetHost {
   void ScheduleAnimation();
 #if defined(OS_WIN)
   void SetCursor(HCURSOR cursor);
+  void SetRubberbandRect(const gfx::Rect& rect);
+  void HideRubberbandRect();
 #endif
 
   void DiscardBackingStore();
@@ -139,6 +141,7 @@ class WebWidgetHost {
   int scroll_dy_;
 
 #if defined(OS_WIN)
+  gfx::Rect rubberband_rect_;
   bool track_mouse_leave_;
 #endif
 

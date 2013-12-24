@@ -127,6 +127,10 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
         webkit::npapi::PluginList::Singleton()->AddExtraPluginPath(path);
     }
 
+    if (!Statics::enableDefaultPlugins) {
+        webkit::npapi::PluginList::Singleton()->SkipLoadingDefaultPlugins();
+    }
+
     return false;
 }
 

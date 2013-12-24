@@ -92,6 +92,7 @@ base::MessageLoop* Statics::rendererMessageLoop = 0;
 base::MessageLoop* Statics::browserMainMessageLoop = 0;
 MediaObserverImpl* Statics::mediaObserver = 0;
 bool Statics::hasDevTools = false;
+bool Statics::enableDefaultPlugins = true;
 int Statics::numWebViews = 0;
 
 std::string& Statics::getDictionaryPath()

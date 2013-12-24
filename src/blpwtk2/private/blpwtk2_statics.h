@@ -86,6 +86,9 @@ struct Statics {
     // Whether or not devtools is available.
     static bool hasDevTools;
 
+    // Whether or not default plugins should be enabled.
+    static bool enableDefaultPlugins;
+
     // Number of WebViews that have not yet been destroyed.  This is
     // incremented and decremented from the application's main thread.
     static int numWebViews;

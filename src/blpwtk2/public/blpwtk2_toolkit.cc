@@ -126,6 +126,17 @@ void Toolkit::registerPlugin(const char* pluginPath)
     Statics::registerPlugin(pluginPath);
 }
 
+void Toolkit::enableDefaultPlugins(bool enabled)
+{
+    Statics::initApplicationMainThread();
+    if (g_started) {
+        DCHECK(Statics::enableDefaultPlugins == enabled);
+        return;
+    }
+    DCHECK(!ToolkitImpl::instance());
+    Statics::enableDefaultPlugins = enabled;
+}
+
 void Toolkit::setRendererUsesInProcessPlugins(int renderer)
 {
     Statics::initApplicationMainThread();

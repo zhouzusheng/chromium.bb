@@ -77,6 +77,10 @@ class WEBKIT_PLUGINS_EXPORT PluginList {
   // Same as above, but specifies a directory in which to search for plugins.
   void AddExtraPluginDir(const base::FilePath& plugin_dir);
 
+  // Call this before plugins are loaded to prevent the default plugins from
+  // being loaded.
+  void SkipLoadingDefaultPlugins();
+
   // Get the ordered list of directories from which to load plugins
   void GetPluginDirectories(std::vector<base::FilePath>* plugin_dirs);
 
@@ -241,6 +245,9 @@ class WEBKIT_PLUGINS_EXPORT PluginList {
   //
   // Internals
   //
+
+  // true if we should skip loading default plugins.
+  bool should_skip_default_plugins_;
 
   // States whether we will load the plug-in list the next time we try to access
   // it, whether we are currently in the process of loading it, or whether we

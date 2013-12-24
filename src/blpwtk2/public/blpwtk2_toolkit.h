@@ -131,6 +131,14 @@ struct BLPWTK2_EXPORT Toolkit {
     // it will not have any effect.
     static void registerPlugin(const char* pluginPath);
 
+    // Enable or disable loading default plugins (e.g. from paths in the
+    // Windows registry).  This is enabled by default.  If it is disabled, then
+    // only plugins registered via 'registerPlugin' will be enabled.  This
+    // function can only be called before creating any WebViews.  The behavior
+    // is undefined if attempting to change this setting after a WebView has
+    // been created (even if it has been destroyed).
+    static void enableDefaultPlugins(bool enabled);
+
     // Mark the specified 'renderer' to use in-process plugins.  Any WebView
     // created with affinity to the specified 'renderer' will use in-process
     // plugins.  The behavior is undefined if this function is called after any

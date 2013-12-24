@@ -118,6 +118,10 @@ void PluginList::AddExtraPluginDir(const base::FilePath& plugin_dir) {
 #endif
 }
 
+void PluginList::SkipLoadingDefaultPlugins() {
+  should_skip_default_plugins_ = true;
+}
+
 void PluginList::RegisterInternalPlugin(const webkit::WebPluginInfo& info,
                                         bool add_at_beginning) {
   PluginEntryPoints entry_points = {0};
@@ -239,6 +243,7 @@ PluginList::PluginList()
 #if defined(OS_WIN)
       dont_load_new_wmp_(false),
 #endif
+      should_skip_default_plugins_(false),
       loading_state_(LOADING_STATE_NEEDS_REFRESH) {
 }
 
@@ -336,7 +341,7 @@ void PluginList::GetPluginPathsToLoad(std::vector<base::FilePath>* plugin_paths)
     plugin_paths->push_back(path);
   }
 
-  if (NPAPIPluginsSupported()) {
+  if (NPAPIPluginsSupported() && !should_skip_default_plugins_) {
     // A bit confusingly, this function is used to load Pepper plugins as well.
     // Those are all internal plugins so we have to use extra_plugin_paths.
     for (size_t i = 0; i < extra_plugin_dirs.size(); ++i)

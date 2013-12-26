@@ -67,6 +67,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
                  Profile* profile,
                  int hostAffinity,
                  bool initiallyVisible,
+                 bool takeFocusOnMouseDown,
                  bool isInProcess);
     WebViewProxy(WebViewImpl* impl,
                  base::MessageLoop* implDispatcher,
@@ -150,7 +151,8 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
   private:
     // methods that get invoked in the impl thread
     void implInit(gfx::NativeView parent, Profile* profile,
-                  int hostAffinity, bool initiallyVisible);
+                  int hostAffinity, bool initiallyVisible,
+                  bool takeFocusOnMouseDown);
     void implDestroy();
     void implLoadUrl(const std::string& url);
     void implFind(const FindOnPage::Request& request);

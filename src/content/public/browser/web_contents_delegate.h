@@ -455,6 +455,9 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Invoked when the RenderWidgetHost's backing store has been updated.
   virtual void DidUpdateBackingStore() {}
 
+  // Return true if the RWHV should take focus on mouse-down.
+  virtual bool ShouldSetFocusOnMouseDown();
+
   // Allows delegate to show a custom tooltip. If the delegate doesn't want a
   // custom tooltip, it should just return 'false'. Otherwise, it should show
   // the tooltip and return 'true'. By default, the delegate doesn't provide a

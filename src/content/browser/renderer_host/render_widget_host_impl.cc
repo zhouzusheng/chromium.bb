@@ -2194,6 +2194,13 @@ const gfx::Vector2d& RenderWidgetHostImpl::GetLastScrollOffset() const {
   return last_scroll_offset_;
 }
 
+bool RenderWidgetHostImpl::ShouldSetFocusOnMouseDown() const {
+  if (delegate_) {
+    return delegate_->ShouldSetFocusOnMouseDown();
+  }
+  return true;
+}
+
 bool RenderWidgetHostImpl::ShouldForwardTouchEvent() const {
   // Always send a touch event if the renderer has a touch-event handler. It is
   // possible that a renderer stops listening to touch-events while there are

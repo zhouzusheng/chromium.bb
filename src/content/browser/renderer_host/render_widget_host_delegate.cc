@@ -17,6 +17,10 @@ bool RenderWidgetHostDelegate::PreHandleWheelEvent(
   return false;
 }
 
+bool RenderWidgetHostDelegate::ShouldSetFocusOnMouseDown() {
+  return true;
+}
+
 bool RenderWidgetHostDelegate::ShowTooltip(
     const string16& tooltip_text,
     WebKit::WebTextDirection text_direction_hint) {

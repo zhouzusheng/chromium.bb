@@ -69,8 +69,9 @@ class WebViewImpl : public WebView,
                 gfx::NativeView parent,
                 Profile* profile,
                 int hostAffinity,
-                bool initiallyVisible);
-    explicit WebViewImpl(content::WebContents* contents);
+                bool initiallyVisible,
+                bool takeFocusOnMouseDown);
+    WebViewImpl(content::WebContents* contents, bool takeFocusOnMouseDown);
     virtual ~WebViewImpl();
 
     void setImplClient(WebViewImplClient* client);
@@ -194,6 +195,9 @@ class WebViewImpl : public WebView,
     // Invoked when the RenderWidgetHost's backing store has been updated.
     virtual void DidUpdateBackingStore() OVERRIDE;
 
+    // Return true if the RWHV should take focus on mouse-down.
+    virtual bool ShouldSetFocusOnMouseDown() OVERRIDE;
+
     // Allows delegate to show a custom tooltip. If the delegate doesn't want a
     // custom tooltip, it should just return 'false'. Otherwise, it should show
     // the tooltip and return 'true'. By default, the delegate doesn't provide a
@@ -257,6 +261,7 @@ class WebViewImpl : public WebView,
     bool d_wasDestroyed;      // if destroy() has been called
     bool d_isDeletingSoon;    // when DeleteSoon has been called
     bool d_isPopup;           // if this view is a popup view
+    bool d_takeFocusOnMouseDown;
     bool d_customTooltipEnabled;
     bool d_ncHitTestEnabled;
     bool d_ncHitTestPendingAck;

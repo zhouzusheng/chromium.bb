@@ -40,6 +40,11 @@ class BLPWTK2_EXPORT CreateParams {
     // afterwards.
     void setInitiallyVisible(bool visible);
 
+    // By default, WebViews will take focus on mouse down (mimicking upstream
+    // chromium behavior).  However, setting this flag to false will disable
+    // that behavior.
+    void setTakeFocusOnMouseDown(bool enable);
+
     // By default, WebViews dynamically instantiate renderer processes each
     // time a new navigation request is made.  This is known as the
     // "process-per-site-instance" model.  For more information, please refer
@@ -85,11 +90,13 @@ class BLPWTK2_EXPORT CreateParams {
     void setProfile(Profile* profile);
 
     bool initiallyVisible() const { return d_initiallyVisible; }
+    bool takeFocusOnMouseDown() const { return d_takeFocusOnMouseDown; }
     int rendererAffinity() const { return d_rendererAffinity; }
     Profile* profile() const { return d_profile; }
 
   private:
     bool d_initiallyVisible;
+    bool d_takeFocusOnMouseDown;
     int d_rendererAffinity;
     Profile* d_profile;
 };

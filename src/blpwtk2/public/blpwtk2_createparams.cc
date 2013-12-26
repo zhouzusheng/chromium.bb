@@ -30,6 +30,7 @@ namespace blpwtk2 {
 
 CreateParams::CreateParams()
 : d_initiallyVisible(true)
+, d_takeFocusOnMouseDown(true)
 , d_rendererAffinity(Constants::ANY_OUT_OF_PROCESS_RENDERER)
 , d_profile(0)
 {
@@ -38,6 +39,11 @@ CreateParams::CreateParams()
 void CreateParams::setInitiallyVisible(bool visible)
 {
     d_initiallyVisible = visible;
+}
+
+void CreateParams::setTakeFocusOnMouseDown(bool enable)
+{
+    d_takeFocusOnMouseDown = enable;
 }
 
 void CreateParams::setRendererAffinity(int affinity)

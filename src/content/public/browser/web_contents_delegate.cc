@@ -163,6 +163,10 @@ bool WebContentsDelegate::OnSetCursor(int hitTestCode) {
   return false;
 }
 
+bool WebContentsDelegate::ShouldSetFocusOnMouseDown() {
+  return true;
+}
+
 bool WebContentsDelegate::ShowTooltip(
     WebContents* web_contents,
     const string16& tooltip_text,

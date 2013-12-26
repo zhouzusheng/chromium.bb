@@ -329,6 +329,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
     return ignore_input_events_;
   }
 
+  bool ShouldSetFocusOnMouseDown() const;
+
   bool ShouldForwardTouchEvent() const;
 
   bool has_touch_handler() const { return has_touch_handler_; }

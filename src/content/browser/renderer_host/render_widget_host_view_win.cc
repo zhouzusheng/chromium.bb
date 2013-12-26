@@ -2920,7 +2920,10 @@ void RenderWidgetHostViewWin::ForwardMouseEventToRenderer(UINT message,
     // mouse is clicked. This happens after the mouse down event is sent to
     // the renderer because normally Windows does a WM_SETFOCUS after
     // WM_LBUTTONDOWN.
-    SetFocus();
+    if (render_widget_host_ &&
+        render_widget_host_->ShouldSetFocusOnMouseDown()) {
+      SetFocus();
+    }
   }
 }
 

@@ -55,7 +55,8 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
                          gfx::NativeView parent,
                          Profile* profile,
                          int hostAffinity,
-                         bool initiallyVisible)
+                         bool initiallyVisible,
+                         bool takeFocusOnMouseDown)
 : d_delegate(delegate)
 , d_implClient(0)
 , d_focusBeforeEnabled(false)
@@ -64,6 +65,7 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 , d_wasDestroyed(false)
 , d_isDeletingSoon(false)
 , d_isPopup(false)
+, d_takeFocusOnMouseDown(takeFocusOnMouseDown)
 , d_customTooltipEnabled(false)
 , d_ncHitTestEnabled(false)
 , d_ncHitTestPendingAck(false)
@@ -92,7 +94,7 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
     SetParent(getNativeView(), parent);
 }
 
-WebViewImpl::WebViewImpl(content::WebContents* contents)
+WebViewImpl::WebViewImpl(content::WebContents* contents, bool takeFocusOnMouseDown)
 : d_delegate(0)
 , d_implClient(0)
 , d_focusBeforeEnabled(false)
@@ -101,6 +103,7 @@ WebViewImpl::WebViewImpl(content::WebContents* contents)
 , d_wasDestroyed(false)
 , d_isDeletingSoon(false)
 , d_isPopup(false)
+, d_takeFocusOnMouseDown(takeFocusOnMouseDown)
 , d_customTooltipEnabled(false)
 , d_ncHitTestEnabled(false)
 , d_ncHitTestPendingAck(false)
@@ -517,7 +520,7 @@ void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(source_contents == d_webContents);
-    WebViewImpl* newView = new WebViewImpl(new_contents);
+    WebViewImpl* newView = new WebViewImpl(new_contents, d_takeFocusOnMouseDown);
     if (d_wasDestroyed || !d_delegate) {
         newView->destroy();
         return;
@@ -698,6 +701,12 @@ void WebViewImpl::DidUpdateBackingStore()
     if (d_wasDestroyed || !d_implClient) return;
     d_implClient->didUpdatedBackingStore(
         d_webContents->GetRenderViewHost()->LastKnownRendererSize());
+}
+
+bool WebViewImpl::ShouldSetFocusOnMouseDown()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    return d_takeFocusOnMouseDown;
 }
 
 bool WebViewImpl::ShowTooltip(content::WebContents* source_contents, 

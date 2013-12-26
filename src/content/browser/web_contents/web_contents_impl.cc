@@ -1289,6 +1289,13 @@ void WebContentsImpl::DidUpdateBackingStore() {
     delegate_->DidUpdateBackingStore();
 }
 
+bool WebContentsImpl::ShouldSetFocusOnMouseDown() {
+  if (delegate_) {
+    return delegate_->ShouldSetFocusOnMouseDown();
+  }
+  return true;
+}
+
 bool WebContentsImpl::ShowTooltip(
     const string16& tooltip_text,
     WebKit::WebTextDirection text_direction_hint) {

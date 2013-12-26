@@ -204,6 +204,7 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
                                 profile,
                                 hostAffinity,
                                 params.initiallyVisible(),
+                                params.takeFocusOnMouseDown(),
                                 isInProcess);
     }
     else if (Statics::isOriginalThreadMode()) {
@@ -211,7 +212,8 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
                                parent,
                                profile,
                                hostAffinity,
-                               params.initiallyVisible());
+                               params.initiallyVisible(),
+                               params.takeFocusOnMouseDown());
     }
 
     NOTREACHED();

@@ -43,6 +43,7 @@ WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
                            Profile* profile,
                            int hostAffinity,
                            bool initiallyVisible,
+                           bool takeFocusOnMouseDown,
                            bool isInProcess)
 : d_impl(0)
 , d_implDispatcher(implDispatcher)
@@ -64,7 +65,7 @@ WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
 
     d_implDispatcher->PostTask(FROM_HERE,
         base::Bind(&WebViewProxy::implInit, this, parent, profile,
-                   hostAffinity, initiallyVisible));
+                   hostAffinity, initiallyVisible, takeFocusOnMouseDown));
 }
 
 WebViewProxy::WebViewProxy(WebViewImpl* impl,
@@ -560,10 +561,11 @@ void WebViewProxy::findStateWithReqId(int reqId,
 void WebViewProxy::implInit(gfx::NativeView parent,
                             Profile* profile,
                             int hostAffinity,
-                            bool initiallyVisible)
+                            bool initiallyVisible,
+                            bool takeFocusOnMouseDown)
 {
     d_impl = new WebViewImpl(this, parent, profile, hostAffinity,
-                             initiallyVisible);
+                             initiallyVisible, takeFocusOnMouseDown);
     d_impl->setImplClient(this);
 }
 

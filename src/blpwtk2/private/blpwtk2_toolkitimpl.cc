@@ -24,7 +24,6 @@
 
 #include <blpwtk2_statics.h>
 #include <blpwtk2_constants.h>
-#include <blpwtk2_createparams.h>
 #include <blpwtk2_browserthread.h>
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_inprocessrenderer.h>
@@ -32,6 +31,7 @@
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_mainmessagepump.h>
 #include <blpwtk2_profileimpl.h>
+#include <blpwtk2_webviewcreateparams.h>
 #include <blpwtk2_webviewimpl.h>
 #include <blpwtk2_webviewproxy.h>
 
@@ -133,7 +133,7 @@ ToolkitImpl::~ToolkitImpl()
 
 WebView* ToolkitImpl::createWebView(NativeView parent,
                                     WebViewDelegate* delegate,
-                                    const CreateParams& params)
+                                    const WebViewCreateParams& params)
 {
     DCHECK(Statics::isRendererMainThreadMode()
         || Statics::isOriginalThreadMode());

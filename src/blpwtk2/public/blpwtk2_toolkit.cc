@@ -193,7 +193,7 @@ void Toolkit::shutdown()
 
 WebView* Toolkit::createWebView(NativeView parent,
                                 WebViewDelegate* delegate,
-                                const CreateParams& params)
+                                const WebViewCreateParams& params)
 {
     Statics::initApplicationMainThread();
 

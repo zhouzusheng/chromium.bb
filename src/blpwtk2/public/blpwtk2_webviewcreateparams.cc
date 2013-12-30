@@ -20,7 +20,7 @@
  * IN THE SOFTWARE.
  */
 
-#include <blpwtk2_createparams.h>
+#include <blpwtk2_webviewcreateparams.h>
 
 #include <blpwtk2_constants.h>
 
@@ -28,7 +28,7 @@
 
 namespace blpwtk2 {
 
-CreateParams::CreateParams()
+WebViewCreateParams::WebViewCreateParams()
 : d_initiallyVisible(true)
 , d_takeFocusOnMouseDown(true)
 , d_rendererAffinity(Constants::ANY_OUT_OF_PROCESS_RENDERER)
@@ -36,17 +36,17 @@ CreateParams::CreateParams()
 {
 }
 
-void CreateParams::setInitiallyVisible(bool visible)
+void WebViewCreateParams::setInitiallyVisible(bool visible)
 {
     d_initiallyVisible = visible;
 }
 
-void CreateParams::setTakeFocusOnMouseDown(bool enable)
+void WebViewCreateParams::setTakeFocusOnMouseDown(bool enable)
 {
     d_takeFocusOnMouseDown = enable;
 }
 
-void CreateParams::setRendererAffinity(int affinity)
+void WebViewCreateParams::setRendererAffinity(int affinity)
 {
     DCHECK(affinity == Constants::ANY_OUT_OF_PROCESS_RENDERER
         || affinity == Constants::IN_PROCESS_RENDERER
@@ -55,7 +55,7 @@ void CreateParams::setRendererAffinity(int affinity)
     d_rendererAffinity = affinity;
 }
 
-void CreateParams::setProfile(Profile* profile)
+void WebViewCreateParams::setProfile(Profile* profile)
 {
     d_profile = profile;
 }

@@ -30,7 +30,7 @@ namespace blpwtk2 {
 struct Constants {
 
     // Constants that can be used for the 'affinity' parameter in
-    // CreateParams::setRendererAffinity().
+    // WebViewCreateParams::setRendererAffinity().
     enum {
         // Use an out-of-process renderer.  The actual renderer process that
         // will be used will be selected based on the internal heuristic used

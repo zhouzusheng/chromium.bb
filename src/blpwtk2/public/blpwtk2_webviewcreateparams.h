@@ -20,8 +20,8 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_CREATEPARAMS_H
-#define INCLUDED_BLPWTK2_CREATEPARAMS_H
+#ifndef INCLUDED_BLPWTK2_WEBVIEWCREATEPARAMS_H
+#define INCLUDED_BLPWTK2_WEBVIEWCREATEPARAMS_H
 
 #include <blpwtk2_config.h>
 
@@ -31,9 +31,9 @@ class Profile;
 
 // This class contains parameters that are passed to blpwtk2 whenever the
 // application wants to create a new WebView.
-class BLPWTK2_EXPORT CreateParams {
+class BLPWTK2_EXPORT WebViewCreateParams {
   public:
-    CreateParams();
+    WebViewCreateParams();
 
     // By default, WebViews are visible.  Set this to false to make it
     // invisible.  The WebView::show() method can be used to show it
@@ -73,7 +73,7 @@ class BLPWTK2_EXPORT CreateParams {
     // Note that if 'affinity' is not 'ANY_OUT_OF_PROCESS_RENDERER', then the
     // application is responsible for ensuring that WebViews that need to talk
     // to each other via script are routed to the same renderer process.
-    // 
+    //
     // Also note that if '--single-process' is specified on the windows command
     // line, then all WebViews will be routed to 'IN_PROCESS_RENDERER',
     // regardless of the 'affinity' setting.  This is useful for debugging.

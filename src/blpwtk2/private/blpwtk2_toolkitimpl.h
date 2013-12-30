@@ -39,8 +39,8 @@ namespace content {
 
 namespace blpwtk2 {
 
-class CreateParams;
 class WebView;
+class WebViewCreateParams;
 class WebViewDelegate;
 class BrowserThread;
 class BrowserContextImpl;
@@ -61,7 +61,7 @@ class ToolkitImpl {
 
     WebView* createWebView(NativeView parent,
                            WebViewDelegate* delegate,
-                           const CreateParams& params);
+                           const WebViewCreateParams& params);
 
     void onRootWindowPositionChanged(gfx::NativeView root);
     void onRootWindowSettingChange(gfx::NativeView root);

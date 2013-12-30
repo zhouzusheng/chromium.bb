@@ -226,7 +226,7 @@ public:
         s_shells.insert(this);
 
         if (!d_webView) {
-            blpwtk2::CreateParams params;
+            blpwtk2::WebViewCreateParams params;
             params.setProfile(d_profile);
             //params.setRendererAffinity(blpwtk2::Constants::IN_PROCESS_RENDERER);
             d_webView = blpwtk2::Toolkit::createWebView(d_mainWnd, this, params);

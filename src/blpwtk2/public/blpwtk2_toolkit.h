@@ -82,10 +82,10 @@
 
 #include <blpwtk2_config.h>
 
-#include <blpwtk2_createparams.h>
-#include <blpwtk2_threadmode.h>
-#include <blpwtk2_pumpmode.h>
 #include <blpwtk2_constants.h>
+#include <blpwtk2_pumpmode.h>
+#include <blpwtk2_threadmode.h>
+#include <blpwtk2_webviewcreateparams.h>
 
 namespace blpwtk2 {
 
@@ -193,9 +193,10 @@ struct BLPWTK2_EXPORT Toolkit {
     // can be used to specify whether this WebView will run in-process or
     // out-of-process.  The behavior is undefined if Toolkit::shutdown() has
     // been called.
-    static WebView* createWebView(NativeView parent,
-                                  WebViewDelegate* delegate = 0,
-                                  const CreateParams& params = CreateParams());
+    static WebView* createWebView(
+        NativeView parent,
+        WebViewDelegate* delegate = 0,
+        const WebViewCreateParams& params = WebViewCreateParams());
 
     // This function must be called by the application whenever any root
     // window containing a WebView receives WM_WINDOWPOSCHANGED.  Chromium

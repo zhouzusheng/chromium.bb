@@ -37,7 +37,7 @@ BOOL WINAPI DllMain(HANDLE hinstDLL,
 
     if (DLL_PROCESS_DETACH == dwReason) {
         DCHECK(!blpwtk2::ToolkitImpl::instance())
-            << "Make sure you call blpwtk2::Toolkit::shutdown()";
+            << "Make sure you call blpwtk2::Toolkit::destroy()";
     }
 
     return TRUE;

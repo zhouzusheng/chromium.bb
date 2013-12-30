@@ -71,12 +71,26 @@ ToolkitImpl* ToolkitImpl::instance()
 }
 
 ToolkitImpl::ToolkitImpl()
-: d_mainDelegate(false)
+: d_threadsStarted(false)
+, d_threadsStopped(false)
+, d_mainDelegate(false)
 {
     DCHECK(!g_instance);
     g_instance = this;
 
     base::MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);
+}
+
+ToolkitImpl::~ToolkitImpl()
+{
+    DCHECK(!d_threadsStarted || d_threadsStopped);
+    DCHECK(g_instance);
+    g_instance = 0;
+}
+
+void ToolkitImpl::startupThreads()
+{
+    DCHECK(!d_threadsStarted);
 
     content::InitializeSandboxInfo(&d_sandboxInfo);
     d_mainRunner.reset(content::ContentMainRunner::Create());
@@ -100,11 +114,14 @@ ToolkitImpl::ToolkitImpl()
 
     InProcessRenderer::init();
     MainMessagePump::current()->init();
+
+    d_threadsStarted = true;
 }
 
-ToolkitImpl::~ToolkitImpl()
+void ToolkitImpl::shutdownThreads()
 {
-    DCHECK(g_instance);
+    DCHECK(!d_threadsStopped);
+    DCHECK(d_threadsStarted);
 
     if (Statics::isRendererMainThreadMode()) {
         d_browserThread->sync();  // make sure any WebView::destroy has been
@@ -128,15 +145,53 @@ ToolkitImpl::~ToolkitImpl()
 
     sandbox::CallOnExitHandlers();
 
-    g_instance = 0;
+    d_threadsStopped = true;
+}
+
+Profile* ToolkitImpl::getProfile(const char* dataDir)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(dataDir);
+    DCHECK(*dataDir);
+    return Statics::getOrCreateProfile(dataDir);
+}
+
+Profile* ToolkitImpl::createIncognitoProfile()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    return Statics::createIncognitoProfile();
+}
+
+bool ToolkitImpl::hasDevTools()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    return Statics::hasDevTools;
+}
+
+void ToolkitImpl::destroy()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(0 == Statics::numWebViews) << "Have not destroyed "
+                                      << Statics::numWebViews
+                                      << " WebViews!";
+    if (d_threadsStarted) {
+        shutdownThreads();
+    }
+    delete this;
+    Statics::deleteProfiles();
 }
 
 WebView* ToolkitImpl::createWebView(NativeView parent,
                                     WebViewDelegate* delegate,
                                     const WebViewCreateParams& params)
 {
+    DCHECK(Statics::isInApplicationMainThread());
     DCHECK(Statics::isRendererMainThreadMode()
         || Statics::isOriginalThreadMode());
+
+    if (!d_threadsStarted) {
+        startupThreads();
+    }
 
     ProfileImpl* profile = static_cast<ProfileImpl*>(params.profile());
     if (!profile) {
@@ -222,7 +277,8 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
 
 void ToolkitImpl::onRootWindowPositionChanged(gfx::NativeView root)
 {
-    if (Statics::isRendererMainThreadMode()) {
+    DCHECK(Statics::isInApplicationMainThread());
+    if (d_threadsStarted && Statics::isRendererMainThreadMode()) {
         DCHECK(d_browserThread);
         d_browserThread->messageLoop()->PostTask(FROM_HERE,
             base::Bind(&content::WebContentsViewWin::onRootWindowPositionChanged, root));
@@ -231,7 +287,8 @@ void ToolkitImpl::onRootWindowPositionChanged(gfx::NativeView root)
 
 void ToolkitImpl::onRootWindowSettingChange(gfx::NativeView root)
 {
-    if (Statics::isRendererMainThreadMode()) {
+    DCHECK(Statics::isInApplicationMainThread());
+    if (d_threadsStarted && Statics::isRendererMainThreadMode()) {
         DCHECK(d_browserThread);
         d_browserThread->messageLoop()->PostTask(FROM_HERE,
             base::Bind(&content::WebContentsViewWin::onRootWindowSettingChange, root));
@@ -240,12 +297,21 @@ void ToolkitImpl::onRootWindowSettingChange(gfx::NativeView root)
 
 bool ToolkitImpl::preHandleMessage(const NativeMsg* msg)
 {
-    return MainMessagePump::current()->preHandleMessage(*msg);
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(PumpMode::MANUAL == Statics::pumpMode);
+    if (d_threadsStarted) {
+        return MainMessagePump::current()->preHandleMessage(*msg);
+    }
+    return false;
 }
 
 void ToolkitImpl::postHandleMessage(const NativeMsg* msg)
 {
-    MainMessagePump::current()->postHandleMessage(*msg);
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(PumpMode::MANUAL == Statics::pumpMode);
+    if (d_threadsStarted) {
+        MainMessagePump::current()->postHandleMessage(*msg);
+    }
 }
 
 }  // close namespace blpwtk2

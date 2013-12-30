@@ -68,7 +68,7 @@ class Profile {
 
   protected:
     // Destroy this profile.  Note that clients of blpwtk2 should not delete
-    // this object.  It will be deleted automatically when 'Toolkit::shutdown'
+    // this object.  It will be deleted automatically when 'Toolkit::destroy'
     // is called.
     virtual ~Profile();
 };

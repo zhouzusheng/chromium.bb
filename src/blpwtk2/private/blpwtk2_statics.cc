@@ -103,9 +103,9 @@ std::string& Statics::getDictionaryPath()
 
 std::vector<base::FilePath>& Statics::getPluginPaths()
 {
-    // The plugins registered via blpwtk2::Toolkit::registerPlugin need to be
-    // stored here temporarily because we can only pass it onto chromium when
-    // ToolkitImpl has been initialized.
+    // The plugins registered via blpwtk2::ToolkitCreateParams::registerPlugin
+    // need to be stored here temporarily because we can only pass it onto
+    // chromium when ToolkitImpl has been initialized.
     static std::vector<base::FilePath> paths;
     return paths;
 }

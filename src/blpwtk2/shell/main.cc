@@ -43,6 +43,7 @@
 
 HINSTANCE g_instance = 0;
 WNDPROC g_defaultEditWndProc = 0;
+blpwtk2::Toolkit* g_toolkit = 0;
 
 #define OVERRIDE override
 #define BUTTON_WIDTH 72
@@ -229,7 +230,7 @@ public:
             blpwtk2::WebViewCreateParams params;
             params.setProfile(d_profile);
             //params.setRendererAffinity(blpwtk2::Constants::IN_PROCESS_RENDERER);
-            d_webView = blpwtk2::Toolkit::createWebView(d_mainWnd, this, params);
+            d_webView = g_toolkit->createWebView(d_mainWnd, this, params);
         }
         else
             d_webView->setParent(d_mainWnd);
@@ -549,13 +550,16 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     int rc = registerShellWindowClass();
     if (rc) return rc;
 
-    blpwtk2::Toolkit::setThreadMode(blpwtk2::ThreadMode::RENDERER_MAIN);
-    blpwtk2::Toolkit::setHttpTransactionHandler(createHttpTransactionHandler());
+    blpwtk2::ToolkitCreateParams toolkitParams;
+    toolkitParams.setThreadMode(blpwtk2::ThreadMode::RENDERER_MAIN);
+    toolkitParams.setHttpTransactionHandler(createHttpTransactionHandler());
 #if AUTO_PUMP
-    blpwtk2::Toolkit::setPumpMode(blpwtk2::PumpMode::AUTOMATIC);
+    toolkitParams.setPumpMode(blpwtk2::PumpMode::AUTOMATIC);
 #endif
 
-    blpwtk2::Profile* profile = blpwtk2::Toolkit::createIncognitoProfile();
+    g_toolkit = blpwtk2::ToolkitFactory::create(toolkitParams);
+
+    blpwtk2::Profile* profile = g_toolkit->createIncognitoProfile();
 
     {
         // Turn on spellcheck
@@ -597,15 +601,16 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     }
 #else
     while (GetMessage(&msg, NULL, 0, 0) > 0) {
-        if (!blpwtk2::Toolkit::preHandleMessage(&msg)) {
+        if (!g_toolkit->preHandleMessage(&msg)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
-        blpwtk2::Toolkit::postHandleMessage(&msg);
+        g_toolkit->postHandleMessage(&msg);
     }
 #endif
 
-    blpwtk2::Toolkit::shutdown();
+    g_toolkit->destroy();
+    g_toolkit = 0;
     return 0;
 }
 
@@ -727,10 +732,10 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         }
         break;
     case WM_WINDOWPOSCHANGED:
-        blpwtk2::Toolkit::onRootWindowPositionChanged(hwnd);
+        g_toolkit->onRootWindowPositionChanged(hwnd);
         break;
     case WM_SETTINGCHANGE:
-        blpwtk2::Toolkit::onRootWindowSettingChange(hwnd);
+        g_toolkit->onRootWindowSettingChange(hwnd);
         break;
     case WM_ERASEBKGND:
         return 1;

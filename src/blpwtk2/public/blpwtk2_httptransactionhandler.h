@@ -32,7 +32,7 @@ class HttpTransaction;
 // A HttpTransaction is a single request/response pair.  Chromium has built-in
 // mechanisms for handling HttpTransactions, but this class allows applications
 // to provide custom handlers by implementing this interface and installing it
-// on startup via blpwtk2::Toolkit::setHttpTransactionHandler().
+// on startup via blpwtk2::ToolkitCreateParams::setHttpTransactionHandler().
 //
 // Note that all HTTP transactions are handled in an IO thread.  All methods in
 // this interface are invoked from the IO thread.  The application *must*

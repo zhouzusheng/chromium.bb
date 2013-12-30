@@ -25,8 +25,8 @@
 
 #include <blpwtk2_config.h>
 
-#include <blpwtk2_threadmode.h>
 #include <blpwtk2_contentmaindelegateimpl.h>
+#include <blpwtk2_toolkit.h>
 
 #include <base/memory/scoped_ptr.h>
 #include <sandbox/win/src/sandbox_types.h>
@@ -39,37 +39,46 @@ namespace content {
 
 namespace blpwtk2 {
 
-class WebView;
-class WebViewCreateParams;
-class WebViewDelegate;
 class BrowserThread;
-class BrowserContextImpl;
 class BrowserMainRunner;
 
 // This is the implementation of the Toolkit.  This class is responsible for
 // setting up the threads (based on the application's selection thread mode),
 // see blpwtk_toolkit.h for an explanation about the threads.
-// There is only ever one instance of ToolkitImpl.  It is created when the
-// first WebView is created, and it is deleted when Toolkit::shutdown() is
-// called.
-class ToolkitImpl {
+// There is only ever one instance of ToolkitImpl.  It is created when
+// ToolkitFactory::create is called, and it is deleted when Toolkit::destroy()
+// is called.  Note that chromium threads are only started when the first
+// WebView is created.
+class ToolkitImpl : public Toolkit {
   public:
     static ToolkitImpl* instance();
 
     ToolkitImpl();
-    ~ToolkitImpl();
+    virtual ~ToolkitImpl();
 
-    WebView* createWebView(NativeView parent,
-                           WebViewDelegate* delegate,
-                           const WebViewCreateParams& params);
+    void startupThreads();
+    void shutdownThreads();
 
-    void onRootWindowPositionChanged(gfx::NativeView root);
-    void onRootWindowSettingChange(gfx::NativeView root);
+    virtual Profile* getProfile(const char* dataDir) OVERRIDE;
+    virtual Profile* createIncognitoProfile() OVERRIDE;
 
-    bool preHandleMessage(const NativeMsg* msg);
-    void postHandleMessage(const NativeMsg* msg);
+    virtual bool hasDevTools() OVERRIDE;
+
+    virtual void destroy() OVERRIDE;
+
+    virtual WebView* createWebView(NativeView parent,
+                                   WebViewDelegate* delegate,
+                                   const WebViewCreateParams& params) OVERRIDE;
+
+    virtual void onRootWindowPositionChanged(gfx::NativeView root) OVERRIDE;
+    virtual void onRootWindowSettingChange(gfx::NativeView root) OVERRIDE;
+
+    virtual bool preHandleMessage(const NativeMsg* msg) OVERRIDE;
+    virtual void postHandleMessage(const NativeMsg* msg) OVERRIDE;
 
   private:
+    bool d_threadsStarted;
+    bool d_threadsStopped;
     sandbox::SandboxInterfaceInfo d_sandboxInfo;
     ContentMainDelegateImpl d_mainDelegate;
     scoped_ptr<content::ContentMainRunner> d_mainRunner;

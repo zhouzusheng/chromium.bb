@@ -82,70 +82,18 @@
 
 #include <blpwtk2_config.h>
 
-#include <blpwtk2_constants.h>
-#include <blpwtk2_pumpmode.h>
-#include <blpwtk2_threadmode.h>
 #include <blpwtk2_webviewcreateparams.h>
 
 namespace blpwtk2 {
 
 class Profile;
-class HttpTransactionHandler;
-class StringRef;
 class WebView;
 class WebViewDelegate;
 
-// This struct defines a bunch of static functions and enums for controlling
-// the behavior of the blpwtk2 module.
-struct BLPWTK2_EXPORT Toolkit {
-
-    // Set the thread mode for the application.  This function can only be
-    // called before creating any WebViews.  If this function is not called,
-    // 'ThreadMode::ORIGINAL' will be used when creating the first WebView.
-    // The behavior is undefined if attempting to change the thread mode after
-    // a WebView has been created (even if it has been destroyed).
-    static void setThreadMode(ThreadMode::Value mode);
-
-    // Set the pump mode for the application.  This function can only be called
-    // before creating any WebViews.  If this function is not called,
-    // 'PumpMode::MANUAL' will be used when creating the first WebView, which
-    // means that the application must call 'preHandleMessage' and
-    // 'postHandleMessage' within the application's main message loop.  Set
-    // this to 'PumpMode::AUTOMATIC' only if the embedding code doesn't have
-    // access to the application's main message loop.  The behavior is
-    // undefined if attempting to change the pump mode after a WebView has been
-    // created (even if it has been destroyed).
-    static void setPumpMode(PumpMode::Value mode);
-
-    // Set the maximum number of sockets per proxy, up to a maximum of 99.
-    // Note that each Profile maintains its own pool of connections, so this is
-    // actually the maximum number of sockets per proxy *per profile*.  The
-    // behavior is undefined if attempting to change the count after a WebView
-    // has been created (even if it has been destroyed).  The behavior is also
-    // undefined if 'count' is less than 1, or more than 99.
-    static void setMaxSocketsPerProxy(int count);
-
-    // Register a plugin at the specified 'pluginPath'.  The 'pluginPath'
-    // should point to a DLL that exports the standard NPAPI entry points.
-    // This function can only be called before creating any WebViews, otherwise
-    // it will not have any effect.
-    static void registerPlugin(const char* pluginPath);
-
-    // Enable or disable loading default plugins (e.g. from paths in the
-    // Windows registry).  This is enabled by default.  If it is disabled, then
-    // only plugins registered via 'registerPlugin' will be enabled.  This
-    // function can only be called before creating any WebViews.  The behavior
-    // is undefined if attempting to change this setting after a WebView has
-    // been created (even if it has been destroyed).
-    static void enableDefaultPlugins(bool enabled);
-
-    // Mark the specified 'renderer' to use in-process plugins.  Any WebView
-    // created with affinity to the specified 'renderer' will use in-process
-    // plugins.  The behavior is undefined if this function is called after any
-    // such WebViews have been created.  Note that using in-process plugins
-    // will disable the sandbox for that renderer.
-    static void setRendererUsesInProcessPlugins(int renderer);
-
+// This interface can be used to create profiles and WebViews.  An single
+// instance of this class can be created using the 'ToolkitFactory'.
+class Toolkit {
+  public:
     // Get the profile that stores data in the specified 'dataDir'.  A browser
     // will typically create a profile for each user on the system.  The data
     // (cookies, local storage, cache, etc) for any WebViews created using this
@@ -155,48 +103,40 @@ struct BLPWTK2_EXPORT Toolkit {
     // 'dataDir', so applications are responsible for restoring those settings
     // (if desired) when they first get the profile.
     // The returned Profile object will remain valid until shutdown() is
-    // called.  The behavior is undefined if shutdown() has already been
-    // called.  The behavior is also undefined if any other process creates a
+    // called.  The behavior is undefined if any other process creates a
     // profile in the same 'dataDir'.
-    static Profile* getProfile(const char* dataDir);
+    virtual Profile* getProfile(const char* dataDir) = 0;
 
     // Create a new Profile that will prevent WebViews that are created using
     // it from storing any data (cookies, local storage, cache, etc) on disk.
     // The returned Profile object will remain valid until shutdown() is
-    // called.  The behavior is undefined if shutdown() has already been
     // called.
-    static Profile* createIncognitoProfile();
+    virtual Profile* createIncognitoProfile() = 0;
 
     // Return true if the blpwtk2_devtools pak file was detected and has been
     // loaded.  This method determines whether blpwtk2::WebView::loadInspector
-    // can be used.  Note that the pak file is only loaded when a WebView has
-    // been created, which may happen asynchronously if using the RENDERER_MAIN
-    // thread mode.
-    static bool hasDevTools();
+    // can be used.  Note that applications should not cache this value because
+    // the pak file is only loaded when a WebView has been created, which may
+    // happen asynchronously if using the RENDERER_MAIN thread mode.
+    virtual bool hasDevTools() = 0;
 
-    // Install a custom HttpTransactionHandler.  This function can only be
-    // called before creating any WebViews, otherwise it will not have any
-    // effect.  The http handler should remain alive until shutdown() is
-    // called.
-    static void setHttpTransactionHandler(HttpTransactionHandler* handler);
-
-    // Shutdown all threads.  This will block until all threads have joined.
-    // Note that this function is a no-op if no WebViews have been created
-    // (since threads are only initialized on the creation of the first
-    // WebView), or if shutdown() has already been called.  The behavior is
-    // undefined if there are WebViews that haven't been destroyed.
-    static void shutdown();
+    // Destroy this Toolkit object.  This will shutdown all threads and block
+    // until all threads have joined.  The behavior is undefined if this
+    // Toolkit object is used after 'destroy' has been called.  The behavior is
+    // also undefined if there are any WebViews that haven't been destroyed.
+    // Note that this method also invalidates any Profile pointers that were
+    // obtained through this interface.
+    virtual void destroy() = 0;
 
     // Create a WebView that will be hosted in the specified 'parent' window.
     // If a 'delegate' is provided, the delegate will receive callbacks from
     // this WebView.  The 'rendererAffinity' property in the specified 'params'
     // can be used to specify whether this WebView will run in-process or
-    // out-of-process.  The behavior is undefined if Toolkit::shutdown() has
-    // been called.
-    static WebView* createWebView(
+    // out-of-process.
+    virtual WebView* createWebView(
         NativeView parent,
         WebViewDelegate* delegate = 0,
-        const WebViewCreateParams& params = WebViewCreateParams());
+        const WebViewCreateParams& params = WebViewCreateParams()) = 0;
 
     // This function must be called by the application whenever any root
     // window containing a WebView receives WM_WINDOWPOSCHANGED.  Chromium
@@ -205,7 +145,7 @@ struct BLPWTK2_EXPORT Toolkit {
     // for 'ThreadMode::RENDERER_MAIN'.  This function is a no-op for other
     // thread modes (Chromium automatically hooks to the root window's WndProc
     // if thread mode is 'ThreadMode::ORIGINAL').
-    static void onRootWindowPositionChanged(NativeView root);
+    virtual void onRootWindowPositionChanged(NativeView root) = 0;
 
     // This function must be called by the application whenever any root
     // window containing a WebView receives WM_SETTINGCHANGE.  Chromium
@@ -214,7 +154,7 @@ struct BLPWTK2_EXPORT Toolkit {
     // for 'ThreadMode::RENDERER_MAIN'.  This function is a no-op for other
     // thread modes (Chromium automatically hooks to the root window's WndProc
     // if thread mode is 'ThreadMode::ORIGINAL').
-    static void onRootWindowSettingChange(NativeView root);
+    virtual void onRootWindowSettingChange(NativeView root) = 0;
 
     // Do extra chromium work needed at each message-loop iteration.  These
     // functions must be called on each message within the application's
@@ -222,11 +162,11 @@ struct BLPWTK2_EXPORT Toolkit {
     ///<code>
     //     MSG msg;
     //     while(GetMessage(&msg, NULL, 0, 0) > 0) {
-    //         if (!blpwtk2::Toolkit::preHandleMessage(&msg)) {
+    //         if (!toolkit->preHandleMessage(&msg)) {
     //             TranslateMessage(&msg);
     //             DispatchMessage(&msg);
     //         }
-    //         blpwtk2::Toolkit::postHandleMessage(&msg);
+    //         toolkit->postHandleMessage(&msg);
     //     }
     ///</code>
     // The behavior is undefined if these functions are not invoked as shown
@@ -234,24 +174,22 @@ struct BLPWTK2_EXPORT Toolkit {
     // means that blpwtk2 has consumed the message, and it should not be
     // dispatched through the normal Windows mechanism.  However, the
     // application must still call 'postHandleMessage'.  The behavior is also
-    // undefined if these functions are called when 'PumpMode::AUTOMATIC' has
-    // been set using 'Toolkit::setPumpMode'.
-    static bool preHandleMessage(const NativeMsg* msg);
-    static void postHandleMessage(const NativeMsg* msg);
-
-    // Set the path to look for the .bdic files in.  This function can only be
-    // called before creating any WebViews.  If this function is not called,
-    // the current working directory will be used.  The behavior is undefined
-    // if attempting to change the dictionary path after a WebView has been
-    // created (even if it has been destroyed).
-    static void setDictionaryPath(const StringRef& path);
+    // undefined if these functions are called when 'PumpMode::AUTOMATIC' is
+    // being used.
+    virtual bool preHandleMessage(const NativeMsg* msg) = 0;
+    virtual void postHandleMessage(const NativeMsg* msg) = 0;
 
     // Do not use this function unless you know what you're doing.  It relaxes
     // a bunch of security checks in the V8 binding layer in order to allow non
     // window contexts.  Note that it has been explicitly marked 'Unsafe' in
     // order to discourage its use except in cases where it is absolutely
     // necessary.
-    static void allowNonWindowContexts_Unsafe();
+    BLPWTK2_EXPORT static void allowNonWindowContexts_Unsafe();
+
+protected:
+    // Destroy this Toolkit object.  Note that clients of blpwtk2 should use
+    // the 'destroy()' method, instead of deleting the object directly.
+    virtual ~Toolkit();
 };
 
 }  // close namespace blpwtk2

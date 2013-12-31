@@ -42,6 +42,7 @@ namespace blpwtk2 {
 class DevToolsHttpHandlerDelegateImpl;
 class InProcessRendererHost;
 class ProfileImpl;
+class ProfileManager;
 
 // This class represents the browser-main-thread's "main".  See
 // blpwtk2_toolkit.h for an explanation about the threads.
@@ -52,7 +53,8 @@ class ProfileImpl;
 // 'blpwtk2_browserthread.h' where this is done).
 class BrowserMainRunner {
   public:
-    explicit BrowserMainRunner(sandbox::SandboxInterfaceInfo* sandboxInfo);
+    BrowserMainRunner(sandbox::SandboxInterfaceInfo* sandboxInfo,
+                      ProfileManager* profileManager);
     ~BrowserMainRunner();
 
     int Run();
@@ -71,6 +73,7 @@ class BrowserMainRunner {
     scoped_ptr<content::BrowserMainRunner> d_impl;
     scoped_ptr<InProcessRendererHost> d_inProcessRendererHost;
     scoped_ptr<DevToolsHttpHandlerDelegateImpl> d_devToolsHttpHandlerDelegate;
+    ProfileManager* d_profileManager;
 
     DISALLOW_COPY_AND_ASSIGN(BrowserMainRunner);
 };

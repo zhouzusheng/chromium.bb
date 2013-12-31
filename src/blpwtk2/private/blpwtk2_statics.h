@@ -110,12 +110,6 @@ struct Statics {
 
     static bool dcheckProfileForRenderer(int renderer, Profile* profile);
 
-    static Profile* getOrCreateProfile(const char* dataDir);
-    static Profile* createIncognitoProfile();
-    static Profile* defaultProfile();
-    static void deleteProfiles();
-    static void deleteBrowserContexts();
-
     static bool isOriginalThreadMode()
     {
         return ThreadMode::ORIGINAL == threadMode;

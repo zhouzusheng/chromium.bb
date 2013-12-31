@@ -105,11 +105,13 @@ void ToolkitImpl::startupThreads()
     if (Statics::isRendererMainThreadMode()) {
         new base::MessageLoop(MessageLoop::TYPE_UI);
         content::WebContentsViewWin::disableHookOnRoot();
-        d_browserThread.reset(new BrowserThread(&d_sandboxInfo));
+        d_browserThread.reset(new BrowserThread(&d_sandboxInfo,
+                                                &d_profileManager));
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
-        d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo));
+        d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo,
+                                                        &d_profileManager));
     }
 
     InProcessRenderer::init();
@@ -153,13 +155,13 @@ Profile* ToolkitImpl::getProfile(const char* dataDir)
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(dataDir);
     DCHECK(*dataDir);
-    return Statics::getOrCreateProfile(dataDir);
+    return d_profileManager.getOrCreateProfile(dataDir);
 }
 
 Profile* ToolkitImpl::createIncognitoProfile()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    return Statics::createIncognitoProfile();
+    return d_profileManager.createIncognitoProfile();
 }
 
 bool ToolkitImpl::hasDevTools()
@@ -178,7 +180,6 @@ void ToolkitImpl::destroy()
         shutdownThreads();
     }
     delete this;
-    Statics::deleteProfiles();
 }
 
 WebView* ToolkitImpl::createWebView(NativeView parent,
@@ -195,7 +196,7 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
 
     ProfileImpl* profile = static_cast<ProfileImpl*>(params.profile());
     if (!profile) {
-        profile = static_cast<ProfileImpl*>(Statics::defaultProfile());
+        profile = static_cast<ProfileImpl*>(d_profileManager.defaultProfile());
     }
 
     // Prevent the application from changing the 'diskCacheEnabled' setting,

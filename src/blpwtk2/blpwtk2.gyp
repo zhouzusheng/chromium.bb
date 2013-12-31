@@ -219,6 +219,8 @@
         'private/blpwtk2_networkdelegateimpl.h',
         'private/blpwtk2_profileimpl.cc',
         'private/blpwtk2_profileimpl.h',
+        'private/blpwtk2_profilemanager.cc',
+        'private/blpwtk2_profilemanager.h',
         'private/blpwtk2_proxyconfigimpl.cc',
         'private/blpwtk2_proxyconfigimpl.h',
         'private/blpwtk2_webviewimpl.cc',

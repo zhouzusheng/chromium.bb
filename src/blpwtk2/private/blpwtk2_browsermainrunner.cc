@@ -25,6 +25,7 @@
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
 #include <blpwtk2_inprocessrendererhost.h>
+#include <blpwtk2_profilemanager.h>
 #include <blpwtk2_statics.h>
 
 #include <base/logging.h>  // for DCHECK
@@ -33,8 +34,11 @@
 
 namespace blpwtk2 {
 
-BrowserMainRunner::BrowserMainRunner(sandbox::SandboxInterfaceInfo* sandboxInfo)
+BrowserMainRunner::BrowserMainRunner(
+    sandbox::SandboxInterfaceInfo* sandboxInfo,
+    ProfileManager* profileManager)
 : d_mainParams(*CommandLine::ForCurrentProcess())
+, d_profileManager(profileManager)
 {
     Statics::initBrowserMainThread();
 
@@ -56,7 +60,7 @@ BrowserMainRunner::~BrowserMainRunner()
     d_devToolsHttpHandlerDelegate.reset();
     d_inProcessRendererHost.reset();
     Statics::browserMainMessageLoop = 0;
-    Statics::deleteBrowserContexts();
+    d_profileManager->deleteBrowserContexts();
     d_impl->Shutdown();
 }
 

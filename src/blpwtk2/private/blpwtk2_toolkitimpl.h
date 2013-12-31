@@ -26,6 +26,7 @@
 #include <blpwtk2_config.h>
 
 #include <blpwtk2_contentmaindelegateimpl.h>
+#include <blpwtk2_profilemanager.h>
 #include <blpwtk2_toolkit.h>
 
 #include <base/memory/scoped_ptr.h>
@@ -79,6 +80,7 @@ class ToolkitImpl : public Toolkit {
   private:
     bool d_threadsStarted;
     bool d_threadsStopped;
+    ProfileManager d_profileManager;
     sandbox::SandboxInterfaceInfo d_sandboxInfo;
     ContentMainDelegateImpl d_mainDelegate;
     scoped_ptr<content::ContentMainRunner> d_mainRunner;

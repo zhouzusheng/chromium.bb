@@ -34,12 +34,15 @@ namespace content {
 
 namespace blpwtk2 {
 
+class RendererInfoMap;
+
 // This class sets up the "browser" side of the InProcessRenderer.  It creates
 // a RenderProcessHostImpl, which sets up a channel that is used to send
 // messages to the InProcessRenderer.
 class InProcessRendererHost {
   public:
-    explicit InProcessRendererHost(content::BrowserContext* browserContext);
+    InProcessRendererHost(content::BrowserContext* browserContext,
+                          RendererInfoMap* rendererInfoMap);
     ~InProcessRendererHost();
 
     int id() const;

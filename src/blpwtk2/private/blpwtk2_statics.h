@@ -101,15 +101,6 @@ struct Statics {
     static std::vector<base::FilePath>& getPluginPaths();
     static void registerPlugin(const char* pluginPath);
 
-    static bool rendererUsesInProcessPlugins(int renderer);
-    static void setRendererUsesInProcessPlugins(int renderer);
-
-    static void setRendererHostId(int renderer, int hostId);
-    static int rendererToHostId(int renderer);
-    static int hostIdToRenderer(int hostId);
-
-    static bool dcheckProfileForRenderer(int renderer, Profile* profile);
-
     static bool isOriginalThreadMode()
     {
         return ThreadMode::ORIGINAL == threadMode;

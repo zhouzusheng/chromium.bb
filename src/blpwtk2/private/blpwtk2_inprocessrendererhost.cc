@@ -23,6 +23,7 @@
 #include <blpwtk2_inprocessrendererhost.h>
 
 #include <blpwtk2_constants.h>
+#include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_statics.h>
 
 #include <content/public/browser/browser_context.h>
@@ -33,8 +34,12 @@
 namespace blpwtk2 {
 
 static content::RenderProcessHostImpl*
-createRenderProcessHost(content::BrowserContext* browserContext)
+createRenderProcessHost(content::BrowserContext* browserContext,
+                        RendererInfoMap* rendererInfoMap)
 {
+    DCHECK(browserContext);
+    DCHECK(rendererInfoMap);
+
     content::StoragePartition* partition
         = content::BrowserContext::GetDefaultStoragePartition(browserContext);
     content::StoragePartitionImpl* partitionImpl
@@ -43,14 +48,15 @@ createRenderProcessHost(content::BrowserContext* browserContext)
     int id = content::RenderProcessHostImpl::GenerateUniqueId();
     bool supportsBrowserPlugin = true;
     bool isGuest = false;
-    Statics::setRendererHostId(Constants::IN_PROCESS_RENDERER, id);
+    rendererInfoMap->setRendererHostId(Constants::IN_PROCESS_RENDERER, id);
     return new content::RenderProcessHostImpl(id, true, browserContext,
                                               partitionImpl,
                                               supportsBrowserPlugin, isGuest);
 }
 
-InProcessRendererHost::InProcessRendererHost(content::BrowserContext* browserContext)
-: d_impl(createRenderProcessHost(browserContext))
+InProcessRendererHost::InProcessRendererHost(content::BrowserContext* browserContext,
+                                             RendererInfoMap* rendererInfoMap)
+: d_impl(createRenderProcessHost(browserContext, rendererInfoMap))
 {
     d_impl->Init();
 }

@@ -96,12 +96,21 @@ base::StringPiece ContentClient::GetDataResource(
 }
 
 ContentMainDelegateImpl::ContentMainDelegateImpl(bool isSubProcess)
-: d_isSubProcess(isSubProcess)
+: d_rendererInfoMap(0)
+, d_isSubProcess(isSubProcess)
 {
 }
 
 ContentMainDelegateImpl::~ContentMainDelegateImpl()
 {
+}
+
+void ContentMainDelegateImpl::setRendererInfoMap(
+    RendererInfoMap* rendererInfoMap)
+{
+    DCHECK(!d_isSubProcess);
+    DCHECK(rendererInfoMap);
+    d_rendererInfoMap = rendererInfoMap;
 }
 
 // ContentMainDelegate implementation
@@ -145,7 +154,8 @@ content::ContentBrowserClient*
 ContentMainDelegateImpl::CreateContentBrowserClient()
 {
     if (!d_contentBrowserClient.get()) {
-        d_contentBrowserClient.reset(new ContentBrowserClientImpl());
+        d_contentBrowserClient.reset(
+            new ContentBrowserClientImpl(d_rendererInfoMap));
 
         // We always want to be able to have an in-process renderer.  Modify
         // the browser process' command line to include the browser locale, as

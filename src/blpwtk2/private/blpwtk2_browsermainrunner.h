@@ -43,6 +43,7 @@ class DevToolsHttpHandlerDelegateImpl;
 class InProcessRendererHost;
 class ProfileImpl;
 class ProfileManager;
+class RendererInfoMap;
 
 // This class represents the browser-main-thread's "main".  See
 // blpwtk2_toolkit.h for an explanation about the threads.
@@ -62,7 +63,8 @@ class BrowserMainRunner {
     // Create the (singleton) InProcessRendererHost.  This can only be called
     // from the browser-main thread.  This is a no-op if the
     // InProcessRendererHost has already been created.
-    void createInProcessRendererHost(ProfileImpl* profile);
+    void createInProcessRendererHost(ProfileImpl* profile,
+                                     RendererInfoMap* rendererInfoMap);
 
     // Return true if the in-process renderer host has been created, and false
     // otherwise.

@@ -36,6 +36,7 @@ namespace net {
 namespace blpwtk2 {
 
 class MediaObserverImpl;
+class RendererInfoMap;
 
 // This is our implementation of the content::ContentBrowserClient interface.
 // This interface allows us to add hooks to the "browser" portion of the
@@ -43,7 +44,7 @@ class MediaObserverImpl;
 // BrowserMainRunner.
 class ContentBrowserClientImpl : public content::ContentBrowserClient {
   public:
-    ContentBrowserClientImpl();
+    explicit ContentBrowserClientImpl(RendererInfoMap* rendererInfoMap);
     virtual ~ContentBrowserClientImpl();
 
     // Notifies that a RenderProcessHost has been created. This is called before
@@ -87,6 +88,7 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
 
   private:
     scoped_ptr<MediaObserverImpl> d_mediaObserver;
+    RendererInfoMap* d_rendererInfoMap;
 
     DISALLOW_COPY_AND_ASSIGN(ContentBrowserClientImpl);
 };

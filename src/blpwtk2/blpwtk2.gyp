@@ -223,6 +223,8 @@
         'private/blpwtk2_profilemanager.h',
         'private/blpwtk2_proxyconfigimpl.cc',
         'private/blpwtk2_proxyconfigimpl.h',
+        'private/blpwtk2_rendererinfomap.cc',
+        'private/blpwtk2_rendererinfomap.h',
         'private/blpwtk2_webviewimpl.cc',
         'private/blpwtk2_webviewimpl.h',
         'private/blpwtk2_webviewimplclient.cc',

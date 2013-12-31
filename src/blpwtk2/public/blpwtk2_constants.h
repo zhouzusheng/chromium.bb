@@ -32,7 +32,7 @@ struct Constants {
     // Constants that can be used for the 'affinity' parameter in
     // WebViewCreateParams::setRendererAffinity().
     enum {
-        // Use an out-of-process renderer.  The actual renderer process that
+        // Use any out-of-process renderer.  The actual renderer process that
         // will be used will be selected based on the internal heuristic used
         // by chromium (based on the site's domain etc).  See
         // https://sites.google.com/a/chromium.org/dev/developers/design-documents/process-models

@@ -31,6 +31,8 @@
 
 namespace blpwtk2 {
 
+class RendererInfoMap;
+
 // FIXME: move this to a separate file
 class ContentClient : public content::ContentClient {
   public:
@@ -57,6 +59,8 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
     explicit ContentMainDelegateImpl(bool isSubProcess);
     virtual ~ContentMainDelegateImpl();
 
+    void setRendererInfoMap(RendererInfoMap* rendererInfoMap);
+
     // ContentMainDelegate implementation
     virtual bool BasicStartupComplete(int* exit_code) OVERRIDE;
     virtual void PreSandboxStartup() OVERRIDE;
@@ -69,6 +73,7 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
     ContentClient d_contentClient;
     scoped_ptr<content::ContentBrowserClient> d_contentBrowserClient;
     scoped_ptr<content::ContentRendererClient> d_contentRendererClient;
+    RendererInfoMap* d_rendererInfoMap;
     bool d_isSubProcess;
 
     DISALLOW_COPY_AND_ASSIGN(ContentMainDelegateImpl);

@@ -95,18 +95,20 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
         Statics::registerPlugin(path.c_str());
     }
 
-    for (size_t i = 0; i < params.numRenderersUsingInProcessPlugins(); ++i) {
-        Statics::setRendererUsesInProcessPlugins(
-            params.rendererUsingInProcessPluginsAt(i));
-    }
-
     if (!params.dictionaryPath().isEmpty()) {
         Statics::getDictionaryPath().assign(params.dictionaryPath().data(),
                                             params.dictionaryPath().length());
     }
 
+    ToolkitImpl* toolkit = new ToolkitImpl();
+
+    for (size_t i = 0; i < params.numRenderersUsingInProcessPlugins(); ++i) {
+        toolkit->setRendererUsesInProcessPlugins(
+            params.rendererUsingInProcessPluginsAt(i));
+    }
+
     g_created = true;
-    return new ToolkitImpl();
+    return toolkit;
 }
 
 }  // close namespace blpwtk2

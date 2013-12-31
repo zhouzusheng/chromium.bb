@@ -27,12 +27,11 @@
 
 #include <blpwtk2_contentmaindelegateimpl.h>
 #include <blpwtk2_profilemanager.h>
+#include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_toolkit.h>
 
 #include <base/memory/scoped_ptr.h>
 #include <sandbox/win/src/sandbox_types.h>
-
-#include <map>
 
 namespace content {
     class ContentMainRunner;
@@ -60,6 +59,8 @@ class ToolkitImpl : public Toolkit {
     void startupThreads();
     void shutdownThreads();
 
+    void setRendererUsesInProcessPlugins(int renderer);
+
     virtual Profile* getProfile(const char* dataDir) OVERRIDE;
     virtual Profile* createIncognitoProfile() OVERRIDE;
 
@@ -81,6 +82,7 @@ class ToolkitImpl : public Toolkit {
     bool d_threadsStarted;
     bool d_threadsStopped;
     ProfileManager d_profileManager;
+    RendererInfoMap d_rendererInfoMap;
     sandbox::SandboxInterfaceInfo d_sandboxInfo;
     ContentMainDelegateImpl d_mainDelegate;
     scoped_ptr<content::ContentMainRunner> d_mainRunner;

@@ -26,6 +26,7 @@
 #include <blpwtk2_statics.h>
 #include <blpwtk2_inprocessrenderer.h>
 #include <blpwtk2_mediaobserverimpl.h>
+#include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
 #include <blpwtk2_webcontentsviewdelegateimpl.h>
 
@@ -93,8 +94,10 @@ void ResourceDispatcherHostDelegate::doHandleExternalProtocol(const GURL& url,
     viewHost->HandleExternalProtocol(url);
 }
 
-ContentBrowserClientImpl::ContentBrowserClientImpl()
+ContentBrowserClientImpl::ContentBrowserClientImpl(RendererInfoMap* rendererInfoMap)
+: d_rendererInfoMap(rendererInfoMap)
 {
+    DCHECK(d_rendererInfoMap);
 }
 
 ContentBrowserClientImpl::~ContentBrowserClientImpl()
@@ -106,8 +109,7 @@ void ContentBrowserClientImpl::RenderProcessHostCreated(
 {
     DCHECK(Statics::isInBrowserMainThread());
     int id = host->GetID();
-    int renderer = Statics::hostIdToRenderer(id);
-    if (Statics::rendererUsesInProcessPlugins(renderer)) {
+    if (d_rendererInfoMap->hostIdUsesInProcessPlugins(id)) {
         host->SetUsesInProcessPlugins();
     }
     host->GetChannel()->AddFilter(new SpellCheckMessageFilter(id));

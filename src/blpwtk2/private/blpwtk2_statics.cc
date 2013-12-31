@@ -22,43 +22,10 @@
 
 #include <blpwtk2_statics.h>
 
-#include <blpwtk2_constants.h>
-
 #include <base/file_util.h>
 #include <base/logging.h>  // for DCHECK
-#include <base/synchronization/lock.h>
-
-#include <list>
-#include <map>
 
 namespace blpwtk2 {
-
-struct RendererInfo {
-    int  d_hostId;
-    bool d_usesInProcessPlugins;
-
-    Profile* d_profileForDCheck;  // only set when DCHECKs are enabled
-
-    RendererInfo()
-    : d_hostId(-1)
-    , d_usesInProcessPlugins(false)
-    , d_profileForDCheck(0)
-    {
-    }
-};
-typedef std::map<int, RendererInfo> RendererInfoMap;
-
-static base::Lock& getLock()
-{
-    static base::Lock s_lock;
-    return s_lock;
-}
-
-static RendererInfoMap& rendererInfoMap()
-{
-    static RendererInfoMap s_map;
-    return s_map;
-}
 
 ThreadMode::Value Statics::threadMode = ThreadMode::ORIGINAL;
 PumpMode::Value Statics::pumpMode = PumpMode::MANUAL;
@@ -93,60 +60,6 @@ void Statics::registerPlugin(const char* pluginPath)
     base::FilePath path = base::FilePath::FromUTF8Unsafe(pluginPath);
     path = base::MakeAbsoluteFilePath(path);
     getPluginPaths().push_back(path);
-}
-
-
-bool Statics::rendererUsesInProcessPlugins(int renderer)
-{
-    base::AutoLock guard(getLock());
-    RendererInfo& info = rendererInfoMap()[renderer];
-    return info.d_usesInProcessPlugins;
-}
-
-void Statics::setRendererUsesInProcessPlugins(int renderer)
-{
-    base::AutoLock guard(getLock());
-    RendererInfo& info = rendererInfoMap()[renderer];
-    DCHECK(-1 == info.d_hostId);
-    info.d_usesInProcessPlugins = true;
-}
-
-void Statics::setRendererHostId(int renderer, int hostId)
-{
-    base::AutoLock guard(getLock());
-    RendererInfo& info = rendererInfoMap()[renderer];
-    DCHECK(-1 == info.d_hostId);
-    info.d_hostId = hostId;
-}
-
-int Statics::rendererToHostId(int renderer)
-{
-    base::AutoLock guard(getLock());
-    RendererInfo& info = rendererInfoMap()[renderer];
-    return info.d_hostId;
-}
-
-int Statics::hostIdToRenderer(int hostId)
-{
-    base::AutoLock guard(getLock());
-    for (RendererInfoMap::const_iterator it = rendererInfoMap().begin();
-        it != rendererInfoMap().end(); ++it) {
-        if (it->second.d_hostId == hostId) {
-            return it->first;
-        }
-    }
-    return Constants::ANY_OUT_OF_PROCESS_RENDERER;
-}
-
-bool Statics::dcheckProfileForRenderer(int renderer, Profile* profile)
-{
-    base::AutoLock guard(getLock());
-    RendererInfo& info = rendererInfoMap()[renderer];
-    if (!info.d_profileForDCheck) {
-        info.d_profileForDCheck = profile;
-        return true;
-    }
-    return info.d_profileForDCheck == profile;
 }
 
 void Statics::initApplicationMainThread()

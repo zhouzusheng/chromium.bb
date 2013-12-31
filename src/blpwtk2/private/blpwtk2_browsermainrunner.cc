@@ -69,14 +69,16 @@ int BrowserMainRunner::Run()
     return d_impl->Run();
 }
 
-void BrowserMainRunner::createInProcessRendererHost(ProfileImpl* profile)
+void BrowserMainRunner::createInProcessRendererHost(ProfileImpl* profile,
+                                                    RendererInfoMap* rendererInfoMap)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_inProcessRendererHost.get());
+    DCHECK(rendererInfoMap);
     BrowserContextImpl* browserContext
         = BrowserContextImpl::fromProfile(profile);
     d_inProcessRendererHost.reset(
-        new InProcessRendererHost(browserContext));
+        new InProcessRendererHost(browserContext, rendererInfoMap));
 }
 
 bool BrowserMainRunner::hasInProcessRendererHost() const

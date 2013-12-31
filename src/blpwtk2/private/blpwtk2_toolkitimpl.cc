@@ -78,6 +78,7 @@ ToolkitImpl::ToolkitImpl()
     DCHECK(!g_instance);
     g_instance = this;
 
+    d_mainDelegate.setRendererInfoMap(&d_rendererInfoMap);
     base::MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);
 }
 
@@ -150,6 +151,11 @@ void ToolkitImpl::shutdownThreads()
     d_threadsStopped = true;
 }
 
+void ToolkitImpl::setRendererUsesInProcessPlugins(int renderer)
+{
+    d_rendererInfoMap.setRendererUsesInProcessPlugins(renderer);
+}
+
 Profile* ToolkitImpl::getProfile(const char* dataDir)
 {
     DCHECK(Statics::isInApplicationMainThread());
@@ -211,7 +217,8 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     // command line.  This is useful for debugging.
     if (singleProcess || params.rendererAffinity() == Constants::IN_PROCESS_RENDERER) {
         DCHECK(params.rendererAffinity() != Constants::IN_PROCESS_RENDERER ||
-               Statics::dcheckProfileForRenderer(params.rendererAffinity(), profile));
+               d_rendererInfoMap.dcheckProfileForRenderer(
+                   params.rendererAffinity(), profile));
 
         BrowserMainRunner* mainRunner =
             Statics::isOriginalThreadMode() ? d_browserMainRunner.get()
@@ -219,21 +226,22 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
 
         if (!mainRunner->hasInProcessRendererHost()) {
             if (Statics::isOriginalThreadMode()) {
-                mainRunner->createInProcessRendererHost(profile);
+                mainRunner->createInProcessRendererHost(profile, &d_rendererInfoMap);
             }
             else {
                 d_browserThread->messageLoop()->PostTask(
                     FROM_HERE,
                     base::Bind(&BrowserMainRunner::createInProcessRendererHost,
                                base::Unretained(mainRunner),
-                               profile));
+                               profile,
+                               &d_rendererInfoMap));
                 d_browserThread->sync();
             }
 
             DCHECK(mainRunner->hasInProcessRendererHost());
         }
 
-        hostAffinity = Statics::rendererToHostId(Constants::IN_PROCESS_RENDERER);
+        hostAffinity = d_rendererInfoMap.rendererToHostId(Constants::IN_PROCESS_RENDERER);
         DCHECK(-1 != hostAffinity);
         isInProcess = true;
     }
@@ -242,12 +250,15 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     }
     else {
         DCHECK(0 <= params.rendererAffinity());
-        DCHECK(Statics::dcheckProfileForRenderer(params.rendererAffinity(), profile));
+        DCHECK(d_rendererInfoMap.dcheckProfileForRenderer(
+            params.rendererAffinity(), profile));
 
-        hostAffinity = Statics::rendererToHostId(params.rendererAffinity());
+        hostAffinity = d_rendererInfoMap.rendererToHostId(
+            params.rendererAffinity());
         if (-1 == hostAffinity) {
             hostAffinity = content::RenderProcessHostImpl::GenerateUniqueId();
-            Statics::setRendererHostId(params.rendererAffinity(), hostAffinity);
+            d_rendererInfoMap.setRendererHostId(params.rendererAffinity(),
+                                                hostAffinity);
         }
     }
 

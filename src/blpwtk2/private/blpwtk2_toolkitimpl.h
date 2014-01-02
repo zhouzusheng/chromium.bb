@@ -33,6 +33,13 @@
 #include <base/memory/scoped_ptr.h>
 #include <sandbox/win/src/sandbox_types.h>
 
+#include <string>
+#include <vector>
+
+namespace base {
+    class FilePath;
+}  // close namespace base
+
 namespace content {
     class ContentMainRunner;
 }  // close namespace content
@@ -41,6 +48,7 @@ namespace blpwtk2 {
 
 class BrowserThread;
 class BrowserMainRunner;
+class StringRef;
 
 // This is the implementation of the Toolkit.  This class is responsible for
 // setting up the threads (based on the application's selection thread mode),
@@ -53,13 +61,14 @@ class ToolkitImpl : public Toolkit {
   public:
     static ToolkitImpl* instance();
 
-    ToolkitImpl();
+    ToolkitImpl(const StringRef& dictionaryPath, bool systemPluginsEnabled);
     virtual ~ToolkitImpl();
 
     void startupThreads();
     void shutdownThreads();
 
     void setRendererUsesInProcessPlugins(int renderer);
+    void registerPlugin(const char* pluginPath);
 
     virtual Profile* getProfile(const char* dataDir) OVERRIDE;
     virtual Profile* createIncognitoProfile() OVERRIDE;
@@ -81,11 +90,14 @@ class ToolkitImpl : public Toolkit {
   private:
     bool d_threadsStarted;
     bool d_threadsStopped;
+    bool d_systemPluginsEnabled;
     ProfileManager d_profileManager;
     RendererInfoMap d_rendererInfoMap;
     sandbox::SandboxInterfaceInfo d_sandboxInfo;
     ContentMainDelegateImpl d_mainDelegate;
     scoped_ptr<content::ContentMainRunner> d_mainRunner;
+    std::vector<base::FilePath> d_pluginPaths;
+    std::string d_dictionaryPath;
 
     // only used for the RENDERER_MAIN thread mode
     scoped_ptr<BrowserThread> d_browserThread;

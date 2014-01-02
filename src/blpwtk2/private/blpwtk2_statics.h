@@ -27,11 +27,7 @@
 #include <blpwtk2_threadmode.h>
 #include <blpwtk2_pumpmode.h>
 
-#include <base/files/file_path.h>
 #include <base/threading/platform_thread.h>
-
-#include <string>
-#include <vector>
 
 namespace base {
 class MessageLoop;
@@ -86,20 +82,12 @@ struct Statics {
     // Whether or not devtools is available.
     static bool hasDevTools;
 
-    // Whether or not default plugins should be enabled.
-    static bool enableDefaultPlugins;
-
     // Number of WebViews that have not yet been destroyed.  This is
     // incremented and decremented from the application's main thread.
     static int numWebViews;
 
 
     // ====== some utility functions =============
-
-    static std::string& getDictionaryPath();
-
-    static std::vector<base::FilePath>& getPluginPaths();
-    static void registerPlugin(const char* pluginPath);
 
     static bool isOriginalThreadMode()
     {

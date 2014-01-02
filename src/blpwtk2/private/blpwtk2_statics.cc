@@ -22,7 +22,6 @@
 
 #include <blpwtk2_statics.h>
 
-#include <base/file_util.h>
 #include <base/logging.h>  // for DCHECK
 
 namespace blpwtk2 {
@@ -37,30 +36,7 @@ base::MessageLoop* Statics::rendererMessageLoop = 0;
 base::MessageLoop* Statics::browserMainMessageLoop = 0;
 MediaObserverImpl* Statics::mediaObserver = 0;
 bool Statics::hasDevTools = false;
-bool Statics::enableDefaultPlugins = true;
 int Statics::numWebViews = 0;
-
-std::string& Statics::getDictionaryPath()
-{
-    static std::string path;
-    return path;
-}
-
-std::vector<base::FilePath>& Statics::getPluginPaths()
-{
-    // The plugins registered via blpwtk2::ToolkitCreateParams::registerPlugin
-    // need to be stored here temporarily because we can only pass it onto
-    // chromium when ToolkitImpl has been initialized.
-    static std::vector<base::FilePath> paths;
-    return paths;
-}
-
-void Statics::registerPlugin(const char* pluginPath)
-{
-    base::FilePath path = base::FilePath::FromUTF8Unsafe(pluginPath);
-    path = base::MakeAbsoluteFilePath(path);
-    getPluginPaths().push_back(path);
-}
 
 void Statics::initApplicationMainThread()
 {

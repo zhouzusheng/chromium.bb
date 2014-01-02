@@ -82,25 +82,20 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     Statics::initApplicationMainThread();
     Statics::threadMode = params.threadMode();
     Statics::pumpMode = params.pumpMode();
-    Statics::enableDefaultPlugins = params.systemPluginsEnabled();
     Statics::httpTransactionHandler = params.httpTransactionHandler();
 
     if (params.isMaxSocketsPerProxySet()) {
         setMaxSocketsPerProxy(params.maxSocketsPerProxy());
     }
 
+    ToolkitImpl* toolkit = new ToolkitImpl(params.dictionaryPath(),
+                                           params.systemPluginsEnabled());
+
     for (size_t i = 0; i < params.numRegisteredPlugins(); ++i) {
         StringRef pathRef = params.registeredPluginAt(i);
         std::string path(pathRef.data(), pathRef.length());
-        Statics::registerPlugin(path.c_str());
+        toolkit->registerPlugin(path.c_str());
     }
-
-    if (!params.dictionaryPath().isEmpty()) {
-        Statics::getDictionaryPath().assign(params.dictionaryPath().data(),
-                                            params.dictionaryPath().length());
-    }
-
-    ToolkitImpl* toolkit = new ToolkitImpl();
 
     for (size_t i = 0; i < params.numRenderersUsingInProcessPlugins(); ++i) {
         toolkit->setRendererUsesInProcessPlugins(

@@ -44,7 +44,6 @@ class ContextMenuParams;
 class DevToolsFrontendHostDelegateImpl;
 class Profile;
 class WebViewDelegate;
-class WebFrameImpl;
 class WebViewImplClient;
 
 // This is the implementation of the blpwtk2::WebView interface.  It creates a
@@ -250,7 +249,6 @@ class WebViewImpl : public WebView,
   private:
     scoped_ptr<DevToolsFrontendHostDelegateImpl> d_devToolsFrontEndHost;
     scoped_ptr<content::WebContents> d_webContents;
-    scoped_ptr<WebFrameImpl> d_mainFrame;
     scoped_ptr<FindOnPage> d_find;
     WebViewDelegate* d_delegate;
     WebViewImplClient* d_implClient;

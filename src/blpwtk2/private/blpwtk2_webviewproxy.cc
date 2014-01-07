@@ -27,12 +27,14 @@
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_statics.h>
 #include <blpwtk2_stringref.h>
+#include <blpwtk2_webframeimpl.h>
 #include <blpwtk2_webviewimpl.h>
 #include <blpwtk2_mediarequestimpl.h>
 
 #include <base/bind.h>
 #include <base/message_loop.h>
 #include <content/public/renderer/render_view.h>
+#include <third_party/WebKit/Source/WebKit/chromium/public/WebView.h>
 #include <ui/gfx/size.h>
 
 namespace blpwtk2 {
@@ -116,10 +118,20 @@ WebFrame* WebViewProxy::mainFrame()
     DCHECK(!d_wasDestroyed);
     DCHECK(Statics::isRendererMainThreadMode());
     DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(d_isInProcess);
     DCHECK(d_isMainFrameAccessible)
         << "You should wait for didFinishLoad";
+    DCHECK(d_gotRendererInfo);
 
-    return d_impl->mainFrame();
+    if (!d_mainFrame.get()) {
+        content::RenderView* rv = content::RenderView::FromRoutingID(d_routingId);
+        DCHECK(rv);
+
+        WebKit::WebFrame* webFrame = rv->GetWebView()->mainFrame();
+        d_mainFrame.reset(new WebFrameImpl(webFrame));
+    }
+
+    return d_mainFrame.get();
 }
 
 void WebViewProxy::loadUrl(const StringRef& url)

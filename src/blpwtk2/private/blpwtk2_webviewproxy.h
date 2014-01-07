@@ -44,6 +44,7 @@ class MessageLoop;
 namespace blpwtk2 {
 
 class Profile;
+class WebFrameImpl;
 class WebViewImpl;
 
 // This is an alternate implementation of the blpwtk2::WebView interface, and
@@ -212,6 +213,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     base::MessageLoop* d_proxyDispatcher;
     WebViewDelegate* d_delegate;
     scoped_ptr<FindOnPage> d_find;
+    scoped_ptr<WebFrameImpl> d_mainFrame;
     int d_routingId;
     gfx::Rect d_rect;
     gfx::Rect d_implRect;       // touched only in the impl thread

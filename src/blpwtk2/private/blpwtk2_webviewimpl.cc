@@ -45,7 +45,6 @@
 #include <content/public/browser/web_contents.h>
 #include <content/public/browser/web_contents_view.h>
 #include <content/public/browser/site_instance.h>
-#include <content/public/renderer/render_view.h>
 #include <third_party/WebKit/Source/WebKit/chromium/public/WebView.h>
 
 namespace blpwtk2 {
@@ -193,21 +192,8 @@ void WebViewImpl::destroy()
 
 WebFrame* WebViewImpl::mainFrame()
 {
-    DCHECK(Statics::isRendererMainThreadMode());
-    DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    DCHECK(d_webContents->GetRenderProcessHost()->IsInProcess());
-
-    if (!d_mainFrame.get()) {
-        int routingId = d_webContents->GetRoutingID();
-        content::RenderView* rv = content::RenderView::FromRoutingID(routingId);
-        DCHECK(rv);
-
-        WebKit::WebFrame* webFrame = rv->GetWebView()->mainFrame();
-        d_mainFrame.reset(new WebFrameImpl(webFrame));
-    }
-
-    return d_mainFrame.get();
+    NOTREACHED() << "mainFrame() not supported in WebViewImpl";
+    return 0;
 }
 
 void WebViewImpl::loadUrl(const StringRef& url)

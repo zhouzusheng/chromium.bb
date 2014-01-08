@@ -41,8 +41,9 @@ void CustomDictionaryEngine::OnCustomDictionaryChanged(
   }
 }
 
-void CustomDictionaryEngine::OnCustomDictionaryReset() {
+void CustomDictionaryEngine::OnCustomDictionaryReset(const std::vector<std::string>& words) {
   dictionary_.clear();
+  Init(words);
 }
 
 bool CustomDictionaryEngine::SpellCheckWord(

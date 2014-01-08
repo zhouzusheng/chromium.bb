@@ -366,9 +366,6 @@ void SpellcheckService::OnSpellCheckCustomWordsChanged() {
     content::RenderProcessHost* process = i.GetCurrentValue();
     if (!process || context_ != process->GetBrowserContext())
       continue;
-    process->Send(new SpellCheckMsg_ResetCustomDictionary());
-    process->Send(new SpellCheckMsg_CustomDictionaryChanged(
-        to_add,
-        chrome::spellcheck_common::WordList()));
+    process->Send(new SpellCheckMsg_ResetCustomDictionary(to_add));
   }
 }

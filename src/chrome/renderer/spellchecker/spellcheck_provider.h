@@ -52,6 +52,9 @@ class SpellCheckProvider
   // Enables document-wide spellchecking.
   void EnableSpellcheck(bool enabled);
 
+  // Makes a document-wide spellcheck request.
+  void RequestSpellcheck();
+
   // RenderViewObserver implementation.
   virtual void DidFinishLoad(WebKit::WebFrame* frame) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;

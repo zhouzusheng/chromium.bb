@@ -44,6 +44,21 @@ bool UpdateSpellcheckEnabled::Visit(content::RenderView* render_view) {
   return true;
 }
 
+class RequestSpellcheckForView : public content::RenderViewVisitor {
+ public:
+  RequestSpellcheckForView() {}
+  virtual bool Visit(content::RenderView* render_view) OVERRIDE;
+ private:
+  DISALLOW_COPY_AND_ASSIGN(RequestSpellcheckForView);
+};
+
+bool RequestSpellcheckForView::Visit(content::RenderView* render_view) {
+  SpellCheckProvider* provider = SpellCheckProvider::Get(render_view);
+  DCHECK(provider);
+  provider->RequestSpellcheck();
+  return true;
+}
+
 class DocumentMarkersCollector : public content::RenderViewVisitor {
  public:
   DocumentMarkersCollector() {}
@@ -146,10 +161,18 @@ void SpellCheck::OnCustomDictionaryChanged(
     const std::vector<std::string>& words_added,
     const std::vector<std::string>& words_removed) {
   custom_dictionary_.OnCustomDictionaryChanged(words_added, words_removed);
+  if (spellcheck_enabled_) {
+    RequestSpellcheckForView requestor;
+    content::RenderView::ForEach(&requestor);
+  }
 }
 
-void SpellCheck::OnCustomDictionaryReset() {
-  custom_dictionary_.OnCustomDictionaryReset();
+void SpellCheck::OnCustomDictionaryReset(const std::vector<std::string>& custom_words) {
+  custom_dictionary_.OnCustomDictionaryReset(custom_words);
+  if (spellcheck_enabled_) {
+    RequestSpellcheckForView requestor;
+    content::RenderView::ForEach(&requestor);
+  }
 }
 
 void SpellCheck::OnEnableAutoSpellCorrect(bool enable) {

@@ -315,6 +315,15 @@ void SpellCheckProvider::EnableSpellcheck(bool enable) {
   }
 }
 
+void SpellCheckProvider::RequestSpellcheck() {
+  if (!render_view()->GetWebView())
+    return;
+
+  WebFrame* frame = render_view()->GetWebView()->focusedFrame();
+  DCHECK(frame->isContinuousSpellCheckingEnabled());
+  frame->document().documentElement().requestSpellCheck();
+}
+
 bool SpellCheckProvider::SatisfyRequestFromCache(
     const WebString& text,
     WebTextCheckingCompletion* completion) {

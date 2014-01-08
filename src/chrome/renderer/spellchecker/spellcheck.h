@@ -124,7 +124,7 @@ class SpellCheck : public content::RenderProcessObserver,
   void OnCustomDictionaryChanged(
       const std::vector<std::string>& words_added,
       const std::vector<std::string>& words_removed);
-  void OnCustomDictionaryReset();
+  void OnCustomDictionaryReset(const std::vector<std::string>& custom_words);
   void OnEnableAutoSpellCorrect(bool enable);
   void OnEnableSpellCheck(bool enable);
   void OnRequestDocumentMarkers();

@@ -92,6 +92,7 @@ struct WebRect;
         WEBKIT_EXPORT bool containsClass(const WebString& name);
         WEBKIT_EXPORT bool toggleClass(const WebString& name);
         WEBKIT_EXPORT WebString innerHTML() const;
+        WEBKIT_EXPORT void requestSpellCheck();
 
         WEBKIT_EXPORT static bool isWebElement(v8::Handle<v8::Value> handle);
         WEBKIT_EXPORT static WebElement fromV8Handle(v8::Handle<v8::Value> handle);

@@ -53,6 +53,7 @@ class SpellCheckProvider
   void EnableSpellcheck(bool enabled);
 
   // RenderViewObserver implementation.
+  virtual void DidFinishLoad(WebKit::WebFrame* frame) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void FocusedNodeChanged(const WebKit::WebNode& node) OVERRIDE;
 

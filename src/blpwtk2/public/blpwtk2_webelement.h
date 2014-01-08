@@ -61,6 +61,7 @@ class WebElement : public WebNode {
     BLPWTK2_EXPORT bool containsClass(const StringRef& name) const;
     BLPWTK2_EXPORT bool toggleClass(const StringRef& name);
     BLPWTK2_EXPORT String innerHTML() const;
+    BLPWTK2_EXPORT void requestSpellCheck();
 
     BLPWTK2_EXPORT static bool isWebElement(v8::Handle<v8::Value> handle);
     BLPWTK2_EXPORT static WebElement fromV8Handle(v8::Handle<v8::Value> handle);

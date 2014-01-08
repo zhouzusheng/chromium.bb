@@ -124,6 +124,11 @@ String WebElement::innerHTML() const
     return  fromWebString(internalToConst<WebKit::WebElement>().innerHTML());
 }
 
+void WebElement::requestSpellCheck()
+{
+    internalTo<WebKit::WebElement>().requestSpellCheck();
+}
+
 bool WebElement::isWebElement(v8::Handle<v8::Value> handle)
 {
     return WebKit::WebElement::isWebElement(handle);

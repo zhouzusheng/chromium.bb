@@ -49,7 +49,8 @@ ContextMenuParams::ContextMenuParams()
 }
 
 ContextMenuParams::ContextMenuParams(const ContextMenuParams& other)
-: d_pointOnScreen(other.d_pointOnScreen)
+: d_misspelledWord(other.d_misspelledWord)
+, d_pointOnScreen(other.d_pointOnScreen)
 , d_canCut(other.d_canCut)
 , d_canCopy(other.d_canCopy)
 , d_canPaste(other.d_canPaste)
@@ -73,6 +74,7 @@ ContextMenuParams& ContextMenuParams::operator=(const ContextMenuParams& other)
     if (this == &other) {
         return *this;
     }
+    d_misspelledWord = other.d_misspelledWord;
     d_pointOnScreen = other.d_pointOnScreen;
     d_canCut = other.d_canCut;
     d_canCopy = other.d_canCopy;

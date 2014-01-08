@@ -57,6 +57,9 @@ class BLPWTK2_EXPORT ContextMenuParams {
     void setCanDelete(bool can) { d_canDelete = can; }
     bool canDelete() const { return d_canDelete; }
 
+    void setMisspelledWord(const String& word) { d_misspelledWord = word; }
+    const String& misspelledWord() const { return d_misspelledWord; }
+
     int numCustomItems() const;
     void setNumCustomItems(int count);
 
@@ -70,6 +73,7 @@ class BLPWTK2_EXPORT ContextMenuParams {
     String& spellSuggestion(int index);
 
   private:
+    String d_misspelledWord;
     POINT d_pointOnScreen;
     bool d_canCut;
     bool d_canCopy;

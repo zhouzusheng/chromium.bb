@@ -44,6 +44,10 @@
 HINSTANCE g_instance = 0;
 WNDPROC g_defaultEditWndProc = 0;
 blpwtk2::Toolkit* g_toolkit = 0;
+bool g_spellCheckEnabled;
+bool g_autoCorrectEnabled;
+std::set<std::string> g_languages;
+std::set<std::string> g_customWords;
 
 #define OVERRIDE override
 #define BUTTON_WIDTH 72
@@ -85,16 +89,40 @@ enum {
     IDM_TEST_V8_APPEND_ELEMENT,
     IDM_TEST_V8_CONVERSIONS,
     IDM_TEST_WEBELEMENT_CONVERSION,
+    IDM_SPELLCHECK,
+    IDM_SPELLCHECK_ENABLED,
+    IDM_AUTOCORRECT_ENABLED,
+    IDM_LANGUAGES,
+    IDM_LANGUAGE_DE,
+    IDM_LANGUAGE_EN_GB,
+    IDM_LANGUAGE_EN_US,
+    IDM_LANGUAGE_ES,
+    IDM_LANGUAGE_FR,
+    IDM_LANGUAGE_IT,
+    IDM_LANGUAGE_PT_BR,
+    IDM_LANGUAGE_PT_PT,
+    IDM_LANGUAGE_RU,
     IDM_CUT,
     IDM_COPY,
     IDM_PASTE,
     IDM_DELETE,
     IDM_INSPECT,
+    IDM_ADD_TO_DICTIONARY,
     IDM_CONTEXT_MENU_BASE_CUSTOM_TAG = 5000,
     IDM_CONTEXT_MENU_END_CUSTOM_TAG = 5999,
     IDM_CONTEXT_MENU_BASE_SPELL_TAG = 6000,
     IDM_CONTEXT_MENU_END_SPELL_TAG = 6999
 };
+
+static const char LANGUAGE_DE[] = "de-DE";
+static const char LANGUAGE_EN_GB[] = "en-GB";
+static const char LANGUAGE_EN_US[] = "en-US";
+static const char LANGUAGE_ES[] = "es-ES";
+static const char LANGUAGE_FR[] = "fr-FR";
+static const char LANGUAGE_IT[] = "it-IT";
+static const char LANGUAGE_PT_BR[] = "pt-BR";
+static const char LANGUAGE_PT_PT[] = "pt-PT";
+static const char LANGUAGE_RU[] = "ru-RU";
 
 class Shell;
 int registerShellWindowClass();
@@ -102,6 +130,8 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView = 0);
 blpwtk2::HttpTransactionHandler* createHttpTransactionHandler();
 void populateSubmenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem& item);
 void populateContextMenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuParams& params);
+void updateSpellCheckConfig(blpwtk2::Profile* profile);
+void toggleLanguage(blpwtk2::Profile* profile, const std::string& language);
 
 void appendElement(blpwtk2::WebView* webView)
 {
@@ -207,6 +237,7 @@ public:
     HWND d_mainWnd;
     HWND d_urlEntryWnd;
     HWND d_findEntryHwnd;
+    HMENU d_spellCheckMenu;
     blpwtk2::WebView* d_webView;
     blpwtk2::Profile* d_profile;
     Shell* d_inspectorShell;
@@ -214,11 +245,18 @@ public:
     POINT d_contextMenuPoint;
     std::string d_findText;
     std::vector<blpwtk2::String> d_contextMenuSpellReplacements;
+    blpwtk2::String d_misspelledWord;
 
-    Shell(HWND mainWnd, HWND urlEntryWnd, HWND findEntryHwnd, blpwtk2::Profile* profile, blpwtk2::WebView* webView = 0)
+    Shell(HWND mainWnd,
+          HWND urlEntryWnd,
+          HWND findEntryHwnd,
+          HMENU spellCheckMenu,
+          blpwtk2::Profile* profile,
+          blpwtk2::WebView* webView = 0)
     : d_mainWnd(mainWnd)
     , d_urlEntryWnd(urlEntryWnd)
     , d_findEntryHwnd(findEntryHwnd)
+    , d_spellCheckMenu(spellCheckMenu)
     , d_webView(webView)
     , d_profile(profile)
     , d_inspectorShell(0)
@@ -525,6 +563,16 @@ public:
 
         AppendMenu(menu, MF_STRING, IDM_INSPECT, L"I&nspect Element");
 
+        if (!params.misspelledWord().isEmpty()) {
+            AppendMenu(menu, MF_SEPARATOR, 0, NULL);
+
+            d_misspelledWord = params.misspelledWord();
+
+            std::string menuText = "Add to dictionary: ";
+            menuText.append(d_misspelledWord.c_str());
+            AppendMenuA(menu, MF_STRING, IDM_ADD_TO_DICTIONARY, menuText.c_str());
+        }
+
         d_contextMenuSpellReplacements.clear();
 
         if (params.numSpellSuggestions() > 0) {
@@ -561,28 +609,13 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
 
     blpwtk2::Profile* profile = g_toolkit->createIncognitoProfile();
 
-    {
-        // Turn on spellcheck
-        blpwtk2::SpellCheckConfig config;
-
-        config.enableSpellCheck(true);
-        config.enableAutoCorrect(true);
-
-        std::vector<blpwtk2::StringRef> languages;
-        languages.push_back("en-US");
-        //languages.push_back("en-GB");
-        //languages.push_back("fr");
-        //languages.push_back("de");
-        config.setLanguages(&languages[0], languages.size());
-
-        std::vector<blpwtk2::StringRef> customWords;
-        customWords.push_back("foo");
-        customWords.push_back("zzzx");
-        customWords.push_back("Bloomberg");
-        config.setCustomWords(&customWords[0], customWords.size());
-
-        profile->setSpellCheckConfig(config);
-    }
+    g_spellCheckEnabled = true;
+    g_autoCorrectEnabled = true;
+    g_languages.insert(LANGUAGE_EN_US);
+    g_customWords.insert("foo");
+    g_customWords.insert("zzzx");
+    g_customWords.insert("Bloomberg");
+    updateSpellCheckConfig(profile);
 
     Shell* firstShell = createShell(profile);
     firstShell->d_webView->loadUrl("http://www.google.com");
@@ -697,6 +730,41 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         case IDM_TEST_WEBELEMENT_CONVERSION:
             testWebElementConversion(shell->d_webView);
             return 0;
+        case IDM_SPELLCHECK_ENABLED:
+            g_spellCheckEnabled = !g_spellCheckEnabled;
+            updateSpellCheckConfig(shell->d_profile);
+            return 0;
+        case IDM_AUTOCORRECT_ENABLED:
+            g_autoCorrectEnabled = !g_autoCorrectEnabled;
+            updateSpellCheckConfig(shell->d_profile);
+            return 0;
+        case IDM_LANGUAGE_DE:
+            toggleLanguage(shell->d_profile, LANGUAGE_DE);
+            return 0;
+        case IDM_LANGUAGE_EN_GB:
+            toggleLanguage(shell->d_profile, LANGUAGE_EN_GB);
+            return 0;
+        case IDM_LANGUAGE_EN_US:
+            toggleLanguage(shell->d_profile, LANGUAGE_EN_US);
+            return 0;
+        case IDM_LANGUAGE_ES:
+            toggleLanguage(shell->d_profile, LANGUAGE_ES);
+            return 0;
+        case IDM_LANGUAGE_FR:
+            toggleLanguage(shell->d_profile, LANGUAGE_FR);
+            return 0;
+        case IDM_LANGUAGE_IT:
+            toggleLanguage(shell->d_profile, LANGUAGE_IT);
+            return 0;
+        case IDM_LANGUAGE_PT_BR:
+            toggleLanguage(shell->d_profile, LANGUAGE_PT_BR);
+            return 0;
+        case IDM_LANGUAGE_PT_PT:
+            toggleLanguage(shell->d_profile, LANGUAGE_PT_PT);
+            return 0;
+        case IDM_LANGUAGE_RU:
+            toggleLanguage(shell->d_profile, LANGUAGE_RU);
+            return 0;
         case IDM_CUT:
             shell->d_webView->cutSelection();
             return 0;
@@ -724,11 +792,42 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             shell->d_inspectorShell->d_webView->inspectElementAt(shell->d_contextMenuPoint);
             shell->d_inspectorShell->d_webView->focus();
             return 0;
+        case IDM_ADD_TO_DICTIONARY:
+            g_customWords.insert(std::string(shell->d_misspelledWord.data(), shell->d_misspelledWord.length()));
+            updateSpellCheckConfig(shell->d_profile);
+            return 0;
         case IDM_EXIT:
             std::vector<Shell*> shells(Shell::s_shells.begin(), Shell::s_shells.end());
             for (int i = 0, size = shells.size(); i < size; ++i)
                 DestroyWindow(shells[i]->d_mainWnd);
             return 0;
+        }
+        break;
+    case WM_INITMENUPOPUP: {
+            HMENU menu = (HMENU)wParam;
+            MENUITEMINFO mii;
+            mii.cbSize = sizeof(MENUITEMINFO);
+            mii.fMask = MIIM_STATE;
+            GetMenuItemInfo(shell->d_spellCheckMenu, 2, TRUE, &mii);
+            if (g_spellCheckEnabled) {
+                mii.fState &= ~MFS_DISABLED;
+            }
+            else {
+                mii.fState |= MFS_DISABLED;
+            }
+            SetMenuItemInfo(shell->d_spellCheckMenu, 2, TRUE, &mii);
+            CheckMenuItem(menu, IDM_SPELLCHECK_ENABLED, g_spellCheckEnabled ? MF_CHECKED : MF_UNCHECKED);
+            EnableMenuItem(menu, IDM_AUTOCORRECT_ENABLED, g_spellCheckEnabled ? MF_ENABLED : MF_DISABLED);
+            CheckMenuItem(menu, IDM_AUTOCORRECT_ENABLED, g_spellCheckEnabled && g_autoCorrectEnabled ? MF_CHECKED : MF_UNCHECKED);
+            CheckMenuItem(menu, IDM_LANGUAGE_DE, g_languages.find(LANGUAGE_DE) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
+            CheckMenuItem(menu, IDM_LANGUAGE_EN_GB, g_languages.find(LANGUAGE_EN_GB) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
+            CheckMenuItem(menu, IDM_LANGUAGE_EN_US, g_languages.find(LANGUAGE_EN_US) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
+            CheckMenuItem(menu, IDM_LANGUAGE_ES, g_languages.find(LANGUAGE_ES) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
+            CheckMenuItem(menu, IDM_LANGUAGE_FR, g_languages.find(LANGUAGE_FR) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
+            CheckMenuItem(menu, IDM_LANGUAGE_IT, g_languages.find(LANGUAGE_IT) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
+            CheckMenuItem(menu, IDM_LANGUAGE_PT_BR, g_languages.find(LANGUAGE_PT_BR) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
+            CheckMenuItem(menu, IDM_LANGUAGE_PT_PT, g_languages.find(LANGUAGE_PT_PT) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
+            CheckMenuItem(menu, IDM_LANGUAGE_RU, g_languages.find(LANGUAGE_RU) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
         }
         break;
     case WM_WINDOWPOSCHANGED:
@@ -847,6 +946,21 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
     AppendMenu(testMenu, MF_STRING, IDM_TEST_V8_CONVERSIONS, L"Test V8 Conversions");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_WEBELEMENT_CONVERSION, L"Test WebElement Conversion");
     AppendMenu(menu, MF_POPUP, (UINT_PTR)testMenu, L"&Test");
+    HMENU spellCheckMenu = CreateMenu();
+    AppendMenu(spellCheckMenu, MF_STRING, IDM_SPELLCHECK_ENABLED, L"Enable &Spellcheck");
+    AppendMenu(spellCheckMenu, MF_STRING, IDM_AUTOCORRECT_ENABLED, L"Enable &Autocorrect");
+    HMENU languagesMenu = CreateMenu();
+    AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_DE, L"&German");
+    AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_EN_GB, L"&English (Great Britain)");
+    AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_EN_US, L"English (&United States)");
+    AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_ES, L"&Spanish");
+    AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_FR, L"&French");
+    AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_IT, L"I&talian");
+    AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_PT_BR, L"Portuguese (&Brazil)");
+    AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_PT_PT, L"Portuguese (&Portugal)");
+    AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_RU, L"&Russian");
+    AppendMenu(spellCheckMenu, MF_POPUP, (UINT_PTR)languagesMenu, L"&Languages");
+    AppendMenu(menu, MF_POPUP, (UINT_PTR)spellCheckMenu, L"&Spelling");
     SetMenu(mainWnd, menu);
 
     HWND hwnd;
@@ -922,7 +1036,7 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
         g_defaultEditWndProc = reinterpret_cast<WNDPROC>(GetWindowLongPtr(urlEntryWnd, GWLP_WNDPROC));
     SetWindowLongPtr(urlEntryWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(urlEntryWndProc));
 
-    return new Shell(mainWnd, urlEntryWnd, findEntryHwnd, profile, webView);
+    return new Shell(mainWnd, urlEntryWnd, findEntryHwnd, spellCheckMenu, profile, webView);
 }
 
 void populateMenuItem(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem& item)
@@ -956,6 +1070,43 @@ void populateSubmenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem
     for (int i = 0; i < item.numSubMenuItems(); ++i) {
         populateMenuItem(menu, menuIdStart,item.subMenuItem(i));
     }
+}
+
+void updateSpellCheckConfig(blpwtk2::Profile* profile)
+{
+    blpwtk2::SpellCheckConfig config;
+
+    config.enableSpellCheck(g_spellCheckEnabled);
+    config.enableAutoCorrect(g_spellCheckEnabled && g_autoCorrectEnabled);
+
+    std::vector<blpwtk2::StringRef> languages;
+    for (std::set<std::string>::const_iterator it = g_languages.begin();
+                                               it != g_languages.end();
+                                               ++it) {
+        languages.push_back(it->c_str());
+    }
+    config.setLanguages(languages.data(), languages.size());
+
+    std::vector<blpwtk2::StringRef> customWords;
+    for (std::set<std::string>::const_iterator it = g_customWords.begin();
+                                               it != g_customWords.end();
+                                               ++it) {
+        customWords.push_back(it->c_str());
+    }
+    config.setCustomWords(customWords.data(), customWords.size());
+
+    profile->setSpellCheckConfig(config);
+}
+
+void toggleLanguage(blpwtk2::Profile* profile, const std::string& language)
+{
+    if (g_languages.find(language) == g_languages.end()) {
+        g_languages.insert(language);
+    }
+    else {
+        g_languages.erase(language);
+    }
+    updateSpellCheckConfig(profile);
 }
 
 class DummyHttpTransactionHandler : public blpwtk2::HttpTransactionHandler {

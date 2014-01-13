@@ -86,12 +86,14 @@ static void skiaDrawText(GraphicsContext* context,
 }
 
 static void setupPaintForFont(SkPaint* paint, GraphicsContext* context,
-                              SkTypeface* face, float size, uint32_t textFlags)
+                              SkTypeface* face, float size, uint32_t textFlags,
+                              bool lcdExplicitlyRequested)
 {
     paint->setTextSize(SkFloatToScalar(size));
     paint->setTypeface(face);
 
-    if (!context->couldUseLCDRenderedText()) {
+    // SHEZ: don't remove cleartype if it was explicitly requested
+    if (!lcdExplicitlyRequested && !context->couldUseLCDRenderedText()) {
         textFlags &= ~SkPaint::kLCDRenderText_Flag;
         // If we *just* clear our request for LCD, then GDI seems to
         // sometimes give us AA text, and sometimes give us BW text. Since the
@@ -115,6 +117,7 @@ static void setupPaintForFont(SkPaint* paint, GraphicsContext* context,
 
 static void paintSkiaText(GraphicsContext* context, HFONT hfont,
                           SkTypeface* face, float size, uint32_t textFlags,
+                          bool lcdExplicitlyRequested,
                           int numGlyphs,
                           const WORD* glyphs,
                           const int* advances,
@@ -131,7 +134,7 @@ static void paintSkiaText(GraphicsContext* context, HFONT hfont,
     SkPaint paint;
     context->setupPaintForFilling(&paint);
     paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-    setupPaintForFont(&paint, context, face, size, textFlags);
+    setupPaintForFont(&paint, context, face, size, textFlags, lcdExplicitlyRequested);
 
     bool didFill = false;
 
@@ -148,7 +151,7 @@ static void paintSkiaText(GraphicsContext* context, HFONT hfont,
         paint.reset();
         context->setupPaintForStroking(&paint);
         paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-        setupPaintForFont(&paint, context, face, size, textFlags);
+        setupPaintForFont(&paint, context, face, size, textFlags, lcdExplicitlyRequested);
 
         if (didFill) {
             // If there is a shadow and we filled above, there will already be
@@ -171,6 +174,8 @@ static void paintSkiaText(GraphicsContext* context, HFONT hfont,
 
 void paintSkiaText(GraphicsContext* context,
                    const FontPlatformData& data,
+                   int textFlags,
+                   bool lcdExplicitlyRequested,
                    int numGlyphs,
                    const WORD* glyphs,
                    const int* advances,
@@ -178,7 +183,7 @@ void paintSkiaText(GraphicsContext* context,
                    const SkPoint& origin,
                    const SkRect& textRect)
 {
-    paintSkiaText(context, data.hfont(), data.typeface(), data.size(), data.paintTextFlags(),
+    paintSkiaText(context, data.hfont(), data.typeface(), data.size(), textFlags, lcdExplicitlyRequested,
                   numGlyphs, glyphs, advances, offsets, origin, textRect);
 }
 
@@ -196,7 +201,7 @@ void paintSkiaText(GraphicsContext* context,
     SkTypeface* face = CreateTypefaceFromHFont(hfont, &size, &paintTextFlags);
     SkAutoUnref aur(face);
 
-    paintSkiaText(context, hfont, face, size, paintTextFlags, numGlyphs, glyphs, advances, offsets, origin, textRect);
+    paintSkiaText(context, hfont, face, size, paintTextFlags, false, numGlyphs, glyphs, advances, offsets, origin, textRect);
 }
 
 }  // namespace WebCore

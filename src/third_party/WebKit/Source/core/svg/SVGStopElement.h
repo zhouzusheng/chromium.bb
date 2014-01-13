@@ -21,7 +21,6 @@
 #ifndef SVGStopElement_h
 #define SVGStopElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGStyledElement.h"
 
@@ -42,7 +41,7 @@ private:
 
     virtual bool isGradientStop() const OVERRIDE { return true; }
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGStopElement)
@@ -58,5 +57,4 @@ inline SVGStopElement* toSVGStopElement(SVGElement* element)
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

@@ -32,14 +32,13 @@
 #include "config.h"
 #include "core/page/PerformanceResourceTiming.h"
 
+#include <wtf/Vector.h>
 #include "core/dom/Document.h"
 #include "core/loader/DocumentLoadTiming.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/SecurityOrigin.h"
-#include "core/platform/KURL.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
-#include <wtf/Vector.h>
+#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -83,6 +82,7 @@ PerformanceResourceTiming::PerformanceResourceTiming(const AtomicString& initiat
     , m_shouldReportDetails(passesTimingAllowCheck(response, requestingDocument))
     , m_requestingDocument(requestingDocument)
 {
+    ScriptWrappable::init(this);
 }
 
 PerformanceResourceTiming::~PerformanceResourceTiming()
@@ -120,10 +120,10 @@ double PerformanceResourceTiming::domainLookupStart() const
     if (!m_shouldReportDetails)
         return 0.0;
 
-    if (!m_timing || m_timing->dnsStart < 0)
+    if (!m_timing || m_timing->dnsStart == 0.0)
         return fetchStart();
 
-    return resourceTimeToDocumentMilliseconds(m_timing->dnsStart);
+    return monotonicTimeToDocumentMilliseconds(m_requestingDocument.get(), m_timing->dnsStart);
 }
 
 double PerformanceResourceTiming::domainLookupEnd() const
@@ -131,10 +131,10 @@ double PerformanceResourceTiming::domainLookupEnd() const
     if (!m_shouldReportDetails)
         return 0.0;
 
-    if (!m_timing || m_timing->dnsEnd < 0)
+    if (!m_timing || m_timing->dnsEnd == 0.0)
         return domainLookupStart();
 
-    return resourceTimeToDocumentMilliseconds(m_timing->dnsEnd);
+    return monotonicTimeToDocumentMilliseconds(m_requestingDocument.get(), m_timing->dnsEnd);
 }
 
 double PerformanceResourceTiming::connectStart() const
@@ -142,16 +142,16 @@ double PerformanceResourceTiming::connectStart() const
     if (!m_shouldReportDetails)
         return 0.0;
 
-    // connectStart will be -1 when a network request is not made.
-    if (!m_timing || m_timing->connectStart < 0 || m_didReuseConnection)
+    // connectStart will be zero when a network request is not made.
+    if (!m_timing || m_timing->connectStart == 0.0 || m_didReuseConnection)
         return domainLookupEnd();
 
     // connectStart includes any DNS time, so we may need to trim that off.
-    int connectStart = m_timing->connectStart;
-    if (m_timing->dnsEnd >= 0)
+    double connectStart = m_timing->connectStart;
+    if (m_timing->dnsEnd > 0.0)
         connectStart = m_timing->dnsEnd;
 
-    return resourceTimeToDocumentMilliseconds(connectStart);
+    return monotonicTimeToDocumentMilliseconds(m_requestingDocument.get(), connectStart);
 }
 
 double PerformanceResourceTiming::connectEnd() const
@@ -159,11 +159,11 @@ double PerformanceResourceTiming::connectEnd() const
     if (!m_shouldReportDetails)
         return 0.0;
 
-    // connectStart will be -1 when a network request is not made.
-    if (!m_timing || m_timing->connectEnd < 0 || m_didReuseConnection)
+    // connectStart will be zero when a network request is not made.
+    if (!m_timing || m_timing->connectEnd == 0.0 || m_didReuseConnection)
         return connectStart();
 
-    return resourceTimeToDocumentMilliseconds(m_timing->connectEnd);
+    return monotonicTimeToDocumentMilliseconds(m_requestingDocument.get(), m_timing->connectEnd);
 }
 
 double PerformanceResourceTiming::secureConnectionStart() const
@@ -171,10 +171,10 @@ double PerformanceResourceTiming::secureConnectionStart() const
     if (!m_shouldReportDetails)
         return 0.0;
 
-    if (!m_timing || m_timing->sslStart < 0) // Secure connection not negotiated.
+    if (!m_timing || m_timing->sslStart == 0.0) // Secure connection not negotiated.
         return 0.0;
 
-    return resourceTimeToDocumentMilliseconds(m_timing->sslStart);
+    return monotonicTimeToDocumentMilliseconds(m_requestingDocument.get(), m_timing->sslStart);
 }
 
 double PerformanceResourceTiming::requestStart() const
@@ -185,7 +185,7 @@ double PerformanceResourceTiming::requestStart() const
     if (!m_timing)
         return connectEnd();
 
-    return resourceTimeToDocumentMilliseconds(m_timing->sendStart);
+    return monotonicTimeToDocumentMilliseconds(m_requestingDocument.get(), m_timing->sendStart);
 }
 
 double PerformanceResourceTiming::responseStart() const
@@ -195,8 +195,9 @@ double PerformanceResourceTiming::responseStart() const
 
     if (!m_timing)
         return requestStart();
+
     // FIXME: This number isn't exactly correct. See the notes in PerformanceTiming::responseStart().
-    return resourceTimeToDocumentMilliseconds(m_timing->receiveHeadersEnd);
+    return monotonicTimeToDocumentMilliseconds(m_requestingDocument.get(), m_timing->receiveHeadersEnd);
 }
 
 double PerformanceResourceTiming::responseEnd() const
@@ -205,13 +206,6 @@ double PerformanceResourceTiming::responseEnd() const
         return responseStart();
 
     return monotonicTimeToDocumentMilliseconds(m_requestingDocument.get(), m_finishTime);
-}
-
-double PerformanceResourceTiming::resourceTimeToDocumentMilliseconds(int deltaMilliseconds) const
-{
-    if (!deltaMilliseconds)
-        return 0.0;
-    return monotonicTimeToDocumentMilliseconds(m_requestingDocument.get(), m_timing->requestTime) + deltaMilliseconds;
 }
 
 } // namespace WebCore

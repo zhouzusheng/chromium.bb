@@ -47,13 +47,13 @@
 #include "core/page/DiagnosticLoggingKeys.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/SecurityOrigin.h"
-#include "core/page/SecurityPolicy.h"
 #include "core/page/Settings.h"
 #include "core/platform/MIMETypeRegistry.h"
 #include "core/plugins/PluginData.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 #include "core/rendering/RenderView.h"
+#include "weborigin/SecurityOrigin.h"
+#include "weborigin/SecurityPolicy.h"
 
 namespace WebCore {
     
@@ -70,7 +70,7 @@ void SubframeLoader::clear()
     m_containsPlugins = false;
 }
 
-bool SubframeLoader::requestFrame(HTMLFrameOwnerElement* ownerElement, const String& urlString, const AtomicString& frameName, bool lockHistory, bool lockBackForwardList)
+bool SubframeLoader::requestFrame(HTMLFrameOwnerElement* ownerElement, const String& urlString, const AtomicString& frameName, bool lockBackForwardList)
 {
     // Support for <frame src="javascript:string">
     KURL scriptURL;
@@ -81,14 +81,14 @@ bool SubframeLoader::requestFrame(HTMLFrameOwnerElement* ownerElement, const Str
     } else
         url = completeURL(urlString);
 
-    if (!loadOrRedirectSubframe(ownerElement, url, frameName, lockHistory, lockBackForwardList))
+    if (!loadOrRedirectSubframe(ownerElement, url, frameName, lockBackForwardList))
         return false;
 
     if (!ownerElement->contentFrame())
         return false;
 
     if (!scriptURL.isEmpty())
-        ownerElement->contentFrame()->script()->executeIfJavaScriptURL(scriptURL);
+        ownerElement->contentFrame()->script()->executeScriptIfJavaScriptURL(scriptURL);
 
     return true;
 }
@@ -180,7 +180,7 @@ bool SubframeLoader::requestObject(HTMLPlugInImageElement* ownerElement, const S
     // If the plug-in element already contains a subframe, loadOrRedirectSubframe will re-use it. Otherwise,
     // it will create a new frame and set it as the RenderPart's widget, causing what was previously 
     // in the widget to be torn down.
-    return loadOrRedirectSubframe(ownerElement, completedURL, frameName, true, true);
+    return loadOrRedirectSubframe(ownerElement, completedURL, frameName, true);
 }
 
 PassRefPtr<Widget> SubframeLoader::createJavaAppletWidget(const IntSize& size, HTMLAppletElement* element, const Vector<String>& paramNames, const Vector<String>& paramValues)
@@ -228,10 +228,10 @@ PassRefPtr<Widget> SubframeLoader::createJavaAppletWidget(const IntSize& size, H
     return widget;
 }
 
-bool SubframeLoader::loadOrRedirectSubframe(HTMLFrameOwnerElement* ownerElement, const KURL& url, const AtomicString& frameName, bool lockHistory, bool lockBackForwardList)
+bool SubframeLoader::loadOrRedirectSubframe(HTMLFrameOwnerElement* ownerElement, const KURL& url, const AtomicString& frameName, bool lockBackForwardList)
 {
     if (Frame* frame = ownerElement->contentFrame()) {
-        frame->navigationScheduler()->scheduleLocationChange(m_frame->document()->securityOrigin(), url.string(), m_frame->loader()->outgoingReferrer(), lockHistory, lockBackForwardList);
+        frame->navigationScheduler()->scheduleLocationChange(m_frame->document()->securityOrigin(), url.string(), m_frame->loader()->outgoingReferrer(), lockBackForwardList);
         return true;
     }
 
@@ -350,10 +350,7 @@ bool SubframeLoader::loadPlugin(HTMLPlugInImageElement* pluginElement, const KUR
 
     renderer->setWidget(widget);
     m_containsPlugins = true;
- 
-#if ENABLE(3D_PLUGIN)
     pluginElement->setNeedsStyleRecalc(SyntheticStyleChange);
-#endif
     return true;
 }
 

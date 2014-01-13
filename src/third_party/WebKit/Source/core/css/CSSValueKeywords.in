@@ -1,6 +1,11 @@
 //
 // CSS value names
 //
+
+// The mode argument is used to limit the keyword to be used only for certain
+// CSSParserModes. Values that have the prefix -internal- are automatically
+// only for UASheetMode.
+
 inherit
 initial
 //
@@ -161,12 +166,16 @@ threedshadow
 window
 windowframe
 windowtext
--webkit-focus-ring-color
+-internal-active-list-box-selection
+-internal-active-list-box-selection-text
+-internal-inactive-list-box-selection
+-internal-inactive-list-box-selection-text
+-webkit-focus-ring-color mode=QuirksOrUASheet
 currentcolor
+grey
 //
 // colors in non strict mode
-grey
--webkit-text
+-webkit-text mode=QuirksOrUASheet
 //
 // CSS_PROP_BACKGROUND_REPEAT:
 //
@@ -331,12 +340,14 @@ table-cell
 table-caption
 -webkit-box
 -webkit-inline-box
--webkit-flex
--webkit-inline-flex
--webkit-grid
--webkit-inline-grid
+flex
+inline-flex
+grid
+inline-grid
 lazy-block
 //none
+-webkit-flex
+-webkit-inline-flex
 //
 // CSS_PROP_CURSOR:
 // The order here must match the order of the ECursor enum in RenderStyleConstants.h.
@@ -432,7 +443,6 @@ line-through
 local
 loud
 lower
--webkit-marquee
 mix
 no-close-quote
 no-open-quote
@@ -452,9 +462,7 @@ static
 thick
 thin
 underline
-#if defined(ENABLE_CSS3_TEXT) && ENABLE_CSS3_TEXT
 wavy
-#endif
 -webkit-nowrap
 
 // CSS3 Values
@@ -676,7 +684,6 @@ caret
 searchfield
 searchfield-decoration
 searchfield-results-decoration
-searchfield-results-button
 searchfield-cancel-button
 textfield
 relevancy-level-indicator
@@ -773,23 +780,11 @@ step-end
 document
 reset
 
-#if defined(ENABLE_CSS_DEVICE_ADAPTATION) && ENABLE_CSS_DEVICE_ADAPTATION
 //
 // CSS_PROP_USER_ZOOM
 //
 // fixed
 zoom
-
-//
-// CSS_PROP_MIN_WIDTH
-// CSS_PROP_MAX_WIDTH
-// CSS_PROP_MIN_HEIGHT
-// CSS_PROP_MAX_HEIGHT
-//
-// auto
-device-width
-device-height
-#endif
 
 //
 // CSS_PROP_POINTER_EVENTS
@@ -830,10 +825,6 @@ geometricPrecision
 economy
 exact
 
-// -webkit-color-correction
-//default
-sRGB
-
 // (-webkit-view-mode:) media feature:
 floating
 fullscreen
@@ -849,11 +840,9 @@ no-limit
 manual
 // auto
 
-#if defined(ENABLE_ACCELERATED_OVERFLOW_SCROLLING) && ENABLE_ACCELERATED_OVERFLOW_SCROLLING
 // -webkit-overflow-scrolling
 // auto
-touch
-#endif
+touch condition=ACCELERATED_OVERFLOW_SCROLLING
 
 // -webkit-writing-mode
 // SVG compatibility
@@ -924,7 +913,7 @@ nonzero
 evenodd
 outside-shape
 
-// -webkit-region-overflow
+// -webkit-region-fragment
 // auto
 break
 
@@ -943,9 +932,7 @@ wrap
 // -webkit-line-align
 edges
 
-#if (defined(ENABLE_SVG) && ENABLE_SVG) || (defined(ENABLE_CSS3_TEXT) && ENABLE_CSS3_TEXT)
 alphabetic
-#endif
 
 // position
 sticky
@@ -991,8 +978,9 @@ no-drag
 // -webkit-grid-{start|end|before|after}
 span
 
-#if defined(ENABLE_CSS3_TEXT) && ENABLE_CSS3_TEXT
 // text-indent
--webkit-each-line
-#endif
+-webkit-each-line condition=CSS3_TEXT
 
+// (scan:) media feature
+progressive
+interlace

@@ -5,8 +5,8 @@
 #include "sync/internal_api/public/http_bridge.h"
 
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
-#include "base/string_number_conversions.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/strings/string_number_conversions.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/cookies/cookie_monster.h"
@@ -29,8 +29,8 @@ HttpBridge::RequestContextGetter::RequestContextGetter(
       network_task_runner_(
           baseline_context_getter_->GetNetworkTaskRunner()),
       user_agent_(user_agent) {
-  DCHECK(baseline_context_getter_);
-  DCHECK(network_task_runner_);
+  DCHECK(baseline_context_getter_.get());
+  DCHECK(network_task_runner_.get());
   DCHECK(!user_agent_.empty());
 }
 
@@ -70,7 +70,7 @@ HttpBridgeFactory::~HttpBridgeFactory() {
 }
 
 HttpPostProviderInterface* HttpBridgeFactory::Create() {
-  HttpBridge* http = new HttpBridge(request_context_getter_,
+  HttpBridge* http = new HttpBridge(request_context_getter_.get(),
                                     network_time_update_callback_);
   http->AddRef();
   return http;
@@ -140,7 +140,7 @@ HttpBridge::HttpBridge(
     : context_getter_for_request_(context_getter),
       network_task_runner_(
           context_getter_for_request_->GetNetworkTaskRunner()),
-      created_on_loop_(MessageLoop::current()),
+      created_on_loop_(base::MessageLoop::current()),
       http_post_completed_(false, false),
       network_time_update_callback_(network_time_update_callback) {
 }
@@ -155,7 +155,7 @@ void HttpBridge::SetExtraRequestHeaders(const char * headers) {
 }
 
 void HttpBridge::SetURL(const char* url, int port) {
-  DCHECK_EQ(MessageLoop::current(), created_on_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), created_on_loop_);
   if (DCHECK_IS_ON()) {
     base::AutoLock lock(fetch_state_lock_);
     DCHECK(!fetch_state_.request_completed);
@@ -173,7 +173,7 @@ void HttpBridge::SetURL(const char* url, int port) {
 void HttpBridge::SetPostPayload(const char* content_type,
                                 int content_length,
                                 const char* content) {
-  DCHECK_EQ(MessageLoop::current(), created_on_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), created_on_loop_);
   if (DCHECK_IS_ON()) {
     base::AutoLock lock(fetch_state_lock_);
     DCHECK(!fetch_state_.request_completed);
@@ -192,7 +192,7 @@ void HttpBridge::SetPostPayload(const char* content_type,
 }
 
 bool HttpBridge::MakeSynchronousPost(int* error_code, int* response_code) {
-  DCHECK_EQ(MessageLoop::current(), created_on_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), created_on_loop_);
   if (DCHECK_IS_ON()) {
     base::AutoLock lock(fetch_state_lock_);
     DCHECK(!fetch_state_.request_completed);
@@ -228,7 +228,7 @@ void HttpBridge::MakeAsynchronousPost() {
 
   fetch_state_.url_poster = net::URLFetcher::Create(
       url_for_request_, net::URLFetcher::POST, this);
-  fetch_state_.url_poster->SetRequestContext(context_getter_for_request_);
+  fetch_state_.url_poster->SetRequestContext(context_getter_for_request_.get());
   fetch_state_.url_poster->SetUploadData(content_type_, request_content_);
   fetch_state_.url_poster->SetExtraRequestHeaders(extra_headers_);
   fetch_state_.url_poster->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES);
@@ -237,14 +237,14 @@ void HttpBridge::MakeAsynchronousPost() {
 }
 
 int HttpBridge::GetResponseContentLength() const {
-  DCHECK_EQ(MessageLoop::current(), created_on_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), created_on_loop_);
   base::AutoLock lock(fetch_state_lock_);
   DCHECK(fetch_state_.request_completed);
   return fetch_state_.response_content.size();
 }
 
 const char* HttpBridge::GetResponseContent() const {
-  DCHECK_EQ(MessageLoop::current(), created_on_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), created_on_loop_);
   base::AutoLock lock(fetch_state_lock_);
   DCHECK(fetch_state_.request_completed);
   return fetch_state_.response_content.data();
@@ -253,7 +253,7 @@ const char* HttpBridge::GetResponseContent() const {
 const std::string HttpBridge::GetResponseHeaderValue(
     const std::string& name) const {
 
-  DCHECK_EQ(MessageLoop::current(), created_on_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), created_on_loop_);
   base::AutoLock lock(fetch_state_lock_);
   DCHECK(fetch_state_.request_completed);
 
@@ -313,7 +313,7 @@ void HttpBridge::OnURLFetchComplete(const net::URLFetcher* source) {
   // End of the line for url_poster_. It lives only on the IO loop.
   // We defer deletion because we're inside a callback from a component of the
   // URLFetcher, so it seems most natural / "polite" to let the stack unwind.
-  MessageLoop::current()->DeleteSoon(FROM_HERE, fetch_state_.url_poster);
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, fetch_state_.url_poster);
   fetch_state_.url_poster = NULL;
 
   // Wake the blocked syncer thread in MakeSynchronousPost.
@@ -323,7 +323,7 @@ void HttpBridge::OnURLFetchComplete(const net::URLFetcher* source) {
 
 net::URLRequestContextGetter* HttpBridge::GetRequestContextGetterForTest()
     const {
-  return context_getter_for_request_;
+  return context_getter_for_request_.get();
 }
 
 void HttpBridge::UpdateNetworkTime() {

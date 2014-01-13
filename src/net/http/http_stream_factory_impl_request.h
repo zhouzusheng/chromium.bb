@@ -11,14 +11,19 @@
 #include "net/base/net_log.h"
 #include "net/http/http_stream_factory_impl.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/spdy/spdy_session_key.h"
 
 namespace net {
+
+class ClientSocketHandle;
+class SpdySession;
 
 class HttpStreamFactoryImpl::Request : public HttpStreamRequest {
  public:
   Request(const GURL& url,
           HttpStreamFactoryImpl* factory,
           HttpStreamRequest::Delegate* delegate,
+          WebSocketStreamBase::Factory* websocket_stream_factory,
           const BoundNetLog& net_log);
   virtual ~Request();
 
@@ -27,9 +32,9 @@ class HttpStreamFactoryImpl::Request : public HttpStreamRequest {
 
   // Called when the Job determines the appropriate |spdy_session_key| for the
   // Request. Note that this does not mean that SPDY is necessarily supported
-  // for this HostPortProxyPair, since we may need to wait for NPN to complete
+  // for this SpdySessionKey, since we may need to wait for NPN to complete
   // before knowing if SPDY is available.
-  void SetSpdySessionKey(const HostPortProxyPair& spdy_session_key);
+  void SetSpdySessionKey(const SpdySessionKey& spdy_session_key);
 
   // Called when the Job determines the appropriate |http_pipelining_key| for
   // the Request. Registers this Request with the factory, so that if an
@@ -57,9 +62,13 @@ class HttpStreamFactoryImpl::Request : public HttpStreamRequest {
   void RemoveRequestFromHttpPipeliningRequestMap();
 
   // Called by an attached Job if it sets up a SpdySession.
-  void OnSpdySessionReady(Job* job,
-                          scoped_refptr<SpdySession> spdy_session,
-                          bool direct);
+  void OnNewSpdySessionReady(Job* job,
+                             scoped_refptr<SpdySession> spdy_session,
+                             bool direct);
+
+  WebSocketStreamBase::Factory* websocket_stream_factory() {
+    return websocket_stream_factory_;
+  }
 
   // HttpStreamRequest::Delegate methods which we implement. Note we don't
   // actually subclass HttpStreamRequest::Delegate.
@@ -68,6 +77,10 @@ class HttpStreamFactoryImpl::Request : public HttpStreamRequest {
                      const SSLConfig& used_ssl_config,
                      const ProxyInfo& used_proxy_info,
                      HttpStreamBase* stream);
+  void OnWebSocketStreamReady(Job* job,
+                              const SSLConfig& used_ssl_config,
+                              const ProxyInfo& used_proxy_info,
+                              WebSocketStreamBase* stream);
   void OnStreamFailed(Job* job, int status, const SSLConfig& used_ssl_config);
   void OnCertificateError(Job* job,
                           int status,
@@ -105,15 +118,19 @@ class HttpStreamFactoryImpl::Request : public HttpStreamRequest {
   // Used to orphan all jobs in |jobs_|.
   void OrphanJobs();
 
+  // Called when a Job succeeds.
+  void OnJobSucceeded(Job* job);
+
   const GURL url_;
   HttpStreamFactoryImpl* const factory_;
+  WebSocketStreamBase::Factory* const websocket_stream_factory_;
   HttpStreamRequest::Delegate* const delegate_;
   const BoundNetLog net_log_;
 
   // At the point where Job is irrevocably tied to the Request, we set this.
   scoped_ptr<Job> bound_job_;
   std::set<HttpStreamFactoryImpl::Job*> jobs_;
-  scoped_ptr<const HostPortProxyPair> spdy_session_key_;
+  scoped_ptr<const SpdySessionKey> spdy_session_key_;
   scoped_ptr<const HttpPipelinedHost::Key> http_pipelining_key_;
 
   bool completed_;
@@ -127,4 +144,4 @@ class HttpStreamFactoryImpl::Request : public HttpStreamRequest {
 
 }  // namespace net
 
-#endif  // NET_HTTP_HTTP_STREAM_FACTORY_IMPL_H_
+#endif  // NET_HTTP_HTTP_STREAM_FACTORY_IMPL_REQUEST_H_

@@ -35,9 +35,16 @@ use constant EmptyToken => 5;
 
 # Used to represent a parsed IDL document
 struct( idlDocument => {
-    interfaces => '@', # All parsed interfaces
-    enumerations => '@', # All parsed enumerations
     fileName => '$', # file name
+    callbackFunctions => '@',
+    enumerations => '@', # All parsed enumerations
+    interfaces => '@', # All parsed interfaces
+});
+
+struct( callbackFunction => {
+    name => '$',
+    type => '$',
+    parameters => '@',
 });
 
 # Used to represent 'interface' blocks
@@ -55,27 +62,33 @@ struct( domInterface => {
     isPartial => '$', # Used for partial interfaces
 });
 
-# Used to represent domInterface contents (name of method, signature)
+# Used to represent domInterface contents
 struct( domFunction => {
     isStatic => '$',
-    signature => '$',    # Return type/Object name/extended attributes
-    parameters => '@',    # List of 'domSignature'
+    name => '$',
+    type => '$',
+    extendedAttributes => '$', # Extended attributes
+    specials => '@',  # Specials
+    parameters => '@',    # List of 'domParameter'
+    overloadedIndex => '$',
 });
 
-# Used to represent domInterface contents (name of attribute, signature)
+# Used to represent domInterface contents
 struct( domAttribute => {
-    type => '$',              # Attribute type (including namespace)
+    type => '$',              # Attribute type (including namespace) (string or UnionType)
+    name => '$',
+    isNullable => '$', # Is variable type Nullable (T?)
     isStatic => '$',
-    signature => '$',         # Attribute signature
+    isReadOnly => '$',
     getterExceptions => '@',  # Possibly raised exceptions.
     setterExceptions => '@',  # Possibly raised exceptions.
+    extendedAttributes => '$', # Extended attributes
 });
 
 # Used to represent a map of 'variable name' <-> 'variable type'
-struct( domSignature => {
+struct( domParameter => {
     name => '$',      # Variable name
-    type => '$',      # Variable type
-    specials => '@',  # Specials
+    type => '$',      # Variable type (string or UnionType)
     extendedAttributes => '$', # Extended attributes
     isOptional => '$', # Is variable optional (optional T)
     isNullable => '$', # Is variable type Nullable (T?)
@@ -104,6 +117,10 @@ struct( Token => {
 struct( Typedef => {
     extendedAttributes => '$', # Extended attributes
     type => '$', # Type of data
+});
+
+struct( UnionType => {
+    unionMemberTypes => '@', # (UnionType or string)[]
 });
 
 # Maps 'typedef name' -> Typedef
@@ -203,6 +220,8 @@ sub Parse
             push(@{$document->interfaces}, $definition);
         } elsif (ref($definition) eq "domEnum") {
             push(@{$document->enumerations}, $definition);
+        } elsif (ref($definition) eq "callbackFunction") {
+            push(@{$document->callbackFunctions}, $definition);
         } else {
             die "Unrecognized IDL definition kind: \"" . ref($definition) . "\"";
         }
@@ -271,7 +290,8 @@ sub getTokenInternal
     }
     if ($self->{DocumentContent} =~ /$identifierTokenPattern/) {
         $token->type(IdentifierToken);
-        $token->value($1);
+        (my $value = $1) =~ s/^_//;  # strip leading underscore, used to strope reserved words
+        $token->value($value);
         $self->{DocumentContent} =~ s/$identifierTokenPattern//;
         return $token;
     }
@@ -375,35 +395,35 @@ sub applyTypedefs
                 }
             }
             foreach my $attribute (@{$definition->attributes}) {
-                $self->applyTypedefsForSignature($attribute->signature);
+                $self->applyTypedefsForTypedObject($attribute);
             }
             foreach my $function (@{$definition->functions}, @{$definition->constructors}, @{$definition->customConstructors}) {
-                $self->applyTypedefsForSignature($function->signature);
-                foreach my $signature (@{$function->parameters}) {
-                    $self->applyTypedefsForSignature($signature);
+                $self->applyTypedefsForTypedObject($function);
+                foreach my $parameter (@{$function->parameters}) {
+                    $self->applyTypedefsForTypedObject($parameter);
                 }
             }
         }
     }
 }
 
-sub applyTypedefsForSignature
+sub applyTypedefsForTypedObject
 {
     my $self = shift;
-    my $signature = shift;
+    my $typedObject = shift;
 
-    if (!defined ($signature->type)) {
+    if (!defined ($typedObject->type)) {
         return;
     }
 
-    my $type = $signature->type;
+    my $type = $typedObject->type;
     $type =~ s/[\?\[\]]+$//g;
-    my $typeSuffix = $signature->type;
+    my $typeSuffix = $typedObject->type;
     $typeSuffix =~ s/^[^\?\[\]]+//g;
     if (exists $typedefs{$type}) {
         my $typedef = $typedefs{$type};
-        $signature->type($typedef->type . $typeSuffix);
-        copyExtendedAttributes($signature->extendedAttributes, $typedef->extendedAttributes);
+        $typedObject->type($typedef->type . $typeSuffix);
+        copyExtendedAttributes($typedObject->extendedAttributes, $typedef->extendedAttributes);
     }
 
     # Handle union types, sequences and etc.
@@ -414,9 +434,9 @@ sub applyTypedefsForSignature
         my $typedef = $typedefs{$name};
         my $regex = '\\b' . $name . '\\b';
         my $replacement = $typedef->type;
-        my $type = $signature->type;
+        my $type = $typedObject->type;
         $type =~ s/($regex)/$replacement/g;
-        $signature->type($type);
+        $typedObject->type($type);
     }
 }
 
@@ -804,14 +824,17 @@ sub parseCallbackRest
 
     my $next = $self->nextToken();
     if ($next->type() == IdentifierToken) {
-        $self->assertTokenType($self->getToken(), IdentifierToken);
+        my $callback = callbackFunction->new();
+        my $name = $self->getToken();
+        $self->assertTokenType($name, IdentifierToken);
+        $callback->name($name->value());
         $self->assertTokenValue($self->getToken(), "=", __LINE__);
-        $self->parseReturnType();
+        $callback->type($self->parseReturnType());
         $self->assertTokenValue($self->getToken(), "(", __LINE__);
-        $self->parseArgumentList();
+        $callback->parameters($self->parseArgumentList());
         $self->assertTokenValue($self->getToken(), ")", __LINE__);
         $self->assertTokenValue($self->getToken(), ";", __LINE__);
-        return;
+        return $callback;
     }
     $self->assertUnexpectedToken($next->value(), __LINE__);
 }
@@ -832,7 +855,7 @@ sub parseTypedef
         $self->assertTokenType($nameToken, IdentifierToken);
         $self->assertTokenValue($self->getToken(), ";", __LINE__);
         my $name = $nameToken->value();
-        die "typedef redefinition for " . $name . " at " . $self->{Line} if exists $typedefs{$name};
+        die "typedef redefinition for " . $name . " at " . $self->{Line} if (exists $typedefs{$name} && $typedef->type ne $typedefs{$name}->type);
         $typedefs{$name} = $typedef;
         return;
     }
@@ -1101,11 +1124,11 @@ sub parseAttributeOrOperationRest
     }
     if ($next->type() == IdentifierToken || $next->value() =~ /$nextAttributeOrOperationRest_1/) {
         my $returnType = $self->parseReturnType();
-        my $interface = $self->parseOperationRest($extendedAttributeList);
-        if (defined ($interface)) {
-            $interface->signature->type($returnType);
+        my $function = $self->parseOperationRest($extendedAttributeList);
+        if (defined ($function)) {
+            $function->type($returnType);
         }
-        return $interface;
+        return $function;
     }
     $self->assertUnexpectedToken($next->value(), __LINE__);
 }
@@ -1132,26 +1155,23 @@ sub parseAttributeRest
     if ($next->value() =~ /$nextAttributeRest_1/) {
         my $newDataNode = domAttribute->new();
         if ($self->parseReadOnly()) {
-            $newDataNode->type("readonly attribute");
-        } else {
-            $newDataNode->type("attribute");
+            $newDataNode->isReadOnly(1);
         }
         $self->assertTokenValue($self->getToken(), "attribute", __LINE__);
-        $newDataNode->signature(domSignature->new());
         my $type = $self->parseType();
-        $newDataNode->signature->isNullable(typeHasNullableSuffix($type));
+        $newDataNode->isNullable(typeHasNullableSuffix($type));
         # Remove all "?" in the type declaration, e.g. "double?" -> "double".
-        $newDataNode->signature->type(typeRemoveNullableSuffix($type));
+        $newDataNode->type(typeRemoveNullableSuffix($type));
         my $token = $self->getToken();
         $self->assertTokenType($token, IdentifierToken);
-        $newDataNode->signature->name($token->value());
+        $newDataNode->name($token->value());
         $self->assertTokenValue($self->getToken(), ";", __LINE__);
         # CustomConstructor may also be used on attributes.
         if (defined $extendedAttributeList->{"CustomConstructors"}) {
             delete $extendedAttributeList->{"CustomConstructors"};
             $extendedAttributeList->{"CustomConstructor"} = "VALUE_IS_MISSING";
         }
-        $newDataNode->signature->extendedAttributes($extendedAttributeList);
+        $newDataNode->extendedAttributes($extendedAttributeList);
         return $newDataNode;
     }
     $self->assertUnexpectedToken($next->value(), __LINE__);
@@ -1192,7 +1212,7 @@ sub parseOperationOrIterator
         my $returnType = $self->parseReturnType();
         my $interface = $self->parseOperationOrIteratorRest($extendedAttributeList);
         if (defined ($interface)) {
-            $interface->signature->type($returnType);
+            $interface->type($returnType);
         }
         return $interface;
     }
@@ -1209,12 +1229,12 @@ sub parseSpecialOperation
         my @specials = ();
         push(@specials, @{$self->parseSpecials()});
         my $returnType = $self->parseReturnType();
-        my $interface = $self->parseOperationRest($extendedAttributeList);
-        if (defined ($interface)) {
-            $interface->signature->type($returnType);
-            $interface->signature->specials(\@specials);
+        my $function = $self->parseOperationRest($extendedAttributeList);
+        if (defined ($function)) {
+            $function->type($returnType);
+            $function->specials(\@specials);
         }
-        return $interface;
+        return $function;
     }
     $self->assertUnexpectedToken($next->value(), __LINE__);
 }
@@ -1328,14 +1348,13 @@ sub parseOperationRest
     my $next = $self->nextToken();
     if ($next->type() == IdentifierToken || $next->value() eq "(") {
         my $newDataNode = domFunction->new();
-        $newDataNode->signature(domSignature->new());
         my $name = $self->parseOptionalIdentifier();
-        $newDataNode->signature->name($name);
-        $self->assertTokenValue($self->getToken(), "(", $name, __LINE__);
+        $newDataNode->name($name);
+        $self->assertTokenValue($self->getToken(), "(", __LINE__);
         push(@{$newDataNode->parameters}, @{$self->parseArgumentList()});
         $self->assertTokenValue($self->getToken(), ")", __LINE__);
         $self->assertTokenValue($self->getToken(), ";", __LINE__);
-        $newDataNode->signature->extendedAttributes($extendedAttributeList);
+        $newDataNode->extendedAttributes($extendedAttributeList);
         return $newDataNode;
     }
     $self->assertUnexpectedToken($next->value(), __LINE__);
@@ -1399,7 +1418,7 @@ sub parseOptionalOrRequiredArgument
     my $self = shift;
     my $extendedAttributeList = shift;
 
-    my $paramDataNode = domSignature->new();
+    my $paramDataNode = domParameter->new();
     $paramDataNode->extendedAttributes($extendedAttributeList);
 
     my $next = $self->nextToken();
@@ -1476,14 +1495,14 @@ sub parseExceptionField
     my $next = $self->nextToken();
     if ($next->type() == IdentifierToken || $next->value() =~ /$nextExceptionField_1/) {
         my $newDataNode = domAttribute->new();
-        $newDataNode->type("readonly attribute");
-        $newDataNode->signature(domSignature->new());
-        $newDataNode->signature->type($self->parseType());
+        $newDataNode->type("attribute");
+        $newDataNode->isReadOnly(1);
+        $newDataNode->type($self->parseType());
         my $token = $self->getToken();
         $self->assertTokenType($token, IdentifierToken);
-        $newDataNode->signature->name($token->value());
+        $newDataNode->name($token->value());
         $self->assertTokenValue($self->getToken(), ";", __LINE__);
-        $newDataNode->signature->extendedAttributes($extendedAttributeList);
+        $newDataNode->extendedAttributes($extendedAttributeList);
         return $newDataNode;
     }
     $self->assertUnexpectedToken($next->value(), __LINE__);
@@ -1748,9 +1767,10 @@ sub parseType
     my $self = shift;
     my $next = $self->nextToken();
     if ($next->value() eq "(") {
-        $self->parseUnionType();
-        $self->parseTypeSuffix();
-        return;
+        my $unionType = $self->parseUnionType();
+        my $suffix = $self->parseTypeSuffix();
+        die "Suffix after UnionType is not supported." if $suffix ne "";
+        return $unionType;
     }
     if ($next->type() == IdentifierToken || $next->value() =~ /$nextType_1/) {
         return $self->parseSingleType();
@@ -1777,36 +1797,38 @@ sub parseUnionType
     my $self = shift;
     my $next = $self->nextToken();
     if ($next->value() eq "(") {
+        my $unionType = UnionType->new();
         $self->assertTokenValue($self->getToken(), "(", __LINE__);
-        $self->parseUnionMemberType();
+        push @{$unionType->unionMemberTypes}, $self->parseUnionMemberType();
         $self->assertTokenValue($self->getToken(), "or", __LINE__);
-        $self->parseUnionMemberType();
-        $self->parseUnionMemberTypes();
+        push @{$unionType->unionMemberTypes}, $self->parseUnionMemberType();
+        push @{$unionType->unionMemberTypes}, $self->parseUnionMemberTypes();
         $self->assertTokenValue($self->getToken(), ")", __LINE__);
-        return;
+        return $unionType;
     }
     $self->assertUnexpectedToken($next->value(), __LINE__);
 }
 
+# Returns UnionType or string
 sub parseUnionMemberType
 {
     my $self = shift;
     my $next = $self->nextToken();
     if ($next->value() eq "(") {
-        $self->parseUnionType();
-        $self->parseTypeSuffix();
-        return;
+        my $unionType = $self->parseUnionType();
+        my $suffix = $self->parseTypeSuffix();
+        die "Suffix after UnionType is not supported." if $suffix ne "";
+        return $unionType;
     }
     if ($next->value() eq "any") {
-        $self->assertTokenValue($self->getToken(), "any", __LINE__);
-        $self->assertTokenValue($self->getToken(), "[", __LINE__);
-        $self->assertTokenValue($self->getToken(), "]", __LINE__);
-        $self->parseTypeSuffix();
-        return;
+        my $type = $self->assertTokenValue($self->getToken(), "any", __LINE__);
+        $type .= $self->assertTokenValue($self->getToken(), "[", __LINE__);
+        $type .= $self->assertTokenValue($self->getToken(), "]", __LINE__);
+        $type .= $self->parseTypeSuffix();
+        return $type;
     }
     if ($next->type() == IdentifierToken || $next->value() =~ /$nextSingleType_1/) {
-        $self->parseNonAnyType();
-        return;
+        return $self->parseNonAnyType();
     }
     $self->assertUnexpectedToken($next->value(), __LINE__);
 }
@@ -1814,12 +1836,14 @@ sub parseUnionMemberType
 sub parseUnionMemberTypes
 {
     my $self = shift;
+    my @types = ();
     my $next = $self->nextToken();
     if ($next->value() eq "or") {
         $self->assertTokenValue($self->getToken(), "or", __LINE__);
-        $self->parseUnionMemberType();
-        $self->parseUnionMemberTypes();
+        push @types, $self->parseUnionMemberType();
+        push @types, $self->parseUnionMemberTypes();
     }
+    return @types;
 }
 
 sub parseNonAnyType
@@ -2179,20 +2203,18 @@ sub applyExtendedAttributeList
         my $index = (@constructorParams == 1) ? 0 : 1;
         foreach my $param (@constructorParams) {
             my $constructor = domFunction->new();
-            $constructor->signature(domSignature->new());
-            $constructor->signature->name("Constructor");
-            $constructor->signature->extendedAttributes($extendedAttributeList);
+            $constructor->name("Constructor");
+            $constructor->extendedAttributes($extendedAttributeList);
             $constructor->parameters($param);
-            $constructor->{overloadedIndex} = $index++;
+            $constructor->overloadedIndex($index++);
             push(@{$interface->constructors}, $constructor);
         }
         delete $extendedAttributeList->{"Constructors"};
         $extendedAttributeList->{"Constructor"} = "VALUE_IS_MISSING";
     } elsif (defined $extendedAttributeList->{"NamedConstructor"}) {
         my $newDataNode = domFunction->new();
-        $newDataNode->signature(domSignature->new());
-        $newDataNode->signature->name("NamedConstructor");
-        $newDataNode->signature->extendedAttributes($extendedAttributeList);
+        $newDataNode->name("NamedConstructor");
+        $newDataNode->extendedAttributes($extendedAttributeList);
         my %attributes = %{$extendedAttributeList->{"NamedConstructor"}};
         my @attributeKeys = keys (%attributes);
         my $constructorName = $attributeKeys[0];
@@ -2205,11 +2227,10 @@ sub applyExtendedAttributeList
         my $index = (@customConstructorParams == 1) ? 0 : 1;
         foreach my $param (@customConstructorParams) {
             my $customConstructor = domFunction->new();
-            $customConstructor->signature(domSignature->new());
-            $customConstructor->signature->name("CustomConstructor");
-            $customConstructor->signature->extendedAttributes($extendedAttributeList);
+            $customConstructor->name("CustomConstructor");
+            $customConstructor->extendedAttributes($extendedAttributeList);
             $customConstructor->parameters($param);
-            $customConstructor->{overloadedIndex} = $index++;
+            $customConstructor->overloadedIndex($index++);
             push(@{$interface->customConstructors}, $customConstructor);
         }
         delete $extendedAttributeList->{"CustomConstructors"};

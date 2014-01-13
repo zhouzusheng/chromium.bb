@@ -27,9 +27,9 @@
 #define DragController_h
 
 #include "core/page/DragActions.h"
-#include "core/platform/DragImage.h"
-#include "core/platform/KURL.h"
 #include "core/platform/graphics/IntPoint.h"
+#include "weborigin/KURL.h"
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -37,6 +37,7 @@ namespace WebCore {
     class Document;
     class DragClient;
     class DragData;
+    class DragImage;
     struct DragSession;
     struct DragState;
     class Element;
@@ -49,7 +50,7 @@ namespace WebCore {
     class Page;
     class PlatformMouseEvent;
     class Range;
-    
+
     class DragController {
         WTF_MAKE_NONCOPYABLE(DragController); WTF_MAKE_FAST_ALLOCATED;
     public:
@@ -76,7 +77,7 @@ namespace WebCore {
 
         Document* documentUnderMouse() const { return m_documentUnderMouse.get(); }
         DragDestinationAction dragDestinationAction() const { return m_dragDestinationAction; }
-        DragSourceAction delegateDragSourceAction(const IntPoint& rootViewPoint);
+        DragSourceAction delegateDragSourceAction();
         
         Node* draggableNode(const Frame*, Node*, const IntPoint&, DragState&) const;
         void dragEnded();
@@ -110,9 +111,9 @@ namespace WebCore {
         void mouseMovedIntoDocument(Document*);
 
         IntRect selectionDraggingRect(Frame*);
-        bool doDrag(Frame* src, Clipboard* clipboard, DragImageRef dragImage, const KURL& linkURL, const KURL& imageURL, Node* node, IntPoint& dragLoc, IntPoint& dragImageOffset);
+        bool doDrag(Frame* src, Clipboard*, DragImage*, const KURL& linkURL, const KURL& imageURL, Node*, IntPoint& dragLoc, IntPoint& dragImageOffset);
         void doImageDrag(Element*, const IntPoint&, const IntRect&, Clipboard*, Frame*, IntPoint&);
-        void doSystemDrag(DragImageRef, const IntPoint&, const IntPoint&, Clipboard*, Frame*, bool forLink);
+        void doSystemDrag(DragImage*, const IntPoint&, const IntPoint&, Clipboard*, Frame*, bool forLink);
         void cleanupAfterSystemDrag();
 
         Page* m_page;

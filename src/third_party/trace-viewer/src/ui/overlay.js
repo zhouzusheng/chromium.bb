@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 /**
  * @fileoverview Implements an element that is hidden by default, but
  * when shown, dims and (attempts to) disable the main document.
@@ -31,6 +30,8 @@ base.exportTo('ui', function() {
       this.classList.add('overlay-root');
       this.visible = false;
 
+      this.createToolBar_();
+
       this.contentHost = this.ownerDocument.createElement('div');
       this.contentHost.classList.add('content-host');
 
@@ -42,6 +43,28 @@ base.exportTo('ui', function() {
       this.onKeydownBoundToThis_ = this.onKeydown_.bind(this);
       this.onFocusInBoundToThis_ = this.onFocusIn_.bind(this);
       this.addEventListener('mousedown', this.onMousedown_.bind(this));
+    },
+
+    toggleToolbar: function(show) {
+      if (show) {
+        if (this.contentHost.firstChild)
+          this.contentHost.insertBefore(this.contentHost.firstChild,
+                                        this.toolbar_);
+        else
+          this.contentHost.appendChild(this.toolbar_);
+      } else {
+        this.contentHost.removeChild(this.toolbar_);
+      }
+    },
+
+    createToolBar_: function() {
+      this.toolbar_ = this.ownerDocument.createElement('div');
+      this.toolbar_.className = 'tool-bar';
+      this.exitButton_ = this.ownerDocument.createElement('span');
+      this.exitButton_.className = 'exit-button';
+      this.exitButton_.textContent = 'x';
+      this.exitButton_.title = 'Close Overlay (esc)';
+      this.toolbar_.appendChild(this.exitButton_);
     },
 
     /**
@@ -160,12 +183,19 @@ base.exportTo('ui', function() {
 
       this.classList.add('overlay');
       this.visible = false;
-      this.defaultClickShouldClose = true;
       this.autoClose = false;
       this.additionalCloseKeyCodes = [];
       this.onKeyDown = this.onKeyDown.bind(this);
       this.onKeyPress = this.onKeyPress.bind(this);
       this.onDocumentClick = this.onDocumentClick.bind(this);
+      this.addEventListener('defaultClickShouldCloseChange',
+          this.onDefaultClickShouldCloseChange_.bind(this));
+      this.defaultClickShouldClose = true;
+    },
+
+    onDefaultClickShouldCloseChange_: function(event) {
+      var overlayRoot = this.ownerDocument.querySelector('.overlay-root');
+      overlayRoot.toggleToolbar(event.newValue);
     },
 
     onVisibleChanged_: function() {

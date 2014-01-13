@@ -59,8 +59,8 @@ RtpDataEngine::RtpDataEngine() {
 }
 
 DataMediaChannel* RtpDataEngine::CreateChannel(
-    const std::string& codec_name) {
-  if (codec_name != "" && codec_name != kGoogleRtpDataCodecName) {
+    DataChannelType data_channel_type) {
+  if (data_channel_type != DCT_RTP) {
     return NULL;
   }
   return new RtpDataMediaChannel(timing_.get());
@@ -307,6 +307,11 @@ bool RtpDataMediaChannel::SendData(
   if (!sending_) {
     LOG(LS_WARNING) << "Not sending packet with ssrc=" << params.ssrc
                     << " len=" << payload.length() << " before SetSend(true).";
+    return false;
+  }
+
+  if (params.type != cricket::DMT_TEXT) {
+    LOG(LS_WARNING) << "Not sending data because binary type is unsupported.";
     return false;
   }
 

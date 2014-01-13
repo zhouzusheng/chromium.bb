@@ -8,7 +8,7 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/time.h"
 #include "content/browser/byte_stream.h"
 #include "content/browser/download/download_create_info.h"
@@ -98,6 +98,7 @@ DownloadInterruptReason DownloadFileImpl::AppendDataToFile(
                          base::TimeDelta::FromMilliseconds(kUpdatePeriodMs),
                          this, &DownloadFileImpl::SendUpdate);
   }
+  rate_estimator_.Increment(data_len);
   return file_.AppendDataToFile(data, data_len);
 }
 
@@ -186,12 +187,8 @@ bool DownloadFileImpl::InProgress() const {
   return file_.in_progress();
 }
 
-int64 DownloadFileImpl::BytesSoFar() const {
-  return file_.bytes_so_far();
-}
-
 int64 DownloadFileImpl::CurrentSpeed() const {
-  return file_.CurrentSpeed();
+  return rate_estimator_.GetCountPerSecond();
 }
 
 bool DownloadFileImpl::GetHash(std::string* hash) {
@@ -306,7 +303,8 @@ void DownloadFileImpl::SendUpdate() {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&DownloadDestinationObserver::DestinationUpdate,
-                 observer_, BytesSoFar(), CurrentSpeed(), GetHashState()));
+                 observer_, file_.bytes_so_far(), CurrentSpeed(),
+                 GetHashState()));
 }
 
 // static

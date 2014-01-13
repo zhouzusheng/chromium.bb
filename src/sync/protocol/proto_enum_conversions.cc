@@ -133,6 +133,7 @@ const char* GetErrorTypeString(sync_pb::SyncEnums::ErrorType error_type) {
     ENUM_CASE(sync_pb::SyncEnums, CLEAR_PENDING);
     ENUM_CASE(sync_pb::SyncEnums, TRANSIENT_ERROR);
     ENUM_CASE(sync_pb::SyncEnums, MIGRATION_DONE);
+    ENUM_CASE(sync_pb::SyncEnums, DISABLED_BY_ADMIN);
     ENUM_CASE(sync_pb::SyncEnums, UNKNOWN);
   }
   NOTREACHED();
@@ -214,6 +215,18 @@ const char* SingletonEventTypeString(
     ENUM_CASE(sync_pb::DebugEventInfo, KEYSTORE_TOKEN_UPDATED);
     ENUM_CASE(sync_pb::DebugEventInfo, CONFIGURE_COMPLETE);
     ENUM_CASE(sync_pb::DebugEventInfo, BOOTSTRAP_TOKEN_UPDATED);
+  }
+  NOTREACHED();
+  return "";
+}
+
+const char* GetBlockedStateString(
+    sync_pb::TabNavigation::BlockedState state) {
+  ASSERT_ENUM_BOUNDS(sync_pb::TabNavigation, BlockedState,
+                     STATE_ALLOWED, STATE_BLOCKED);
+  switch (state) {
+    ENUM_CASE(sync_pb::TabNavigation, STATE_ALLOWED);
+    ENUM_CASE(sync_pb::TabNavigation, STATE_BLOCKED);
   }
   NOTREACHED();
   return "";

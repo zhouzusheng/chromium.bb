@@ -25,9 +25,9 @@
 #ifndef InspectorConsoleAgent_h
 #define InspectorConsoleAgent_h
 
-
 #include "InspectorFrontend.h"
 #include "bindings/v8/ScriptState.h"
+#include "bindings/v8/ScriptString.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/page/ConsoleTypes.h"
@@ -42,6 +42,7 @@ namespace WebCore {
 class ConsoleMessage;
 class DocumentLoader;
 class DOMWindow;
+class Frame;
 class InspectorFrontend;
 class InspectorState;
 class InjectedScriptManager;
@@ -80,13 +81,14 @@ public:
 
     Vector<unsigned> consoleMessageArgumentCounts();
 
-    void startTiming(const String& title);
-    void stopTiming(const String& title, PassRefPtr<ScriptCallStack>);
-    void count(ScriptState*, PassRefPtr<ScriptArguments>);
+    void startConsoleTiming(Frame*, const String& title);
+    void stopConsoleTiming(Frame*, const String& title, PassRefPtr<ScriptCallStack>);
+    void consoleCount(ScriptState*, PassRefPtr<ScriptArguments>);
 
     void frameWindowDiscarded(DOMWindow*);
+    void didCommitLoad(Frame*, DocumentLoader*);
 
-    void didFinishXHRLoading(ThreadableLoaderClient*, unsigned long requestIdentifier, const String&, const String& url, const String& sendURL, unsigned sendLineNumber);
+    void didFinishXHRLoading(ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const String& url, const String& sendURL, unsigned sendLineNumber);
     void didReceiveResourceResponse(unsigned long requestIdentifier, DocumentLoader*, const ResourceResponse& response, ResourceLoader*);
     void didFailLoading(unsigned long requestIdentifier, DocumentLoader*, const ResourceError&);
     void addProfileFinishedMessageToConsole(PassRefPtr<ScriptProfile>, unsigned lineNumber, const String& sourceURL);

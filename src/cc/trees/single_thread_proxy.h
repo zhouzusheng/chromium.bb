@@ -9,6 +9,7 @@
 
 #include "base/time.h"
 #include "cc/animation/animation_events.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/proxy.h"
 
@@ -26,7 +27,7 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual bool CompositeAndReadback(void* pixels, gfx::Rect rect) OVERRIDE;
   virtual void FinishAllRendering() OVERRIDE;
   virtual bool IsStarted() const OVERRIDE;
-  virtual void SetSurfaceReady() OVERRIDE;
+  virtual void SetLayerTreeHostClientReady() OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
   virtual void CreateAndInitializeOutputSurface() OVERRIDE;
   virtual const RendererCapabilities& GetRendererCapabilities() const OVERRIDE;
@@ -46,18 +47,19 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual bool CommitPendingForTesting() OVERRIDE;
 
   // LayerTreeHostImplClient implementation
+  virtual void DidTryInitializeRendererOnImplThread(
+      bool success,
+      scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE;
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE;
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {}
-  virtual void OnVSyncParametersChanged(base::TimeTicks timebase,
-                                        base::TimeDelta interval) OVERRIDE {}
-  virtual void DidVSync(base::TimeTicks frame_time) OVERRIDE {}
+  virtual void BeginFrameOnImplThread(const BeginFrameArgs& args)
+      OVERRIDE {}
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE;
   virtual void OnHasPendingTreeStateChanged(bool have_pending_tree) OVERRIDE;
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE;
   virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect dirty_rect) OVERRIDE;
   virtual void DidInitializeVisibleTileOnImplThread() OVERRIDE;
   virtual void SetNeedsCommitOnImplThread() OVERRIDE;
-  virtual void SetNeedsManageTilesOnImplThread() OVERRIDE;
   virtual void PostAnimationEventsToMainThreadOnImplThread(
       scoped_ptr<AnimationEventsVector> events,
       base::Time wall_clock_time) OVERRIDE;
@@ -70,8 +72,7 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual void RenewTreePriority() OVERRIDE {}
   virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay)
       OVERRIDE {}
-  virtual void DidReceiveLastInputEventForVSync(base::TimeTicks frame_time)
-      OVERRIDE {}
+  virtual void DidActivatePendingTree() OVERRIDE {}
 
   // Called by the legacy path where RenderWidget does the scheduling.
   void CompositeImmediately(base::TimeTicks frame_begin_time);
@@ -82,12 +83,14 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   void OnOutputSurfaceInitializeAttempted(bool success);
   bool CommitAndComposite(base::TimeTicks frame_begin_time,
                           gfx::Rect device_viewport_damage_rect,
+                          bool for_readback,
                           LayerTreeHostImpl::FrameData* frame);
   void DoCommit(scoped_ptr<ResourceUpdateQueue> queue);
   bool DoComposite(
       scoped_refptr<cc::ContextProvider> offscreen_context_provider,
       base::TimeTicks frame_begin_time,
       gfx::Rect device_viewport_damage_rect,
+      bool for_readback,
       LayerTreeHostImpl::FrameData* frame);
   void DidSwapFrame();
 

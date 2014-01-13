@@ -292,12 +292,16 @@ WebInspector.View.prototype = {
         }
     },
 
-    canHighlightLine: function()
+    canHighlightPosition: function()
     {
         return false;
     },
 
-    highlightLine: function(line)
+    /**
+     * @param {number} line
+     * @param {number=} column
+     */
+    highlightPosition: function(line, column)
     {
     },
 
@@ -345,11 +349,16 @@ WebInspector.View.prototype = {
 
             styleElement = document.createElement("style");
             styleElement.type = "text/css";
-            styleElement.textContent = xhr.responseText;
+            styleElement.textContent = xhr.responseText + this._buildSourceURL(cssFile);
         }
         document.head.insertBefore(styleElement, document.head.firstChild);
 
         WebInspector.View._cssFileToStyleElement[cssFile] = styleElement;
+    },
+
+    _buildSourceURL: function(cssFile)
+    {
+        return "\n/*# sourceURL=" + WebInspector.ParsedURL.completeURL(window.location.href, cssFile) + " */";
     },
 
     _disableCSSIfNeeded: function()

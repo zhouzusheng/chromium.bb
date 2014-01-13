@@ -23,32 +23,21 @@
 #include "config.h"
 #include "core/dom/ContainerNode.h"
 
-#include "HTMLNames.h"
-#include "core/accessibility/AXObjectCache.h"
 #include "core/dom/ChildListMutationScope.h"
 #include "core/dom/ContainerNodeAlgorithms.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/FullscreenController.h"
 #include "core/dom/MutationEvent.h"
+#include "core/dom/NodeRareData.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/dom/TemplateContentDocumentFragment.h"
-#include "core/html/shadow/InsertionPoint.h"
-#include "core/inspector/InspectorInstrumentation.h"
-#include "core/loader/cache/MemoryCache.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/page/Page.h"
-#include "core/platform/graphics/FloatRect.h"
+#include "core/html/HTMLCollection.h"
 #include "core/rendering/InlineTextBox.h"
-#include "core/rendering/RenderBox.h"
+#include "core/rendering/RenderText.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderWidget.h"
-#include "core/rendering/RootInlineBox.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 using namespace std;
 
@@ -58,14 +47,12 @@ static void dispatchChildInsertionEvents(Node*);
 static void dispatchChildRemovalEvents(Node*);
 static void updateTreeAfterInsertion(ContainerNode*, Node*, AttachBehavior);
 
-typedef pair<RefPtr<Node>, unsigned> CallbackParameters;
-typedef pair<NodeCallback, CallbackParameters> CallbackInfo;
+typedef pair<NodeCallback, RefPtr<Node> > CallbackInfo;
 typedef Vector<CallbackInfo> NodeCallbackQueue;
 
 static NodeCallbackQueue* s_postAttachCallbackQueue;
 
 static size_t s_attachDepth;
-static bool s_shouldReEnableMemoryCacheCallsAfterAttach;
 
 ChildNodesLazySnapshot* ChildNodesLazySnapshot::latestSnapshot = 0;
 
@@ -166,7 +153,6 @@ static inline ExceptionCode checkAcceptChild(ContainerNode* newParent, Node* new
 
     // Use common case fast path if possible.
     if ((newChild->isElementNode() || newChild->isTextNode()) && newParent->isElementNode()) {
-        ASSERT(!newParent->isReadOnlyNode());
         ASSERT(!newParent->isDocumentTypeNode());
         ASSERT(isChildTypeAllowed(newParent, newChild));
         if (containsConsideringHostElements(newChild, newParent))
@@ -179,8 +165,6 @@ static inline ExceptionCode checkAcceptChild(ContainerNode* newParent, Node* new
     if (newChild->isPseudoElement())
         return HIERARCHY_REQUEST_ERR;
 
-    if (newParent->isReadOnlyNode())
-        return NO_MODIFICATION_ALLOWED_ERR;
     if (newChild->inDocument() && newChild->isDocumentTypeNode())
         return HIERARCHY_REQUEST_ERR;
     if (containsConsideringHostElements(newChild, newParent))
@@ -197,7 +181,6 @@ static inline ExceptionCode checkAcceptChild(ContainerNode* newParent, Node* new
 
 static inline bool checkAcceptChildGuaranteedNodeTypes(ContainerNode* newParent, Node* newChild, ExceptionCode& ec)
 {
-    ASSERT(!newParent->isReadOnlyNode());
     ASSERT(!newParent->isDocumentTypeNode());
     ASSERT(isChildTypeAllowed(newParent, newChild));
     if (newChild->contains(newParent)) {
@@ -474,12 +457,6 @@ bool ContainerNode::removeChild(Node* oldChild, ExceptionCode& ec)
 
     ec = 0;
 
-    // NO_MODIFICATION_ALLOWED_ERR: Raised if this node is readonly.
-    if (isReadOnlyNode()) {
-        ec = NO_MODIFICATION_ALLOWED_ERR;
-        return false;
-    }
-
     // NOT_FOUND_ERR: Raised if oldChild is not a child of this node.
     if (!oldChild || oldChild->parentNode() != this) {
         ec = NOT_FOUND_ERR;
@@ -490,7 +467,8 @@ bool ContainerNode::removeChild(Node* oldChild, ExceptionCode& ec)
 
     document()->removeFocusedNodeOfSubtree(child.get());
 
-    document()->removeFullScreenElementOfSubtree(child.get());
+    if (FullscreenController* fullscreen = FullscreenController::fromIfExists(document()))
+        fullscreen->removeFullScreenElementOfSubtree(child.get());
 
     // Events fired when blurring currently focused node might have moved this
     // child into a different parent.
@@ -578,7 +556,8 @@ void ContainerNode::removeChildren()
     // The container node can be removed from event handlers.
     RefPtr<ContainerNode> protect(this);
 
-    document()->removeFullScreenElementOfSubtree(this, true);
+    if (FullscreenController* fullscreen = FullscreenController::fromIfExists(document()))
+        fullscreen->removeFullScreenElementOfSubtree(this, true);
 
     // Do any prep work needed before actually starting to detach
     // and remove... e.g. stop loading frames, fire unload events.
@@ -603,7 +582,7 @@ void ContainerNode::removeChildren()
         }
 
         childrenChanged(false, 0, 0, -static_cast<int>(removedChildren.size()));
-        
+
         for (size_t i = 0; i < removedChildren.size(); ++i)
             ChildNodeRemovalNotifier(this).notify(removedChildren[i].get());
     }
@@ -696,17 +675,6 @@ void ContainerNode::parserAppendChild(PassRefPtr<Node> newChild)
 
 void ContainerNode::suspendPostAttachCallbacks()
 {
-    if (!s_attachDepth) {
-        ASSERT(!s_shouldReEnableMemoryCacheCallsAfterAttach);
-        if (Page* page = document()->page()) {
-            // FIXME: How can this call be specific to one Page, while the
-            // s_attachDepth is a global? Doesn't make sense.
-            if (page->areMemoryCacheClientCallsEnabled()) {
-                page->setMemoryCacheClientCallsEnabled(false);
-                s_shouldReEnableMemoryCacheCallsAfterAttach = true;
-            }
-        }
-    }
     ++s_attachDepth;
 }
 
@@ -717,21 +685,15 @@ void ContainerNode::resumePostAttachCallbacks()
 
         if (s_postAttachCallbackQueue)
             dispatchPostAttachCallbacks();
-        if (s_shouldReEnableMemoryCacheCallsAfterAttach) {
-            s_shouldReEnableMemoryCacheCallsAfterAttach = false;
-            if (Page* page = document()->page())
-                page->setMemoryCacheClientCallsEnabled(true);
-        }
     }
     --s_attachDepth;
 }
 
-void ContainerNode::queuePostAttachCallback(NodeCallback callback, Node* node, unsigned callbackData)
+void ContainerNode::queuePostAttachCallback(NodeCallback callback, Node* node)
 {
     if (!s_postAttachCallbackQueue)
         s_postAttachCallbackQueue = new NodeCallbackQueue;
-    
-    s_postAttachCallbackQueue->append(CallbackInfo(callback, CallbackParameters(node, callbackData)));
+    s_postAttachCallbackQueue->append(CallbackInfo(callback, node));
 }
 
 bool ContainerNode::postAttachCallbacksAreSuspended()
@@ -745,38 +707,22 @@ void ContainerNode::dispatchPostAttachCallbacks()
     // can add more callbacks to the end of the queue.
     for (size_t i = 0; i < s_postAttachCallbackQueue->size(); ++i) {
         const CallbackInfo& info = (*s_postAttachCallbackQueue)[i];
-        NodeCallback callback = info.first;
-        CallbackParameters params = info.second;
-
-        callback(params.first.get(), params.second);
+        info.first(info.second.get());
     }
     s_postAttachCallbackQueue->clear();
 }
 
-static void needsStyleRecalcCallback(Node* node, unsigned data)
+void ContainerNode::attach(const AttachContext& context)
 {
-    node->setNeedsStyleRecalc(static_cast<StyleChangeType>(data));
+    attachChildren(context);
+    Node::attach(context);
 }
 
-void ContainerNode::scheduleSetNeedsStyleRecalc(StyleChangeType changeType)
+void ContainerNode::detach(const AttachContext& context)
 {
-    if (postAttachCallbacksAreSuspended())
-        queuePostAttachCallback(needsStyleRecalcCallback, this, static_cast<unsigned>(changeType));
-    else
-        setNeedsStyleRecalc(changeType);
-}
-
-void ContainerNode::attach()
-{
-    attachChildren();
-    Node::attach();
-}
-
-void ContainerNode::detach()
-{
-    detachChildren();
+    detachChildren(context);
     clearChildNeedsStyleRecalc();
-    Node::detach();
+    Node::detach(context);
 }
 
 void ContainerNode::childrenChanged(bool changedByParser, Node*, Node*, int childCountDelta)
@@ -794,6 +740,138 @@ void ContainerNode::cloneChildNodes(ContainerNode *clone)
         clone->appendChild(n->cloneNode(true), ec);
 }
 
+
+bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
+{
+    if (!renderer())
+        return false;
+    // What is this code really trying to do?
+    RenderObject* o = renderer();
+    RenderObject* p = o;
+
+    if (!o->isInline() || o->isReplaced()) {
+        point = o->localToAbsolute(FloatPoint(), UseTransforms);
+        return true;
+    }
+
+    // find the next text/image child, to get a position
+    while (o) {
+        p = o;
+        if (o->firstChild()) {
+            o = o->firstChild();
+        } else if (o->nextSibling()) {
+            o = o->nextSibling();
+        } else {
+            RenderObject* next = 0;
+            while (!next && o->parent()) {
+                o = o->parent();
+                next = o->nextSibling();
+            }
+            o = next;
+
+            if (!o)
+                break;
+        }
+        ASSERT(o);
+
+        if (!o->isInline() || o->isReplaced()) {
+            point = o->localToAbsolute(FloatPoint(), UseTransforms);
+            return true;
+        }
+
+        if (p->node() && p->node() == this && o->isText() && !o->isBR() && !toRenderText(o)->firstTextBox()) {
+            // do nothing - skip unrendered whitespace that is a child or next sibling of the anchor
+        } else if ((o->isText() && !o->isBR()) || o->isReplaced()) {
+            point = FloatPoint();
+            if (o->isText() && toRenderText(o)->firstTextBox()) {
+                point.move(toRenderText(o)->linesBoundingBox().x(), toRenderText(o)->firstTextBox()->root()->lineTop());
+            } else if (o->isBox()) {
+                RenderBox* box = toRenderBox(o);
+                point.moveBy(box->location());
+            }
+            point = o->container()->localToAbsolute(point, UseTransforms);
+            return true;
+        }
+    }
+
+    // If the target doesn't have any children or siblings that could be used to calculate the scroll position, we must be
+    // at the end of the document. Scroll to the bottom. FIXME: who said anything about scrolling?
+    if (!o && document()->view()) {
+        point = FloatPoint(0, document()->view()->contentsHeight());
+        return true;
+    }
+    return false;
+}
+
+bool ContainerNode::getLowerRightCorner(FloatPoint& point) const
+{
+    if (!renderer())
+        return false;
+
+    RenderObject* o = renderer();
+    if (!o->isInline() || o->isReplaced()) {
+        RenderBox* box = toRenderBox(o);
+        point = o->localToAbsolute(LayoutPoint(box->size()), UseTransforms);
+        return true;
+    }
+
+    // find the last text/image child, to get a position
+    while (o) {
+        if (o->lastChild()) {
+            o = o->lastChild();
+        } else if (o->previousSibling()) {
+            o = o->previousSibling();
+        } else {
+            RenderObject* prev = 0;
+        while (!prev) {
+            o = o->parent();
+            if (!o)
+                return false;
+            prev = o->previousSibling();
+        }
+        o = prev;
+        }
+        ASSERT(o);
+        if (o->isText() || o->isReplaced()) {
+            point = FloatPoint();
+            if (o->isText()) {
+                RenderText* text = toRenderText(o);
+                IntRect linesBox = text->linesBoundingBox();
+                if (!linesBox.maxX() && !linesBox.maxY())
+                    continue;
+                point.moveBy(linesBox.maxXMaxYCorner());
+            } else {
+                RenderBox* box = toRenderBox(o);
+                point.moveBy(box->frameRect().maxXMaxYCorner());
+            }
+            point = o->container()->localToAbsolute(point, UseTransforms);
+            return true;
+        }
+    }
+    return true;
+}
+
+// FIXME: This override is only needed for inline anchors without an
+// InlineBox and it does not belong in ContainerNode as it reaches into
+// the render and line box trees.
+// https://code.google.com/p/chromium/issues/detail?id=248354
+LayoutRect ContainerNode::boundingBox() const
+{
+    FloatPoint upperLeft, lowerRight;
+    bool foundUpperLeft = getUpperLeftCorner(upperLeft);
+    bool foundLowerRight = getLowerRightCorner(lowerRight);
+
+    // If we've found one corner, but not the other,
+    // then we should just return a point at the corner that we did find.
+    if (foundUpperLeft != foundLowerRight) {
+        if (foundUpperLeft)
+            lowerRight = upperLeft;
+        else
+            upperLeft = lowerRight;
+    }
+
+    return enclosingLayoutRect(FloatRect(upperLeft, lowerRight.expandedTo(upperLeft) - upperLeft));
+}
 
 void ContainerNode::setFocus(bool received)
 {
@@ -828,6 +906,18 @@ void ContainerNode::setHovered(bool over)
 
     Node::setHovered(over);
 
+    if (!renderer()) {
+        // When setting hover to false, the style needs to be recalc'd even when
+        // there's no renderer (imagine setting display:none in the :hover class,
+        // if a nil renderer would prevent this element from recalculating its
+        // style, it would never go back to its normal style and remain
+        // stuck in its hovered style).
+        if (!over)
+            setNeedsStyleRecalc();
+
+        return;
+    }
+
     // note that we need to recalc the style
     // FIXME: Move to Element
     if (renderer()) {
@@ -836,6 +926,35 @@ void ContainerNode::setHovered(bool over)
         if (renderer() && renderer()->style()->hasAppearance())
             renderer()->theme()->stateChanged(renderer(), HoverState);
     }
+}
+
+PassRefPtr<HTMLCollection> ContainerNode::children()
+{
+    return ensureRareData()->ensureNodeLists()->addCacheWithAtomicName<HTMLCollection>(this, NodeChildren);
+}
+
+Element* ContainerNode::firstElementChild() const
+{
+    return ElementTraversal::firstWithin(this);
+}
+
+Element* ContainerNode::lastElementChild() const
+{
+    Node* n = lastChild();
+    while (n && !n->isElementNode())
+        n = n->previousSibling();
+    return toElement(n);
+}
+
+unsigned ContainerNode::childElementCount() const
+{
+    unsigned count = 0;
+    Node* n = firstChild();
+    while (n) {
+        count += n->isElementNode();
+        n = n->nextSibling();
+    }
+    return count;
 }
 
 unsigned ContainerNode::childNodeCount() const

@@ -23,7 +23,6 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGElement.h"
 
 #include "HTMLNames.h"
@@ -80,10 +79,9 @@ SVGElement::~SVGElement()
         delete rareData;
 
         // The rare data cleanup may have caused other SVG nodes to be deleted,
-        // modifying the rare data map, so we must re-get the iterator here.
-        it = rareDataMap.find(this);
-        ASSERT(it != rareDataMap.end());
-        rareDataMap.remove(it);
+        // modifying the rare data map. Do not rely on the existing iterator.
+        ASSERT(rareDataMap.contains(this));
+        rareDataMap.remove(this);
     }
     ASSERT(document());
     document()->accessSVGExtensions()->rebuildAllElementReferencesForTarget(this);
@@ -92,7 +90,7 @@ SVGElement::~SVGElement()
 
 void SVGElement::willRecalcStyle(StyleChange change)
 {
-    if (!hasSVGRareData() || styleChangeType() == SyntheticStyleChange)
+    if (!hasSVGRareData() || needsLayerUpdate())
         return;
     // If the style changes because of a regular property change (not induced by SMIL animations themselves)
     // reset the "computed style without SMIL style properties", so the base value change gets reflected.
@@ -173,7 +171,7 @@ String SVGElement::xmlbase() const
     return fastGetAttribute(XMLNames::baseAttr);
 }
 
-void SVGElement::setXmlbase(const String& value, ExceptionCode&)
+void SVGElement::setXmlbase(const String& value)
 {
     setAttribute(XMLNames::baseAttr, value);
 }
@@ -561,7 +559,7 @@ void SVGElement::synchronizeAnimatedSVGAttribute(const QualifiedName& name) cons
         nonConstThis->localAttributeToPropertyMap().synchronizeProperty(nonConstThis, name);
 }
 
-SVGAttributeToPropertyMap& SVGElement::localAttributeToPropertyMap()
+SVGAttributeToPropertyMap& SVGElement::localAttributeToPropertyMap() const
 {
     DEFINE_STATIC_LOCAL(SVGAttributeToPropertyMap, emptyMap, ());
     return emptyMap;
@@ -599,14 +597,14 @@ PassRefPtr<RenderStyle> SVGElement::customStyleForRenderer()
     return document()->styleResolver()->styleForElement(correspondingElement(), style, DisallowStyleSharing);
 }
 
-StylePropertySet* SVGElement::animatedSMILStyleProperties() const
+MutableStylePropertySet* SVGElement::animatedSMILStyleProperties() const
 {
     if (hasSVGRareData())
         return svgRareData()->animatedSMILStyleProperties();
     return 0;
 }
 
-StylePropertySet* SVGElement::ensureAnimatedSMILStyleProperties()
+MutableStylePropertySet* SVGElement::ensureAnimatedSMILStyleProperties()
 {
     return ensureSVGRareData()->ensureAnimatedSMILStyleProperties();
 }
@@ -740,5 +738,3 @@ bool SVGElement::isAnimatableAttribute(const QualifiedName& name) const
 #endif
 
 }
-
-#endif // ENABLE(SVG)

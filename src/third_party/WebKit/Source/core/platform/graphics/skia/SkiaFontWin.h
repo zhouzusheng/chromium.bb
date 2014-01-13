@@ -35,12 +35,12 @@
 #include <usp10.h>
 
 struct SkPoint;
+struct SkRect;
 
 namespace WebCore {
 
 class FontPlatformData;
 class GraphicsContext;
-class PlatformContextSkia;
 
 // Note that the offsets parameter is optional. If not null it represents a
 // per glyph offset (such as returned by ScriptPlace Windows API function).
@@ -50,7 +50,8 @@ void paintSkiaText(GraphicsContext*,
                    const WORD* glyphs,
                    const int* advances,
                    const GOFFSET* offsets,
-                   const SkPoint* origin);
+                   const SkPoint& origin,
+                   const SkRect& textRect);
 
 // Note that the offsets parameter is optional. If not null it represents a
 // per glyph offset (such as returned by ScriptPlace Windows API function).
@@ -62,7 +63,8 @@ void paintSkiaText(GraphicsContext*,
                    const WORD* glyphs,
                    const int* advances,
                    const GOFFSET* offsets,
-                   const SkPoint* origin);
+                   const SkPoint& origin,
+                   const SkRect& textRect);
 
 }  // namespace WebCore
 

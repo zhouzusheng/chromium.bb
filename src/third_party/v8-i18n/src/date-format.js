@@ -300,61 +300,70 @@ function initializeDateTimeFormat(dateFormat, locales, options) {
  *
  * @constructor
  */
-Intl.DateTimeFormat = function() {
-  var locales = arguments[0];
-  var options = arguments[1];
+%SetProperty(Intl, 'DateTimeFormat', function() {
+    var locales = arguments[0];
+    var options = arguments[1];
 
-  if (!this || this === Intl) {
-    // Constructor is called as a function.
-    return new Intl.DateTimeFormat(locales, options);
-  }
+    if (!this || this === Intl) {
+      // Constructor is called as a function.
+      return new Intl.DateTimeFormat(locales, options);
+    }
 
-  return initializeDateTimeFormat(toObject(this), locales, options);
-};
+    return initializeDateTimeFormat(toObject(this), locales, options);
+  },
+  ATTRIBUTES.DONT_ENUM
+);
 
 
 /**
  * DateTimeFormat resolvedOptions method.
  */
-Intl.DateTimeFormat.prototype.resolvedOptions = function() {
-  if (!this || typeof this !== 'object' ||
-      this.__initializedIntlObject !== 'dateformat') {
-    throw new TypeError('resolvedOptions method called on a non-object or ' +
-        'on a object that is not Intl.DateTimeFormat.');
-  }
+%SetProperty(Intl.DateTimeFormat.prototype, 'resolvedOptions', function() {
+    if (%_IsConstructCall()) {
+      throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+    }
 
-  var format = this;
-  var fromPattern = fromLDMLString(format.resolved.pattern);
-  var userCalendar = ICU_CALENDAR_MAP[format.resolved.calendar];
-  if (userCalendar === undefined) {
-    // Use ICU name if we don't have a match. It shouldn't happen, but
-    // it would be too strict to throw for this.
-    userCalendar = format.resolved.calendar;
-  }
+    if (!this || typeof this !== 'object' ||
+        this.__initializedIntlObject !== 'dateformat') {
+      throw new TypeError('resolvedOptions method called on a non-object or ' +
+          'on a object that is not Intl.DateTimeFormat.');
+    }
 
-  var locale = getOptimalLanguageTag(format.resolved.requestedLocale,
-                                     format.resolved.locale);
+    var format = this;
+    var fromPattern = fromLDMLString(format.resolved.pattern);
+    var userCalendar = ICU_CALENDAR_MAP[format.resolved.calendar];
+    if (userCalendar === undefined) {
+      // Use ICU name if we don't have a match. It shouldn't happen, but
+      // it would be too strict to throw for this.
+      userCalendar = format.resolved.calendar;
+    }
 
-  var result = {
-    locale: locale,
-    numberingSystem: format.resolved.numberingSystem,
-    calendar: userCalendar,
-    timeZone: format.resolved.timeZone
-  };
+    var locale = getOptimalLanguageTag(format.resolved.requestedLocale,
+                                       format.resolved.locale);
 
-  addWECPropertyIfDefined(result, 'timeZoneName', fromPattern.timeZoneName);
-  addWECPropertyIfDefined(result, 'era', fromPattern.era);
-  addWECPropertyIfDefined(result, 'year', fromPattern.year);
-  addWECPropertyIfDefined(result, 'month', fromPattern.month);
-  addWECPropertyIfDefined(result, 'day', fromPattern.day);
-  addWECPropertyIfDefined(result, 'weekday', fromPattern.weekday);
-  addWECPropertyIfDefined(result, 'hour12', fromPattern.hour12);
-  addWECPropertyIfDefined(result, 'hour', fromPattern.hour);
-  addWECPropertyIfDefined(result, 'minute', fromPattern.minute);
-  addWECPropertyIfDefined(result, 'second', fromPattern.second);
+    var result = {
+      locale: locale,
+      numberingSystem: format.resolved.numberingSystem,
+      calendar: userCalendar,
+      timeZone: format.resolved.timeZone
+    };
 
-  return result;
-};
+    addWECPropertyIfDefined(result, 'timeZoneName', fromPattern.timeZoneName);
+    addWECPropertyIfDefined(result, 'era', fromPattern.era);
+    addWECPropertyIfDefined(result, 'year', fromPattern.year);
+    addWECPropertyIfDefined(result, 'month', fromPattern.month);
+    addWECPropertyIfDefined(result, 'day', fromPattern.day);
+    addWECPropertyIfDefined(result, 'weekday', fromPattern.weekday);
+    addWECPropertyIfDefined(result, 'hour12', fromPattern.hour12);
+    addWECPropertyIfDefined(result, 'hour', fromPattern.hour);
+    addWECPropertyIfDefined(result, 'minute', fromPattern.minute);
+    addWECPropertyIfDefined(result, 'second', fromPattern.second);
+
+    return result;
+  },
+  ATTRIBUTES.DONT_ENUM
+);
+%FunctionRemovePrototype(Intl.DateTimeFormat.prototype.resolvedOptions);
 
 
 /**
@@ -363,9 +372,16 @@ Intl.DateTimeFormat.prototype.resolvedOptions = function() {
  * order in the returned list as in the input list.
  * Options are optional parameter.
  */
-Intl.DateTimeFormat.supportedLocalesOf = function(locales) {
-  return supportedLocalesOf('dateformat', locales, arguments[1]);
-};
+%SetProperty(Intl.DateTimeFormat, 'supportedLocalesOf', function(locales) {
+    if (%_IsConstructCall()) {
+      throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+    }
+
+    return supportedLocalesOf('dateformat', locales, arguments[1]);
+  },
+  ATTRIBUTES.DONT_ENUM
+);
+%FunctionRemovePrototype(Intl.DateTimeFormat.supportedLocalesOf);
 
 
 /**

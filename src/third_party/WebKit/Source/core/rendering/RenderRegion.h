@@ -48,7 +48,7 @@ public:
 
     virtual bool isRenderRegion() const { return true; }
 
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
+    bool hitTestFlowThreadContents(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
@@ -82,15 +82,8 @@ public:
 
     void clearObjectStyleInRegion(const RenderObject*);
 
-    enum RegionState {
-        RegionUndefined,
-        RegionEmpty,
-        RegionFit,
-        RegionOverset
-    };
-
-    RegionState regionState() const { return isValid() ? m_regionState : RegionUndefined; }
-    void setRegionState(RegionState regionState) { m_regionState = regionState; }
+    RegionOversetState regionOversetState() const;
+    void setRegionOversetState(RegionOversetState);
     
     // These methods represent the width and height of a "page" and for a RenderRegion they are just the
     // content width and content height of a region. For RenderRegionSets, however, they will be the width and
@@ -135,7 +128,7 @@ protected:
 
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
 
-    LayoutRect overflowRectForFlowThreadPortion(LayoutRect flowThreadPortionRect, bool isFirstPortion, bool isLastPortion) const;
+    LayoutRect overflowRectForFlowThreadPortion(const LayoutRect& flowThreadPortionRect, bool isFirstPortion, bool isLastPortion) const;
     void repaintFlowThreadContentRectangle(const LayoutRect& repaintRect, const LayoutRect& flowThreadPortionRect,
         const LayoutRect& flowThreadPortionOverflowRect, const LayoutPoint& regionLocation) const;
 
@@ -197,7 +190,6 @@ private:
     bool m_isValid : 1;
     bool m_hasCustomRegionStyle : 1;
     bool m_hasAutoLogicalHeight : 1;
-    RegionState m_regionState;
 };
 
 inline RenderRegion* toRenderRegion(RenderObject* object)

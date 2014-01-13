@@ -33,8 +33,8 @@
 
 #include "WebPopupMenu.h"
 #include "core/platform/chromium/FramelessScrollViewClient.h"
-#include <public/WebPoint.h>
-#include <public/WebSize.h>
+#include "public/platform/WebPoint.h"
+#include "public/platform/WebSize.h"
 #include <wtf/OwnPtr.h>
 #include <wtf/RefCounted.h>
 
@@ -43,9 +43,6 @@ class Frame;
 class FramelessScrollView;
 class KeyboardEvent;
 class Page;
-#if ENABLE(GESTURE_RECOGNIZER)
-class PlatformGestureRecognizer;
-#endif
 class PlatformKeyboardEvent;
 class Range;
 class Widget;
@@ -85,7 +82,6 @@ public:
     virtual bool confirmComposition() OVERRIDE;
     virtual bool confirmComposition(const WebString& text) OVERRIDE;
     virtual bool compositionRange(size_t* location, size_t* length) OVERRIDE;
-    virtual WebTextInputType textInputType() OVERRIDE;
     virtual bool caretOrSelectionRange(size_t* location, size_t* length) OVERRIDE;
     virtual void setTextDirection(WebTextDirection) OVERRIDE;
     virtual bool isAcceleratedCompositingActive() const OVERRIDE { return false; }
@@ -122,9 +118,7 @@ public:
     virtual WebCore::IntPoint screenToRootView(const WebCore::IntPoint&) const OVERRIDE;
     virtual WebCore::IntRect rootViewToScreen(const WebCore::IntRect&) const OVERRIDE;
     virtual WebScreenInfo screenInfo() const OVERRIDE;
-    virtual void scrollbarsModeDidChange() const OVERRIDE;
     virtual void setCursor(const WebCore::Cursor&) OVERRIDE;
-    virtual void setCursorHiddenUntilMouseMoves(bool) OVERRIDE;
 
     // WebCore::FramelessScrollViewClient methods:
     virtual void popupClosed(WebCore::FramelessScrollView*) OVERRIDE;

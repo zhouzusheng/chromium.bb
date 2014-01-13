@@ -30,7 +30,6 @@
 #include "core/workers/Worker.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/EventException.h"
 #include "core/dom/EventListener.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
@@ -41,11 +40,10 @@
 #include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
 #include "core/page/UseCounter.h"
-#include "core/platform/text/TextEncoding.h"
 #include "core/workers/WorkerContextProxy.h"
 #include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerThread.h"
-#include <wtf/MainThread.h>
+#include "wtf/MainThread.h"
 
 namespace WebCore {
 
@@ -53,6 +51,7 @@ inline Worker::Worker(ScriptExecutionContext* context)
     : AbstractWorker(context)
     , m_contextProxy(WorkerContextProxy::create(this))
 {
+    ScriptWrappable::init(this);
 }
 
 PassRefPtr<Worker> Worker::create(ScriptExecutionContext* context, const String& url, ExceptionCode& ec)

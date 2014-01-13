@@ -29,20 +29,24 @@ class CC_EXPORT LayerTreeHostCommon {
   static void CalculateDrawProperties(
       Layer* root_layer,
       gfx::Size device_viewport_size,
+      const gfx::Transform& device_transform,
       float device_scale_factor,
       float page_scale_factor,
       Layer* page_scale_application_layer,
       int max_texture_size,
       bool can_use_lcd_text,
+      bool can_adjust_raster_scales,
       LayerList* render_surface_layer_list);
   static void CalculateDrawProperties(
       LayerImpl* root_layer,
       gfx::Size device_viewport_size,
+      const gfx::Transform& device_transform,
       float device_scale_factor,
       float page_scale_factor,
       LayerImpl* page_scale_application_layer,
       int max_texture_size,
       bool can_use_lcd_text,
+      bool can_adjust_raster_scales,
       LayerImplList* render_surface_layer_list);
 
   // Performs hit testing for a given render_surface_layer_list.
@@ -113,6 +117,9 @@ bool LayerTreeHostCommon::RenderSurfaceContributesToTarget(
 template <typename LayerType>
 LayerType* LayerTreeHostCommon::FindLayerInSubtree(LayerType* root_layer,
                                                    int layer_id) {
+  if (!root_layer)
+    return NULL;
+
   if (root_layer->id() == layer_id)
     return root_layer;
 

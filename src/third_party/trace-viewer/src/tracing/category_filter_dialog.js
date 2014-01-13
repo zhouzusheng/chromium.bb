@@ -26,6 +26,7 @@ base.exportTo('tracing', function() {
       var containerEl = document.createElement('div');
       containerEl.className = 'category-filter-dialog';
       containerEl.textContent = 'Select active categories:';
+
       this.formEl_ = document.createElement('form');
       this.formEl_.className = 'category-filter-dialog-form';
       containerEl.appendChild(this.formEl_);
@@ -36,50 +37,23 @@ base.exportTo('tracing', function() {
       this.formEl_.appendChild(this.categoriesEl_);
 
       this.addEventListener('visibleChange', this.onVisibleChange_.bind(this));
-
-      this.onChangeCallback_ = undefined;
-      this.isCheckedCallback_ = undefined;
     },
 
     set categories(c) {
       this.categories_ = c;
     },
 
-    set settings_key(k) {
-      this.settings_key_ = k;
-    },
-
-    set settings(s) {
-      this.settings_ = s;
-    },
-
     set settingUpdatedCallback(c) {
       this.settingUpdatedCallback_ = c;
     },
 
-    selectedCategories: function() {
-      // TODO(dsinclair): This can be made smarter by just storing an array
-      // of selected categories when they're clicked.
-      var inputs = this.categoriesEl_.querySelectorAll('input');
-      var inputs_length = inputs.length;
+    unselectedCategories_: function() {
+      var inputs = this.formEl_.querySelectorAll('input');
       var categories = [];
-      for (var i = 0; i < inputs_length; ++i) {
+      for (var i = 0; i < inputs.length; ++i) {
         var input = inputs[i];
-        if (input.checked)
+        if (input.checked === false)
           categories.push(input.value);
-      }
-      return categories;
-    },
-
-    unselectedCategories: function() {
-      var inputs = this.categoriesEl_.querySelectorAll('input');
-      var inputs_length = inputs.length;
-      var categories = [];
-      for (var i = 0; i < inputs_length; ++i) {
-        var input = inputs[i];
-        if (input.checked)
-          continue;
-        categories.push(input.value);
       }
       return categories;
     },
@@ -93,28 +67,15 @@ base.exportTo('tracing', function() {
     updateForm_: function() {
       this.categoriesEl_.innerHTML = ''; // Clear old categories
 
-      // Dedup the categories. We may have things in settings that are also
-      // returned when we query the category list.
-      var set = {};
-      var allCategories =
-          this.categories_.concat(this.settings_.keys(this.settings_key_));
-      var allCategoriesLength = allCategories.length;
-      for (var i = 0; i < allCategoriesLength; ++i) {
-        set[allCategories[i]] = true;
-      }
-      var categories = [];
-      for (var category in set) {
-        categories.push(category);
-      }
-      categories = categories.sort();
-
+      var categories = this.categories_.sort();
       for (var i = 0; i < categories.length; i++) {
         var category = categories[i];
         var inputEl = document.createElement('input');
         inputEl.type = 'checkbox';
-        inputEl.id = inputEl.value = category;
-        inputEl.checked =
-            this.settings_.get(category, 'true', this.settings_key_) === 'true';
+        inputEl.id = category;
+        inputEl.value = category;
+
+        inputEl.checked = true;
         inputEl.onchange = this.updateSetting_.bind(this);
 
         var labelEl = document.createElement('label');
@@ -130,9 +91,8 @@ base.exportTo('tracing', function() {
 
     updateSetting_: function(e) {
       var checkbox = e.target;
-      this.settings_.set(checkbox.value, checkbox.checked, this.settings_key_);
       if (this.settingUpdatedCallback_ !== undefined)
-        this.settingUpdatedCallback_();
+        this.settingUpdatedCallback_(this.unselectedCategories_());
     }
   };
 

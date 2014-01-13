@@ -30,7 +30,8 @@
 
 #include "config.h"
 
-#include <gtest/gtest.h>
+#include "PopupContainer.h"
+#include "PopupMenuChromium.h"
 #include "URLTestHelpers.h"
 #include "WebDocument.h"
 #include "WebElement.h"
@@ -53,16 +54,15 @@
 #include "core/platform/PopupMenu.h"
 #include "core/platform/PopupMenuClient.h"
 #include "core/platform/chromium/KeyboardCodes.h"
-#include "core/platform/chromium/PopupContainer.h"
-#include "core/platform/chromium/PopupMenuChromium.h"
 #include "core/platform/graphics/Color.h"
 #include "v8.h"
-#include <public/Platform.h>
-#include <public/WebString.h>
-#include <public/WebUnitTestSupport.h>
-#include <public/WebURL.h>
-#include <public/WebURLRequest.h>
-#include <public/WebURLResponse.h>
+#include <gtest/gtest.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebUnitTestSupport.h"
+#include "public/platform/WebURL.h"
+#include "public/platform/WebURLRequest.h"
+#include "public/platform/WebURLResponse.h"
 
 using namespace WebCore;
 using namespace WebKit;
@@ -187,7 +187,7 @@ protected:
     {
         m_webView = static_cast<WebViewImpl*>(WebView::create(&m_webviewClient));
         m_webView->initializeMainFrame(&m_webFrameClient);
-        m_popupMenu = adoptRef(new PopupMenuChromium(&m_popupMenuClient));
+        m_popupMenu = adoptRef(new PopupMenuChromium(*static_cast<WebFrameImpl*>(m_webView->mainFrame())->frame(), &m_popupMenuClient));
     }
 
     virtual void TearDown()
@@ -204,8 +204,7 @@ protected:
 
     void showPopup()
     {
-        m_popupMenu->show(IntRect(0, 0, 100, 100),
-            static_cast<WebFrameImpl*>(m_webView->mainFrame())->frameView(), 0);
+        m_popupMenu->show(FloatQuad(FloatRect(0, 0, 100, 100)), IntSize(100, 100), 0);
         ASSERT_TRUE(popupOpen());
         EXPECT_TRUE(m_webView->selectPopup()->popupType() == PopupContainer::Select);
     }

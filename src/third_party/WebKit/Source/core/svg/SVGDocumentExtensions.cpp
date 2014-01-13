@@ -21,23 +21,14 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGDocumentExtensions.h"
 
 #include "XLinkNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/ScriptableDocumentParser.h"
-#include "core/loader/FrameLoader.h"
-#include "core/page/Console.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
-#include "core/page/Page.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/animation/SMILTimeContainer.h"
-#include "core/svg/animation/SVGSMILElement.h"
 #include <wtf/text/AtomicString.h>
 
 namespace WebCore {
@@ -390,5 +381,3 @@ void SVGDocumentExtensions::unregisterSVGFontFaceElement(SVGFontFaceElement* ele
 #endif
 
 }
-
-#endif

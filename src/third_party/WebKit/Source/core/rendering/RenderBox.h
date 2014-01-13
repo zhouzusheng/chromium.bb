@@ -24,9 +24,9 @@
 #define RenderBox_h
 
 #include "core/platform/ScrollTypes.h"
-#include "core/rendering/exclusions/ExclusionShapeOutsideInfo.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderOverflow.h"
+#include "core/rendering/shapes/ShapeOutsideInfo.h"
 
 namespace WebCore {
 
@@ -49,7 +49,7 @@ public:
     // position:static elements that are not flex-items get their z-index coerced to auto.
     virtual bool requiresLayer() const OVERRIDE { return isRoot() || isPositioned() || createsGroup() || hasClipPath() || hasOverflowClip() || hasTransform() || hasHiddenBackface() || hasReflection() || style()->specifiesColumns() || !style()->hasAutoZIndex() || isFloatingWithShapeOutside(); }
 
-    virtual bool backgroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect) const OVERRIDE FINAL;
+    virtual bool backgroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect) const OVERRIDE;
 
     // Use this with caution! No type checking is done!
     RenderBox* firstChildBox() const;
@@ -443,6 +443,7 @@ public:
     bool canBeScrolledAndHasScrollableArea() const;
     virtual bool canBeProgramaticallyScrolled() const;
     virtual void autoscroll(const IntPoint&);
+    bool autoscrollInProgress() const;
     bool canAutoscroll() const;
     IntSize calculateAutoscrollDirection(const IntPoint& windowPoint) const;
     static RenderBox* findAutoscrollable(RenderObject*);
@@ -543,7 +544,6 @@ public:
 
     virtual bool hasRelativeDimensions() const;
     virtual bool hasRelativeLogicalHeight() const;
-    bool hasViewportPercentageLogicalHeight() const;
 
     bool hasHorizontalLayoutOverflow() const
     {
@@ -578,9 +578,9 @@ public:
     virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
     static void reportStaticMembersMemoryUsage(MemoryInstrumentation*);
 
-    ExclusionShapeOutsideInfo* exclusionShapeOutsideInfo() const
+    ShapeOutsideInfo* shapeOutsideInfo() const
     {
-        return isFloatingWithShapeOutside() && ExclusionShapeOutsideInfo::isEnabledFor(this) ? ExclusionShapeOutsideInfo::info(this) : 0;
+        return isFloatingWithShapeOutside() && ShapeOutsideInfo::isEnabledFor(this) ? ShapeOutsideInfo::info(this) : 0;
     }
 
 protected:
@@ -612,7 +612,6 @@ protected:
     virtual bool shouldComputeSizeAsReplaced() const { return isReplaced() && !isInlineBlockOrInlineTable(); }
 
     virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE;
-    virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject*, RenderGeometryMap&) const OVERRIDE;
     virtual void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const;
 
     void paintRootBoxFillLayers(const PaintInfo&);
@@ -620,7 +619,7 @@ protected:
     RenderObject* splitAnonymousBoxesAroundChild(RenderObject* beforeChild);
  
 private:
-    void updateExclusionShapeOutsideInfoAfterStyleChange(const ExclusionShapeValue* shapeOutside, const ExclusionShapeValue* oldShapeOutside);
+    void updateShapeOutsideInfoAfterStyleChange(const ShapeValue* shapeOutside, const ShapeValue* oldShapeOutside);
 
     bool includeVerticalScrollbarSize() const;
     bool includeHorizontalScrollbarSize() const;

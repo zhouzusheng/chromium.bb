@@ -23,14 +23,10 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGMaskElement.h"
 
 #include "SVGNames.h"
-#include "core/css/StyleResolver.h"
-#include "core/dom/Attribute.h"
 #include "core/rendering/svg/RenderSVGResourceMasker.h"
-#include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGUnitTypes.h"
 
@@ -92,7 +88,7 @@ bool SVGMaskElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::widthAttr);
         supportedAttributes.add(SVGNames::heightAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGMaskElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -158,9 +154,9 @@ void SVGMaskElement::childrenChanged(bool changedByParser, Node* beforeChange, N
         object->setNeedsLayout(true);
 }
 
-RenderObject* SVGMaskElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGMaskElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGResourceMasker(this);
+    return new (document()->renderArena()) RenderSVGResourceMasker(this);
 }
 
 bool SVGMaskElement::selfHasRelativeLengths() const
@@ -172,5 +168,3 @@ bool SVGMaskElement::selfHasRelativeLengths() const
 }
 
 }
-
-#endif // ENABLE(SVG)

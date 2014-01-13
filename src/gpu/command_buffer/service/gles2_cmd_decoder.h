@@ -21,12 +21,14 @@
 namespace gfx {
 class GLContext;
 class GLSurface;
-class AsyncPixelTransferDelegate;
 }
 
 namespace gpu {
 
+class AsyncPixelTransferDelegate;
+class AsyncPixelTransferManager;
 class StreamTextureManager;
+struct Mailbox;
 
 namespace gles2 {
 
@@ -120,8 +122,7 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   // Set the surface associated with the default FBO.
   virtual void SetSurface(const scoped_refptr<gfx::GLSurface>& surface) = 0;
 
-  virtual bool SetParent(GLES2Decoder* parent_decoder,
-                         uint32 parent_texture_id) = 0;
+  virtual bool ProduceFrontBuffer(const Mailbox& mailbox) = 0;
 
   // Resize an offscreen frame buffer.
   virtual bool ResizeOffscreenFrameBuffer(const gfx::Size& size) = 0;
@@ -141,11 +142,12 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   // Gets the associated ContextGroup
   virtual ContextGroup* GetContextGroup() = 0;
 
-  // Gets the service id for any simulated backbuffer fbo.
+  // Restores all of the decoder GL state.
   virtual void RestoreState() const = 0;
 
   // Restore States.
   virtual void RestoreActiveTexture() const = 0;
+  virtual void RestoreAllTextureUnitBindings() const = 0;
   virtual void RestoreAttribute(unsigned index) const = 0;
   virtual void RestoreBufferBindings() const = 0;
   virtual void RestoreFramebufferBindings() const = 0;
@@ -172,14 +174,15 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   // Sets a callback which is called when a glResizeCHROMIUM command
   // is processed.
   virtual void SetResizeCallback(
-      const base::Callback<void(gfx::Size)>& callback) = 0;
+      const base::Callback<void(gfx::Size, float)>& callback) = 0;
 
   virtual void SetStreamTextureManager(StreamTextureManager* manager) = 0;
 
   // Interface to performing async pixel transfers.
-  virtual gfx::AsyncPixelTransferDelegate* GetAsyncPixelTransferDelegate() = 0;
-  virtual void SetAsyncPixelTransferDelegate(
-      gfx::AsyncPixelTransferDelegate* delegate) = 0;
+  virtual AsyncPixelTransferManager* GetAsyncPixelTransferManager() = 0;
+  virtual void ResetAsyncPixelTransferManagerForTest() = 0;
+  virtual void SetAsyncPixelTransferManagerForTest(
+      AsyncPixelTransferManager* manager) = 0;
 
   // Get the service texture ID corresponding to a client texture ID.
   // If no such record is found then return false.

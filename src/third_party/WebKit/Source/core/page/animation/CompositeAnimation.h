@@ -59,6 +59,7 @@ public:
     PassRefPtr<RenderStyle> getAnimatedStyle() const;
 
     double timeToNextService() const;
+    double timeToNextEvent() const;
     
     AnimationControllerPrivate* animationController() const { return m_animationController; }
 
@@ -75,8 +76,7 @@ public:
     void overrideImplicitAnimations(CSSPropertyID);
     void resumeOverriddenImplicitAnimations(CSSPropertyID);
 
-    bool pauseAnimationAtTime(const AtomicString& name, double t);
-    bool pauseTransitionAtTime(CSSPropertyID, double);
+    void pauseAnimationsForTesting(double t);
     unsigned numberOfActiveAnimations() const;
 
 private:

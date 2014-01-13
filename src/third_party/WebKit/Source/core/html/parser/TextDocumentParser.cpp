@@ -26,15 +26,13 @@
 #include "core/html/parser/TextDocumentParser.h"
 
 #include "HTMLNames.h"
-#include "core/html/HTMLDocument.h"
-#include "core/html/parser/HTMLTokenizer.h"
 #include "core/html/parser/HTMLTreeBuilder.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-TextDocumentParser::TextDocumentParser(HTMLDocument* document)
+TextDocumentParser::TextDocumentParser(Document* document)
     : HTMLDocumentParser(document, false)
     , m_haveInsertedFakePreElement(false)
 {

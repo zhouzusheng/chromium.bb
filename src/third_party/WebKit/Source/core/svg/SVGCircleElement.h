@@ -21,7 +21,6 @@
 #ifndef SVGCircleElement_h
 #define SVGCircleElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
@@ -50,7 +49,7 @@ private:
 
     virtual bool selfHasRelativeLengths() const;
 
-    RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    RenderObject* createRenderer(RenderStyle*);
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGCircleElement)
         DECLARE_ANIMATED_LENGTH(Cx, cx)
@@ -67,5 +66,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif // SVGCircleElement_h

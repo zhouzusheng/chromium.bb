@@ -42,12 +42,10 @@
 #include "core/loader/FormState.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
-#include "core/page/Frame.h"
 #include "core/platform/network/FormData.h"
 #include "core/platform/network/FormDataBuilder.h"
-#include "core/platform/text/TextEncoding.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/RandomNumber.h>
+#include "wtf/CurrentTime.h"
+#include "wtf/text/TextEncoding.h"
 
 namespace WebCore {
 
@@ -124,7 +122,7 @@ void FormSubmission::Attributes::copyFrom(const Attributes& other)
     m_acceptCharset = other.m_acceptCharset;
 }
 
-inline FormSubmission::FormSubmission(Method method, const KURL& action, const String& target, const String& contentType, PassRefPtr<FormState> state, PassRefPtr<FormData> data, const String& boundary, bool lockHistory, PassRefPtr<Event> event)
+inline FormSubmission::FormSubmission(Method method, const KURL& action, const String& target, const String& contentType, PassRefPtr<FormState> state, PassRefPtr<FormData> data, const String& boundary, PassRefPtr<Event> event)
     : m_method(method)
     , m_action(action)
     , m_target(target)
@@ -132,12 +130,11 @@ inline FormSubmission::FormSubmission(Method method, const KURL& action, const S
     , m_formState(state)
     , m_formData(data)
     , m_boundary(boundary)
-    , m_lockHistory(lockHistory)
     , m_event(event)
 {
 }
 
-PassRefPtr<FormSubmission> FormSubmission::create(HTMLFormElement* form, const Attributes& attributes, PassRefPtr<Event> event, bool lockHistory, FormSubmissionTrigger trigger)
+PassRefPtr<FormSubmission> FormSubmission::create(HTMLFormElement* form, const Attributes& attributes, PassRefPtr<Event> event, FormSubmissionTrigger trigger)
 {
     ASSERT(form);
 
@@ -145,7 +142,7 @@ PassRefPtr<FormSubmission> FormSubmission::create(HTMLFormElement* form, const A
     if (event && event->target()) {
         for (Node* node = event->target()->toNode(); node; node = node->parentNode()) {
             if (node->isElementNode() && toElement(node)->isFormControlElement()) {
-                submitButton = static_cast<HTMLFormControlElement*>(node);
+                submitButton = toHTMLFormControlElement(node);
                 break;
             }
         }
@@ -179,7 +176,7 @@ PassRefPtr<FormSubmission> FormSubmission::create(HTMLFormElement* form, const A
         }
     }
 
-    TextEncoding dataEncoding = isMailtoForm ? UTF8Encoding() : FormDataBuilder::encodingFromAcceptCharset(copiedAttributes.acceptCharset(), document);
+    WTF::TextEncoding dataEncoding = isMailtoForm ? UTF8Encoding() : FormDataBuilder::encodingFromAcceptCharset(copiedAttributes.acceptCharset(), document);
     RefPtr<DOMFormData> domFormData = DOMFormData::create(dataEncoding.encodingForFormSubmission());
     Vector<pair<String, String> > formValues;
 
@@ -189,12 +186,10 @@ PassRefPtr<FormSubmission> FormSubmission::create(HTMLFormElement* form, const A
         HTMLElement* element = toHTMLElement(control);
         if (!element->isDisabledFormControl())
             control->appendFormData(*domFormData, isMultiPartForm);
-        if (element->hasLocalName(inputTag)) {
-            HTMLInputElement* input = static_cast<HTMLInputElement*>(control);
-            if (input->isTextField()) {
+        if (element->hasTagName(inputTag)) {
+            HTMLInputElement* input = toHTMLInputElement(element);
+            if (input->isTextField())
                 formValues.append(pair<String, String>(input->name().string(), input->value()));
-                input->addSearchResult();
-            }
             if (input->isPasswordField() && !input->value().isEmpty())
                 containsPasswordData = true;
         }
@@ -219,7 +214,7 @@ PassRefPtr<FormSubmission> FormSubmission::create(HTMLFormElement* form, const A
     formData->setContainsPasswordData(containsPasswordData);
     String targetOrBaseTarget = copiedAttributes.target().isEmpty() ? document->baseTarget() : copiedAttributes.target();
     RefPtr<FormState> formState = FormState::create(form, formValues, document, trigger);
-    return adoptRef(new FormSubmission(copiedAttributes.method(), actionURL, targetOrBaseTarget, encodingType, formState.release(), formData.release(), boundary, lockHistory, event));
+    return adoptRef(new FormSubmission(copiedAttributes.method(), actionURL, targetOrBaseTarget, encodingType, formState.release(), formData.release(), boundary, event));
 }
 
 KURL FormSubmission::requestURL() const

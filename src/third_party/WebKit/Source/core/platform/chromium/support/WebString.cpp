@@ -29,50 +29,59 @@
  */
 
 #include "config.h"
-#include <public/WebString.h>
+#include "public/platform/WebString.h"
 
-#include <public/WebCString.h>
+#include "public/platform/WebCString.h"
 #include <wtf/text/AtomicString.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebKit {
 
-class WebStringPrivate : public WTF::StringImpl {
-};
-
 void WebString::reset()
 {
-    if (m_private) {
-        m_private->deref();
-        m_private = 0;
-    }
+    m_private.reset();
 }
 
 void WebString::assign(const WebString& other)
 {
-    assign(const_cast<WebStringPrivate*>(other.m_private));
+    assign(other.m_private.get());
 }
 
 void WebString::assign(const WebUChar* data, size_t length)
 {
-    assign(static_cast<WebStringPrivate*>(
-        WTF::StringImpl::create(data, length).get()));
+    assign(StringImpl::create8BitIfPossible(data, length).get());
 }
 
 size_t WebString::length() const
 {
-    return m_private ? const_cast<WebStringPrivate*>(m_private)->length() : 0;
+    return m_private.isNull() ? 0 : m_private->length();
 }
 
-const WebUChar* WebString::data() const
+WebUChar WebString::at(unsigned i) const
 {
-    return m_private ? const_cast<WebStringPrivate*>(m_private)->characters() : 0;
+    ASSERT(!m_private.isNull());
+    return (*m_private.get())[i];
+}
+
+bool WebString::is8Bit() const
+{
+    return m_private->is8Bit();
+}
+
+const WebLChar* WebString::data8() const
+{
+    return !m_private.isNull() && is8Bit() ? m_private->characters8() : 0;
+}
+
+const WebUChar* WebString::data16() const
+{
+    return !m_private.isNull() && !is8Bit() ? m_private->characters16() : 0;
 }
 
 WebCString WebString::utf8() const
 {
-    return WTF::String(m_private).utf8();
+    return WTF::String(m_private.get()).utf8();
 }
 
 WebString WebString::fromUTF8(const char* data, size_t length)
@@ -87,29 +96,26 @@ WebString WebString::fromUTF8(const char* data)
 
 bool WebString::equals(const WebString& s) const
 {
-    return equal(m_private, s.m_private);
+    return equal(m_private.get(), s.m_private.get());
 }
 
 WebString::WebString(const WTF::String& s)
-    : m_private(static_cast<WebStringPrivate*>(s.impl()))
 {
-    if (m_private)
-        m_private->ref();
+    m_private = s.impl();
 }
 
 WebString& WebString::operator=(const WTF::String& s)
 {
-    assign(static_cast<WebStringPrivate*>(s.impl()));
+    assign(s.impl());
     return *this;
 }
 
 WebString::operator WTF::String() const
 {
-    return m_private;
+    return m_private.get();
 }
 
 WebString::WebString(const WTF::AtomicString& s)
-    : m_private(0)
 {
     assign(s.string());
 }
@@ -122,16 +128,11 @@ WebString& WebString::operator=(const WTF::AtomicString& s)
 
 WebString::operator WTF::AtomicString() const
 {
-    return WTF::AtomicString(static_cast<WTF::StringImpl *>(m_private));
+    return WTF::AtomicString(m_private.get());
 }
 
-void WebString::assign(WebStringPrivate* p)
+void WebString::assign(WTF::StringImpl* p)
 {
-    // Take care to handle the case where m_private == p
-    if (p)
-        p->ref();
-    if (m_private)
-        m_private->deref();
     m_private = p;
 }
 

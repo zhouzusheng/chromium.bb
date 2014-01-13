@@ -7,8 +7,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
+#include "cc/output/compositor_frame.h"
 #include "cc/output/renderer.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 
 namespace cc {
 
@@ -25,15 +26,16 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
 
   virtual const RendererCapabilities& Capabilities() const OVERRIDE;
 
+  virtual bool CanReadPixels() const OVERRIDE;
+
   virtual void DrawFrame(RenderPassList* render_passes_in_draw_order) OVERRIDE;
 
   virtual void Finish() OVERRIDE {}
 
-  virtual void SwapBuffers(const LatencyInfo& latency_info) OVERRIDE;
+  virtual void SwapBuffers() OVERRIDE;
+  virtual void ReceiveSwapBuffersAck(const CompositorFrameAck&) OVERRIDE;
 
   virtual void GetFramebufferPixels(void* pixels, gfx::Rect rect) OVERRIDE;
-
-  virtual void ReceiveCompositorFrameAck(const CompositorFrameAck&) OVERRIDE;
 
   virtual bool IsContextLost() OVERRIDE;
 
@@ -52,6 +54,7 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
   OutputSurface* output_surface_;
   ResourceProvider* resource_provider_;
   RendererCapabilities capabilities_;
+  CompositorFrame frame_for_swap_buffers_;
   bool visible_;
 
   DISALLOW_COPY_AND_ASSIGN(DelegatingRenderer);

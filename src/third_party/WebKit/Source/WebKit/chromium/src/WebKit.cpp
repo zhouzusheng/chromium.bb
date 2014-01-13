@@ -32,32 +32,34 @@
 #include "WebKit.h"
 
 #include "IDBFactoryBackendProxy.h"
+#include "RuntimeEnabledFeatures.h"
 #include "WebMediaPlayerClientImpl.h"
 #include "WebWorkerClientImpl.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8RecursionScope.h"
+#include "core/Init.h"
 #include "core/dom/CustomElementRegistry.h"
 #include "core/dom/MutationObserver.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "RuntimeEnabledFeatures.h"
 #include "core/page/Settings.h"
-#include "core/platform/EventTracer.h"
 #include "core/platform/LayoutTestSupport.h"
 #include "core/platform/Logging.h"
+#include "core/platform/graphics/MediaPlayer.h"
 #include "core/platform/graphics/chromium/ImageDecodingStore.h"
-#include "core/platform/graphics/chromium/MediaPlayerPrivateChromium.h"
-#include "core/platform/text/TextEncoding.h"
 #include "core/workers/WorkerContextProxy.h"
-#include "v8.h"
-#include <public/Platform.h>
-#include <public/WebPrerenderingSupport.h>
-#include <public/WebThread.h>
-#include <wtf/Assertions.h>
-#include <wtf/MainThread.h>
-#include <wtf/text/AtomicString.h>
-#include <wtf/Threading.h>
-#include <wtf/UnusedParam.h>
+#include "wtf/Assertions.h"
+#include "wtf/CryptographicallyRandomNumber.h"
+#include "wtf/CurrentTime.h"
+#include "wtf/MainThread.h"
+#include "wtf/Threading.h"
+#include "wtf/UnusedParam.h"
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/TextEncoding.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebPrerenderingSupport.h"
+#include "public/platform/WebThread.h"
+#include <v8.h>
 
 namespace WebKit {
 
@@ -81,12 +83,10 @@ static WebThread::TaskObserver* s_endOfTaskRunner = 0;
 // Doing so may cause hard to reproduce crashes.
 static bool s_webKitInitialized = false;
 
-static Platform* s_webKitPlatformSupport = 0;
-
 static bool generateEntropy(unsigned char* buffer, size_t length)
 {
-    if (s_webKitPlatformSupport) {
-        s_webKitPlatformSupport->cryptographicallyRandomValues(buffer, length);
+    if (Platform::current()) {
+        Platform::current()->cryptographicallyRandomValues(buffer, length);
         return true;
     }
     return false;
@@ -99,16 +99,16 @@ static void assertV8RecursionScope()
 }
 #endif
 
-void initialize(Platform* webKitPlatformSupport)
+void initialize(Platform* platform)
 {
-    initializeWithoutV8(webKitPlatformSupport);
+    initializeWithoutV8(platform);
 
     v8::V8::SetEntropySource(&generateEntropy);
     v8::V8::Initialize();
     WebCore::V8PerIsolateData::ensureInitialized(v8::Isolate::GetCurrent());
 
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
-    if (WebThread* currentThread = webKitPlatformSupport->currentThread()) {
+    if (WebThread* currentThread = platform->currentThread()) {
 #ifndef NDEBUG
         v8::V8::AddCallCompletedCallback(&assertV8RecursionScope);
 #endif
@@ -118,18 +118,37 @@ void initialize(Platform* webKitPlatformSupport)
     }
 }
 
-void initializeWithoutV8(Platform* webKitPlatformSupport)
+static double currentTimeFunction()
+{
+    return Platform::current()->currentTime();
+}
+
+static double monotonicallyIncreasingTimeFunction()
+{
+    return Platform::current()->monotonicallyIncreasingTime();
+}
+
+static void cryptographicallyRandomValues(unsigned char* buffer, size_t length)
+{
+    Platform::current()->cryptographicallyRandomValues(buffer, length);
+}
+
+static void callOnMainThreadFunction(WTF::MainThreadFunction function, void* context)
+{
+    Platform::current()->callOnMainThread(function, context);
+}
+
+void initializeWithoutV8(Platform* platform)
 {
     ASSERT(!s_webKitInitialized);
     s_webKitInitialized = true;
 
-    ASSERT(webKitPlatformSupport);
-    ASSERT(!s_webKitPlatformSupport);
-    s_webKitPlatformSupport = webKitPlatformSupport;
-    Platform::initialize(s_webKitPlatformSupport);
+    ASSERT(platform);
+    Platform::initialize(platform);
 
-    WTF::initializeThreading();
-    WTF::initializeMainThread();
+    WTF::setRandomSource(cryptographicallyRandomValues);
+    WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction);
+    WTF::initializeMainThread(callOnMainThreadFunction);
     WebCore::init();
     WebCore::ImageDecodingStore::initializeOnce();
 
@@ -140,13 +159,11 @@ void initializeWithoutV8(Platform* webKitPlatformSupport)
     // they're running on the main WebKitThread.  It might be possible to make
     // the initialization thread-safe, but given that so many code paths use
     // this, initializing this lazily probably doesn't buy us much.
-    WebCore::UTF8Encoding();
-
-    WebCore::EventTracer::initialize();
+    WTF::UTF8Encoding();
 
     WebCore::setIDBFactoryBackendInterfaceCreateFunction(WebKit::IDBFactoryBackendProxy::create);
 
-    WebCore::MediaPlayerPrivate::setMediaEngineRegisterSelfFunction(WebKit::WebMediaPlayerClientImpl::registerSelf);
+    WebCore::MediaPlayer::setMediaEngineCreateFunction(WebKit::WebMediaPlayerClientImpl::create);
 
     WebCore::WorkerContextProxy::setCreateDelegate(WebWorkerClientImpl::createWorkerContextProxy);
 }
@@ -160,20 +177,15 @@ void shutdown()
 #ifndef NDEBUG
         v8::V8::RemoveCallCompletedCallback(&assertV8RecursionScope);
 #endif
-        ASSERT(s_webKitPlatformSupport->currentThread());
-        s_webKitPlatformSupport->currentThread()->removeTaskObserver(s_endOfTaskRunner);
+        ASSERT(Platform::current()->currentThread());
+        Platform::current()->currentThread()->removeTaskObserver(s_endOfTaskRunner);
         delete s_endOfTaskRunner;
         s_endOfTaskRunner = 0;
     }
-    s_webKitPlatformSupport = 0;
     WebCore::ImageDecodingStore::shutdown();
+    WebCore::shutdown();
     Platform::shutdown();
     WebPrerenderingSupport::shutdown();
-}
-
-Platform* webKitPlatformSupport()
-{
-    return s_webKitPlatformSupport;
 }
 
 void setLayoutTestMode(bool value)

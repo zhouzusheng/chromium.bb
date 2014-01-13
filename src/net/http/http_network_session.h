@@ -6,6 +6,9 @@
 #define NET_HTTP_HTTP_NETWORK_SESSION_H_
 
 #include <set>
+#include <string>
+
+#include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/non_thread_safe.h"
 #include "net/base/host_port_pair.h"
@@ -83,7 +86,7 @@ class NET_EXPORT HttpNetworkSession
     SpdySessionPool::TimeFunc time_func;
     std::string trusted_spdy_proxy;
     bool enable_quic;
-    uint16 origin_port_to_force_quic_on;
+    HostPortPair origin_to_force_quic_on;
     QuicClock* quic_clock;  // Will be owned by QuicStreamFactory.
     QuicRandom* quic_random;
     bool enable_user_alternate_protocol_ports;
@@ -121,7 +124,7 @@ class NET_EXPORT HttpNetworkSession
 
   CertVerifier* cert_verifier() { return cert_verifier_; }
   ProxyService* proxy_service() { return proxy_service_; }
-  SSLConfigService* ssl_config_service() { return ssl_config_service_; }
+  SSLConfigService* ssl_config_service() { return ssl_config_service_.get(); }
   SpdySessionPool* spdy_session_pool() { return &spdy_session_pool_; }
   QuicStreamFactory* quic_stream_factory() { return &quic_stream_factory_; }
   HttpAuthHandlerFactory* http_auth_handler_factory() {
@@ -135,6 +138,9 @@ class NET_EXPORT HttpNetworkSession
   }
   HttpStreamFactory* http_stream_factory() {
     return http_stream_factory_.get();
+  }
+  HttpStreamFactory* websocket_stream_factory() {
+    return websocket_stream_factory_.get();
   }
   NetLog* net_log() {
     return net_log_;
@@ -190,6 +196,7 @@ class NET_EXPORT HttpNetworkSession
   QuicStreamFactory quic_stream_factory_;
   SpdySessionPool spdy_session_pool_;
   scoped_ptr<HttpStreamFactory> http_stream_factory_;
+  scoped_ptr<HttpStreamFactory> websocket_stream_factory_;
   std::set<HttpResponseBodyDrainer*> response_drainers_;
 
   Params params_;

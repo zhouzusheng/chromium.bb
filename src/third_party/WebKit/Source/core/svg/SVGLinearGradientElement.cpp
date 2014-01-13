@@ -23,20 +23,14 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGLinearGradientElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
-#include "core/dom/Document.h"
-#include "core/platform/graphics/FloatPoint.h"
 #include "core/rendering/svg/RenderSVGResourceLinearGradient.h"
 #include "core/svg/LinearGradientAttributes.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGLength.h"
-#include "core/svg/SVGTransform.h"
 #include "core/svg/SVGTransformList.h"
-#include "core/svg/SVGUnitTypes.h"
 
 namespace WebCore {
 
@@ -81,7 +75,7 @@ bool SVGLinearGradientElement::isSupportedAttribute(const QualifiedName& attrNam
         supportedAttributes.add(SVGNames::y1Attr);
         supportedAttributes.add(SVGNames::y2Attr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGLinearGradientElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -119,9 +113,9 @@ void SVGLinearGradientElement::svgAttributeChanged(const QualifiedName& attrName
         object->setNeedsLayout(true);
 }
 
-RenderObject* SVGLinearGradientElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGLinearGradientElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGResourceLinearGradient(this);
+    return new (document()->renderArena()) RenderSVGResourceLinearGradient(this);
 }
 
 bool SVGLinearGradientElement::collectGradientAttributes(LinearGradientAttributes& attributes)
@@ -199,5 +193,3 @@ bool SVGLinearGradientElement::selfHasRelativeLengths() const
 }
 
 }
-
-#endif // ENABLE(SVG)

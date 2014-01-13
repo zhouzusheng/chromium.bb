@@ -31,7 +31,6 @@
 
 #include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/inspector/ScriptProfile.h"
 #include "core/page/DOMWindowProperty.h"
 #include <wtf/Forward.h>
 #include <wtf/PassRefPtr.h>
@@ -43,8 +42,6 @@ class Frame;
 class MemoryInfo;
 class Page;
 class ScriptArguments;
-
-typedef Vector<RefPtr<ScriptProfile> > ProfilesArray;
 
 class Console : public ScriptWrappable, public RefCounted<Console>, public DOMWindowProperty {
 public:
@@ -64,9 +61,8 @@ public:
     void assertCondition(ScriptState*, PassRefPtr<ScriptArguments>, bool condition);
     void count(ScriptState*, PassRefPtr<ScriptArguments>);
     void markTimeline(PassRefPtr<ScriptArguments>);
-    const ProfilesArray& profiles() const { return m_profiles; }
-    void profile(const String&, ScriptState*);
-    void profileEnd(const String&, ScriptState*);
+    void profile(ScriptState*, const String&);
+    void profileEnd(ScriptState*, const String&);
     void time(const String&);
     void timeEnd(ScriptState*, const String&);
     void timeStamp(PassRefPtr<ScriptArguments>);
@@ -80,8 +76,6 @@ private:
     inline Page* page() const;
 
     explicit Console(Frame*);
-
-    ProfilesArray m_profiles;
 };
 
 } // namespace WebCore

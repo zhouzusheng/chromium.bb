@@ -1,5 +1,4 @@
 /*
- * Copyright (C) 2008-2009 Torch Mobile, Inc.
  * Copyright (C) Research In Motion Limited 2009-2010. All rights reserved.
  *
  *  This library is free software; you can redistribute it and/or
@@ -31,11 +30,7 @@
 #include "core/platform/image-decoders/png/PNGImageDecoder.h"
 #include "core/platform/image-decoders/webp/WEBPImageDecoder.h"
 
-#include <algorithm>
-#include <cmath>
 #include <wtf/MemoryInstrumentationVector.h>
-
-using namespace std;
 
 namespace WebCore {
 
@@ -44,7 +39,7 @@ static unsigned copyFromSharedBuffer(char* buffer, unsigned bufferLength, const 
     unsigned bytesExtracted = 0;
     const char* moreData;
     while (unsigned moreDataLength = sharedBuffer.getSomeData(moreData, offset)) {
-        unsigned bytesToCopy = min(bufferLength - bytesExtracted, moreDataLength);
+        unsigned bytesToCopy = std::min(bufferLength - bytesExtracted, moreDataLength);
         memcpy(buffer + bytesExtracted, moreData, bytesToCopy);
         bytesExtracted += bytesToCopy;
         if (bytesExtracted == bufferLength)
@@ -91,23 +86,24 @@ inline bool matchesCURSignature(char* contents)
 
 PassOwnPtr<ImageDecoder> ImageDecoder::create(const SharedBuffer& data, ImageSource::AlphaOption alphaOption, ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption)
 {
-    static const unsigned lengthOfLongestSignature = 14; // To wit: "RIFF????WEBPVP"
-    char contents[lengthOfLongestSignature];
-    unsigned length = copyFromSharedBuffer(contents, lengthOfLongestSignature, data, 0);
-    if (length < lengthOfLongestSignature)
+    static const unsigned longestSignatureLength = sizeof("RIFF????WEBPVP") - 1;
+    ASSERT(longestSignatureLength == 14);
+
+    char contents[longestSignatureLength];
+    if (copyFromSharedBuffer(contents, longestSignatureLength, data, 0) < longestSignatureLength)
         return nullptr;
 
-    if (matchesGIFSignature(contents))
-        return adoptPtr(new GIFImageDecoder(alphaOption, gammaAndColorProfileOption));
+    if (matchesJPEGSignature(contents))
+        return adoptPtr(new JPEGImageDecoder(alphaOption, gammaAndColorProfileOption));
 
     if (matchesPNGSignature(contents))
         return adoptPtr(new PNGImageDecoder(alphaOption, gammaAndColorProfileOption));
 
+    if (matchesGIFSignature(contents))
+        return adoptPtr(new GIFImageDecoder(alphaOption, gammaAndColorProfileOption));
+
     if (matchesICOSignature(contents) || matchesCURSignature(contents))
         return adoptPtr(new ICOImageDecoder(alphaOption, gammaAndColorProfileOption));
-
-    if (matchesJPEGSignature(contents))
-        return adoptPtr(new JPEGImageDecoder(alphaOption, gammaAndColorProfileOption));
 
     if (matchesWebPSignature(contents))
         return adoptPtr(new WEBPImageDecoder(alphaOption, gammaAndColorProfileOption));
@@ -131,7 +127,7 @@ bool ImageDecoder::frameIsCompleteAtIndex(size_t index) const
 
 unsigned ImageDecoder::frameBytesAtIndex(size_t index) const
 {
-    if (m_frameBufferCache.size() <= index)
+    if (m_frameBufferCache.size() <= index || m_frameBufferCache[index].status() == ImageFrame::FrameEmpty)
         return 0;
     // FIXME: Use the dimension of the requested frame.
     return m_size.area() * sizeof(ImageFrame::PixelData);
@@ -142,89 +138,75 @@ void ImageDecoder::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Image);
     info.addMember(m_data, "data");
     info.addMember(m_frameBufferCache, "frameBufferCache");
-    info.addMember(m_colorProfile, "colorProfile");
-    info.addMember(m_scaledColumns, "scaledColumns");
-    info.addMember(m_scaledRows, "scaledRows");
 }
 
-enum MatchType {
-    Exact,
-    UpperBound,
-    LowerBound
-};
-
-inline void fillScaledValues(Vector<int>& scaledValues, double scaleRate, int length)
+size_t ImageDecoder::clearCacheExceptFrame(size_t clearExceptFrame)
 {
-    double inflateRate = 1. / scaleRate;
-    scaledValues.reserveCapacity(static_cast<int>(length * scaleRate + 0.5));
-    for (int scaledIndex = 0; ; ++scaledIndex) {
-        int index = static_cast<int>(scaledIndex * inflateRate + 0.5);
-        if (index >= length)
-            break;
-        scaledValues.append(index);
+    // Don't clear if there are no frames or only one frame.
+    if (m_frameBufferCache.size() <= 1)
+        return 0;
+
+    // We need to preserve frames such that:
+    //  1. We don't clear |clearExceptFrame|;
+    //  2. We don't clear any frame from which a future initFrameBuffer() call
+    //     will copy bitmap data.
+    // All other frames can be cleared.
+    while ((clearExceptFrame < m_frameBufferCache.size()) && (m_frameBufferCache[clearExceptFrame].status() == ImageFrame::FrameEmpty))
+        clearExceptFrame = m_frameBufferCache[clearExceptFrame].requiredPreviousFrameIndex();
+
+    size_t frameBytesCleared = 0;
+    for (size_t i = 0; i < m_frameBufferCache.size(); ++i) {
+        if (i != clearExceptFrame) {
+            frameBytesCleared += frameBytesAtIndex(i);
+            clearFrameBuffer(i);
+        }
     }
+    return frameBytesCleared;
 }
 
-template <MatchType type> static int getScaledValue(const Vector<int>& scaledValues, int valueToMatch, int searchStart)
+void ImageDecoder::clearFrameBuffer(size_t frameIndex)
 {
-    if (scaledValues.isEmpty())
-        return valueToMatch;
+    m_frameBufferCache[frameIndex].clearPixelData();
+}
 
-    const int* dataStart = scaledValues.data();
-    const int* dataEnd = dataStart + scaledValues.size();
-    const int* matched = std::lower_bound(dataStart + searchStart, dataEnd, valueToMatch);
-    switch (type) {
-    case Exact:
-        return matched != dataEnd && *matched == valueToMatch ? matched - dataStart : -1;
-    case LowerBound:
-        return matched != dataEnd && *matched == valueToMatch ? matched - dataStart : matched - dataStart - 1;
-    case UpperBound:
+size_t ImageDecoder::findRequiredPreviousFrame(size_t frameIndex)
+{
+    ASSERT(frameIndex <= m_frameBufferCache.size());
+    if (!frameIndex) {
+        // The first frame doesn't rely on any previous data.
+        return notFound;
+    }
+
+    // The starting state for this frame depends on the previous frame's
+    // disposal method.
+    size_t prevFrame = frameIndex - 1;
+    const ImageFrame* prevBuffer = &m_frameBufferCache[prevFrame];
+    ASSERT(prevBuffer->requiredPreviousFrameIndexValid());
+
+    switch (prevBuffer->disposalMethod()) {
+    case ImageFrame::DisposeNotSpecified:
+    case ImageFrame::DisposeKeep:
+        // prevFrame will be used as the starting state for this frame.
+        // FIXME: Be even smarter by checking the frame sizes and/or alpha-containing regions.
+        return prevFrame;
+    case ImageFrame::DisposeOverwritePrevious:
+        // Frames that use the DisposeOverwritePrevious method are effectively
+        // no-ops in terms of changing the starting state of a frame compared to
+        // the starting state of the previous frame, so skip over them and
+        // return the required previous frame of it.
+        return prevBuffer->requiredPreviousFrameIndex();
+    case ImageFrame::DisposeOverwriteBgcolor:
+        // If the previous frame fills the whole image, then the current frame
+        // can be decoded alone. Likewise, if the previous frame could be
+        // decoded without reference to any prior frame, the starting state for
+        // this frame is a blank frame, so it can again be decoded alone.
+        // Otherwise, the previous frame contributes to this frame.
+        return (prevBuffer->originalFrameRect().contains(IntRect(IntPoint(), size()))
+            || (prevBuffer->requiredPreviousFrameIndex() == notFound)) ? notFound : prevFrame;
     default:
-        return matched != dataEnd ? matched - dataStart : -1;
+        ASSERT_NOT_REACHED();
+        return notFound;
     }
-}
-
-void ImageDecoder::prepareScaleDataIfNecessary()
-{
-    m_scaled = false;
-    m_scaledColumns.clear();
-    m_scaledRows.clear();
-
-    int width = size().width();
-    int height = size().height();
-    int numPixels = height * width;
-    if (m_maxNumPixels <= 0 || numPixels <= m_maxNumPixels)
-        return;
-
-    m_scaled = true;
-    double scale = sqrt(m_maxNumPixels / (double)numPixels);
-    fillScaledValues(m_scaledColumns, scale, width);
-    fillScaledValues(m_scaledRows, scale, height);
-}
-
-int ImageDecoder::upperBoundScaledX(int origX, int searchStart)
-{
-    return getScaledValue<UpperBound>(m_scaledColumns, origX, searchStart);
-}
-
-int ImageDecoder::lowerBoundScaledX(int origX, int searchStart)
-{
-    return getScaledValue<LowerBound>(m_scaledColumns, origX, searchStart);
-}
-
-int ImageDecoder::upperBoundScaledY(int origY, int searchStart)
-{
-    return getScaledValue<UpperBound>(m_scaledRows, origY, searchStart);
-}
-
-int ImageDecoder::lowerBoundScaledY(int origY, int searchStart)
-{
-    return getScaledValue<LowerBound>(m_scaledRows, origY, searchStart);
-}
-
-int ImageDecoder::scaledY(int origY, int searchStart)
-{
-    return getScaledValue<Exact>(m_scaledRows, origY, searchStart);
 }
 
 } // namespace WebCore

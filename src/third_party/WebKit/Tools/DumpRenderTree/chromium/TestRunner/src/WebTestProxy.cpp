@@ -28,13 +28,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "WebTestProxy.h"
 
 #include "AccessibilityControllerChromium.h"
 #include "EventSender.h"
+#include "MockColorChooser.h"
 #include "MockWebSpeechInputController.h"
 #include "MockWebSpeechRecognizer.h"
+#include "MockWebValidationMessageClient.h"
 #include "SpellCheckClient.h"
 #include "TestCommon.h"
 #include "TestInterfaces.h"
@@ -65,10 +66,10 @@
 // FIXME: Including platform_canvas.h here is a layering violation.
 #include <cctype>
 #include "skia/ext/platform_canvas.h"
-#include <public/WebCString.h>
-#include <public/WebURLError.h>
-#include <public/WebURLRequest.h>
-#include <public/WebURLResponse.h>
+#include "public/platform/WebCString.h"
+#include "public/platform/WebURLError.h"
+#include "public/platform/WebURLRequest.h"
+#include "public/platform/WebURLResponse.h"
 
 using namespace WebKit;
 using namespace std;
@@ -76,6 +77,20 @@ using namespace std;
 namespace WebTestRunner {
 
 namespace {
+
+class HostMethodTask : public WebMethodTask<WebTestProxyBase> {
+public:
+    typedef void (WebTestProxyBase::*CallbackMethodType)();
+    HostMethodTask(WebTestProxyBase* object, CallbackMethodType callback)
+        : WebMethodTask<WebTestProxyBase>(object)
+        , m_callback(callback)
+    { }
+
+    virtual void runIfValid() { (m_object->*m_callback)(); }
+
+private:
+    CallbackMethodType m_callback;
+};
 
 void printNodeDescription(WebTestDelegate* delegate, const WebNode& node, int exception)
 {
@@ -438,7 +453,10 @@ string dumpAllBackForwardLists(TestInterfaces* interfaces, WebTestDelegate* dele
 WebTestProxyBase::WebTestProxyBase()
     : m_testInterfaces(0)
     , m_delegate(0)
+    , m_webWidget(0)
     , m_spellcheck(new SpellCheckClient)
+    , m_chooserCount(0)
+    , m_validationMessageClient(new MockWebValidationMessageClient())
 {
     reset();
 }
@@ -458,6 +476,7 @@ void WebTestProxyBase::setDelegate(WebTestDelegate* delegate)
 {
     m_delegate = delegate;
     m_spellcheck->setDelegate(delegate);
+    m_validationMessageClient->setDelegate(delegate);
 #if ENABLE_INPUT_SPEECH
     if (m_speechInputController.get())
         m_speechInputController->setDelegate(delegate);
@@ -466,11 +485,29 @@ void WebTestProxyBase::setDelegate(WebTestDelegate* delegate)
         m_speechRecognizer->setDelegate(delegate);
 }
 
+void WebTestProxyBase::setWidget(WebWidget* widget)
+{
+    m_webWidget = widget;
+}
+
+WebWidget* WebTestProxyBase::webWidget()
+{
+    return m_webWidget;
+}
+
+WebView* WebTestProxyBase::webView()
+{
+    WEBKIT_ASSERT(m_webWidget);
+    // TestRunner does not support popup widgets. So m_webWidget is always a WebView.
+    return static_cast<WebView*>(m_webWidget);
+}
+
 void WebTestProxyBase::reset()
 {
     m_paintRect = WebRect();
     m_canvas.reset();
     m_isPainting = false;
+    m_animateScheduled = false;
     m_resourceIdentifierMap.clear();
     m_logConsoleOutput = true;
     if (m_geolocationClient.get())
@@ -486,13 +523,24 @@ WebSpellCheckClient* WebTestProxyBase::spellCheckClient() const
     return m_spellcheck.get();
 }
 
+WebValidationMessageClient* WebTestProxyBase::validationMessageClient()
+{
+    return m_validationMessageClient.get();
+}
+
+WebColorChooser* WebTestProxyBase::createColorChooser(WebColorChooserClient* client, const WebKit::WebColor& color)
+{
+    // This instance is deleted by WebCore::ColorInputType
+    return new MockColorChooser(client, m_delegate, this);
+}
+
 string WebTestProxyBase::captureTree(bool debugRenderTree)
 {
     WebScriptController::flushConsoleMessages();
 
     bool shouldDumpAsText = m_testInterfaces->testRunner()->shouldDumpAsText();
     bool shouldDumpAsPrinted = m_testInterfaces->testRunner()->isPrinting();
-    WebFrame* frame = m_testInterfaces->webView()->mainFrame();
+    WebFrame* frame = webView()->mainFrame();
     string dataUtf8;
     if (shouldDumpAsText) {
         bool recursive = m_testInterfaces->testRunner()->shouldDumpChildFramesAsText();
@@ -516,9 +564,9 @@ string WebTestProxyBase::captureTree(bool debugRenderTree)
 
 SkCanvas* WebTestProxyBase::capturePixels()
 {
-    m_testInterfaces->webView()->layout();
+    webWidget()->layout();
     if (m_testInterfaces->testRunner()->testRepaint()) {
-        WebSize viewSize = m_testInterfaces->webView()->size();
+        WebSize viewSize = webWidget()->size();
         int width = viewSize.width;
         int height = viewSize.height;
         if (m_testInterfaces->testRunner()->sweepHorizontally()) {
@@ -538,7 +586,7 @@ SkCanvas* WebTestProxyBase::capturePixels()
     // The rect should be drawn after everything is laid out and painted.
     if (m_testInterfaces->testRunner()->shouldDumpSelectionRect()) {
         // If there is a selection rect - draw a red 1px border enclosing rect
-        WebRect wr = m_testInterfaces->webView()->mainFrame()->selectionBoundsRect();
+        WebRect wr = webView()->mainFrame()->selectionBoundsRect();
         if (!wr.isEmpty()) {
             // Render a red rectangle bounding selection rect
             SkPaint paint;
@@ -565,21 +613,21 @@ void WebTestProxyBase::paintRect(const WebRect& rect)
     WEBKIT_ASSERT(!m_isPainting);
     WEBKIT_ASSERT(canvas());
     m_isPainting = true;
-    float deviceScaleFactor = m_testInterfaces->webView()->deviceScaleFactor();
+    float deviceScaleFactor = webView()->deviceScaleFactor();
     int scaledX = static_cast<int>(static_cast<float>(rect.x) * deviceScaleFactor);
     int scaledY = static_cast<int>(static_cast<float>(rect.y) * deviceScaleFactor);
     int scaledWidth = static_cast<int>(ceil(static_cast<float>(rect.width) * deviceScaleFactor));
     int scaledHeight = static_cast<int>(ceil(static_cast<float>(rect.height) * deviceScaleFactor));
     WebRect deviceRect(scaledX, scaledY, scaledWidth, scaledHeight);
-    m_testInterfaces->webView()->paint(canvas(), deviceRect);
+    webWidget()->paint(canvas(), deviceRect);
     m_isPainting = false;
 }
 
 void WebTestProxyBase::paintInvalidatedRegion()
 {
-    m_testInterfaces->webView()->animate(0.0);
-    m_testInterfaces->webView()->layout();
-    WebSize widgetSize = m_testInterfaces->webView()->size();
+    webWidget()->animate(0.0);
+    webWidget()->layout();
+    WebSize widgetSize = webWidget()->size();
     WebRect clientRect(0, 0, widgetSize.width, widgetSize.height);
 
     // Paint the canvas if necessary. Allow painting to generate extra rects
@@ -612,8 +660,8 @@ void WebTestProxyBase::paintPagesWithBoundaries()
     WEBKIT_ASSERT(canvas());
     m_isPainting = true;
 
-    WebSize pageSizeInPixels = m_testInterfaces->webView()->size();
-    WebFrame* webFrame = m_testInterfaces->webView()->mainFrame();
+    WebSize pageSizeInPixels = webWidget()->size();
+    WebFrame* webFrame = webView()->mainFrame();
 
     int pageCount = webFrame->printBegin(pageSizeInPixels);
     int totalHeight = pageCount * (pageSizeInPixels.height + 1) - 1;
@@ -637,8 +685,8 @@ SkCanvas* WebTestProxyBase::canvas()
 {
     if (m_canvas.get())
         return m_canvas.get();
-    WebSize widgetSize = m_testInterfaces->webView()->size();
-    float deviceScaleFactor = m_testInterfaces->webView()->deviceScaleFactor();
+    WebSize widgetSize = webWidget()->size();
+    float deviceScaleFactor = webView()->deviceScaleFactor();
     int scaledWidth = static_cast<int>(ceil(static_cast<float>(widgetSize.width) * deviceScaleFactor));
     int scaledHeight = static_cast<int>(ceil(static_cast<float>(widgetSize.height) * deviceScaleFactor));
     m_canvas.reset(skia::CreateBitmapCanvas(scaledWidth, scaledHeight, true));
@@ -654,7 +702,7 @@ void WebTestProxyBase::displayRepaintMask()
 
 void WebTestProxyBase::display()
 {
-    const WebKit::WebSize& size = m_testInterfaces->webView()->size();
+    const WebKit::WebSize& size = webWidget()->size();
     WebRect rect(0, 0, size.width, size.height);
     m_paintRect = rect;
     paintInvalidatedRegion();
@@ -724,30 +772,49 @@ void WebTestProxyBase::didScrollRect(int, int, const WebRect& clipRect)
     didInvalidateRect(clipRect);
 }
 
-void WebTestProxyBase::scheduleComposite()
+void WebTestProxyBase::invalidateAll()
 {
     m_paintRect = WebRect(0, 0, INT_MAX, INT_MAX);
 }
 
+void WebTestProxyBase::scheduleComposite()
+{
+    invalidateAll();
+}
+
 void WebTestProxyBase::scheduleAnimation()
 {
-    scheduleComposite();
+    if (!m_testInterfaces->testRunner()->testIsRunning())
+        return;
+
+    if (!m_animateScheduled) {
+        m_animateScheduled = true;
+        m_delegate->postDelayedTask(new HostMethodTask(this, &WebTestProxyBase::animateNow), 1);
+    }
+}
+
+void WebTestProxyBase::animateNow()
+{
+    if (m_animateScheduled) {
+        m_animateScheduled = false;
+        webWidget()->animate(0.0);
+    }
 }
 
 void WebTestProxyBase::show(WebNavigationPolicy)
 {
-    scheduleComposite();
+    invalidateAll();
 }
 
 void WebTestProxyBase::setWindowRect(const WebRect& rect)
 {
-    scheduleComposite();
+    invalidateAll();
     discardBackingStore();
 }
 
 void WebTestProxyBase::didAutoResize(const WebSize&)
 {
-    scheduleComposite();
+    invalidateAll();
 }
 
 void WebTestProxyBase::postAccessibilityNotification(const WebKit::WebAccessibilityObject& obj, WebKit::WebAccessibilityNotification notification)
@@ -999,7 +1066,7 @@ WebMediaPlayer* WebTestProxyBase::createMediaPlayer(WebFrame* frame, const WebUR
 // Simulate a print by going into print mode and then exit straight away.
 void WebTestProxyBase::printPage(WebFrame* frame)
 {
-    WebSize pageSizeInPixels = m_testInterfaces->webView()->size();
+    WebSize pageSizeInPixels = webWidget()->size();
     WebPrintParams printParams(pageSizeInPixels);
     frame->printBegin(printParams);
     frame->printEnd();
@@ -1068,6 +1135,26 @@ void WebTestProxyBase::didBlur()
     m_delegate->setFocus(this, false);
 }
 
+void WebTestProxyBase::setToolTipText(const WebString& text, WebTextDirection)
+{
+    m_testInterfaces->testRunner()->setToolTipText(text);
+}
+
+void WebTestProxyBase::didOpenChooser()
+{
+    m_chooserCount++;
+}
+
+void WebTestProxyBase::didCloseChooser()
+{
+    m_chooserCount--;
+}
+
+bool WebTestProxyBase::isChooserShown()
+{
+    return 0 < m_chooserCount;
+}
+
 void WebTestProxyBase::willPerformClientRedirect(WebFrame* frame, const WebURL&, const WebURL& to, double, double)
 {
     if (m_testInterfaces->testRunner()->shouldDumpFrameLoadCallbacks()) {
@@ -1115,13 +1202,14 @@ void WebTestProxyBase::didReceiveServerRedirectForProvisionalLoad(WebFrame* fram
     }
 }
 
-void WebTestProxyBase::didFailProvisionalLoad(WebFrame* frame, const WebURLError&)
+bool WebTestProxyBase::didFailProvisionalLoad(WebFrame* frame, const WebURLError&)
 {
     if (m_testInterfaces->testRunner()->shouldDumpFrameLoadCallbacks()) {
         printFrameDescription(m_delegate, frame);
         m_delegate->printMessage(" - didFailProvisionalLoadWithError\n");
     }
     locationChangeDone(frame);
+    return !frame->provisionalDataSource();
 }
 
 void WebTestProxyBase::didCommitProvisionalLoad(WebFrame* frame, bool)
@@ -1227,25 +1315,9 @@ void WebTestProxyBase::willRequestResource(WebFrame* frame, const WebKit::WebCac
 {
     if (m_testInterfaces->testRunner()->shouldDumpResourceRequestCallbacks()) {
         printFrameDescription(m_delegate, frame);
-        WebElement element = request.initiatorElement();
-        if (!element.isNull()) {
-            m_delegate->printMessage(" - element with ");
-            if (element.hasAttribute("id"))
-                m_delegate->printMessage(string("id '") + element.getAttribute("id").utf8().data() + "'");
-            else
-                m_delegate->printMessage("no id");
-        } else
-            m_delegate->printMessage(string(" - ") + request.initiatorName().utf8().data());
+        m_delegate->printMessage(string(" - ") + request.initiatorName().utf8().data());
         m_delegate->printMessage(string(" requested '") + URLDescription(request.urlRequest().url()).c_str() + "'\n");
     }
-}
-
-bool WebTestProxyBase::canHandleRequest(WebFrame*, const WebURLRequest& request)
-{
-    GURL url = request.url();
-    // Just reject the scheme used in
-    // LayoutTests/http/tests/misc/redirect-to-external-url.html
-    return !url.SchemeIs("spaceballs");
 }
 
 WebURLError WebTestProxyBase::cannotHandleRequestError(WebFrame*, const WebURLRequest& request)
@@ -1482,6 +1554,14 @@ bool WebTestProxyBase::willCheckAndDispatchMessageEvent(WebFrame*, WebFrame*, We
     }
 
     return false;
+}
+
+void WebTestProxyBase::resetInputMethod()
+{
+    // If a composition text exists, then we need to let the browser process
+    // to cancel the input method's ongoing composition session.
+    if (m_webWidget)
+        m_webWidget->confirmComposition();
 }
 
 }

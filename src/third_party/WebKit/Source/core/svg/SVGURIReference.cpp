@@ -20,13 +20,10 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGURIReference.h"
 
-#include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/Element.h"
-#include "core/platform/KURL.h"
+#include "weborigin/KURL.h"
 
 namespace WebCore {
 
@@ -109,5 +106,3 @@ void SVGURIReference::addSupportedAttributes(HashSet<QualifiedName>& supportedAt
 }
 
 }
-
-#endif // ENABLE(SVG)

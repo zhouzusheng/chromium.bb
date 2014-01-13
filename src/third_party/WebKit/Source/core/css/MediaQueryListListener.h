@@ -22,8 +22,7 @@
 
 #include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptValue.h"
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 

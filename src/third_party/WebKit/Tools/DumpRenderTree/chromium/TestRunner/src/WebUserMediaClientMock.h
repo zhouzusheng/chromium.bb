@@ -34,9 +34,9 @@
 #include "TestCommon.h"
 #include "WebTask.h"
 #include "WebUserMediaClient.h"
-#include <public/WebCommon.h>
-#include <public/WebString.h>
-#include <public/WebURL.h>
+#include "public/platform/WebCommon.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
 
 namespace WebTestRunner {
 
@@ -47,8 +47,8 @@ public:
     explicit WebUserMediaClientMock(WebTestDelegate*);
     ~WebUserMediaClientMock() { }
 
-    virtual void requestUserMedia(const WebKit::WebUserMediaRequest&, const WebKit::WebVector<WebKit::WebMediaStreamSource>&, const WebKit::WebVector<WebKit::WebMediaStreamSource>&) OVERRIDE;
-    virtual void cancelUserMediaRequest(const WebKit::WebUserMediaRequest&);
+    virtual void requestUserMedia(const WebKit::WebUserMediaRequest&) OVERRIDE;
+    virtual void cancelUserMediaRequest(const WebKit::WebUserMediaRequest&) OVERRIDE;
 
     // Task related methods
     WebTaskList* taskList() { return &m_taskList; }

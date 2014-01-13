@@ -26,14 +26,13 @@
 #ifndef WebGLRenderbuffer_h
 #define WebGLRenderbuffer_h
 
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLSharedObject.h"
-
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
-class WebGLRenderbuffer : public WebGLSharedObject {
+class WebGLRenderbuffer : public WebGLSharedObject, public ScriptWrappable {
 public:
     virtual ~WebGLRenderbuffer();
 
@@ -54,15 +53,16 @@ public:
     GC3Dsizei getWidth() const { return m_width; }
     GC3Dsizei getHeight() const { return m_height; }
 
-    void setIsValid(bool isValid) { m_isValid = isValid; }
-    bool isValid() const { return m_isValid; }
-
     bool isInitialized() const { return m_initialized; }
     void setInitialized() { m_initialized = true; }
 
     bool hasEverBeenBound() const { return object() && m_hasEverBeenBound; }
 
     void setHasEverBeenBound() { m_hasEverBeenBound = true; }
+
+    void setEmulatedStencilBuffer(PassRefPtr<WebGLRenderbuffer> buffer) { m_emulatedStencilBuffer = buffer; }
+    WebGLRenderbuffer* emulatedStencilBuffer() const { return m_emulatedStencilBuffer.get(); }
+    void deleteEmulatedStencilBuffer(GraphicsContext3D* context3d);
 
 protected:
     WebGLRenderbuffer(WebGLRenderingContext*);
@@ -75,9 +75,10 @@ private:
     GC3Denum m_internalFormat;
     bool m_initialized;
     GC3Dsizei m_width, m_height;
-    bool m_isValid; // This is only false if internalFormat is DEPTH_STENCIL and packed_depth_stencil is not supported.
 
     bool m_hasEverBeenBound;
+
+    RefPtr<WebGLRenderbuffer> m_emulatedStencilBuffer;
 };
 
 } // namespace WebCore

@@ -20,7 +20,6 @@
 #ifndef SVGAnimatedPreserveAspectRatio_h
 #define SVGAnimatedPreserveAspectRatio_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/SVGPreserveAspectRatio.h"
 #include "core/svg/properties/SVGAnimatedPropertyTearOff.h"
@@ -34,7 +33,7 @@ typedef SVGAnimatedPropertyTearOff<SVGPreserveAspectRatio> SVGAnimatedPreserveAs
 DECLARE_ANIMATED_PROPERTY(SVGAnimatedPreserveAspectRatio, SVGPreserveAspectRatio, UpperProperty, LowerProperty)
 
 #define DEFINE_ANIMATED_PRESERVEASPECTRATIO(OwnerType, DOMAttribute, UpperProperty, LowerProperty) \
-DEFINE_ANIMATED_PROPERTY(AnimatedPreserveAspectRatio, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty)
+DEFINE_ANIMATED_PROPERTY(AnimatedPreserveAspectRatio, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty, SVGAnimatedPreserveAspectRatio, SVGPreserveAspectRatio)
 
 class SVGAnimationElement;
 
@@ -57,5 +56,4 @@ public:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

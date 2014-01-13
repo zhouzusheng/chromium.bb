@@ -44,7 +44,13 @@ class IpcNetworkManager;
 class IpcPacketSocketFactory;
 class VideoCaptureImplManager;
 class WebRtcAudioDeviceImpl;
+class WebRtcLoggingHandlerImpl;
+class WebRtcLoggingMessageFilter;
 struct StreamDeviceInfo;
+
+#if defined(GOOGLE_TV)
+class RTCVideoDecoderFactoryTv;
+#endif
 
 // Object factory for RTC MediaStreams and RTC PeerConnections.
 class CONTENT_EXPORT MediaStreamDependencyFactory
@@ -134,6 +140,10 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
   // own source.
   void StopLocalAudioSource(const WebKit::WebMediaStream& description);
 
+#if defined(GOOGLE_TV)
+  RTCVideoDecoderFactoryTv* decoder_factory_tv() { return decoder_factory_tv_; }
+#endif
+
  protected:
   // Asks the PeerConnection factory to create a Local MediaStream object.
   virtual scoped_refptr<webrtc::MediaStreamInterface>
@@ -194,12 +204,22 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
   void DeleteIpcNetworkManager();
   void CleanupPeerConnectionFactory();
 
+  void CreateWebRtcLoggingHandler(WebRtcLoggingMessageFilter* filter,
+                                  const std::string& app_session_id,
+                                  const std::string& app_url);
+
   // We own network_manager_, must be deleted on the worker thread.
   // The network manager uses |p2p_socket_dispatcher_|.
   IpcNetworkManager* network_manager_;
   scoped_ptr<IpcPacketSocketFactory> socket_factory_;
 
   scoped_refptr<webrtc::PeerConnectionFactoryInterface> pc_factory_;
+
+#if defined(GOOGLE_TV)
+  // |pc_factory_| will hold the ownership of this object, and |pc_factory_|
+  // outlives this object. Thus weak pointer is sufficient.
+  RTCVideoDecoderFactoryTv* decoder_factory_tv_;
+#endif
 
   scoped_refptr<VideoCaptureImplManager> vc_manager_;
   scoped_refptr<P2PSocketDispatcher> p2p_socket_dispatcher_;

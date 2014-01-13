@@ -18,10 +18,9 @@
  */
 
 #include "config.h"
-#if ENABLE(SVG)
+
 #include "core/svg/SVGTransformDistance.h"
 
-#include "core/platform/FloatConversion.h"
 #include "core/platform/graphics/FloatPoint.h"
 #include "core/platform/graphics/FloatSize.h"
 #include "core/svg/SVGTransform.h"
@@ -217,5 +216,3 @@ float SVGTransformDistance::distance() const
 }
 
 }
-
-#endif

@@ -34,34 +34,28 @@
 #include "InspectorFrontend.h"
 #include "bindings/v8/ScriptGCEvent.h"
 #include "bindings/v8/ScriptProfiler.h"
-#include "core/dom/CharacterData.h"
 #include "core/dom/Document.h"
-#include "core/dom/EventListenerMap.h"
 #include "core/dom/Node.h"
-#include "core/dom/NodeTraversal.h"
-#include "core/dom/StyledElement.h"
 #include "core/inspector/BindingVisitors.h"
 #include "core/inspector/HeapGraphSerializer.h"
 #include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorDOMStorageAgent.h"
-#include "core/inspector/InspectorState.h"
-#include "core/inspector/InspectorValues.h"
-#include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/MemoryInstrumentationImpl.h"
 #include "core/loader/cache/MemoryCache.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
+#include "core/platform/JSONValues.h"
 #include "core/platform/MemoryUsageSupport.h"
-#include <wtf/ArrayBufferView.h>
-#include <wtf/HashSet.h>
-#include <wtf/MemoryInstrumentationArrayBufferView.h>
-#include <wtf/NonCopyingSort.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/text/StringImpl.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "wtf/ArrayBufferView.h"
+#include "wtf/HashSet.h"
+#include "wtf/MemoryInstrumentationArrayBufferView.h"
+#include "wtf/NonCopyingSort.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/StringBuilder.h"
+#include "wtf/text/StringImpl.h"
+#include "wtf/text/WTFString.h"
 
 // Use a type alias instead of 'using' here which would cause a conflict on Mac.
 typedef WebCore::TypeBuilder::Memory::MemoryBlock InspectorMemoryBlock;
@@ -304,7 +298,7 @@ void InspectorMemoryAgent::getProcessMemoryDistributionMap(TypeNameToSizeMap* me
     getProcessMemoryDistributionImpl(false, memoryInfo);
 }
 
-void InspectorMemoryAgent::getProcessMemoryDistribution(ErrorString*, const bool* reportGraph, RefPtr<InspectorMemoryBlock>& processMemory, RefPtr<InspectorObject>& graphMetaInformation)
+void InspectorMemoryAgent::getProcessMemoryDistribution(ErrorString*, const bool* reportGraph, RefPtr<InspectorMemoryBlock>& processMemory, RefPtr<JSONObject>& graphMetaInformation)
 {
     TypeNameToSizeMap memoryInfo;
     graphMetaInformation = getProcessMemoryDistributionImpl(reportGraph && *reportGraph, &memoryInfo);
@@ -345,9 +339,9 @@ private:
 
 }
 
-PassRefPtr<InspectorObject> InspectorMemoryAgent::getProcessMemoryDistributionImpl(bool reportGraph, TypeNameToSizeMap* memoryInfo)
+PassRefPtr<JSONObject> InspectorMemoryAgent::getProcessMemoryDistributionImpl(bool reportGraph, TypeNameToSizeMap* memoryInfo)
 {
-    RefPtr<InspectorObject> meta;
+    RefPtr<JSONObject> meta;
     OwnPtr<HeapGraphSerializer> graphSerializer;
     OwnPtr<FrontendWrapper> frontendWrapper;
 
@@ -364,7 +358,6 @@ PassRefPtr<InspectorObject> InspectorMemoryAgent::getProcessMemoryDistributionIm
     reportRenderTreeInfo(memoryInstrumentationClient, m_page);
     collectDomTreeInfo(memoryInstrumentation, m_page); // FIXME: collect for all pages?
 
-    PlatformMemoryInstrumentation::reportStaticMembersMemoryUsage(&memoryInstrumentation);
     WebCoreMemoryInstrumentation::reportStaticMembersMemoryUsage(&memoryInstrumentation);
 
     memoryInstrumentation.addRootObject(this);

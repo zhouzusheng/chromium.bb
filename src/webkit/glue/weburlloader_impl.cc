@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/process_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/time.h"
 #include "net/base/data_url.h"
 #include "net/base/load_flags.h"
@@ -20,15 +20,15 @@
 #include "net/base/net_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPHeaderVisitor.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPLoadInfo.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoaderClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoadTiming.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
+#include "third_party/WebKit/public/platform/WebHTTPHeaderVisitor.h"
+#include "third_party/WebKit/public/platform/WebHTTPLoadInfo.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
+#include "third_party/WebKit/public/platform/WebURLLoadTiming.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/public/web/WebSecurityPolicy.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/glue/ftp_directory_listing_response_delegate.h"
 #include "webkit/glue/multipart_response_delegate.h"
@@ -150,51 +150,37 @@ bool GetInfoFromDataURL(const GURL& url,
 
 typedef ResourceDevToolsInfo::HeadersVector HeadersVector;
 
-// Given a base time and a second time, returns the time from the base time to
-// the second time, in milliseconds.  If the second time is null, returns -1.
-// The base time must not be null.
-int TimeTicksToOffset(base::TimeTicks base_time, base::TimeTicks time) {
-  if (time.is_null())
-    return -1;
-  DCHECK(!base_time.is_null());
-  return static_cast<int>((time - base_time).InMillisecondsRoundedUp());
-}
-
 // Converts timing data from |load_timing| to the format used by WebKit.
 void PopulateURLLoadTiming(const net::LoadTimingInfo& load_timing,
                            WebURLLoadTiming* url_timing) {
   DCHECK(!load_timing.request_start.is_null());
 
+  const TimeTicks kNullTicks;
   url_timing->initialize();
   url_timing->setRequestTime(
-      (load_timing.request_start - TimeTicks()).InSecondsF());
-  url_timing->setProxyStart(TimeTicksToOffset(load_timing.request_start,
-                                              load_timing.proxy_resolve_start));
-  url_timing->setProxyEnd(TimeTicksToOffset(load_timing.request_start,
-                                            load_timing.proxy_resolve_end));
-  url_timing->setDNSStart(TimeTicksToOffset(
-      load_timing.request_start,
-      load_timing.connect_timing.dns_start));
-  url_timing->setDNSEnd(TimeTicksToOffset(load_timing.request_start,
-                                          load_timing.connect_timing.dns_end));
+      (load_timing.request_start - kNullTicks).InSecondsF());
+  url_timing->setProxyStart(
+      (load_timing.proxy_resolve_start - kNullTicks).InSecondsF());
+  url_timing->setProxyEnd(
+      (load_timing.proxy_resolve_end - kNullTicks).InSecondsF());
+  url_timing->setDNSStart(
+      (load_timing.connect_timing.dns_start - kNullTicks).InSecondsF());
+  url_timing->setDNSEnd(
+      (load_timing.connect_timing.dns_end - kNullTicks).InSecondsF());
   url_timing->setConnectStart(
-      TimeTicksToOffset(load_timing.request_start,
-                        load_timing.connect_timing.connect_start));
+      (load_timing.connect_timing.connect_start - kNullTicks).InSecondsF());
   url_timing->setConnectEnd(
-      TimeTicksToOffset(load_timing.request_start,
-                        load_timing.connect_timing.connect_end));
+      (load_timing.connect_timing.connect_end - kNullTicks).InSecondsF());
   url_timing->setSSLStart(
-      TimeTicksToOffset(load_timing.request_start,
-                        load_timing.connect_timing.ssl_start));
-  url_timing->setSSLEnd(TimeTicksToOffset(load_timing.request_start,
-                                          load_timing.connect_timing.ssl_end));
-  url_timing->setSendStart(TimeTicksToOffset(load_timing.request_start,
-                                             load_timing.send_start));
-  url_timing->setSendEnd(TimeTicksToOffset(load_timing.request_start,
-                                           load_timing.send_end));
+      (load_timing.connect_timing.ssl_start - kNullTicks).InSecondsF());
+  url_timing->setSSLEnd(
+      (load_timing.connect_timing.ssl_end - kNullTicks).InSecondsF());
+  url_timing->setSendStart(
+      (load_timing.send_start - kNullTicks).InSecondsF());
+  url_timing->setSendEnd(
+      (load_timing.send_end - kNullTicks).InSecondsF());
   url_timing->setReceiveHeadersEnd(
-      TimeTicksToOffset(load_timing.request_start,
-                        load_timing.receive_headers_end));
+      (load_timing.receive_headers_end - kNullTicks).InSecondsF());
 }
 
 void PopulateURLResponse(
@@ -225,6 +211,7 @@ void PopulateURLResponse(
   extra_data->set_was_npn_negotiated(info.was_npn_negotiated);
   extra_data->set_was_alternate_protocol_available(
       info.was_alternate_protocol_available);
+  extra_data->set_connection_info(info.connection_info);
   extra_data->set_was_fetched_via_proxy(info.was_fetched_via_proxy);
 
   // If there's no received headers end time, don't set load timing.  This is
@@ -264,7 +251,7 @@ void PopulateURLResponse(
     response->setHTTPLoadInfo(load_info);
   }
 
-  const net::HttpResponseHeaders* headers = info.headers;
+  const net::HttpResponseHeaders* headers = info.headers.get();
   if (!headers)
     return;
 
@@ -400,12 +387,12 @@ WebURLLoaderImpl::Context::Context(WebURLLoaderImpl* loader)
 void WebURLLoaderImpl::Context::Cancel() {
   // The bridge will still send OnCompletedRequest, which will Release() us, so
   // we don't do that here.
-  if (bridge_.get())
+  if (bridge_)
     bridge_->Cancel();
 
   // Ensure that we do not notify the multipart delegate anymore as it has
   // its own pointer to the client.
-  if (multipart_delegate_.get())
+  if (multipart_delegate_)
     multipart_delegate_->Cancel();
 
   // Do not make any further calls to the client.
@@ -414,13 +401,13 @@ void WebURLLoaderImpl::Context::Cancel() {
 }
 
 void WebURLLoaderImpl::Context::SetDefersLoading(bool value) {
-  if (bridge_.get())
+  if (bridge_)
     bridge_->SetDefersLoading(value);
 }
 
 void WebURLLoaderImpl::Context::DidChangePriority(
     WebURLRequest::Priority new_priority) {
-  if (bridge_.get())
+  if (bridge_)
     bridge_->DidChangePriority(
         ConvertWebKitPriorityToNetPriority(new_priority));
 }
@@ -444,8 +431,8 @@ void WebURLLoaderImpl::Context::Start(
                          &sync_load_response->error_code);
     } else {
       AddRef();  // Balanced in OnCompletedRequest
-      MessageLoop::current()->PostTask(FROM_HERE,
-          base::Bind(&Context::HandleDataURL, this));
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE, base::Bind(&Context::HandleDataURL, this));
     }
     return;
   }
@@ -566,7 +553,7 @@ void WebURLLoaderImpl::Context::Start(
       }
     }
     request_body->set_identifier(request.httpBody().identifier());
-    bridge_->SetRequestBody(request_body);
+    bridge_->SetRequestBody(request_body.get());
   }
 
   if (sync_load_response) {
@@ -661,7 +648,7 @@ void WebURLLoaderImpl::Context::OnReceivedResponse(
 
   DCHECK(!ftp_listing_delegate_.get());
   DCHECK(!multipart_delegate_.get());
-  if (info.headers && info.mime_type == "multipart/x-mixed-replace") {
+  if (info.headers.get() && info.mime_type == "multipart/x-mixed-replace") {
     std::string content_type;
     info.headers->EnumerateHeader(NULL, "content-type", &content_type);
 
@@ -697,11 +684,11 @@ void WebURLLoaderImpl::Context::OnReceivedData(const char* data,
   if (!client_)
     return;
 
-  if (ftp_listing_delegate_.get()) {
+  if (ftp_listing_delegate_) {
     // The FTP listing delegate will make the appropriate calls to
     // client_->didReceiveData and client_->didReceiveResponse.
     ftp_listing_delegate_->OnReceivedData(data, data_length);
-  } else if (multipart_delegate_.get()) {
+  } else if (multipart_delegate_) {
     // The multipart delegate will make the appropriate calls to
     // client_->didReceiveData and client_->didReceiveResponse.
     multipart_delegate_->OnReceivedData(data, data_length, encoded_data_length);
@@ -721,10 +708,10 @@ void WebURLLoaderImpl::Context::OnCompletedRequest(
     bool was_ignored_by_handler,
     const std::string& security_info,
     const base::TimeTicks& completion_time) {
-  if (ftp_listing_delegate_.get()) {
+  if (ftp_listing_delegate_) {
     ftp_listing_delegate_->OnCompletedRequest();
     ftp_listing_delegate_.reset(NULL);
-  } else if (multipart_delegate_.get()) {
+  } else if (multipart_delegate_) {
     multipart_delegate_->OnCompletedRequest();
     multipart_delegate_.reset(NULL);
   }

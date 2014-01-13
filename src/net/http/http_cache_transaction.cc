@@ -10,6 +10,7 @@
 #include <unistd.h>
 #endif
 
+#include <algorithm>
 #include <string>
 
 #include "base/bind.h"
@@ -17,9 +18,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
@@ -173,7 +175,6 @@ HttpCache::Transaction::Transaction(
       cache_(cache->AsWeakPtr()),
       entry_(NULL),
       new_entry_(NULL),
-      network_trans_(NULL),
       new_response_(NULL),
       mode_(NONE),
       target_state_(STATE_NONE),
@@ -192,8 +193,8 @@ HttpCache::Transaction::Transaction(
       effective_load_flags_(0),
       write_len_(0),
       weak_factory_(this),
-      io_callback_(base::Bind(
-          &Transaction::OnIOComplete, weak_factory_.GetWeakPtr())),
+      io_callback_(base::Bind(&Transaction::OnIOComplete,
+                              weak_factory_.GetWeakPtr())),
       transaction_pattern_(PATTERN_UNDEFINED),
       defer_cache_sensitivity_delay_(false),
       transaction_delegate_(transaction_delegate) {
@@ -214,7 +215,7 @@ HttpCache::Transaction::~Transaction() {
   cache_io_start_ = base::TimeTicks();
   deferred_cache_sensitivity_delay_ = base::TimeDelta();
 
-  if (cache_) {
+  if (cache_.get()) {
     if (entry_) {
       bool cancel_request = reading_;
       if (cancel_request) {
@@ -245,7 +246,7 @@ int HttpCache::Transaction::WriteMetadata(IOBuffer* buf, int buf_len,
   DCHECK(buf);
   DCHECK_GT(buf_len, 0);
   DCHECK(!callback.is_null());
-  if (!cache_ || !entry_)
+  if (!cache_.get() || !entry_)
     return ERR_UNEXPECTED;
 
   // We don't need to track this operation for anything.
@@ -301,7 +302,7 @@ int HttpCache::Transaction::Start(const HttpRequestInfo* request,
   DCHECK(!network_trans_.get());
   DCHECK(!entry_);
 
-  if (!cache_)
+  if (!cache_.get())
     return ERR_UNEXPECTED;
 
   SetRequest(net_log, request);
@@ -325,7 +326,7 @@ int HttpCache::Transaction::RestartIgnoringLastError(
   // Ensure that we only have one asynchronous call at a time.
   DCHECK(callback_.is_null());
 
-  if (!cache_)
+  if (!cache_.get())
     return ERR_UNEXPECTED;
 
   int rv = RestartNetworkRequest();
@@ -344,7 +345,7 @@ int HttpCache::Transaction::RestartWithCertificate(
   // Ensure that we only have one asynchronous call at a time.
   DCHECK(callback_.is_null());
 
-  if (!cache_)
+  if (!cache_.get())
     return ERR_UNEXPECTED;
 
   int rv = RestartNetworkRequestWithCertificate(client_cert);
@@ -358,13 +359,13 @@ int HttpCache::Transaction::RestartWithCertificate(
 int HttpCache::Transaction::RestartWithAuth(
     const AuthCredentials& credentials,
     const CompletionCallback& callback) {
-  DCHECK(auth_response_.headers);
+  DCHECK(auth_response_.headers.get());
   DCHECK(!callback.is_null());
 
   // Ensure that we only have one asynchronous call at a time.
   DCHECK(callback_.is_null());
 
-  if (!cache_)
+  if (!cache_.get())
     return ERR_UNEXPECTED;
 
   // Clear the intermediate response since we are going to start over.
@@ -392,13 +393,13 @@ int HttpCache::Transaction::Read(IOBuffer* buf, int buf_len,
 
   DCHECK(callback_.is_null());
 
-  if (!cache_)
+  if (!cache_.get())
     return ERR_UNEXPECTED;
 
   // If we have an intermediate auth response at this point, then it means the
   // user wishes to read the network response (the error page).  If there is a
   // previous response in the cache then we should leave it intact.
-  if (auth_response_.headers && mode_ != NONE) {
+  if (auth_response_.headers.get() && mode_ != NONE) {
     UpdateTransactionPattern(PATTERN_NOT_COVERED);
     DCHECK(mode_ & WRITE);
     DoneWritingToEntry(mode_ == READ_WRITE);
@@ -445,14 +446,23 @@ void HttpCache::Transaction::StopCaching() {
   // entry how it is (it will be marked as truncated at destruction), and let
   // the next piece of code that executes know that we are now reading directly
   // from the net.
-  if (cache_ && entry_ && (mode_ & WRITE) && network_trans_.get() &&
+  if (cache_.get() && entry_ && (mode_ & WRITE) && network_trans_.get() &&
       !is_sparse_ && !range_requested_) {
     mode_ = NONE;
   }
 }
 
+bool HttpCache::Transaction::GetFullRequestHeaders(
+    HttpRequestHeaders* headers) const {
+  if (network_trans_)
+    return network_trans_->GetFullRequestHeaders(headers);
+
+  // TODO(ttuttle): Read headers from cache.
+  return false;
+}
+
 void HttpCache::Transaction::DoneReading() {
-  if (cache_ && entry_) {
+  if (cache_.get() && entry_) {
     DCHECK(reading_);
     DCHECK_NE(mode_, UPDATE);
     if (mode_ & WRITE)
@@ -462,10 +472,12 @@ void HttpCache::Transaction::DoneReading() {
 
 const HttpResponseInfo* HttpCache::Transaction::GetResponseInfo() const {
   // Null headers means we encountered an error or haven't a response yet
-  if (auth_response_.headers)
+  if (auth_response_.headers.get())
     return &auth_response_;
-  return (response_.headers || response_.ssl_info.cert ||
-          response_.cert_request_info) ? &response_ : NULL;
+  return (response_.headers.get() || response_.ssl_info.cert.get() ||
+          response_.cert_request_info.get())
+             ? &response_
+             : NULL;
 }
 
 LoadState HttpCache::Transaction::GetLoadState() const {
@@ -473,7 +485,7 @@ LoadState HttpCache::Transaction::GetLoadState() const {
   if (state != LOAD_STATE_WAITING_FOR_CACHE)
     return state;
 
-  if (cache_)
+  if (cache_.get())
     return cache_->GetLoadStateForPendingTransaction(this);
 
   return LOAD_STATE_IDLE;
@@ -851,7 +863,7 @@ int HttpCache::Transaction::DoSendRequest() {
 int HttpCache::Transaction::DoSendRequestComplete(int result) {
   ReportNetworkActionFinish();
 
-  if (!cache_)
+  if (!cache_.get())
     return ERR_UNEXPECTED;
 
   // If requested, and we have a readable cache entry, and we have
@@ -916,7 +928,7 @@ int HttpCache::Transaction::DoSuccessfulSendRequest() {
   }
 
   new_response_ = new_response;
-  if (!ValidatePartialResponse() && !auth_response_.headers) {
+  if (!ValidatePartialResponse() && !auth_response_.headers.get()) {
     // Something went wrong with this request and we have to restart it.
     // If we have an authentication response, we are exposed to weird things
     // hapenning if the user cancels the authentication before we receive
@@ -980,7 +992,7 @@ int HttpCache::Transaction::DoSuccessfulSendRequest() {
 int HttpCache::Transaction::DoNetworkRead() {
   ReportNetworkActionStart();
   next_state_ = STATE_NETWORK_READ_COMPLETE;
-  return network_trans_->Read(read_buf_, io_buf_len_, io_callback_);
+  return network_trans_->Read(read_buf_.get(), io_buf_len_, io_callback_);
 }
 
 int HttpCache::Transaction::DoNetworkReadComplete(int result) {
@@ -988,7 +1000,7 @@ int HttpCache::Transaction::DoNetworkReadComplete(int result) {
 
   ReportNetworkActionFinish();
 
-  if (!cache_)
+  if (!cache_.get())
     return ERR_UNEXPECTED;
 
   // If there is an error or we aren't saving the data, we are done; just wait
@@ -1003,7 +1015,7 @@ int HttpCache::Transaction::DoNetworkReadComplete(int result) {
 int HttpCache::Transaction::DoInitEntry() {
   DCHECK(!new_entry_);
 
-  if (!cache_)
+  if (!cache_.get())
     return ERR_UNEXPECTED;
 
   if (mode_ == WRITE) {
@@ -1236,7 +1248,7 @@ int HttpCache::Transaction::DoUpdateCachedResponse() {
   int rv = OK;
   // Update cached response based on headers in new_response.
   // TODO(wtc): should we update cached certificate (response_.ssl_info), too?
-  response_.headers->Update(*new_response_->headers);
+  response_.headers->Update(*new_response_->headers.get());
   response_.response_time = new_response_->response_time;
   response_.request_time = new_response_->request_time;
   response_.network_accessed = new_response_->network_accessed;
@@ -1299,7 +1311,7 @@ int HttpCache::Transaction::DoOverwriteCachedResponse() {
 
   // We change the value of Content-Length for partial content.
   if (handling_206_ && partial_.get())
-    partial_->FixContentLength(new_response_->headers);
+    partial_->FixContentLength(new_response_->headers.get());
 
   response_ = *new_response_;
 
@@ -1307,7 +1319,7 @@ int HttpCache::Transaction::DoOverwriteCachedResponse() {
     // There is no point in storing this resource because it will never be used.
     DoneWritingToEntry(false);
     if (partial_.get())
-      partial_->FixResponseHeaders(response_.headers, true);
+      partial_->FixResponseHeaders(response_.headers.get(), true);
     next_state_ = STATE_PARTIAL_HEADERS_RECEIVED;
     return OK;
   }
@@ -1390,7 +1402,7 @@ int HttpCache::Transaction::DoPartialHeadersReceived() {
   } else if (mode_ != NONE) {
     // We are about to return the headers for a byte-range request to the user,
     // so let's fix them.
-    partial_->FixResponseHeaders(response_.headers, true);
+    partial_->FixResponseHeaders(response_.headers.get(), true);
   }
   return OK;
 }
@@ -1404,9 +1416,8 @@ int HttpCache::Transaction::DoCacheReadResponse() {
 
   net_log_.BeginEvent(NetLog::TYPE_HTTP_CACHE_READ_INFO);
   ReportCacheActionStart();
-  return ResetCacheIOStart(
-      entry_->disk_entry->ReadData(kResponseInfoIndex, 0, read_buf_,
-                                   io_buf_len_, io_callback_));
+  return ResetCacheIOStart(entry_->disk_entry->ReadData(
+      kResponseInfoIndex, 0, read_buf_.get(), io_buf_len_, io_callback_));
 }
 
 int HttpCache::Transaction::DoCacheReadResponseComplete(int result) {
@@ -1494,7 +1505,7 @@ int HttpCache::Transaction::DoCacheWriteResponseComplete(int result) {
 
 int HttpCache::Transaction::DoCacheReadMetadata() {
   DCHECK(entry_);
-  DCHECK(!response_.metadata);
+  DCHECK(!response_.metadata.get());
   next_state_ = STATE_CACHE_READ_METADATA_COMPLETE;
 
   response_.metadata =
@@ -1503,7 +1514,9 @@ int HttpCache::Transaction::DoCacheReadMetadata() {
   net_log_.BeginEvent(NetLog::TYPE_HTTP_CACHE_READ_INFO);
   ReportCacheActionStart();
   return ResetCacheIOStart(
-      entry_->disk_entry->ReadData(kMetadataIndex, 0, response_.metadata,
+      entry_->disk_entry->ReadData(kMetadataIndex,
+                                   0,
+                                   response_.metadata.get(),
                                    response_.metadata->size(),
                                    io_callback_));
 }
@@ -1526,7 +1539,7 @@ int HttpCache::Transaction::DoCacheQueryData() {
 
 int HttpCache::Transaction::DoCacheQueryDataComplete(int result) {
   DCHECK_EQ(OK, result);
-  if (!cache_)
+  if (!cache_.get())
     return ERR_UNEXPECTED;
 
   return ValidateEntryHeadersAndContinue();
@@ -1540,14 +1553,15 @@ int HttpCache::Transaction::DoCacheReadData() {
     net_log_.BeginEvent(NetLog::TYPE_HTTP_CACHE_READ_DATA);
   ReportCacheActionStart();
   if (partial_.get()) {
-    return ResetCacheIOStart(
-        partial_->CacheRead(entry_->disk_entry, read_buf_, io_buf_len_,
-                            io_callback_));
+    return ResetCacheIOStart(partial_->CacheRead(
+        entry_->disk_entry, read_buf_.get(), io_buf_len_, io_callback_));
   }
 
-  return ResetCacheIOStart(
-      entry_->disk_entry->ReadData(kResponseContentIndex, read_offset_,
-                                   read_buf_, io_buf_len_, io_callback_));
+  return ResetCacheIOStart(entry_->disk_entry->ReadData(kResponseContentIndex,
+                                                        read_offset_,
+                                                        read_buf_.get(),
+                                                        io_buf_len_,
+                                                        io_callback_));
 }
 
 int HttpCache::Transaction::DoCacheReadDataComplete(int result) {
@@ -1557,7 +1571,7 @@ int HttpCache::Transaction::DoCacheReadDataComplete(int result) {
                                       result);
   }
 
-  if (!cache_)
+  if (!cache_.get())
     return ERR_UNEXPECTED;
 
   if (partial_.get()) {
@@ -1589,7 +1603,7 @@ int HttpCache::Transaction::DoCacheWriteData(int num_bytes) {
   }
 
   return ResetCacheIOStart(
-      AppendResponseDataToEntry(read_buf_, num_bytes, io_callback_));
+      AppendResponseDataToEntry(read_buf_.get(), num_bytes, io_callback_));
 }
 
 int HttpCache::Transaction::DoCacheWriteDataComplete(int result) {
@@ -1601,7 +1615,7 @@ int HttpCache::Transaction::DoCacheWriteDataComplete(int result) {
     }
   }
   // Balance the AddRef from DoCacheWriteData.
-  if (!cache_)
+  if (!cache_.get())
     return ERR_UNEXPECTED;
 
   if (result != write_len_) {
@@ -1865,8 +1879,8 @@ int HttpCache::Transaction::BeginPartialCacheValidation() {
 int HttpCache::Transaction::ValidateEntryHeadersAndContinue() {
   DCHECK(mode_ == READ_WRITE);
 
-  if (!partial_->UpdateFromStoredHeaders(response_.headers, entry_->disk_entry,
-                                         truncated_)) {
+  if (!partial_->UpdateFromStoredHeaders(
+          response_.headers.get(), entry_->disk_entry, truncated_)) {
     return DoRestartPartialRequest();
   }
 
@@ -1960,7 +1974,8 @@ bool HttpCache::Transaction::RequiresValidation() {
     return false;
 
   if (response_.vary_data.is_valid() &&
-      !response_.vary_data.MatchesRequest(*request_, *response_.headers)) {
+      !response_.vary_data.MatchesRequest(*request_,
+                                          *response_.headers.get())) {
     vary_mismatch_ = true;
     return true;
   }
@@ -1983,7 +1998,7 @@ bool HttpCache::Transaction::RequiresValidation() {
 }
 
 bool HttpCache::Transaction::ConditionalizeRequest() {
-  DCHECK(response_.headers);
+  DCHECK(response_.headers.get());
 
   if (request_->method == "PUT" || request_->method == "DELETE")
     return false;
@@ -2072,7 +2087,7 @@ bool HttpCache::Transaction::ConditionalizeRequest() {
 // time it is called it will return true so that we don't keep retrying the
 // request.
 bool HttpCache::Transaction::ValidatePartialResponse() {
-  const HttpResponseHeaders* headers = new_response_->headers;
+  const HttpResponseHeaders* headers = new_response_->headers.get();
   int response_code = headers->response_code();
   bool partial_response = (response_code == 206);
   handling_206_ = false;
@@ -2182,7 +2197,7 @@ void HttpCache::Transaction::IgnoreRangeRequest() {
 
 void HttpCache::Transaction::FailRangeRequest() {
   response_ = *new_response_;
-  partial_->FixResponseHeaders(response_.headers, false);
+  partial_->FixResponseHeaders(response_.headers.get(), false);
 }
 
 int HttpCache::Transaction::SetupEntryForRead() {
@@ -2273,9 +2288,8 @@ int HttpCache::Transaction::WriteResponseInfoToEntry(bool truncated) {
   data->Done();
 
   io_buf_len_ = data->pickle()->size();
-  return ResetCacheIOStart(
-      entry_->disk_entry->WriteData(kResponseInfoIndex, 0, data,
-                                    io_buf_len_, io_callback_, true));
+  return ResetCacheIOStart(entry_->disk_entry->WriteData(
+      kResponseInfoIndex, 0, data.get(), io_buf_len_, io_callback_, true));
 }
 
 int HttpCache::Transaction::AppendResponseDataToEntry(
@@ -2301,9 +2315,17 @@ void HttpCache::Transaction::DoneWritingToEntry(bool success) {
 
 int HttpCache::Transaction::OnCacheReadError(int result, bool restart) {
   DLOG(ERROR) << "ReadData failed: " << result;
+  const int result_for_histogram = std::max(0, -result);
+  if (restart) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY("HttpCache.ReadErrorRestartable",
+                                result_for_histogram);
+  } else {
+    UMA_HISTOGRAM_SPARSE_SLOWLY("HttpCache.ReadErrorNonRestartable",
+                                result_for_histogram);
+  }
 
   // Avoid using this entry in the future.
-  if (cache_)
+  if (cache_.get())
     cache_->DoomActiveEntry(cache_key_);
 
   if (restart) {
@@ -2415,7 +2437,7 @@ void HttpCache::Transaction::OnIOComplete(int result) {
 
 void HttpCache::Transaction::ScheduleDelayedLoop(base::TimeDelta delay,
                                                  int result) {
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&HttpCache::Transaction::RunDelayedLoop,
                  weak_factory_.GetWeakPtr(),
@@ -2496,7 +2518,7 @@ void HttpCache::Transaction::UpdateTransactionPattern(
 
 void HttpCache::Transaction::RecordHistograms() {
   DCHECK_NE(PATTERN_UNDEFINED, transaction_pattern_);
-  if (!cache_ || !cache_->GetCurrentBackend() ||
+  if (!cache_.get() || !cache_->GetCurrentBackend() ||
       cache_->GetCurrentBackend()->GetCacheType() != DISK_CACHE ||
       cache_->mode() != NORMAL || request_->method != "GET") {
     return;

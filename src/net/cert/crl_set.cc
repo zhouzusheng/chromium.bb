@@ -7,8 +7,8 @@
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/time.h"
 #include "base/values.h"
 #include "crypto/sha2.h"
@@ -133,12 +133,12 @@ static base::DictionaryValue* ReadHeader(base::StringPiece* data) {
   const base::StringPiece header_bytes(data->data(), header_len);
   data->remove_prefix(header_len);
 
-  scoped_ptr<Value> header(base::JSONReader::Read(
+  scoped_ptr<base::Value> header(base::JSONReader::Read(
       header_bytes, base::JSON_ALLOW_TRAILING_COMMAS));
   if (header.get() == NULL)
     return NULL;
 
-  if (!header->IsType(Value::TYPE_DICTIONARY))
+  if (!header->IsType(base::Value::TYPE_DICTIONARY))
     return NULL;
   return reinterpret_cast<base::DictionaryValue*>(header.release());
 }
@@ -178,7 +178,7 @@ static bool ReadCRL(base::StringPiece* data, std::string* out_parent_spki_hash,
 }
 
 bool CRLSet::CopyBlockedSPKIsFromHeader(base::DictionaryValue* header_dict) {
-  ListValue* blocked_spkis_list = NULL;
+  base::ListValue* blocked_spkis_list = NULL;
   if (!header_dict->GetList("BlockedSPKIs", &blocked_spkis_list)) {
     // BlockedSPKIs is optional, so it's fine if we don't find it.
     return true;

@@ -170,14 +170,14 @@ String StylePropertySerializer::asText() const
         case CSSPropertyWebkitAnimationFillMode:
             shorthandPropertyID = CSSPropertyWebkitAnimation;
             break;
-        case CSSPropertyWebkitFlexDirection:
-        case CSSPropertyWebkitFlexWrap:
-            shorthandPropertyID = CSSPropertyWebkitFlexFlow;
+        case CSSPropertyFlexDirection:
+        case CSSPropertyFlexWrap:
+            shorthandPropertyID = CSSPropertyFlexFlow;
             break;
-        case CSSPropertyWebkitFlexBasis:
-        case CSSPropertyWebkitFlexGrow:
-        case CSSPropertyWebkitFlexShrink:
-            shorthandPropertyID = CSSPropertyWebkitFlex;
+        case CSSPropertyFlexBasis:
+        case CSSPropertyFlexGrow:
+        case CSSPropertyFlexShrink:
+            shorthandPropertyID = CSSPropertyFlex;
             break;
         case CSSPropertyWebkitMaskPositionX:
         case CSSPropertyWebkitMaskPositionY:
@@ -200,11 +200,6 @@ String StylePropertySerializer::asText() const
         case CSSPropertyWebkitTransitionTimingFunction:
         case CSSPropertyWebkitTransitionDelay:
             shorthandPropertyID = CSSPropertyWebkitTransition;
-            break;
-        case CSSPropertyWebkitWrapFlow:
-        case CSSPropertyWebkitShapeMargin:
-        case CSSPropertyWebkitShapePadding:
-            shorthandPropertyID = CSSPropertyWebkitWrap;
             break;
         default:
             break;
@@ -341,14 +336,16 @@ String StylePropertySerializer::getPropertyValue(CSSPropertyID propertyID) const
         return getShorthandValue(webkitColumnRuleShorthand());
     case CSSPropertyWebkitColumns:
         return getShorthandValue(webkitColumnsShorthand());
-    case CSSPropertyWebkitFlex:
-        return getShorthandValue(webkitFlexShorthand());
-    case CSSPropertyWebkitFlexFlow:
-        return getShorthandValue(webkitFlexFlowShorthand());
-    case CSSPropertyWebkitGridColumn:
-        return getShorthandValue(webkitGridColumnShorthand());
-    case CSSPropertyWebkitGridRow:
-        return getShorthandValue(webkitGridRowShorthand());
+    case CSSPropertyFlex:
+        return getShorthandValue(flexShorthand());
+    case CSSPropertyFlexFlow:
+        return getShorthandValue(flexFlowShorthand());
+    case CSSPropertyGridColumn:
+        return getShorthandValue(gridColumnShorthand());
+    case CSSPropertyGridRow:
+        return getShorthandValue(gridRowShorthand());
+    case CSSPropertyGridArea:
+        return getShorthandValue(gridAreaShorthand());
     case CSSPropertyFont:
         return fontValue();
     case CSSPropertyMargin:
@@ -381,16 +378,12 @@ String StylePropertySerializer::getPropertyValue(CSSPropertyID propertyID) const
         return getLayeredShorthandValue(webkitTransitionShorthand());
     case CSSPropertyWebkitAnimation:
         return getLayeredShorthandValue(webkitAnimationShorthand());
-    case CSSPropertyWebkitWrap:
-        return getShorthandValue(webkitWrapShorthand());
-#if ENABLE(SVG)
     case CSSPropertyMarker: {
         RefPtr<CSSValue> value = m_propertySet.getPropertyCSSValue(CSSPropertyMarkerStart);
         if (value)
             return value->cssText();
         return String();
     }
-#endif
     case CSSPropertyBorderRadius:
         return get4Values(borderRadiusShorthand());
     default:
@@ -547,7 +540,7 @@ String StylePropertySerializer::getLayeredShorthandValue(const StylePropertyShor
         values[i] = m_propertySet.getPropertyCSSValue(shorthand.properties()[i]);
         if (values[i]) {
             if (values[i]->isBaseValueList()) {
-                CSSValueList* valueList = static_cast<CSSValueList*>(values[i].get());
+                CSSValueList* valueList = toCSSValueList(values[i].get());
                 numLayers = max(valueList->length(), numLayers);
             } else
                 numLayers = max<size_t>(1U, numLayers);
@@ -569,7 +562,7 @@ String StylePropertySerializer::getLayeredShorthandValue(const StylePropertyShor
             RefPtr<CSSValue> value;
             if (values[j]) {
                 if (values[j]->isBaseValueList())
-                    value = static_cast<CSSValueList*>(values[j].get())->item(i);
+                    value = toCSSValueList(values[j].get())->item(i);
                 else {
                     value = values[j];
 
@@ -594,7 +587,7 @@ String StylePropertySerializer::getLayeredShorthandValue(const StylePropertyShor
                     RefPtr<CSSValue> yValue;
                     RefPtr<CSSValue> nextValue = values[j + 1];
                     if (nextValue->isValueList())
-                        yValue = static_cast<CSSValueList*>(nextValue.get())->itemWithoutBoundsCheck(i);
+                        yValue = toCSSValueList(nextValue.get())->itemWithoutBoundsCheck(i);
                     else
                         yValue = nextValue;
 
@@ -603,9 +596,13 @@ String StylePropertySerializer::getLayeredShorthandValue(const StylePropertyShor
                     if (value->isImplicitInitialValue() || yValue->isImplicitInitialValue())
                         continue;
 
+                    // FIXME: At some point we need to fix this code to avoid returning an invalid shorthand,
+                    // since some longhand combinations are not serializable into a single shorthand.
+                    if (!value->isPrimitiveValue() || !yValue->isPrimitiveValue())
+                        continue;
 
-                    int xId = static_cast<CSSPrimitiveValue*>(value.get())->getIdent();
-                    int yId = static_cast<CSSPrimitiveValue*>(yValue.get())->getIdent();
+                    CSSValueID xId = toCSSPrimitiveValue(value.get())->getValueID();
+                    CSSValueID yId = toCSSPrimitiveValue(yValue.get())->getValueID();
                     if (xId != yId) {
                         if (xId == CSSValueRepeat && yId == CSSValueNoRepeat) {
                             useRepeatXShorthand = true;

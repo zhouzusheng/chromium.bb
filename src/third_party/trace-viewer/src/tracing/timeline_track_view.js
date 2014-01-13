@@ -5,8 +5,8 @@
 'use strict';
 
 /**
- * @fileoverview Interactive visualizaiton of Model objects
- * based loosely on gantt charts. Each thread in the Model is given a
+ * @fileoverview Interactive visualizaiton of TraceModel objects
+ * based loosely on gantt charts. Each thread in the TraceModel is given a
  * set of Tracks, one per subrow in the thread. The TimelineTrackView class
  * acts as a controller, creating the individual tracks, while Tracks
  * do actual drawing.
@@ -23,7 +23,7 @@ base.require('base.event_target');
 base.require('tracing.filter');
 base.require('tracing.selection');
 base.require('tracing.timeline_viewport');
-base.require('tracing.tracks.model_track');
+base.require('tracing.tracks.trace_model_track');
 base.require('tracing.tracks.ruler_track');
 base.require('ui');
 
@@ -35,7 +35,7 @@ base.exportTo('tracing', function() {
   function intersectRect_(r1, r2) {
     var results = new Object;
     if (r2.left > r1.right || r2.right < r1.left ||
-         r2.top > r1.bottom || r2.bottom < r1.top) {
+        r2.top > r1.bottom || r2.bottom < r1.top) {
       return false;
     }
     results.left = Math.max(r1.left, r2.left);
@@ -48,7 +48,7 @@ base.exportTo('tracing', function() {
   }
 
   /**
-   * Renders a Model into a div element, making one
+   * Renders a TraceModel into a div element, making one
    * Track for each subrow in each thread of the model, managing
    * overall track layout, and handling user interaction with the
    * viewport.
@@ -79,7 +79,7 @@ base.exportTo('tracing', function() {
       this.modelTrackContainer_.className = 'model-track-container';
       this.appendChild(this.modelTrackContainer_);
 
-      this.modelTrack_ = new tracing.tracks.ModelTrack();
+      this.modelTrack_ = new tracing.tracks.TraceModelTrack();
       this.modelTrackContainer_.appendChild(this.modelTrack_);
 
       this.dragBox_ = this.ownerDocument.createElement('div');
@@ -168,11 +168,24 @@ base.exportTo('tracing', function() {
 
     setInitialViewport_: function() {
       var w = this.firstCanvas.width;
-      var boost =
-          (this.model_.bounds.max - this.model_.bounds.min) * 0.15;
-      this.viewport_.xSetWorldBounds(this.model_.bounds.min - boost,
-                                    this.model_.bounds.max + boost,
-                                    w);
+
+      var min;
+      var range;
+
+      if (this.model_.bounds.isEmpty) {
+        min = 0;
+        range = 1000;
+      } else if (this.model_.bounds.range == 0) {
+        min = this.model_.bounds.min;
+        range = 1000;
+      } else {
+        min = this.model_.bounds.min;
+        range = this.model_.bounds.range;
+      }
+      var boost = range * 0.15;
+      this.viewport_.xSetWorldBounds(min - boost,
+                                     min + range + boost,
+                                     w);
     },
 
     /**
@@ -212,8 +225,11 @@ base.exportTo('tracing', function() {
         return false;
       if (!this.focusElement_)
         return true;
-      if (this.focusElement.tabIndex >= 0)
-        return document.activeElement == this.focusElement;
+      if (this.focusElement.tabIndex >= 0) {
+        if (document.activeElement == this.focusElement)
+          return true;
+        return ui.elementIsChildOf(document.activeElement, this.focusElement);
+      }
       return true;
     },
 
@@ -323,11 +339,11 @@ base.exportTo('tracing', function() {
           break;
       }
       if (e.shiftKey && this.dragBeginEvent_) {
-          var vertical = e.shiftKey;
-          if (this.dragBeginEvent_) {
-            this.setDragBoxPosition_(this.dragBoxXStart_, this.dragBoxYStart_,
-                               this.dragBoxXEnd_, this.dragBoxYEnd_, vertical);
-          }
+        var vertical = e.shiftKey;
+        if (this.dragBeginEvent_) {
+          this.setDragBoxPosition_(this.dragBoxXStart_, this.dragBoxYStart_,
+              this.dragBoxXEnd_, this.dragBoxYEnd_, vertical);
+        }
       }
     },
 
@@ -338,8 +354,8 @@ base.exportTo('tracing', function() {
         if (this.dragBeginEvent_) {
           var vertical = e.shiftKey;
           this.setDragBoxPosition_(this.dragBoxXStart_, this.dragBoxYStart_,
-                                this.dragBoxXEnd_, this.dragBoxYEnd_, vertical);
-          }
+              this.dragBoxXEnd_, this.dragBoxYEnd_, vertical);
+        }
       }
     },
 
@@ -389,14 +405,14 @@ base.exportTo('tracing', function() {
 
       if (this.focusElement.tabIndex) {
         help +=
-          ' <-            : Select previous event on current timeline\n' +
-          ' ->            : Select next event on current timeline\n';
+            ' <-            : Select previous event on current timeline\n' +
+            ' ->            : Select next event on current timeline\n';
       } else {
         help += 'General Navigation\n' +
-          ' g/General     : Shows grid at the start/end of the selected' +
-                                                                  ' task\n' +
-          ' <-,^TAB       : Select previous event on current timeline\n' +
-          ' ->, TAB       : Select next event on current timeline\n';
+            ' g/General     : Shows grid at the start/end of the selected' +
+            ' task\n' +
+            ' <-,^TAB       : Select previous event on current timeline\n' +
+            ' ->, TAB       : Select next event on current timeline\n';
       }
       help +=
           '\n' +
@@ -425,6 +441,9 @@ base.exportTo('tracing', function() {
       base.dispatchSimpleEvent(this, 'selectionChange');
       for (i = 0; i < this.selection_.length; i++)
         this.selection_[i].selected = true;
+      if (this.selection_.length &&
+          this.selection_[0].track)
+        this.selection_[0].track.scrollIntoViewIfNeeded();
       this.viewport_.dispatchChangeEvent(); // Triggers a redraw.
     },
 
@@ -444,7 +463,7 @@ base.exportTo('tracing', function() {
       }
 
       this.viewport_.xPanWorldBoundsIntoView(bounds.min, bounds.max,
-                                            this.firstCanvas.width);
+          this.firstCanvas.width);
     },
 
     get firstCanvas() {
@@ -481,12 +500,12 @@ base.exportTo('tracing', function() {
       dragRect.right = dragRect.left + dragRect.width;
       dragRect.bottom = dragRect.top + dragRect.height;
       var modelTrackContainerRect =
-                              this.modelTrackContainer_.getBoundingClientRect();
+          this.modelTrackContainer_.getBoundingClientRect();
       var clipRect = {
         left: modelTrackContainerRect.left,
         top: modelTrackContainerRect.top,
         right: modelTrackContainerRect.right,
-        bottom: modelTrackContainerRect.bottom,
+        bottom: modelTrackContainerRect.bottom
       };
       var trackTitleWidth = parseInt(this.modelTrack_.headingWidth);
       clipRect.left = clipRect.left + trackTitleWidth;
@@ -515,32 +534,28 @@ base.exportTo('tracing', function() {
     },
 
     onGridToggle_: function(left) {
-      var tb;
-      if (left)
-        tb = this.selection_.bounds.min;
-      else
-        tb = this.selection_.bounds.max;
+      var tb = left ? this.selection_.bounds.min : this.selection_.bounds.max;
+
+      // Toggle the grid off if the grid is on, the marker position is the same
+      // and the same element is selected (same timebase).
+      if (this.viewport_.gridEnabled &&
+          this.viewport_.gridSide === left &&
+          this.viewport_.gridTimebase === tb) {
+        this.viewport_.gridside = undefined;
+        this.viewport_.gridEnabled = false;
+        this.viewport_.gridTimebase = undefined;
+        return;
+      }
 
       // Shift the timebase left until its just left of model_.bounds.min.
       var numInterfvalsSinceStart = Math.ceil((tb - this.model_.bounds.min) /
           this.viewport_.gridStep_);
       this.viewport_.gridTimebase = tb -
           (numInterfvalsSinceStart + 1) * this.viewport_.gridStep_;
+
       this.viewport_.gridEnabled = true;
-    },
-
-    isChildOfThis_: function(el) {
-      if (el == this)
-        return;
-
-      var isChildOfThis = false;
-      var cur = el;
-      while (cur.parentNode) {
-        if (cur == this)
-          return true;
-        cur = cur.parentNode;
-      }
-      return false;
+      this.viewport_.gridSide = left;
+      this.viewport_.gridTimebase = tb;
     },
 
     onMouseDown_: function(e) {
@@ -602,7 +617,7 @@ base.exportTo('tracing', function() {
         this.dragBoxYEnd_ = e.clientY;
         var vertical = e.shiftKey;
         this.setDragBoxPosition_(this.dragBoxXStart_, this.dragBoxYStart_,
-                                this.dragBoxXEnd_, this.dragBoxYEnd_, vertical);
+            this.dragBoxXEnd_, this.dragBoxYEnd_, vertical);
       }
     },
 
@@ -651,10 +666,10 @@ base.exportTo('tracing', function() {
 
     onDblClick_: function(e) {
       var modelTrackContainerRect =
-                              this.modelTrackContainer_.getBoundingClientRect();
+          this.modelTrackContainer_.getBoundingClientRect();
       var clipBounds = {
         left: modelTrackContainerRect.left,
-        right: modelTrackContainerRect.right,
+        right: modelTrackContainerRect.right
       };
       var trackTitleWidth = parseInt(this.modelTrack_.headingWidth);
       clipBounds.left = clipBounds.left + trackTitleWidth;

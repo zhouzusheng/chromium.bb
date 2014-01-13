@@ -27,23 +27,13 @@
 #include "config.h"
 #include "InternalSettings.h"
 
-#include "core/dom/Document.h"
-#include "core/dom/ExceptionCode.h"
-#include "core/page/CaptionUserPreferences.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/page/Page.h"
-#include "core/page/PageGroup.h"
 #include "RuntimeEnabledFeatures.h"
+#include "core/dom/ExceptionCode.h"
+#include "core/page/Page.h"
 #include "core/page/Settings.h"
-#include "core/platform/Language.h"
-#include "core/platform/Supplementable.h"
-#include "core/platform/graphics/TextRun.h"
-#include "core/platform/text/LocaleToScriptMapping.h"
-
-#if ENABLE(INPUT_TYPE_COLOR)
 #include "core/platform/ColorChooser.h"
-#endif
+#include "core/platform/Supplementable.h"
+#include "core/platform/text/LocaleToScriptMapping.h"
 
 #define InternalSettingsGuardForSettingsReturn(returnValue) \
     if (!settings()) { \
@@ -67,15 +57,14 @@ namespace WebCore {
 
 InternalSettings::Backup::Backup(Settings* settings)
     : m_originalCSSExclusionsEnabled(RuntimeEnabledFeatures::cssExclusionsEnabled())
-    , m_originalCSSVariablesEnabled(settings->cssVariablesEnabled())
     , m_originalAuthorShadowDOMForAnyElementEnabled(RuntimeEnabledFeatures::authorShadowDOMForAnyElementEnabled())
     , m_originalExperimentalShadowDOMEnabled(RuntimeEnabledFeatures::experimentalShadowDOMEnabled())
+    , m_originalExperimentalWebSocketEnabled(settings->experimentalWebSocketEnabled())
     , m_originalStyleScoped(RuntimeEnabledFeatures::styleScopedEnabled())
     , m_originalEditingBehavior(settings->editingBehaviorType())
     , m_originalTextAutosizingEnabled(settings->textAutosizingEnabled())
     , m_originalTextAutosizingWindowSizeOverride(settings->textAutosizingWindowSizeOverride())
     , m_originalTextAutosizingFontScaleFactor(settings->textAutosizingFontScaleFactor())
-    , m_originalResolutionOverride(settings->resolutionOverride())
     , m_originalMediaTypeOverride(settings->mediaTypeOverride())
     , m_originalDialogElementEnabled(RuntimeEnabledFeatures::dialogElementEnabled())
     , m_originalLazyLayoutEnabled(RuntimeEnabledFeatures::lazyLayoutEnabled())
@@ -92,15 +81,14 @@ InternalSettings::Backup::Backup(Settings* settings)
 void InternalSettings::Backup::restoreTo(Settings* settings)
 {
     RuntimeEnabledFeatures::setCSSExclusionsEnabled(m_originalCSSExclusionsEnabled);
-    settings->setCSSVariablesEnabled(m_originalCSSVariablesEnabled);
     RuntimeEnabledFeatures::setAuthorShadowDOMForAnyElementEnabled(m_originalAuthorShadowDOMForAnyElementEnabled);
     RuntimeEnabledFeatures::setExperimentalShadowDOMEnabled(m_originalExperimentalShadowDOMEnabled);
+    settings->setExperimentalWebSocketEnabled(m_originalExperimentalWebSocketEnabled);
     RuntimeEnabledFeatures::setStyleScopedEnabled(m_originalStyleScoped);
     settings->setEditingBehaviorType(m_originalEditingBehavior);
     settings->setTextAutosizingEnabled(m_originalTextAutosizingEnabled);
     settings->setTextAutosizingWindowSizeOverride(m_originalTextAutosizingWindowSizeOverride);
     settings->setTextAutosizingFontScaleFactor(m_originalTextAutosizingFontScaleFactor);
-    settings->setResolutionOverride(m_originalResolutionOverride);
     settings->setMediaTypeOverride(m_originalMediaTypeOverride);
     RuntimeEnabledFeatures::setDialogElementEnabled(m_originalDialogElementEnabled);
     RuntimeEnabledFeatures::setLazyLayoutEnabled(m_originalLazyLayoutEnabled);
@@ -186,6 +174,11 @@ void InternalSettings::setExperimentalShadowDOMEnabled(bool isEnabled)
     RuntimeEnabledFeatures::setExperimentalShadowDOMEnabled(isEnabled);
 }
 
+void InternalSettings::setExperimentalWebSocketEnabled(bool isEnabled)
+{
+    settings()->setExperimentalWebSocketEnabled(isEnabled);
+}
+
 void InternalSettings::setStyleScopedEnabled(bool enabled)
 {
     RuntimeEnabledFeatures::setStyleScopedEnabled(enabled);
@@ -259,13 +252,6 @@ void InternalSettings::setTextAutosizingWindowSizeOverride(int width, int height
     settings()->setTextAutosizingWindowSizeOverride(IntSize(width, height));
 }
 
-void InternalSettings::setResolutionOverride(int dotsPerCSSInchHorizontally, int dotsPerCSSInchVertically, ExceptionCode& ec)
-{
-    InternalSettingsGuardForSettings();
-    // An empty size resets the override.
-    settings()->setResolutionOverride(IntSize(dotsPerCSSInchHorizontally, dotsPerCSSInchVertically));
-}
-
 void InternalSettings::setMediaTypeOverride(const String& mediaType, ExceptionCode& ec)
 {
     InternalSettingsGuardForSettings();
@@ -281,18 +267,6 @@ void InternalSettings::setTextAutosizingFontScaleFactor(float fontScaleFactor, E
 void InternalSettings::setCSSExclusionsEnabled(bool enabled)
 {
     RuntimeEnabledFeatures::setCSSExclusionsEnabled(enabled);
-}
-
-void InternalSettings::setCSSVariablesEnabled(bool enabled, ExceptionCode& ec)
-{
-    InternalSettingsGuardForSettings();
-    settings()->setCSSVariablesEnabled(enabled);
-}
-
-bool InternalSettings::cssVariablesEnabled(ExceptionCode& ec)
-{
-    InternalSettingsGuardForSettingsReturn(false);
-    return settings()->cssVariablesEnabled();
 }
 
 void InternalSettings::setEditingBehavior(const String& editingBehavior, ExceptionCode& ec)
@@ -318,43 +292,6 @@ void InternalSettings::setDialogElementEnabled(bool enabled)
 void InternalSettings::setLazyLayoutEnabled(bool enabled)
 {
     RuntimeEnabledFeatures::setLazyLayoutEnabled(enabled);
-}
-
-void InternalSettings::setShouldDisplayTrackKind(const String& kind, bool enabled, ExceptionCode& ec)
-{
-    InternalSettingsGuardForSettings();
-
-    if (!page())
-        return;
-    CaptionUserPreferences* captionPreferences = page()->group().captionPreferences();
-
-    if (equalIgnoringCase(kind, "Subtitles"))
-        captionPreferences->setUserPrefersSubtitles(enabled);
-    else if (equalIgnoringCase(kind, "Captions"))
-        captionPreferences->setUserPrefersCaptions(enabled);
-    else if (equalIgnoringCase(kind, "TextDescriptions"))
-        captionPreferences->setUserPrefersTextDescriptions(enabled);
-    else
-        ec = SYNTAX_ERR;
-}
-
-bool InternalSettings::shouldDisplayTrackKind(const String& kind, ExceptionCode& ec)
-{
-    InternalSettingsGuardForSettingsReturn(false);
-
-    if (!page())
-        return false;
-    CaptionUserPreferences* captionPreferences = page()->group().captionPreferences();
-
-    if (equalIgnoringCase(kind, "Subtitles"))
-        return captionPreferences->userPrefersSubtitles();
-    if (equalIgnoringCase(kind, "Captions"))
-        return captionPreferences->userPrefersCaptions();
-    if (equalIgnoringCase(kind, "TextDescriptions"))
-        return captionPreferences->userPrefersTextDescriptions();
-
-    ec = SYNTAX_ERR;
-    return false;
 }
 
 void InternalSettings::setLangAttributeAwareFormControlUIEnabled(bool enabled)

@@ -11,7 +11,7 @@
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
-#include "base/time/default_clock.h"
+#include "base/time/default_tick_clock.h"
 #include "media/base/audio_renderer.h"
 #include "media/base/demuxer.h"
 #include "media/base/media_export.h"
@@ -63,9 +63,7 @@ class VideoRenderer;
 // If any error ever happens, this object will transition to the "Error" state
 // from any state. If Stop() is ever called, this object will transition to
 // "Stopped" state.
-class MEDIA_EXPORT Pipeline
-    : public base::RefCountedThreadSafe<Pipeline>,
-      public DemuxerHost {
+class MEDIA_EXPORT Pipeline : public DemuxerHost {
  public:
   // Buffering states the pipeline transitions between during playback.
   // kHaveMetadata:
@@ -85,6 +83,7 @@ class MEDIA_EXPORT Pipeline
   // Constructs a media pipeline that will execute on |message_loop|.
   Pipeline(const scoped_refptr<base::MessageLoopProxy>& message_loop,
            MediaLog* media_log);
+  virtual ~Pipeline();
 
   // Build a pipeline to using the given filter collection to construct a filter
   // chain, executing |seek_cb| when the initial seek/preroll has completed.
@@ -115,6 +114,8 @@ class MEDIA_EXPORT Pipeline
   //
   // Stop() must complete before destroying the pipeline. It it permissible to
   // call Stop() at any point during the lifetime of the pipeline.
+  //
+  // It is safe to delete the pipeline during the execution of |stop_cb|.
   void Stop(const base::Closure& stop_cb);
 
   // Attempt to seek to the position specified by time.  |seek_cb| will be
@@ -197,10 +198,6 @@ class MEDIA_EXPORT Pipeline
   FRIEND_TEST_ALL_PREFIXES(PipelineTest, EndedCallback);
   FRIEND_TEST_ALL_PREFIXES(PipelineTest, AudioStreamShorterThanVideo);
   friend class MediaLog;
-
-  // Only allow ourselves to be deleted by reference counting.
-  friend class base::RefCountedThreadSafe<Pipeline>;
-  virtual ~Pipeline();
 
   // Pipeline states, as described above.
   enum State {
@@ -376,8 +373,8 @@ class MEDIA_EXPORT Pipeline
   // the filters.
   float playback_rate_;
 
-  // base::Clock used by |clock_|.
-  base::DefaultClock default_clock_;
+  // base::TickClock used by |clock_|.
+  base::DefaultTickClock default_tick_clock_;
 
   // Reference clock.  Keeps track of current playback time.  Uses system
   // clock and linear interpolation, but can have its time manually set
@@ -442,7 +439,7 @@ class MEDIA_EXPORT Pipeline
 
   // Time of pipeline creation; is non-zero only until the pipeline first
   // reaches "kStarted", at which point it is used & zeroed out.
-  base::Time creation_time_;
+  base::TimeTicks creation_time_;
 
   scoped_ptr<SerialRunner> pending_callbacks_;
 

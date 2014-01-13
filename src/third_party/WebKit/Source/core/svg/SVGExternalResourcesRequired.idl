@@ -25,9 +25,7 @@
  */
 
 [
-    Conditional=SVG,
-    
-    DoNotGenerateToV8,
+    NoInterfaceObject
 ] interface SVGExternalResourcesRequired { 
     readonly attribute SVGAnimatedBoolean externalResourcesRequired;
 };

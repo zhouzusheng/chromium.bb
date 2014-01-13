@@ -32,19 +32,13 @@
 #define V8DOMWrapper_h
 
 #include "bindings/v8/DOMDataStore.h"
-#include "bindings/v8/DOMWrapperWorld.h"
-#include "bindings/v8/V8DOMWindowShell.h"
-#include "bindings/v8/V8Utilities.h"
-#include "bindings/v8/WrapperTypeInfo.h"
-#include "bindings/v8/custom/V8CustomXPathNSResolver.h"
-#include "core/dom/Event.h"
-#include "core/dom/Node.h"
 #include <v8.h>
-#include "wtf/MainThread.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/text/WTFString.h"
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
+
+struct WrapperTypeInfo;
 
     class V8DOMWrapper {
     public:
@@ -62,11 +56,6 @@ namespace WebCore {
 
         static bool isDOMWrapper(v8::Handle<v8::Value>);
         static bool isWrapperOfType(v8::Handle<v8::Value>, WrapperTypeInfo*);
-
-        // Used for V8WrapAsFunction, which is used only by CUSTOM_ELEMENTS
-        static v8::Handle<v8::Function> toFunction(v8::Handle<v8::Value>);
-        static v8::Handle<v8::Function> toFunction(v8::Handle<v8::Object>, const AtomicString& name, v8::Isolate*);
-        static v8::Handle<v8::Object> fromFunction(v8::Handle<v8::Object>);
     };
 
     inline void V8DOMWrapper::setNativeInfo(v8::Handle<v8::Object> wrapper, WrapperTypeInfo* type, void* object)

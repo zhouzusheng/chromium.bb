@@ -5,14 +5,19 @@
 #ifndef CC_TREES_PROXY_H_
 #define CC_TREES_PROXY_H_
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
 #include "base/values.h"
 #include "cc/base/cc_export.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkPicture.h"
+
+namespace base { class SingleThreadTaskRunner; }
 
 namespace gfx {
 class Rect;
@@ -22,20 +27,15 @@ class Vector2d;
 namespace cc {
 
 class OutputSurface;
-class Thread;
 struct RendererCapabilities;
 
 // Abstract class responsible for proxying commands from the main-thread side of
 // the compositor over to the compositor implementation.
 class CC_EXPORT Proxy {
  public:
-  Thread* MainThread() const;
+  base::SingleThreadTaskRunner* MainThreadTaskRunner() const;
   bool HasImplThread() const;
-  Thread* ImplThread() const;
-
-  // Returns 0 if the current thread is neither the main thread nor the impl
-  // thread.
-  Thread* CurrentThread() const;
+  base::SingleThreadTaskRunner* ImplThreadTaskRunner() const;
 
   // Debug hooks.
   bool IsMainThread() const;
@@ -56,7 +56,7 @@ class CC_EXPORT Proxy {
 
   // Indicates that the compositing surface associated with our context is
   // ready to use.
-  virtual void SetSurfaceReady() = 0;
+  virtual void SetLayerTreeHostClientReady() = 0;
 
   virtual void SetVisible(bool visible) = 0;
 
@@ -98,16 +98,18 @@ class CC_EXPORT Proxy {
 
   // Testing hooks
   virtual bool CommitPendingForTesting() = 0;
+  virtual std::string SchedulerStateAsStringForTesting();
 
  protected:
-  explicit Proxy(scoped_ptr<Thread> impl_thread);
+  explicit Proxy(
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
   friend class DebugScopedSetImplThread;
   friend class DebugScopedSetMainThread;
   friend class DebugScopedSetMainThreadBlocked;
 
  private:
-  scoped_ptr<Thread> main_thread_;
-  scoped_ptr<Thread> impl_thread_;
+  scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner_;
 #ifndef NDEBUG
   bool impl_thread_is_overridden_;
   bool is_main_thread_blocked_;

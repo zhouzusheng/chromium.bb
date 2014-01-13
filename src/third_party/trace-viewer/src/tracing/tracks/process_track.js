@@ -4,6 +4,9 @@
 
 'use strict';
 
+base.require('tcmalloc.heap_instance_track');
+base.require('tracing.analysis.object_snapshot_view');
+base.require('tracing.analysis.object_instance_view');
 base.require('tracing.tracks.container_track');
 base.require('tracing.tracks.counter_track');
 base.require('tracing.tracks.object_instance_track');
@@ -13,12 +16,15 @@ base.require('ui');
 
 base.exportTo('tracing.tracks', function() {
 
+  var ObjectSnapshotView = tracing.analysis.ObjectSnapshotView;
+  var ObjectInstanceView = tracing.analysis.ObjectInstanceView;
+
   /**
    * Visualizes a Process by building ThreadTracks and CounterTracks.
    * @constructor
    */
   var ProcessTrack =
-      ui.define(tracing.tracks.ContainerTrack);
+      ui.define('process-track', tracing.tracks.ContainerTrack);
 
   ProcessTrack.prototype = {
 
@@ -47,15 +53,54 @@ base.exportTo('tracing.tracks', function() {
       this.detach();
       if (this.process_) {
         // Create the object instance tracks for this process.
-        var instancesByTypeName = this.process_.objects.getAllInstancesByTypeName();
+        var instancesByTypeName =
+            this.process_.objects.getAllInstancesByTypeName();
         var instanceTypeNames = base.dictionaryKeys(instancesByTypeName);
         instanceTypeNames.sort();
         instanceTypeNames.forEach(function(typeName) {
-          var track = new tracing.tracks.ObjectInstanceTrack();
+          var allInstances = instancesByTypeName[typeName];
+
+          // If a object snapshot has a viewer it will be shown,
+          // unless the viewer asked for it to not be shown.
+          var instanceViewInfo = ObjectInstanceView.getViewInfo(typeName);
+          var snapshotViewInfo = ObjectSnapshotView.getViewInfo(typeName);
+          if (instanceViewInfo && !instanceViewInfo.options.showInTrackView)
+            instanceViewInfo = undefined;
+          if (snapshotViewInfo && !snapshotViewInfo.options.showInTrackView)
+            snapshotViewInfo = undefined;
+          var hasViewInfo = instanceViewInfo || snapshotViewInfo;
+
+          // There are some instances that don't merit their own track in
+          // the UI. Filter them out.
+          var visibleInstances = [];
+          for (var i = 0; i < allInstances.length; i++) {
+            var instance = allInstances[i];
+
+            // Do not create tracks for instances that have no snapshots.
+            if (instance.snapshots.length === 0)
+              continue;
+
+            // Do not create tracks for instances that have implicit snapshots
+            // and don't have a viewer.
+            if (instance.hasImplicitSnapshots && !hasViewInfo)
+              continue;
+
+            visibleInstances.push(instance);
+          }
+          if (visibleInstances.length === 0)
+            return;
+
+          // Look up the constructor for this track, or use the default
+          // constructor if none exists.
+          var trackConstructor =
+              tracing.tracks.ObjectInstanceTrack.getTrackConstructor(typeName);
+          if (!trackConstructor)
+            trackConstructor = tracing.tracks.ObjectInstanceTrack;
+          var track = new trackConstructor();
           track.heading = typeName + ':';
-          track.objectInstances = instancesByTypeName[typeName];
+          track.objectInstances = visibleInstances;
           this.addTrack_(track);
-        }.bind(this));
+        }, this);
 
 
         // Add counter tracks for this process.
@@ -63,7 +108,7 @@ base.exportTo('tracing.tracks', function() {
         for (var tid in this.process.counters) {
           counters.push(this.process.counters[tid]);
         }
-        counters.sort(tracing.model.Counter.compare);
+        counters.sort(tracing.trace_model.Counter.compare);
 
         // Create the counters for this process.
         counters.forEach(function(counter) {
@@ -77,7 +122,7 @@ base.exportTo('tracing.tracks', function() {
         var threads = [];
         for (var tid in this.process.threads)
           threads.push(this.process.threads[tid]);
-        threads.sort(tracing.model.Thread.compare);
+        threads.sort(tracing.trace_model.Thread.compare);
 
         // Create the threads.
         threads.forEach(function(thread) {

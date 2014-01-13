@@ -31,10 +31,8 @@
 #include "core/css/CSSGradientValue.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/platform/graphics/Image.h"
-#include "core/rendering/RenderObject.h"
-#include <wtf/MemoryInstrumentationHashCountedSet.h>
-#include <wtf/MemoryInstrumentationHashMap.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/MemoryInstrumentationHashCountedSet.h"
+#include "wtf/MemoryInstrumentationHashMap.h"
 
 
 namespace WTF {
@@ -112,7 +110,7 @@ Image* CSSImageGeneratorValue::getImage(RenderObject* renderer, const IntSize& s
         return 0;
 
     // Look up the image in our cache.
-    return m_images.get(size).get();
+    return m_images.get(size);
 }
 
 void CSSImageGeneratorValue::putImage(const IntSize& size, PassRefPtr<Image> image)

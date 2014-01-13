@@ -26,8 +26,9 @@
 #ifndef WebGLDebugShaders_h
 #define WebGLDebugShaders_h
 
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
-#include <wtf/PassOwnPtr.h>
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
@@ -35,9 +36,9 @@ class WebGLShader;
 
 typedef int ExceptionCode;
 
-class WebGLDebugShaders : public WebGLExtension {
+class WebGLDebugShaders : public WebGLExtension, public ScriptWrappable {
 public:
-    static PassOwnPtr<WebGLDebugShaders> create(WebGLRenderingContext*);
+    static PassRefPtr<WebGLDebugShaders> create(WebGLRenderingContext*);
     static bool supported(WebGLRenderingContext*);
     static const char* getExtensionName();
 

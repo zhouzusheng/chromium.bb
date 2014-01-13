@@ -36,13 +36,13 @@
 
 #include "V8ArrayBuffer.h"
 #include "V8Blob.h"
-#include "V8DOMWindow.h"
 #include "V8MessagePort.h"
+#include "V8Window.h"
 #include "bindings/v8/V8Binding.h"
 
 namespace WebCore {
 
-v8::Handle<v8::Value> V8MessageEvent::dataAttrGetterCustom(v8::Local<v8::String> name, const v8::AccessorInfo& info)
+void V8MessageEvent::dataAttrGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     MessageEvent* event = V8MessageEvent::toNative(info.Holder());
 
@@ -58,9 +58,10 @@ v8::Handle<v8::Value> V8MessageEvent::dataAttrGetterCustom(v8::Local<v8::String>
     }
 
     case MessageEvent::DataTypeSerializedScriptValue:
-        if (RefPtr<SerializedScriptValue> serializedValue = event->dataAsSerializedScriptValue())
-            result = serializedValue->deserialize(info.GetIsolate(), event->ports());
-        else
+        if (RefPtr<SerializedScriptValue> serializedValue = event->dataAsSerializedScriptValue()) {
+            MessagePortArray ports = event->ports();
+            result = serializedValue->deserialize(info.GetIsolate(), &ports);
+        } else
             result = v8Null(info.GetIsolate());
         break;
 
@@ -83,27 +84,10 @@ v8::Handle<v8::Value> V8MessageEvent::dataAttrGetterCustom(v8::Local<v8::String>
     // This custom handler (dataAccessGetter) will not be called again.
     v8::PropertyAttribute dataAttr = static_cast<v8::PropertyAttribute>(v8::DontDelete | v8::ReadOnly);
     info.Holder()->ForceSet(name, result, dataAttr);
-    return result;
+    v8SetReturnValue(info, result);
 }
 
-v8::Handle<v8::Value> V8MessageEvent::portsAttrGetterCustom(v8::Local<v8::String> name, const v8::AccessorInfo& info)
-{
-    MessageEvent* event = V8MessageEvent::toNative(info.Holder());
-
-    MessagePortArray* ports = event->ports();
-    if (!ports)
-        return v8::Array::New(0);
-
-    MessagePortArray portsCopy(*ports);
-
-    v8::Local<v8::Array> portArray = v8::Array::New(portsCopy.size());
-    for (size_t i = 0; i < portsCopy.size(); ++i)
-        portArray->Set(v8Integer(i, info.GetIsolate()), toV8Fast(portsCopy[i].get(), info, event));
-
-    return portArray;
-}
-
-v8::Handle<v8::Value> V8MessageEvent::initMessageEventMethodCustom(const v8::Arguments& args)
+void V8MessageEvent::initMessageEventMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     MessageEvent* event = V8MessageEvent::toNative(args.Holder());
     String typeArg = toWebCoreString(args[0]);
@@ -116,24 +100,23 @@ v8::Handle<v8::Value> V8MessageEvent::initMessageEventMethodCustom(const v8::Arg
     DOMWindow* sourceArg = 0;
     if (args[6]->IsObject()) {
         v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(args[6]);
-        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(args.GetIsolate(), worldTypeInMainThread(args.GetIsolate())));
+        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8Window::GetTemplate(args.GetIsolate(), worldTypeInMainThread(args.GetIsolate())));
         if (!window.IsEmpty())
-            sourceArg = V8DOMWindow::toNative(window);
+            sourceArg = V8Window::toNative(window);
     }
     OwnPtr<MessagePortArray> portArray;
 
     if (!isUndefinedOrNull(args[7])) {
         portArray = adoptPtr(new MessagePortArray);
         if (!getMessagePortArray(args[7], *portArray, args.GetIsolate()))
-            return v8::Undefined();
+            return;
     }
     event->initMessageEvent(typeArg, canBubbleArg, cancelableArg, dataArg, originArg, lastEventIdArg, sourceArg, portArray.release());
-    return v8::Undefined();
 }
 
-v8::Handle<v8::Value> V8MessageEvent::webkitInitMessageEventMethodCustom(const v8::Arguments& args)
+void V8MessageEvent::webkitInitMessageEventMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
-    return initMessageEventMethodCustom(args);
+    initMessageEventMethodCustom(args);
 }
 
 

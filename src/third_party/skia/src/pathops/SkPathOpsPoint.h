@@ -10,6 +10,10 @@
 #include "SkPathOpsTypes.h"
 #include "SkPoint.h"
 
+inline bool AlmostEqualUlps(const SkPoint& pt1, const SkPoint& pt2) {
+    return AlmostEqualUlps(pt1.fX, pt2.fX) && AlmostEqualUlps(pt1.fY, pt2.fY);
+}
+
 struct SkDVector {
     double fX, fY;
 
@@ -113,8 +117,8 @@ struct SkDPoint {
             return true;
         }
         double inv = 1 / denom;
-        return approximately_equal(fX * inv, a.fX * inv)
-                && approximately_equal(fY * inv, a.fY * inv);
+        return approximately_equal_double(fX * inv, a.fX * inv)
+                && approximately_equal_double(fY * inv, a.fY * inv);
     }
 
     bool approximatelyEqualHalf(const SkDPoint& a) const {
@@ -145,6 +149,13 @@ struct SkDPoint {
     double distanceSquared(const SkDPoint& a) const {
         SkDVector temp = *this - a;
         return temp.lengthSquared();
+    }
+
+    static SkDPoint Mid(const SkDPoint& a, const SkDPoint& b) {
+        SkDPoint result;
+        result.fX = (a.fX + b.fX) / 2;
+        result.fY = (a.fY + b.fY) / 2;
+        return result;
     }
 
     double moreRoughlyEqual(const SkDPoint& a) const {

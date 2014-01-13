@@ -85,7 +85,7 @@ public:
      *  Returns a ref() to the default typeface. The caller must call unref()
      *  when they are done referencing the object. Never returns NULL.
      */
-    static SkTypeface* RefDefault();
+    static SkTypeface* RefDefault(Style style = SkTypeface::kNormal);
 
     /** Return a new reference to the typeface that most closely matches the
         requested familyName and style. Pass null as the familyName to return
@@ -203,6 +203,15 @@ public:
     SkStream* openStream(int* ttcIndex) const;
     SkScalerContext* createScalerContext(const SkDescriptor*) const;
 
+    // PRIVATE / EXPERIMENTAL -- do not call
+    void filterRec(SkScalerContextRec* rec) const {
+        this->onFilterRec(rec);
+    }
+    // PRIVATE / EXPERIMENTAL -- do not call
+    void getFontDescriptor(SkFontDescriptor* desc, bool* isLocal) const {
+        this->onGetFontDescriptor(desc, isLocal);
+    }
+
 protected:
     /** uniqueID must be unique and non-zero
     */
@@ -213,7 +222,7 @@ protected:
     void setIsFixedPitch(bool isFixedPitch) { fIsFixedPitch = isFixedPitch; }
 
     friend class SkScalerContext;
-    static SkTypeface* GetDefaultTypeface();
+    static SkTypeface* GetDefaultTypeface(Style style = SkTypeface::kNormal);
 
     virtual SkScalerContext* onCreateScalerContext(const SkDescriptor*) const = 0;
     virtual void onFilterRec(SkScalerContextRec*) const = 0;

@@ -27,6 +27,7 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/Settings.h"
 #include "core/platform/graphics/IntSize.h"
+#include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderView.h"
@@ -80,6 +81,27 @@ static const Vector<QualifiedName>& formInputTags()
     return formInputTags;
 }
 
+static RenderListItem* getAncestorListItem(const RenderObject* renderer)
+{
+    RenderObject* ancestor = renderer->parent();
+    while (ancestor && (ancestor->isRenderInline() || ancestor->isAnonymousBlock()))
+        ancestor = ancestor->parent();
+
+    return (ancestor && ancestor->isListItem()) ? toRenderListItem(ancestor) : 0;
+}
+
+static RenderObject* getAncestorList(const RenderObject* renderer)
+{
+    // FIXME: Add support for <menu> elements as a possible ancestor of an <li> element,
+    // see http://www.whatwg.org/specs/web-apps/current-work/multipage/grouping-content.html#the-li-element
+    for (RenderObject* ancestor = renderer->parent(); ancestor; ancestor = ancestor->parent()) {
+        Node* parentNode = ancestor->generatingNode();
+        if (parentNode && (parentNode->hasTagName(olTag) || parentNode->hasTagName(ulTag)))
+            return ancestor;
+    }
+    return 0;
+}
+
 TextAutosizer::TextAutosizer(Document* document)
     : m_document(document)
 {
@@ -120,10 +142,8 @@ bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
     // Largest area of block that can be visible at once (assuming the main
     // frame doesn't get scaled to less than overview scale), in CSS pixels.
     windowInfo.minLayoutSize = mainFrame->view()->layoutSize();
-    for (Frame* frame = m_document->frame(); frame; frame = frame->tree()->parent()) {
-        if (!frame->view()->isInChildFrameWithFrameFlattening())
-            windowInfo.minLayoutSize = windowInfo.minLayoutSize.shrunkTo(frame->view()->layoutSize());
-    }
+    for (Frame* frame = m_document->frame(); frame; frame = frame->tree()->parent())
+        windowInfo.minLayoutSize = windowInfo.minLayoutSize.shrunkTo(frame->view()->layoutSize());
 
     // The layoutRoot could be neither a container nor a cluster, so walk up the tree till we find each of these.
     RenderBlock* container = layoutRoot->isRenderBlock() ? toRenderBlock(layoutRoot) : layoutRoot->containingBlock();
@@ -208,8 +228,14 @@ void TextAutosizer::processContainer(float multiplier, RenderBlock* container, T
             if (localMultiplier != 1 && descendant->style()->textAutosizingMultiplier() == 1) {
                 setMultiplier(descendant, localMultiplier);
                 setMultiplier(descendant->parent(), localMultiplier); // Parent does line spacing.
+
+                if (RenderListItem* listItemAncestor = getAncestorListItem(descendant)) {
+                    if (RenderObject* list = getAncestorList(listItemAncestor)) {
+                        if (list->style()->textAutosizingMultiplier() == 1)
+                            setMultiplierForList(list, localMultiplier);
+                    }
+                }
             }
-            // FIXME: Increase list marker size proportionately.
         } else if (isAutosizingContainer(descendant)) {
             RenderBlock* descendantBlock = toRenderBlock(descendant);
             TextAutosizingClusterInfo descendantClusterInfo(descendantBlock);
@@ -228,9 +254,26 @@ void TextAutosizer::processContainer(float multiplier, RenderBlock* container, T
 
 void TextAutosizer::setMultiplier(RenderObject* renderer, float multiplier)
 {
+    // FIXME: Investigate if a clone() is needed and whether it does the right thing w.r.t. style sharing.
     RefPtr<RenderStyle> newStyle = RenderStyle::clone(renderer->style());
     newStyle->setTextAutosizingMultiplier(multiplier);
     renderer->setStyle(newStyle.release());
+}
+
+void TextAutosizer::setMultiplierForList(RenderObject* renderer, float multiplier)
+{
+#ifndef NDEBUG
+    Node* parentNode = renderer->generatingNode();
+    ASSERT(parentNode);
+    ASSERT(parentNode->hasTagName(olTag) || parentNode->hasTagName(ulTag));
+#endif
+    setMultiplier(renderer, multiplier);
+
+    // Make sure all list items are autosized consistently.
+    for (RenderObject* child = renderer->firstChild(); child; child = child->nextSibling()) {
+        if (child->isListItem() && child->style()->textAutosizingMultiplier() == 1)
+            setMultiplier(child, multiplier);
+    }
 }
 
 float TextAutosizer::computeAutosizedFontSize(float specifiedSize, float multiplier)
@@ -353,7 +396,8 @@ bool TextAutosizer::isIndependentDescendant(const RenderBlock* renderer)
         || renderer->hasColumns()
         || renderer->containingBlock()->isHorizontalWritingMode() != renderer->isHorizontalWritingMode()
         || renderer->style()->isDisplayReplacedType()
-        || renderer->isTextArea();
+        || renderer->isTextArea()
+        || renderer->style()->userModify() != READ_ONLY;
     // FIXME: Tables need special handling to multiply all their columns by
     // the same amount even if they're different widths; so do hasColumns()
     // containers, and probably flexboxes...
@@ -448,12 +492,12 @@ bool TextAutosizer::contentHeightIsConstrained(const RenderBlock* container)
         RenderStyle* style = container->style();
         if (style->overflowY() >= OSCROLL)
             return false;
-        if (style->height().isSpecified() || style->maxHeight().isSpecified()) {
+        if (style->height().isSpecified() || style->maxHeight().isSpecified() || container->isOutOfFlowPositioned()) {
             // Some sites (e.g. wikipedia) set their html and/or body elements to height:100%,
             // without intending to constrain the height of the content within them.
             return !container->isRoot() && !container->isBody();
         }
-        if (container->isFloatingOrOutOfFlowPositioned())
+        if (container->isFloating())
             return false;
     }
     return false;
@@ -478,15 +522,15 @@ bool TextAutosizer::compositeClusterShouldBeAutosized(Vector<TextAutosizingClust
     // in and pan from side to side to read each line, since if there are very
     // few lines of text you'll only need to pan across once or twice.
     //
-    // An exception to the 4 lines of text are the textarea clusters, which are
-    // always autosized by default (i.e. threated as if they contain more than 4
-    // lines of text). This is to ensure that the text does not suddenly get
-    // autosized when the user enters more than 4 lines of text.
+    // An exception to the 4 lines of text are the textarea and contenteditable
+    // clusters, which are always autosized by default (i.e. threated as if they
+    // contain more than 4 lines of text). This is to ensure that the text does
+    // not suddenly get autosized when the user enters more than 4 lines of text.
     float totalTextWidth = 0;
     const float minLinesOfText = 4;
     float minTextWidth = blockWidth * minLinesOfText;
     for (size_t i = 0; i < clusterInfos.size(); ++i) {
-        if (clusterInfos[i].root->isTextArea())
+        if (clusterInfos[i].root->isTextArea() || (clusterInfos[i].root->style() && clusterInfos[i].root->style()->userModify() != READ_ONLY))
             return true;
         measureDescendantTextWidth(clusterInfos[i].blockContainingAllText, clusterInfos[i], minTextWidth, totalTextWidth);
         if (totalTextWidth >= minTextWidth)

@@ -39,6 +39,7 @@
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8GCController.h"
 #include "bindings/v8/V8Initializer.h"
+#include "bindings/v8/V8ObjectConstructor.h"
 #include "bindings/v8/V8ScriptRunner.h"
 #include "bindings/v8/WrapperTypeInfo.h"
 #include "core/inspector/ScriptCallStack.h"
@@ -48,8 +49,8 @@
 #include "core/workers/WorkerThread.h"
 #include <v8.h>
 
-#include <public/Platform.h>
-#include <public/WebWorkerRunLoop.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebWorkerRunLoop.h"
 
 namespace WebCore {
 
@@ -60,6 +61,7 @@ WorkerScriptController::WorkerScriptController(WorkerContext* workerContext)
     , m_executionScheduledToTerminate(false)
 {
     m_isolate->Enter();
+    v8::V8::Initialize();
     V8PerIsolateData* data = V8PerIsolateData::create(m_isolate);
     m_domDataStore = adoptPtr(new DOMDataStore(WorkerWorld));
     data->setWorkerDOMDataStore(m_domDataStore.get());
@@ -93,13 +95,12 @@ bool WorkerScriptController::initializeContextIfNeeded()
     if (!m_context.isEmpty())
         return true;
 
-    v8::Persistent<v8::ObjectTemplate> globalTemplate;
-    m_context.set(v8::Context::New(m_isolate, 0, globalTemplate));
+    m_context.set(m_isolate, v8::Context::New(m_isolate));
     if (m_context.isEmpty())
         return false;
 
     // Starting from now, use local context only.
-    v8::Local<v8::Context> context = v8::Local<v8::Context>::New(m_context.get());
+    v8::Local<v8::Context> context = m_context.newLocal(m_isolate);
 
     v8::Context::Scope scope(context);
 
@@ -126,7 +127,7 @@ bool WorkerScriptController::initializeContextIfNeeded()
     V8DOMWrapper::associateObjectWithWrapper(PassRefPtr<WorkerContext>(m_workerContext), contextType, jsWorkerContext, m_isolate, WrapperConfiguration::Dependent);
 
     // Insert the object instance as the prototype of the shadow object.
-    v8::Handle<v8::Object> globalObject = v8::Handle<v8::Object>::Cast(m_context->Global()->GetPrototype());
+    v8::Handle<v8::Object> globalObject = v8::Handle<v8::Object>::Cast(m_context.newLocal(m_isolate)->Global()->GetPrototype());
     globalObject->SetPrototype(jsWorkerContext);
 
     return true;
@@ -136,24 +137,24 @@ ScriptValue WorkerScriptController::evaluate(const String& script, const String&
 {
     V8GCController::checkMemoryUsage();
 
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(m_isolate);
 
     if (!initializeContextIfNeeded())
         return ScriptValue();
 
+    v8::Handle<v8::Context> context = m_context.newLocal(m_isolate);
     if (!m_disableEvalPending.isEmpty()) {
-        m_context->AllowCodeGenerationFromStrings(false);
-        m_context->SetErrorMessageForCodeGenerationFromStrings(v8String(m_disableEvalPending, m_context->GetIsolate()));
+        context->AllowCodeGenerationFromStrings(false);
+        context->SetErrorMessageForCodeGenerationFromStrings(v8String(m_disableEvalPending, m_isolate));
         m_disableEvalPending = String();
     }
 
-    v8::Isolate* isolate = m_context->GetIsolate();
-    v8::Context::Scope scope(m_context.get());
+    v8::Context::Scope scope(context);
 
     v8::TryCatch block;
 
-    v8::Handle<v8::String> scriptString = v8String(script, isolate);
-    v8::Handle<v8::Script> compiledScript = ScriptSourceCode::compileScript(scriptString, fileName, scriptStartPosition, 0, isolate);
+    v8::Handle<v8::String> scriptString = v8String(script, m_isolate);
+    v8::Handle<v8::Script> compiledScript = V8ScriptRunner::compileScript(scriptString, fileName, scriptStartPosition, 0, m_isolate);
     v8::Local<v8::Value> result = V8ScriptRunner::runCompiledScript(compiledScript, m_workerContext);
 
     if (!block.CanContinue()) {
@@ -168,7 +169,7 @@ ScriptValue WorkerScriptController::evaluate(const String& script, const String&
         state->lineNumber = message->GetLineNumber();
         state->sourceURL = toWebCoreString(message->GetScriptResourceName());
         if (m_workerContext->sanitizeScriptError(state->errorMessage, state->lineNumber, state->sourceURL))
-            state->exception = throwError(v8GeneralError, state->errorMessage.utf8().data(), isolate);
+            state->exception = throwError(v8GeneralError, state->errorMessage.utf8().data(), m_isolate);
         else
             state->exception = ScriptValue(block.Exception());
 
@@ -235,7 +236,7 @@ void WorkerScriptController::disableEval(const String& errorMessage)
 
 void WorkerScriptController::setException(const ScriptValue& exception)
 {
-    throwError(*exception.v8Value(), m_context->GetIsolate());
+    throwError(exception.v8Value(), m_isolate);
 }
 
 WorkerScriptController* WorkerScriptController::controllerForContext()

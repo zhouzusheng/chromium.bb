@@ -31,6 +31,8 @@
 #include "config.h"
 #include "WebDocument.h"
 
+#include "public/platform/WebURL.h"
+#include <wtf/PassRefPtr.h>
 #include "WebAccessibilityObject.h"
 #include "WebDOMEvent.h"
 #include "WebDocumentType.h"
@@ -46,6 +48,7 @@
 #include "core/dom/DocumentStyleSheetCollection.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
+#include "core/dom/FullscreenController.h"
 #include "core/dom/NodeList.h"
 #include "core/html/HTMLAllCollection.h"
 #include "core/html/HTMLBodyElement.h"
@@ -54,10 +57,8 @@
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLHeadElement.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/rendering/RenderObject.h"
-#include <public/WebURL.h>
-#include <wtf/PassRefPtr.h>
+#include "weborigin/SecurityOrigin.h"
 
 using namespace WebCore;
 
@@ -169,7 +170,7 @@ void WebDocument::forms(WebVector<WebFormElement>& results) const
         Node* node = forms->item(i);
         // Strange but true, sometimes node can be 0.
         if (node && node->isHTMLElement())
-            temp.append(WebFormElement(static_cast<HTMLFormElement*>(node)));
+            temp.append(WebFormElement(toHTMLFormElement(node)));
     }
     results.assign(temp);
 }
@@ -209,13 +210,15 @@ void WebDocument::insertUserStyleSheet(const WebString& sourceCode, UserStyleLev
 
 void WebDocument::cancelFullScreen()
 {
-    unwrap<Document>()->webkitCancelFullScreen();
+    if (FullscreenController* fullscreen = FullscreenController::fromIfExists(unwrap<Document>()))
+        fullscreen->webkitCancelFullScreen();
 }
 
 WebElement WebDocument::fullScreenElement() const
 {
     Element* fullScreenElement = 0;
-    fullScreenElement = constUnwrap<Document>()->webkitCurrentFullScreenElement();
+    if (FullscreenController* fullscreen = FullscreenController::fromIfExists(const_cast<WebDocument*>(this)->unwrap<Document>()))
+        fullScreenElement = fullscreen->webkitCurrentFullScreenElement();
     return WebElement(fullScreenElement);
 }
 

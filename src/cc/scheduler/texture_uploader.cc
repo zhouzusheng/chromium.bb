@@ -14,7 +14,7 @@
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/resource.h"
 #include "gpu/GLES2/gl2extchromium.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "ui/gfx/rect.h"
@@ -115,7 +115,6 @@ double TextureUploader::EstimatedTexturesPerSecond() {
   // Use the median as our estimate.
   std::multiset<double>::iterator median = textures_per_second_history_.begin();
   std::advance(median, textures_per_second_history_.size() / 2);
-  TRACE_COUNTER_ID1("cc", "EstimatedTexturesPerSecond", context_, *median);
   return *median;
 }
 

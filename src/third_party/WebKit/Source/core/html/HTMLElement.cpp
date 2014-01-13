@@ -27,7 +27,6 @@
 
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
-#include "HTMLElementFactory.h"
 #include "HTMLNames.h"
 #include "XMLNames.h"
 #include "bindings/v8/ScriptController.h"
@@ -35,20 +34,15 @@
 #include "core/css/CSSParser.h"
 #include "core/css/CSSValuePool.h"
 #include "core/css/StylePropertySet.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/DocumentFragment.h"
-#include "core/dom/Event.h"
 #include "core/dom/EventListener.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/KeyboardEvent.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/markup.h"
-#include "core/html/DOMSettableTokenList.h"
 #include "core/html/HTMLBRElement.h"
-#include "core/html/HTMLCollection.h"
-#include "core/html/HTMLDocument.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
@@ -113,7 +107,7 @@ bool HTMLElement::ieForbidsInsertHTML() const
     return false;
 }
 
-static inline int unicodeBidiAttributeForDirAuto(HTMLElement* element)
+static inline CSSValueID unicodeBidiAttributeForDirAuto(HTMLElement* element)
 {
     if (element->hasLocalName(preTag) || element->hasLocalName(textareaTag))
         return CSSValueWebkitPlaintext;
@@ -333,9 +327,7 @@ static void mergeWithNextTextNode(PassRefPtr<Node> node, ExceptionCode& ec)
     
     RefPtr<Text> textNode = toText(node.get());
     RefPtr<Text> textNext = toText(next);
-    textNode->appendData(textNext->data(), ec);
-    if (ec)
-        return;
+    textNode->appendData(textNext->data());
     if (textNext->parentNode()) // Might have been removed by mutation event.
         textNext->remove(ec);
 }
@@ -572,8 +564,8 @@ void HTMLElement::applyAlignmentAttributeToStyle(const AtomicString& alignment, 
 {
     // Vertical alignment with respect to the current baseline of the text
     // right or left means floating images.
-    int floatValue = CSSValueInvalid;
-    int verticalAlignValue = CSSValueInvalid;
+    CSSValueID floatValue = CSSValueInvalid;
+    CSSValueID verticalAlignValue = CSSValueInvalid;
 
     if (equalIgnoringCase(alignment, "absmiddle"))
         verticalAlignValue = CSSValueMiddle;
@@ -608,9 +600,32 @@ bool HTMLElement::hasCustomFocusLogic() const
     return false;
 }
 
+bool HTMLElement::supportsSpatialNavigationFocus() const
+{
+    // This function checks whether the element satisfies the extended criteria
+    // for the element to be focusable, introduced by spatial navigation feature,
+    // i.e. checks if click or keyboard event handler is specified.
+    // This is the way to make it possible to navigate to (focus) elements
+    // which web designer meant for being active (made them respond to click events).
+
+    if (!document()->settings() || !document()->settings()->spatialNavigationEnabled())
+        return false;
+    EventTarget* target = const_cast<HTMLElement*>(this);
+    return target->hasEventListeners(eventNames().clickEvent)
+        || target->hasEventListeners(eventNames().keydownEvent)
+        || target->hasEventListeners(eventNames().keypressEvent)
+        || target->hasEventListeners(eventNames().keyupEvent);
+}
+
 bool HTMLElement::supportsFocus() const
 {
-    return Element::supportsFocus() || (rendererIsEditable() && parentNode() && !parentNode()->rendererIsEditable());
+    // FIXME: supportsFocus() can be called when layout is not up to date.
+    // Logic that deals with the renderer should be moved to rendererIsFocusable().
+    // But supportsFocus must return true when the element is editable, or else
+    // it won't be focusable. Furthermore, supportsFocus cannot just return true
+    // always or else tabIndex() will change for all HTML elements.
+    return Element::supportsFocus() || (rendererIsEditable() && parentNode() && !parentNode()->rendererIsEditable())
+        || supportsSpatialNavigationFocus();
 }
 
 String HTMLElement::contentEditable() const
@@ -726,12 +741,6 @@ void HTMLElement::setTranslate(bool enable)
     setAttribute(translateAttr, enable ? "yes" : "no");
 }
 
-
-PassRefPtr<HTMLCollection> HTMLElement::children()
-{
-    return ensureCachedHTMLCollection(NodeChildren);
-}
-
 bool HTMLElement::rendererIsNeeded(const NodeRenderingContext& context)
 {
     if (hasLocalName(noscriptTag)) {
@@ -746,10 +755,10 @@ bool HTMLElement::rendererIsNeeded(const NodeRenderingContext& context)
     return StyledElement::rendererIsNeeded(context);
 }
 
-RenderObject* HTMLElement::createRenderer(RenderArena* arena, RenderStyle* style)
+RenderObject* HTMLElement::createRenderer(RenderStyle* style)
 {
     if (hasLocalName(wbrTag))
-        return new (arena) RenderWordBreak(this);
+        return new (document()->renderArena()) RenderWordBreak(this);
     return RenderObject::createObject(this, style);
 }
 
@@ -757,7 +766,7 @@ HTMLFormElement* HTMLElement::findFormAncestor() const
 {
     for (ContainerNode* ancestor = parentNode(); ancestor; ancestor = ancestor->parentNode()) {
         if (ancestor->hasTagName(formTag))
-            return static_cast<HTMLFormElement*>(ancestor);
+            return toHTMLFormElement(ancestor);
     }
     return 0;
 }
@@ -798,32 +807,7 @@ static void setHasDirAutoFlagRecursively(Node* firstNode, bool flag, Node* lastN
 void HTMLElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
     StyledElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
-
-    if (!selfOrAncestorHasDirAutoAttribute())
-        return;
-
-    for (Element* ancestor = this; ancestor; ancestor = ancestor->parentElement()) {
-        if (!elementAffectsDirectionality(ancestor))
-            continue;
-        toHTMLElement(ancestor)->calculateAndAdjustDirectionality();
-        return;
-    }
-}
-
-void HTMLElement::removedFrom(ContainerNode* insertionPoint)
-{
-    StyledElement::removedFrom(insertionPoint);
-    if (!parentNode() && selfOrAncestorHasDirAutoAttribute())
-        setHasDirAutoFlagRecursively(this, false);
-}
-
-Node::InsertionNotificationRequest HTMLElement::insertedInto(ContainerNode* insertionPoint)
-{
-    StyledElement::insertedInto(insertionPoint);
-    if (parentNode()->selfOrAncestorHasDirAutoAttribute() && !selfOrAncestorHasDirAutoAttribute())
-        setHasDirAutoFlagRecursively(this, true);
-
-    return InsertionDone;
+    adjustDirectionalityIfNeededAfterChildrenChanged(beforeChange, childCountDelta);
 }
 
 bool HTMLElement::hasDirectionAuto() const
@@ -923,6 +907,35 @@ void HTMLElement::calculateAndAdjustDirectionality()
     setHasDirAutoFlagRecursively(this, true, strongDirectionalityTextNode);
     if (renderer() && renderer()->style() && renderer()->style()->direction() != textDirection)
         setNeedsStyleRecalc();
+}
+
+void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(Node* beforeChange, int childCountDelta)
+{
+    if ((!document() || document()->renderer()) && childCountDelta < 0) {
+        Node* node = beforeChange ? NodeTraversal::nextSkippingChildren(beforeChange) : 0;
+        for (int counter = 0; node && counter < childCountDelta; counter++, node = NodeTraversal::nextSkippingChildren(node)) {
+            if (elementAffectsDirectionality(node))
+                continue;
+
+            setHasDirAutoFlagRecursively(node, false);
+        }
+    }
+
+    if (!selfOrAncestorHasDirAutoAttribute())
+        return;
+
+    Node* oldMarkedNode = beforeChange ? NodeTraversal::nextSkippingChildren(beforeChange) : 0;
+    while (oldMarkedNode && elementAffectsDirectionality(oldMarkedNode))
+        oldMarkedNode = NodeTraversal::nextSkippingChildren(oldMarkedNode, this);
+    if (oldMarkedNode)
+        setHasDirAutoFlagRecursively(oldMarkedNode, false);
+
+    for (Element* elementToAdjust = this; elementToAdjust; elementToAdjust = elementToAdjust->parentElement()) {
+        if (elementAffectsDirectionality(elementToAdjust)) {
+            toHTMLElement(elementToAdjust)->calculateAndAdjustDirectionality();
+            return;
+        }
+    }
 }
 
 void HTMLElement::addHTMLLengthToStyle(MutableStylePropertySet* style, CSSPropertyID propertyID, const String& value)
@@ -1034,6 +1047,28 @@ void HTMLElement::addHTMLColorToStyle(MutableStylePropertySet* style, CSSPropert
         parsedColor.setRGB(parseColorStringWithCrazyLegacyRules(colorString));
 
     style->setProperty(propertyID, cssValuePool().createColorValue(parsedColor.rgb()));
+}
+
+void HTMLElement::defaultEventHandler(Event* event)
+{
+    if (event->type() == eventNames().keypressEvent && event->isKeyboardEvent()) {
+        handleKeypressEvent(toKeyboardEvent(event));
+        if (event->defaultHandled())
+            return;
+    }
+
+    StyledElement::defaultEventHandler(event);
+}
+
+void HTMLElement::handleKeypressEvent(KeyboardEvent* event)
+{
+    if (!document()->settings() || !document()->settings()->spatialNavigationEnabled() || !supportsFocus())
+        return;
+    int charCode = event->charCode();
+    if (charCode == '\r' || charCode == ' ') {
+        dispatchSimulatedClick(event);
+        event->setDefaultHandled();
+    }
 }
 
 } // namespace WebCore

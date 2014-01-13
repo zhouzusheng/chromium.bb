@@ -26,8 +26,6 @@
 #include "core/html/HTMLViewSourceDocument.h"
 
 #include "HTMLNames.h"
-#include "core/dom/Attribute.h"
-#include "core/dom/DOMImplementation.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
 #include "core/dom/Text.h"
 #include "core/html/HTMLAnchorElement.h"
@@ -42,8 +40,6 @@
 #include "core/html/HTMLTableSectionElement.h"
 #include "core/html/parser/HTMLToken.h"
 #include "core/html/parser/HTMLViewSourceParser.h"
-#include "core/html/parser/TextViewSourceParser.h"
-#include "core/platform/text/SegmentedString.h"
 
 namespace WebCore {
 
@@ -56,40 +52,38 @@ HTMLViewSourceDocument::HTMLViewSourceDocument(Frame* frame, const KURL& url, co
     styleSheetCollection()->setUsesBeforeAfterRulesOverride(true);
     setIsViewSource(true);
 
+    // FIXME: Why do view-source pages need to load in quirks mode?
     setCompatibilityMode(QuirksMode);
     lockCompatibilityMode();
 }
 
 PassRefPtr<DocumentParser> HTMLViewSourceDocument::createParser()
 {
-    if (m_type == "text/html" || m_type == "application/xhtml+xml" || m_type == "image/svg+xml" || DOMImplementation::isXMLMIMEType(m_type))
-        return HTMLViewSourceParser::create(this);
-
-    return TextViewSourceParser::create(this);
+    return HTMLViewSourceParser::create(this, m_type);
 }
 
 void HTMLViewSourceDocument::createContainingTable()
 {
     RefPtr<HTMLHtmlElement> html = HTMLHtmlElement::create(this);
     parserAppendChild(html);
-    html->attach();
+    html->lazyAttach();
     RefPtr<HTMLBodyElement> body = HTMLBodyElement::create(this);
     html->parserAppendChild(body);
-    body->attach();
+    body->lazyAttach();
 
     // Create a line gutter div that can be used to make sure the gutter extends down the height of the whole
     // document.
     RefPtr<HTMLDivElement> div = HTMLDivElement::create(this);
     div->setAttribute(classAttr, "webkit-line-gutter-backdrop");
     body->parserAppendChild(div);
-    div->attach();
+    div->lazyAttach();
 
     RefPtr<HTMLTableElement> table = HTMLTableElement::create(this);
     body->parserAppendChild(table);
-    table->attach();
+    table->lazyAttach();
     m_tbody = HTMLTableSectionElement::create(tbodyTag, this);
     table->parserAppendChild(m_tbody);
-    m_tbody->attach();
+    m_tbody->lazyAttach();
     m_current = m_tbody;
 }
 
@@ -124,8 +118,6 @@ void HTMLViewSourceDocument::addSource(const String& source, HTMLToken& token)
 
 void HTMLViewSourceDocument::processDoctypeToken(const String& source, HTMLToken&)
 {
-    if (!m_current)
-        createContainingTable();
     m_current = addSpanWithClassName("webkit-html-doctype");
     addText(source, "webkit-html-doctype");
     m_current = m_td;
@@ -188,7 +180,7 @@ PassRefPtr<Element> HTMLViewSourceDocument::addSpanWithClassName(const AtomicStr
     RefPtr<HTMLElement> span = HTMLElement::create(spanTag, this);
     span->setAttribute(classAttr, className);
     m_current->parserAppendChild(span);
-    span->attach();
+    span->lazyAttach();
     return span.release();
 }
 
@@ -197,25 +189,25 @@ void HTMLViewSourceDocument::addLine(const AtomicString& className)
     // Create a table row.
     RefPtr<HTMLTableRowElement> trow = HTMLTableRowElement::create(this);
     m_tbody->parserAppendChild(trow);
-    trow->attach();
+    trow->lazyAttach();
 
     // Create a cell that will hold the line number (it is generated in the stylesheet using counters).
     RefPtr<HTMLTableCellElement> td = HTMLTableCellElement::create(tdTag, this);
     td->setAttribute(classAttr, "webkit-line-number");
     trow->parserAppendChild(td);
-    td->attach();
+    td->lazyAttach();
 
     // Create a second cell for the line contents
     td = HTMLTableCellElement::create(tdTag, this);
     td->setAttribute(classAttr, "webkit-line-content");
     trow->parserAppendChild(td);
-    td->attach();
+    td->lazyAttach();
     m_current = m_td = td;
 
 #ifdef DEBUG_LINE_NUMBERS
     RefPtr<Text> lineNumberText = Text::create(this, String::number(parser()->lineNumber() + 1) + " ");
     td->addChild(lineNumberText);
-    lineNumberText->attach();
+    lineNumberText->lazyAttach();
 #endif
 
     // Open up the needed spans.
@@ -231,7 +223,7 @@ void HTMLViewSourceDocument::finishLine()
     if (!m_current->hasChildNodes()) {
         RefPtr<HTMLBRElement> br = HTMLBRElement::create(this);
         m_current->parserAppendChild(br);
-        br->attach();
+        br->lazyAttach();
     }
     m_current = m_tbody;
 }
@@ -257,7 +249,7 @@ void HTMLViewSourceDocument::addText(const String& text, const AtomicString& cla
         }
         RefPtr<Text> t = Text::create(this, substring);
         m_current->parserAppendChild(t);
-        t->attach();
+        t->lazyAttach();
         if (i < size - 1)
             finishLine();
     }
@@ -287,7 +279,7 @@ PassRefPtr<Element> HTMLViewSourceDocument::addBase(const AtomicString& href)
     RefPtr<HTMLBaseElement> base = HTMLBaseElement::create(baseTag, this);
     base->setAttribute(hrefAttr, href);
     m_current->parserAppendChild(base);
-    base->attach();
+    base->lazyAttach();
     return base.release();
 }
 
@@ -307,7 +299,7 @@ PassRefPtr<Element> HTMLViewSourceDocument::addLink(const AtomicString& url, boo
     anchor->setAttribute(targetAttr, "_blank");
     anchor->setAttribute(hrefAttr, url);
     m_current->parserAppendChild(anchor);
-    anchor->attach();
+    anchor->lazyAttach();
     return anchor.release();
 }
 

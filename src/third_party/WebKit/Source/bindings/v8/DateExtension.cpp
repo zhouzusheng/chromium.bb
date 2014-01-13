@@ -33,7 +33,7 @@
 
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
-#include "bindings/v8/V8RecursionScope.h"
+#include "bindings/v8/V8ScriptRunner.h"
 
 namespace WebCore {
 
@@ -74,7 +74,7 @@ DateExtension* DateExtension::get()
     return extension;
 }
 
-void DateExtension::setAllowSleep(bool allow)
+void DateExtension::setAllowSleep(bool allow, v8::Isolate* isolate)
 {
     v8::Local<v8::Value> result = v8::Context::GetCurrent()->Global()->Get(v8::String::NewSymbol("Date"));
     if (result.IsEmpty() || !result->IsObject())
@@ -90,8 +90,7 @@ void DateExtension::setAllowSleep(bool allow)
 
     v8::Handle<v8::Value> argv[1];
     argv[0] = v8::Boolean::New(!allow);
-    V8RecursionScope::MicrotaskSuppression scope;
-    v8::Handle<v8::Function>::Cast(sleepFunctionHandle)->Call(v8::Object::New(), 1, argv);
+    V8ScriptRunner::callInternalFunction(v8::Handle<v8::Function>::Cast(sleepFunctionHandle), v8::Object::New(), WTF_ARRAY_LENGTH(argv), argv, isolate);
 }
 
 v8::Handle<v8::FunctionTemplate> DateExtension::GetNativeFunction(v8::Handle<v8::String> name)
@@ -104,21 +103,21 @@ v8::Handle<v8::FunctionTemplate> DateExtension::GetNativeFunction(v8::Handle<v8:
     return v8::Handle<v8::FunctionTemplate>();
 }
 
-v8::Handle<v8::Value> DateExtension::Setup(const v8::Arguments& args)
+void DateExtension::Setup(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     if (args.Length() != 2 || !args[0]->IsObject() || !args[1]->IsFunction())
-        return v8::Undefined();
+        return;
 
     v8::Handle<v8::Object> dateObject = v8::Handle<v8::Object>::Cast(args[0]);
     v8::Handle<v8::Function> enableSleepDetectionFunction = v8::Handle<v8::Function>::Cast(args[1]);
 
     dateObject->SetHiddenValue(V8HiddenPropertyName::sleepFunction(), enableSleepDetectionFunction);
-    return v8::Undefined();
+    return;
 }
 
-v8::Handle<v8::Value> DateExtension::OnSleepDetected(const v8::Arguments& args)
+void DateExtension::OnSleepDetected(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
-    return throwError(v8GeneralError, "Too much time spent in unload handler.", args.GetIsolate());
+    throwError(v8GeneralError, "Too much time spent in unload handler.", args.GetIsolate());
 }
 
 }  // namespace WebCore

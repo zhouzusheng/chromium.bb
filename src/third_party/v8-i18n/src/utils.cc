@@ -124,7 +124,7 @@ void Utils::AsciiToUChar(const char* source,
 // static
 // Chrome Linux doesn't like static initializers in class, so we create
 // template on demand.
-v8::Persistent<v8::ObjectTemplate> Utils::GetTemplate(v8::Isolate* isolate) {
+v8::Local<v8::ObjectTemplate> Utils::GetTemplate(v8::Isolate* isolate) {
   static v8::Persistent<v8::ObjectTemplate> icu_template;
 
   if (icu_template.IsEmpty()) {
@@ -133,17 +133,16 @@ v8::Persistent<v8::ObjectTemplate> Utils::GetTemplate(v8::Isolate* isolate) {
     // Set aside internal field for ICU class.
     raw_template->SetInternalFieldCount(1);
 
-    icu_template =
-        v8::Persistent<v8::ObjectTemplate>::New(isolate, raw_template);
+    icu_template.Reset(isolate, raw_template);
   }
 
-  return icu_template;
+  return v8::Local<v8::ObjectTemplate>::New(isolate, icu_template);
 }
 
 // static
 // Chrome Linux doesn't like static initializers in class, so we create
 // template on demand. This one has 2 internal fields.
-v8::Persistent<v8::ObjectTemplate> Utils::GetTemplate2(v8::Isolate* isolate) {
+v8::Local<v8::ObjectTemplate> Utils::GetTemplate2(v8::Isolate* isolate) {
   static v8::Persistent<v8::ObjectTemplate> icu_template_2;
 
   if (icu_template_2.IsEmpty()) {
@@ -152,11 +151,10 @@ v8::Persistent<v8::ObjectTemplate> Utils::GetTemplate2(v8::Isolate* isolate) {
     // Set aside internal field for ICU class and additional data.
     raw_template->SetInternalFieldCount(2);
 
-    icu_template_2 =
-        v8::Persistent<v8::ObjectTemplate>::New(isolate, raw_template);
+    icu_template_2.Reset(isolate, raw_template);
   }
 
-  return icu_template_2;
+  return v8::Local<v8::ObjectTemplate>::New(isolate, icu_template_2);
 }
 
 }  // namespace v8_i18n

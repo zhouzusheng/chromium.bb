@@ -33,10 +33,10 @@
 
 #include "StorageAreaProxy.h"
 #include "WebViewImpl.h"
-#include "core/page/SecurityOrigin.h"
-#include "core/platform/KURL.h"
-#include <public/WebURL.h>
-#include <wtf/PassOwnPtr.h>
+#include "public/platform/WebURL.h"
+#include "weborigin/KURL.h"
+#include "weborigin/SecurityOrigin.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace WebKit {
 

@@ -29,29 +29,34 @@
 
 #include "HTMLNames.h"
 #include "InspectorFrontendClientLocal.h"
+#include "InternalRuntimeFlags.h"
 #include "InternalSettings.h"
 #include "MallocStatistics.h"
 #include "MockPagePopupDriver.h"
+#include "RuntimeEnabledFeatures.h"
 #include "TypeConversions.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/ClientRect.h"
 #include "core/dom/ClientRectList.h"
-#include "core/dom/ComposedShadowTreeWalker.h"
 #include "core/dom/DOMStringList.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarker.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Element.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/FullscreenController.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/dom/PseudoElement.h"
 #include "core/dom/Range.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/dom/StaticNodeList.h"
 #include "core/dom/TreeScope.h"
 #include "core/dom/ViewportArguments.h"
+#include "core/dom/shadow/ComposedShadowTreeWalker.h"
+#include "core/dom/shadow/ContentDistributor.h"
+#include "core/dom/shadow/ElementShadow.h"
+#include "core/dom/shadow/SelectRuleFeatureSet.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/Editor.h"
 #include "core/editing/SpellChecker.h"
 #include "core/editing/TextIterator.h"
@@ -62,9 +67,7 @@
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/html/HTMLTextAreaElement.h"
-#include "core/html/shadow/ContentDistributor.h"
 #include "core/html/shadow/HTMLContentElement.h"
-#include "core/html/shadow/SelectRuleFeatureSet.h"
 #include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorConsoleAgent.h"
 #include "core/inspector/InspectorController.h"
@@ -85,47 +88,27 @@
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/PrintContext.h"
-#include "RuntimeEnabledFeatures.h"
 #include "core/page/Settings.h"
 #include "core/page/animation/AnimationController.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
+#include "core/platform/ColorChooser.h"
 #include "core/platform/Cursor.h"
 #include "core/platform/Language.h"
-#include "core/platform/SchemeRegistry.h"
 #include "core/platform/graphics/IntRect.h"
 #include "core/rendering/RenderMenuList.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderTreeAsText.h"
 #include "core/rendering/RenderView.h"
 #include "core/workers/WorkerThread.h"
-#include <wtf/dtoa.h>
-#include <wtf/text/StringBuffer.h>
+#include "weborigin/SchemeRegistry.h"
+#include "wtf/dtoa.h"
+#include "wtf/text/StringBuffer.h"
 
-#if ENABLE(INPUT_TYPE_COLOR)
-#include "core/platform/ColorChooser.h"
-#endif
-
-#if ENABLE(BATTERY_STATUS)
-#include "modules/battery/BatteryController.h"
-#endif
-
-#if ENABLE(PAGE_POPUP)
 #include "core/page/PagePopupController.h"
-#endif
-
 #include "core/platform/graphics/GraphicsLayer.h"
-#include "core/platform/graphics/chromium/GraphicsLayerChromium.h"
 #include "core/platform/graphics/filters/FilterOperation.h"
 #include "core/platform/graphics/filters/FilterOperations.h"
 #include "core/rendering/RenderLayerBacking.h"
-
-#if ENABLE(ENCRYPTED_MEDIA_V2)
-#include "CDM.h"
-#include "MockCDM.h"
-#endif
-
-#include "core/page/CaptionUserPreferences.h"
-#include "core/page/PageGroup.h"
 
 #include "core/platform/mock/PlatformSpeechSynthesizerMock.h"
 #include "modules/speech/DOMWindowSpeechSynthesis.h"
@@ -133,9 +116,7 @@
 
 namespace WebCore {
 
-#if ENABLE(PAGE_POPUP)
 static MockPagePopupDriver* s_pagePopupDriver = 0;
-#endif
 
 using namespace HTMLNames;
 
@@ -169,20 +150,6 @@ static bool markerTypesFrom(const String& markerType, DocumentMarker::MarkerType
         result =  DocumentMarker::Grammar;
     else if (equalIgnoringCase(markerType, "TextMatch"))
         result =  DocumentMarker::TextMatch;
-    else if (equalIgnoringCase(markerType, "Replacement"))
-        result =  DocumentMarker::Replacement;
-    else if (equalIgnoringCase(markerType, "CorrectionIndicator"))
-        result =  DocumentMarker::CorrectionIndicator;
-    else if (equalIgnoringCase(markerType, "RejectedCorrection"))
-        result =  DocumentMarker::RejectedCorrection;
-    else if (equalIgnoringCase(markerType, "Autocorrected"))
-        result =  DocumentMarker::Autocorrected;
-    else if (equalIgnoringCase(markerType, "SpellCheckingExemption"))
-        result =  DocumentMarker::SpellCheckingExemption;
-    else if (equalIgnoringCase(markerType, "DeletedAutocorrection"))
-        result =  DocumentMarker::DeletedAutocorrection;
-    else if (equalIgnoringCase(markerType, "DictationAlternatives"))
-        result =  DocumentMarker::DictationAlternatives;
     else
         return false;
 
@@ -212,20 +179,15 @@ void Internals::resetToConsistentState(Page* page)
 {
     ASSERT(page);
 
+    page->setDeviceScaleFactor(1);
     page->setPageScaleFactor(1, IntPoint(0, 0));
     page->setPagination(Pagination());
     TextRun::setAllowsRoundingHacks(false);
     WebCore::overrideUserPreferredLanguages(Vector<String>());
     WebCore::Settings::setUsesOverlayScrollbars(false);
-#if ENABLE(PAGE_POPUP)
     delete s_pagePopupDriver;
     s_pagePopupDriver = 0;
-    if (page->chrome())
-        page->chrome()->client()->resetPagePopupDriver();
-#endif
-    if (page->inspectorController())
-        page->inspectorController()->setProfilerEnabled(false);
-    page->group().captionPreferences()->setTestingMode(false);
+    page->chrome().client()->resetPagePopupDriver();
     if (!page->mainFrame()->editor()->isContinuousSpellCheckingEnabled())
         page->mainFrame()->editor()->toggleContinuousSpellChecking();
     if (page->mainFrame()->editor()->isOverwriteModeEnabled())
@@ -233,10 +195,9 @@ void Internals::resetToConsistentState(Page* page)
 }
 
 Internals::Internals(Document* document)
-    : ContextDestructionObserver(document)
+    : ContextLifecycleObserver(document)
+    , m_runtimeFlags(InternalRuntimeFlags::create())
 {
-    if (document && document->page())
-        document->page()->group().captionPreferences()->setTestingMode(true);
 }
 
 Document* Internals::contextDocument() const
@@ -260,6 +221,11 @@ InternalSettings* Internals::settings() const
     if (!page)
         return 0;
     return InternalSettings::from(page);
+}
+
+InternalRuntimeFlags* Internals::runtimeFlags() const
+{
+    return m_runtimeFlags.get();
 }
 
 unsigned Internals::workerThreadCount() const
@@ -392,6 +358,23 @@ bool Internals::hasSelectorForPseudoClassInShadow(Element* host, const String& p
     return false;
 }
 
+unsigned short Internals::compareTreeScopePosition(const Node* node1, const Node* node2, ExceptionCode& ec) const
+{
+    if (!node1 || !node2) {
+        ec = INVALID_ACCESS_ERR;
+        return 0;
+    }
+    const TreeScope* treeScope1 = node1->isDocumentNode() ? static_cast<const TreeScope*>(toDocument(node1)) :
+        node1->isShadowRoot() ? static_cast<const TreeScope*>(toShadowRoot(node1)) : 0;
+    const TreeScope* treeScope2 = node2->isDocumentNode() ? static_cast<const TreeScope*>(toDocument(node2)) :
+        node2->isShadowRoot() ? static_cast<const TreeScope*>(toShadowRoot(node2)) : 0;
+    if (!treeScope1 || !treeScope2) {
+        ec = INVALID_ACCESS_ERR;
+        return 0;
+    }
+    return treeScope1->comparePosition(treeScope2);
+}
+
 unsigned Internals::numberOfActiveAnimations() const
 {
     Frame* contextFrame = frame();
@@ -428,66 +411,14 @@ void Internals::resumeAnimations(Document* document, ExceptionCode& ec) const
     controller->resumeAnimations();
 }
 
-bool Internals::pauseAnimationAtTimeOnElement(const String& animationName, double pauseTime, Element* element, ExceptionCode& ec)
+void Internals::pauseAnimations(double pauseTime, ExceptionCode& ec)
 {
-    if (!element || pauseTime < 0) {
+    if (pauseTime < 0) {
         ec = INVALID_ACCESS_ERR;
-        return false;
-    }
-    AnimationController* controller = frame()->animation();
-    return controller->pauseAnimationAtTime(element->renderer(), AtomicString(animationName), pauseTime);
-}
-
-bool Internals::pauseAnimationAtTimeOnPseudoElement(const String& animationName, double pauseTime, Element* element, const String& pseudoId, ExceptionCode& ec)
-{
-    if (!element || pauseTime < 0) {
-        ec = INVALID_ACCESS_ERR;
-        return false;
+        return;
     }
 
-    if (pseudoId != "before" && pseudoId != "after") {
-        ec = INVALID_ACCESS_ERR;
-        return false;
-    }
-
-    PseudoElement* pseudoElement = element->pseudoElement(pseudoId == "before" ? BEFORE : AFTER);
-    if (!pseudoElement) {
-        ec = INVALID_ACCESS_ERR;
-        return false;
-    }
-
-    return frame()->animation()->pauseAnimationAtTime(pseudoElement->renderer(), AtomicString(animationName), pauseTime);
-}
-
-bool Internals::pauseTransitionAtTimeOnElement(const String& propertyName, double pauseTime, Element* element, ExceptionCode& ec)
-{
-    if (!element || pauseTime < 0) {
-        ec = INVALID_ACCESS_ERR;
-        return false;
-    }
-    AnimationController* controller = frame()->animation();
-    return controller->pauseTransitionAtTime(element->renderer(), propertyName, pauseTime);
-}
-
-bool Internals::pauseTransitionAtTimeOnPseudoElement(const String& property, double pauseTime, Element* element, const String& pseudoId, ExceptionCode& ec)
-{
-    if (!element || pauseTime < 0) {
-        ec = INVALID_ACCESS_ERR;
-        return false;
-    }
-
-    if (pseudoId != "before" && pseudoId != "after") {
-        ec = INVALID_ACCESS_ERR;
-        return false;
-    }
-
-    PseudoElement* pseudoElement = element->pseudoElement(pseudoId == "before" ? BEFORE : AFTER);
-    if (!pseudoElement) {
-        ec = INVALID_ACCESS_ERR;
-        return false;
-    }
-
-    return frame()->animation()->pauseTransitionAtTime(pseudoElement->renderer(), property, pauseTime);
+    frame()->animation()->pauseAnimationsForTesting(pauseTime);
 }
 
 bool Internals::hasShadowInsertionPoint(const Node* root, ExceptionCode& ec) const
@@ -632,15 +563,6 @@ ShadowRoot* Internals::ensureShadowRoot(Element* host, ExceptionCode& ec)
     return host->createShadowRoot(ec).get();
 }
 
-ShadowRoot* Internals::createShadowRoot(Element* host, ExceptionCode& ec)
-{
-    if (!host) {
-        ec = INVALID_ACCESS_ERR;
-        return 0;
-    }
-    return host->createShadowRoot(ec).get();
-}
-
 ShadowRoot* Internals::shadowRoot(Element* host, ExceptionCode& ec)
 {
     // FIXME: Internals::shadowRoot() in tests should be converted to youngestShadowRoot() or oldestShadowRoot().
@@ -750,17 +672,12 @@ String Internals::visiblePlaceholder(Element* element)
     return String();
 }
 
-#if ENABLE(INPUT_TYPE_COLOR)
 void Internals::selectColorInColorChooser(Element* element, const String& colorValue)
 {
     if (!element->hasTagName(inputTag))
         return;
-    HTMLInputElement* inputElement = element->toInputElement();
-    if (!inputElement)
-        return;
-    inputElement->selectColorInColorChooser(Color(colorValue));
+    toHTMLInputElement(element)->selectColorInColorChooser(Color(colorValue));
 }
-#endif
 
 Vector<String> Internals::formControlStateOfPreviousHistoryItem(ExceptionCode& ec)
 {
@@ -807,30 +724,23 @@ void Internals::enableMockSpeechSynthesizer()
 
 void Internals::setEnableMockPagePopup(bool enabled, ExceptionCode& ec)
 {
-#if ENABLE(PAGE_POPUP)
     Document* document = contextDocument();
-    if (!document || !document->page() || !document->page()->chrome())
+    if (!document || !document->page())
         return;
     Page* page = document->page();
     if (!enabled) {
-        page->chrome()->client()->resetPagePopupDriver();
+        page->chrome().client()->resetPagePopupDriver();
         return;
     }
     if (!s_pagePopupDriver)
         s_pagePopupDriver = MockPagePopupDriver::create(page->mainFrame()).leakPtr();
-    page->chrome()->client()->setPagePopupDriver(s_pagePopupDriver);
-#else
-    UNUSED_PARAM(enabled);
-    UNUSED_PARAM(ec);
-#endif
+    page->chrome().client()->setPagePopupDriver(s_pagePopupDriver);
 }
 
-#if ENABLE(PAGE_POPUP)
 PassRefPtr<PagePopupController> Internals::pagePopupController()
 {
     return s_pagePopupDriver ? s_pagePopupDriver->pagePopupController() : 0;
 }
-#endif
 
 PassRefPtr<ClientRect> Internals::absoluteCaretBounds(ExceptionCode& ec)
 {
@@ -983,12 +893,14 @@ String Internals::configurationForViewport(Document* document, float devicePixel
 
     const int defaultLayoutWidthForNonMobilePages = 980;
 
-    ViewportArguments arguments = page->viewportArguments();
-    ViewportAttributes attributes = computeViewportAttributes(arguments, defaultLayoutWidthForNonMobilePages, deviceWidth, deviceHeight, devicePixelRatio, IntSize(availableWidth, availableHeight));
-    restrictMinimumScaleFactorToViewportSize(attributes, IntSize(availableWidth, availableHeight), devicePixelRatio);
-    restrictScaleFactorToInitialScaleIfNotUserScalable(attributes);
+    // FIXME(aelias): Remove this argument from all the fast/viewport tests.
+    ASSERT(devicePixelRatio == 1);
 
-    return "viewport size " + String::number(attributes.layoutSize.width()) + "x" + String::number(attributes.layoutSize.height()) + " scale " + String::number(attributes.initialScale) + " with limits [" + String::number(attributes.minimumScale) + ", " + String::number(attributes.maximumScale) + "] and userScalable " + (attributes.userScalable ? "true" : "false");
+    ViewportArguments arguments = page->viewportArguments();
+    PageScaleConstraints constraints = arguments.resolve(IntSize(availableWidth, availableHeight), FloatSize(deviceWidth, deviceHeight), defaultLayoutWidthForNonMobilePages);
+    constraints.fitToContentsWidth(constraints.layoutSize.width(), availableWidth);
+
+    return "viewport size " + String::number(constraints.layoutSize.width()) + "x" + String::number(constraints.layoutSize.height()) + " scale " + String::number(constraints.initialScale) + " with limits [" + String::number(constraints.minimumScale) + ", " + String::number(constraints.maximumScale) + "] and userScalable " + (arguments.userZoom ? "true" : "false");
 }
 
 bool Internals::wasLastChangeUserEdit(Element* textField, ExceptionCode& ec)
@@ -998,8 +910,8 @@ bool Internals::wasLastChangeUserEdit(Element* textField, ExceptionCode& ec)
         return false;
     }
 
-    if (HTMLInputElement* inputElement = textField->toInputElement())
-        return inputElement->lastChangeWasUserEdit();
+    if (textField->hasTagName(inputTag))
+        return toHTMLInputElement(textField)->lastChangeWasUserEdit();
 
     // FIXME: We should be using hasTagName instead but Windows port doesn't link QualifiedNames properly.
     if (textField->tagName() == "TEXTAREA")
@@ -1016,8 +928,8 @@ bool Internals::elementShouldAutoComplete(Element* element, ExceptionCode& ec)
         return false;
     }
 
-    if (HTMLInputElement* inputElement = element->toInputElement())
-        return inputElement->shouldAutocomplete();
+    if (element->hasTagName(inputTag))
+        return toHTMLInputElement(element)->shouldAutocomplete();
 
     ec = INVALID_NODE_TYPE_ERR;
     return false;
@@ -1030,13 +942,12 @@ String Internals::suggestedValue(Element* element, ExceptionCode& ec)
         return String();
     }
 
-    HTMLInputElement* inputElement = element->toInputElement();
-    if (!inputElement) {
+    if (!element->hasTagName(inputTag)) {
         ec = INVALID_NODE_TYPE_ERR;
         return String();
     }
 
-    return inputElement->suggestedValue();
+    return toHTMLInputElement(element)->suggestedValue();
 }
 
 void Internals::setSuggestedValue(Element* element, const String& value, ExceptionCode& ec)
@@ -1046,13 +957,12 @@ void Internals::setSuggestedValue(Element* element, const String& value, Excepti
         return;
     }
 
-    HTMLInputElement* inputElement = element->toInputElement();
-    if (!inputElement) {
+    if (!element->hasTagName(inputTag)) {
         ec = INVALID_NODE_TYPE_ERR;
         return;
     }
 
-    inputElement->setSuggestedValue(value);
+    toHTMLInputElement(element)->setSuggestedValue(value);
 }
 
 void Internals::setEditingValue(Element* element, const String& value, ExceptionCode& ec)
@@ -1062,23 +972,21 @@ void Internals::setEditingValue(Element* element, const String& value, Exception
         return;
     }
 
-    HTMLInputElement* inputElement = element->toInputElement();
-    if (!inputElement) {
+    if (!element->hasTagName(inputTag)) {
         ec = INVALID_NODE_TYPE_ERR;
         return;
     }
 
-    inputElement->setEditingValue(value);
+    toHTMLInputElement(element)->setEditingValue(value);
 }
 
 void Internals::setAutofilled(Element* element, bool enabled, ExceptionCode& ec)
 {
-    HTMLInputElement* inputElement = element->toInputElement();
-    if (!inputElement) {
+    if (!element->hasTagName(inputTag)) {
         ec = INVALID_ACCESS_ERR;
         return;
     }
-    inputElement->setAutofilled(enabled);
+    toHTMLInputElement(element)->setAutofilled(enabled);
 }
 
 void Internals::scrollElementToRect(Element* element, long x, long y, long w, long h, ExceptionCode& ec)
@@ -1155,6 +1063,8 @@ PassRefPtr<DOMPoint> Internals::touchPositionAdjustedToBestClickableNode(long x,
         return 0;
     }
 
+    document->updateLayout();
+
     IntSize radius(width / 2, height / 2);
     IntPoint point(x + radius.width(), y + radius.height());
 
@@ -1175,6 +1085,8 @@ Node* Internals::touchNodeAdjustedToBestClickableNode(long x, long y, long width
         return 0;
     }
 
+    document->updateLayout();
+
     IntSize radius(width / 2, height / 2);
     IntPoint point(x + radius.width(), y + radius.height());
 
@@ -1190,6 +1102,8 @@ PassRefPtr<DOMPoint> Internals::touchPositionAdjustedToBestContextMenuNode(long 
         ec = INVALID_ACCESS_ERR;
         return 0;
     }
+
+    document->updateLayout();
 
     IntSize radius(width / 2, height / 2);
     IntPoint point(x + radius.width(), y + radius.height());
@@ -1211,6 +1125,8 @@ Node* Internals::touchNodeAdjustedToBestContextMenuNode(long x, long y, long wid
         return 0;
     }
 
+    document->updateLayout();
+
     IntSize radius(width / 2, height / 2);
     IntPoint point(x + radius.width(), y + radius.height());
 
@@ -1226,6 +1142,8 @@ PassRefPtr<ClientRect> Internals::bestZoomableAreaForTouchPoint(long x, long y, 
         ec = INVALID_ACCESS_ERR;
         return 0;
     }
+
+    document->updateLayout();
 
     IntSize radius(width / 2, height / 2);
     IntPoint point(x + radius.width(), y + radius.height());
@@ -1384,38 +1302,12 @@ void Internals::emitInspectorDidCancelFrame()
     inspectorController->didCancelFrame();
 }
 
-void Internals::setBatteryStatus(Document* document, const String& eventType, bool charging, double chargingTime, double dischargingTime, double level, ExceptionCode& ec)
-{
-    if (!document || !document->page()) {
-        ec = INVALID_ACCESS_ERR;
-        return;
-    }
-
-#if ENABLE(BATTERY_STATUS)
-    BatteryController::from(document->page())->didChangeBatteryStatus(eventType, BatteryStatus::create(charging, chargingTime, dischargingTime, level));
-#else
-    UNUSED_PARAM(eventType);
-    UNUSED_PARAM(charging);
-    UNUSED_PARAM(chargingTime);
-    UNUSED_PARAM(dischargingTime);
-    UNUSED_PARAM(level);
-#endif
-}
-
 bool Internals::hasSpellingMarker(Document* document, int from, int length, ExceptionCode&)
 {
     if (!document || !document->frame())
         return 0;
 
     return document->frame()->editor()->selectionStartHasMarkerFor(DocumentMarker::Spelling, from, length);
-}
-
-bool Internals::hasAutocorrectedMarker(Document* document, int from, int length, ExceptionCode&)
-{
-    if (!document || !document->frame())
-        return 0;
-
-    return document->frame()->editor()->selectionStartHasMarkerFor(DocumentMarker::Autocorrected, from, length);
 }
 
 void Internals::setContinuousSpellCheckingEnabled(bool enabled, ExceptionCode&)
@@ -1507,6 +1399,16 @@ void Internals::closeDummyInspectorFrontend()
     m_frontendWindow.release();
 }
 
+Vector<unsigned long> Internals::setMemoryCacheCapacities(unsigned long minDeadBytes, unsigned long maxDeadBytes, unsigned long totalBytes)
+{
+    Vector<unsigned long> result;
+    result.append(memoryCache()->minDeadCapacity());
+    result.append(memoryCache()->maxDeadCapacity());
+    result.append(memoryCache()->capacity());
+    memoryCache()->setCapacities(minDeadBytes, maxDeadBytes, totalBytes);
+    return result;
+}
+
 void Internals::setInspectorResourcesDataSizeLimits(int maximumResourcesContentSize, int maximumSingleResourceContentSize, ExceptionCode& ec)
 {
     Page* page = contextDocument()->frame()->page();
@@ -1515,17 +1417,6 @@ void Internals::setInspectorResourcesDataSizeLimits(int maximumResourcesContentS
         return;
     }
     page->inspectorController()->setResourcesDataSizeLimitsFromInternals(maximumResourcesContentSize, maximumSingleResourceContentSize);
-}
-
-void Internals::setJavaScriptProfilingEnabled(bool enabled, ExceptionCode& ec)
-{
-    Page* page = contextDocument()->frame()->page();
-    if (!page || !page->inspectorController()) {
-        ec = INVALID_ACCESS_ERR;
-        return;
-    }
-
-    page->inspectorController()->setProfilerEnabled(enabled);
 }
 
 bool Internals::hasGrammarMarker(Document* document, int from, int length, ExceptionCode&)
@@ -1564,6 +1455,11 @@ bool Internals::isPageBoxVisible(Document* document, int pageNumber, ExceptionCo
 String Internals::layerTreeAsText(Document* document, ExceptionCode& ec) const
 {
     return layerTreeAsText(document, 0, ec);
+}
+
+String Internals::elementLayerTreeAsText(Element* element, ExceptionCode& ec) const
+{
+    return elementLayerTreeAsText(element, 0, ec);
 }
 
 static PassRefPtr<NodeList> paintOrderList(Element* element, ExceptionCode& ec, RenderLayer::PaintOrderListType type)
@@ -1609,17 +1505,60 @@ String Internals::layerTreeAsText(Document* document, unsigned flags, ExceptionC
         return String();
     }
 
-    LayerTreeFlags layerTreeFlags = 0;
-    if (flags & LAYER_TREE_INCLUDES_VISIBLE_RECTS)
-        layerTreeFlags |= LayerTreeFlagsIncludeVisibleRects;
-    if (flags & LAYER_TREE_INCLUDES_TILE_CACHES)
-        layerTreeFlags |= LayerTreeFlagsIncludeTileCaches;
-    if (flags & LAYER_TREE_INCLUDES_REPAINT_RECTS)
-        layerTreeFlags |= LayerTreeFlagsIncludeRepaintRects;
-    if (flags & LAYER_TREE_INCLUDES_PAINTING_PHASES)
-        layerTreeFlags |= LayerTreeFlagsIncludePaintingPhases;
+    return document->frame()->layerTreeAsText(flags);
+}
 
-    return document->frame()->layerTreeAsText(layerTreeFlags);
+String Internals::elementLayerTreeAsText(Element* element, unsigned flags, ExceptionCode& ec) const
+{
+    if (!element) {
+        ec = INVALID_ACCESS_ERR;
+        return String();
+    }
+
+    element->document()->updateLayout();
+
+    RenderObject* renderer = element->renderer();
+    if (!renderer || !renderer->isBox()) {
+        ec = INVALID_ACCESS_ERR;
+        return String();
+    }
+
+    RenderLayer* layer = toRenderBox(renderer)->layer();
+    if (!layer) {
+        ec = INVALID_ACCESS_ERR;
+        return String();
+    }
+
+    if (!layer->backing() || !layer->backing()->graphicsLayer()) {
+        // Don't raise exception in these cases which may be normally used in tests.
+        return String();
+    }
+
+    return layer->backing()->graphicsLayer()->layerTreeAsText(flags);
+}
+
+void Internals::setNeedsCompositedScrolling(Element* element, unsigned needsCompositedScrolling, ExceptionCode& ec)
+{
+    if (!element) {
+        ec = INVALID_ACCESS_ERR;
+        return;
+    }
+
+    element->document()->updateLayout();
+
+    RenderObject* renderer = element->renderer();
+    if (!renderer || !renderer->isBox()) {
+        ec = INVALID_ACCESS_ERR;
+        return;
+    }
+
+    RenderLayer* layer = toRenderBox(renderer)->layer();
+    if (!layer) {
+        ec = INVALID_ACCESS_ERR;
+        return;
+    }
+
+    layer->setForceNeedsCompositedScrolling(static_cast<RenderLayer::ForceNeedsCompositedScrollingMode>(needsCompositedScrolling));
 }
 
 String Internals::repaintRectsAsText(Document* document, ExceptionCode& ec) const
@@ -1765,6 +1704,17 @@ String Internals::pageSizeAndMarginsInPixels(int pageNumber, int width, int heig
     return PrintContext::pageSizeAndMarginsInPixels(frame(), pageNumber, width, height, marginTop, marginRight, marginBottom, marginLeft);
 }
 
+void Internals::setDeviceScaleFactor(float scaleFactor, ExceptionCode& ec)
+{
+    Document* document = contextDocument();
+    if (!document || !document->page()) {
+        ec = INVALID_ACCESS_ERR;
+        return;
+    }
+    Page* page = document->page();
+    page->setDeviceScaleFactor(scaleFactor);
+}
+
 void Internals::setPageScaleFactor(float scaleFactor, int x, int y, ExceptionCode& ec)
 {
     Document* document = contextDocument();
@@ -1789,28 +1739,28 @@ void Internals::webkitWillEnterFullScreenForElement(Document* document, Element*
 {
     if (!document)
         return;
-    document->webkitWillEnterFullScreenForElement(element);
+    FullscreenController::from(document)->webkitWillEnterFullScreenForElement(element);
 }
 
 void Internals::webkitDidEnterFullScreenForElement(Document* document, Element* element)
 {
     if (!document)
         return;
-    document->webkitDidEnterFullScreenForElement(element);
+    FullscreenController::from(document)->webkitDidEnterFullScreenForElement(element);
 }
 
 void Internals::webkitWillExitFullScreenForElement(Document* document, Element* element)
 {
     if (!document)
         return;
-    document->webkitWillExitFullScreenForElement(element);
+    FullscreenController::from(document)->webkitWillExitFullScreenForElement(element);
 }
 
 void Internals::webkitDidExitFullScreenForElement(Document* document, Element* element)
 {
     if (!document)
         return;
-    document->webkitDidExitFullScreenForElement(element);
+    FullscreenController::from(document)->webkitDidExitFullScreenForElement(element);
 }
 
 void Internals::registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme)
@@ -1968,12 +1918,16 @@ void Internals::forceReload(bool endToEnd)
     frame()->loader()->reload(endToEnd);
 }
 
-#if ENABLE(ENCRYPTED_MEDIA_V2)
-void Internals::initializeMockCDM()
+PassRefPtr<ClientRect> Internals::selectionBounds(ExceptionCode& ec)
 {
-    CDM::registerCDMFactory(MockCDM::create, MockCDM::supportsKeySytem);
+    Document* document = contextDocument();
+    if (!document || !document->frame() || !document->frame()->selection()) {
+        ec = INVALID_ACCESS_ERR;
+        return 0;
+    }
+
+    return ClientRect::create(document->frame()->selection()->bounds());
 }
-#endif
 
 String Internals::markerTextForListItem(Element* element, ExceptionCode& ec)
 {

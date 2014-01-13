@@ -7,7 +7,7 @@
 #include <iomanip>
 
 #include "base/json/string_escape.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "sync/syncable/blob.h"
 #include "sync/syncable/directory.h"
 #include "sync/syncable/syncable_base_transaction.h"
@@ -42,8 +42,8 @@ Directory* Entry::dir() const {
   return basetrans_->directory();
 }
 
-DictionaryValue* Entry::ToValue(Cryptographer* cryptographer) const {
-  DictionaryValue* entry_info = new DictionaryValue();
+base::DictionaryValue* Entry::ToValue(Cryptographer* cryptographer) const {
+  base::DictionaryValue* entry_info = new base::DictionaryValue();
   entry_info->SetBoolean("good", good());
   if (good()) {
     entry_info->Set("kernel", kernel_->ToValue(cryptographer));
@@ -102,6 +102,18 @@ Id Entry::GetSuccessorId() const {
 
 Id Entry::GetFirstChildId() const {
   return dir()->GetFirstChildId(basetrans_, kernel_);
+}
+
+void Entry::GetChildHandles(std::vector<int64>* result) const {
+  dir()->GetChildHandlesById(basetrans_, Get(ID), result);
+}
+
+int Entry::GetTotalNodeCount() const {
+  return dir()->GetTotalNodeCount(basetrans_, kernel_);
+}
+
+int Entry::GetPositionIndex() const {
+  return dir()->GetPositionIndex(basetrans_, kernel_);
 }
 
 bool Entry::ShouldMaintainPosition() const {

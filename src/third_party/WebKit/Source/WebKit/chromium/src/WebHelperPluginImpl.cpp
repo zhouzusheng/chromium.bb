@@ -52,30 +52,28 @@ using namespace WebCore;
 
 namespace WebKit {
 
-#define addLiteral(literal, writer)    writer.addData(literal, sizeof(literal) - 1)
+#define addLiteral(literal, writer)    writer->addData(literal, sizeof(literal) - 1)
 
-static inline void addString(const String& str, DocumentWriter& writer)
+static inline void addString(const String& str, DocumentWriter* writer)
 {
     CString str8 = str.utf8();
-    writer.addData(str8.data(), str8.length());
+    writer->addData(str8.data(), str8.length());
 }
 
-void writeDocument(const String& pluginType, const WebDocument& hostDocument, WebCore::DocumentWriter& writer)
+static void writeDocument(const String& pluginType, const WebDocument& hostDocument, WebCore::DocumentLoader* loader)
 {
     // Give the new document the same URL as the hose document so that content
     // settings and other decisions can be made based on the correct origin.
     const WebURL& url = hostDocument.url();
 
-    writer.setMIMEType("text/html");
-    writer.setEncoding("UTF-8", false);
-    writer.begin(url);
+    DocumentWriter* writer = loader->beginWriting("text/html", "UTF-8", url);
 
     addLiteral("<!DOCTYPE html><head><meta charset='UTF-8'></head><body>\n", writer);
     String objectTag = "<object type=\"" + pluginType + "\"></object>";
     addString(objectTag, writer);
     addLiteral("</body>\n", writer);
 
-    writer.end();
+    writer->end();
 }
 
 class HelperPluginChromeClient : public EmptyChromeClient {
@@ -200,11 +198,11 @@ bool WebHelperPluginImpl::initializePage(const String& pluginType, const WebDocu
     // The page's main frame was set in initializeFrame() as a result of the above call.
     Frame* frame = m_page->mainFrame();
     ASSERT(frame);
+    frame->loader()->forceSandboxFlags(SandboxAll & ~SandboxPlugins & ~SandboxScripts);
     frame->setView(FrameView::create(frame));
     // No need to set a size or make it not transparent.
 
-    DocumentWriter* writer = frame->loader()->activeDocumentLoader()->writer();
-    writeDocument(pluginType, hostDocument, *writer);
+    writeDocument(pluginType, hostDocument, frame->loader()->activeDocumentLoader());
 
     return true;
 }
@@ -241,8 +239,7 @@ void WebHelperPluginImpl::close()
 
 WebHelperPlugin* WebHelperPlugin::create(WebWidgetClient* client)
 {
-    if (!client)
-        CRASH();
+    RELEASE_ASSERT(client);
     // A WebHelperPluginImpl instance usually has two references.
     //  - One owned by the instance itself. It represents the visible widget.
     //  - One owned by the hosting element. It's released when the hosting

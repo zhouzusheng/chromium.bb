@@ -27,8 +27,12 @@
 #include "modules/mediastream/MediaStreamTrack.h"
 
 #include "core/dom/Event.h"
+#include "core/dom/ScriptExecutionContext.h"
 #include "core/platform/mediastream/MediaStreamCenter.h"
 #include "core/platform/mediastream/MediaStreamComponent.h"
+#include "modules/mediastream/MediaStreamTrackSourcesCallback.h"
+#include "modules/mediastream/MediaStreamTrackSourcesRequest.h"
+#include "public/platform/WebSourceInfo.h"
 
 namespace WebCore {
 
@@ -44,6 +48,7 @@ MediaStreamTrack::MediaStreamTrack(ScriptExecutionContext* context, MediaStreamC
     , m_stopped(false)
     , m_component(component)
 {
+    ScriptWrappable::init(this);
     m_component->source()->addObserver(this);
 }
 
@@ -112,6 +117,14 @@ String MediaStreamTrack::readyState() const
 
     ASSERT_NOT_REACHED();
     return String();
+}
+
+void MediaStreamTrack::getSources(ScriptExecutionContext* context, PassRefPtr<MediaStreamTrackSourcesCallback> callback, ExceptionCode& ec)
+{
+    RefPtr<MediaStreamTrackSourcesRequest> request = MediaStreamTrackSourcesRequest::create(context, callback);
+    bool ok = MediaStreamCenter::instance().getMediaStreamTrackSources(request.release());
+    if (!ok)
+        ec = NOT_SUPPORTED_ERR;
 }
 
 bool MediaStreamTrack::ended() const

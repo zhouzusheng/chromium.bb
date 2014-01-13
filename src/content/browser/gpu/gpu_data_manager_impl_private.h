@@ -13,10 +13,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
 #include "base/observer_list_threadsafe.h"
-#include "content/browser/gpu/gpu_blacklist.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
-#include "content/browser/gpu/gpu_driver_bug_list.h"
-#include "content/browser/gpu/gpu_switching_list.h"
+#include "gpu/config/gpu_blacklist.h"
+#include "gpu/config/gpu_driver_bug_list.h"
+#include "gpu/config/gpu_switching_list.h"
 
 namespace content {
 
@@ -26,9 +26,9 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   void InitializeForTesting(
       const std::string& gpu_blacklist_json,
-      const GPUInfo& gpu_info);
+      const gpu::GPUInfo& gpu_info);
   bool IsFeatureBlacklisted(int feature) const;
-  GPUInfo GetGPUInfo() const;
+  gpu::GPUInfo GetGPUInfo() const;
   void GetGpuProcessHandles(
       const GpuDataManager::GetGpuProcessHandlesCallback& callback) const;
   bool GpuAccessAllowed(std::string* reason) const;
@@ -51,7 +51,7 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   void Initialize();
 
-  void UpdateGpuInfo(const GPUInfo& gpu_info);
+  void UpdateGpuInfo(const gpu::GPUInfo& gpu_info);
 
   void UpdateVideoMemoryUsageStats(
       const GPUVideoMemoryUsageStats& video_memory_usage_stats);
@@ -64,11 +64,14 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   void UpdateRendererWebPrefs(WebPreferences* prefs) const;
 
-  GpuSwitchingOption GetGpuSwitchingOption() const;
+  gpu::GpuSwitchingOption GetGpuSwitchingOption() const;
 
   std::string GetBlacklistVersion() const;
+  std::string GetDriverBugListVersion() const;
 
-  base::ListValue* GetBlacklistReasons() const;
+  void GetBlacklistReasons(base::ListValue* reasons) const;
+
+  void GetDriverBugWorkarounds(base::ListValue* workarounds) const;
 
   void AddLogMessage(int level,
                      const std::string& header,
@@ -101,6 +104,11 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
                           ThreeDAPIType requester);
 
   size_t GetBlacklistedFeatureCount() const;
+
+  void SetDisplayCount(unsigned int display_count);
+  unsigned int GetDisplayCount() const;
+
+  void OnGpuProcessInitFailure();
 
   virtual ~GpuDataManagerImplPrivate();
 
@@ -160,7 +168,7 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   void InitializeImpl(const std::string& gpu_blacklist_json,
                       const std::string& gpu_switching_list_json,
                       const std::string& gpu_driver_bug_list_json,
-                      const GPUInfo& gpu_info);
+                      const gpu::GPUInfo& gpu_info);
 
   void UpdateBlacklistedFeatures(const std::set<int>& features);
 
@@ -170,7 +178,7 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   // Update the GPU switching status.
   // This should only be called once at initialization time.
-  void UpdateGpuSwitchingManager(const GPUInfo& gpu_info);
+  void UpdateGpuSwitchingManager(const gpu::GPUInfo& gpu_info);
 
   // Notify all observers whenever there is a GPU info update.
   void NotifyGpuInfoUpdate();
@@ -195,19 +203,19 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   std::set<int> blacklisted_features_;
   std::set<int> preliminary_blacklisted_features_;
 
-  GpuSwitchingOption gpu_switching_;
+  gpu::GpuSwitchingOption gpu_switching_;
 
   std::set<int> gpu_driver_bugs_;
 
-  GPUInfo gpu_info_;
+  gpu::GPUInfo gpu_info_;
 
-  scoped_ptr<GpuBlacklist> gpu_blacklist_;
-  scoped_ptr<GpuSwitchingList> gpu_switching_list_;
-  scoped_ptr<GpuDriverBugList> gpu_driver_bug_list_;
+  scoped_ptr<gpu::GpuBlacklist> gpu_blacklist_;
+  scoped_ptr<gpu::GpuSwitchingList> gpu_switching_list_;
+  scoped_ptr<gpu::GpuDriverBugList> gpu_driver_bug_list_;
 
   const scoped_refptr<GpuDataManagerObserverList> observer_list_;
 
-  ListValue log_messages_;
+  base::ListValue log_messages_;
 
   bool use_swiftshader_;
 
@@ -229,6 +237,10 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   bool domain_blocking_enabled_;
 
   GpuDataManagerImpl* owner_;
+
+  unsigned int display_count_;
+
+  bool gpu_process_accessible_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuDataManagerImplPrivate);
 };

@@ -33,6 +33,7 @@ namespace WebCore {
 OESElementIndexUint::OESElementIndexUint(WebGLRenderingContext* context)
     : WebGLExtension(context)
 {
+    ScriptWrappable::init(this);
     context->graphicsContext3D()->getExtensions()->ensureEnabled("GL_OES_element_index_uint");
 }
 
@@ -45,9 +46,9 @@ WebGLExtension::ExtensionName OESElementIndexUint::getName() const
     return OESElementIndexUintName;
 }
 
-PassOwnPtr<OESElementIndexUint> OESElementIndexUint::create(WebGLRenderingContext* context)
+PassRefPtr<OESElementIndexUint> OESElementIndexUint::create(WebGLRenderingContext* context)
 {
-    return adoptPtr(new OESElementIndexUint(context));
+    return adoptRef(new OESElementIndexUint(context));
 }
 
 bool OESElementIndexUint::supported(WebGLRenderingContext* context)

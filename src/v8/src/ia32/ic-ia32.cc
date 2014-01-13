@@ -92,7 +92,8 @@ static void GenerateNameDictionaryReceiverCheck(MacroAssembler* masm,
   __ j(not_zero, miss);
 
   __ mov(r0, FieldOperand(receiver, JSObject::kPropertiesOffset));
-  __ CheckMap(r0, FACTORY->hash_table_map(), miss, DONT_DO_SMI_CHECK);
+  __ CheckMap(r0, masm->isolate()->factory()->hash_table_map(), miss,
+              DONT_DO_SMI_CHECK);
 }
 
 
@@ -270,7 +271,7 @@ static void GenerateFastArrayLoad(MacroAssembler* masm,
   if (not_fast_array != NULL) {
     // Check that the object is in fast mode and writable.
     __ CheckMap(scratch,
-                FACTORY->fixed_array_map(),
+                masm->isolate()->factory()->fixed_array_map(),
                 not_fast_array,
                 DONT_DO_SMI_CHECK);
   } else {
@@ -282,7 +283,7 @@ static void GenerateFastArrayLoad(MacroAssembler* masm,
   // Fast case: Do the load.
   STATIC_ASSERT((kPointerSize == 4) && (kSmiTagSize == 1) && (kSmiTag == 0));
   __ mov(scratch, FieldOperand(scratch, key, times_2, FixedArray::kHeaderSize));
-  __ cmp(scratch, Immediate(FACTORY->the_hole_value()));
+  __ cmp(scratch, Immediate(masm->isolate()->factory()->the_hole_value()));
   // In case the loaded value is the_hole we have to consult GetProperty
   // to ensure the prototype chain is searched.
   __ j(equal, out_of_range);
@@ -1353,6 +1354,23 @@ void LoadIC::GenerateMiss(MacroAssembler* masm) {
 }
 
 
+void LoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- ecx    : key
+  //  -- edx    : receiver
+  //  -- esp[0] : return address
+  // -----------------------------------
+
+  __ pop(ebx);
+  __ push(edx);  // receiver
+  __ push(ecx);  // name
+  __ push(ebx);  // return address
+
+  // Perform tail call to the entry.
+  __ TailCallRuntime(Runtime::kGetProperty, 2, 1);
+}
+
+
 void KeyedLoadIC::GenerateMiss(MacroAssembler* masm, ICMissMode miss_mode) {
   // ----------- S t a t e -------------
   //  -- ecx    : key
@@ -1464,8 +1482,8 @@ void StoreIC::GenerateNormal(MacroAssembler* masm) {
 }
 
 
-void StoreIC::GenerateGlobalProxy(MacroAssembler* masm,
-                                  StrictModeFlag strict_mode) {
+void StoreIC::GenerateRuntimeSetProperty(MacroAssembler* masm,
+                                         StrictModeFlag strict_mode) {
   // ----------- S t a t e -------------
   //  -- eax    : value
   //  -- ecx    : name
@@ -1526,6 +1544,26 @@ void KeyedStoreIC::GenerateMiss(MacroAssembler* masm, ICMissMode miss_mode) {
       ? ExternalReference(IC_Utility(kKeyedStoreIC_MissForceGeneric),
                           masm->isolate())
       : ExternalReference(IC_Utility(kKeyedStoreIC_Miss), masm->isolate());
+  __ TailCallExternalReference(ref, 3, 1);
+}
+
+
+void StoreIC::GenerateSlow(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- eax    : value
+  //  -- ecx    : key
+  //  -- edx    : receiver
+  //  -- esp[0] : return address
+  // -----------------------------------
+
+  __ pop(ebx);
+  __ push(edx);
+  __ push(ecx);
+  __ push(eax);
+  __ push(ebx);   // return address
+
+  // Do tail-call to runtime routine.
+  ExternalReference ref(IC_Utility(kStoreIC_Slow), masm->isolate());
   __ TailCallExternalReference(ref, 3, 1);
 }
 

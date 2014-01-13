@@ -28,23 +28,19 @@
 
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/BeforeTextInsertedEvent.h"
 #include "core/dom/Document.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/dom/Text.h"
-#include "core/editing/Editor.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/TextIterator.h"
 #include "core/html/FormController.h"
 #include "core/html/FormDataList.h"
 #include "core/html/shadow/TextControlInnerElements.h"
-#include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/platform/LocalizedStrings.h"
 #include "core/rendering/RenderTextControlMultiLine.h"
@@ -208,9 +204,9 @@ void HTMLTextAreaElement::parseAttribute(const QualifiedName& name, const Atomic
         HTMLTextFormControlElement::parseAttribute(name, value);
 }
 
-RenderObject* HTMLTextAreaElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* HTMLTextAreaElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderTextControlMultiLine(this);
+    return new (document()->renderArena()) RenderTextControlMultiLine(this);
 }
 
 bool HTMLTextAreaElement::appendFormData(FormDataList& encoding, bool)
@@ -283,8 +279,6 @@ void HTMLTextAreaElement::subtreeHasChanged()
     if (!focused())
         return;
 
-    if (Frame* frame = document()->frame())
-        frame->editor()->textDidChangeInTextArea(this);
     // When typing in a textarea, childrenChanged is not called, so we need to force the directionality check.
     calculateAndAdjustDirectionality();
 }
@@ -525,9 +519,9 @@ HTMLElement* HTMLTextAreaElement::placeholderElement() const
     return m_placeholder;
 }
 
-void HTMLTextAreaElement::attach()
+void HTMLTextAreaElement::attach(const AttachContext& context)
 {
-    HTMLTextFormControlElement::attach();
+    HTMLTextFormControlElement::attach(context);
     fixPlaceholderRenderer(m_placeholder, innerTextElement());
 }
 

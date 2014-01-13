@@ -27,13 +27,10 @@
 
 #include "HTMLNames.h"
 #include "core/dom/IdTargetObserver.h"
-#include "core/html/FormController.h"
 #include "core/html/HTMLFormControlElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/ValidityState.h"
-#include "core/page/EditorClient.h"
-#include "core/page/Frame.h"
 
 namespace WebCore {
 
@@ -73,7 +70,7 @@ void FormAssociatedElement::didMoveToNewDocument(Document* oldDocument)
 {
     HTMLElement* element = toHTMLElement(this);
     if (oldDocument && element->fastHasAttribute(formAttr))
-        resetFormAttributeTargetObserver();
+        m_formAttributeTargetObserver = nullptr;
 }
 
 void FormAssociatedElement::insertedInto(ContainerNode* insertionPoint)
@@ -109,7 +106,7 @@ HTMLFormElement* FormAssociatedElement::findAssociatedForm(const HTMLElement* el
         HTMLFormElement* newForm = 0;
         Element* newFormCandidate = element->treeScope()->getElementById(formId);
         if (newFormCandidate && newFormCandidate->hasTagName(formTag))
-            newForm = static_cast<HTMLFormElement*>(newFormCandidate);
+            newForm = toHTMLFormElement(newFormCandidate);
         return newForm;
     }
 
@@ -179,7 +176,8 @@ void FormAssociatedElement::formAttributeChanged()
         m_formAttributeTargetObserver = nullptr;
     } else {
         resetFormOwner();
-        resetFormAttributeTargetObserver();
+        if (element->inDocument())
+            resetFormAttributeTargetObserver();
     }
 }
 
@@ -253,6 +251,7 @@ void FormAssociatedElement::setCustomValidity(const String& error)
 
 void FormAssociatedElement::resetFormAttributeTargetObserver()
 {
+    ASSERT(toHTMLElement(this)->inDocument());
     m_formAttributeTargetObserver = FormAttributeTargetObserver::create(toHTMLElement(this)->fastGetAttribute(formAttr), this);
 }
 

@@ -5,14 +5,14 @@
 #include "webkit/glue/multipart_response_delegate.h"
 
 #include "base/logging.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "net/base/net_util.h"
 #include "net/http/http_util.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPHeaderVisitor.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoaderClient.h"
+#include "third_party/WebKit/public/platform/WebHTTPHeaderVisitor.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 
 using WebKit::WebHTTPHeaderVisitor;
 using WebKit::WebString;

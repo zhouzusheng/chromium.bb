@@ -41,7 +41,7 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
   virtual PP_Resource CreateFileRef(PP_Instance instance,
                                     PP_Resource file_system,
                                     const char* path) OVERRIDE;
-  virtual PP_Resource CreateFlashDeviceID(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateFlashDRM(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateFlashFontFile(
       PP_Instance instance,
       const PP_BrowserFont_Trusted_Description* description,
@@ -55,15 +55,16 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
   virtual PP_Resource CreateGraphics3DRaw(PP_Instance instance,
                                           PP_Resource share_context,
                                           const int32_t* attrib_list) OVERRIDE;
+  virtual PP_Resource CreateHostResolver(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateHostResolverPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateImageData(PP_Instance instance,
                                       PP_ImageDataFormat format,
                                       const PP_Size* size,
                                       PP_Bool init_to_zero) OVERRIDE;
-  virtual PP_Resource CreateImageDataNaCl(PP_Instance instance,
-                                          PP_ImageDataFormat format,
-                                          const PP_Size* size,
-                                          PP_Bool init_to_zero) OVERRIDE;
+  virtual PP_Resource CreateImageDataSimple(PP_Instance instance,
+                                            PP_ImageDataFormat format,
+                                            const PP_Size* size,
+                                            PP_Bool init_to_zero) OVERRIDE;
   virtual PP_Resource CreateIMEInputEvent(PP_Instance instance,
                                           PP_InputEvent_Type type,
                                           PP_TimeTicks time_stamp,
@@ -73,6 +74,8 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
                                           int32_t target_segment,
                                           uint32_t selection_start,
                                           uint32_t selection_end) OVERRIDE;
+  virtual PP_Resource CreateIsolatedFileSystem(PP_Instance instance,
+                                               const char* fsid) OVERRIDE;
   virtual PP_Resource CreateKeyboardInputEvent(
       PP_Instance instance,
       PP_InputEvent_Type type,
@@ -89,6 +92,15 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
       const PP_Point* mouse_position,
       int32_t click_count,
       const PP_Point* mouse_movement) OVERRIDE;
+  virtual PP_Resource CreateNetAddressFromIPv4Address(
+      PP_Instance instance,
+      const PP_NetAddress_IPv4* ipv4_addr) OVERRIDE;
+  virtual PP_Resource CreateNetAddressFromIPv6Address(
+      PP_Instance instance,
+      const PP_NetAddress_IPv6* ipv6_addr) OVERRIDE;
+  virtual PP_Resource CreateNetAddressFromNetAddressPrivate(
+      PP_Instance instance,
+      const PP_NetAddress_Private& private_addr) OVERRIDE;
   virtual PP_Resource CreateTouchInputEvent(
       PP_Instance instance,
       PP_InputEvent_Type type,
@@ -106,7 +118,9 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
   virtual PP_Resource CreateTalk(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPServerSocketPrivate(
       PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateTCPSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateUDPSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateURLLoader(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateVideoCapture(PP_Instance instance) OVERRIDE;

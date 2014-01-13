@@ -70,7 +70,19 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
     virtual bool OnSerializedPacket(const SerializedPacket& packet) = 0;
   };
 
+  // Interface which gets callbacks from the QuicPacketGenerator at interesting
+  // points.  Implementations must not mutate the state of the generator
+  // as a result of these callbacks.
+  class NET_EXPORT_PRIVATE DebugDelegateInterface {
+   public:
+    virtual ~DebugDelegateInterface() {}
+
+    // Called when a frame has been added to the current packet.
+    virtual void OnFrameAddedToPacket(const QuicFrame& frame) = 0;
+  };
+
   QuicPacketGenerator(DelegateInterface* delegate,
+                      DebugDelegateInterface* debug_delegate,
                       QuicPacketCreator* creator);
 
   virtual ~QuicPacketGenerator();
@@ -87,16 +99,23 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // Enables flushing and flushes queued data.
   void FinishBatchOperations();
 
-  bool HasQueuedData() const;
+  bool HasQueuedFrames() const;
+
+  void set_debug_delegate(DebugDelegateInterface* debug_delegate) {
+    debug_delegate_ = debug_delegate;
+  }
 
  private:
-  void SendQueuedData();
+  void SendQueuedFrames();
 
-  bool HasPendingData() const;
+  bool HasPendingFrames() const;
   bool AddNextPendingFrame();
+
+  bool AddFrame(const QuicFrame& frame);
   void SerializeAndSendPacket();
 
   DelegateInterface* delegate_;
+  DebugDelegateInterface* debug_delegate_;
 
   QuicPacketCreator* packet_creator_;
   QuicFrames queued_control_frames_;

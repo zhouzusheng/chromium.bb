@@ -31,14 +31,14 @@
 #include "config.h"
 #include "bindings/v8/V8DOMWrapper.h"
 
-#include "V8DOMWindow.h"
 #include "V8HTMLCollection.h"
 #include "V8HTMLDocument.h"
-#include "bindings/v8/V8AdaptorFunction.h"
+#include "V8Window.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/V8ObjectConstructor.h"
 #include "bindings/v8/V8PerContextData.h"
+#include "bindings/v8/V8ScriptRunner.h"
 
 namespace WebCore {
 
@@ -48,6 +48,9 @@ public:
         : m_didEnterContext(false)
         , m_context(v8::Context::GetCurrent())
     {
+        // FIXME: Remove all empty creationContexts from caller sites.
+        // If a creationContext is empty, we will end up creating a new object
+        // in the context currently entered. This is wrong.
         if (creationContext.IsEmpty())
             return;
         v8::Handle<v8::Context> contextForWrapper = creationContext->CreationContext();
@@ -74,6 +77,35 @@ private:
     v8::Handle<v8::Context> m_context;
 };
 
+static v8::Local<v8::Object> wrapInShadowTemplate(v8::Local<v8::Object> wrapper, Node* impl, v8::Isolate* isolate)
+{
+    // This is only for getting a unique pointer which we can pass to privateTemplate.
+    static const char* shadowTemplateUniqueKey = "wrapInShadowTemplate";
+    WrapperWorldType currentWorldType = worldType(isolate);
+    v8::Handle<v8::FunctionTemplate> shadowTemplate;
+    if (!V8PerIsolateData::from(isolate)->hasPrivateTemplate(currentWorldType, &shadowTemplateUniqueKey)) {
+        shadowTemplate = v8::FunctionTemplate::New();
+        if (shadowTemplate.IsEmpty())
+            return v8::Local<v8::Object>();
+        shadowTemplate->SetClassName(v8::String::NewSymbol("HTMLDocument"));
+        shadowTemplate->Inherit(V8HTMLDocument::GetTemplate(isolate, currentWorldType));
+        shadowTemplate->InstanceTemplate()->SetInternalFieldCount(V8HTMLDocument::internalFieldCount);
+    } else {
+        shadowTemplate = V8PerIsolateData::from(isolate)->privateTemplate(currentWorldType, &shadowTemplateUniqueKey, 0, v8::Handle<v8::Value>(), v8::Handle<v8::Signature>());
+    }
+
+    v8::Local<v8::Function> shadowConstructor = shadowTemplate->GetFunction();
+    if (shadowConstructor.IsEmpty())
+        return v8::Local<v8::Object>();
+
+    v8::Local<v8::Object> shadow = V8ScriptRunner::instantiateObject(shadowConstructor);
+    if (shadow.IsEmpty())
+        return v8::Local<v8::Object>();
+    shadow->SetPrototype(wrapper);
+    V8DOMWrapper::setNativeInfo(wrapper, &V8HTMLDocument::info, impl);
+    return shadow;
+}
+
 v8::Local<v8::Object> V8DOMWrapper::createWrapper(v8::Handle<v8::Object> creationContext, WrapperTypeInfo* type, void* impl, v8::Isolate* isolate)
 {
     V8WrapperInstantiationScope scope(creationContext);
@@ -82,7 +114,7 @@ v8::Local<v8::Object> V8DOMWrapper::createWrapper(v8::Handle<v8::Object> creatio
     v8::Local<v8::Object> wrapper = perContextData ? perContextData->createWrapperFromCache(type) : V8ObjectConstructor::newInstance(type->getTemplate(isolate, worldTypeInMainThread(isolate))->GetFunction());
 
     if (type == &V8HTMLDocument::info && !wrapper.IsEmpty())
-        wrapper = V8HTMLDocument::wrapInShadowObject(wrapper, static_cast<Node*>(impl), isolate);
+        wrapper = wrapInShadowTemplate(wrapper, static_cast<Node*>(impl), isolate);
 
     return wrapper;
 }
@@ -136,23 +168,6 @@ bool V8DOMWrapper::isWrapperOfType(v8::Handle<v8::Value> value, WrapperTypeInfo*
 
     WrapperTypeInfo* typeInfo = static_cast<WrapperTypeInfo*>(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
     return typeInfo == type;
-}
-
-v8::Handle<v8::Function> V8DOMWrapper::toFunction(v8::Handle<v8::Value> object)
-{
-    return V8AdaptorFunction::get(v8::Handle<v8::Object>::Cast(object));
-}
-
-v8::Handle<v8::Function> V8DOMWrapper::toFunction(v8::Handle<v8::Object> object, const AtomicString& name, v8::Isolate* isolate)
-{
-    return V8AdaptorFunction::wrap(object, name, isolate);
-}
-
-v8::Handle<v8::Object> V8DOMWrapper::fromFunction(v8::Handle<v8::Object> object)
-{
-    if (!object->IsFunction())
-        return object;
-    return V8AdaptorFunction::unwrap(v8::Handle<v8::Function>::Cast(object));
 }
 
 }  // namespace WebCore

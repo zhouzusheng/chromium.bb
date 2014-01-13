@@ -45,10 +45,12 @@
 #include "talk/base/logging.h"
 #include "talk/base/stringencode.h"
 #include "talk/base/stringutils.h"
+#include "talk/media/base/audiorenderer.h"
 #include "talk/media/base/constants.h"
 #include "talk/media/base/streamparams.h"
 #include "talk/media/base/voiceprocessor.h"
 #include "talk/media/webrtc/webrtcvoe.h"
+#include "webrtc/modules/audio_processing/include/audio_processing.h"
 
 #ifdef WIN32
 #include <objbase.h>  // NOLINT
@@ -114,6 +116,9 @@ static const char kIsacCodecName[] = "ISAC";
 static const char kL16CodecName[] = "L16";
 // Codec parameters for Opus.
 static const int kOpusMonoBitrate = 32000;
+// Parameter used for NACK.
+// This value is equivalent to 5 seconds of audio data at 20 ms per packet.
+static const int kNackMaxPackets = 250;
 static const int kOpusStereoBitrate = 64000;
 
 // Dumps an AudioCodec in RFC 2327-ish format.
@@ -177,6 +182,11 @@ static bool FindCodec(const std::vector<AudioCodec>& codecs,
   }
   return false;
 }
+static bool IsNackEnabled(const AudioCodec& codec) {
+  return codec.HasFeedbackParam(FeedbackParam(kRtcpFbParamNack,
+                                              kParamValueEmpty));
+}
+
 
 class WebRtcSoundclipMedia : public SoundclipMedia {
  public:
@@ -456,10 +466,7 @@ bool WebRtcVoiceEngine::InitInternal() {
     return false;
   }
 
-  // Turn on AEC and AGC by default.
-  if (!SetOptions(
-      MediaEngineInterface::ECHO_CANCELLATION |
-      MediaEngineInterface::AUTO_GAIN_CONTROL)) {
+  if (!SetOptions(MediaEngineInterface::DEFAULT_AUDIO_OPTIONS)) {
     return false;
   }
 
@@ -512,12 +519,7 @@ void WebRtcVoiceEngine::Terminate() {
   LOG(LS_INFO) << "WebRtcVoiceEngine::Terminate";
   initialized_ = false;
 
-  if (is_dumping_aec_) {
-    if (voe_wrapper_->processing()->StopDebugRecording() == -1) {
-      LOG_RTCERR0(StopDebugRecording);
-    }
-    is_dumping_aec_ = false;
-  }
+  StopAecDump();
 
   voe_wrapper_sc_->base()->Terminate();
   voe_wrapper_->base()->Terminate();
@@ -562,13 +564,14 @@ bool WebRtcVoiceEngine::SetOptions(int flags) {
   options.stereo_swapping.Set(
       ((flags & MediaEngineInterface::STEREO_FLIPPING) != 0));
 
-  // Typing detection warning is always on.
+  // Set defaults for flagless options here. Make sure they are all set so that
+  // ApplyOptions applies all of them when we clear overrides.
   options.typing_detection.Set(true);
-
-  // Make sure they are all set so that ApplyOptions applies all of
-  // them when we clear overrides.
   options.conference_mode.Set(false);
   options.adjust_agc_delta.Set(0);
+  options.experimental_agc.Set(false);
+  options.experimental_aec.Set(false);
+  options.aec_dump.Set(false);
 
   return SetAudioOptions(options);
 }
@@ -607,28 +610,33 @@ bool WebRtcVoiceEngine::ClearOptionOverrides() {
   return true;
 }
 
+// AudioOptions defaults are set in InitInternal (for options with corresponding
+// MediaEngineInterface flags) and in SetOptions(int) for flagless options.
 bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
-  WebRtcAudioOptions options = WebRtcAudioOptions(options_in);
+  AudioOptions options = options_in;  // The options are modified below.
+  // kEcConference is AEC with high suppression.
+  webrtc::EcModes ec_mode = webrtc::kEcConference;
+  webrtc::AecmModes aecm_mode = webrtc::kAecmSpeakerphone;
+  webrtc::AgcModes agc_mode = webrtc::kAgcAdaptiveAnalog;
+  webrtc::NsModes ns_mode = webrtc::kNsHighSuppression;
+  bool aecm_comfort_noise = false;
+
 #if defined(IOS)
   // On iOS, VPIO provides built-in EC and AGC.
   options.echo_cancellation.Set(false);
   options.auto_gain_control.Set(false);
+#elif defined(ANDROID)
+  ec_mode = webrtc::kEcAecm;
 #endif
 
 #if defined(IOS) || defined(ANDROID)
-  // Use speakerphone mode with comfort noise generation for mobile.
-  options.ec_mode = webrtc::kEcAecm;
-  // On mobile, webrtc recommends fixed AGC (not adaptive)
-  options.agc_mode = webrtc::kAgcFixedDigital;
-  // On mobile, webrtc recommends moderate aggressiveness.
-  options.noise_suppression.Set(true);
-  options.ns_mode = webrtc::kNsModerateSuppression;
-  // No typing detection support on iOS or Android.
+  // Set the AGC mode for iOS as well despite disabling it above, to avoid
+  // unsupported configuration errors from webrtc.
+  agc_mode = webrtc::kAgcFixedDigital;
   options.typing_detection.Set(false);
-#elif CHROMEOS  // IOS || ANDROID
-  // Conference mode doesn't work well on ChromeOS.
-  options.conference_mode.Set(false);
-#endif  // CHROMEOS
+  options.experimental_agc.Set(false);
+  options.experimental_aec.Set(false);
+#endif
 
   LOG(LS_INFO) << "Applying audio options: " << options.ToString();
 
@@ -636,20 +644,20 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
 
   bool echo_cancellation;
   if (options.echo_cancellation.Get(&echo_cancellation)) {
-    if (voep->SetEcStatus(echo_cancellation, options.ec_mode) == -1) {
-      LOG_RTCERR2(SetEcStatus, echo_cancellation, options.ec_mode);
+    if (voep->SetEcStatus(echo_cancellation, ec_mode) == -1) {
+      LOG_RTCERR2(SetEcStatus, echo_cancellation, ec_mode);
       return false;
     }
-#if !defined(IOS) && !defined(ANDROID)
-    // SetEcMetricsStatus is currently disabled on mobile.
+#if !defined(ANDROID)
+    // TODO(ajm): Remove the error return on Android from webrtc.
     if (voep->SetEcMetricsStatus(echo_cancellation) == -1) {
       LOG_RTCERR1(SetEcMetricsStatus, echo_cancellation);
       return false;
     }
 #endif
-    if (options.ec_mode == webrtc::kEcAecm) {
-      if (voep->SetAecmMode(options.aecm_mode, false) != 0) {
-        LOG_RTCERR2(SetAecmMode, options.aecm_mode, false);
+    if (ec_mode == webrtc::kEcAecm) {
+      if (voep->SetAecmMode(aecm_mode, aecm_comfort_noise) != 0) {
+        LOG_RTCERR2(SetAecmMode, aecm_mode, aecm_comfort_noise);
         return false;
       }
     }
@@ -657,16 +665,16 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
 
   bool auto_gain_control;
   if (options.auto_gain_control.Get(&auto_gain_control)) {
-    if (voep->SetAgcStatus(auto_gain_control, options.agc_mode) == -1) {
-      LOG_RTCERR2(SetAgcStatus, auto_gain_control, options.agc_mode);
+    if (voep->SetAgcStatus(auto_gain_control, agc_mode) == -1) {
+      LOG_RTCERR2(SetAgcStatus, auto_gain_control, agc_mode);
       return false;
     }
   }
 
   bool noise_suppression;
   if (options.noise_suppression.Get(&noise_suppression)) {
-    if (voep->SetNsStatus(noise_suppression, options.ns_mode) == -1) {
-      LOG_RTCERR2(SetNsStatus, noise_suppression, options.ns_mode);
+    if (voep->SetNsStatus(noise_suppression, ns_mode) == -1) {
+      LOG_RTCERR2(SetNsStatus, noise_suppression, ns_mode);
       return false;
     }
   }
@@ -679,8 +687,6 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
     }
   }
 
-#if !defined(IOS)
-// Current build fails setting stereo swapping on iOS
   bool stereo_swapping;
   if (options.stereo_swapping.Get(&stereo_swapping)) {
     voep->EnableStereoChannelSwapping(stereo_swapping);
@@ -689,12 +695,12 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
       return false;
     }
   }
-#endif
+
   bool typing_detection;
   if (options.typing_detection.Get(&typing_detection)) {
     if (voep->SetTypingDetectionStatus(typing_detection) == -1) {
       // In case of error, log the info and continue
-      LOG_RTCERR1(SetTypingDetectionStatus, true);
+      LOG_RTCERR1(SetTypingDetectionStatus, typing_detection);
     }
   }
 
@@ -705,13 +711,16 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
     }
   }
 
-  bool conference_mode;
-  if (options.conference_mode.Get(&conference_mode)) {
-    if (!SetConferenceMode(conference_mode)) {
-      LOG_RTCERR1(SetConferenceMode, conference_mode);
-      return false;
-    }
+  bool aec_dump;
+  if (options.aec_dump.Get(&aec_dump)) {
+    // TODO(grunell): Use a string in the options instead and let the embedder
+    // choose the filename.
+    if (aec_dump)
+      StartAecDump("audio.aecdump");
+    else
+      StopAecDump();
   }
+
 
   return true;
 }
@@ -737,11 +746,6 @@ struct ResumeEntry {
   bool playout;
   SendFlags send;
 };
-
-bool WebRtcVoiceEngine::SetMobileHeadsetMode(bool enable) {
-  // TODO(kundaji): implement this.
-  return false;
-}
 
 // TODO(juberti): Refactor this so that the core logic can be used to set the
 // soundclip device. At that time, reinstate the soundclip pause/resume code.
@@ -1059,21 +1063,10 @@ void WebRtcVoiceEngine::SetTraceOptions(const std::string& options) {
       std::find(opts.begin(), opts.end(), "recordEC");
   if (recordEC != opts.end()) {
     ++recordEC;
-    if (recordEC != opts.end() && !is_dumping_aec_) {
-      // Start dumping AEC when we are not dumping and recordEC has a filename.
-      if (voe_wrapper_->processing()->StartDebugRecording(
-          recordEC->c_str()) == -1) {
-        LOG_RTCERR0(StartDebugRecording);
-      } else {
-        is_dumping_aec_ = true;
-      }
-    } else if (recordEC == opts.end() && is_dumping_aec_) {
-      // Stop dumping EC when we are dumping and recordEC has no filename.
-      if (voe_wrapper_->processing()->StopDebugRecording() == -1) {
-        LOG_RTCERR0(StopDebugRecording);
-      }
-      is_dumping_aec_ = false;
-    }
+    if (recordEC != opts.end())
+      StartAecDump(recordEC->c_str());
+    else
+      StopAecDump();
   }
 }
 
@@ -1130,8 +1123,7 @@ void WebRtcVoiceEngine::Print(webrtc::TraceLevel level, const char* trace,
   }
 }
 
-void WebRtcVoiceEngine::CallbackOnError(const int channel_num,
-                                        const int err_code) {
+void WebRtcVoiceEngine::CallbackOnError(int channel_num, int err_code) {
   talk_base::CritScope lock(&channels_cs_);
   WebRtcVoiceMediaChannel* channel = NULL;
   uint32 ssrc = 0;
@@ -1232,45 +1224,6 @@ bool WebRtcVoiceEngine::AdjustAgcLevel(int delta) {
 
   if (voe_wrapper_->processing()->SetAgcConfig(config) == -1) {
     LOG_RTCERR1(SetAgcConfig, config.targetLeveldBOv);
-    return false;
-  }
-  return true;
-}
-
-// Configures echo cancellation and noise suppression modes according to
-// whether or not we are in a multi-point conference.
-bool WebRtcVoiceEngine::SetConferenceMode(bool enable) {
-// Only use EC_AECM for mobile.
-#if defined(IOS) || defined(ANDROID)
-  return true;
-#endif
-
-  LOG(LS_INFO) << (enable ? "Enabling" : "Disabling")
-               << " Conference Mode audio processing";
-
-  // Both noise suppression and echo cancellation are user-options, so preserve
-  // the enable state and just toggle the mode.
-  bool ns;
-  webrtc::NsModes ns_mode;
-  if (voe_wrapper_->processing()->GetNsStatus(ns, ns_mode) == -1) {
-    LOG_RTCERR0(GetNsStatus);
-    return false;
-  }
-  ns_mode = enable ? webrtc::kNsConference : webrtc::kNsDefault;
-  if (voe_wrapper_->processing()->SetNsStatus(ns, ns_mode) == -1) {
-    LOG_RTCERR2(SetNsStatus, ns, ns_mode);
-    return false;
-  }
-
-  bool aec;
-  webrtc::EcModes ec_mode;
-  if (voe_wrapper_->processing()->GetEcStatus(aec, ec_mode) == -1) {
-    LOG_RTCERR0(GetEcStatus);
-    return false;
-  }
-  ec_mode = enable ? webrtc::kEcConference : webrtc::kEcDefault;
-  if (voe_wrapper_->processing()->SetEcStatus(aec, ec_mode) == -1) {
-    LOG_RTCERR2(SetEcStatus, aec, ec_mode);
     return false;
   }
   return true;
@@ -1434,12 +1387,12 @@ bool WebRtcVoiceEngine::UnregisterProcessor(
 
 // Implementing method from WebRtc VoEMediaProcess interface
 // Do not lock mux_channel_cs_ in this callback.
-void WebRtcVoiceEngine::Process(const int channel,
-                                const webrtc::ProcessingTypes type,
+void WebRtcVoiceEngine::Process(int channel,
+                                webrtc::ProcessingTypes type,
                                 int16_t audio10ms[],
-                                const int length,
-                                const int sampling_freq,
-                                const bool is_stereo) {
+                                int length,
+                                int sampling_freq,
+                                bool is_stereo) {
     talk_base::CritScope cs(&signal_media_critical_);
     AudioFrame frame(audio10ms, length, sampling_freq, is_stereo);
     if (type == webrtc::kPlaybackAllChannelsMixed) {
@@ -1454,6 +1407,29 @@ void WebRtcVoiceEngine::Process(const int channel,
     }
 }
 
+void WebRtcVoiceEngine::StartAecDump(const std::string& filename) {
+  if (!is_dumping_aec_) {
+    // Start dumping AEC when we are not dumping.
+    if (voe_wrapper_->processing()->StartDebugRecording(
+        filename.c_str()) != webrtc::AudioProcessing::kNoError) {
+      LOG_RTCERR0(StartDebugRecording);
+    } else {
+      is_dumping_aec_ = true;
+    }
+  }
+}
+
+void WebRtcVoiceEngine::StopAecDump() {
+  if (is_dumping_aec_) {
+    // Stop dumping AEC when we are dumping.
+    if (voe_wrapper_->processing()->StopDebugRecording() !=
+        webrtc::AudioProcessing::kNoError) {
+      LOG_RTCERR0(StopDebugRecording);
+    }
+    is_dumping_aec_ = false;
+  }
+}
+
 // WebRtcVoiceMediaChannel
 WebRtcVoiceMediaChannel::WebRtcVoiceMediaChannel(WebRtcVoiceEngine *engine)
     : WebRtcMediaChannel<VoiceMediaChannel, WebRtcVoiceEngine>(
@@ -1462,6 +1438,7 @@ WebRtcVoiceMediaChannel::WebRtcVoiceMediaChannel(WebRtcVoiceEngine *engine)
       options_(),
       dtmf_allowed_(false),
       desired_playout_(false),
+      nack_enabled_(false),
       playout_(false),
       desired_send_(SEND_NOTHING),
       send_(SEND_NOTHING),
@@ -1612,6 +1589,7 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
   // Disable DTMF, VAD, and FEC unless we know the other side wants them.
   dtmf_allowed_ = false;
   engine()->voe()->codec()->SetVADStatus(voe_channel(), false);
+  engine()->voe()->rtp()->SetNACKStatus(voe_channel(), false, 0);
   engine()->voe()->rtp()->SetFECStatus(voe_channel(), false);
 
   // Scan through the list to figure out the codec to use for sending, along
@@ -1728,6 +1706,8 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
         }
       } else {
         send_codec = voe_codec;
+      nack_enabled_ = IsNackEnabled(*it);
+      SetNack(send_ssrc_, voe_channel(), nack_enabled_);
       }
       first = false;
       // Set the codec immediately, since SetVADStatus() depends on whether
@@ -1736,6 +1716,11 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
         return false;
     }
   }
+  for (ChannelMap::iterator it = mux_channels_.begin();
+       it != mux_channels_.end(); ++it) {
+    SetNack(it->first, it->second, nack_enabled_);
+  }
+
 
   // If we're being asked to set an empty list of codecs, due to a buggy client,
   // choose the most common format: PCMU
@@ -1749,6 +1734,17 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
 
   return true;
 }
+void WebRtcVoiceMediaChannel::SetNack(uint32 ssrc, int channel,
+                                      bool nack_enabled) {
+  if (nack_enabled) {
+    LOG(LS_INFO) << "Enabling NACK for stream " << ssrc;
+    engine()->voe()->rtp()->SetNACKStatus(channel, true, kNackMaxPackets);
+  } else {
+    LOG(LS_INFO) << "Disabling NACK for stream " << ssrc;
+    engine()->voe()->rtp()->SetNACKStatus(channel, false, 0);
+  }
+}
+
 
 bool WebRtcVoiceMediaChannel::SetSendCodec(
     const webrtc::CodecInst& send_codec) {
@@ -1792,17 +1788,11 @@ bool WebRtcVoiceMediaChannel::SetSendRtpHeaderExtensions(
   }
 
   LOG(LS_INFO) << "Enabling audio level header extension with ID " << id;
-// This api call is not available in iOS version of VoiceEngine currently.
-#if !defined(IOS) && !defined(ANDROID)
   if (engine()->voe()->rtp()->SetRTPAudioLevelIndicationStatus(
       voe_channel(), enable, id) == -1) {
     LOG_RTCERR3(SetRTPAudioLevelIndicationStatus, voe_channel(), enable, id);
     return false;
   }
-#else
-  LOG(LS_WARNING) << "Not enabling audio level header extension with ID " << id
-                  << " because it's not supported on iOS or Android.";
-#endif
 
   return true;
 }
@@ -2060,6 +2050,7 @@ bool WebRtcVoiceMediaChannel::AddRecvStream(const StreamParams& sp) {
     LOG(LS_INFO) << "Disabling playback on the default voice channel";
     SetPlayout(voe_channel(), false);
   }
+  SetNack(ssrc, channel, nack_enabled_);
 
   mux_channels_[ssrc] = channel;
 
@@ -2098,6 +2089,17 @@ bool WebRtcVoiceMediaChannel::RemoveRecvStream(uint32 ssrc) {
       SetPlayout(voe_channel(), true);
     }
   }
+  return true;
+}
+
+bool WebRtcVoiceMediaChannel::SetRenderer(uint32 ssrc,
+                                          AudioRenderer* renderer) {
+  ASSERT(renderer != NULL);
+  int channel = GetReceiveChannelNum(ssrc);
+  if (channel == -1)
+    return false;
+
+  renderer->SetChannelId(channel);
   return true;
 }
 

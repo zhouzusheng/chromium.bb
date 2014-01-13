@@ -43,8 +43,6 @@
 #include "core/page/Frame.h"
 #include "core/platform/mediastream/RTCConfiguration.h"
 #include "core/platform/mediastream/RTCDataChannelHandler.h"
-#include "core/platform/mediastream/RTCIceCandidateDescriptor.h"
-#include "core/platform/mediastream/RTCSessionDescriptionDescriptor.h"
 #include "modules/mediastream/MediaConstraintsImpl.h"
 #include "modules/mediastream/MediaStreamEvent.h"
 #include "modules/mediastream/RTCDTMFSender.h"
@@ -59,6 +57,9 @@
 #include "modules/mediastream/RTCStatsCallback.h"
 #include "modules/mediastream/RTCStatsRequestImpl.h"
 #include "modules/mediastream/RTCVoidRequestImpl.h"
+#include "public/platform/WebRTCDataChannelInit.h"
+#include "public/platform/WebRTCICECandidate.h"
+#include "public/platform/WebRTCSessionDescription.h"
 
 namespace WebCore {
 
@@ -138,6 +139,7 @@ RTCPeerConnection::RTCPeerConnection(ScriptExecutionContext* context, PassRefPtr
     , m_scheduledEventTimer(this, &RTCPeerConnection::scheduledEventTimerFired)
     , m_stopped(false)
 {
+    ScriptWrappable::init(this);
     Document* document = toDocument(m_scriptExecutionContext);
 
     if (!document->frame()) {
@@ -218,16 +220,16 @@ void RTCPeerConnection::setLocalDescription(PassRefPtr<RTCSessionDescription> pr
     }
 
     RefPtr<RTCVoidRequestImpl> request = RTCVoidRequestImpl::create(scriptExecutionContext(), successCallback, errorCallback);
-    m_peerHandler->setLocalDescription(request.release(), sessionDescription->descriptor());
+    m_peerHandler->setLocalDescription(request.release(), sessionDescription->webSessionDescription());
 }
 
 PassRefPtr<RTCSessionDescription> RTCPeerConnection::localDescription(ExceptionCode& ec)
 {
-    RefPtr<RTCSessionDescriptionDescriptor> descriptor = m_peerHandler->localDescription();
-    if (!descriptor)
+    WebKit::WebRTCSessionDescription webSessionDescription = m_peerHandler->localDescription();
+    if (webSessionDescription.isNull())
         return 0;
 
-    RefPtr<RTCSessionDescription> sessionDescription = RTCSessionDescription::create(descriptor.release());
+    RefPtr<RTCSessionDescription> sessionDescription = RTCSessionDescription::create(webSessionDescription);
     return sessionDescription.release();
 }
 
@@ -245,16 +247,16 @@ void RTCPeerConnection::setRemoteDescription(PassRefPtr<RTCSessionDescription> p
     }
 
     RefPtr<RTCVoidRequestImpl> request = RTCVoidRequestImpl::create(scriptExecutionContext(), successCallback, errorCallback);
-    m_peerHandler->setRemoteDescription(request.release(), sessionDescription->descriptor());
+    m_peerHandler->setRemoteDescription(request.release(), sessionDescription->webSessionDescription());
 }
 
 PassRefPtr<RTCSessionDescription> RTCPeerConnection::remoteDescription(ExceptionCode& ec)
 {
-    RefPtr<RTCSessionDescriptionDescriptor> descriptor = m_peerHandler->remoteDescription();
-    if (!descriptor)
+    WebKit::WebRTCSessionDescription webSessionDescription = m_peerHandler->remoteDescription();
+    if (webSessionDescription.isNull())
         return 0;
 
-    RefPtr<RTCSessionDescription> desc = RTCSessionDescription::create(descriptor.release());
+    RefPtr<RTCSessionDescription> desc = RTCSessionDescription::create(webSessionDescription);
     return desc.release();
 }
 
@@ -290,7 +292,7 @@ void RTCPeerConnection::addIceCandidate(RTCIceCandidate* iceCandidate, Exception
         return;
     }
 
-    bool valid = m_peerHandler->addIceCandidate(iceCandidate->descriptor());
+    bool valid = m_peerHandler->addIceCandidate(iceCandidate->webCandidate());
     if (!valid)
         ec = SYNTAX_ERR;
 }
@@ -443,9 +445,23 @@ PassRefPtr<RTCDataChannel> RTCPeerConnection::createDataChannel(String label, co
         return 0;
     }
 
-    bool reliable = true;
-    options.get("reliable", reliable);
-    RefPtr<RTCDataChannel> channel = RTCDataChannel::create(scriptExecutionContext(), m_peerHandler.get(), label, reliable, ec);
+    WebKit::WebRTCDataChannelInit init;
+    options.get("ordered", init.ordered);
+    options.get("negotiated", init.negotiated);
+
+    unsigned short value = 0;
+    if (options.get("id", value))
+        init.id = value;
+    if (options.get("maxRetransmits", value))
+        init.maxRetransmits = value;
+    if (options.get("maxRetransmitTime", value))
+        init.maxRetransmitTime = value;
+
+    String protocolString;
+    options.get("protocol", protocolString);
+    init.protocol = protocolString;
+
+    RefPtr<RTCDataChannel> channel = RTCDataChannel::create(scriptExecutionContext(), m_peerHandler.get(), label, init, ec);
     if (ec)
         return 0;
     m_dataChannels.append(channel);
@@ -505,13 +521,13 @@ void RTCPeerConnection::negotiationNeeded()
     scheduleDispatchEvent(Event::create(eventNames().negotiationneededEvent, false, false));
 }
 
-void RTCPeerConnection::didGenerateIceCandidate(PassRefPtr<RTCIceCandidateDescriptor> iceCandidateDescriptor)
+void RTCPeerConnection::didGenerateIceCandidate(WebKit::WebRTCICECandidate webCandidate)
 {
     ASSERT(scriptExecutionContext()->isContextThread());
-    if (!iceCandidateDescriptor)
+    if (webCandidate.isNull())
         scheduleDispatchEvent(RTCIceCandidateEvent::create(false, false, 0));
     else {
-        RefPtr<RTCIceCandidate> iceCandidate = RTCIceCandidate::create(iceCandidateDescriptor);
+        RefPtr<RTCIceCandidate> iceCandidate = RTCIceCandidate::create(webCandidate);
         scheduleDispatchEvent(RTCIceCandidateEvent::create(false, false, iceCandidate.release()));
     }
 }

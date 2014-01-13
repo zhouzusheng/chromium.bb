@@ -29,26 +29,20 @@
  */
 
 #include "config.h"
-
 #include "core/inspector/InspectorFileSystemAgent.h"
 
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/Document.h"
 #include "core/dom/Event.h"
-#include "core/dom/ScriptExecutionContext.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileError.h"
 #include "core/fileapi/FileReader.h"
 #include "core/html/VoidCallback.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
-#include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/TextResourceDecoder.h"
 #include "core/page/Frame.h"
-#include "core/page/SecurityOrigin.h"
-#include "core/platform/KURL.h"
 #include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/text/TextEncoding.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/DirectoryEntry.h"
 #include "modules/filesystem/DirectoryReader.h"
@@ -58,12 +52,15 @@
 #include "modules/filesystem/ErrorCallback.h"
 #include "modules/filesystem/FileCallback.h"
 #include "modules/filesystem/FileEntry.h"
-#include "modules/filesystem/FileSystemCallback.h"
 #include "modules/filesystem/FileSystemCallbacks.h"
 #include "modules/filesystem/LocalFileSystem.h"
 #include "modules/filesystem/Metadata.h"
 #include "modules/filesystem/MetadataCallback.h"
-#include <wtf/text/Base64.h>
+#include "weborigin/KURL.h"
+#include "weborigin/SecurityOrigin.h"
+#include "wtf/ArrayBuffer.h"
+#include "wtf/text/Base64.h"
+#include "wtf/text/TextEncoding.h"
 
 using WebCore::TypeBuilder::Array;
 
@@ -610,7 +607,6 @@ PassOwnPtr<InspectorFileSystemAgent> InspectorFileSystemAgent::create(Instrument
 
 InspectorFileSystemAgent::~InspectorFileSystemAgent()
 {
-    m_instrumentingAgents->setInspectorFileSystemAgent(0);
 }
 
 void InspectorFileSystemAgent::enable(ErrorString*)
@@ -712,7 +708,6 @@ InspectorFileSystemAgent::InspectorFileSystemAgent(InstrumentingAgents* instrume
     ASSERT(instrumentingAgents);
     ASSERT(state);
     ASSERT(m_pageAgent);
-    m_instrumentingAgents->setInspectorFileSystemAgent(this);
 }
 
 bool InspectorFileSystemAgent::assertEnabled(ErrorString* error)

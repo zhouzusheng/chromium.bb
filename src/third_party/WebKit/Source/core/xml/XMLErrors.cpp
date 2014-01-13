@@ -30,15 +30,11 @@
 #include "core/xml/XMLErrors.h"
 
 #include "HTMLNames.h"
+#include "SVGNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Text.h"
-#include "core/page/Frame.h"
 #include <wtf/text/WTFString.h>
-
-#if ENABLE(SVG)
-#include "SVGNames.h"
-#endif
 
 namespace WebCore {
 
@@ -127,31 +123,23 @@ void XMLErrors::insertErrorMessageBlock()
         RefPtr<Element> body = m_document->createElement(bodyTag, true);
         rootElement->parserAppendChild(body);
         m_document->parserAppendChild(rootElement);
-        if (m_document->attached() && !rootElement->attached())
-            rootElement->attach();
+        rootElement->lazyAttach();
         documentElement = body.get();
-    }
-#if ENABLE(SVG)
-    else if (documentElement->namespaceURI() == SVGNames::svgNamespaceURI) {
+    } else if (documentElement->namespaceURI() == SVGNames::svgNamespaceURI) {
         RefPtr<Element> rootElement = m_document->createElement(htmlTag, true);
         RefPtr<Element> body = m_document->createElement(bodyTag, true);
         rootElement->parserAppendChild(body);
 
-        documentElement->parentNode()->parserRemoveChild(documentElement.get());
         if (documentElement->attached())
             documentElement->detach();
+        m_document->parserRemoveChild(documentElement.get());
 
         body->parserAppendChild(documentElement);
-        m_document->parserAppendChild(rootElement.get());
-
-        if (m_document->attached())
-            // In general, rootElement shouldn't be attached right now, but it will be if there is a style element
-            // in the SVG content.
-            rootElement->reattach();
+        m_document->parserAppendChild(rootElement);
+        rootElement->lazyAttach();
 
         documentElement = body.get();
     }
-#endif
 
     String errorMessages = m_errorMessages.toString();
     RefPtr<Element> reportElement = createXHTMLParserErrorHeader(m_document, errorMessages);
@@ -171,9 +159,9 @@ void XMLErrors::insertErrorMessageBlock()
     else
         documentElement->parserAppendChild(reportElement);
 
-    if (documentElement->attached() && !reportElement->attached())
-        reportElement->attach();
+    reportElement->lazyAttach();
 
+    // FIXME: Why do we need to call this manually?
     m_document->updateStyleIfNeeded();
 }
 

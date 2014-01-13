@@ -30,17 +30,11 @@
 #include "config.h"
 #include "core/page/Frame.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
-#include "WebKitFontFamilyNames.h"
-#include "XMLNSNames.h"
-#include "XMLNames.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/npruntime_impl.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
-#include "core/css/MediaFeatureNames.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Event.h"
@@ -82,6 +76,7 @@
 #include "core/page/UserContentURLPattern.h"
 #include "core/page/animation/AnimationController.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
+#include "core/platform/DragImage.h"
 #include "core/platform/Logging.h"
 #include "core/platform/graphics/FloatQuad.h"
 #include "core/platform/graphics/GraphicsContext.h"
@@ -94,19 +89,11 @@
 #include "core/rendering/RenderTextControl.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
+#include "core/svg/SVGDocument.h"
+#include "core/svg/SVGDocumentExtensions.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefCountedLeakCounter.h>
 #include <wtf/StdLibExtras.h>
-#include <wtf/text/StringStatics.h>
-
-#include "MathMLNames.h"
-#include "SVGNames.h"
-#include "XLinkNames.h"
-
-#if ENABLE(SVG)
-#include "core/svg/SVGDocument.h"
-#include "core/svg/SVGDocumentExtensions.h"
-#endif
 
 using namespace std;
 
@@ -139,21 +126,6 @@ static inline float parentTextZoomFactor(Frame* frame)
     return parent->textZoomFactor();
 }
 
-void init()
-{
-    AtomicString::init();
-    HTMLNames::init();
-    SVGNames::init();
-    XLinkNames::init();
-    MathMLNames::init();
-    XMLNSNames::init();
-    XMLNames::init();
-    WebKitFontFamilyNames::init();
-    MediaFeatureNames::init();
-    WTF::StringStatics::init();
-    QualifiedName::init();
-}
-
 inline Frame::Frame(Page* page, HTMLFrameOwnerElement* ownerElement, FrameLoaderClient* frameLoaderClient)
     : m_page(page)
     , m_treeNode(this, parentFromOwnerElement(ownerElement))
@@ -173,7 +145,6 @@ inline Frame::Frame(Page* page, HTMLFrameOwnerElement* ownerElement, FrameLoader
     , m_inViewSourceMode(false)
 {
     ASSERT(page);
-    WebCore::init();
 
     if (ownerElement) {
         page->incrementSubframeCount();
@@ -244,9 +215,9 @@ void Frame::setView(PassRefPtr<FrameView> view)
     // Prepare for destruction now, so any unload event handlers get run and the DOMWindow is
     // notified. If we wait until the view is destroyed, then things won't be hooked up enough for
     // these calls to work.
-    if (!view && m_doc && m_doc->attached()) {
+    if (!view && document() && document()->attached()) {
         // FIXME: We don't call willRemove here. Why is that OK?
-        m_doc->prepareForDestruction();
+        document()->prepareForDestruction();
     }
 
     if (m_view)
@@ -263,43 +234,6 @@ void Frame::setView(PassRefPtr<FrameView> view)
     // Since this part may be getting reused as a result of being
     // pulled from the back/forward cache, reset this flag.
     loader()->resetMultipleFormSubmissionProtection();
-}
-
-void Frame::setDocument(PassRefPtr<Document> newDoc)
-{
-    ASSERT(!newDoc || newDoc->frame() == this);
-    if (m_doc && m_doc->attached()) {
-        // FIXME: We don't call willRemove here. Why is that OK?
-        m_doc->detach();
-    }
-
-    m_doc = newDoc;
-    ASSERT(!m_doc || m_doc->domWindow());
-    ASSERT(!m_doc || m_doc->domWindow()->frame() == this);
-
-    if (m_page && m_view) {
-        if (ScrollingCoordinator* scrollingCoordinator = m_page->scrollingCoordinator()) {
-            scrollingCoordinator->scrollableAreaScrollbarLayerDidChange(m_view.get(), HorizontalScrollbar);
-            scrollingCoordinator->scrollableAreaScrollbarLayerDidChange(m_view.get(), VerticalScrollbar);
-            scrollingCoordinator->scrollableAreaScrollLayerDidChange(m_view.get());
-        }
-    }
-
-    selection()->updateSecureKeyboardEntryIfActive();
-
-    if (m_doc && !m_doc->attached())
-        m_doc->attach();
-
-    if (m_doc) {
-        m_script->updateDocument();
-        m_doc->updateViewportArguments();
-    }
-
-    if (m_page && m_page->mainFrame() == this) {
-        notifyChromeClientWheelEventHandlerCountChanged();
-        if (m_doc && m_doc->hasTouchEventHandlers())
-            m_page->chrome()->client()->needTouchEvents(true);
-    }
 }
 
 #if ENABLE(ORIENTATION_EVENTS)
@@ -320,12 +254,12 @@ void Frame::setPrinting(bool printing, const FloatSize& pageSize, const FloatSiz
 {
     // In setting printing, we should not validate resources already cached for the document.
     // See https://bugs.webkit.org/show_bug.cgi?id=43704
-    ResourceCacheValidationSuppressor validationSuppressor(m_doc->cachedResourceLoader());
+    ResourceCacheValidationSuppressor validationSuppressor(document()->cachedResourceLoader());
 
-    m_doc->setPrinting(printing);
+    document()->setPrinting(printing);
     view()->adjustMediaTypeForPrinting(printing);
 
-    m_doc->styleResolverChanged(RecalcStyleImmediately);
+    document()->styleResolverChanged(RecalcStyleImmediately);
     if (shouldUsePrintingLayout()) {
         view()->forceLayoutForPagination(pageSize, originalPageSize, maximumShrinkRatio, shouldAdjustViewSize);
     } else {
@@ -343,7 +277,7 @@ bool Frame::shouldUsePrintingLayout() const
 {
     // Only top frame being printed should be fit to page size.
     // Subframes should be constrained by parents only.
-    return m_doc->printing() && (!tree()->parent() || !tree()->parent()->m_doc->printing());
+    return document()->printing() && (!tree()->parent() || !tree()->parent()->document()->printing());
 }
 
 FloatSize Frame::resizePageRectsKeepingRatio(const FloatSize& originalSize, const FloatSize& expectedSize)
@@ -364,6 +298,16 @@ FloatSize Frame::resizePageRectsKeepingRatio(const FloatSize& originalSize, cons
         resultSize.setWidth(floorf(resultSize.height() * ratio));
     }
     return resultSize;
+}
+
+void Frame::setDOMWindow(PassRefPtr<DOMWindow> domWindow)
+{
+    m_domWindow = domWindow;
+}
+
+Document* Frame::document() const
+{
+    return m_domWindow ? m_domWindow->document() : 0;
 }
 
 RenderView* Frame::contentRenderer() const
@@ -420,8 +364,8 @@ void Frame::clearTimers()
 
 void Frame::dispatchVisibilityStateChangeEvent()
 {
-    if (m_doc)
-        m_doc->dispatchVisibilityStateChangeEvent();
+    if (document())
+        document()->dispatchVisibilityStateChangeEvent();
 
     Vector<RefPtr<Frame> > childFrames;
     for (Frame* child = tree()->firstChild(); child; child = child->tree()->nextSibling())
@@ -434,7 +378,7 @@ void Frame::dispatchVisibilityStateChangeEvent()
 void Frame::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    info.addMember(m_doc, "doc");
+    info.addMember(m_domWindow, "domWindow");
     info.ignoreMember(m_view);
     info.addMember(m_ownerElement, "ownerElement");
     info.addMember(m_page, "page");
@@ -489,7 +433,7 @@ String Frame::displayStringModifiedByEncoding(const String& str) const
 
 VisiblePosition Frame::visiblePositionForPoint(const IntPoint& framePoint)
 {
-    HitTestResult result = eventHandler()->hitTestResultAtPoint(framePoint, HitTestRequest::ReadOnly | HitTestRequest::Active);
+    HitTestResult result = eventHandler()->hitTestResultAtPoint(framePoint);
     Node* node = result.innerNonSharedNode();
     if (!node)
         return VisiblePosition();
@@ -511,7 +455,7 @@ Document* Frame::documentAtPoint(const IntPoint& point)
     HitTestResult result = HitTestResult(pt);
 
     if (contentRenderer())
-        result = eventHandler()->hitTestResultAtPoint(pt);
+        result = eventHandler()->hitTestResultAtPoint(pt, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent);
     return result.innerNode() ? result.innerNode()->document() : 0;
 }
 
@@ -578,14 +522,14 @@ void Frame::createView(const IntSize& viewportSize, const Color& backgroundColor
         view()->setCanHaveScrollbars(owner->scrollingMode() != ScrollbarAlwaysOff);
 }
 
-String Frame::layerTreeAsText(LayerTreeFlags flags) const
+String Frame::layerTreeAsText(unsigned flags) const
 {
     document()->updateLayout();
 
     if (!contentRenderer())
         return String();
 
-    return contentRenderer()->compositor()->layerTreeAsText(flags);
+    return contentRenderer()->compositor()->layerTreeAsText(static_cast<LayerTreeFlags>(flags));
 }
 
 String Frame::trackedRepaintRectsAsText() const
@@ -618,16 +562,12 @@ void Frame::setPageAndTextZoomFactors(float pageZoomFactor, float textZoomFactor
     if (!document)
         return;
 
-    m_editor->dismissCorrectionPanelAsIgnored();
-
-#if ENABLE(SVG)
     // Respect SVGs zoomAndPan="disabled" property in standalone SVG documents.
     // FIXME: How to handle compound documents + zoomAndPan="disabled"? Needs SVG WG clarification.
     if (document->isSVGDocument()) {
         if (!toSVGDocument(document)->zoomAndPanEnabled())
             return;
     }
-#endif
 
     if (m_pageZoomFactor != pageZoomFactor) {
         if (FrameView* view = this->view()) {
@@ -657,11 +597,7 @@ void Frame::deviceOrPageScaleFactorChanged()
     for (RefPtr<Frame> child = tree()->firstChild(); child; child = child->tree()->nextSibling())
         child->deviceOrPageScaleFactorChanged();
 
-    RenderView* root = contentRenderer();
-    if (root && root->compositor())
-        root->compositor()->deviceOrPageScaleFactorChanged();
-
-    m_page->chrome()->client()->deviceOrPageScaleFactorChanged();
+    m_page->chrome().client()->deviceOrPageScaleFactorChanged();
 }
 
 void Frame::notifyChromeClientWheelEventHandlerCountChanged() const
@@ -675,7 +611,7 @@ void Frame::notifyChromeClientWheelEventHandlerCountChanged() const
             count += frame->document()->wheelEventHandlerCount();
     }
 
-    m_page->chrome()->client()->numWheelEventHandlersChanged(count);
+    m_page->chrome().client()->numWheelEventHandlersChanged(count);
 }
 
 bool Frame::isURLAllowed(const KURL& url) const
@@ -722,10 +658,10 @@ struct ScopedFramePaintingState {
     Color backgroundColor;
 };
 
-DragImageRef Frame::nodeImage(Node* node)
+PassOwnPtr<DragImage> Frame::nodeImage(Node* node)
 {
     if (!node->renderer())
-        return 0;
+        return nullptr;
 
     const ScopedFramePaintingState state(this, node);
 
@@ -733,13 +669,13 @@ DragImageRef Frame::nodeImage(Node* node)
 
     // When generating the drag image for an element, ignore the document background.
     m_view->setBaseBackgroundColor(Color::transparent);
-    m_doc->updateLayout();
+    document()->updateLayout();
     m_view->setNodeToDraw(node); // Enable special sub-tree drawing mode.
 
     // Document::updateLayout may have blown away the original RenderObject.
     RenderObject* renderer = node->renderer();
     if (!renderer)
-      return 0;
+        return nullptr;
 
     LayoutRect topLevelRect;
     IntRect paintingRect = pixelSnappedIntRect(renderer->paintingRootRect(topLevelRect));
@@ -750,26 +686,26 @@ DragImageRef Frame::nodeImage(Node* node)
     paintingRect.setWidth(paintingRect.width() * deviceScaleFactor);
     paintingRect.setHeight(paintingRect.height() * deviceScaleFactor);
 
-    OwnPtr<ImageBuffer> buffer(ImageBuffer::create(paintingRect.size(), deviceScaleFactor, ColorSpaceDeviceRGB));
+    OwnPtr<ImageBuffer> buffer(ImageBuffer::create(paintingRect.size(), deviceScaleFactor));
     if (!buffer)
-        return 0;
+        return nullptr;
     buffer->context()->translate(-paintingRect.x(), -paintingRect.y());
     buffer->context()->clip(FloatRect(0, 0, paintingRect.maxX(), paintingRect.maxY()));
 
     m_view->paintContents(buffer->context(), paintingRect);
 
     RefPtr<Image> image = buffer->copyImage();
-    return createDragImageFromImage(image.get(), renderer->shouldRespectImageOrientation());
+    return DragImage::create(image.get(), renderer->shouldRespectImageOrientation());
 }
 
-DragImageRef Frame::dragImageForSelection()
+PassOwnPtr<DragImage> Frame::dragImageForSelection()
 {
     if (!selection()->isRange())
-        return 0;
+        return nullptr;
 
     const ScopedFramePaintingState state(this, 0);
-    m_view->setPaintBehavior(PaintBehaviorSelectionOnly);
-    m_doc->updateLayout();
+    m_view->setPaintBehavior(PaintBehaviorSelectionOnly | PaintBehaviorFlattenCompositingLayers);
+    document()->updateLayout();
 
     IntRect paintingRect = enclosingIntRect(selection()->bounds());
 
@@ -779,16 +715,16 @@ DragImageRef Frame::dragImageForSelection()
     paintingRect.setWidth(paintingRect.width() * deviceScaleFactor);
     paintingRect.setHeight(paintingRect.height() * deviceScaleFactor);
 
-    OwnPtr<ImageBuffer> buffer(ImageBuffer::create(paintingRect.size(), deviceScaleFactor, ColorSpaceDeviceRGB));
+    OwnPtr<ImageBuffer> buffer(ImageBuffer::create(paintingRect.size(), deviceScaleFactor));
     if (!buffer)
-        return 0;
+        return nullptr;
     buffer->context()->translate(-paintingRect.x(), -paintingRect.y());
     buffer->context()->clip(FloatRect(0, 0, paintingRect.maxX(), paintingRect.maxY()));
 
     m_view->paintContents(buffer->context(), paintingRect);
 
     RefPtr<Image> image = buffer->copyImage();
-    return createDragImageFromImage(image.get());
+    return DragImage::create(image.get());
 }
 
 } // namespace WebCore

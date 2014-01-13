@@ -14,12 +14,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoaderClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPlugin.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebPlugin.h"
 #include "ui/gfx/native_widget_types.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/webkit_plugins_export.h"
@@ -75,6 +75,7 @@ class WEBKIT_PLUGINS_EXPORT WebPluginImpl :
       WebKit::WebPluginContainer* container);
   virtual void destroy();
   virtual NPObject* scriptableObject();
+  virtual struct _NPP* pluginNPP();
   virtual bool getFormValue(WebKit::WebString& value);
   virtual void paint(
       WebKit::WebCanvas* canvas, const WebKit::WebRect& paint_rect);
@@ -291,6 +292,9 @@ class WEBKIT_PLUGINS_EXPORT WebPluginImpl :
 
   // This is just a weak reference.
   WebKit::WebPluginContainer* container_;
+
+  // Unique identifier for this plugin, used to track script objects.
+  struct _NPP* npp_;
 
   typedef std::map<WebPluginResourceClient*,
                    webkit_glue::MultipartResponseDelegate*>

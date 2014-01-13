@@ -20,7 +20,6 @@
 #ifndef SVGAnimatedTransformList_h
 #define SVGAnimatedTransformList_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/properties/SVGAnimatedTransformListPropertyTearOff.h"
 
@@ -33,7 +32,7 @@ typedef SVGAnimatedTransformListPropertyTearOff SVGAnimatedTransformList;
 DECLARE_ANIMATED_LIST_PROPERTY(SVGAnimatedTransformList, SVGTransformList, UpperProperty, LowerProperty)
 
 #define DEFINE_ANIMATED_TRANSFORM_LIST(OwnerType, DOMAttribute, UpperProperty, LowerProperty) \
-DEFINE_ANIMATED_PROPERTY(AnimatedTransformList, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty)
+DEFINE_ANIMATED_PROPERTY(AnimatedTransformList, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty, SVGAnimatedTransformList, SVGTransformList)
 
 class SVGAnimationElement;
 
@@ -59,5 +58,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

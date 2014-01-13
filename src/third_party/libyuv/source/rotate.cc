@@ -72,7 +72,7 @@ void TransposeUVWx8_MIPS_DSPR2(const uint8* src, int src_stride,
                                int width);
 #endif  // defined(__mips__)
 
-#if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86)
+#if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86) && defined(_MSC_VER)
 #define HAS_TRANSPOSE_WX8_SSSE3
 __declspec(naked) __declspec(align(16))
 static void TransposeWx8_SSSE3(const uint8* src, int src_stride,
@@ -1087,6 +1087,50 @@ void RotateUV180(const uint8* src, int src_stride,
     dst_a -= dst_stride_a;
     dst_b -= dst_stride_b;
   }
+}
+
+LIBYUV_API
+int RotatePlane(const uint8* src, int src_stride,
+                uint8* dst, int dst_stride,
+                int width, int height,
+                RotationMode mode) {
+  if (!src || width <= 0 || height == 0 || !dst) {
+    return -1;
+  }
+
+  // Negative height means invert the image.
+  if (height < 0) {
+    height = -height;
+    src = src + (height - 1) * src_stride;
+    src_stride = -src_stride;
+  }
+
+  switch (mode) {
+    case kRotate0:
+      // copy frame
+      CopyPlane(src, src_stride,
+                dst, dst_stride,
+                width, height);
+      return 0;
+    case kRotate90:
+      RotatePlane90(src, src_stride,
+                    dst, dst_stride,
+                    width, height);
+      return 0;
+    case kRotate270:
+      RotatePlane270(src, src_stride,
+                     dst, dst_stride,
+                     width, height);
+      return 0;
+    case kRotate180:
+      RotatePlane180(src, src_stride,
+                     dst, dst_stride,
+                     width, height);
+      return 0;
+    default:
+      break;
+  }
+  return -1;
 }
 
 LIBYUV_API

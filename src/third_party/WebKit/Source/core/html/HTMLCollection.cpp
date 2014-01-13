@@ -28,12 +28,9 @@
 #include "core/dom/NodeList.h"
 #include "core/dom/NodeRareData.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/html/HTMLDocument.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/HTMLOptionElement.h"
-
-#include <utility>
 
 namespace WebCore {
 
@@ -206,7 +203,7 @@ template <> inline bool isMatchingElement(const HTMLCollection* htmlCollection, 
         return element->hasLocalName(optionTag) && toHTMLOptionElement(element)->selected();
     case DataListOptions:
         if (element->hasLocalName(optionTag)) {
-            HTMLOptionElement* option = static_cast<HTMLOptionElement*>(element);
+            HTMLOptionElement* option = toHTMLOptionElement(element);
             if (!option->isDisabledFormControl() && !option->value().isEmpty())
                 return true;
         }

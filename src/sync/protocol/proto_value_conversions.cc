@@ -9,7 +9,7 @@
 #include "base/base64.h"
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "sync/internal_api/public/base/unique_position.h"
 #include "sync/protocol/app_notification_specifics.pb.h"
@@ -198,6 +198,8 @@ base::DictionaryValue* TabNavigationToValue(
   SET_INT64(global_id);
   SET_STR(search_terms);
   SET_STR(favicon_url);
+  SET_ENUM(blocked_state, GetBlockedStateString);
+  SET_STR_REP(content_pack_categories);
   return value;
 }
 
@@ -283,8 +285,8 @@ base::DictionaryValue* AutofillSpecificsToValue(
 base::DictionaryValue* AutofillProfileSpecificsToValue(
     const sync_pb::AutofillProfileSpecifics& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
-  SET_STR(label);
   SET_STR(guid);
+  SET_STR(origin);
 
   SET_STR_REP(name_first);
   SET_STR_REP(name_middle);
@@ -334,7 +336,7 @@ base::DictionaryValue* DictionarySpecificsToValue(
 
 namespace {
 
-DictionaryValue* FaviconSyncFlagsToValue(
+base::DictionaryValue* FaviconSyncFlagsToValue(
     const sync_pb::FaviconSyncFlags& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
   SET_BOOL(enabled);
@@ -377,9 +379,9 @@ base::DictionaryValue* ExtensionSpecificsToValue(
 }
 
 namespace {
-DictionaryValue* FaviconDataToValue(
+base::DictionaryValue* FaviconDataToValue(
     const sync_pb::FaviconData& proto) {
-  DictionaryValue* value = new DictionaryValue();
+  base::DictionaryValue* value = new base::DictionaryValue();
   SET_BYTES(favicon);
   SET_INT32(width);
   SET_INT32(height);
@@ -387,9 +389,9 @@ DictionaryValue* FaviconDataToValue(
 }
 }  // namespace
 
-DictionaryValue* FaviconImageSpecificsToValue(
+base::DictionaryValue* FaviconImageSpecificsToValue(
     const sync_pb::FaviconImageSpecifics& proto) {
-  DictionaryValue* value = new DictionaryValue();
+  base::DictionaryValue* value = new base::DictionaryValue();
   SET_STR(favicon_url);
   SET(favicon_web, FaviconDataToValue);
   SET(favicon_web_32, FaviconDataToValue);
@@ -398,9 +400,9 @@ DictionaryValue* FaviconImageSpecificsToValue(
   return value;
 }
 
-DictionaryValue* FaviconTrackingSpecificsToValue(
+base::DictionaryValue* FaviconTrackingSpecificsToValue(
     const sync_pb::FaviconTrackingSpecifics& proto) {
-  DictionaryValue* value = new DictionaryValue();
+  base::DictionaryValue* value = new base::DictionaryValue();
   SET_STR(favicon_url);
   SET_INT64(last_visit_time_ms)
   SET_BOOL(is_bookmarked);
@@ -420,6 +422,15 @@ base::DictionaryValue* ManagedUserSettingSpecificsToValue(
   base::DictionaryValue* value = new base::DictionaryValue();
   SET_STR(name);
   SET_STR(value);
+  return value;
+}
+
+base::DictionaryValue* ManagedUserSpecificsToValue(
+    const sync_pb::ManagedUserSpecifics& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_STR(id);
+  SET_STR(name);
+  SET_BOOL(acknowledged);
   return value;
 }
 
@@ -552,6 +563,7 @@ base::DictionaryValue* EntitySpecificsToValue(
   SET_FIELD(favicon_tracking, FaviconTrackingSpecificsToValue);
   SET_FIELD(history_delete_directive, HistoryDeleteDirectiveSpecificsToValue);
   SET_FIELD(managed_user_setting, ManagedUserSettingSpecificsToValue);
+  SET_FIELD(managed_user, ManagedUserSpecificsToValue);
   SET_FIELD(nigori, NigoriSpecificsToValue);
   SET_FIELD(password, PasswordSpecificsToValue);
   SET_FIELD(preference, PreferenceSpecificsToValue);
@@ -566,10 +578,10 @@ base::DictionaryValue* EntitySpecificsToValue(
 
 namespace {
 
-StringValue* UniquePositionToStringValue(
+base::StringValue* UniquePositionToStringValue(
     const sync_pb::UniquePosition& proto) {
   UniquePosition pos = UniquePosition::FromProto(proto);
-  return new StringValue(pos.ToDebugString());
+  return new base::StringValue(pos.ToDebugString());
 }
 
 base::DictionaryValue* SyncEntityToValue(const sync_pb::SyncEntity& proto,
@@ -720,6 +732,7 @@ base::DictionaryValue* ClientCommandToValue(
   SET_INT32(max_commit_batch_size);
   SET_INT32(sessions_commit_delay_seconds);
   SET_INT32(throttle_delay_seconds);
+  SET_INT32(client_invalidation_hint_buffer_size);
   return value;
 }
 
@@ -787,7 +800,13 @@ base::DictionaryValue* DatatypeAssociationStatsToValue(
   SET_INT32(num_sync_items_added);
   SET_INT32(num_sync_items_deleted);
   SET_INT32(num_sync_items_modified);
+  SET_INT64(local_version_pre_association);
+  SET_INT64(sync_version_pre_association)
   SET_BOOL(had_error);
+  SET_INT64(download_wait_time_us);
+  SET_INT64(download_time_us);
+  SET_INT64(association_wait_time_for_high_priority_us);
+  SET_INT64(association_wait_time_for_same_priority_us);
   return value;
 }
 

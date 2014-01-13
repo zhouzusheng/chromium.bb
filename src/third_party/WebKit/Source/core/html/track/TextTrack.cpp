@@ -33,13 +33,12 @@
 
 #include "core/html/track/TextTrack.h"
 
-#include "core/dom/Event.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/track/TextTrackCueList.h"
 #include "core/html/track/TextTrackList.h"
+#include "core/html/track/TextTrackRegion.h"
 #include "core/html/track/TextTrackRegionList.h"
-#include "core/html/track/TrackBase.h"
 
 namespace WebCore {
 
@@ -110,6 +109,7 @@ TextTrack::TextTrack(ScriptExecutionContext* context, TextTrackClient* client, c
     , m_renderedTrackIndex(invalidTrackIndex)
     , m_hasBeenConfigured(false)
 {
+    ScriptWrappable::init(this);
     setKind(kind);
 }
 
@@ -121,11 +121,14 @@ TextTrack::~TextTrack()
 
         for (size_t i = 0; i < m_cues->length(); ++i)
             m_cues->item(i)->setTrack(0);
+    }
+
 #if ENABLE(WEBVTT_REGIONS)
+    if (m_regions) {
         for (size_t i = 0; i < m_regions->length(); ++i)
             m_regions->item(i)->setTrack(0);
-#endif
     }
+#endif
     clearClient();
 }
 
@@ -481,38 +484,6 @@ bool TextTrack::hasCue(TextTrackCue* cue)
     ASSERT_NOT_REACHED();
     return false;
 }
-
-#if USE(PLATFORM_TEXT_TRACK_MENU)
-PassRefPtr<PlatformTextTrack> TextTrack::platformTextTrack()
-{
-    if (m_platformTextTrack)
-        return m_platformTextTrack;
-
-    PlatformTextTrack::TrackKind kind = PlatformTextTrack::Caption;
-    if (m_kind == subtitlesKeyword())
-        kind = PlatformTextTrack::Subtitle;
-    else if (m_kind == captionsKeyword())
-        kind = PlatformTextTrack::Caption;
-    else if (m_kind == descriptionsKeyword())
-        kind = PlatformTextTrack::Description;
-    else if (m_kind == chaptersKeyword())
-        kind = PlatformTextTrack::Chapter;
-    else if (m_kind == metadataKeyword())
-        kind = PlatformTextTrack::MetaData;
-
-    PlatformTextTrack::TrackType type = PlatformTextTrack::OutOfBand;
-    if (m_trackType == TrackElement)
-        type = PlatformTextTrack::OutOfBand;
-    else if (m_trackType == AddTrack)
-        type = PlatformTextTrack::Script;
-    else if (m_trackType == InBand)
-        type = PlatformTextTrack::InBand;
-
-    m_platformTextTrack = PlatformTextTrack::create(this, m_label, m_language, kind, type);
-
-    return m_platformTextTrack;
-}
-#endif
 
 bool TextTrack::isMainProgramContent() const
 {

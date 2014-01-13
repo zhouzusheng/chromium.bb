@@ -124,7 +124,7 @@ void PDFResource::HistogramPDFPageCount(int count) {
 void PDFResource::UserMetricsRecordAction(const PP_Var& action) {
   scoped_refptr<ppapi::StringVar> action_str(
       ppapi::StringVar::FromPPVar(action));
-  if (action_str) {
+  if (action_str.get()) {
     Post(RENDERER,
          PpapiHostMsg_PDF_UserMetricsRecordAction(action_str->value()));
   }
@@ -167,33 +167,21 @@ PP_Resource PDFResource::GetResourceImageForScale(PP_ResourceImage image_id,
     return 0;
 
   HostResource resource;
-  std::string image_data_desc;
-  int fd;
+  PP_ImageDataDesc image_desc;
   if (!UnpackMessage<PpapiPluginMsg_PDF_GetResourceImageReply>(
-      reply, &resource, &image_data_desc, &fd)) {
+      reply, &resource, &image_desc)) {
     return 0;
   }
 
-  if (resource.is_null() || image_data_desc.size() != sizeof(PP_ImageDataDesc))
+  if (resource.is_null())
+    return 0;
+  if (!PPB_ImageData_Shared::IsImageDataDescValid(image_desc))
     return 0;
 
-  // We serialize the PP_ImageDataDesc just by copying to a string.
-  PP_ImageDataDesc desc;
-  memcpy(&desc, image_data_desc.data(), sizeof(PP_ImageDataDesc));
-
-#if defined(OS_ANDROID)
-  // This is compiled into android for tests only.
-  return 0;
-#elif defined(OS_WIN) || defined(OS_MACOSX)
   base::SharedMemoryHandle handle;
   if (!reply_params.TakeSharedMemoryHandleAtIndex(0, &handle))
     return 0;
-  return (new ImageData(resource, desc, handle))->GetReference();
-#elif defined(OS_LINUX)
-  return (new ImageData(resource, desc, fd))->GetReference();
-#else
-#error Not implemented.
-#endif
+  return (new SimpleImageData(resource, image_desc, handle))->GetReference();
 }
 
 PP_Resource PDFResource::GetResourceImage(PP_ResourceImage image_id) {

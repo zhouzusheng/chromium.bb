@@ -9,8 +9,8 @@
 #include "base/i18n/break_iterator.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
 #include "ui/base/text/utf16_indexing.h"
 #include "ui/gfx/canvas.h"
@@ -22,14 +22,18 @@ namespace gfx {
 
 namespace {
 
-// The maximum supported number of Uniscribe runs; a SCRIPT_ITEM is 8 bytes.
-// TODO(msw): Review memory use/failure? Max string length? Alternate approach?
-const int kGuessItems = 100;
-const int kMaxItems = 10000;
+// The maximum length of text supported for Uniscribe layout and display.
+// This empirically chosen value should prevent major performance degradations.
+// TODO(msw): Support longer text, partial layout/painting, etc.
+const size_t kMaxUniscribeTextLength = 10000;
 
-// The maximum supported number of Uniscribe glyphs; a glyph is 1 word.
-// TODO(msw): Review memory use/failure? Max string length? Alternate approach?
-const int kMaxGlyphs = 100000;
+// The initial guess and maximum supported number of runs; arbitrary values.
+// TODO(msw): Support more runs, determine a better initial guess, etc.
+const int kGuessRuns = 100;
+const size_t kMaxRuns = 10000;
+
+// The maximum number of glyphs per run; ScriptShape fails on larger values.
+const size_t kMaxGlyphs = 65535;
 
 // Callback to |EnumEnhMetaFile()| to intercept font creation.
 int CALLBACK MetaFileEnumProc(HDC hdc,
@@ -149,7 +153,9 @@ TextRun::~TextRun() {
 
 // Returns the X coordinate of the leading or |trailing| edge of the glyph
 // starting at |index|, relative to the left of the text (not the view).
-int GetGlyphXBoundary(internal::TextRun* run, size_t index, bool trailing) {
+int GetGlyphXBoundary(const internal::TextRun* run,
+                      size_t index,
+                      bool trailing) {
   DCHECK_GE(index, run->range.start());
   DCHECK_LT(index, run->range.end() + (trailing ? 0 : 1));
   int x = 0;
@@ -179,6 +185,8 @@ RenderTextWin::RenderTextWin()
     : RenderText(),
       common_baseline_(0),
       needs_layout_(false) {
+  set_truncate_length(kMaxUniscribeTextLength);
+
   memset(&script_control_, 0, sizeof(script_control_));
   memset(&script_state_, 0, sizeof(script_state_));
 
@@ -204,14 +212,14 @@ SelectionModel RenderTextWin::FindCursorPosition(const Point& point) {
 
   EnsureLayout();
   // Find the run that contains the point and adjust the argument location.
-  Point p(ToTextPoint(point));
-  size_t run_index = GetRunContainingPoint(p);
-  if (run_index == runs_.size())
-    return EdgeSelectionModel((p.x() < 0) ? CURSOR_LEFT : CURSOR_RIGHT);
+  int x = ToTextPoint(point).x();
+  size_t run_index = GetRunContainingXCoord(x);
+  if (run_index >= runs_.size())
+    return EdgeSelectionModel((x < 0) ? CURSOR_LEFT : CURSOR_RIGHT);
   internal::TextRun* run = runs_[run_index];
 
   int position = 0, trailing = 0;
-  HRESULT hr = ScriptXtoCP(p.x() - run->preceding_run_widths,
+  HRESULT hr = ScriptXtoCP(x - run->preceding_run_widths,
                            run->range.length(),
                            run->glyph_count,
                            run->logical_clusters.get(),
@@ -340,17 +348,16 @@ void RenderTextWin::SetSelectionModel(const SelectionModel& model) {
   ResetLayout();
 }
 
-void RenderTextWin::GetGlyphBounds(size_t index,
-                                   ui::Range* xspan,
-                                   int* height) {
+ui::Range RenderTextWin::GetGlyphBounds(size_t index) {
   const size_t run_index =
       GetRunContainingCaret(SelectionModel(index, CURSOR_FORWARD));
-  DCHECK_LT(run_index, runs_.size());
+  // Return edge bounds if the index is invalid or beyond the layout text size.
+  if (run_index >= runs_.size())
+    return ui::Range(string_size_.width());
   internal::TextRun* run = runs_[run_index];
   const size_t layout_index = TextIndexToLayoutIndex(index);
-  xspan->set_start(GetGlyphXBoundary(run, layout_index, false));
-  xspan->set_end(GetGlyphXBoundary(run, layout_index, true));
-  *height = run->font.GetHeight();
+  return ui::Range(GetGlyphXBoundary(run, layout_index, false),
+                   GetGlyphXBoundary(run, layout_index, true));
 }
 
 std::vector<Rect> RenderTextWin::GetSubstringBounds(const ui::Range& range) {
@@ -367,15 +374,13 @@ std::vector<Rect> RenderTextWin::GetSubstringBounds(const ui::Range& range) {
   // Add a Rect for each run/selection intersection.
   // TODO(msw): The bounds should probably not always be leading the range ends.
   for (size_t i = 0; i < runs_.size(); ++i) {
-    internal::TextRun* run = runs_[visual_to_logical_[i]];
+    const internal::TextRun* run = runs_[visual_to_logical_[i]];
     ui::Range intersection = run->range.Intersect(layout_range);
     if (intersection.IsValid()) {
       DCHECK(!intersection.is_reversed());
       ui::Range range_x(GetGlyphXBoundary(run, intersection.start(), false),
                         GetGlyphXBoundary(run, intersection.end(), false));
       Rect rect(range_x.GetMin(), 0, range_x.length(), run->font.GetHeight());
-      // Center the rect vertically in the display area.
-      rect.Offset(0, (display_rect().height() - rect.height()) / 2);
       rect.set_origin(ToViewPoint(rect.origin()));
       // Union this with the last rect if they're adjacent.
       if (!bounds.empty() && rect.SharesEdgeWith(bounds.back())) {
@@ -389,14 +394,11 @@ std::vector<Rect> RenderTextWin::GetSubstringBounds(const ui::Range& range) {
 }
 
 size_t RenderTextWin::TextIndexToLayoutIndex(size_t index) const {
-  if (!obscured())
-    return index;
-
   DCHECK_LE(index, text().length());
-  const ptrdiff_t offset = ui::UTF16IndexToOffset(text(), 0, index);
-  DCHECK_GE(offset, 0);
-  DCHECK_LE(static_cast<size_t>(offset), GetLayoutText().length());
-  return static_cast<size_t>(offset);
+  ptrdiff_t i = obscured() ? ui::UTF16IndexToOffset(text(), 0, index) : index;
+  CHECK_GE(i, 0);
+  // Clamp layout indices to the length of the text actually used for layout.
+  return std::min<size_t>(GetLayoutText().length(), i);
 }
 
 size_t RenderTextWin::LayoutIndexToTextIndex(size_t index) const {
@@ -412,20 +414,16 @@ size_t RenderTextWin::LayoutIndexToTextIndex(size_t index) const {
 bool RenderTextWin::IsCursorablePosition(size_t position) {
   if (position == 0 || position == text().length())
     return true;
-
   EnsureLayout();
-  const size_t run_index =
-      GetRunContainingCaret(SelectionModel(position, CURSOR_FORWARD));
-  if (run_index >= runs_.size())
-    return false;
 
-  internal::TextRun* run = runs_[run_index];
-  const size_t start = run->range.start();
-  const size_t layout_position = TextIndexToLayoutIndex(position);
-  if (layout_position == start)
-    return true;
-  return run->logical_clusters[layout_position - start] !=
-         run->logical_clusters[layout_position - start - 1];
+  // Check that the index is at a valid code point (not mid-surrgate-pair),
+  // that it is not truncated from layout text (its glyph is shown on screen),
+  // and that its glyph has distinct bounds (not mid-multi-character-grapheme).
+  // An example of a multi-character-grapheme that is not a surrogate-pair is:
+  // \x0915\x093f - (ki) - one of many Devanagari biconsonantal conjuncts.
+  return ui::IsValidCodePointIndex(text(), position) &&
+         position < LayoutIndexToTextIndex(GetLayoutText().length()) &&
+         GetGlyphBounds(position) != GetGlyphBounds(position - 1);
 }
 
 void RenderTextWin::ResetLayout() {
@@ -447,7 +445,7 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
   DCHECK(!needs_layout_);
 
   // Skia will draw glyphs with respect to the baseline.
-  Vector2d offset(GetOffsetForDrawing() + Vector2d(0, common_baseline_));
+  Vector2d offset(GetTextOffset() + Vector2d(0, common_baseline_));
 
   SkScalar x = SkIntToScalar(offset.x());
   SkScalar y = SkIntToScalar(offset.y());
@@ -507,23 +505,20 @@ void RenderTextWin::ItemizeLogicalText() {
   HRESULT hr = E_OUTOFMEMORY;
   int script_items_count = 0;
   std::vector<SCRIPT_ITEM> script_items;
-  const size_t text_length = GetLayoutText().length();
-  for (size_t n = kGuessItems; hr == E_OUTOFMEMORY && n < kMaxItems; n *= 2) {
+  const size_t layout_text_length = GetLayoutText().length();
+  // Ensure that |kMaxRuns| is attempted and the loop terminates afterward.
+  for (size_t runs = kGuessRuns; hr == E_OUTOFMEMORY && runs <= kMaxRuns;
+       runs = std::max(runs + 1, std::min(runs * 2, kMaxRuns))) {
     // Derive the array of Uniscribe script items from the logical text.
-    // ScriptItemize always adds a terminal array item so that the length of the
-    // last item can be derived from the terminal SCRIPT_ITEM::iCharPos.
-    script_items.resize(n);
-    hr = ScriptItemize(GetLayoutText().c_str(),
-                       text_length,
-                       n - 1,
-                       &script_control_,
-                       &script_state_,
-                       &script_items[0],
-                       &script_items_count);
+    // ScriptItemize always adds a terminal array item so that the length of
+    // the last item can be derived from the terminal SCRIPT_ITEM::iCharPos.
+    script_items.resize(runs);
+    hr = ScriptItemize(GetLayoutText().c_str(), layout_text_length,
+                       runs - 1, &script_control_, &script_state_,
+                       &script_items[0], &script_items_count);
   }
   DCHECK(SUCCEEDED(hr));
-
-  if (script_items_count <= 0)
+  if (!SUCCEEDED(hr) || script_items_count <= 0)
     return;
 
   // Temporarily apply composition underlines and selection colors.
@@ -533,7 +528,7 @@ void RenderTextWin::ItemizeLogicalText() {
   // TODO(msw): Only break for bold/italic, not color etc. See TextRun comment.
   internal::StyleIterator style(colors(), styles());
   SCRIPT_ITEM* script_item = &script_items[0];
-  const size_t layout_text_length = GetLayoutText().length();
+  const size_t max_run_length = kMaxGlyphs / 2;
   for (size_t run_break = 0; run_break < layout_text_length;) {
     internal::TextRun* run = new internal::TextRun();
     run->range.set_start(run_break);
@@ -552,6 +547,9 @@ void RenderTextWin::ItemizeLogicalText() {
     const size_t script_item_break = (script_item + 1)->iCharPos;
     run_break = std::min(script_item_break,
                          TextIndexToLayoutIndex(style.GetRange().end()));
+    // Clamp run lengths to avoid exceeding the maximum supported glyph count.
+    if ((run_break - run->range.start()) > max_run_length)
+      run_break = run->range.start() + max_run_length;
     style.UpdatePosition(LayoutIndexToTextIndex(run_break));
     if (script_item_break == run_break)
       script_item++;
@@ -751,23 +749,19 @@ HRESULT RenderTextWin::ShapeTextRunWithFont(internal::TextRun* run,
   HRESULT hr = E_OUTOFMEMORY;
   const size_t run_length = run->range.length();
   const wchar_t* run_text = &(GetLayoutText()[run->range.start()]);
-  // Max glyph guess: http://msdn.microsoft.com/en-us/library/dd368564.aspx
+  // Guess the expected number of glyphs from the length of the run.
+  // MSDN suggests this at http://msdn.microsoft.com/en-us/library/dd368564.aspx
   size_t max_glyphs = static_cast<size_t>(1.5 * run_length + 16);
-  while (hr == E_OUTOFMEMORY && max_glyphs < kMaxGlyphs) {
+  while (hr == E_OUTOFMEMORY && max_glyphs <= kMaxGlyphs) {
     run->glyph_count = 0;
     run->glyphs.reset(new WORD[max_glyphs]);
     run->visible_attributes.reset(new SCRIPT_VISATTR[max_glyphs]);
-    hr = ScriptShape(cached_hdc_,
-                     &run->script_cache,
-                     run_text,
-                     run_length,
-                     max_glyphs,
-                     &run->script_analysis,
-                     run->glyphs.get(),
-                     run->logical_clusters.get(),
-                     run->visible_attributes.get(),
+    hr = ScriptShape(cached_hdc_, &run->script_cache, run_text, run_length,
+                     max_glyphs, &run->script_analysis, run->glyphs.get(),
+                     run->logical_clusters.get(), run->visible_attributes.get(),
                      &run->glyph_count);
-    max_glyphs *= 2;
+    // Ensure that |kMaxGlyphs| is attempted and the loop terminates afterward.
+    max_glyphs = std::max(max_glyphs + 1, std::min(max_glyphs * 2, kMaxGlyphs));
   }
   return hr;
 }
@@ -810,22 +804,21 @@ size_t RenderTextWin::GetRunContainingCaret(const SelectionModel& caret) const {
   DCHECK(!needs_layout_);
   size_t layout_position = TextIndexToLayoutIndex(caret.caret_pos());
   LogicalCursorDirection affinity = caret.caret_affinity();
-  size_t run = 0;
-  for (; run < runs_.size(); ++run)
+  for (size_t run = 0; run < runs_.size(); ++run)
     if (RangeContainsCaret(runs_[run]->range, layout_position, affinity))
-      break;
-  return run;
+      return run;
+  return runs_.size();
 }
 
-size_t RenderTextWin::GetRunContainingPoint(const Point& point) const {
+size_t RenderTextWin::GetRunContainingXCoord(int x) const {
   DCHECK(!needs_layout_);
   // Find the text run containing the argument point (assumed already offset).
-  size_t run = 0;
-  for (; run < runs_.size(); ++run)
-    if (runs_[run]->preceding_run_widths <= point.x() &&
-        runs_[run]->preceding_run_widths + runs_[run]->width > point.x())
-      break;
-  return run;
+  for (size_t run = 0; run < runs_.size(); ++run) {
+    if ((runs_[run]->preceding_run_widths <= x) &&
+        ((runs_[run]->preceding_run_widths + runs_[run]->width) > x))
+      return run;
+  }
+  return runs_.size();
 }
 
 SelectionModel RenderTextWin::FirstSelectionModelInsideRun(

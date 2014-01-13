@@ -7,6 +7,7 @@
 #include "base/threading/thread_checker.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/public/browser/browser_thread.h"
+#include "gpu/command_buffer/common/constants.h"
 #include "net/base/cache_type.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -102,7 +103,9 @@ class ShaderDiskReadHelper
   DISALLOW_COPY_AND_ASSIGN(ShaderDiskReadHelper);
 };
 
-class ShaderClearHelper : public base::RefCounted<ShaderClearHelper> {
+class ShaderClearHelper
+    : public base::RefCounted<ShaderClearHelper>,
+      public base::SupportsWeakPtr<ShaderClearHelper> {
  public:
   ShaderClearHelper(scoped_refptr<ShaderDiskCache> cache,
                     const base::FilePath& path,
@@ -152,7 +155,7 @@ ShaderDiskCacheEntry::~ShaderDiskCacheEntry() {
 
 void ShaderDiskCacheEntry::Cache() {
   DCHECK(CalledOnValidThread());
-  if (!cache_)
+  if (!cache_.get())
     return;
 
   int rv = cache_->backend()->OpenEntry(
@@ -165,7 +168,7 @@ void ShaderDiskCacheEntry::Cache() {
 
 void ShaderDiskCacheEntry::OnOpComplete(int rv) {
   DCHECK(CalledOnValidThread());
-  if (!cache_)
+  if (!cache_.get())
     return;
 
   do {
@@ -218,10 +221,13 @@ int ShaderDiskCacheEntry::WriteCallback(int rv) {
 
   op_type_ = WRITE_DATA;
   scoped_refptr<net::StringIOBuffer> io_buf = new net::StringIOBuffer(shader_);
-  return entry_->WriteData(1, 0, io_buf, shader_.length(),
-                           base::Bind(&ShaderDiskCacheEntry::OnOpComplete,
-                                      this),
-                           false);
+  return entry_->WriteData(
+      1,
+      0,
+      io_buf.get(),
+      shader_.length(),
+      base::Bind(&ShaderDiskCacheEntry::OnOpComplete, this),
+      false);
 }
 
 int ShaderDiskCacheEntry::IOComplete(int rv) {
@@ -245,14 +251,14 @@ ShaderDiskReadHelper::ShaderDiskReadHelper(
 
 void ShaderDiskReadHelper::LoadCache() {
   DCHECK(CalledOnValidThread());
-  if (!cache_)
+  if (!cache_.get())
     return;
   OnOpComplete(net::OK);
 }
 
 void ShaderDiskReadHelper::OnOpComplete(int rv) {
   DCHECK(CalledOnValidThread());
-  if (!cache_)
+  if (!cache_.get())
     return;
 
   do {
@@ -304,9 +310,12 @@ int ShaderDiskReadHelper::OpenNextEntryComplete(int rv) {
 
   op_type_ = READ_COMPLETE;
   buf_ = new net::IOBufferWithSize(entry_->GetDataSize(1));
-  return entry_->ReadData(1, 0, buf_, buf_->size(),
-                          base::Bind(&ShaderDiskReadHelper::OnOpComplete,
-                                     this));
+  return entry_->ReadData(
+      1,
+      0,
+      buf_.get(),
+      buf_->size(),
+      base::Bind(&ShaderDiskReadHelper::OnOpComplete, this));
 }
 
 int ShaderDiskReadHelper::ReadComplete(int rv) {
@@ -375,13 +384,13 @@ void ShaderClearHelper::DoClearShaderCache(int rv) {
     switch (op_type_) {
       case VERIFY_CACHE_SETUP:
         rv = cache_->SetAvailableCallback(
-            base::Bind(&ShaderClearHelper::DoClearShaderCache, this));
+            base::Bind(&ShaderClearHelper::DoClearShaderCache, AsWeakPtr()));
         op_type_ = DELETE_CACHE;
         break;
       case DELETE_CACHE:
         rv = cache_->Clear(
             delete_begin_, delete_end_,
-            base::Bind(&ShaderClearHelper::DoClearShaderCache, this));
+            base::Bind(&ShaderClearHelper::DoClearShaderCache, AsWeakPtr()));
         op_type_ = TERMINATE;
         break;
       case TERMINATE:
@@ -496,7 +505,6 @@ void ShaderCacheFactory::CacheCleared(const base::FilePath& path) {
 
 ShaderDiskCache::ShaderDiskCache(const base::FilePath& cache_path)
     : cache_available_(false),
-      max_cache_size_(0),
       host_id_(0),
       cache_path_(cache_path),
       is_initialized_(false),
@@ -521,9 +529,9 @@ void ShaderDiskCache::Init() {
       net::SHADER_CACHE,
       net::CACHE_BACKEND_BLOCKFILE,
       cache_path_.Append(kGpuCachePath),
-      max_cache_size_,
+      gpu::kDefaultMaxProgramCacheMemoryBytes,
       true,
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE),
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE).get(),
       NULL,
       &backend_,
       base::Bind(&ShaderDiskCache::CacheCreatedCallback, this));

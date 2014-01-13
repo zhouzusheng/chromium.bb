@@ -27,8 +27,6 @@
 
 #include "core/html/canvas/WebGLTexture.h"
 
-#include "core/html/canvas/WebGLContextGroup.h"
-#include "core/html/canvas/WebGLFramebuffer.h"
 #include "core/html/canvas/WebGLRenderingContext.h"
 
 namespace WebCore {
@@ -46,9 +44,13 @@ WebGLTexture::WebGLTexture(WebGLRenderingContext* ctx)
     , m_wrapS(GraphicsContext3D::REPEAT)
     , m_wrapT(GraphicsContext3D::REPEAT)
     , m_isNPOT(false)
+    , m_isCubeComplete(false)
     , m_isComplete(false)
     , m_needToUseBlackTexture(false)
+    , m_isFloatType(false)
+    , m_isHalfFloatType(false)
 {
+    ScriptWrappable::init(this);
     setObject(ctx->graphicsContext3D()->createTexture());
 }
 
@@ -230,11 +232,17 @@ bool WebGLTexture::isNPOT() const
     return m_isNPOT;
 }
 
-bool WebGLTexture::needToUseBlackTexture() const
+bool WebGLTexture::needToUseBlackTexture(TextureExtensionFlag flag) const
 {
     if (!object())
         return false;
-    return m_needToUseBlackTexture;
+    if (m_needToUseBlackTexture)
+        return true;
+    if ((m_isFloatType && !(flag & TextureFloatLinearExtensionEnabled)) || (m_isHalfFloatType && !(flag && TextureHalfFloatLinearExtensionEnabled))) {
+        if (m_magFilter != GraphicsContext3D::NEAREST || (m_minFilter != GraphicsContext3D::NEAREST && m_minFilter != GraphicsContext3D::NEAREST_MIPMAP_NEAREST))
+            return true;
+    }
+    return false;
 }
 
 void WebGLTexture::deleteObjectImpl(GraphicsContext3D* context3d, Platform3DObject object)
@@ -275,7 +283,8 @@ bool WebGLTexture::canGenerateMipmaps()
         const LevelInfo& info = m_info[ii][0];
         if (!info.valid
             || info.width != first.width || info.height != first.height
-            || info.internalFormat != first.internalFormat || info.type != first.type)
+            || info.internalFormat != first.internalFormat || info.type != first.type
+            || (m_info.size() > 1 && !m_isCubeComplete))
             return false;
     }
     return true;
@@ -311,6 +320,7 @@ void WebGLTexture::update()
         }
     }
     m_isComplete = true;
+    m_isCubeComplete = true;
     const LevelInfo& first = m_info[0][0];
     GC3Dint levelCount = computeLevelCount(first.width, first.height);
     if (levelCount < 1)
@@ -320,7 +330,10 @@ void WebGLTexture::update()
             const LevelInfo& info0 = m_info[ii][0];
             if (!info0.valid
                 || info0.width != first.width || info0.height != first.height
-                || info0.internalFormat != first.internalFormat || info0.type != first.type) {
+                || info0.internalFormat != first.internalFormat || info0.type != first.type
+                || (m_info.size() > 1 && info0.width != info0.height)) {
+                if (m_info.size() > 1)
+                    m_isCubeComplete = false;
                 m_isComplete = false;
                 break;
             }
@@ -340,11 +353,16 @@ void WebGLTexture::update()
             }
         }
     }
+    m_isFloatType = m_info[0][0].type == GraphicsContext3D::FLOAT;
+    m_isHalfFloatType = m_info[0][0].type == GraphicsContext3D::HALF_FLOAT_OES;
 
     m_needToUseBlackTexture = false;
     // NPOT
     if (m_isNPOT && ((m_minFilter != GraphicsContext3D::NEAREST && m_minFilter != GraphicsContext3D::LINEAR)
                      || m_wrapS != GraphicsContext3D::CLAMP_TO_EDGE || m_wrapT != GraphicsContext3D::CLAMP_TO_EDGE))
+        m_needToUseBlackTexture = true;
+    // If it is a Cube texture, check Cube Completeness first
+    if (m_info.size() > 1 && !m_isCubeComplete)
         m_needToUseBlackTexture = true;
     // Completeness
     if (!m_isComplete && m_minFilter != GraphicsContext3D::NEAREST && m_minFilter != GraphicsContext3D::LINEAR)

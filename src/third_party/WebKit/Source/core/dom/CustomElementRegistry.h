@@ -31,13 +31,11 @@
 #ifndef CustomElementRegistry_h
 #define CustomElementRegistry_h
 
-#include "bindings/v8/ScriptState.h"
-#include "core/dom/ContextDestructionObserver.h"
-#include "core/dom/CustomElementConstructor.h"
+#include "core/dom/ContextLifecycleObserver.h"
+#include "core/dom/CustomElementCallback.h"
 #include "core/dom/CustomElementUpgradeCandidateMap.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/QualifiedName.h"
-#include "wtf/HashSet.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -48,6 +46,7 @@
 
 namespace WebCore {
 
+class CustomElementConstructorBuilder;
 class CustomElementDefinition;
 class Dictionary;
 class Document;
@@ -55,18 +54,20 @@ class Element;
 
 class CustomElementInvocation {
 public:
-    explicit CustomElementInvocation(PassRefPtr<Element>);
+    CustomElementInvocation(PassRefPtr<CustomElementCallback>, PassRefPtr<Element>);
     ~CustomElementInvocation();
 
+    CustomElementCallback* callback() const { return m_callback.get(); }
     Element* element() const { return m_element.get(); }
 
 private:
+    RefPtr<CustomElementCallback> m_callback;
     RefPtr<Element> m_element;
 };
 
 void setTypeExtension(Element*, const AtomicString& typeExtension);
 
-class CustomElementRegistry : public RefCounted<CustomElementRegistry>, public ContextDestructionObserver {
+class CustomElementRegistry : public RefCounted<CustomElementRegistry>, public ContextLifecycleObserver {
     WTF_MAKE_NONCOPYABLE(CustomElementRegistry); WTF_MAKE_FAST_ALLOCATED;
 public:
     class CallbackDeliveryScope {
@@ -78,11 +79,10 @@ public:
     explicit CustomElementRegistry(Document*);
     ~CustomElementRegistry();
 
-    PassRefPtr<CustomElementConstructor> registerElement(WebCore::ScriptState*, const AtomicString& name, const Dictionary& options, ExceptionCode&);
+    void registerElement(CustomElementConstructorBuilder*, const AtomicString& name, ExceptionCode&);
 
     bool isUnresolved(Element*) const;
     PassRefPtr<CustomElementDefinition> findFor(Element*) const;
-    PassRefPtr<CustomElementDefinition> findAndCheckNamespace(const AtomicString& type, const AtomicString& namespaceURI) const;
 
     PassRefPtr<Element> createCustomTagElement(const QualifiedName& localName);
 
@@ -103,11 +103,13 @@ private:
     static bool isValidName(const AtomicString&);
 
     static InstanceSet& activeCustomElementRegistries();
-    void activate(const CustomElementInvocation&);
+    void enqueueReadyCallback(CustomElementCallback*, Element*);
     void deactivate();
     void deliverLifecycleCallbacks();
 
-    void didCreateCustomTagElement(Element*);
+    PassRefPtr<CustomElementDefinition> findAndCheckNamespace(const AtomicString& type, const AtomicString& namespaceURI) const;
+
+    void didCreateCustomTagElement(CustomElementDefinition*, Element*);
     void didCreateUnresolvedElement(CustomElementDefinition::CustomElementKind, const AtomicString& type, Element*);
 
     DefinitionMap m_definitions;

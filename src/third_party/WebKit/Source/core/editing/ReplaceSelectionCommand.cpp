@@ -28,7 +28,6 @@
 #include "core/editing/ReplaceSelectionCommand.h"
 
 #include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
 #include "HTMLNames.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/css/StylePropertySet.h"
@@ -38,8 +37,6 @@
 #include "core/dom/Element.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
-#include "core/dom/NodeList.h"
-#include "core/dom/NodeRenderStyle.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
 #include "core/editing/ApplyStyleCommand.h"
@@ -55,7 +52,6 @@
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/page/Frame.h"
-#include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
 #include <wtf/StdLibExtras.h>
@@ -72,7 +68,7 @@ enum EFragmentType { EmptyFragment, SingleTextNodeFragment, TreeFragment };
 class ReplacementFragment {
     WTF_MAKE_NONCOPYABLE(ReplacementFragment);
 public:
-    ReplacementFragment(Document*, DocumentFragment*, bool matchStyle, const VisibleSelection&);
+    ReplacementFragment(Document*, DocumentFragment*, const VisibleSelection&);
 
     Node* firstChild() const;
     Node* lastChild() const;
@@ -102,8 +98,7 @@ private:
 static bool isInterchangeNewlineNode(const Node *node)
 {
     DEFINE_STATIC_LOCAL(String, interchangeNewlineClassString, (AppleInterchangeNewline));
-    return node && node->hasTagName(brTag) && 
-           static_cast<const Element *>(node)->getAttribute(classAttr) == interchangeNewlineClassString;
+    return node && node->hasTagName(brTag) && toElement(node)->getAttribute(classAttr) == interchangeNewlineClassString;
 }
 
 static bool isInterchangeConvertedSpaceSpan(const Node *node)
@@ -139,7 +134,7 @@ static Position positionAvoidingPrecedingNodes(Position pos)
     return pos;
 }
 
-ReplacementFragment::ReplacementFragment(Document* document, DocumentFragment* fragment, bool, const VisibleSelection& selection)
+ReplacementFragment::ReplacementFragment(Document* document, DocumentFragment* fragment, const VisibleSelection& selection)
     : m_document(document),
       m_fragment(fragment),
       m_hasInterchangeNewlineAtStart(false), 
@@ -631,7 +626,7 @@ void ReplaceSelectionCommand::makeInsertedContentRoundTrippableWithHTMLTreeBuild
         }
 
         if (isHeaderElement(node.get())) {
-            if (HTMLElement* headerElement = static_cast<HTMLElement*>(highestEnclosingNodeOfType(positionInParentBeforeNode(node.get()), isHeaderElement)))
+            if (HTMLElement* headerElement = toHTMLElement(highestEnclosingNodeOfType(positionInParentBeforeNode(node.get()), isHeaderElement)))
                 moveNodeOutOfAncestor(node, headerElement);
         }
     }
@@ -641,6 +636,9 @@ void ReplaceSelectionCommand::moveNodeOutOfAncestor(PassRefPtr<Node> prpNode, Pa
 {
     RefPtr<Node> node = prpNode;
     RefPtr<Node> ancestor = prpAncestor;
+
+    if (!ancestor->parentNode()->rendererIsEditable())
+        return;
 
     VisiblePosition positionAtEndOfNode = lastPositionInOrAfterNode(node.get());
     VisiblePosition lastPositionInParagraph = lastPositionInNode(ancestor.get());
@@ -679,7 +677,6 @@ void ReplaceSelectionCommand::removeUnrenderedTextNodesAtEnds(InsertedNodes& ins
     // We don't have to make sure that firstNodeInserted isn't inside a select or script element, because
     // it is a top level node in the fragment and the user can't insert into those elements.
     Node* firstNodeInserted = insertedNodes.firstNodeInserted();
-    lastLeafInserted = insertedNodes.lastLeafInserted();
     if (firstNodeInserted && firstNodeInserted->isTextNode() && !nodeHasVisibleRenderText(toText(firstNodeInserted))) {
         insertedNodes.willRemoveNode(firstNodeInserted);
         removeNode(firstNodeInserted);
@@ -892,7 +889,7 @@ void ReplaceSelectionCommand::doApply()
     if (!selection.rootEditableElement())
         return;
 
-    ReplacementFragment fragment(document(), m_documentFragment.get(), m_matchStyle, selection);
+    ReplacementFragment fragment(document(), m_documentFragment.get(), selection);
     if (performTrivialReplace(fragment))
         return;
     
@@ -1250,7 +1247,7 @@ bool ReplaceSelectionCommand::shouldPerformSmartReplace() const
         return false;
 
     Element* textControl = enclosingTextFormControl(positionAtStartOfInsertedContent().deepEquivalent());
-    if (textControl && textControl->hasTagName(inputTag) && static_cast<HTMLInputElement*>(textControl)->isPasswordField())
+    if (textControl && textControl->hasTagName(inputTag) && toHTMLInputElement(textControl)->isPasswordField())
         return false; // Disable smart replace for password fields.
 
     return true;

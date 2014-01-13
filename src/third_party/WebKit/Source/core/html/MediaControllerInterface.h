@@ -77,18 +77,12 @@ public:
     virtual void setClosedCaptionsVisible(bool) = 0;
     virtual bool closedCaptionsVisible() const = 0;
 
-    virtual bool supportsScanning() const = 0;
-
     virtual void beginScrubbing() = 0;
     virtual void endScrubbing() = 0;
 
     virtual bool canPlay() const = 0;
 
-    virtual bool isLiveStream() const = 0;
-
     virtual bool hasCurrentSrc() const = 0;
-
-    virtual void returnToRealtime() = 0;
 };
 
 }

@@ -26,13 +26,11 @@
 
 #include "core/platform/graphics/chromium/OpaqueRectTrackingContentLayerDelegate.h"
 
-#include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
 #include "core/platform/graphics/transforms/AffineTransform.h"
-#include <public/WebFloatRect.h>
-#include <public/WebRect.h>
+#include "public/platform/WebFloatRect.h"
+#include "public/platform/WebRect.h"
 
 using WebKit::WebFloatRect;
 using WebKit::WebRect;
@@ -54,7 +52,7 @@ void OpaqueRectTrackingContentLayerDelegate::paintContents(SkCanvas* canvas, con
     GraphicsContext context(canvas);
     context.setTrackOpaqueRegion(!m_opaque);
     context.setCertainlyOpaque(m_opaque);
-    context.setShouldSmoothFonts(canPaintLCDText && m_opaque);
+    context.setShouldSmoothFonts(canPaintLCDText);
 
     // Record transform prior to painting, as all opaque tracking will be
     // relative to this current value.

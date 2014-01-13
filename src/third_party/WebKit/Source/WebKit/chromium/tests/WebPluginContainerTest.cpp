@@ -46,9 +46,10 @@
 #include "WebView.h"
 #include "WebViewImpl.h"
 #include "core/dom/Element.h"
-#include <public/Platform.h>
-#include <public/WebThread.h>
-#include <public/WebUnitTestSupport.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebClipboard.h"
+#include "public/platform/WebThread.h"
+#include "public/platform/WebUnitTestSupport.h"
 
 using namespace WebKit;
 
@@ -70,11 +71,24 @@ protected:
     std::string m_baseURL;
 };
 
+// Subclass of FakeWebPlugin that has a selection of 'x' as plain text and 'y' as markup text.
+class TestPlugin : public FakeWebPlugin {
+public:
+    TestPlugin(WebFrame* frame, const WebPluginParams& params)
+        : FakeWebPlugin(frame, params)
+    {
+    }
+
+    virtual bool hasSelection() const { return true; }
+    virtual WebString selectionAsText() const { return WebString("x"); }
+    virtual WebString selectionAsMarkup() const { return WebString("y"); }
+};
+
 class TestPluginWebFrameClient : public WebFrameClient {
     virtual WebPlugin* createPlugin(WebFrame* frame, const WebPluginParams& params) OVERRIDE
     {
         if (params.mimeType == WebString::fromUTF8("application/x-webkit-test-webplugin"))
-            return new FakeWebPlugin(frame, params);
+            return new TestPlugin(frame, params);
         return WebFrameClient::createPlugin(frame, params);
     }
 };
@@ -112,6 +126,55 @@ TEST_F(WebPluginContainerTest, WindowToLocalPointTest)
     WebPoint point4 = pluginContainerTwo->windowToLocalPoint(WebPoint(-10, 10));
     ASSERT_EQ(10, point4.x);
     ASSERT_EQ(10, point4.y);
+
+    webView->close();
+}
+
+TEST_F(WebPluginContainerTest, LocalToWindowPointTest)
+{
+    URLTestHelpers::registerMockedURLFromBaseURL(WebString::fromUTF8(m_baseURL.c_str()), WebString::fromUTF8("plugin_container.html"));
+    WebView* webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "plugin_container.html", true, new TestPluginWebFrameClient());
+    ASSERT(webView);
+    webView->settings()->setPluginsEnabled(true);
+    webView->resize(WebSize(300, 300));
+    webView->layout();
+    FrameTestHelpers::runPendingTasks();
+
+    WebPluginContainer* pluginContainerOne = getWebPluginContainer(webView, WebString::fromUTF8("translated-plugin"));
+    ASSERT(pluginContainerOne);
+    WebPoint point1 = pluginContainerOne->localToWindowPoint(WebPoint(0, 0));
+    ASSERT_EQ(10, point1.x);
+    ASSERT_EQ(10, point1.y);
+    WebPoint point2 = pluginContainerOne->localToWindowPoint(WebPoint(90, 90));
+    ASSERT_EQ(100, point2.x);
+    ASSERT_EQ(100, point2.y);
+
+    WebPluginContainer* pluginContainerTwo = getWebPluginContainer(webView, WebString::fromUTF8("rotated-plugin"));
+    ASSERT(pluginContainerTwo);
+    WebPoint point3 = pluginContainerTwo->localToWindowPoint(WebPoint(10, 0));
+    ASSERT_EQ(0, point3.x);
+    ASSERT_EQ(10, point3.y);
+    WebPoint point4 = pluginContainerTwo->localToWindowPoint(WebPoint(10, 10));
+    ASSERT_EQ(-10, point4.x);
+    ASSERT_EQ(10, point4.y);
+
+    webView->close();
+}
+
+// Verifies executing the command 'Copy' results in copying to the clipboard.
+TEST_F(WebPluginContainerTest, Copy)
+{
+    URLTestHelpers::registerMockedURLFromBaseURL(WebString::fromUTF8(m_baseURL.c_str()), WebString::fromUTF8("plugin_container.html"));
+    WebView* webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "plugin_container.html", true, new TestPluginWebFrameClient());
+    ASSERT(webView);
+    webView->settings()->setPluginsEnabled(true);
+    webView->resize(WebSize(300, 300));
+    webView->layout();
+    FrameTestHelpers::runPendingTasks();
+
+    WebElement pluginContainerOneElement = webView->mainFrame()->document().getElementById(WebString::fromUTF8("translated-plugin"));
+    EXPECT_TRUE(webView->mainFrame()->executeCommand("Copy",  pluginContainerOneElement));
+    EXPECT_EQ(WebString("x"), Platform::current()->clipboard()->readPlainText(WebClipboard::Buffer()));
 
     webView->close();
 }

@@ -9,9 +9,8 @@
 #include <vector>
 
 #include "base/debug/trace_event.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
-#include "cc/output/compositor_frame.h"
+#include "base/strings/string_util.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
@@ -54,11 +53,10 @@ bool DelegatingRenderer::Initialize() {
   capabilities_.using_partial_swap = false;
   // TODO(danakj): Throttling - we may want to only allow 1 outstanding frame,
   // but the parent compositor may pipeline for us.
-  // TODO(danakj): Can we use this in single-thread mode?
-  capabilities_.using_swap_complete_callback = true;
   capabilities_.max_texture_size = resource_provider_->max_texture_size();
   capabilities_.best_texture_format = resource_provider_->best_texture_format();
   capabilities_.allow_partial_texture_updates = false;
+  capabilities_.using_offscreen_context3d = false;
 
   WebGraphicsContext3D* context3d = resource_provider_->GraphicsContext3D();
 
@@ -80,31 +78,27 @@ bool DelegatingRenderer::Initialize() {
 
   // TODO(danakj): We need non-GPU-specific paths for these things. This
   // renderer shouldn't need to use context3d extensions directly.
-  bool has_read_bgra = true;
-  bool has_set_visibility = true;
-  bool has_io_surface = true;
-  bool has_arb_texture_rect = true;
-  bool has_egl_image = true;
+  bool has_set_visibility = false;
+  bool has_io_surface = false;
+  bool has_arb_texture_rect = false;
+  bool has_egl_image = false;
+  bool has_map_image = false;
   for (size_t i = 0; i < extensions.size(); ++i) {
-    if (extensions[i] == "GL_EXT_read_format_bgra")
-      has_read_bgra = true;
-    else if (extensions[i] == "GL_CHROMIUM_set_visibility")
+    if (extensions[i] == "GL_CHROMIUM_set_visibility") {
       has_set_visibility = true;
-    else if (extensions[i] == "GL_CHROMIUM_iosurface")
+    } else if (extensions[i] == "GL_CHROMIUM_iosurface") {
       has_io_surface = true;
-    else if (extensions[i] == "GL_ARB_texture_rectangle")
-      has_arb_texture_rect = true;
-    else if (extensions[i] == "GL_OES_EGL_image_external")
-      has_egl_image = true;
+    } else if (extensions[i] == "GL_ARB_texture_rectangle") {
+        has_arb_texture_rect = true;
+    } else if (extensions[i] == "GL_OES_EGL_image_external") {
+        has_egl_image = true;
+    } else if (extensions[i] == "GL_CHROMIUM_map_image") {
+      has_map_image = true;
+    }
   }
 
   if (has_io_surface)
     DCHECK(has_arb_texture_rect);
-
-  capabilities_.using_accelerated_painting =
-      Settings().accelerate_painting &&
-      capabilities_.best_texture_format == GL_BGRA_EXT &&
-      has_read_bgra;
 
   // TODO(piman): loop visibility to GPU process?
   capabilities_.using_set_visibility = has_set_visibility;
@@ -114,6 +108,8 @@ bool DelegatingRenderer::Initialize() {
 
   capabilities_.using_egl_image = has_egl_image;
 
+  capabilities_.using_map_image = has_map_image;
+
   return true;
 }
 
@@ -122,6 +118,8 @@ DelegatingRenderer::~DelegatingRenderer() {}
 const RendererCapabilities& DelegatingRenderer::Capabilities() const {
   return capabilities_;
 }
+
+bool DelegatingRenderer::CanReadPixels() const { return false; }
 
 static ResourceProvider::ResourceId AppendToArray(
     ResourceProvider::ResourceIdArray* array,
@@ -134,37 +132,40 @@ void DelegatingRenderer::DrawFrame(
     RenderPassList* render_passes_in_draw_order) {
   TRACE_EVENT0("cc", "DelegatingRenderer::DrawFrame");
 
-  CompositorFrame out_frame;
-  out_frame.metadata = client_->MakeCompositorFrameMetadata();
+  DCHECK(!frame_for_swap_buffers_.delegated_frame_data);
 
-  out_frame.delegated_frame_data = make_scoped_ptr(new DelegatedFrameData);
+  frame_for_swap_buffers_.metadata = client_->MakeCompositorFrameMetadata();
+
+  frame_for_swap_buffers_.delegated_frame_data =
+      make_scoped_ptr(new DelegatedFrameData);
+  DelegatedFrameData& out_data = *frame_for_swap_buffers_.delegated_frame_data;
+  // Move the render passes and resources into the |out_frame|.
+  out_data.render_pass_list.swap(*render_passes_in_draw_order);
 
   // Collect all resource ids in the render passes into a ResourceIdArray.
   ResourceProvider::ResourceIdArray resources;
   DrawQuad::ResourceIteratorCallback append_to_array =
       base::Bind(&AppendToArray, &resources);
-  for (size_t i = 0; i < render_passes_in_draw_order->size(); ++i) {
-    RenderPass* render_pass = render_passes_in_draw_order->at(i);
+  for (size_t i = 0; i < out_data.render_pass_list.size(); ++i) {
+    RenderPass* render_pass = out_data.render_pass_list.at(i);
     for (size_t j = 0; j < render_pass->quad_list.size(); ++j)
       render_pass->quad_list[j]->IterateResources(append_to_array);
   }
-
-  // Move the render passes and resources into the |out_frame|.
-  DelegatedFrameData& out_data = *out_frame.delegated_frame_data;
-  out_data.render_pass_list.swap(*render_passes_in_draw_order);
   resource_provider_->PrepareSendToParent(resources, &out_data.resource_list);
-
-  output_surface_->SendFrameToParentCompositor(&out_frame);
 }
 
-void DelegatingRenderer::SwapBuffers(const LatencyInfo& latency_info) {
+void DelegatingRenderer::SwapBuffers() {
+  TRACE_EVENT0("cc", "DelegatingRenderer::SwapBuffers");
+
+  output_surface_->SwapBuffers(&frame_for_swap_buffers_);
+  frame_for_swap_buffers_.delegated_frame_data.reset();
 }
 
 void DelegatingRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
-  NOTIMPLEMENTED();
+  NOTREACHED();
 }
 
-void DelegatingRenderer::ReceiveCompositorFrameAck(
+void DelegatingRenderer::ReceiveSwapBuffersAck(
     const CompositorFrameAck& ack) {
   resource_provider_->ReceiveFromParent(ack.resources);
 }

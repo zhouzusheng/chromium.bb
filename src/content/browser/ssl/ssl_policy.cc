@@ -8,8 +8,8 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
-#include "base/string_util.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
@@ -44,9 +44,8 @@ SSLPolicy::SSLPolicy(SSLPolicyBackend* backend)
 
 void SSLPolicy::OnCertError(SSLCertErrorHandler* handler) {
   // First we check if we know the policy for this error.
-  net::CertPolicy::Judgment judgment =
-      backend_->QueryPolicy(handler->ssl_info().cert,
-                            handler->request_url().host());
+  net::CertPolicy::Judgment judgment = backend_->QueryPolicy(
+      handler->ssl_info().cert.get(), handler->request_url().host());
 
   if (judgment == net::CertPolicy::ALLOWED) {
     handler->ContinueRequest();
@@ -173,7 +172,7 @@ void SSLPolicy::OnAllowCertificate(scoped_refptr<SSLCertErrorHandler> handler,
     // While AllowCertForHost() executes synchronously on this thread,
     // ContinueRequest() gets posted to a different thread. Calling
     // AllowCertForHost() first ensures deterministic ordering.
-    backend_->AllowCertForHost(handler->ssl_info().cert,
+    backend_->AllowCertForHost(handler->ssl_info().cert.get(),
                                handler->request_url().host());
     handler->ContinueRequest();
   } else {
@@ -182,7 +181,7 @@ void SSLPolicy::OnAllowCertificate(scoped_refptr<SSLCertErrorHandler> handler,
     // While DenyCertForHost() executes synchronously on this thread,
     // CancelRequest() gets posted to a different thread. Calling
     // DenyCertForHost() first ensures deterministic ordering.
-    backend_->DenyCertForHost(handler->ssl_info().cert,
+    backend_->DenyCertForHost(handler->ssl_info().cert.get(),
                               handler->request_url().host());
     handler->CancelRequest();
   }
@@ -194,7 +193,8 @@ void SSLPolicy::OnAllowCertificate(scoped_refptr<SSLCertErrorHandler> handler,
 void SSLPolicy::OnCertErrorInternal(SSLCertErrorHandler* handler,
                                     bool overridable,
                                     bool strict_enforcement) {
-  bool cancel_request = false;
+  CertificateRequestResultType result =
+      CERTIFICATE_REQUEST_RESULT_TYPE_CONTINUE;
   GetContentClient()->browser()->AllowCertificateError(
       handler->render_process_id(),
       handler->render_view_id(),
@@ -206,9 +206,19 @@ void SSLPolicy::OnCertErrorInternal(SSLCertErrorHandler* handler,
       strict_enforcement,
       base::Bind(&SSLPolicy::OnAllowCertificate, base::Unretained(this),
                  make_scoped_refptr(handler)),
-      &cancel_request);
-  if (cancel_request)
-    handler->CancelRequest();
+      &result);
+  switch (result) {
+    case CERTIFICATE_REQUEST_RESULT_TYPE_CONTINUE:
+      break;
+    case CERTIFICATE_REQUEST_RESULT_TYPE_CANCEL:
+      handler->CancelRequest();
+      break;
+    case CERTIFICATE_REQUEST_RESULT_TYPE_DENY:
+      handler->DenyRequest();
+      break;
+    default:
+      NOTREACHED();
+  }
 }
 
 void SSLPolicy::InitializeEntryIfNeeded(NavigationEntryImpl* entry) {

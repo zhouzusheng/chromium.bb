@@ -39,13 +39,13 @@ namespace WebCore {
 class DateExtension : public v8::Extension {
 public:
     static DateExtension* get();
-    void setAllowSleep(bool allow);
+    void setAllowSleep(bool, v8::Isolate*);
 
 private:
     DateExtension();
     virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(v8::Handle<v8::String>);
-    static v8::Handle<v8::Value> Setup(const v8::Arguments&);
-    static v8::Handle<v8::Value> OnSleepDetected(const v8::Arguments&);
+    static void Setup(const v8::FunctionCallbackInfo<v8::Value>&);
+    static void OnSleepDetected(const v8::FunctionCallbackInfo<v8::Value>&);
 
     static DateExtension* extension;
 };

@@ -23,17 +23,13 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFilterElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attr.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "core/svg/SVGParserUtilities.h"
-#include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
 namespace WebCore {
 
@@ -119,7 +115,7 @@ bool SVGFilterElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::heightAttr);
         supportedAttributes.add(SVGNames::filterResAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFilterElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -189,9 +185,9 @@ void SVGFilterElement::childrenChanged(bool changedByParser, Node* beforeChange,
         object->setNeedsLayout(true);
 }
 
-RenderObject* SVGFilterElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGFilterElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGResourceFilter(this);
+    return new (document()->renderArena()) RenderSVGResourceFilter(this);
 }
 
 bool SVGFilterElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
@@ -230,7 +226,7 @@ bool SVGFilterElement::childShouldCreateRenderer(const NodeRenderingContext& chi
         allowedChildElementTags.add(SVGNames::feTurbulenceTag);
     }
 
-    return allowedChildElementTags.contains<QualifiedName, SVGAttributeHashTranslator>(svgElement->tagQName());
+    return allowedChildElementTags.contains<SVGAttributeHashTranslator>(svgElement->tagQName());
 }
 
 bool SVGFilterElement::selfHasRelativeLengths() const
@@ -242,5 +238,3 @@ bool SVGFilterElement::selfHasRelativeLengths() const
 }
 
 }
-
-#endif

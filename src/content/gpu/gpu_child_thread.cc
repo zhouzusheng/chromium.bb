@@ -4,27 +4,18 @@
 
 #include "content/gpu/gpu_child_thread.h"
 
-#include <string>
-#include <vector>
-
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/threading/worker_pool.h"
 #include "build/build_config.h"
-#include "content/common/child_process.h"
+#include "content/child/child_process.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/gpu/gpu_info_collector.h"
 #include "content/gpu/gpu_watchdog_thread.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
+#include "gpu/config/gpu_info_collector.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "ui/gl/gl_implementation.h"
-
-#if defined(OS_ANDROID)
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-#include <sys/resource.h>
-#endif
 
 namespace content {
 namespace {
@@ -54,9 +45,11 @@ bool GpuProcessLogMessageHandler(int severity,
 
 GpuChildThread::GpuChildThread(GpuWatchdogThread* watchdog_thread,
                                bool dead_on_arrival,
-                               const GPUInfo& gpu_info)
+                               const gpu::GPUInfo& gpu_info,
+                               const DeferredMessages& deferred_messages)
     : dead_on_arrival_(dead_on_arrival),
       gpu_info_(gpu_info),
+      deferred_messages_(deferred_messages),
       in_browser_process_(false) {
   watchdog_thread_ = watchdog_thread;
 #if defined(OS_WIN)
@@ -123,7 +116,11 @@ bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
 }
 
 void GpuChildThread::OnInitialize() {
-  Send(new GpuHostMsg_Initialized(!dead_on_arrival_));
+  Send(new GpuHostMsg_Initialized(!dead_on_arrival_, gpu_info_));
+  while (!deferred_messages_.empty()) {
+    Send(deferred_messages_.front());
+    deferred_messages_.pop();
+  }
 
   if (dead_on_arrival_) {
     VLOG(1) << "Exiting GPU process due to errors during initialization";
@@ -132,9 +129,9 @@ void GpuChildThread::OnInitialize() {
   }
 
 #if defined(OS_ANDROID)
-  // TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-  int nice_value = -6; // High priority
-  setpriority(PRIO_PROCESS, base::PlatformThread::CurrentId(), nice_value);
+  base::PlatformThread::SetThreadPriority(
+      base::PlatformThread::CurrentHandle(),
+      base::kThreadPriority_Display);
 #endif
 
   // We don't need to pipe log messages if we are running the GPU thread in
@@ -149,11 +146,11 @@ void GpuChildThread::OnInitialize() {
   // Defer creation of the render thread. This is to prevent it from handling
   // IPC messages before the sandbox has been enabled and all other necessary
   // initialization has succeeded.
-  gpu_channel_manager_.reset(new GpuChannelManager(
-      this,
-      watchdog_thread_,
-      ChildProcess::current()->io_message_loop_proxy(),
-      ChildProcess::current()->GetShutDownEvent()));
+  gpu_channel_manager_.reset(
+      new GpuChannelManager(this,
+                            watchdog_thread_.get(),
+                            ChildProcess::current()->io_message_loop_proxy(),
+                            ChildProcess::current()->GetShutDownEvent()));
 
   // Ensure the browser process receives the GPU info before a reply to any
   // subsequent IPC it might send.
@@ -162,7 +159,7 @@ void GpuChildThread::OnInitialize() {
 }
 
 void GpuChildThread::StopWatchdog() {
-  if (watchdog_thread_) {
+  if (watchdog_thread_.get()) {
     watchdog_thread_->Stop();
   }
 }
@@ -176,15 +173,15 @@ void GpuChildThread::OnCollectGraphicsInfo() {
          in_browser_process_);
 #endif  // OS_WIN
 
-  if (!gpu_info_collector::CollectContextGraphicsInfo(&gpu_info_))
-    VLOG(1) << "gpu_info_collector::CollectGraphicsInfo failed";
+  if (!gpu::CollectContextGraphicsInfo(&gpu_info_))
+    VLOG(1) << "gpu::CollectGraphicsInfo failed";
   GetContentClient()->SetGpuInfo(gpu_info_);
 
 #if defined(OS_WIN)
   // This is slow, but it's the only thing the unsandboxed GPU process does,
   // and GpuDataManager prevents us from sending multiple collecting requests,
   // so it's OK to be blocking.
-  gpu_info_collector::GetDxDiagnostics(&gpu_info_.dx_diagnostics);
+  gpu::GetDxDiagnostics(&gpu_info_.dx_diagnostics);
   gpu_info_.finalized = true;
 #endif  // OS_WIN
 
@@ -229,7 +226,7 @@ void GpuChildThread::OnHang() {
 
 void GpuChildThread::OnDisableWatchdog() {
   VLOG(1) << "GPU: Disabling watchdog thread";
-  if (watchdog_thread_) {
+  if (watchdog_thread_.get()) {
     // Disarm the watchdog before shutting down the message loop. This prevents
     // the future posting of tasks to the message loop.
     if (watchdog_thread_->message_loop())

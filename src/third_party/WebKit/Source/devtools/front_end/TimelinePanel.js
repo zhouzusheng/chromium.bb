@@ -632,7 +632,7 @@ WebInspector.TimelinePanel.prototype = {
         var records = this._model.records;
         for (var i = 0; i < records.length; ++i)
             this._innerAddRecordToTimeline(records[i]);
-        this._invalidateAndScheduleRefresh(false, true);
+        this._invalidateAndScheduleRefresh(false, false);
     },
 
     _onTimelineEventRecorded: function(event)
@@ -1429,7 +1429,7 @@ WebInspector.TimelineRecordListRow.prototype = {
 
     dispose: function()
     {
-        this.element.parentElement.removeChild(this.element);
+        this.element.remove();
     }
 }
 
@@ -1506,7 +1506,7 @@ WebInspector.TimelineRecordGraphRow.prototype = {
 
     dispose: function()
     {
-        this.element.parentElement.removeChild(this.element);
+        this.element.remove();
         this._expandElement._dispose();
     }
 }
@@ -1545,7 +1545,7 @@ WebInspector.TimelineExpandableElement.prototype = {
 
     _dispose: function()
     {
-        this._element.parentElement.removeChild(this._element);
+        this._element.remove();
     }
 }
 

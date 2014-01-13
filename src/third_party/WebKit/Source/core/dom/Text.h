@@ -28,12 +28,14 @@
 namespace WebCore {
 
 class RenderText;
+class ScriptExecutionContext;
 
 class Text : public CharacterData {
 public:
     static const unsigned defaultLengthLimit = 1 << 16;
 
     static PassRefPtr<Text> create(Document*, const String&);
+    static PassRefPtr<Text> create(ScriptExecutionContext*, const String&);
     static PassRefPtr<Text> createWithLengthLimit(Document*, const String&, unsigned positionInString, unsigned lengthLimit = defaultLengthLimit);
     static PassRefPtr<Text> createEditingText(Document*, const String&);
 
@@ -42,22 +44,22 @@ public:
     // DOM Level 3: http://www.w3.org/TR/DOM-Level-3-Core/core.html#ID-1312295772
 
     String wholeText() const;
-    PassRefPtr<Text> replaceWholeText(const String&, ExceptionCode&);
+    PassRefPtr<Text> replaceWholeText(const String&);
     
     void recalcTextStyle(StyleChange);
     void createTextRendererIfNeeded();
     bool textRendererIsNeeded(const NodeRenderingContext&);
-    RenderText* createTextRenderer(RenderArena*, RenderStyle*);
+    RenderText* createTextRenderer(RenderStyle*);
     void updateTextRenderer(unsigned offsetOfReplacedData, unsigned lengthOfReplacedData);
 
-    virtual void attach() OVERRIDE FINAL;
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE FINAL;
     
     virtual bool canContainRangeEndPoint() const OVERRIDE FINAL { return true; }
     virtual NodeType nodeType() const OVERRIDE;
 
 protected:
-    Text(Document* document, const String& data, ConstructionType type)
-        : CharacterData(document, data, type)
+    Text(TreeScope* treeScope, const String& data, ConstructionType type)
+        : CharacterData(treeScope, data, type)
     {
         ScriptWrappable::init(this);
     }

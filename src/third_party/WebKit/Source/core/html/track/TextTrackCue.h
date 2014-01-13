@@ -32,12 +32,10 @@
 #ifndef TextTrackCue_h
 #define TextTrackCue_h
 
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/EventTarget.h"
 #include "core/html/HTMLDivElement.h"
-#include "core/html/HTMLElement.h"
-#include "core/html/track/TextTrack.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/RefCounted.h>
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
@@ -63,14 +61,14 @@ public:
 protected:
     TextTrackCueBox(Document*, TextTrackCue*);
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
     TextTrackCue* m_cue;
 };
 
 // ----------------------------
 
-class TextTrackCue : public RefCounted<TextTrackCue>, public EventTarget {
+class TextTrackCue : public RefCounted<TextTrackCue>, public ScriptWrappable, public EventTarget {
 public:
     static PassRefPtr<TextTrackCue> create(ScriptExecutionContext* context, double start, double end, const String& content)
     {
@@ -157,8 +155,8 @@ public:
     std::pair<double, double> getCSSPosition() const;
 
     int getCSSSize() const;
-    int getCSSWritingDirection() const;
-    int getCSSWritingMode() const;
+    CSSValueID getCSSWritingDirection() const;
+    CSSValueID getCSSWritingMode() const;
 
     enum WritingDirection {
         Horizontal,
@@ -182,7 +180,7 @@ public:
     {
         return !(*this == cue);
     }
-    
+
     enum CueType {
         Generic,
         WebVTT
@@ -265,10 +263,10 @@ private:
     bool m_displayTreeShouldChange;
     RefPtr<TextTrackCueBox> m_displayTree;
 
-    int m_displayDirection;
+    CSSValueID m_displayDirection;
 
-    int m_displayWritingModeMap[NumberOfWritingDirections];
-    int m_displayWritingMode;
+    CSSValueID m_displayWritingModeMap[NumberOfWritingDirections];
+    CSSValueID m_displayWritingMode;
 
     int m_displaySize;
 

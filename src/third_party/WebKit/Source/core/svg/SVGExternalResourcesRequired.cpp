@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGExternalResourcesRequired.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attr.h"
 #include "core/svg/SVGElement.h"
 
 namespace WebCore {
@@ -120,5 +118,3 @@ bool SVGExternalResourcesRequired::haveLoadedRequiredResources() const
 }
 
 }
-
-#endif // ENABLE(SVG)

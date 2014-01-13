@@ -27,7 +27,6 @@
 
 #include "core/platform/graphics/ImageBuffer.h"
 #include "core/platform/graphics/filters/Filter.h"
-#include "core/platform/text/TextStream.h"
 #include <wtf/Uint8ClampedArray.h>
 
 #if HAVE(ARM_NEON_INTRINSICS)
@@ -75,6 +74,45 @@ void FilterEffect::determineAbsolutePaintRect()
     else
         m_absolutePaintRect.unite(enclosingIntRect(m_maxEffectRect));
     
+}
+
+FloatRect FilterEffect::mapRectRecursive(const FloatRect& rect)
+{
+    FloatRect result;
+    if (m_inputEffects.size() > 0) {
+        result = m_inputEffects.at(0)->mapRectRecursive(rect);
+        for (unsigned i = 1; i < m_inputEffects.size(); ++i)
+            result.unite(m_inputEffects.at(i)->mapRectRecursive(rect));
+    } else
+        result = rect;
+    return mapRect(result);
+}
+
+FloatRect FilterEffect::getSourceRect(const FloatRect& destRect, const FloatRect& destClipRect)
+{
+    FloatRect sourceRect = mapRect(destRect, false);
+    FloatRect sourceClipRect = mapRect(destClipRect, false);
+
+    FloatRect boundaries = effectBoundaries();
+    if (hasX())
+        sourceClipRect.setX(boundaries.x());
+    if (hasY())
+        sourceClipRect.setY(boundaries.y());
+    if (hasWidth())
+        sourceClipRect.setWidth(boundaries.width());
+    if (hasHeight())
+        sourceClipRect.setHeight(boundaries.height());
+
+    FloatRect result;
+    if (m_inputEffects.size() > 0) {
+        result = m_inputEffects.at(0)->getSourceRect(sourceRect, sourceClipRect);
+        for (unsigned i = 1; i < m_inputEffects.size(); ++i)
+            result.unite(m_inputEffects.at(i)->getSourceRect(sourceRect, sourceClipRect));
+    } else {
+        result = sourceRect;
+        result.intersect(sourceClipRect);
+    }
+    return result;
 }
 
 IntRect FilterEffect::requestedRegionOfInputImageData(const IntRect& effectRect) const
@@ -206,7 +244,7 @@ ImageBuffer* FilterEffect::asImageBuffer()
         return 0;
     if (m_imageBufferResult)
         return m_imageBufferResult.get();
-    m_imageBufferResult = ImageBuffer::create(m_absolutePaintRect.size(), 1, m_resultColorSpace, m_filter->renderingMode());
+    m_imageBufferResult = ImageBuffer::create(m_absolutePaintRect.size(), 1, m_filter->renderingMode());
     IntRect destinationRect(IntPoint(), m_absolutePaintRect.size());
     if (m_premultipliedImageResult)
         m_imageBufferResult->putByteArray(Premultiplied, m_premultipliedImageResult.get(), destinationRect.size(), destinationRect, IntPoint());
@@ -343,7 +381,7 @@ ImageBuffer* FilterEffect::createImageBufferResult()
     ASSERT(!hasResult());
     if (m_absolutePaintRect.isEmpty())
         return 0;
-    m_imageBufferResult = ImageBuffer::create(m_absolutePaintRect.size(), 1, m_resultColorSpace, m_filter->renderingMode());
+    m_imageBufferResult = ImageBuffer::create(m_absolutePaintRect.size(), 1, m_filter->renderingMode());
     if (!m_imageBufferResult)
         return 0;
     ASSERT(m_imageBufferResult->context());
@@ -396,6 +434,45 @@ TextStream& FilterEffect::externalRepresentation(TextStream& ts, int) const
     // FIXME: We should dump the subRegions of the filter primitives here later. This isn't
     // possible at the moment, because we need more detailed informations from the target object.
     return ts;
+}
+
+FloatRect FilterEffect::determineFilterPrimitiveSubregion()
+{
+    ASSERT(filter());
+
+    // FETile, FETurbulence, FEFlood don't have input effects, take the filter region as unite rect.
+    FloatRect subregion;
+    if (unsigned numberOfInputEffects = inputEffects().size()) {
+        subregion = inputEffect(0)->determineFilterPrimitiveSubregion();
+        for (unsigned i = 1; i < numberOfInputEffects; ++i)
+            subregion.unite(inputEffect(i)->determineFilterPrimitiveSubregion());
+    } else
+        subregion = filter()->filterRegion();
+
+    // After calling determineFilterPrimitiveSubregion on the target effect, reset the subregion again for <feTile>.
+    if (filterEffectType() == FilterEffectTypeTile)
+        subregion = filter()->filterRegion();
+
+    subregion = mapRect(subregion);
+
+    FloatRect boundaries = effectBoundaries();
+    if (hasX())
+        subregion.setX(boundaries.x());
+    if (hasY())
+        subregion.setY(boundaries.y());
+    if (hasWidth())
+        subregion.setWidth(boundaries.width());
+    if (hasHeight())
+        subregion.setHeight(boundaries.height());
+
+    setFilterPrimitiveSubregion(subregion);
+
+    FloatRect absoluteSubregion = filter()->absoluteTransform().mapRect(subregion);
+    FloatSize filterResolution = filter()->filterResolution();
+    absoluteSubregion.scale(filterResolution.width(), filterResolution.height());
+
+    setMaxEffectRect(absoluteSubregion);
+    return subregion;
 }
 
 } // namespace WebCore

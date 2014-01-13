@@ -27,10 +27,8 @@
 #include "HTMLNames.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/html/HTMLOListElement.h"
-#include "core/loader/cache/CachedImage.h"
 #include "core/rendering/RenderListMarker.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/style/StyleInheritedData.h"
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/StringBuilder.h>
 
@@ -362,7 +360,6 @@ void RenderListItem::positionListMarker()
                     hitSelfPaintingLayer = true;
             }
         } else {
-            markerLogicalLeft = m_marker->logicalLeft() + paddingStart() + borderStart() + m_marker->marginEnd();
             LayoutUnit rightLineOffset = logicalRightOffsetForLine(blockOffset, logicalRightOffsetForLine(blockOffset, false), false);
             markerLogicalLeft = rightLineOffset - lineOffset + paddingStart() + borderStart() + m_marker->marginEnd();
             m_marker->inlineBoxWrapper()->adjustLineDirectionPosition(markerLogicalLeft - markerOldLogicalLeft);

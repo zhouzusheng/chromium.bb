@@ -56,7 +56,7 @@ Buffer* BufferManager::GetBuffer(
 void BufferManager::RemoveBuffer(GLuint client_id) {
   BufferMap::iterator it = buffers_.find(client_id);
   if (it != buffers_.end()) {
-    Buffer* buffer = it->second;
+    Buffer* buffer = it->second.get();
     buffer->MarkAsDeleted();
     buffers_.erase(it);
   }
@@ -241,8 +241,9 @@ bool BufferManager::IsUsageClientSideArray(GLenum usage) {
 }
 
 bool BufferManager::UseNonZeroSizeForClientSideArrayBuffer() {
-  return feature_info_ && feature_info_->workarounds(
-              ).use_non_zero_size_for_client_side_stream_buffers;
+  return feature_info_.get() &&
+         feature_info_->workarounds()
+             .use_non_zero_size_for_client_side_stream_buffers;
 }
 
 void BufferManager::SetInfo(

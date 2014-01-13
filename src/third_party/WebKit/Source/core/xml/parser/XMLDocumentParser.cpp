@@ -29,10 +29,16 @@
 #include <libxml/parser.h>
 #include <libxml/parserInternals.h>
 #include <libxslt/xslt.h>
+#include <wtf/StringExtras.h>
+#include <wtf/text/CString.h>
+#include <wtf/Threading.h>
+#include <wtf/unicode/UTF8.h>
+#include <wtf/UnusedParam.h>
+#include <wtf/Vector.h>
 #include "HTMLNames.h"
 #include "XMLNSNames.h"
+#include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
-#include "bindings/v8/ScriptValue.h"
 #include "core/dom/CDATASection.h"
 #include "core/dom/Comment.h"
 #include "core/dom/Document.h"
@@ -43,8 +49,6 @@
 #include "core/dom/ScriptElement.h"
 #include "core/dom/TransformSource.h"
 #include "core/html/HTMLHtmlElement.h"
-#include "core/html/HTMLLinkElement.h"
-#include "core/html/HTMLStyleElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/parser/HTMLEntityParser.h"
 #include "core/loader/FrameLoader.h"
@@ -53,26 +57,14 @@
 #include "core/loader/cache/CachedResourceLoader.h"
 #include "core/loader/cache/CachedScript.h"
 #include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/page/SecurityOrigin.h"
+#include "core/page/UseCounter.h"
 #include "core/platform/network/ResourceError.h"
-#include "core/platform/network/ResourceHandle.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
 #include "core/xml/XMLErrors.h"
 #include "core/xml/XMLTreeViewer.h"
 #include "core/xml/parser/XMLDocumentParserScope.h"
-#include <wtf/StringExtras.h>
-#include <wtf/text/CString.h>
-#include <wtf/Threading.h>
-#include <wtf/unicode/UTF8.h>
-#include <wtf/UnusedParam.h>
-#include <wtf/Vector.h>
-
-#if ENABLE(SVG)
-#include "SVGNames.h"
-#include "core/svg/SVGStyleElement.h"
-#endif
+#include "weborigin/SecurityOrigin.h"
 
 using namespace std;
 
@@ -342,8 +334,11 @@ void XMLDocumentParser::append(PassRefPtr<StringImpl> inputSource)
 
     doWrite(source.toString());
 
-    // After parsing, go ahead and dispatch image beforeload events.
-    ImageLoader::dispatchPendingBeforeLoadEvents();
+    if (isStopped())
+        return;
+
+    if (document()->frame() && document()->frame()->script()->canExecuteScripts(NotAboutToExecuteScript))
+        ImageLoader::dispatchPendingBeforeLoadEvents();
 }
 
 void XMLDocumentParser::handleError(XMLErrors::ErrorType type, const char* formattedMessage, TextPosition position)
@@ -371,7 +366,7 @@ void XMLDocumentParser::exitText()
     if (!m_leafTextNode)
         return;
 
-    m_leafTextNode->appendData(toString(m_bufferedText.data(), m_bufferedText.size()), IGNORE_EXCEPTION);
+    m_leafTextNode->appendData(toString(m_bufferedText.data(), m_bufferedText.size()));
     Vector<xmlChar> empty;
     m_bufferedText.swap(empty);
 
@@ -456,7 +451,7 @@ void XMLDocumentParser::notifyFinished(CachedResource* unusedResource)
 
     // JavaScript can detach this parser, make sure it's kept alive even if detached.
     RefPtr<XMLDocumentParser> protect(this);
-    
+
     if (errorOccurred)
         scriptElement->dispatchErrorEvent();
     else if (!wasCanceled) {
@@ -734,6 +729,8 @@ XMLDocumentParser::XMLDocumentParser(Document* document, FrameView* frameView)
     , m_scriptStartPosition(TextPosition::belowRangePosition())
     , m_parsingFragment(false)
 {
+    // This is XML being used as a document resource.
+    UseCounter::count(document, UseCounter::XMLDocument);
 }
 
 XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parentElement, ParserContentPolicy parserContentPolicy)

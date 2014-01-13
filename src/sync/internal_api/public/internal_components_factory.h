@@ -24,8 +24,6 @@ class SyncEngineEventListener;
 class SyncScheduler;
 class TrafficRecorder;
 
-class ThrottledDataTypeTracker;
-
 namespace sessions {
 class DebugInfoGetter;
 class SyncSessionContext;
@@ -71,9 +69,8 @@ class SYNC_EXPORT InternalComponentsFactory {
   virtual scoped_ptr<sessions::SyncSessionContext> BuildContext(
       ServerConnectionManager* connection_manager,
       syncable::Directory* directory,
-      const std::vector<ModelSafeWorker*> workers,
+      const std::vector<ModelSafeWorker*>& workers,
       ExtensionsActivityMonitor* monitor,
-      ThrottledDataTypeTracker* throttled_data_type_tracker,
       const std::vector<SyncEngineEventListener*>& listeners,
       sessions::DebugInfoGetter* debug_info_getter,
       TrafficRecorder* traffic_recorder,

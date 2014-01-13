@@ -28,34 +28,28 @@
 
 #include "core/rendering/FilterEffectRenderer.h"
 
+#include "SVGNames.h"
+#include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/dom/Document.h"
+#include "core/loader/cache/CachedDocument.h"
+#include "core/loader/cache/CachedSVGDocumentReference.h"
 #include "core/platform/FloatConversion.h"
 #include "core/platform/graphics/ColorSpace.h"
 #include "core/platform/graphics/filters/FEColorMatrix.h"
 #include "core/platform/graphics/filters/FEComponentTransfer.h"
 #include "core/platform/graphics/filters/FEDropShadow.h"
 #include "core/platform/graphics/filters/FEGaussianBlur.h"
-#include "core/platform/graphics/filters/FEMerge.h"
-#include "core/rendering/RenderLayer.h"
-
-#include <algorithm>
-#include <wtf/MathExtras.h>
-
+#include "core/platform/graphics/filters/SourceAlpha.h"
 #include "core/platform/graphics/filters/custom/CustomFilterGlobalContext.h"
-#include "core/platform/graphics/filters/custom/CustomFilterOperation.h"
-#include "core/platform/graphics/filters/custom/CustomFilterProgram.h"
 #include "core/platform/graphics/filters/custom/CustomFilterValidatedProgram.h"
 #include "core/platform/graphics/filters/custom/FECustomFilter.h"
 #include "core/platform/graphics/filters/custom/ValidatedCustomFilterOperation.h"
+#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
-
-#if ENABLE(SVG)
-#include "core/loader/cache/CachedSVGDocument.h"
-#include "core/loader/cache/CachedSVGDocumentReference.h"
-#include "core/platform/graphics/filters/SourceAlpha.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
-#endif
+#include "wtf/MathExtras.h"
+#include <algorithm>
 
 namespace WebCore {
 
@@ -88,12 +82,52 @@ static PassRefPtr<FECustomFilter> createCustomFilterEffect(Filter* filter, Docum
         return 0;
 
     CustomFilterGlobalContext* globalContext = document->renderView()->customFilterGlobalContext();
-    globalContext->prepareContextIfNeeded(document->view()->hostWindow());
+    globalContext->prepareContextIfNeeded();
     if (!globalContext->context())
         return 0;
 
     return FECustomFilter::create(filter, globalContext->context(), operation->validatedProgram(), operation->parameters(),
         operation->meshRows(), operation->meshColumns(),  operation->meshType());
+}
+
+// Returns whether or not the SVGStyledElement object contains a valid color-interpolation-filters attribute
+static bool getSVGStyledElementColorSpace(SVGStyledElement* svgStyledElement, ColorSpace& cs)
+{
+    if (!svgStyledElement)
+        return false;
+
+    const RenderObject* renderer = svgStyledElement->renderer();
+    const RenderStyle* style = renderer ? renderer->style() : 0;
+    const SVGRenderStyle* svgStyle = style ? style->svgStyle() : 0;
+    EColorInterpolation eColorInterpolation = CI_AUTO;
+    if (svgStyle) {
+        // If a layout has been performed, then we can use the fast path to get this attribute
+        eColorInterpolation = svgStyle->colorInterpolationFilters();
+    } else {
+        // Otherwise, use the slow path by using string comparison (used by external svg files)
+        RefPtr<CSSValue> cssValue = svgStyledElement->getPresentationAttribute(
+            SVGNames::color_interpolation_filtersAttr.toString());
+        if (cssValue.get() && cssValue->isPrimitiveValue()) {
+            const CSSPrimitiveValue& primitiveValue = *((CSSPrimitiveValue*)cssValue.get());
+            eColorInterpolation = (EColorInterpolation)primitiveValue;
+        } else {
+            return false;
+        }
+    }
+
+    switch (eColorInterpolation) {
+    case CI_AUTO:
+    case CI_SRGB:
+        cs = ColorSpaceDeviceRGB;
+        break;
+    case CI_LINEARRGB:
+        cs = ColorSpaceLinearRGB;
+        break;
+    default:
+        return false;
+    }
+
+    return true;
 }
 
 FilterEffectRenderer::FilterEffectRenderer()
@@ -117,7 +151,6 @@ GraphicsContext* FilterEffectRenderer::inputContext()
 
 PassRefPtr<FilterEffect> FilterEffectRenderer::buildReferenceFilter(RenderObject* renderer, PassRefPtr<FilterEffect> previousEffect, ReferenceFilterOperation* filterOperation)
 {
-#if ENABLE(SVG)
     if (!renderer)
         return 0;
 
@@ -125,7 +158,7 @@ PassRefPtr<FilterEffect> FilterEffectRenderer::buildReferenceFilter(RenderObject
     ASSERT(document);
 
     CachedSVGDocumentReference* cachedSVGDocumentReference = filterOperation->cachedSVGDocumentReference();
-    CachedSVGDocument* cachedSVGDocument = cachedSVGDocumentReference ? cachedSVGDocumentReference->document() : 0;
+    CachedDocument* cachedSVGDocument = cachedSVGDocumentReference ? cachedSVGDocumentReference->document() : 0;
 
     // If we have an SVG document, this is an external reference. Otherwise
     // we look up the referenced node in the current document.
@@ -143,6 +176,11 @@ PassRefPtr<FilterEffect> FilterEffectRenderer::buildReferenceFilter(RenderObject
         return 0;
     }
 
+    if (!filter->isSVGElement() || !filter->hasTagName(SVGNames::filterTag))
+        return 0;
+
+    SVGFilterElement* filterElement = toSVGFilterElement(toSVGElement(filter));
+
     RefPtr<FilterEffect> effect;
 
     // FIXME: Figure out what to do with SourceAlpha. Right now, we're
@@ -152,7 +190,10 @@ PassRefPtr<FilterEffect> FilterEffectRenderer::buildReferenceFilter(RenderObject
     // This may need a spec clarification.
     RefPtr<SVGFilterBuilder> builder = SVGFilterBuilder::create(previousEffect, SourceAlpha::create(this));
 
-    for (Node* node = filter->firstChild(); node; node = node->nextSibling()) {
+    ColorSpace filterColorSpace = ColorSpaceDeviceRGB;
+    const bool useFilterColorSpace = getSVGStyledElementColorSpace(filterElement, filterColorSpace);
+
+    for (Node* node = filterElement->firstChild(); node; node = node->nextSibling()) {
         if (!node->isSVGElement())
             continue;
 
@@ -167,24 +208,21 @@ PassRefPtr<FilterEffect> FilterEffectRenderer::buildReferenceFilter(RenderObject
             continue;
 
         effectElement->setStandardAttributes(effect.get());
+        effect->setEffectBoundaries(SVGLengthContext::resolveRectangle<SVGFilterPrimitiveStandardAttributes>(effectElement, filterElement->primitiveUnits(), sourceImageRect()));
+
+        ColorSpace colorSpace = filterColorSpace;
+        if (useFilterColorSpace || getSVGStyledElementColorSpace(effectElement, colorSpace))
+            effect->setOperatingColorSpace(colorSpace);
         builder->add(effectElement->result(), effect);
         m_effects.append(effect);
     }
     return effect;
-#else
-    UNUSED_PARAM(renderer);
-    UNUSED_PARAM(previousEffect);
-    UNUSED_PARAM(filterOperation);
-    return 0;
-#endif
 }
 
 bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations& operations)
 {
     m_hasCustomShaderFilter = false;
     m_hasFilterThatMovesPixels = operations.hasFilterThatMovesPixels();
-    if (m_hasFilterThatMovesPixels)
-        m_outsets = operations.outsets();
     
     // Keep the old effects on the stack until we've created the new effects.
     // New FECustomFilters can reuse cached resources from old FECustomFilters.
@@ -199,7 +237,7 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
         case FilterOperation::REFERENCE: {
             ReferenceFilterOperation* referenceOperation = static_cast<ReferenceFilterOperation*>(filterOperation);
             effect = buildReferenceFilter(renderer, previousEffect, referenceOperation);
-            referenceOperation->setFilterEffect(effect);
+            referenceOperation->setFilterEffect(effect, this);
             break;
         }
         case FilterOperation::GRAYSCALE: {
@@ -351,11 +389,10 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
         }
 
         if (effect) {
-            // Unlike SVG, filters applied here should not clip to their primitive subregions.
-            effect->setClipsToBounds(false);
-            effect->setOperatingColorSpace(ColorSpaceDeviceRGB);
-            
             if (filterOperation->getOperationType() != FilterOperation::REFERENCE) {
+                // Unlike SVG, filters applied here should not clip to their primitive subregions.
+                effect->setClipsToBounds(false);
+                effect->setOperatingColorSpace(ColorSpaceDeviceRGB);
                 effect->inputEffects().append(previousEffect);
                 m_effects.append(effect);
             }
@@ -367,8 +404,6 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
     if (!m_effects.size())
         return false;
 
-    setMaxEffectRects(m_sourceDrawingRegion);
-    
     return true;
 }
 
@@ -392,7 +427,7 @@ void FilterEffectRenderer::allocateBackingStoreIfNeeded()
     if (!m_graphicsBufferAttached) {
         IntSize logicalSize(m_sourceDrawingRegion.width(), m_sourceDrawingRegion.height());
         if (!sourceImage() || sourceImage()->logicalSize() != logicalSize)
-            setSourceImage(ImageBuffer::create(logicalSize, 1, ColorSpaceDeviceRGB, renderingMode()));
+            setSourceImage(ImageBuffer::create(logicalSize, 1, renderingMode()));
         m_graphicsBufferAttached = true;
     }
 }
@@ -419,15 +454,14 @@ LayoutRect FilterEffectRenderer::computeSourceImageRectForDirtyRect(const Layout
         return filterBoxRect;
     }
     // The result of this function is the area in the "filterBoxRect" that needs to be repainted, so that we fully cover the "dirtyRect".
-    LayoutRect rectForRepaint = dirtyRect;
-    if (hasFilterThatMovesPixels()) {
-        // Note that the outsets are reversed here because we are going backwards -> we have the dirty rect and
-        // need to find out what is the rectangle that might influence the result inside that dirty rect.
-        rectForRepaint.move(-m_outsets.right(), -m_outsets.bottom());
-        rectForRepaint.expand(m_outsets.left() + m_outsets.right(), m_outsets.top() + m_outsets.bottom());
-    }
+    FloatRect rectForRepaint = dirtyRect;
+    rectForRepaint.move(-filterBoxRect.location().x(), -filterBoxRect.location().y());
+    float inf = std::numeric_limits<float>::infinity();
+    FloatRect clipRect = FloatRect(FloatPoint(-inf, -inf), FloatSize(inf, inf));
+    rectForRepaint = lastEffect()->getSourceRect(rectForRepaint, clipRect);
+    rectForRepaint.move(filterBoxRect.location().x(), filterBoxRect.location().y());
     rectForRepaint.intersect(filterBoxRect);
-    return rectForRepaint;
+    return LayoutRect(rectForRepaint);
 }
 
 bool FilterEffectRendererHelper::prepareFilterEffect(RenderLayer* renderLayer, const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect, const LayoutRect& layerRepaintRect)
@@ -438,13 +472,19 @@ bool FilterEffectRendererHelper::prepareFilterEffect(RenderLayer* renderLayer, c
 
     FilterEffectRenderer* filter = renderLayer->filterRenderer();
     LayoutRect filterSourceRect = filter->computeSourceImageRectForDirtyRect(filterBoxRect, dirtyRect);
-    m_paintOffset = filterSourceRect.location();
 
     if (filterSourceRect.isEmpty()) {
         // The dirty rect is not in view, just bail out.
         m_haveFilterEffect = false;
         return false;
     }
+
+    AffineTransform absoluteTransform;
+    absoluteTransform.translate(filterBoxRect.x(), filterBoxRect.y());
+    filter->setAbsoluteTransform(absoluteTransform);
+    filter->setAbsoluteFilterRegion(filterSourceRect);
+    filter->setFilterRegion(absoluteTransform.inverse().mapRect(filterSourceRect));
+    filter->lastEffect()->determineFilterPrimitiveSubregion();
     
     bool hasUpdatedBackingStore = filter->updateBackingStoreRect(filterSourceRect);
     if (filter->hasFilterThatMovesPixels()) {
@@ -466,7 +506,7 @@ GraphicsContext* FilterEffectRendererHelper::beginFilterEffect(GraphicsContext* 
     filter->allocateBackingStoreIfNeeded();
     // Paint into the context that represents the SourceGraphic of the filter.
     GraphicsContext* sourceGraphicsContext = filter->inputContext();
-    if (!sourceGraphicsContext || !isFilterSizeValid(filter->filterRegion())) {
+    if (!sourceGraphicsContext || !isFilterSizeValid(filter->absoluteFilterRegion())) {
         // Disable the filters and continue.
         m_haveFilterEffect = false;
         return oldContext;
@@ -476,7 +516,10 @@ GraphicsContext* FilterEffectRendererHelper::beginFilterEffect(GraphicsContext* 
     
     // Translate the context so that the contents of the layer is captuterd in the offscreen memory buffer.
     sourceGraphicsContext->save();
-    sourceGraphicsContext->translate(-m_paintOffset.x(), -m_paintOffset.y());
+    // FIXME: can we just use sourceImageRect for everything, and get rid of
+    // m_repaintRect?
+    FloatPoint offset = filter->sourceImageRect().location();
+    sourceGraphicsContext->translate(-offset.x(), -offset.y());
     sourceGraphicsContext->clearRect(m_repaintRect);
     sourceGraphicsContext->clip(m_repaintRect);
     
@@ -490,15 +533,12 @@ GraphicsContext* FilterEffectRendererHelper::applyFilterEffect()
     filter->inputContext()->restore();
 
     filter->apply();
-    
+
     // Get the filtered output and draw it in place.
-    LayoutRect destRect = filter->outputRect();
-    destRect.move(m_paintOffset.x(), m_paintOffset.y());
-    
-    m_savedGraphicsContext->drawImageBuffer(filter->output(), m_renderLayer->renderer()->style()->colorSpace(), pixelSnappedIntRect(destRect), CompositeSourceOver);
-    
+    m_savedGraphicsContext->drawImageBuffer(filter->output(), filter->outputRect(), CompositeSourceOver);
+
     filter->clearIntermediateResults();
-    
+
     return m_savedGraphicsContext;
 }
 

@@ -25,7 +25,7 @@
  */
 
 [
-    Conditional=WEBGL,
+    NoInterfaceObject
 ] interface WebGLContextAttributes {
     attribute boolean alpha;
     attribute boolean depth;

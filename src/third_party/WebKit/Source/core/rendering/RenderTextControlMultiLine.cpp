@@ -22,19 +22,15 @@
 #include "config.h"
 #include "core/rendering/RenderTextControlMultiLine.h"
 
-#include "HTMLNames.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/html/HTMLTextAreaElement.h"
-#include "core/html/shadow/TextControlInnerElements.h"
-#include "core/page/Frame.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/style/StyleInheritedData.h"
 
 namespace WebCore {
 
-RenderTextControlMultiLine::RenderTextControlMultiLine(Element* element)
+RenderTextControlMultiLine::RenderTextControlMultiLine(HTMLTextAreaElement* element)
     : RenderTextControl(element)
 {
+    ASSERT(element);
 }
 
 RenderTextControlMultiLine::~RenderTextControlMultiLine()
@@ -85,7 +81,7 @@ PassRefPtr<RenderStyle> RenderTextControlMultiLine::createInnerTextStyle(const R
 {
     RefPtr<RenderStyle> textBlockStyle = RenderStyle::create();
     textBlockStyle->inheritFrom(startStyle);
-    adjustInnerTextStyle(startStyle, textBlockStyle.get());
+    adjustInnerTextStyle(textBlockStyle.get());
     textBlockStyle->setDisplay(BLOCK);
 
     return textBlockStyle.release();

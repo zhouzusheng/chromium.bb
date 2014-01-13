@@ -41,7 +41,7 @@
 #include "WebTextDirection.h"
 #include <deque>
 #include <memory>
-#include <public/WebURL.h>
+#include "public/platform/WebURL.h"
 #include <set>
 #include <string>
 
@@ -73,6 +73,7 @@ public:
     WebTaskList* taskList() { return &m_taskList; }
 
     void setTestIsRunning(bool);
+    bool testIsRunning() const { return m_testIsRunning; }
 
     // WebTestRunner implementation.
     virtual bool shouldGeneratePixelResults() OVERRIDE;
@@ -126,6 +127,7 @@ public:
     bool requestPointerLock();
     void requestPointerUnlock();
     bool isPointerLocked();
+    void setToolTipText(const WebKit::WebString&);
 
     // A single item in the work queue.
     class WorkItem {
@@ -426,6 +428,9 @@ private:
     void showWebInspector(const CppArgumentList&, CppVariant*);
     void closeWebInspector(const CppArgumentList&, CppVariant*);
 
+    // Inspect chooser state
+    void isChooserShown(const CppArgumentList&, CppVariant*);
+
     // Allows layout tests to exec scripts at WebInspector side.
     void evaluateInWebInspector(const CppArgumentList&, CppVariant*);
 
@@ -491,13 +496,7 @@ private:
     ///////////////////////////////////////////////////////////////////////////
     // Internal helpers
     void checkResponseMimeType();
-    void completeNotifyDone(bool isTimeout);
-    class NotifyDoneTimedOutTask: public WebMethodTask<TestRunner> {
-    public:
-        NotifyDoneTimedOutTask(TestRunner* object): WebMethodTask<TestRunner>(object) { }
-        virtual void runIfValid() { m_object->completeNotifyDone(true); }
-    };
-
+    void completeNotifyDone();
     class HostMethodTask : public WebMethodTask<TestRunner> {
     public:
         typedef void (TestRunner::*CallbackMethodType)();
@@ -566,6 +565,9 @@ private:
 
     // Bound variable to set whether postMessages should be intercepted or not
     CppVariant m_interceptPostMessage;
+
+    // Bound variable to store the last tooltip text
+    CppVariant m_tooltipText;
 
     // If true, the test_shell will write a descriptive line for each editing
     // command.

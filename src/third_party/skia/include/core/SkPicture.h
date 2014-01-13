@@ -15,6 +15,8 @@
 
 class SkBBoxHierarchy;
 class SkCanvas;
+class SkDrawPictureCallback;
+class SkData;
 class SkPicturePlayback;
 class SkPictureRecord;
 class SkStream;
@@ -150,9 +152,9 @@ public:
 
     /** Replays the drawing commands on the specified canvas. This internally
         calls endRecording() if that has not already been called.
-        @param surface the canvas receiving the drawing commands.
+        @param canvas the canvas receiving the drawing commands.
     */
-    void draw(SkCanvas* surface);
+    void draw(SkCanvas* canvas, SkDrawPictureCallback* = NULL);
 
     /** Return the width of the picture's recording canvas. This
         value reflects what was passed to setSize(), and does not necessarily
@@ -169,17 +171,21 @@ public:
     int height() const { return fHeight; }
 
     /**
-     *  Function to encode an SkBitmap to an SkWStream. A function with this
-     *  signature can be passed to serialize() and SkOrderedWriteBuffer. The
-     *  function should return true if it succeeds. Otherwise it should return
-     *  false so that SkOrderedWriteBuffer can switch to another method of
-     *  storing SkBitmaps.
+     *  Function to encode an SkBitmap to an SkData. A function with this
+     *  signature can be passed to serialize() and SkOrderedWriteBuffer.
+     *  Returning NULL will tell the SkOrderedWriteBuffer to use
+     *  SkBitmap::flatten() to store the bitmap.
+     *  @param pixelRefOffset Output parameter, telling the deserializer what
+     *      offset in the bm's pixelRef corresponds to the encoded data.
+     *  @return SkData If non-NULL, holds encoded data representing the passed
+     *      in bitmap. The caller is responsible for calling unref().
      */
-    typedef bool (*EncodeBitmap)(SkWStream*, const SkBitmap&);
+    typedef SkData* (*EncodeBitmap)(size_t* pixelRefOffset, const SkBitmap& bm);
 
     /**
      *  Serialize to a stream. If non NULL, encoder will be used to encode
      *  any bitmaps in the picture.
+     *  encoder will never be called with a NULL pixelRefOffset.
      */
     void serialize(SkWStream*, EncodeBitmap encoder = NULL) const;
 
@@ -192,6 +198,7 @@ public:
     void abortPlayback();
 #endif
 
+protected:
     // V2 : adds SkPixelRef's generation ID.
     // V3 : PictInfo tag at beginning, and EOF tag at the end
     // V4 : move SkPictInfo to be the header
@@ -203,9 +210,9 @@ public:
     //      SK_SUPPORT_HINTING_SCALE_FACTOR
     // V10: add drawRRect, drawOval, clipRRect
     // V11: modify how readBitmap and writeBitmap store their info.
-    static const uint32_t PICTURE_VERSION = 11;
+    // V12: add conics to SkPath, use new SkPathRef flattening
+    static const uint32_t PICTURE_VERSION = 12;
 
-protected:
     // fPlayback, fRecord, fWidth & fHeight are protected to allow derived classes to
     // install their own SkPicturePlayback-derived players,SkPictureRecord-derived
     // recorders and set the picture size
@@ -246,5 +253,22 @@ private:
     SkCanvas*   fCanvas;
 };
 
+/**
+ *  Subclasses of this can be passed to canvas.drawPicture. During the drawing
+ *  of the picture, this callback will periodically be invoked. If its
+ *  abortDrawing() returns true, then picture playback will be interrupted.
+ *
+ *  The resulting drawing is undefined, as there is no guarantee how often the
+ *  callback will be invoked. If the abort happens inside some level of nested
+ *  calls to save(), restore will automatically be called to return the state
+ *  to the same level it was before the drawPicture call was made.
+ */
+class SK_API SkDrawPictureCallback {
+public:
+    SkDrawPictureCallback() {}
+    virtual ~SkDrawPictureCallback() {}
+
+    virtual bool abortDrawing() = 0;
+};
 
 #endif

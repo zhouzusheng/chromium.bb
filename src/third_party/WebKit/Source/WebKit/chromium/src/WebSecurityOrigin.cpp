@@ -31,11 +31,12 @@
 #include "config.h"
 #include "WebSecurityOrigin.h"
 
-#include "core/page/SecurityOrigin.h"
-#include "core/platform/KURL.h"
-#include <public/WebString.h>
-#include <public/WebURL.h>
-#include <wtf/PassRefPtr.h>
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
+#include "weborigin/DatabaseIdentifier.h"
+#include "weborigin/KURL.h"
+#include "weborigin/SecurityOrigin.h"
+#include "wtf/PassRefPtr.h"
 
 using namespace WebCore;
 
@@ -46,7 +47,7 @@ class WebSecurityOriginPrivate : public SecurityOrigin {
 
 WebSecurityOrigin WebSecurityOrigin::createFromDatabaseIdentifier(const WebString& databaseIdentifier)
 {
-    return WebSecurityOrigin(SecurityOrigin::createFromDatabaseIdentifier(databaseIdentifier));
+    return WebSecurityOrigin(createSecurityOriginFromDatabaseIdentifier(databaseIdentifier));
 }
 
 WebSecurityOrigin WebSecurityOrigin::createFromString(const WebString& origin)
@@ -118,7 +119,7 @@ WebString WebSecurityOrigin::toString() const
 WebString WebSecurityOrigin::databaseIdentifier() const
 {
     ASSERT(m_private);
-    return m_private->databaseIdentifier();
+    return createDatabaseIdentifierFromSecurityOrigin(m_private);
 }
 
 bool WebSecurityOrigin::canAccessPasswordManager() const

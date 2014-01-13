@@ -40,12 +40,10 @@
 #include "core/editing/DeleteFromTextNodeCommand.h"
 #include "core/editing/DeleteSelectionCommand.h"
 #include "core/editing/Editor.h"
-#include "core/editing/EditorInsertAction.h"
 #include "core/editing/InsertIntoTextNodeCommand.h"
 #include "core/editing/InsertLineBreakCommand.h"
 #include "core/editing/InsertNodeBeforeCommand.h"
 #include "core/editing/InsertParagraphSeparatorCommand.h"
-#include "core/editing/InsertTextCommand.h"
 #include "core/editing/MergeIdenticalElementsCommand.h"
 #include "core/editing/RemoveCSSPropertyCommand.h"
 #include "core/editing/RemoveNodeCommand.h"
@@ -66,7 +64,6 @@
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderText.h"
-#include <wtf/unicode/CharacterNames.h>
 
 using namespace std;
 
@@ -1002,7 +999,7 @@ void CompositeEditCommand::cloneParagraphUnderNewElement(Position& start, Positi
         for (size_t i = ancestors.size(); i != 0; --i) {
             Node* item = ancestors[i - 1].get();
             RefPtr<Node> child = item->cloneNode(isTableElement(item));
-            appendNode(child, static_cast<Element *>(lastNode.get()));
+            appendNode(child, toElement(lastNode.get()));
             lastNode = child.release();
         }
     }

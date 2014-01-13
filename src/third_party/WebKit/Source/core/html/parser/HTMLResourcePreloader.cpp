@@ -27,6 +27,7 @@
 #include "core/html/parser/HTMLResourcePreloader.h"
 
 #include "core/dom/Document.h"
+#include "core/loader/cache/CachedResourceInitiatorInfo.h"
 #include "core/loader/cache/CachedResourceLoader.h"
 
 #include "core/css/MediaList.h"
@@ -37,7 +38,7 @@ namespace WebCore {
 
 bool PreloadRequest::isSafeToSendToAnotherThread() const
 {
-    return m_initiator.isSafeToSendToAnotherThread()
+    return m_initiatorName.isSafeToSendToAnotherThread()
         && m_charset.isSafeToSendToAnotherThread()
         && m_resourceURL.isSafeToSendToAnotherThread()
         && m_mediaAttribute.isSafeToSendToAnotherThread()
@@ -52,8 +53,10 @@ KURL PreloadRequest::completeURL(Document* document)
 CachedResourceRequest PreloadRequest::resourceRequest(Document* document)
 {
     ASSERT(isMainThread());
-    CachedResourceRequest request(ResourceRequest(completeURL(document)));
-    request.setInitiator(m_initiator);
+    CachedResourceInitiatorInfo initiatorInfo;
+    initiatorInfo.name = m_initiatorName;
+    initiatorInfo.position = m_initiatorPosition;
+    CachedResourceRequest request(ResourceRequest(completeURL(document)), initiatorInfo);
 
     // FIXME: It's possible CORS should work for other request types?
     if (m_resourceType == CachedResource::Script)
@@ -72,7 +75,7 @@ void HTMLResourcePreloader::takeAndPreload(PreloadRequestStream& r)
 
 static bool mediaAttributeMatches(Frame* frame, RenderStyle* renderStyle, const String& attributeValue)
 {
-    RefPtr<MediaQuerySet> mediaQueries = MediaQuerySet::createAllowingDescriptionSyntax(attributeValue);
+    RefPtr<MediaQuerySet> mediaQueries = MediaQuerySet::create(attributeValue);
     MediaQueryEvaluator mediaQueryEvaluator("screen", frame, renderStyle);
     return mediaQueryEvaluator.eval(mediaQueries.get());
 }

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "AccessibilityControllerChromium.h"
 
 #include "WebAccessibilityObject.h"
@@ -37,7 +36,7 @@
 #include "WebNode.h"
 #include "WebTestDelegate.h"
 #include "WebView.h"
-#include <public/WebCString.h>
+#include "public/platform/WebCString.h"
 
 using namespace WebKit;
 

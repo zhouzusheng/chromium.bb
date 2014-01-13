@@ -5,7 +5,7 @@
 #include "chrome/renderer/spellchecker/custom_dictionary_engine.h"
 
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 
 CustomDictionaryEngine::CustomDictionaryEngine() {
 }
@@ -13,13 +13,12 @@ CustomDictionaryEngine::CustomDictionaryEngine() {
 CustomDictionaryEngine::~CustomDictionaryEngine() {
 }
 
-void CustomDictionaryEngine::Init(
-    const std::vector<std::string>& custom_words) {
+void CustomDictionaryEngine::Init(const std::set<std::string>& custom_words) {
   // SpellingMenuOberver calls UTF16ToUTF8(word) to convert words for storage,
   // synchronization, and use in the custom dictionary engine. Since
   // (UTF8ToUTF16(UTF16ToUTF8(word)) == word) holds, the engine does not need to
   // normalize the strings.
-  for (std::vector<std::string>::const_iterator it = custom_words.begin();
+  for (std::set<std::string>::const_iterator it = custom_words.begin();
        it != custom_words.end();
        ++it) {
     dictionary_.insert(UTF8ToUTF16(*it));
@@ -42,18 +41,14 @@ void CustomDictionaryEngine::OnCustomDictionaryChanged(
 }
 
 bool CustomDictionaryEngine::SpellCheckWord(
-    const char16* text,
+    const string16& text,
     int misspelling_start,
     int misspelling_len) {
-  DCHECK(text);
-  string16 text16(text);
-
   // The text to be checked is empty on OSX(async) right now.
   // TODO(groby): Fix as part of async hook-up. (http://crbug.com/178241)
-  if (text16.empty())
-    return false;
-  DCHECK(text16.length() >= size_t(misspelling_start + misspelling_len));
-  return misspelling_start >= 0 &&
+  return
+      misspelling_start >= 0 &&
       misspelling_len > 0 &&
-      dictionary_.count(text16.substr(misspelling_start, misspelling_len)) > 0;
+      size_t(misspelling_start + misspelling_len) <= text.length() &&
+      dictionary_.count(text.substr(misspelling_start, misspelling_len)) > 0;
 }

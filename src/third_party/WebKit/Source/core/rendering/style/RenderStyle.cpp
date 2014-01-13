@@ -25,13 +25,10 @@
 
 #include <algorithm>
 #include "CSSPropertyNames.h"
-#include "core/css/StyleResolver.h"
+#include "core/css/resolver/StyleResolver.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/platform/graphics/Font.h"
 #include "core/platform/graphics/FontSelector.h"
-#include "core/platform/graphics/transforms/ScaleTransformOperation.h"
-#include "core/rendering/RenderArena.h"
-#include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/TextAutosizer.h"
 #include "core/rendering/style/ContentData.h"
@@ -59,9 +56,8 @@ COMPILE_ASSERT(sizeof(BorderValue) == sizeof(SameSizeAsBorderValue), BorderValue
 struct SameSizeAsRenderStyle : public RefCounted<SameSizeAsRenderStyle> {
     void* dataRefs[7];
     void* ownPtrs[1];
-#if ENABLE(SVG)
     void* dataRefSvgStyle;
-#endif
+
     struct InheritedFlags {
         unsigned m_bitfields[2];
     } inherited_flags;
@@ -111,9 +107,7 @@ ALWAYS_INLINE RenderStyle::RenderStyle()
     , rareNonInheritedData(defaultStyle()->rareNonInheritedData)
     , rareInheritedData(defaultStyle()->rareInheritedData)
     , inherited(defaultStyle()->inherited)
-#if ENABLE(SVG)
     , m_svgStyle(defaultStyle()->m_svgStyle)
-#endif
 {
     setBitDefaults(); // Would it be faster to copy this from the default style?
     COMPILE_ASSERT((sizeof(InheritedFlags) <= 8), InheritedFlags_does_not_grow);
@@ -139,9 +133,7 @@ ALWAYS_INLINE RenderStyle::RenderStyle(bool)
     rareNonInheritedData.access()->m_gridItem.init();
     rareInheritedData.init();
     inherited.init();
-#if ENABLE(SVG)
     m_svgStyle.init();
-#endif
 }
 
 ALWAYS_INLINE RenderStyle::RenderStyle(const RenderStyle& o)
@@ -153,9 +145,7 @@ ALWAYS_INLINE RenderStyle::RenderStyle(const RenderStyle& o)
     , rareNonInheritedData(o.rareNonInheritedData)
     , rareInheritedData(o.rareInheritedData)
     , inherited(o.inherited)
-#if ENABLE(SVG)
     , m_svgStyle(o.m_svgStyle)
-#endif
     , inherited_flags(o.inherited_flags)
     , noninherited_flags(o.noninherited_flags)
 {
@@ -172,10 +162,8 @@ void RenderStyle::inheritFrom(const RenderStyle* inheritParent, IsAtShadowBounda
         rareInheritedData = inheritParent->rareInheritedData;
     inherited = inheritParent->inherited;
     inherited_flags = inheritParent->inherited_flags;
-#if ENABLE(SVG)
     if (m_svgStyle != inheritParent->m_svgStyle)
         m_svgStyle.access()->inheritFrom(inheritParent->m_svgStyle.get());
-#endif
 }
 
 void RenderStyle::copyNonInheritedFrom(const RenderStyle* other)
@@ -200,10 +188,8 @@ void RenderStyle::copyNonInheritedFrom(const RenderStyle* other)
     noninherited_flags._page_break_after = other->noninherited_flags._page_break_after;
     noninherited_flags._page_break_inside = other->noninherited_flags._page_break_inside;
     noninherited_flags.explicitInheritance = other->noninherited_flags.explicitInheritance;
-#if ENABLE(SVG)
     if (m_svgStyle != other->m_svgStyle)
         m_svgStyle.access()->copyNonInheritedFrom(other->m_svgStyle.get());
-#endif
     ASSERT(zoom() == initialZoom());
 }
 
@@ -219,10 +205,7 @@ bool RenderStyle::operator==(const RenderStyle& o) const
         && rareNonInheritedData == o.rareNonInheritedData
         && rareInheritedData == o.rareInheritedData
         && inherited == o.inherited
-#if ENABLE(SVG)
-        && m_svgStyle == o.m_svgStyle
-#endif
-            ;
+        && m_svgStyle == o.m_svgStyle;
 }
 
 bool RenderStyle::isStyleAvailable() const
@@ -319,9 +302,7 @@ bool RenderStyle::inheritedNotEqual(const RenderStyle* other) const
 {
     return inherited_flags != other->inherited_flags
            || inherited != other->inherited
-#if ENABLE(SVG)
            || m_svgStyle->inheritedNotEqual(other->m_svgStyle.get())
-#endif
            || rareInheritedData != other->rareInheritedData;
 }
 
@@ -330,9 +311,7 @@ bool RenderStyle::inheritedDataShared(const RenderStyle* other) const
     // This is a fast check that only looks if the data structures are shared.
     return inherited_flags == other->inherited_flags
         && inherited.get() == other->inherited.get()
-#if ENABLE(SVG)
         && m_svgStyle.get() == other->m_svgStyle.get()
-#endif
         && rareInheritedData.get() == other->rareInheritedData.get();
 }
 
@@ -367,14 +346,12 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
 {
     changedContextSensitiveProperties = ContextSensitivePropertyNone;
 
-#if ENABLE(SVG)
     StyleDifference svgChange = StyleDifferenceEqual;
     if (m_svgStyle != other->m_svgStyle) {
         svgChange = m_svgStyle->diff(other->m_svgStyle.get());
         if (svgChange == StyleDifferenceLayout)
             return svgChange;
     }
-#endif
 
     if (m_box->width() != other->m_box->width()
         || m_box->minWidth() != other->m_box->minWidth()
@@ -404,7 +381,7 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
             || rareNonInheritedData->textOverflow != other->rareNonInheritedData->textOverflow)
             return StyleDifferenceLayout;
 
-        if (rareNonInheritedData->m_regionOverflow != other->rareNonInheritedData->m_regionOverflow)
+        if (rareNonInheritedData->m_regionFragment != other->rareNonInheritedData->m_regionFragment)
             return StyleDifferenceLayout;
 
         if (rareNonInheritedData->m_wrapFlow != other->rareNonInheritedData->m_wrapFlow
@@ -457,6 +434,7 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
         if (rareInheritedData->highlight != other->rareInheritedData->highlight
             || rareInheritedData->indent != other->rareInheritedData->indent
 #if ENABLE(CSS3_TEXT)
+            || rareInheritedData->m_textAlignLast != other->rareInheritedData->m_textAlignLast
             || rareInheritedData->m_textIndentLine != other->rareInheritedData->m_textIndentLine
 #endif
             || rareInheritedData->m_effectiveZoom != other->rareInheritedData->m_effectiveZoom
@@ -582,14 +560,12 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
     if (!QuotesData::equals(rareInheritedData->quotes.get(), other->rareInheritedData->quotes.get()))
         return StyleDifferenceLayout;
 
-#if ENABLE(SVG)
     // SVGRenderStyle::diff() might have returned StyleDifferenceRepaint, eg. if fill changes.
     // If eg. the font-size changed at the same time, we're not allowed to return StyleDifferenceRepaint,
     // but have to return StyleDifferenceLayout, that's why  this if branch comes after all branches
     // that are relevant for SVG and might return StyleDifferenceLayout.
     if (svgChange != StyleDifferenceEqual)
         return svgChange;
-#endif
 
     // Make sure these left/top/right/bottom checks stay below all layout checks and above
     // all visible checks.
@@ -609,10 +585,9 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
             return StyleDifferenceRepaintLayer;
     }
     
-#if ENABLE(CSS_COMPOSITING)
-    if (rareNonInheritedData->m_effectiveBlendMode != other->rareNonInheritedData->m_effectiveBlendMode)
-        return StyleDifferenceRepaintLayer;
-#endif
+    if (RuntimeEnabledFeatures::cssCompositingEnabled())
+        if (rareNonInheritedData->m_effectiveBlendMode != other->rareNonInheritedData->m_effectiveBlendMode)
+            return StyleDifferenceRepaintLayer;
 
     if (rareNonInheritedData->opacity != other->rareNonInheritedData->opacity) {
         // Don't return early here; instead take note of the type of change,
@@ -631,26 +606,15 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
         || rareNonInheritedData->m_maskBoxImage != other->rareNonInheritedData->m_maskBoxImage)
         return StyleDifferenceRepaintLayer;
 
-    if (inherited->color != other->inherited->color
-        || inherited_flags._visibility != other->inherited_flags._visibility
-        || inherited_flags._text_decorations != other->inherited_flags._text_decorations
+    if (inherited_flags._visibility != other->inherited_flags._visibility
         || inherited_flags.m_printColorAdjust != other->inherited_flags.m_printColorAdjust
         || inherited_flags._insideLink != other->inherited_flags._insideLink
         || surround->border != other->surround->border
         || *m_background.get() != *other->m_background.get()
-        || visual->textDecoration != other->visual->textDecoration
         || rareInheritedData->userModify != other->rareInheritedData->userModify
         || rareInheritedData->userSelect != other->rareInheritedData->userSelect
         || rareNonInheritedData->userDrag != other->rareNonInheritedData->userDrag
         || rareNonInheritedData->m_borderFit != other->rareNonInheritedData->m_borderFit
-#if ENABLE(CSS3_TEXT)
-        || rareNonInheritedData->m_textDecorationStyle != other->rareNonInheritedData->m_textDecorationStyle
-        || rareNonInheritedData->m_textDecorationColor != other->rareNonInheritedData->m_textDecorationColor
-#endif // CSS3_TEXT
-        || rareInheritedData->textFillColor != other->rareInheritedData->textFillColor
-        || rareInheritedData->textStrokeColor != other->rareInheritedData->textStrokeColor
-        || rareInheritedData->textEmphasisColor != other->rareInheritedData->textEmphasisColor
-        || rareInheritedData->textEmphasisFill != other->rareInheritedData->textEmphasisFill
         || rareInheritedData->m_imageRendering != other->rareInheritedData->m_imageRendering)
         return StyleDifferenceRepaint;
         
@@ -673,6 +637,17 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
             || rareNonInheritedData->m_perspectiveOriginY != other->rareNonInheritedData->m_perspectiveOriginY)
             return StyleDifferenceRecompositeLayer;
     }
+
+    if (inherited->color != other->inherited->color
+        || inherited_flags._text_decorations != other->inherited_flags._text_decorations
+        || visual->textDecoration != other->visual->textDecoration
+        || rareNonInheritedData->m_textDecorationStyle != other->rareNonInheritedData->m_textDecorationStyle
+        || rareNonInheritedData->m_textDecorationColor != other->rareNonInheritedData->m_textDecorationColor
+        || rareInheritedData->textFillColor != other->rareInheritedData->textFillColor
+        || rareInheritedData->textStrokeColor != other->rareInheritedData->textStrokeColor
+        || rareInheritedData->textEmphasisColor != other->rareInheritedData->textEmphasisColor
+        || rareInheritedData->textEmphasisFill != other->rareInheritedData->textEmphasisFill)
+        return StyleDifferenceRepaintIfText;
 
     // Cursors are not checked, since they will be set appropriately in response to mouse events,
     // so they don't need to cause any repaint or layout.
@@ -793,7 +768,27 @@ void RenderStyle::setContent(QuoteType quote, bool add)
 
     rareNonInheritedData.access()->m_content = ContentData::create(quote);
 }
-    
+
+BlendMode RenderStyle::blendMode() const
+{
+    if (RuntimeEnabledFeatures::cssCompositingEnabled())
+        return static_cast<BlendMode>(rareNonInheritedData->m_effectiveBlendMode);
+    return BlendModeNormal;
+}
+
+void RenderStyle::setBlendMode(BlendMode v)
+{
+    if (RuntimeEnabledFeatures::cssCompositingEnabled())
+        rareNonInheritedData.access()->m_effectiveBlendMode = v;
+}
+
+bool RenderStyle::hasBlendMode() const
+{
+    if (RuntimeEnabledFeatures::cssCompositingEnabled())
+        return static_cast<BlendMode>(rareNonInheritedData->m_effectiveBlendMode) != BlendModeNormal;
+    return false;
+}
+
 inline bool requireTransformOrigin(const Vector<RefPtr<TransformOperation> >& transformOperations, RenderStyle::ApplyTransformOrigin applyOrigin)
 {
     // transform-origin brackets the transform with translate operations.
@@ -1333,11 +1328,9 @@ Color RenderStyle::colorIncludingFallback(int colorProperty, bool visitedLink) c
     case CSSPropertyWebkitColumnRuleColor:
         result = visitedLink ? visitedLinkColumnRuleColor() : columnRuleColor();
         break;
-#if ENABLE(CSS3_TEXT)
-    case CSSPropertyWebkitTextDecorationColor:
+    case CSSPropertyTextDecorationColor:
         // Text decoration color fallback is handled in RenderObject::decorationColor.
         return visitedLink ? visitedLinkTextDecorationColor() : textDecorationColor();
-#endif // CSS3_TEXT
     case CSSPropertyWebkitTextEmphasisColor:
         result = visitedLink ? visitedLinkTextEmphasisColor() : textEmphasisColor();
         break;
@@ -1369,11 +1362,9 @@ Color RenderStyle::visitedDependentColor(int colorProperty) const
 
     Color visitedColor = colorIncludingFallback(colorProperty, true);
 
-#if ENABLE(CSS3_TEXT)
     // Text decoration color validity is preserved (checked in RenderObject::decorationColor).
-    if (colorProperty == CSSPropertyWebkitTextDecorationColor)
+    if (colorProperty == CSSPropertyTextDecorationColor)
         return visitedColor;
-#endif // CSS3_TEXT
 
     // FIXME: Technically someone could explicitly specify the color transparent, but for now we'll just
     // assume that if the background color is transparent that it wasn't set. Note that it's weird that
@@ -1562,9 +1553,9 @@ void RenderStyle::setBorderImageOutset(LengthBox outset)
     surround.access()->border.m_image.setOutset(outset);
 }
 
-ExclusionShapeValue* RenderStyle::initialShapeInside()
+ShapeValue* RenderStyle::initialShapeInside()
 {
-    DEFINE_STATIC_LOCAL(RefPtr<ExclusionShapeValue>, sOutsideValue, (ExclusionShapeValue::createOutsideValue()));
+    DEFINE_STATIC_LOCAL(RefPtr<ShapeValue>, sOutsideValue, (ShapeValue::createOutsideValue()));
     return sOutsideValue.get();
 }
 
@@ -1582,9 +1573,7 @@ void RenderStyle::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     // FIXME: inherited contains StyleImage and Font fields that might need to be instrumented.
     info.addMember(inherited, "inherited");
     info.addMember(m_cachedPseudoStyles, "cachedPseudoStyles");
-#if ENABLE(SVG)
     info.addMember(m_svgStyle, "svgStyle");
-#endif
     info.addMember(inherited_flags, "inherited_flags");
     info.addMember(noninherited_flags, "noninherited_flags");
 }

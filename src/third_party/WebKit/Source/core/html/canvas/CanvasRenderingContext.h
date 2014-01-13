@@ -28,10 +28,11 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/html/HTMLCanvasElement.h"
-#include "core/platform/graphics/GraphicsLayer.h"
-#include <wtf/HashSet.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/text/StringHash.h>
+#include "wtf/HashSet.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/text/StringHash.h"
+
+namespace WebKit { class WebLayer; }
 
 namespace WebCore {
 
@@ -58,7 +59,7 @@ public:
 
     virtual void paintRenderingResultsToCanvas() {}
 
-    virtual PlatformLayer* platformLayer() const { return 0; }
+    virtual WebKit::WebLayer* platformLayer() const { return 0; }
 
 protected:
     CanvasRenderingContext(HTMLCanvasElement*);

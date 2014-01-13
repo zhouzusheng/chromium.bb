@@ -21,7 +21,6 @@
 #ifndef SVGFilterPrimitiveStandardAttributes_h
 #define SVGFilterPrimitiveStandardAttributes_h
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
 #include "core/rendering/svg/RenderSVGResourceFilterPrimitive.h"
 #include "core/svg/SVGAnimatedLength.h"
@@ -68,7 +67,7 @@ protected:
 private:
     virtual bool isFilterEffect() const { return true; }
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE { return false; }
 
@@ -85,5 +84,4 @@ void invalidateFilterPrimitiveParent(SVGElement*);
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

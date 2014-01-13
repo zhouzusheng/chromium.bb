@@ -32,20 +32,20 @@ import sys
 import shutil
 
 from in_file import InFile
-import in_generator
+import name_macros
 import license
 
 
 IMPLEMENTATION_TEMPLATE = """%(license)s
 #include "config.h"
-#include "%(namespace)sFactory.h"
+#include "%(class_name)sFactory.h"
 
-#include "%(namespace)sHeaders.h"
+#include "%(class_name)sHeaders.h"
 #include "RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
-PassRefPtr<%(namespace)s> %(namespace)sFactory::create(const String& type)
+PassRefPtr<%(class_name)s> %(class_name)sFactory::create(const String& type)
 {
 %(factory_implementation)s
     return 0;
@@ -55,19 +55,19 @@ PassRefPtr<%(namespace)s> %(namespace)sFactory::create(const String& type)
 """
 
 
-class EventFactoryWriter(in_generator.Writer):
+class EventFactoryWriter(name_macros.Writer):
     defaults = {
-        'interfaceName' : None,
-        'conditional' : None,
+        'implementedAs': None,
+        'conditional': None,
         'runtimeConditional': None,
     }
     default_parameters = {
         'namespace': '',
     }
-    class_name = 'EventFactory'
 
-    def _namespace(self):
-        return self.in_file.parameters['namespace']
+    def __init__(self, in_file_path, enabled_conditions):
+        super(EventFactoryWriter, self).__init__(in_file_path, enabled_conditions)
+        self._outputs[(self.class_name + ".cpp")] = self.generate_implementation
 
     def _events(self):
         return self.in_file.name_dictionaries
@@ -77,25 +77,22 @@ class EventFactoryWriter(in_generator.Writer):
         if event['runtimeConditional']:
             runtime_condition = ' && RuntimeEnabledFeatures::' + event['runtimeConditional'] + '()'
         name = os.path.basename(event['name'])
-        interface_name = event['interfaceName'] if event['interfaceName'] else name
+        class_name = self._class_name_for_entry(event)
         implementation = """    if (type == "%(name)s"%(runtime_condition)s)
-        return %(interface_name)s::create();""" % {
+        return %(class_name)s::create();""" % {
             'name': name,
             'runtime_condition': runtime_condition,
-            'interface_name': interface_name,
+            'class_name': class_name,
         }
         return self.wrap_with_condition(implementation, event['conditional'])
 
-    def generate_header(self):
-        pass
-
     def generate_implementation(self):
         return IMPLEMENTATION_TEMPLATE % {
-            'namespace': self._namespace().strip('"'),
+            'class_name': self.class_name,
             'license': license.license_for_generated_cpp(),
             'factory_implementation': "\n".join(map(self._factory_implementation, self._events())),
         }
 
 
 if __name__ == "__main__":
-    in_generator.Maker(EventFactoryWriter).main(sys.argv)
+    name_macros.Maker(EventFactoryWriter).main(sys.argv)

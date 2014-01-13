@@ -9,6 +9,7 @@
 
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/sequenced_task_runner.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/public/browser/browser_thread.h"
@@ -16,13 +17,13 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
-#include "webkit/fileapi/external_mount_points.h"
-#include "webkit/fileapi/file_permission_policy.h"
-#include "webkit/fileapi/file_system_options.h"
-#include "webkit/fileapi/file_system_task_runners.h"
-#include "webkit/fileapi/local_file_system_operation.h"
-#include "webkit/fileapi/sandbox_mount_point_provider.h"
-#include "webkit/quota/quota_manager.h"
+#include "webkit/browser/fileapi/external_mount_points.h"
+#include "webkit/browser/fileapi/file_permission_policy.h"
+#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
+#include "webkit/browser/fileapi/file_system_operation_runner.h"
+#include "webkit/browser/fileapi/file_system_options.h"
+#include "webkit/browser/fileapi/file_system_task_runners.h"
+#include "webkit/browser/quota/quota_manager.h"
 
 namespace content {
 
@@ -52,15 +53,15 @@ scoped_refptr<fileapi::FileSystemContext> CreateFileSystemContext(
     fileapi::ExternalMountPoints* external_mount_points,
     quota::SpecialStoragePolicy* special_storage_policy,
     quota::QuotaManagerProxy* quota_manager_proxy) {
-  base::SequencedWorkerPool* pool = BrowserThread::GetBlockingPool();
-  base::SequencedWorkerPool::SequenceToken media_sequence_token =
-      pool->GetNamedSequenceToken(fileapi::kMediaTaskRunnerName);
+
+  base::SequencedWorkerPool* pool = content::BrowserThread::GetBlockingPool();
+  scoped_refptr<base::SequencedTaskRunner> file_task_runner =
+      pool->GetSequencedTaskRunner(pool->GetNamedSequenceToken("FileAPI"));
 
   scoped_ptr<fileapi::FileSystemTaskRunners> task_runners(
       new fileapi::FileSystemTaskRunners(
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE),
-          pool->GetSequencedTaskRunner(media_sequence_token)));
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get(),
+          file_task_runner.get()));
 
   // Setting up additional mount point providers.
   ScopedVector<fileapi::FileSystemMountPointProvider> additional_providers;
@@ -105,7 +106,7 @@ bool CheckFileSystemPermissionsForProcess(
       *error = base::PLATFORM_FILE_ERROR_SECURITY;
       return false;
     case fileapi::FILE_PERMISSION_ALWAYS_ALLOW:
-      CHECK(mount_point_provider == context->sandbox_provider());
+      CHECK(context->IsSandboxFileSystem(url.type()));
       return true;
     case fileapi::FILE_PERMISSION_USE_FILE_PERMISSION: {
       const bool success = policy->HasPermissionsForFile(
@@ -131,7 +132,8 @@ void SyncGetPlatformPath(fileapi::FileSystemContext* context,
                          int process_id,
                          const GURL& path,
                          base::FilePath* platform_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK(context->task_runners()->file_task_runner()->
+         RunsTasksOnCurrentThread());
   DCHECK(platform_path);
   *platform_path = base::FilePath();
   fileapi::FileSystemURL url(context->CrackURL(path));
@@ -146,19 +148,7 @@ void SyncGetPlatformPath(fileapi::FileSystemContext* context,
       context, process_id, url, fileapi::kReadFilePermissions, &error))
     return;
 
-  // This is called only by pepper plugin as of writing to get the
-  // underlying platform path to upload a file in the sandboxed filesystem
-  // (e.g. TEMPORARY or PERSISTENT).
-  // TODO(kinuko): this hack should go away once appropriate upload-stream
-  // handling based on element types is supported.
-  fileapi::LocalFileSystemOperation* operation =
-      context->CreateFileSystemOperation(
-          url, NULL)->AsLocalFileSystemOperation();
-  DCHECK(operation);
-  if (!operation)
-    return;
-
-  operation->SyncGetPlatformPath(url, platform_path);
+  context->operation_runner()->SyncGetPlatformPath(url, platform_path);
 
   // The path is to be attached to URLLoader so we grant read permission
   // for the file. (We first need to check if it can already be read not to

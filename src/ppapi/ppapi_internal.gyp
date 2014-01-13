@@ -42,24 +42,24 @@
         'ppapi_shared_target': 1,
       },
       'dependencies': [
-        'ppapi.gyp:ppapi_c',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '../gpu/gpu.gyp:command_buffer_client',
         '../gpu/gpu.gyp:gles2_implementation',
         '../media/media.gyp:shared_memory_support',
         '../skia/skia.gyp:skia',
-        '../third_party/icu/icu.gyp:icuuc',
         # TODO(ananta) : The WebKit dependency needs to move to a new target for NACL.
-        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
+        '../third_party/WebKit/public/blink.gyp:blink',
+        '../third_party/icu/icu.gyp:icuuc',
         '../ui/surface/surface.gyp:surface',
+        '../url/url.gyp:url_lib',
+        'ppapi.gyp:ppapi_c',
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
-        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
+        '../third_party/WebKit/public/blink.gyp:blink',
       ],
       'conditions': [
         ['OS=="mac"', {
@@ -112,10 +112,10 @@
             '../media/media.gyp:shared_memory_support',
             '../ipc/ipc.gyp:ipc',
             '../skia/skia.gyp:skia',
+            # TODO(ananta) : The WebKit dependency needs to move to a new target for NACL.
+            '../third_party/WebKit/public/blink.gyp:blink',
             '../third_party/icu/icu.gyp:icuuc',
             '../third_party/icu/icu.gyp:icui18n',
-            # TODO(ananta) : The WebKit dependency needs to move to a new target for NACL.
-            '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
             '../ui/surface/surface.gyp:surface',
             'ppapi.gyp:ppapi_c',
             'ppapi_shared',
@@ -151,10 +151,10 @@
             '../media/media.gyp:shared_memory_support',
             '../ipc/ipc.gyp:ipc',
             '../skia/skia.gyp:skia',
+            # TODO(ananta) : The WebKit dependency needs to move to a new target for NACL.
+            '../third_party/WebKit/public/blink.gyp:blink',
             '../third_party/icu/icu.gyp:icuuc',
             '../third_party/icu/icu.gyp:icui18n',
-            # TODO(ananta) : The WebKit dependency needs to move to a new target for NACL.
-            '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
             '../ui/surface/surface.gyp:surface',
             'ppapi.gyp:ppapi_c',
             'ppapi_shared',

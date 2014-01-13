@@ -22,7 +22,8 @@ base.exportTo('tracing.tracks', function() {
    * @extends {CanvasBasedTrack}
    */
 
-  var SliceTrack = ui.define(tracing.tracks.CanvasBasedTrack);
+  var SliceTrack = ui.define(
+      'slice-track', tracing.tracks.CanvasBasedTrack);
 
   SliceTrack.prototype = {
 
@@ -118,7 +119,7 @@ base.exportTo('tracing.tracks', function() {
       var lowSlice = base.findLowIndexInSortedArray(slices,
                                                     function(slice) {
                                                       return slice.start +
-                                                        slice.duration;
+                slice.duration;
                                                     },
                                                     viewLWorld);
       for (var i = lowSlice; i < slices.length; ++i) {
@@ -327,6 +328,8 @@ base.exportTo('tracing.tracks', function() {
         var newtitle = title;
         var elided = false;
         while (track.labelWidthWorld(newtitle, pixWidth) > sliceDuration) {
+          if (newtitle.length * 0.75 < 1)
+            break;
           newtitle = newtitle.substring(0, newtitle.length * 0.75);
           elided = true;
         }

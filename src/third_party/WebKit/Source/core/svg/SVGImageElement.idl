@@ -23,18 +23,17 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-[
-    Conditional=SVG
-] interface SVGImageElement : SVGStyledElement,
-                                              SVGURIReference,
-                                              SVGTests,
-                                              SVGLangSpace,
-                                              SVGExternalResourcesRequired,
-                                              SVGTransformable {
+interface SVGImageElement : SVGStyledElement,
+                            SVGLangSpace,
+                            SVGTransformable {
     readonly attribute SVGAnimatedLength x;
     readonly attribute SVGAnimatedLength y;
     readonly attribute SVGAnimatedLength width;
     readonly attribute SVGAnimatedLength height;
     readonly attribute SVGAnimatedPreserveAspectRatio preserveAspectRatio;
 };
+
+SVGImageElement implements SVGExternalResourcesRequired;
+SVGImageElement implements SVGTests;
+SVGImageElement implements SVGURIReference;
 

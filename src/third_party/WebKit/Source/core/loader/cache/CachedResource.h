@@ -27,7 +27,6 @@
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/ResourceLoaderOptions.h"
 #include "core/loader/cache/CachePolicy.h"
-#include "core/platform/PurgePriority.h"
 #include "core/platform/Timer.h"
 #include "core/platform/network/ResourceError.h"
 #include "core/platform/network/ResourceLoadPriority.h"
@@ -67,15 +66,13 @@ public:
         CSSStyleSheet,
         Script,
         FontResource,
-        RawResource
-#if ENABLE(SVG)
-        , SVGDocumentResource
-#endif
-        , XSLStyleSheet
-        , LinkPrefetch
-        , LinkSubresource
-        , TextTrackResource
-        , ShaderResource
+        RawResource,
+        SVGDocumentResource,
+        XSLStyleSheet,
+        LinkPrefetch,
+        LinkSubresource,
+        TextTrackResource,
+        ShaderResource
     };
 
     enum Status {
@@ -99,14 +96,16 @@ public:
     void setResourceError(const ResourceError& error) { m_error = error; }
     const ResourceError& resourceError() const { return m_error; }
 
+    void setIdentifier(unsigned long identifier) { m_identifier = identifier; }
+    unsigned long identifier() const { return m_identifier; }
+
     virtual bool shouldIgnoreHTTPStatusCodeErrors() const { return false; }
 
     ResourceRequest& resourceRequest() { return m_resourceRequest; }
     const KURL& url() const { return m_resourceRequest.url();}
     Type type() const { return static_cast<Type>(m_type); }
-    
-    ResourceLoadPriority loadPriority() const { return m_loadPriority; }
-    void setLoadPriority(ResourceLoadPriority);
+
+    void didChangePriority(ResourceLoadPriority);
 
     void addClient(CachedResourceClient*);
     void removeClient(CachedResourceClient*);
@@ -123,7 +122,7 @@ public:
 
     virtual void didAddClient(CachedResourceClient*);
     virtual void didRemoveClient(CachedResourceClient*) { }
-    virtual void allClientsRemoved() { }
+    virtual void allClientsRemoved();
     void destroyDecodedDataIfNeeded();
 
     unsigned count() const { return m_clients.size(); }
@@ -153,12 +152,12 @@ public:
             || type() == RawResource;
     }
 
+    void updateForAccess();
     unsigned accessCount() const { return m_accessCount; }
-    void increaseAccessCount() { m_accessCount++; }
 
     // Computes the status of an object after loading.  
     // Updates the expire date on the cache entry file
-    void finish();
+    void finish(double finishTime = 0.0);
 
     // FIXME: Remove the stringless variant once all the callsites' error messages are updated.
     bool passesAccessControlCheck(SecurityOrigin*);
@@ -173,7 +172,7 @@ public:
     
     bool inLiveDecodedResourcesList() { return m_inLiveDecodedResourcesList; }
     
-    void stopLoading();
+    void clearLoader();
 
     SharedBuffer* resourceBuffer() const { ASSERT(!m_purgeableData); return m_data.get(); }
 
@@ -200,8 +199,8 @@ public:
 
     // List of acceptable MIME types separated by ",".
     // A MIME type may contain a wildcard, e.g. "text/*".
-    String accept() const { return m_accept; }
-    void setAccept(const String& accept) { m_accept = accept; }
+    AtomicString accept() const { return m_accept; }
+    void setAccept(const AtomicString& accept) { m_accept = accept; }
 
     bool wasCanceled() const { return m_error.isCancellation(); }
     bool errorOccurred() const { return m_status == LoadError || m_status == DecodeError; }
@@ -211,8 +210,6 @@ public:
     DataBufferingPolicy dataBufferingPolicy() const { return m_options.dataBufferingPolicy; }
     
     virtual void destroyDecodedData() { }
-
-    void setOwningCachedResourceLoader(CachedResourceLoader* cachedResourceLoader) { m_owningCachedResourceLoader = cachedResourceLoader; }
     
     bool isPreloaded() const { return m_preloadCount; }
     void increasePreloadCount() { ++m_preloadCount; }
@@ -225,6 +222,7 @@ public:
     bool mustRevalidateDueToCacheHeaders(CachePolicy) const;
     bool isCacheValidator() const { return m_resourceToRevalidate; }
     CachedResource* resourceToRevalidate() const { return m_resourceToRevalidate; }
+    void setResourceToRevalidate(CachedResource*);
     
     bool isPurgeable() const;
     bool wasPurged() const;
@@ -234,16 +232,9 @@ public:
     // better way to handle the archive case.
     bool makePurgeable(bool purgeable);
     
-    // HTTP revalidation support methods for CachedResourceLoader.
-    void setResourceToRevalidate(CachedResource*);
-    virtual void switchClientsToRevalidatedResource();
-    void clearResourceToRevalidate();
-    void updateResponseAfterRevalidation(const ResourceResponse& validatingResponse);
-    
     virtual void didSendData(unsigned long long /* bytesSent */, unsigned long long /* totalBytesToBeSent */) { }
     virtual void didDownloadData(int) { }
 
-    void setLoadFinishTime(double finishTime) { m_loadFinishTime = finishTime; }
     double loadFinishTime() const { return m_loadFinishTime; }
 
     virtual void reportMemoryUsage(MemoryObjectInfo*) const;
@@ -259,6 +250,10 @@ protected:
     void didAccessDecodedData(double timeStamp);
 
     bool isSafeToMakePurgeable() const;
+
+    virtual void switchClientsToRevalidatedResource();
+    void clearResourceToRevalidate();
+    void updateResponseAfterRevalidation(const ResourceResponse& validatingResponse);
     
     HashCountedSet<CachedResourceClient*> m_clients;
 
@@ -279,10 +274,9 @@ protected:
     bool hasClient(CachedResourceClient* client) { return m_clients.contains(client) || m_clientsAwaitingCallback.contains(client); }
 
     ResourceRequest m_resourceRequest;
-    String m_accept;
+    AtomicString m_accept;
     RefPtr<ResourceLoader> m_loader;
     ResourceLoaderOptions m_options;
-    ResourceLoadPriority m_loadPriority;
 
     ResourceResponse m_response;
     double m_responseTimestamp;
@@ -290,12 +284,15 @@ protected:
     RefPtr<SharedBuffer> m_data;
     OwnPtr<PurgeableBuffer> m_purgeableData;
     Timer<CachedResource> m_decodedDataDeletionTimer;
+    Timer<CachedResource> m_cancelTimer;
 
 private:
     bool addClientToSet(CachedResourceClient*);
     void decodedDataDeletionTimerFired(Timer<CachedResource>*);
+    void cancelTimerFired(Timer<CachedResource>*);
 
-    virtual PurgePriority purgePriority() const { return PurgeDefault; }
+    void revalidationSucceeded(const ResourceResponse&);
+    void revalidationFailed();
 
     double currentAge() const;
     double freshnessLifetime() const;
@@ -310,6 +307,8 @@ private:
 
     double m_lastDecodedAccessTime; // Used as a "thrash guard" in the cache
     double m_loadFinishTime;
+
+    unsigned long m_identifier;
 
     unsigned m_encodedSize;
     unsigned m_decodedSize;
@@ -340,8 +339,6 @@ private:
     
     CachedResource* m_nextInLiveResourcesList;
     CachedResource* m_prevInLiveResourcesList;
-
-    CachedResourceLoader* m_owningCachedResourceLoader; // only non-0 for resources that are not in the cache
     
     // If this field is non-null we are using the resource as a proxy for checking whether an existing resource is still up to date
     // using HTTP If-Modified-Since/If-None-Match headers. If the response is 304 all clients of this resource are moved

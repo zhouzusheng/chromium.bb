@@ -10,11 +10,11 @@
 #include <vector>
 
 #include "base/observer_list.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/timer.h"
 #include "build/build_config.h"
-#include "content/common/child_process.h"
-#include "content/common/child_thread.h"
+#include "content/child/child_process.h"
+#include "content/child/child_thread.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
@@ -77,9 +77,11 @@ class DevToolsAgentFilter;
 class DomStorageDispatcher;
 class GpuChannelHost;
 class IndexedDBDispatcher;
+class InputEventFilter;
 class InputHandlerManager;
 class MediaStreamCenter;
 class MediaStreamDependencyFactory;
+class MIDIMessageFilter;
 class P2PSocketDispatcher;
 class PeerConnectionTracker;
 class RendererWebKitPlatformSupportImpl;
@@ -146,6 +148,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
       int64 idle_notification_delay_in_ms) OVERRIDE;
   virtual void ToggleWebKitSharedTimer(bool suspend) OVERRIDE;
   virtual void UpdateHistograms(int sequence_number) OVERRIDE;
+  virtual int PostTaskToAllWebWorkers(const base::Closure& closure) OVERRIDE;
   virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) OVERRIDE;
 #if defined(OS_WIN)
   virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
@@ -157,7 +160,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   // GpuChannelHostFactory implementation:
   virtual bool IsMainThread() OVERRIDE;
-  virtual bool IsIOThread() OVERRIDE;
   virtual base::MessageLoop* GetMainLoop() OVERRIDE;
   virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() OVERRIDE;
   virtual base::WaitableEvent* GetShutDownEvent() OVERRIDE;
@@ -187,29 +189,14 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   void DoNotSuspendWebKitSharedTimer();
   void DoNotNotifyWebKitOfModalLoop();
 
-  // True if focus changes should be send via IPC to the browser.
-  bool should_send_focus_ipcs() const {
-    return should_send_focus_ipcs_;
+  // True if we are running layout tests. This currently disables forwarding
+  // various status messages to the console, skips network error pages, and
+  // short circuits size update and focus events.
+  bool layout_test_mode() const {
+    return layout_test_mode_;
   }
-  void set_should_send_focus_ipcs(bool send) {
-    should_send_focus_ipcs_ = send;
-  }
-
-  // True if RenderWidgets should report the newly requested size back to
-  // WebKit without waiting for the browser to acknowledge the size.
-  bool short_circuit_size_updates() const {
-    return short_circuit_size_updates_;
-  }
-  void set_short_circuit_size_updates(bool short_circuit) {
-    short_circuit_size_updates_ = short_circuit;
-  }
-
-  // True if we should never display error pages in response to a failed load.
-  bool skip_error_pages() const {
-    return skip_error_pages_;
-  }
-  void set_skip_error_pages(bool skip) {
-    skip_error_pages_ = skip;
+  void set_layout_test_mode(bool layout_test_mode) {
+    layout_test_mode_ = layout_test_mode;
   }
 
   IPC::ForwardingMessageFilter* compositor_output_surface_filter() const {
@@ -241,6 +228,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
     return audio_message_filter_.get();
   }
 
+  MIDIMessageFilter* midi_message_filter() {
+    return midi_message_filter_.get();
+  }
 
   // Creates the embedder implementation of WebMediaStreamCenter.
   // The resulting object is owned by WebKit and deleted by WebKit at tear-down.
@@ -272,6 +262,11 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // on the renderer's main thread.
   scoped_refptr<base::MessageLoopProxy> GetFileThreadMessageLoopProxy();
 
+  // Returns a MessageLoopProxy instance corresponding to the message loop
+  // of the thread on which media operations should be run. Must be called
+  // on the renderer's main thread.
+  scoped_refptr<base::MessageLoopProxy> GetMediaThreadMessageLoopProxy();
+
   // Causes the idle handler to skip sending idle notifications
   // on the two next scheduled calls, so idle notifications are
   // not sent for at least one notification delay.
@@ -287,9 +282,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // Handle loss of the shared GpuVDAContext3D context above.
   static void OnGpuVDAContextLoss();
 
-  scoped_refptr<ContextProviderCommandBuffer>
+  scoped_refptr<cc::ContextProvider>
       OffscreenContextProviderForMainThread();
-  scoped_refptr<ContextProviderCommandBuffer>
+  scoped_refptr<cc::ContextProvider>
       OffscreenContextProviderForCompositorThread();
 
   // AudioRendererMixerManager instance which manages renderer side mixer
@@ -388,6 +383,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_refptr<DBMessageFilter> db_message_filter_;
   scoped_refptr<AudioInputMessageFilter> audio_input_message_filter_;
   scoped_refptr<AudioMessageFilter> audio_message_filter_;
+  scoped_refptr<MIDIMessageFilter> midi_message_filter_;
   scoped_refptr<DevToolsAgentFilter> devtools_agent_message_filter_;
 
   scoped_ptr<MediaStreamDependencyFactory> media_stream_factory_;
@@ -425,10 +421,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   bool suspend_webkit_shared_timer_;
   bool notify_webkit_of_modal_loop_;
 
-  // The following flags are used to control layout test specific behavior.
-  bool should_send_focus_ipcs_;
-  bool short_circuit_size_updates_;
-  bool skip_error_pages_;
+  // The following flag is used to control layout test specific behavior.
+  bool layout_test_mode_;
 
   // Timer that periodically calls IdleHandler.
   base::RepeatingTimer<RenderThreadImpl> idle_timer_;
@@ -442,10 +436,15 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // May be null if overridden by ContentRendererClient.
   scoped_ptr<base::Thread> compositor_thread_;
 
+  // Thread for running multimedia operations (e.g., video decoding).
+  scoped_ptr<base::Thread> media_thread_;
+
   // Will point to appropriate MessageLoopProxy after initialization,
   // regardless of whether |compositor_thread_| is overriden.
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy_;
 
+  // May be null if unused by the |input_handler_manager_|.
+  scoped_refptr<InputEventFilter> input_event_filter_;
   scoped_ptr<InputHandlerManager> input_handler_manager_;
   scoped_refptr<IPC::ForwardingMessageFilter> compositor_output_surface_filter_;
 

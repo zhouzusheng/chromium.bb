@@ -40,7 +40,6 @@
 #include "modules/indexeddb/IDBDatabaseCallbacksImpl.h"
 #include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/indexeddb/IDBOpenDBRequest.h"
-#include "modules/indexeddb/IDBTransactionCoordinator.h"
 
 #include <gtest/gtest.h>
 
@@ -181,7 +180,7 @@ TEST_F(IDBRequestTest, ConnectionsAfterStopping)
         EXPECT_EQ(request->readyState(), "pending");
 
         scriptExecutionContext()->stopActiveDOMObjects();
-        request->onUpgradeNeeded(oldVersion, interface, metadata);
+        request->onUpgradeNeeded(oldVersion, interface, metadata, WebKit::WebIDBCallbacks::DataLossNone);
     }
 
     {

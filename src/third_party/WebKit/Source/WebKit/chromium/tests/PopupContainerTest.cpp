@@ -24,7 +24,7 @@
  */
 
 #include "config.h"
-#include "core/platform/chromium/PopupContainer.h"
+#include "PopupContainer.h"
 
 #include <gtest/gtest.h>
 
@@ -72,7 +72,7 @@ const int screenMaxX = 1024;
 const int screenMaxY = 768;
 const int targetControlWidth = 130;
 
-static IntRect calculatePosition(const IntRect& initialRect, PopupContent* content)
+static IntRect calculatePositionWithTransformAndRTL(const IntRect& initialRect, const IntSize& transformOffset, int verticalOffset, PopupContent* content)
 {
     const bool isRTL = true;
     const int targetControlHeight = 20;
@@ -80,7 +80,16 @@ static IntRect calculatePosition(const IntRect& initialRect, PopupContent* conte
     const FloatRect windowRect(0, 0, 512, 512);
     int rtlOffset = targetControlWidth - initialRect.width();
     bool needToResizeView = false;
-    return PopupContainer::layoutAndCalculateWidgetRectInternal(initialRect, targetControlHeight, windowRect, screenRect, !isRTL, rtlOffset, content, needToResizeView);
+    return PopupContainer::layoutAndCalculateWidgetRectInternal(initialRect, targetControlHeight, windowRect, screenRect, !isRTL, rtlOffset, verticalOffset, transformOffset, content, needToResizeView);
+}
+
+static IntRect calculatePosition(const IntRect& initialRect, PopupContent* content, FloatRect windowRect = FloatRect(0, 0, 512, 512), bool isRTL = true)
+{
+    const int targetControlHeight = 20;
+    const FloatRect screenRect(0, 0, screenMaxX, screenMaxY);
+    int rtlOffset = (targetControlWidth - initialRect.width()) * (isRTL ? 1 : -1);
+    bool needToResizeView = false;
+    return PopupContainer::layoutAndCalculateWidgetRectInternal(initialRect, targetControlHeight, windowRect, screenRect, !isRTL, rtlOffset, 0, IntSize(), content, needToResizeView);
 }
 
 TEST(PopupContainerTest, PopupPosition)
@@ -155,5 +164,33 @@ TEST(PopupContainerTest, PopupPosition)
         EXPECT_EQ(IntRect(100, 10, targetControlWidth, 370), resultRect);
         EXPECT_TRUE(content.layoutCount);
         EXPECT_EQ(368, content.height);
+    }
+
+    {
+        // There is not enough room to the right, so open the popup menu to the left.
+        IntRect initialRect(screenMaxX - targetControlWidth - 6, 100, targetControlWidth * 2, 100);
+        MockPopupContent content(initialRect.size());
+        IntRect resultRect = calculatePosition(initialRect, &content, FloatRect(0, 0, screenMaxX, screenMaxY), false);
+        EXPECT_EQ(IntRect(758, 100, 260, 100), resultRect);
+    }
+
+    {
+        // Test for --webkit-transform:rotate(53deg).
+        IntRect initialRect(100, 700, targetControlWidth, 258);
+        MockPopupContent content(initialRect.size());
+        IntSize transformOffset(-4, -8);
+        IntRect resultRect = calculatePositionWithTransformAndRTL(initialRect, transformOffset, -104, &content);
+        EXPECT_EQ(IntRect(104, 430, targetControlWidth, 258), resultRect);
+        EXPECT_EQ(0u, content.layoutCount);
+    }
+
+    {
+        // Test for --webkit-transform:rotate(-53deg).
+        IntRect initialRect(100, 700, targetControlWidth, 258);
+        MockPopupContent content(initialRect.size());
+        IntSize transformOffset(4, -8);
+        IntRect resultRect = calculatePositionWithTransformAndRTL(initialRect, transformOffset, 104, &content);
+        EXPECT_EQ(IntRect(96, 430, targetControlWidth, 258), resultRect);
+        EXPECT_EQ(0u, content.layoutCount);
     }
 }

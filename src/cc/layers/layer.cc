@@ -6,17 +6,19 @@
 
 #include <algorithm>
 
+#include "base/location.h"
 #include "base/metrics/histogram.h"
+#include "base/single_thread_task_runner.h"
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_events.h"
 #include "cc/animation/layer_animation_controller.h"
-#include "cc/base/thread.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/output/copy_output_request.h"
+#include "cc/output/copy_output_result.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebAnimationDelegate.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebLayerScrollClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "third_party/WebKit/public/platform/WebAnimationDelegate.h"
+#include "third_party/WebKit/public/platform/WebLayerScrollClient.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/rect_conversions.h"
 
@@ -40,10 +42,12 @@ Layer::Layer()
       have_wheel_event_handlers_(false),
       anchor_point_(0.5f, 0.5f),
       background_color_(0),
+      compositing_reasons_(kCompositingReasonUnknown),
       opacity_(1.f),
       anchor_point_z_(0.f),
       is_container_for_fixed_position_layers_(false),
       is_drawable_(false),
+      hide_layer_and_subtree_(false),
       masks_to_bounds_(false),
       contents_opaque_(false),
       double_sided_(true),
@@ -52,8 +56,7 @@ Layer::Layer()
       draw_checkerboard_for_missing_tiles_(false),
       force_render_surface_(false),
       replica_layer_(NULL),
-      raster_scale_(1.f),
-      automatically_compute_raster_scale_(false),
+      raster_scale_(0.f),
       layer_scroll_client_(NULL) {
   if (layer_id_ < 0) {
     s_next_layer_id = 1;
@@ -69,18 +72,15 @@ Layer::~Layer() {
   // way for us to be destroyed while we still have a parent.
   DCHECK(!parent());
 
-  for (size_t i = 0; i < request_copy_callbacks_.size(); ++i)
-    request_copy_callbacks_[i].Run(scoped_ptr<SkBitmap>());
-
   layer_animation_controller_->RemoveValueObserver(this);
 
   // Remove the parent reference from all children and dependents.
   RemoveAllChildren();
-  if (mask_layer_) {
+  if (mask_layer_.get()) {
     DCHECK_EQ(this, mask_layer_->parent());
     mask_layer_->RemoveFromParent();
   }
-  if (replica_layer_) {
+  if (replica_layer_.get()) {
     DCHECK_EQ(this, replica_layer_->parent());
     replica_layer_->RemoveFromParent();
   }
@@ -95,14 +95,17 @@ void Layer::SetLayerTreeHost(LayerTreeHost* host) {
   for (size_t i = 0; i < children_.size(); ++i)
     children_[i]->SetLayerTreeHost(host);
 
-  if (mask_layer_)
+  if (mask_layer_.get())
     mask_layer_->SetLayerTreeHost(host);
-  if (replica_layer_)
+  if (replica_layer_.get())
     replica_layer_->SetLayerTreeHost(host);
 
   if (host) {
     layer_animation_controller_->SetAnimationRegistrar(
         host->animation_registrar());
+
+    if (host->settings().layer_transforms_should_scale_layer_contents)
+      reset_raster_scale_to_unknown();
   }
 
   if (host && layer_animation_controller_->has_any_animation())
@@ -170,11 +173,17 @@ void Layer::SetParent(Layer* layer) {
   parent_ = layer;
   SetLayerTreeHost(parent_ ? parent_->layer_tree_host() : NULL);
 
-  ForceAutomaticRasterScaleToBeRecomputed();
-  if (mask_layer_)
-    mask_layer_->ForceAutomaticRasterScaleToBeRecomputed();
-  if (replica_layer_ && replica_layer_->mask_layer_)
-    replica_layer_->mask_layer_->ForceAutomaticRasterScaleToBeRecomputed();
+  if (!layer_tree_host_)
+    return;
+  const LayerTreeSettings& settings = layer_tree_host_->settings();
+  if (!settings.layer_transforms_should_scale_layer_contents)
+    return;
+
+  reset_raster_scale_to_unknown();
+  if (mask_layer_.get())
+    mask_layer_->reset_raster_scale_to_unknown();
+  if (replica_layer_.get() && replica_layer_->mask_layer_.get())
+    replica_layer_->mask_layer_->reset_raster_scale_to_unknown();
 }
 
 bool Layer::HasAncestor(Layer* ancestor) const {
@@ -207,13 +216,13 @@ void Layer::RemoveFromParent() {
 }
 
 void Layer::RemoveChildOrDependent(Layer* child) {
-  if (mask_layer_ == child) {
+  if (mask_layer_.get() == child) {
     mask_layer_->SetParent(NULL);
     mask_layer_ = NULL;
     SetNeedsFullTreeSync();
     return;
   }
-  if (replica_layer_ == child) {
+  if (replica_layer_.get() == child) {
     replica_layer_->SetParent(NULL);
     replica_layer_ = NULL;
     SetNeedsFullTreeSync();
@@ -223,7 +232,7 @@ void Layer::RemoveChildOrDependent(Layer* child) {
   for (LayerList::iterator iter = children_.begin();
        iter != children_.end();
        ++iter) {
-    if (*iter != child)
+    if (iter->get() != child)
       continue;
 
     child->SetParent(NULL);
@@ -238,7 +247,7 @@ void Layer::ReplaceChild(Layer* reference, scoped_refptr<Layer> new_layer) {
   DCHECK_EQ(reference->parent(), this);
   DCHECK(IsPropertyChangeAllowed());
 
-  if (reference == new_layer)
+  if (reference == new_layer.get())
     return;
 
   int reference_index = IndexOfChild(reference);
@@ -249,7 +258,7 @@ void Layer::ReplaceChild(Layer* reference, scoped_refptr<Layer> new_layer) {
 
   reference->RemoveFromParent();
 
-  if (new_layer) {
+  if (new_layer.get()) {
     new_layer->RemoveFromParent();
     InsertChild(new_layer, reference_index);
   }
@@ -257,7 +266,7 @@ void Layer::ReplaceChild(Layer* reference, scoped_refptr<Layer> new_layer) {
 
 int Layer::IndexOfChild(const Layer* reference) {
   for (size_t i = 0; i < children_.size(); ++i) {
-    if (children_[i] == reference)
+    if (children_[i].get() == reference)
       return i;
   }
   return -1;
@@ -304,11 +313,12 @@ void Layer::SetChildren(const LayerList& children) {
     AddChild(children[i]);
 }
 
-void Layer::RequestCopyAsBitmap(RequestCopyAsBitmapCallback callback) {
+void Layer::RequestCopyOfOutput(
+    scoped_ptr<CopyOutputRequest> request) {
   DCHECK(IsPropertyChangeAllowed());
-  if (callback.is_null())
+  if (request->IsEmpty())
     return;
-  request_copy_callbacks_.push_back(callback);
+  copy_requests_.push_back(request.Pass());
   SetNeedsCommit();
 }
 
@@ -336,8 +346,29 @@ void Layer::SetBackgroundColor(SkColor background_color) {
   SetNeedsCommit();
 }
 
+SkColor Layer::SafeOpaqueBackgroundColor() const {
+  SkColor color = background_color();
+  if (SkColorGetA(color) == 255 && !contents_opaque()) {
+    color = SK_ColorTRANSPARENT;
+  } else if (SkColorGetA(color) != 255 && contents_opaque()) {
+    for (const Layer* layer = parent(); layer;
+         layer = layer->parent()) {
+      color = layer->background_color();
+      if (SkColorGetA(color) == 255)
+        break;
+    }
+    if (SkColorGetA(color) != 255)
+      color = layer_tree_host_->background_color();
+    if (SkColorGetA(color) != 255)
+      color = SkColorSetA(color, 255);
+  }
+  return color;
+}
+
 void Layer::CalculateContentsScale(
     float ideal_contents_scale,
+    float device_scale_factor,
+    float page_scale_factor,
     bool animating_transform_to_screen,
     float* contents_scale_x,
     float* contents_scale_y,
@@ -357,14 +388,14 @@ void Layer::SetMasksToBounds(bool masks_to_bounds) {
 
 void Layer::SetMaskLayer(Layer* mask_layer) {
   DCHECK(IsPropertyChangeAllowed());
-  if (mask_layer_ == mask_layer)
+  if (mask_layer_.get() == mask_layer)
     return;
-  if (mask_layer_) {
+  if (mask_layer_.get()) {
     DCHECK_EQ(this, mask_layer_->parent());
     mask_layer_->RemoveFromParent();
   }
   mask_layer_ = mask_layer;
-  if (mask_layer_) {
+  if (mask_layer_.get()) {
     DCHECK(!mask_layer_->parent());
     mask_layer_->RemoveFromParent();
     mask_layer_->SetParent(this);
@@ -375,14 +406,14 @@ void Layer::SetMaskLayer(Layer* mask_layer) {
 
 void Layer::SetReplicaLayer(Layer* layer) {
   DCHECK(IsPropertyChangeAllowed());
-  if (replica_layer_ == layer)
+  if (replica_layer_.get() == layer)
     return;
-  if (replica_layer_) {
+  if (replica_layer_.get()) {
     DCHECK_EQ(this, replica_layer_->parent());
     replica_layer_->RemoveFromParent();
   }
   replica_layer_ = layer;
-  if (replica_layer_) {
+  if (replica_layer_.get()) {
     DCHECK(!replica_layer_->parent());
     replica_layer_->RemoveFromParent();
     replica_layer_->SetParent(this);
@@ -487,9 +518,19 @@ void Layer::SetScrollOffset(gfx::Vector2d scroll_offset) {
   if (scroll_offset_ == scroll_offset)
     return;
   scroll_offset_ = scroll_offset;
+  SetNeedsCommit();
+}
+
+void Layer::SetScrollOffsetFromImplSide(gfx::Vector2d scroll_offset) {
+  DCHECK(IsPropertyChangeAllowed());
+  DCHECK(layer_tree_host_ && layer_tree_host_->CommitRequested());
+  if (scroll_offset_ == scroll_offset)
+    return;
+  scroll_offset_ = scroll_offset;
   if (layer_scroll_client_)
     layer_scroll_client_->didScroll();
-  SetNeedsCommit();
+  // Note: didScroll() could potentially change the layer structure.
+  //       "this" may have been destroyed during the process.
 }
 
 void Layer::SetMaxScrollOffset(gfx::Vector2d max_scroll_offset) {
@@ -572,6 +613,15 @@ void Layer::SetIsDrawable(bool is_drawable) {
   SetNeedsCommit();
 }
 
+void Layer::SetHideLayerAndSubtree(bool hide) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (hide_layer_and_subtree_ == hide)
+    return;
+
+  hide_layer_and_subtree_ = hide;
+  SetNeedsCommit();
+}
+
 void Layer::SetNeedsDisplayRect(const gfx::RectF& dirty_rect) {
   update_rect_.Union(dirty_rect);
   needs_display_ = true;
@@ -613,19 +663,19 @@ void Layer::SetPositionConstraint(const LayerPositionConstraint& constraint) {
   SetNeedsCommit();
 }
 
-static void RunCopyCallbackOnMainThread(
-    const Layer::RequestCopyAsBitmapCallback& callback,
-    scoped_ptr<SkBitmap> bitmap) {
-  callback.Run(bitmap.Pass());
+static void RunCopyCallbackOnMainThread(scoped_ptr<CopyOutputRequest> request,
+                                        scoped_ptr<CopyOutputResult> result) {
+  request->SendResult(result.Pass());
 }
 
 static void PostCopyCallbackToMainThread(
-    Thread* main_thread,
-    const Layer::RequestCopyAsBitmapCallback& callback,
-    scoped_ptr<SkBitmap> bitmap) {
-  main_thread->PostTask(base::Bind(&RunCopyCallbackOnMainThread,
-                                   callback,
-                                   base::Passed(&bitmap)));
+    scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner,
+    scoped_ptr<CopyOutputRequest> request,
+    scoped_ptr<CopyOutputResult> result) {
+  main_thread_task_runner->PostTask(FROM_HERE,
+                                    base::Bind(&RunCopyCallbackOnMainThread,
+                                               base::Passed(&request),
+                                               base::Passed(&result)));
 }
 
 void Layer::PushPropertiesTo(LayerImpl* layer) {
@@ -636,11 +686,13 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetContentBounds(content_bounds());
   layer->SetContentsScale(contents_scale_x(), contents_scale_y());
   layer->SetDebugName(debug_name_);
+  layer->SetCompositingReasons(compositing_reasons_);
   layer->SetDoubleSided(double_sided_);
   layer->SetDrawCheckerboardForMissingTiles(
       draw_checkerboard_for_missing_tiles_);
   layer->SetForceRenderSurface(force_render_surface_);
   layer->SetDrawsContent(DrawsContent());
+  layer->SetHideLayerAndSubtree(hide_layer_and_subtree_);
   layer->SetFilters(filters());
   layer->SetFilter(filter());
   layer->SetBackgroundFilters(background_filters());
@@ -669,16 +721,25 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetScrollOffset(scroll_offset_);
   layer->SetMaxScrollOffset(max_scroll_offset_);
 
-  // Wrap the request_copy_callbacks_ in a PostTask to the main thread.
-  std::vector<RequestCopyAsBitmapCallback> main_thread_request_copy_callbacks;
-  for (size_t i = 0; i < request_copy_callbacks_.size(); ++i) {
-    main_thread_request_copy_callbacks.push_back(
-        base::Bind(&PostCopyCallbackToMainThread,
-                   layer_tree_host()->proxy()->MainThread(),
-                   request_copy_callbacks_[i]));
+  // Wrap the copy_requests_ in a PostTask to the main thread.
+  ScopedPtrVector<CopyOutputRequest> main_thread_copy_requests;
+  for (ScopedPtrVector<CopyOutputRequest>::iterator it = copy_requests_.begin();
+       it != copy_requests_.end();
+       ++it) {
+    scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner =
+        layer_tree_host()->proxy()->MainThreadTaskRunner();
+    scoped_ptr<CopyOutputRequest> original_request = copy_requests_.take(it);
+    const CopyOutputRequest& original_request_ref = *original_request;
+    scoped_ptr<CopyOutputRequest> main_thread_request =
+        CopyOutputRequest::CreateRelayRequest(
+            original_request_ref,
+            base::Bind(&PostCopyCallbackToMainThread,
+                       main_thread_task_runner,
+                       base::Passed(&original_request)));
+    main_thread_copy_requests.push_back(main_thread_request.Pass());
   }
-  request_copy_callbacks_.clear();
-  layer->PassRequestCopyCallbacks(&main_thread_request_copy_callbacks);
+  copy_requests_.clear();
+  layer->PassCopyRequests(&main_thread_copy_requests);
 
   // If the main thread commits multiple times before the impl thread actually
   // draws, then damage tracking will become incorrect if we simply clobber the
@@ -737,35 +798,8 @@ void Layer::SetDebugName(const std::string& debug_name) {
   SetNeedsCommit();
 }
 
-void Layer::SetRasterScale(float scale) {
-  if (raster_scale_ == scale)
-    return;
-  raster_scale_ = scale;
-
-  // When automatically computed, this acts like a draw property.
-  if (automatically_compute_raster_scale_)
-    return;
-  SetNeedsDisplay();
-}
-
-void Layer::SetAutomaticallyComputeRasterScale(bool automatic) {
-  if (automatically_compute_raster_scale_ == automatic)
-    return;
-  automatically_compute_raster_scale_ = automatic;
-
-  if (automatically_compute_raster_scale_)
-    ForceAutomaticRasterScaleToBeRecomputed();
-  else
-    SetRasterScale(1);
-}
-
-void Layer::ForceAutomaticRasterScaleToBeRecomputed() {
-  if (!automatically_compute_raster_scale_)
-    return;
-  if (!raster_scale_)
-    return;
-  raster_scale_ = 0.f;
-  SetNeedsCommit();
+void Layer::SetCompositingReasons(CompositingReasons reasons) {
+  compositing_reasons_ = reasons;
 }
 
 void Layer::CreateRenderSurface() {
@@ -819,11 +853,6 @@ void Layer::RemoveAnimation(int animation_id) {
   SetNeedsCommit();
 }
 
-void Layer::TransferAnimationsTo(Layer* layer) {
-  layer_animation_controller_->TransferAnimationsTo(
-      layer->layer_animation_controller());
-}
-
 void Layer::SuspendAnimations(double monotonic_time) {
   layer_animation_controller_->SuspendAnimations(monotonic_time);
   SetNeedsCommit();
@@ -869,6 +898,10 @@ ScrollbarLayer* Layer::ToScrollbarLayer() {
 
 RenderingStatsInstrumentation* Layer::rendering_stats_instrumentation() const {
   return layer_tree_host_->rendering_stats_instrumentation();
+}
+
+bool Layer::SupportsLCDText() const {
+  return false;
 }
 
 }  // namespace cc

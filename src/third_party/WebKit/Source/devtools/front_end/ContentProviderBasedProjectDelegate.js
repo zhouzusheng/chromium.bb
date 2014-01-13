@@ -69,12 +69,12 @@ WebInspector.ContentProviderBasedProjectDelegate.prototype = {
     },
 
     /**
-     * @param {Array.<string>} path
+     * @param {string} path
      * @param {function(?string,boolean,string)} callback
      */
     requestFileContent: function(path, callback)
     {
-        var contentProvider = this._contentProviders[path.join("/")];
+        var contentProvider = this._contentProviders[path];
         contentProvider.requestContent(callback);
     },
 
@@ -87,7 +87,7 @@ WebInspector.ContentProviderBasedProjectDelegate.prototype = {
     },
 
     /**
-     * @param {Array.<string>} path
+     * @param {string} path
      * @param {string} newContent
      * @param {function(?string)} callback
      */
@@ -97,7 +97,60 @@ WebInspector.ContentProviderBasedProjectDelegate.prototype = {
     },
 
     /**
-     * @param {Array.<string>} path
+     * @return {boolean}
+     */
+    canRename: function()
+    {
+        return false;
+    },
+
+    /**
+     * @param {string} path
+     * @param {string} newName
+     * @param {function(boolean, string=)} callback
+     */
+    rename: function(path, newName, callback)
+    {
+        this.performRename(path, newName, innerCallback.bind(this));
+
+        /**
+         * @param {boolean} success
+         * @param {string=} newName
+         */
+        function innerCallback(success, newName)
+        {
+            if (success)
+                this._updateName(path, newName);
+            callback(success, newName);
+        }
+    },
+
+    /**
+     * @param {string} path
+     * @param {string} newName
+     * @param {function(boolean, string=)} callback
+     */
+    performRename: function(path, newName, callback)
+    {
+        callback(false);
+    },
+
+    /**
+     * @param {string} path
+     * @param {string} newName
+     */
+    _updateName: function(path, newName)
+    {
+        var oldPath = path;
+        var copyOfPath = path.split("/");
+        copyOfPath[copyOfPath.length - 1] = newName;
+        var newPath = copyOfPath.join("/");
+        this._contentProviders[newPath] = this._contentProviders[oldPath];
+        delete this._contentProviders[oldPath];
+    },
+
+    /**
+     * @param {string} path
      * @param {string} query
      * @param {boolean} caseSensitive
      * @param {boolean} isRegex
@@ -105,32 +158,34 @@ WebInspector.ContentProviderBasedProjectDelegate.prototype = {
      */
     searchInFileContent: function(path, query, caseSensitive, isRegex, callback)
     {
-        var contentProvider = this._contentProviders[path.join("/")];
+        var contentProvider = this._contentProviders[path];
         contentProvider.searchInContent(query, caseSensitive, isRegex, callback);
     },
 
     /**
-     * @param {Array.<string>} path
+     * @param {string} parentPath
+     * @param {string} name
      * @param {string} url
      * @param {WebInspector.ContentProvider} contentProvider
      * @param {boolean} isEditable
      * @param {boolean=} isContentScript
-     * @return {Array.<string>}
+     * @return {string}
      */
-    addContentProvider: function(path, url, contentProvider, isEditable, isContentScript)
+    addContentProvider: function(parentPath, name, url, contentProvider, isEditable, isContentScript)
     {
-        var fileDescriptor = new WebInspector.FileDescriptor(path, url, url, contentProvider.contentType(), isEditable, isContentScript);
-        this._contentProviders[path.join("/")] = contentProvider;
+        var path = parentPath ? parentPath + "/" + name : name;
+        var fileDescriptor = new WebInspector.FileDescriptor(parentPath, name, url, url, contentProvider.contentType(), isEditable, isContentScript);
+        this._contentProviders[path] = contentProvider;
         this.dispatchEventToListeners(WebInspector.ProjectDelegate.Events.FileAdded, fileDescriptor);
         return path;
     },
 
     /**
-     * @param {Array.<string>} path
+     * @param {string} path
      */
     removeFile: function(path)
     {
-        delete this._contentProviders[path.join("/")];
+        delete this._contentProviders[path];
         this.dispatchEventToListeners(WebInspector.ProjectDelegate.Events.FileRemoved, path);
     },
 

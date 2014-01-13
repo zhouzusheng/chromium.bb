@@ -45,25 +45,22 @@
 #include "V8DOMImplementation.h"
 #include "V8HTMLDocument.h"
 #include "V8Node.h"
+#include "V8SVGDocument.h"
 #include "V8Touch.h"
 #include "V8TouchList.h"
 #include "V8WebGLRenderingContext.h"
 #include "V8XPathNSResolver.h"
 #include "V8XPathResult.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8DOMWindowShell.h"
 #include "bindings/v8/V8DOMWrapper.h"
+#include "bindings/v8/V8WindowShell.h"
 #include "bindings/v8/custom/V8CustomXPathNSResolver.h"
-
-#if ENABLE(SVG)
-#include "V8SVGDocument.h"
-#endif
 
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
 
-v8::Handle<v8::Value> V8Document::evaluateMethodCustom(const v8::Arguments& args)
+void V8Document::evaluateMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     RefPtr<Document> document = V8Document::toNative(args.Holder());
     ExceptionCode ec = 0;
@@ -73,19 +70,23 @@ v8::Handle<v8::Value> V8Document::evaluateMethodCustom(const v8::Arguments& args
         contextNode = V8Node::toNative(v8::Handle<v8::Object>::Cast(args[1]));
 
     RefPtr<XPathNSResolver> resolver = toXPathNSResolver(args[2], args.GetIsolate());
-    if (!resolver && !args[2]->IsNull() && !args[2]->IsUndefined())
-        return setDOMException(TYPE_MISMATCH_ERR, args.GetIsolate());
+    if (!resolver && !args[2]->IsNull() && !args[2]->IsUndefined()) {
+        setDOMException(TYPE_MISMATCH_ERR, args.GetIsolate());
+        return;
+    }
 
     int type = toInt32(args[3]);
     RefPtr<XPathResult> inResult;
     if (V8XPathResult::HasInstance(args[4], args.GetIsolate(), worldType(args.GetIsolate())))
         inResult = V8XPathResult::toNative(v8::Handle<v8::Object>::Cast(args[4]));
 
-    V8TRYCATCH(RefPtr<XPathResult>, result, document->evaluate(expression, contextNode.get(), resolver.get(), type, inResult.get(), ec));
-    if (ec)
-        return setDOMException(ec, args.GetIsolate());
+    V8TRYCATCH_VOID(RefPtr<XPathResult>, result, document->evaluate(expression, contextNode.get(), resolver.get(), type, inResult.get(), ec));
+    if (ec) {
+        setDOMException(ec, args.GetIsolate());
+        return;
+    }
 
-    return toV8Fast(result.release(), args, document.get());
+    v8SetReturnValue(args, toV8Fast(result.release(), args, document.get()));
 }
 
 v8::Handle<v8::Object> wrap(Document* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
@@ -93,10 +94,8 @@ v8::Handle<v8::Object> wrap(Document* impl, v8::Handle<v8::Object> creationConte
     ASSERT(impl);
     if (impl->isHTMLDocument())
         return wrap(toHTMLDocument(impl), creationContext, isolate);
-#if ENABLE(SVG)
     if (impl->isSVGDocument())
         return wrap(toSVGDocument(impl), creationContext, isolate);
-#endif
     v8::Handle<v8::Object> wrapper = V8Document::createWrapper(impl, creationContext, isolate);
     if (wrapper.IsEmpty())
         return wrapper;
@@ -107,7 +106,7 @@ v8::Handle<v8::Object> wrap(Document* impl, v8::Handle<v8::Object> creationConte
     return wrapper;
 }
 
-v8::Handle<v8::Value> V8Document::createTouchListMethodCustom(const v8::Arguments& args)
+void V8Document::createTouchListMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     RefPtr<TouchList> touchList = TouchList::create();
 
@@ -116,7 +115,7 @@ v8::Handle<v8::Value> V8Document::createTouchListMethodCustom(const v8::Argument
         touchList->append(touch);
     }
 
-    return toV8(touchList.release(), args.Holder(), args.GetIsolate());
+    v8SetReturnValue(args, toV8(touchList.release(), args.Holder(), args.GetIsolate()));
 }
 
 } // namespace WebCore

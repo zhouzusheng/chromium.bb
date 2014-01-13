@@ -152,11 +152,18 @@ public:
     void forceRenderTargetFlush();
 
     /**
-     * Gets a preferred 8888 config to use for writing / reading pixel data. The returned config
-     * must have at least as many bits per channel as the config param.
+     * Gets a preferred 8888 config to use for writing/reading pixel data to/from a surface with
+     * config surfaceConfig. The returned config must have at least as many bits per channel as the
+     * readConfig or writeConfig param.
      */
-    virtual GrPixelConfig preferredReadPixelsConfig(GrPixelConfig config) const { return config; }
-    virtual GrPixelConfig preferredWritePixelsConfig(GrPixelConfig config) const { return config; }
+    virtual GrPixelConfig preferredReadPixelsConfig(GrPixelConfig readConfig,
+                                                    GrPixelConfig surfaceConfig) const {
+        return readConfig;
+    }
+    virtual GrPixelConfig preferredWritePixelsConfig(GrPixelConfig writeConfig,
+                                                     GrPixelConfig surfaceConfig) const {
+        return writeConfig;
+    }
 
     /**
      * Called before uploading writing pixels to a GrTexture when the src pixel config doesn't
@@ -358,7 +365,9 @@ protected:
     }
 
     // prepares clip flushes gpu state before a draw
-    bool setupClipAndFlushState(DrawType, const GrDeviceCoordTexture* dstCopy);
+    bool setupClipAndFlushState(DrawType,
+                                const GrDeviceCoordTexture* dstCopy,
+                                GrDrawState::AutoRestoreEffects* are);
 
     // Functions used to map clip-respecting stencil tests into normal
     // stencil funcs supported by GPUs.
@@ -523,7 +532,7 @@ private:
     // these are mutable so they can be created on-demand
     mutable GrIndexBuffer*                                              fQuadIndexBuffer;
     bool                                                                fContextIsDirty;
-    // Used to abandon/release all resources created by this GrGpu. TODO: Move this 
+    // Used to abandon/release all resources created by this GrGpu. TODO: Move this
     // functionality to GrResourceCache.
     ResourceList                                                        fResourceList;
 

@@ -28,34 +28,22 @@
 #define DragClient_h
 
 #include "core/page/DragActions.h"
-#include "core/platform/DragImage.h"
-#include "core/platform/graphics/IntPoint.h"
 
 namespace WebCore {
-    
-    class Clipboard;
-    class DragData;
-    class Frame;
-    class Image;
-    class HTMLImageElement;
-    
-    class DragClient {
-    public:
-        virtual void willPerformDragDestinationAction(DragDestinationAction, DragData*) = 0;
-        virtual void willPerformDragSourceAction(DragSourceAction, const IntPoint&, Clipboard*) = 0;
-        virtual DragDestinationAction actionMaskForDrag(DragData*) = 0;
 
-        virtual DragSourceAction dragSourceActionMaskForPoint(const IntPoint& rootViewPoint) = 0;
-        
-        virtual void startDrag(DragImageRef dragImage, const IntPoint& dragImageOrigin, const IntPoint& eventPos, Clipboard*, Frame*, bool linkDrag = false) = 0;
-        
-        virtual void dragControllerDestroyed() = 0;
+class Clipboard;
+class DragData;
+class DragImage;
+class Frame;
+class IntPoint;
 
-        virtual void dragEnded() { }
+class DragClient {
+public:
+    virtual DragDestinationAction actionMaskForDrag(DragData*) = 0;
+    virtual void startDrag(DragImage*, const IntPoint& dragImageOrigin, const IntPoint& eventPos, Clipboard*, Frame*, bool linkDrag = false) = 0;
+    virtual ~DragClient() { }
+};
 
-        virtual ~DragClient() { }
-    };
-    
 }
 
 #endif // !DragClient_h

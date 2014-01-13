@@ -5,7 +5,7 @@
 #include "cc/layers/tiled_layer_impl.h"
 
 #include "base/basictypes.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/layers/append_quads_data.h"
@@ -71,12 +71,6 @@ ResourceProvider::ResourceId TiledLayerImpl::ContentsResourceId() const {
   return resource_id;
 }
 
-void TiledLayerImpl::DumpLayerProperties(std::string* str, int indent) const {
-  str->append(IndentString(indent));
-  base::StringAppendF(str, "skipsDraw: %d\n", (!tiler_ || skips_draw_));
-  LayerImpl::DumpLayerProperties(str, indent);
-}
-
 bool TiledLayerImpl::HasTileAt(int i, int j) const {
   return !!tiler_->TileAt(i, j);
 }
@@ -112,6 +106,26 @@ scoped_ptr<LayerImpl> TiledLayerImpl::CreateLayerImpl(
   return TiledLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
 }
 
+void TiledLayerImpl::AsValueInto(base::DictionaryValue* state) const {
+  LayerImpl::AsValueInto(state);
+  state->Set("invalidation", MathUtil::AsValue(update_rect()).release());
+}
+
+size_t TiledLayerImpl::GPUMemoryUsageInBytes() const {
+  size_t amount = 0;
+  const size_t kMemoryUsagePerTileInBytes =
+      4 * tiler_->tile_size().width() * tiler_->tile_size().height();
+  for (LayerTilingData::TileMap::const_iterator iter = tiler_->tiles().begin();
+       iter != tiler_->tiles().end();
+       ++iter) {
+    const DrawableTile* tile = static_cast<DrawableTile*>(iter->second);
+    if (!tile || !tile->resource_id())
+      continue;
+    amount += kMemoryUsagePerTileInBytes;
+  }
+  return amount;
+}
+
 void TiledLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   LayerImpl::PushPropertiesTo(layer);
 
@@ -135,13 +149,22 @@ void TiledLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   }
 }
 
+bool TiledLayerImpl::WillDraw(DrawMode draw_mode,
+                              ResourceProvider* resource_provider) {
+  if (!tiler_ || tiler_->has_empty_bounds() ||
+      visible_content_rect().IsEmpty() ||
+      draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE)
+    return false;
+  return LayerImpl::WillDraw(draw_mode, resource_provider);
+}
+
 void TiledLayerImpl::AppendQuads(QuadSink* quad_sink,
                                  AppendQuadsData* append_quads_data) {
+  DCHECK(tiler_);
+  DCHECK(!tiler_->has_empty_bounds());
+  DCHECK(!visible_content_rect().IsEmpty());
+
   gfx::Rect content_rect = visible_content_rect();
-
-  if (!tiler_ || tiler_->has_empty_bounds() || content_rect.IsEmpty())
-    return;
-
   SharedQuadState* shared_quad_state =
       quad_sink->UseSharedQuadState(CreateSharedQuadState());
   AppendDebugBorderQuad(quad_sink, shared_quad_state, append_quads_data);
@@ -292,7 +315,7 @@ void TiledLayerImpl::DidLoseOutputSurface() {
 }
 
 const char* TiledLayerImpl::LayerTypeAsString() const {
-  return "ContentLayer";
+  return "cc::TiledLayerImpl";
 }
 
 }  // namespace cc

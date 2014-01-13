@@ -36,18 +36,18 @@
 #include "WebWorkerBase.h"
 #include "bindings/v8/WorkerScriptController.h"
 #include "core/dom/CrossThreadTask.h"
-#include "core/platform/KURL.h"
 #include "core/platform/network/BlobData.h"
 #include "core/workers/WorkerContext.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerThread.h"
-#include <public/WebFileInfo.h>
-#include <public/WebFileSystemEntry.h>
-#include <public/WebString.h>
-#include <public/WebURL.h>
-#include <wtf/MainThread.h>
-#include <wtf/Threading.h>
-#include <wtf/UnusedParam.h>
+#include "public/platform/WebFileInfo.h"
+#include "public/platform/WebFileSystemEntry.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
+#include "weborigin/KURL.h"
+#include "wtf/MainThread.h"
+#include "wtf/Threading.h"
+#include "wtf/UnusedParam.h"
 
 namespace WebCore {
 
@@ -60,7 +60,7 @@ template<> struct CrossThreadCopierBase<false, false, WebKit::WebFileInfo> {
         newInfo.modificationTime = info.modificationTime;
         newInfo.length = info.length;
         newInfo.type = info.type;
-        newInfo.platformPath.assign(info.platformPath.data(), info.platformPath.length());
+        newInfo.platformPath.assign(info.platformPath);
         return newInfo;
     }
 };

@@ -5,13 +5,12 @@
 #include "webkit/plugins/npapi/plugin_instance.h"
 
 #include "base/bind.h"
-#include "build/build_config.h"
 #include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "net/base/escape.h"
-#include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/plugin_host.h"
 #include "webkit/plugins/npapi/plugin_lib.h"
 #include "webkit/plugins/npapi/plugin_stream_url.h"
@@ -27,7 +26,7 @@
 namespace webkit {
 namespace npapi {
 
-PluginInstance::PluginInstance(PluginLib *plugin, const std::string &mime_type)
+PluginInstance::PluginInstance(PluginLib* plugin, const std::string& mime_type)
     : plugin_(plugin),
       npp_(0),
       host_(PluginHost::Singleton()),
@@ -52,7 +51,7 @@ PluginInstance::PluginInstance(PluginLib *plugin, const std::string &mime_type)
 #endif
       currently_handled_event_(NULL),
 #endif
-      message_loop_(MessageLoop::current()),
+      message_loop_(base::MessageLoop::current()),
       load_manually_(false),
       in_close_streams_(false),
       next_timer_id_(1),
@@ -78,7 +77,7 @@ PluginInstance::~PluginInstance() {
     npp_ = 0;
   }
 
-  if (plugin_)
+  if (plugin_.get())
     plugin_->CloseInstance();
 }
 
@@ -108,7 +107,7 @@ void PluginInstance::RemoveStream(PluginStream* stream) {
   std::vector<scoped_refptr<PluginStream> >::iterator stream_index;
   for (stream_index = open_streams_.begin();
        stream_index != open_streams_.end(); ++stream_index) {
-    if (*stream_index == stream) {
+    if (stream_index->get() == stream) {
       open_streams_.erase(stream_index);
       break;
     }
@@ -463,7 +462,7 @@ uint32 PluginInstance::ScheduleTimer(uint32 interval,
   timers_[timer_id] = info;
 
   // Schedule the callback.
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&PluginInstance::OnTimerCall, this, func, npp_, timer_id),
       base::TimeDelta::FromMilliseconds(interval));
@@ -505,7 +504,7 @@ void PluginInstance::OnTimerCall(void (*func)(NPP id, uint32 timer_id),
   // Reschedule repeating timers after invoking the callback so callback is not
   // re-entered if it pumps the message loop.
   if (info.repeat) {
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PluginInstance::OnTimerCall, this, func, npp_, timer_id),
         base::TimeDelta::FromMilliseconds(info.interval));
@@ -535,7 +534,7 @@ void PluginInstance::RequestRead(NPStream* stream, NPByteRange* range_list) {
       range_info.push_back(',');
   }
 
-  if (plugin_data_stream_) {
+  if (plugin_data_stream_.get()) {
     if (plugin_data_stream_->stream() == stream) {
       webplugin_->CancelDocumentLoad();
       plugin_data_stream_ = NULL;
@@ -551,7 +550,7 @@ void PluginInstance::RequestRead(NPStream* stream, NPByteRange* range_list) {
   std::vector<scoped_refptr<PluginStream> >::iterator stream_index;
   for (stream_index = open_streams_.begin();
           stream_index != open_streams_.end(); ++stream_index) {
-    PluginStream* plugin_stream = *stream_index;
+    PluginStream* plugin_stream = stream_index->get();
     if (plugin_stream->stream() == stream) {
       // A stream becomes seekable the first time NPN_RequestRead
       // is called on it.
@@ -672,7 +671,7 @@ void PluginInstance::URLRedirectResponse(bool allow, void* notify_data) {
   std::vector<scoped_refptr<PluginStream> >::iterator stream_index;
   for (stream_index = open_streams_.begin();
           stream_index != open_streams_.end(); ++stream_index) {
-    PluginStream* plugin_stream = *stream_index;
+    PluginStream* plugin_stream = stream_index->get();
     if (plugin_stream->notify_data() == notify_data) {
       WebPluginResourceClient* resource_client =
           plugin_stream->AsResourceClient();

@@ -5,15 +5,15 @@
 #include "content/renderer/speech_recognition_dispatcher.h"
 
 #include "base/basictypes.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/common/speech_recognition_messages.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechGrammar.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechRecognitionParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechRecognitionResult.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechRecognizerClient.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebSpeechGrammar.h"
+#include "third_party/WebKit/public/web/WebSpeechRecognitionParams.h"
+#include "third_party/WebKit/public/web/WebSpeechRecognitionResult.h"
+#include "third_party/WebKit/public/web/WebSpeechRecognizerClient.h"
 
 using WebKit::WebVector;
 using WebKit::WebString;

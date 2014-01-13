@@ -10,13 +10,15 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "net/base/ip_endpoint.h"
 #include "net/quic/blocked_list.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_crypto_stream.h"
 #include "net/quic/quic_packet_creator.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/quic_spdy_compressor.h"
+#include "net/quic/quic_spdy_decompressor.h"
 #include "net/quic/reliable_quic_stream.h"
 
 namespace net {
@@ -48,7 +50,9 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
     HANDSHAKE_CONFIRMED,
   };
 
-  QuicSession(QuicConnection* connection, bool is_server);
+  QuicSession(QuicConnection* connection,
+              const QuicConfig& config,
+              bool is_server);
 
   virtual ~QuicSession();
 
@@ -100,12 +104,17 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // Servers will simply call it once with HANDSHAKE_CONFIRMED.
   virtual void OnCryptoHandshakeEvent(CryptoHandshakeEvent event);
 
+  // Returns mutable config for this session. Returned config is owned
+  // by QuicSession.
+  QuicConfig* config();
+
   // Returns true if the stream existed previously and has been closed.
   // Returns false if the stream is still active or if the stream has
   // not yet been created.
   bool IsClosedStream(QuicStreamId id);
 
   QuicConnection* connection() { return connection_.get(); }
+  const QuicConnection* connection() const { return connection_.get(); }
   size_t num_active_requests() const { return stream_map_.size(); }
   const IPEndPoint& peer_address() const {
     return connection_->peer_address();
@@ -120,6 +129,11 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
 
   void MarkWriteBlocked(QuicStreamId id);
 
+  // Marks that |stream_id| is blocked waiting to decompress the
+  // headers identified by |decompression_id|.
+  void MarkDecompressionBlocked(QuicHeaderId decompression_id,
+                                QuicStreamId stream_id);
+
   bool goaway_received() const {
     return goaway_received_;
   }
@@ -127,6 +141,11 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   bool goaway_sent() const {
     return goaway_sent_;
   }
+
+  QuicSpdyDecompressor* decompressor() { return &decompressor_; }
+  QuicSpdyCompressor* compressor() { return &compressor_; }
+
+  QuicErrorCode error() const { return error_; }
 
  protected:
   // Creates a new stream, owned by the caller, to handle a peer-initiated
@@ -158,12 +177,21 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   base::hash_map<QuicStreamId, ReliableQuicStream*>* streams() {
     return &stream_map_;
   }
+
+  const base::hash_map<QuicStreamId, ReliableQuicStream*>* streams() const {
+    return &stream_map_;
+  }
+
   std::vector<ReliableQuicStream*>* closed_streams() {
     return &closed_streams_;
   }
 
   size_t get_max_open_streams() const {
     return max_open_streams_;
+  }
+
+  void set_max_open_streams(size_t max_open_streams) {
+    max_open_streams_ = max_open_streams;
   }
 
  private:
@@ -182,8 +210,13 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
 
   std::vector<ReliableQuicStream*> closed_streams_;
 
+  QuicSpdyDecompressor decompressor_;
+  QuicSpdyCompressor compressor_;
+
+  QuicConfig config_;
+
   // Returns the maximum number of streams this connection can open.
-  const size_t max_open_streams_;
+  size_t max_open_streams_;
 
   // Map from StreamId to pointers to streams that are owned by the caller.
   ReliableStreamMap stream_map_;
@@ -197,7 +230,14 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // A list of streams which need to write more data.
   BlockedList<QuicStreamId> write_blocked_streams_;
 
+  // A map of headers waiting to be compressed, and the streams
+  // they are associated with.
+  map<uint32, QuicStreamId> decompression_blocked_streams_;
+
   QuicStreamId largest_peer_created_stream_id_;
+
+  // The latched error with which the connection was closed.
+  QuicErrorCode error_;
 
   // Whether a GoAway has been received.
   bool goaway_received_;

@@ -21,7 +21,6 @@
 #ifndef SVGSymbolElement_h
 #define SVGSymbolElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedPreserveAspectRatio.h"
 #include "core/svg/SVGAnimatedRect.h"
@@ -47,7 +46,7 @@ private:
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
 
     virtual bool selfHasRelativeLengths() const;
 
@@ -60,5 +59,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

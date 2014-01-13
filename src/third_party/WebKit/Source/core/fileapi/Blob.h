@@ -32,19 +32,19 @@
 #define Blob_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/platform/KURL.h"
+#include "core/html/URLRegistry.h"
 #include "core/platform/network/BlobData.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "weborigin/KURL.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class ScriptExecutionContext;
 
-class Blob : public ScriptWrappable, public RefCounted<Blob> {
+class Blob : public ScriptWrappable, public URLRegistrable, public RefCounted<Blob> {
 public:
     static PassRefPtr<Blob> create()
     {
@@ -69,6 +69,9 @@ public:
 
     virtual unsigned long long size() const { return static_cast<unsigned long long>(m_size); }
     virtual bool isFile() const { return false; }
+
+    // URLRegistrable
+    virtual URLRegistry& registry() const OVERRIDE;
 
     PassRefPtr<Blob> slice(long long start = 0, long long end = std::numeric_limits<long long>::max(), const String& contentType = String()) const;
 

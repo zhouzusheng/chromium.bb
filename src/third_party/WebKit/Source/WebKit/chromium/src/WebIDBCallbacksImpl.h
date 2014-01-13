@@ -26,7 +26,7 @@
 #ifndef WebIDBCallbacksImpl_h
 #define WebIDBCallbacksImpl_h
 
-#include <public/WebIDBCallbacks.h>
+#include "public/platform/WebIDBCallbacks.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 
@@ -55,7 +55,7 @@ public:
     virtual void onSuccess(long long);
     virtual void onSuccess();
     virtual void onBlocked(long long oldVersion);
-    virtual void onUpgradeNeeded(long long oldVersion, WebIDBDatabase*, const WebIDBMetadata&);
+    virtual void onUpgradeNeeded(long long oldVersion, WebIDBDatabase*, const WebIDBMetadata&, DataLoss);
 
 private:
     RefPtr<WebCore::IDBCallbacks> m_callbacks;

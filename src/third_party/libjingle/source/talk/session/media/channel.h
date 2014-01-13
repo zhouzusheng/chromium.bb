@@ -262,6 +262,7 @@ class BaseChannel
   bool PacketIsRtcp(const TransportChannel* channel, const char* data,
                     size_t len);
   bool SendPacket(bool rtcp, talk_base::Buffer* packet);
+  virtual bool WantsPacket(bool rtcp, talk_base::Buffer* packet);
   void HandlePacket(bool rtcp, talk_base::Buffer* packet);
 
   // Apply the new local/remote session description.
@@ -361,6 +362,7 @@ class VoiceChannel : public BaseChannel {
                const std::string& content_name, bool rtcp);
   ~VoiceChannel();
   bool Init();
+  bool SetRenderer(uint32 ssrc, AudioRenderer* renderer);
 
   // downcasts a MediaChannel
   virtual VoiceMediaChannel* media_channel() const {
@@ -453,6 +455,7 @@ class VoiceChannel : public BaseChannel {
   void OnSrtpError(uint32 ssrc, SrtpFilter::Mode mode, SrtpFilter::Error error);
   // Configuration and setting.
   bool SetChannelOptions_w(const AudioOptions& options);
+  bool SetRenderer_w(uint32 ssrc, AudioRenderer* renderer);
 
   static const int kEarlyMediaTimeout = 1000;
   bool received_media_;
@@ -646,12 +649,20 @@ class DataChannel : public BaseChannel {
 
   // overrides from BaseChannel
   virtual const ContentInfo* GetFirstContent(const SessionDescription* sdesc);
+  // If data_channel_type_ is DCT_NONE, set it.  Otherwise, check that
+  // it's the same as what was set previously.  Returns false if it's
+  // set to one type one type and changed to another type later.
+  bool SetDataChannelType(DataChannelType new_data_channel_type);
+  // Same as SetDataChannelType, but extracts the type from the
+  // DataContentDescription.
+  bool SetDataChannelTypeFromContent(const DataContentDescription* content);
   virtual bool SetMaxSendBandwidth_w(int max_bandwidth);
   virtual bool SetLocalContent_w(const MediaContentDescription* content,
                                  ContentAction action);
   virtual bool SetRemoteContent_w(const MediaContentDescription* content,
                                   ContentAction action);
   virtual void ChangeState();
+  virtual bool WantsPacket(bool rtcp, talk_base::Buffer* packet);
 
   virtual void OnMessage(talk_base::Message* pmsg);
   virtual void GetSrtpCiphers(std::vector<std::string>* ciphers) const;
@@ -665,6 +676,9 @@ class DataChannel : public BaseChannel {
   void OnSrtpError(uint32 ssrc, SrtpFilter::Mode mode, SrtpFilter::Error error);
 
   talk_base::scoped_ptr<DataMediaMonitor> media_monitor_;
+  // TODO(pthatcher): Make a separate SctpDataChannel and
+  // RtpDataChannel instead of using this.
+  DataChannelType data_channel_type_;
 };
 
 }  // namespace cricket

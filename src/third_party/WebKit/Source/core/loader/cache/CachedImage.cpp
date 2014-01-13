@@ -24,29 +24,21 @@
 #include "config.h"
 #include "core/loader/cache/CachedImage.h"
 
-#include "core/loader/FrameLoaderTypes.h"
-#include "core/loader/ResourceLoader.h"
 #include "core/loader/cache/CachedImageClient.h"
 #include "core/loader/cache/CachedResourceClient.h"
 #include "core/loader/cache/CachedResourceClientWalker.h"
 #include "core/loader/cache/CachedResourceLoader.h"
 #include "core/loader/cache/MemoryCache.h"
 #include "core/page/FrameView.h"
-#include "core/page/Page.h"
-#include "RuntimeEnabledFeatures.h"
-#include "core/page/Settings.h"
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/graphics/BitmapImage.h"
 #include "core/rendering/RenderObject.h"
+#include "core/svg/graphics/SVGImage.h"
 #include <wtf/CurrentTime.h>
 #include <wtf/MemoryInstrumentationHashMap.h>
 #include <wtf/MemoryObjectInfo.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/Vector.h>
-
-#if ENABLE(SVG)
-#include "core/svg/graphics/SVGImage.h"
-#endif
 
 using std::max;
 
@@ -103,10 +95,8 @@ void CachedImage::didRemoveClient(CachedResourceClient* c)
     ASSERT(c->resourceClientType() == CachedImageClient::expectedType());
 
     m_pendingContainerSizeRequests.remove(static_cast<CachedImageClient*>(c));
-#if ENABLE(SVG)
     if (m_svgImageCache)
         m_svgImageCache->removeClientFromCache(static_cast<CachedImageClient*>(c));
-#endif
 
     CachedResource::didRemoveClient(c);
 }
@@ -136,6 +126,7 @@ void CachedImage::allClientsRemoved()
     m_pendingContainerSizeRequests.clear();
     if (m_image && !errorOccurred())
         m_image->resetAnimation();
+    CachedResource::allClientsRemoved();
 }
 
 pair<Image*, float> CachedImage::brokenImage(float deviceScaleFactor) const
@@ -185,15 +176,12 @@ Image* CachedImage::imageForRenderer(const RenderObject* renderer)
     if (!m_image)
         return Image::nullImage();
 
-#if ENABLE(SVG)
     if (m_image->isSVGImage()) {
         Image* image = m_svgImageCache->imageForRenderer(renderer);
         if (image != Image::nullImage())
             return image;
     }
-#else
-    UNUSED_PARAM(renderer);
-#endif
+
     return m_image.get();
 }
 
@@ -207,17 +195,12 @@ void CachedImage::setContainerSizeForRenderer(const CachedImageClient* renderer,
         m_pendingContainerSizeRequests.set(renderer, SizeAndZoom(containerSize, containerZoom));
         return;
     }
-#if ENABLE(SVG)
     if (!m_image->isSVGImage()) {
         m_image->setContainerSize(containerSize);
         return;
     }
 
     m_svgImageCache->setContainerSizeForRenderer(renderer, containerSize, containerZoom);
-#else
-    UNUSED_PARAM(containerZoom);
-    m_image->setContainerSize(containerSize);
-#endif
 }
 
 bool CachedImage::usesImageContainerSize() const
@@ -255,11 +238,8 @@ LayoutSize CachedImage::imageSizeForRenderer(const RenderObject* renderer, float
 
     if (m_image->isBitmapImage() && (renderer && renderer->shouldRespectImageOrientation() == RespectImageOrientation))
         imageSize = static_cast<BitmapImage*>(m_image.get())->sizeRespectingOrientation();
-#if ENABLE(SVG)
-    else if (m_image->isSVGImage()) {
+    else if (m_image->isSVGImage())
         imageSize = m_svgImageCache->imageSizeForRenderer(renderer);
-    }
-#endif
     else
         imageSize = m_image->size();
 
@@ -299,8 +279,8 @@ void CachedImage::clear()
 
 void CachedImage::setCustomAcceptHeader()
 {
-    if (RuntimeEnabledFeatures::webPInAcceptHeaderEnabled())
-        setAccept("image/webp,*/*;q=0.8");
+    DEFINE_STATIC_LOCAL(const AtomicString, acceptWebP, ("image/webp,*/*;q=0.8", AtomicString::ConstructFromLiteral));
+    setAccept(acceptWebP);
 }
 
 inline void CachedImage::createImage()
@@ -308,14 +288,12 @@ inline void CachedImage::createImage()
     // Create the image if it doesn't yet exist.
     if (m_image)
         return;
-#if ENABLE(SVG)
-    else if (m_response.mimeType() == "image/svg+xml") {
+
+    if (m_response.mimeType() == "image/svg+xml") {
         RefPtr<SVGImage> svgImage = SVGImage::create(this);
         m_svgImageCache = SVGImageCache::create(svgImage.get());
         m_image = svgImage.release();
-    }
-#endif
-    else
+    } else
         m_image = BitmapImage::create(this);
 
     if (m_image) {
@@ -409,8 +387,7 @@ void CachedImage::destroyDecodedData()
         // Invoking addClient() will reconstruct the image object.
         m_image = 0;
         setDecodedSize(0);
-        if (!MemoryCache::shouldMakeResourcePurgeableOnEviction())
-            makePurgeable(true);
+        makePurgeable(true);
     } else if (m_image && !errorOccurred())
         m_image->destroyDecodedData();
 }
@@ -470,9 +447,7 @@ void CachedImage::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     CachedResource::reportMemoryUsage(memoryObjectInfo);
     info.addMember(m_pendingContainerSizeRequests, "pendingContainerSizeRequests");
     info.addMember(m_image, "m_image");
-#if ENABLE(SVG)
     info.addMember(m_svgImageCache, "svgImageCache");
-#endif
 }
 
 bool CachedImage::currentFrameKnownToBeOpaque(const RenderObject* renderer)

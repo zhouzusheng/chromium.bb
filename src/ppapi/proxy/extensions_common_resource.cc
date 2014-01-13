@@ -22,6 +22,7 @@ ExtensionsCommonResource::ExtensionsCommonResource(Connection connection,
                                                    PP_Instance instance)
     : PluginResource(connection, instance) {
   SendCreate(RENDERER, PpapiHostMsg_ExtensionsCommon_Create());
+  SendCreate(BROWSER, PpapiHostMsg_ExtensionsCommon_Create());
 }
 
 ExtensionsCommonResource::~ExtensionsCommonResource() {
@@ -32,7 +33,34 @@ ExtensionsCommonResource::AsExtensionsCommon_API() {
   return this;
 }
 
-int32_t ExtensionsCommonResource::Call(
+int32_t ExtensionsCommonResource::CallRenderer(
+    const std::string& request_name,
+    const std::vector<PP_Var>& input_args,
+    const std::vector<PP_Var*>& output_args,
+    scoped_refptr<TrackedCallback> callback) {
+  return CommonCall(RENDERER, request_name, input_args, output_args, callback);
+}
+
+void ExtensionsCommonResource::PostRenderer(const std::string& request_name,
+                                            const std::vector<PP_Var>& args) {
+  CommonPost(RENDERER, request_name, args);
+}
+
+int32_t ExtensionsCommonResource::CallBrowser(
+    const std::string& request_name,
+    const std::vector<PP_Var>& input_args,
+    const std::vector<PP_Var*>& output_args,
+    scoped_refptr<TrackedCallback> callback) {
+  return CommonCall(BROWSER, request_name, input_args, output_args, callback);
+}
+
+void ExtensionsCommonResource::PostBrowser(const std::string& request_name,
+                                           const std::vector<PP_Var>& args) {
+  CommonPost(BROWSER, request_name, args);
+}
+
+int32_t ExtensionsCommonResource::CommonCall(
+    Destination dest,
     const std::string& request_name,
     const std::vector<PP_Var>& input_args,
     const std::vector<PP_Var*>& output_args,
@@ -50,15 +78,16 @@ int32_t ExtensionsCommonResource::Call(
   }
 
   PluginResource::Call<PpapiPluginMsg_ExtensionsCommon_CallReply>(
-      RENDERER,
+      dest,
       PpapiHostMsg_ExtensionsCommon_Call(request_name, *input_args_value),
       base::Bind(&ExtensionsCommonResource::OnPluginMsgCallReply,
                  base::Unretained(this), output_args, callback));
   return PP_OK_COMPLETIONPENDING;
 }
 
-void ExtensionsCommonResource::Post(const std::string& request_name,
-                                    const std::vector<PP_Var>& args) {
+void ExtensionsCommonResource::CommonPost(Destination dest,
+                                          const std::string& request_name,
+                                          const std::vector<PP_Var>& args) {
   scoped_ptr<base::ListValue> args_value(CreateListValueFromVarVector(args));
   if (!args_value.get()) {
     LOG(WARNING) << "Failed to convert PP_Var input arguments.";
@@ -66,7 +95,7 @@ void ExtensionsCommonResource::Post(const std::string& request_name,
   }
 
   PluginResource::Post(
-      RENDERER, PpapiHostMsg_ExtensionsCommon_Post(request_name, *args_value));
+      dest, PpapiHostMsg_ExtensionsCommon_Post(request_name, *args_value));
 }
 
 void ExtensionsCommonResource::OnPluginMsgCallReply(
@@ -80,21 +109,26 @@ void ExtensionsCommonResource::OnPluginMsgCallReply(
     return;
 
   int32_t result = params.result();
-  if (result == PP_OK) {
-    // If the size doesn't match, something must be really wrong.
-    CHECK_EQ(output_args.size(), output.GetSize());
 
-    std::vector<PP_Var> output_vars;
-    if (CreateVarVectorFromListValue(output, &output_vars)) {
-      DCHECK_EQ(output_args.size(), output_vars.size());
-      std::vector<PP_Var>::const_iterator src_iter = output_vars.begin();
-      std::vector<PP_Var*>::const_iterator dest_iter = output_args.begin();
-      for (; src_iter != output_vars.end() && dest_iter != output_args.end();
-           ++src_iter, ++dest_iter) {
-        **dest_iter = *src_iter;
-      }
-    } else {
-      result = PP_ERROR_FAILED;
+  // If the size doesn't match, something must be really wrong.
+  CHECK_EQ(output_args.size(), output.GetSize());
+
+  std::vector<PP_Var> output_vars;
+  if (CreateVarVectorFromListValue(output, &output_vars)) {
+    DCHECK_EQ(output_args.size(), output_vars.size());
+    std::vector<PP_Var>::const_iterator src_iter = output_vars.begin();
+    std::vector<PP_Var*>::const_iterator dest_iter = output_args.begin();
+    for (; src_iter != output_vars.end() && dest_iter != output_args.end();
+         ++src_iter, ++dest_iter) {
+      **dest_iter = *src_iter;
+    }
+  } else {
+    NOTREACHED();
+    result = PP_ERROR_FAILED;
+    for (std::vector<PP_Var*>::const_iterator dest_iter = output_args.begin();
+         dest_iter != output_args.end();
+         ++dest_iter) {
+      **dest_iter = PP_MakeUndefined();
     }
   }
 

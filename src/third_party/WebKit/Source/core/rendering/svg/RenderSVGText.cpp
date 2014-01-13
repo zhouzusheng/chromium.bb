@@ -26,14 +26,13 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGText.h"
 
 #include "core/editing/VisiblePosition.h"
 #include "core/platform/FloatConversion.h"
 #include "core/platform/graphics/FloatQuad.h"
 #include "core/platform/graphics/FontCache.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/SimpleFontData.h"
 #include "core/platform/graphics/transforms/TransformState.h"
 #include "core/rendering/HitTestRequest.h"
@@ -562,5 +561,3 @@ void RenderSVGText::updateFirstLetter()
 }
 
 }
-
-#endif // ENABLE(SVG)

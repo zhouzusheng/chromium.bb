@@ -36,9 +36,9 @@
 #include "modules/notifications/NotificationCenter.h"
 
 #include "core/dom/Document.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/workers/WorkerContext.h"
 #include "modules/notifications/NotificationClient.h"
+#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -53,6 +53,7 @@ NotificationCenter::NotificationCenter(ScriptExecutionContext* context, Notifica
     : ActiveDOMObject(context)
     , m_client(client)
 {
+    ScriptWrappable::init(this);
 }
 
 #if ENABLE(LEGACY_NOTIFICATIONS)

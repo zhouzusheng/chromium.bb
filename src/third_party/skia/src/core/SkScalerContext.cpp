@@ -110,6 +110,15 @@ SkScalerContext::SkScalerContext(SkTypeface* typeface, const SkDescriptor* desc)
              desc->findEntry(kPathEffect_SkDescriptorTag, NULL),
         desc->findEntry(kMaskFilter_SkDescriptorTag, NULL));
 #endif
+#ifdef SK_BUILD_FOR_ANDROID
+    uint32_t len;
+    const void* data = desc->findEntry(kAndroidOpts_SkDescriptorTag, &len);
+    if (data) {
+        SkOrderedReadBuffer buffer(data, len);
+        fPaintOptionsAndroid.unflatten(buffer);
+        SkASSERT(buffer.offset() == buffer.size());
+    }
+#endif
 }
 
 SkScalerContext::~SkScalerContext() {
@@ -125,7 +134,8 @@ SkScalerContext::~SkScalerContext() {
 SkScalerContext* SkScalerContext::allocNextContext() const {
 #ifdef SK_BUILD_FOR_ANDROID
     SkTypeface* newFace = SkAndroidNextLogicalTypeface(fRec.fFontID,
-                                                       fRec.fOrigFontID);
+                                                       fRec.fOrigFontID,
+                                                       fPaintOptionsAndroid);
     if (0 == newFace) {
         return NULL;
     }
@@ -663,8 +673,16 @@ void SkScalerContext::getPath(const SkGlyph& glyph, SkPath* path) {
     this->internalGetPath(glyph, NULL, path, NULL);
 }
 
-void SkScalerContext::getFontMetrics(SkPaint::FontMetrics* mx,
-                                     SkPaint::FontMetrics* my) {
+void SkScalerContext::getFontMetrics(SkPaint::FontMetrics* fm) {
+    // All of this complexity should go away when we change generateFontMetrics
+    // to just take one parameter (since it knows if it is vertical or not)
+    SkPaint::FontMetrics* mx = NULL;
+    SkPaint::FontMetrics* my = NULL;
+    if (fRec.fFlags & kVertical_Flag) {
+        mx = fm;
+    } else {
+        my = fm;
+    }
     this->generateFontMetrics(mx, my);
 }
 
@@ -773,10 +791,7 @@ void SkScalerContextRec::getMatrixFrom2x2(SkMatrix* dst) const {
 }
 
 void SkScalerContextRec::getLocalMatrix(SkMatrix* m) const {
-    m->setScale(SkScalarMul(fTextSize, fPreScaleX), fTextSize);
-    if (fPreSkewX) {
-        m->postSkew(fPreSkewX, 0);
-    }
+    SkPaint::SetTextMatrix(m, fTextSize, fPreScaleX, fPreSkewX);
 }
 
 void SkScalerContextRec::getSingleMatrix(SkMatrix* m) const {

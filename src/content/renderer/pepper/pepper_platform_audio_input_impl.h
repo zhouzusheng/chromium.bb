@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "media/audio/audio_input_ipc.h"
@@ -99,7 +100,7 @@ class PepperPlatformAudioInputImpl
   // I/O THREAD.
   scoped_ptr<media::AudioInputIPC> ipc_;
 
-  base::MessageLoopProxy* main_message_loop_proxy_;
+  scoped_refptr<base::MessageLoopProxy> main_message_loop_proxy_;
 
   // THIS MUST ONLY BE ACCESSED ON THE MAIN THREAD.
   base::WeakPtr<PepperPluginDelegateImpl> plugin_delegate_;
@@ -110,6 +111,9 @@ class PepperPlatformAudioInputImpl
 
   // Initialized on the main thread and accessed on the I/O thread afterwards.
   media::AudioParameters params_;
+
+  // Whether we have tried to create an audio stream.
+  bool create_stream_sent_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperPlatformAudioInputImpl);
 };

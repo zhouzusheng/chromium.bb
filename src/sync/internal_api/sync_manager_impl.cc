@@ -9,13 +9,12 @@
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/json/json_writer.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram.h"
 #include "base/observer_list.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "sync/engine/sync_scheduler.h"
 #include "sync/engine/syncer_types.h"
@@ -80,6 +79,7 @@ GetUpdatesCallerInfo::GetUpdatesSource GetSourceFromReason(
     case CONFIGURE_REASON_NEW_CLIENT:
       return GetUpdatesCallerInfo::NEW_CLIENT;
     case CONFIGURE_REASON_NEWLY_ENABLED_DATA_TYPE:
+    case CONFIGURE_REASON_CRYPTO:
       return GetUpdatesCallerInfo::NEWLY_SUPPORTED_DATATYPE;
     default:
       NOTREACHED();
@@ -173,7 +173,6 @@ SyncManagerImpl::SyncManagerImpl(const std::string& name)
       initialized_(false),
       observing_network_connectivity_changes_(false),
       invalidator_state_(DEFAULT_INVALIDATION_ERROR),
-      throttled_data_type_tracker_(&allstatus_),
       traffic_recorder_(kMaxMessagesToRecord, kMaxMessageSizeToRecord),
       encryptor_(NULL),
       unrecoverable_error_handler_(NULL),
@@ -297,8 +296,10 @@ ModelTypeSet SyncManagerImpl::GetTypesWithEmptyProgressMarkerToken(
 
 void SyncManagerImpl::ConfigureSyncer(
     ConfigureReason reason,
-    ModelTypeSet types_to_config,
-    ModelTypeSet failed_types,
+    ModelTypeSet to_download,
+    ModelTypeSet to_purge,
+    ModelTypeSet to_journal,
+    ModelTypeSet to_unapply,
     const ModelSafeRoutingInfo& new_routing_info,
     const base::Closure& ready_task,
     const base::Closure& retry_task) {
@@ -306,13 +307,20 @@ void SyncManagerImpl::ConfigureSyncer(
   DCHECK(!ready_task.is_null());
   DCHECK(!retry_task.is_null());
 
-  // Cleanup any types that might have just been disabled.
-  ModelTypeSet previous_types = ModelTypeSet::All();
-  if (!session_context_->routing_info().empty())
-    previous_types = GetRoutingInfoTypes(session_context_->routing_info());
-  if (!PurgeDisabledTypes(previous_types,
-                          GetRoutingInfoTypes(new_routing_info),
-                          failed_types)) {
+  DVLOG(1) << "Configuring -"
+           << "\n\t" << "current types: "
+           << ModelTypeSetToString(GetRoutingInfoTypes(new_routing_info))
+           << "\n\t" << "types to download: "
+           << ModelTypeSetToString(to_download)
+           << "\n\t" << "types to purge: "
+           << ModelTypeSetToString(to_purge)
+           << "\n\t" << "types to journal: "
+           << ModelTypeSetToString(to_journal)
+           << "\n\t" << "types to unapply: "
+           << ModelTypeSetToString(to_unapply);
+  if (!PurgeDisabledTypes(to_purge,
+                          to_journal,
+                          to_unapply)) {
     // We failed to cleanup the types. Invoke the ready task without actually
     // configuring any types. The caller should detect this as a configuration
     // failure and act appropriately.
@@ -321,7 +329,7 @@ void SyncManagerImpl::ConfigureSyncer(
   }
 
   ConfigurationParams params(GetSourceFromReason(reason),
-                             types_to_config,
+                             to_download,
                              new_routing_info,
                              ready_task);
 
@@ -348,7 +356,8 @@ void SyncManagerImpl::Init(
     scoped_ptr<InternalComponentsFactory> internal_components_factory,
     Encryptor* encryptor,
     UnrecoverableErrorHandler* unrecoverable_error_handler,
-    ReportUnrecoverableErrorFunction report_unrecoverable_error_function) {
+    ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
+    bool use_oauth2_token) {
   CHECK(!initialized_);
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(post_factory.get());
@@ -415,7 +424,8 @@ void SyncManagerImpl::Init(
   }
 
   connection_manager_.reset(new SyncAPIServerConnectionManager(
-      sync_server_and_path, port, use_ssl, post_factory.release()));
+      sync_server_and_path, port, use_ssl, use_oauth2_token,
+      post_factory.release()));
   connection_manager_->set_client_id(directory()->cache_guid());
   connection_manager_->AddListener(this);
 
@@ -437,7 +447,6 @@ void SyncManagerImpl::Init(
       directory(),
       workers,
       extensions_activity_monitor,
-      &throttled_data_type_tracker_,
       listeners,
       &debug_info_event_listener_,
       &traffic_recorder_,
@@ -574,21 +583,20 @@ bool SyncManagerImpl::PurgePartiallySyncedTypes() {
   if (partially_synced_types.Empty())
     return true;
   return directory()->PurgeEntriesWithTypeIn(partially_synced_types,
+                                             ModelTypeSet(),
                                              ModelTypeSet());
 }
 
 bool SyncManagerImpl::PurgeDisabledTypes(
-    ModelTypeSet previously_enabled_types,
-    ModelTypeSet currently_enabled_types,
-    ModelTypeSet failed_types) {
-  ModelTypeSet disabled_types = Difference(previously_enabled_types,
-                                           currently_enabled_types);
-  if (disabled_types.Empty())
+    ModelTypeSet to_purge,
+    ModelTypeSet to_journal,
+    ModelTypeSet to_unapply) {
+  if (to_purge.Empty())
     return true;
-
-  DVLOG(1) << "Purging disabled types "
-           << ModelTypeSetToString(disabled_types);
-  return directory()->PurgeEntriesWithTypeIn(disabled_types, failed_types);
+  DVLOG(1) << "Purging disabled types " << ModelTypeSetToString(to_purge);
+  DCHECK(to_purge.HasAll(to_journal));
+  DCHECK(to_purge.HasAll(to_unapply));
+  return directory()->PurgeEntriesWithTypeIn(to_purge, to_journal, to_unapply);
 }
 
 void SyncManagerImpl::UpdateCredentials(const SyncCredentials& credentials) {
@@ -598,8 +606,7 @@ void SyncManagerImpl::UpdateCredentials(const SyncCredentials& credentials) {
   DCHECK(!credentials.sync_token.empty());
 
   observing_network_connectivity_changes_ = true;
-  if (!connection_manager_->SetAuthToken(credentials.sync_token,
-                                         credentials.sync_token_time))
+  if (!connection_manager_->SetAuthToken(credentials.sync_token))
     return;  // Auth token is known to be invalid, so exit early.
 
   invalidator_->UpdateCredentials(credentials.email, credentials.sync_token);
@@ -921,8 +928,7 @@ void SyncManagerImpl::HandleCalculateChangesChangeEventFromSyncer(
       change_buffers[type].PushDeletedItem(handle);
     else if (exists_now && existed_before &&
              VisiblePropertiesDiffer(it->second, crypto)) {
-      change_buffers[type].PushUpdatedItem(
-          handle, VisiblePositionsDiffer(it->second));
+      change_buffers[type].PushUpdatedItem(handle);
     }
 
     SetExtraChangeRecordData(handle, type, &change_buffers[type], crypto,
@@ -958,8 +964,7 @@ void SyncManagerImpl::RequestNudgeForDataTypes(
       types.First().Get(),
       this);
   allstatus_.IncrementNudgeCounter(NUDGE_SOURCE_LOCAL);
-  scheduler_->ScheduleNudgeAsync(nudge_delay,
-                                 NUDGE_SOURCE_LOCAL,
+  scheduler_->ScheduleLocalNudge(nudge_delay,
                                  types,
                                  nudge_location);
 }
@@ -1197,10 +1202,10 @@ JsArgList SyncManagerImpl::GetChildNodeIds(const JsArgList& args) {
   int64 id = GetId(args.Get(), 0);
   if (id != kInvalidId) {
     ReadTransaction trans(FROM_HERE, GetUserShare());
-    syncable::Directory::ChildHandles child_handles;
+    syncable::Directory::Metahandles child_handles;
     trans.GetDirectory()->GetChildHandlesByHandle(trans.GetWrappedTrans(),
                                                   id, &child_handles);
-    for (syncable::Directory::ChildHandles::const_iterator it =
+    for (syncable::Directory::Metahandles::const_iterator it =
              child_handles.begin(); it != child_handles.end(); ++it) {
       child_ids->Append(new base::StringValue(base::Int64ToString(*it)));
     }
@@ -1226,12 +1231,6 @@ void SyncManagerImpl::OnInvalidatorStateChange(InvalidatorState state) {
       (invalidator_state_ == INVALIDATIONS_ENABLED);
   allstatus_.SetNotificationsEnabled(notifications_enabled);
   scheduler_->SetNotificationsEnabled(notifications_enabled);
-
-  if (invalidator_state_ == syncer::INVALIDATION_CREDENTIALS_REJECTED) {
-    // If the invalidator's credentials were rejected, that means that
-    // our sync credentials are also bad, so invalidate those.
-    connection_manager_->OnInvalidationCredentialsRejected();
-  }
 
   if (js_event_handler_.IsInitialized()) {
     base::DictionaryValue details;
@@ -1262,9 +1261,8 @@ void SyncManagerImpl::OnIncomingInvalidation(
     LOG(WARNING) << "Sync received invalidation without any type information.";
   } else {
     allstatus_.IncrementNudgeCounter(NUDGE_SOURCE_NOTIFICATION);
-    scheduler_->ScheduleNudgeWithStatesAsync(
+    scheduler_->ScheduleInvalidationNudge(
         TimeDelta::FromMilliseconds(kSyncSchedulerDelayMsec),
-        NUDGE_SOURCE_NOTIFICATION,
         type_invalidation_map, FROM_HERE);
     allstatus_.IncrementNotificationsReceived();
     UpdateNotificationInfo(type_invalidation_map);
@@ -1292,27 +1290,22 @@ void SyncManagerImpl::OnIncomingInvalidation(
 
 void SyncManagerImpl::RefreshTypes(ModelTypeSet types) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  const ModelTypeInvalidationMap& type_invalidation_map =
-      ModelTypeSetToInvalidationMap(types, std::string());
-  if (type_invalidation_map.empty()) {
+  if (types.Empty()) {
     LOG(WARNING) << "Sync received refresh request with no types specified.";
   } else {
     allstatus_.IncrementNudgeCounter(NUDGE_SOURCE_LOCAL_REFRESH);
-    scheduler_->ScheduleNudgeWithStatesAsync(
+    scheduler_->ScheduleLocalRefreshRequest(
         TimeDelta::FromMilliseconds(kSyncRefreshDelayMsec),
-        NUDGE_SOURCE_LOCAL_REFRESH,
-        type_invalidation_map, FROM_HERE);
+        types, FROM_HERE);
   }
 
   if (js_event_handler_.IsInitialized()) {
     base::DictionaryValue details;
     base::ListValue* changed_types = new base::ListValue();
     details.Set("changedTypes", changed_types);
-    for (ModelTypeInvalidationMap::const_iterator it =
-             type_invalidation_map.begin(); it != type_invalidation_map.end();
-         ++it) {
+    for (ModelTypeSet::Iterator it = types.First(); it.Good(); it.Inc()) {
       const std::string& model_type_str =
-          ModelTypeToString(it->first);
+          ModelTypeToString(it.Get());
       changed_types->Append(new base::StringValue(model_type_str));
     }
     details.SetString("source", "LOCAL_INVALIDATION");

@@ -11,7 +11,7 @@
 
 void SkOpContour::addCoincident(int index, SkOpContour* other, int otherIndex,
         const SkIntersections& ts, bool swap) {
-    SkCoincidence& coincidence = *fCoincidences.append();
+    SkCoincidence& coincidence = fCoincidences.push_back();
     coincidence.fContours[0] = this;  // FIXME: no need to store
     coincidence.fContours[1] = other;
     coincidence.fSegments[0] = index;
@@ -64,38 +64,36 @@ void SkOpContour::addCoincidentPoints() {
     #endif
         double startT = coincidence.fTs[0][0];
         double endT = coincidence.fTs[0][1];
-        bool cancelers;
-        if ((cancelers = startT > endT)) {
+        bool startSwapped, oStartSwapped, cancelers;
+        if ((cancelers = startSwapped = startT > endT)) {
             SkTSwap(startT, endT);
-            SkTSwap(coincidence.fPts[0], coincidence.fPts[1]);
         }
         SkASSERT(!approximately_negative(endT - startT));
         double oStartT = coincidence.fTs[1][0];
         double oEndT = coincidence.fTs[1][1];
-        if (oStartT > oEndT) {
-            SkTSwap<double>(oStartT, oEndT);
+        if ((oStartSwapped = oStartT > oEndT)) {
+            SkTSwap(oStartT, oEndT);
             cancelers ^= true;
         }
         SkASSERT(!approximately_negative(oEndT - oStartT));
-        bool opp = fOperand ^ otherContour->fOperand;
-        if (cancelers && !opp) {
+        if (cancelers) {
             // make sure startT and endT have t entries
             if (startT > 0 || oEndT < 1
                     || thisOne.isMissing(startT) || other.isMissing(oEndT)) {
-                thisOne.addTPair(startT, &other, oEndT, true, coincidence.fPts[0]);
+                thisOne.addTPair(startT, &other, oEndT, true, coincidence.fPts[startSwapped]);
             }
             if (oStartT > 0 || endT < 1
                     || thisOne.isMissing(endT) || other.isMissing(oStartT)) {
-                other.addTPair(oStartT, &thisOne, endT, true, coincidence.fPts[1]);
+                other.addTPair(oStartT, &thisOne, endT, true, coincidence.fPts[oStartSwapped]);
             }
         } else {
             if (startT > 0 || oStartT > 0
                     || thisOne.isMissing(startT) || other.isMissing(oStartT)) {
-                thisOne.addTPair(startT, &other, oStartT, true, coincidence.fPts[0]);
+                thisOne.addTPair(startT, &other, oStartT, true, coincidence.fPts[startSwapped]);
             }
             if (endT < 1 || oEndT < 1
                     || thisOne.isMissing(endT) || other.isMissing(oEndT)) {
-                other.addTPair(oEndT, &thisOne, endT, true, coincidence.fPts[1]);
+                other.addTPair(oEndT, &thisOne, endT, true, coincidence.fPts[!oStartSwapped]);
             }
         }
     #if DEBUG_CONCIDENT
@@ -135,8 +133,7 @@ void SkOpContour::calcCoincidentWinding() {
             cancelers ^= true;
         }
         SkASSERT(!approximately_negative(oEndT - oStartT));
-        bool opp = fOperand ^ otherContour->fOperand;
-        if (cancelers && !opp) {
+        if (cancelers) {
             // make sure startT and endT have t entries
             if (!thisOne.done() && !other.done()) {
                 thisOne.addTCancel(startT, endT, &other, oStartT, oEndT);
@@ -155,9 +152,9 @@ void SkOpContour::calcCoincidentWinding() {
 
 void SkOpContour::sortSegments() {
     int segmentCount = fSegments.count();
-    fSortedSegments.setReserve(segmentCount);
+    fSortedSegments.push_back_n(segmentCount);
     for (int test = 0; test < segmentCount; ++test) {
-        *fSortedSegments.append() = &fSegments[test];
+        fSortedSegments[test] = &fSegments[test];
     }
     SkTQSort<SkOpSegment>(fSortedSegments.begin(), fSortedSegments.end() - 1);
     fFirstSorted = 0;
@@ -232,7 +229,7 @@ int SkOpContour::debugShowWindingValues(int totalSegments, int ofInterest) {
     return sum;
 }
 
-static void SkOpContour::debugShowWindingValues(const SkTDArray<SkOpContour*>& contourList) {
+static void SkOpContour::debugShowWindingValues(const SkTArray<SkOpContour*, true>& contourList) {
 //     int ofInterest = 1 << 1 | 1 << 5 | 1 << 9 | 1 << 13;
 //    int ofInterest = 1 << 4 | 1 << 8 | 1 << 12 | 1 << 16;
     int ofInterest = 1 << 5 | 1 << 8;

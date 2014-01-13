@@ -38,17 +38,14 @@
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Event.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/dom/Text.h"
 #include "core/html/HTMLDivElement.h"
-#include "core/html/HTMLMediaElement.h"
-#include "core/html/HTMLSpanElement.h"
 #include "core/html/track/TextTrack.h"
 #include "core/html/track/TextTrackCueList.h"
 #include "core/html/track/WebVTTElement.h"
 #include "core/html/track/WebVTTParser.h"
 #include "core/rendering/RenderTextTrackCue.h"
-#include <wtf/MathExtras.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/MathExtras.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -108,6 +105,12 @@ TextTrackCue* TextTrackCueBox::getCue() const
 void TextTrackCueBox::applyCSSProperties(const IntSize&)
 {
     // FIXME: Apply all the initial CSS positioning properties. http://wkb.ug/79916
+#if ENABLE(WEBVTT_REGIONS)
+    if (!m_cue->regionId().isEmpty()) {
+        setInlineStyleProperty(CSSPropertyPosition, CSSValueRelative);
+        return;
+    }
+#endif
 
     // 3.5.1 On the (root) List of WebVTT Node Objects:
 
@@ -175,9 +178,9 @@ const AtomicString& TextTrackCueBox::textTrackCueBoxShadowPseudoId()
     return trackDisplayBoxShadowPseudoId;
 }
 
-RenderObject* TextTrackCueBox::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* TextTrackCueBox::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderTextTrackCue(this);
+    return new (document()->renderArena()) RenderTextTrackCue(this);
 }
 
 // ----------------------------
@@ -204,6 +207,7 @@ TextTrackCue::TextTrackCue(ScriptExecutionContext* context, double start, double
     , m_displayDirection(CSSValueLtr)
 {
     ASSERT(m_scriptExecutionContext->isDocument());
+    ScriptWrappable::init(this);
 
     // 4. If the text track cue writing direction is horizontal, then let
     // writing-mode be 'horizontal-tb'. Otherwise, if the text track cue writing
@@ -217,7 +221,7 @@ TextTrackCue::TextTrackCue(ScriptExecutionContext* context, double start, double
 
 TextTrackCue::~TextTrackCue()
 {
-    removeDisplayTree();
+    displayTreeInternal()->remove(ASSERT_NO_EXCEPTION);
 }
 
 PassRefPtr<TextTrackCueBox> TextTrackCue::createDisplayTree()
@@ -553,10 +557,9 @@ void TextTrackCue::setIsActive(bool active)
 {
     m_isActive = active;
 
-    if (!active) {
-        // Remove the display tree as soon as the cue becomes inactive.
-        displayTreeInternal()->remove(ASSERT_NO_EXCEPTION);
-    }
+    // Remove the display tree as soon as the cue becomes inactive.
+    if (!active)
+        removeDisplayTree();
 }
 
 int TextTrackCue::calculateComputedLinePosition()
@@ -824,6 +827,13 @@ PassRefPtr<TextTrackCueBox> TextTrackCue::getDisplayTree(const IntSize& videoSiz
 
 void TextTrackCue::removeDisplayTree()
 {
+#if ENABLE(WEBVTT_REGIONS)
+    // The region needs to be informed about the cue removal.
+    TextTrackRegion* region = m_track->regions()->getRegionById(m_regionId);
+    if (region)
+        region->willRemoveTextTrackCueBox(m_displayTree.get());
+#endif
+
     displayTreeInternal()->remove(ASSERT_NO_EXCEPTION);
 }
 
@@ -1107,12 +1117,12 @@ NextSetting:
 #endif
 }
 
-int TextTrackCue::getCSSWritingDirection() const
+CSSValueID TextTrackCue::getCSSWritingDirection() const
 {
     return m_displayDirection;
 }
 
-int TextTrackCue::getCSSWritingMode() const
+CSSValueID TextTrackCue::getCSSWritingMode() const
 {
     return m_displayWritingMode;
 }

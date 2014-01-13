@@ -31,11 +31,12 @@
 #include "core/dom/SimulatedClickOptions.h"
 #include "core/dom/TreeScope.h"
 #include "core/editing/EditingBoundary.h"
+#include "core/inspector/InspectorCounters.h"
 #include "core/page/FocusDirection.h"
-#include "core/platform/KURLHash.h"
 #include "core/platform/TreeShared.h"
 #include "core/platform/graphics/LayoutRect.h"
 #include "core/rendering/style/RenderStyleConstants.h"
+#include "weborigin/KURLHash.h"
 #include <wtf/Forward.h>
 #include <wtf/ListHashSet.h>
 #include <wtf/text/AtomicString.h>
@@ -74,7 +75,6 @@ class PlatformWheelEvent;
 class QualifiedName;
 class RadioNodeList;
 class RegisteredEventListener;
-class RenderArena;
 class RenderBox;
 class RenderBoxModelObject;
 class RenderObject;
@@ -87,14 +87,13 @@ typedef int ExceptionCode;
 
 const int nodeStyleChangeShift = 15;
 
-// SyntheticStyleChange means that we need to go through the entire style change logic even though
-// no style property has actually changed. It is used to restructure the tree when, for instance,
-// RenderLayers are created or destroyed due to animation changes.
-enum StyleChangeType { 
-    NoStyleChange = 0, 
-    InlineStyleChange = 1 << nodeStyleChangeShift, 
-    FullStyleChange = 2 << nodeStyleChangeShift, 
-    SyntheticStyleChange = 3 << nodeStyleChangeShift
+enum StyleChangeType {
+    NoStyleChange = 0,
+    InlineStyleChange = 1 << nodeStyleChangeShift,
+    FullStyleChange = 2 << nodeStyleChangeShift,
+
+    // FIXME: SyntheticStyleChange is deprecated, instead you should use setNeedsLayerUpdate().
+    SyntheticStyleChange = 3 << nodeStyleChangeShift,
 };
 
 class NodeRareDataBase {
@@ -127,7 +126,6 @@ public:
         ATTRIBUTE_NODE = 2,
         TEXT_NODE = 3,
         CDATA_SECTION_NODE = 4,
-        ENTITY_REFERENCE_NODE = 5,
         ENTITY_NODE = 6,
         PROCESSING_INSTRUCTION_NODE = 7,
         COMMENT_NODE = 8,
@@ -137,6 +135,15 @@ public:
         NOTATION_NODE = 12,
         XPATH_NAMESPACE_NODE = 13,
     };
+
+    // EntityReference nodes are deprecated and impossible to create in WebKit.
+    // We want Node.ENTITY_REFERNCE_NODE to exist in JS and this enum, makes the bindings
+    // generation not complain about ENTITY_REFERENCE_NODE being missing from the implementation
+    // while not requiring all switch(NodeType) blocks to include this deprecated constant.
+    enum DeprecatedNodeType {
+        ENTITY_REFERENCE_NODE = 5
+    };
+
     enum DocumentPosition {
         DOCUMENT_POSITION_EQUIVALENT = 0x00,
         DOCUMENT_POSITION_DISCONNECTED = 0x01,
@@ -146,6 +153,15 @@ public:
         DOCUMENT_POSITION_CONTAINED_BY = 0x10,
         DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC = 0x20,
     };
+
+    static void init();
+    static void shutdown();
+#if ENABLE(PARTITION_ALLOC)
+    // All Nodes are placed in their own heap partition for security.
+    // See http://crbug.com/246860 for detail.
+    void* operator new(size_t);
+    void operator delete(void*);
+#endif
 
     static bool isSupported(const String& feature, const String& version);
 
@@ -178,6 +194,11 @@ public:
     bool hasAttributes() const;
     NamedNodeMap* attributes() const;
 
+    // ChildNode interface API
+    Element* previousElementSibling() const;
+    Element* nextElementSibling() const;
+    void remove(ExceptionCode&);
+
     Node* pseudoAwareNextSibling() const;
     Node* pseudoAwarePreviousSibling() const;
     Node* pseudoAwareFirstChild() const;
@@ -195,12 +216,11 @@ public:
     bool removeChild(Node* child, ExceptionCode&);
     bool appendChild(PassRefPtr<Node> newChild, ExceptionCode&, AttachBehavior = AttachNow);
 
-    void remove(ExceptionCode&);
     bool hasChildNodes() const { return firstChild(); }
     virtual PassRefPtr<Node> cloneNode(bool deep) = 0;
-    const AtomicString& localName() const { return virtualLocalName(); }
-    const AtomicString& namespaceURI() const { return virtualNamespaceURI(); }
-    const AtomicString& prefix() const { return virtualPrefix(); }
+    virtual const AtomicString& localName() const;
+    virtual const AtomicString& namespaceURI() const;
+    virtual const AtomicString& prefix() const;
     virtual void setPrefix(const AtomicString&, ExceptionCode&);
     void normalize();
 
@@ -241,20 +261,12 @@ public:
     virtual bool isCharacterDataNode() const { return false; }
     virtual bool isFrameOwnerElement() const { return false; }
     virtual bool isPluginElement() const { return false; }
-    virtual bool isInsertionPointNode() const { return false; }
 
     bool isDocumentNode() const;
     bool isTreeScope() const { return treeScope()->rootNode() == this; }
     bool isDocumentFragment() const { return getFlag(IsDocumentFragmentFlag); }
     bool isShadowRoot() const { return isDocumentFragment() && isTreeScope(); }
-    bool isInsertionPoint() const { return getFlag(NeedsShadowTreeWalkerFlag) && isInsertionPointNode(); }
-    // Returns Node rather than InsertionPoint. Should be used only for language bindings.
-    Node* insertionParentForBinding() const;
-
-    bool needsShadowTreeWalker() const;
-    bool needsShadowTreeWalkerSlow() const;
-    void setNeedsShadowTreeWalker() { setFlag(NeedsShadowTreeWalkerFlag); }
-    void resetNeedsShadowTreeWalker() { setFlag(needsShadowTreeWalkerSlow(), NeedsShadowTreeWalkerFlag); }
+    bool isInsertionPoint() const { return getFlag(IsInsertionPointFlag); }
 
     bool inNamedFlow() const { return getFlag(InNamedFlowFlag); }
     bool hasCustomStyleCallbacks() const { return getFlag(HasCustomStyleCallbacksFlag); }
@@ -362,8 +374,14 @@ public:
     void clearChildNeedsStyleRecalc() { clearFlag(ChildNeedsStyleRecalcFlag); }
 
     void setNeedsStyleRecalc(StyleChangeType changeType = FullStyleChange);
-    void clearNeedsStyleRecalc() { m_nodeFlags &= ~StyleChangeMask; }
-    virtual void scheduleSetNeedsStyleRecalc(StyleChangeType changeType = FullStyleChange) { setNeedsStyleRecalc(changeType); }
+    void clearNeedsStyleRecalc()
+    {
+        m_nodeFlags &= ~StyleChangeMask;
+        clearFlag(NeedsLayerUpdate);
+    }
+
+    void setNeedsLayerUpdate();
+    bool needsLayerUpdate() const { return getFlag(NeedsLayerUpdate); }
 
     void setIsLink(bool f) { setFlag(f, IsLinkFlag); }
     void setIsLink() { setFlag(IsLinkFlag); }
@@ -394,11 +412,13 @@ public:
 
     virtual short tabIndex() const;
 
-    // Whether this kind of node can receive focus by default. Most nodes are
-    // not focusable but some elements, such as form controls and links, are.
+    // Whether this node can receive focus at all. Most nodes are not focusable
+    // but some elements, such as form controls and links, are. Unlike
+    // rendererIsFocusable(), this method may be called when layout is not up to
+    // date, so it must not use the renderer to determine focusability.
     virtual bool supportsFocus() const;
     // Whether the node can actually be focused.
-    virtual bool isFocusable() const;
+    bool isFocusable() const;
     virtual bool isKeyboardFocusable(KeyboardEvent*) const;
     virtual bool isMouseFocusable() const;
     virtual Node* focusDelegate();
@@ -474,7 +494,6 @@ public:
     bool isInShadowTree() const { return getFlag(IsInShadowTreeFlag); }
     bool isInTreeScope() const { return getFlag(static_cast<NodeFlags>(InDocumentFlag | IsInShadowTreeFlag)); }
 
-    bool isReadOnlyNode() const { return nodeType() == ENTITY_REFERENCE_NODE; }
     bool isDocumentTypeNode() const { return nodeType() == DOCUMENT_TYPE_NODE; }
     virtual bool childTypeAllowed(NodeType) const { return false; }
     unsigned childNodeCount() const;
@@ -516,21 +535,28 @@ public:
     RenderBox* renderBox() const;
     RenderBoxModelObject* renderBoxModelObject() const;
 
+    struct AttachContext {
+        RenderStyle* resolvedStyle;
+        bool performingReattach;
+
+        AttachContext() : resolvedStyle(0), performingReattach(false) { }
+    };
+
     // Attaches this node to the rendering tree. This calculates the style to be applied to the node and creates an
     // appropriate RenderObject which will be inserted into the tree (except when the style has display: none). This
     // makes the node visible in the FrameView.
-    virtual void attach();
+    virtual void attach(const AttachContext& = AttachContext());
 
     // Detaches the node from the rendering tree, making it invisible in the rendered view. This method will remove
     // the node's rendering object from the rendering tree and delete it.
-    virtual void detach();
+    virtual void detach(const AttachContext& = AttachContext());
 
 #ifndef NDEBUG
     bool inDetach() const;
 #endif
 
-    void reattach();
-    void reattachIfAttached();
+    void reattach(const AttachContext& = AttachContext());
+    void lazyReattachIfAttached();
     ContainerNode* parentNodeForRenderingAndStyle();
     
     // Wrapper for nodes that don't have a renderer, but still cache the style (like HTMLOptionElement).
@@ -598,17 +624,16 @@ public:
     PassRefPtr<Element> querySelector(const AtomicString& selectors, ExceptionCode&);
     PassRefPtr<NodeList> querySelectorAll(const AtomicString& selectors, ExceptionCode&);
 
-    unsigned short compareDocumentPosition(Node*);
+    unsigned short compareDocumentPosition(const Node*) const;
 
     enum ShadowTreesTreatment {
         TreatShadowTreesAsDisconnected,
         TreatShadowTreesAsComposed
     };
 
-    unsigned short compareDocumentPositionInternal(Node*, ShadowTreesTreatment);
+    unsigned short compareDocumentPositionInternal(const Node*, ShadowTreesTreatment) const;
 
     virtual Node* toNode();
-    virtual HTMLInputElement* toInputElement();
 
     virtual const AtomicString& interfaceName() const;
     virtual ScriptExecutionContext* scriptExecutionContext() const;
@@ -697,9 +722,7 @@ private:
         // These bits are used by derived classes, pulled up here so they can
         // be stored in the same memory word as the Node bits above.
         IsParsingChildrenFinishedFlag = 1 << 13, // Element
-#if ENABLE(SVG)
         HasSVGRareDataFlag = 1 << 14, // SVGElement
-#endif
 
         StyleChangeMask = 1 << nodeStyleChangeShift | 1 << (nodeStyleChangeShift + 1),
 
@@ -713,14 +736,16 @@ private:
         HasScopedHTMLStyleChildFlag = 1 << 22,
         HasEventTargetDataFlag = 1 << 23,
         V8CollectableDuringMinorGCFlag = 1 << 24,
-        NeedsShadowTreeWalkerFlag = 1 << 25,
+        IsInsertionPointFlag = 1 << 25,
         IsInShadowTreeFlag = 1 << 26,
         IsCustomElement = 1 << 27,
+
+        NeedsLayerUpdate = 1 << 28,
 
         DefaultNodeFlags = IsParsingChildrenFinishedFlag
     };
 
-    // 4 bits remaining
+    // 3 bits remaining
 
     bool getFlag(NodeFlags mask) const { return m_nodeFlags & mask; }
     void setFlag(bool f, NodeFlags mask) const { m_nodeFlags = (m_nodeFlags & ~mask) | (-(int32_t)f & mask); } 
@@ -733,17 +758,34 @@ protected:
         CreateText = DefaultNodeFlags | IsTextFlag,
         CreateContainer = DefaultNodeFlags | IsContainerFlag, 
         CreateElement = CreateContainer | IsElementFlag, 
-        CreatePseudoElement =  CreateElement | InDocumentFlag | NeedsShadowTreeWalkerFlag,
-        CreateShadowRoot = CreateContainer | IsDocumentFragmentFlag | NeedsShadowTreeWalkerFlag | IsInShadowTreeFlag,
+        CreatePseudoElement =  CreateElement | InDocumentFlag,
+        CreateShadowRoot = CreateContainer | IsDocumentFragmentFlag | IsInShadowTreeFlag,
         CreateDocumentFragment = CreateContainer | IsDocumentFragmentFlag,
         CreateStyledElement = CreateElement | IsStyledElementFlag, 
         CreateHTMLElement = CreateStyledElement | IsHTMLFlag,
         CreateSVGElement = CreateStyledElement | IsSVGFlag,
         CreateDocument = CreateContainer | InDocumentFlag,
-        CreateInsertionPoint = CreateHTMLElement | NeedsShadowTreeWalkerFlag,
+        CreateInsertionPoint = CreateHTMLElement | IsInsertionPointFlag,
         CreateEditingText = CreateText | HasNameOrIsEditingTextFlag,
     };
-    Node(Document*, ConstructionType);
+
+    Node(TreeScope* treeScope, ConstructionType type)
+        : m_nodeFlags(type)
+        , m_parentOrShadowHostNode(0)
+        , m_treeScope(treeScope)
+        , m_previous(0)
+        , m_next(0)
+    {
+        ScriptWrappable::init(this);
+        if (!m_treeScope)
+            m_treeScope = TreeScope::noDocumentInstance();
+        m_treeScope->guardRef();
+
+#if !defined(NDEBUG) || (defined(DUMP_NODE_STATISTICS) && DUMP_NODE_STATISTICS)
+        trackForDebugging();
+#endif
+        InspectorCounters::incrementCounter(InspectorCounters::NodeCounter);
+    }
 
     virtual void didMoveToNewDocument(Document* oldDocument);
     
@@ -761,6 +803,13 @@ protected:
 
     Document* documentInternal() const { return treeScope()->documentScope(); }
     void setTreeScope(TreeScope* scope) { m_treeScope = scope; }
+
+    // Subclasses may override this method to affect focusability. Unlike
+    // supportsFocus, this method must be called on an up-to-date layout, so it
+    // may use the renderer to reason about focusability. This method cannot be
+    // moved to RenderObject because some focusable nodes don't have renderers,
+    // e.g., HTMLOptionElement.
+    virtual bool rendererIsFocusable() const { return false; }
 
 private:
     friend class TreeShared<Node>;
@@ -793,9 +842,6 @@ private:
 
     virtual RenderStyle* nonRendererStyle() const { return 0; }
 
-    virtual const AtomicString& virtualPrefix() const;
-    virtual const AtomicString& virtualLocalName() const;
-    virtual const AtomicString& virtualNamespaceURI() const;
     virtual RenderStyle* virtualComputedStyle(PseudoId = NOPSEUDO);
 
     Element* ancestorElement() const;
@@ -822,11 +868,9 @@ protected:
     void setIsParsingChildrenFinished() { setFlag(IsParsingChildrenFinishedFlag); }
     void clearIsParsingChildrenFinished() { clearFlag(IsParsingChildrenFinishedFlag); }
 
-#if ENABLE(SVG)
     bool hasSVGRareData() const { return getFlag(HasSVGRareDataFlag); }
     void setHasSVGRareData() { setFlag(HasSVGRareDataFlag); }
     void clearHasSVGRareData() { clearFlag(HasSVGRareDataFlag); }
-#endif
 };
 
 // Used in Node::addSubresourceAttributeURLs() and in addSubresourceStyleURLs()
@@ -859,24 +903,37 @@ inline ContainerNode* Node::parentNodeGuaranteedHostFree() const
     return parentOrShadowHostNode();
 }
 
-inline void Node::reattach()
+inline void Node::reattach(const AttachContext& context)
 {
+    AttachContext reattachContext(context);
+    reattachContext.performingReattach = true;
+
     if (attached())
-        detach();
-    attach();
+        detach(reattachContext);
+    attach(reattachContext);
 }
 
-inline void Node::reattachIfAttached()
+inline void Node::lazyReattachIfAttached()
 {
     if (attached())
-        reattach();
+        lazyReattach();
 }
 
 inline void Node::lazyReattach(ShouldSetAttached shouldSetAttached)
 {
+    AttachContext context;
+    context.performingReattach = true;
+
     if (attached())
-        detach();
+        detach(context);
     lazyAttach(shouldSetAttached);
+}
+
+// Need a template since ElementShadow is not a Node, but has the style recalc methods.
+template<class T>
+inline bool shouldRecalcStyle(Node::StyleChange change, const T* node)
+{
+    return change >= Node::Inherit || node->childNeedsStyleRecalc() || node->needsStyleRecalc();
 }
 
 } //namespace

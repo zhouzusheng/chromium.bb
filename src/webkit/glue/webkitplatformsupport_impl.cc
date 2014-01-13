@@ -10,7 +10,6 @@
 
 #include "base/allocator/allocator_extension.h"
 #include "base/bind.h"
-#include "base/memory/discardable_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
@@ -19,46 +18,37 @@
 #include "base/platform_file.h"
 #include "base/process_util.h"
 #include "base/rand_util.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/sys_info.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "grit/webkit_chromium_resources.h"
 #include "grit/webkit_resources.h"
 #include "grit/webkit_strings.h"
+#include "net/base/data_url.h"
+#include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCookie.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebDiscardableMemory.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGestureCurve.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebPluginListBuilder.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
+#include "third_party/WebKit/public/web/WebFrameClient.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebScreenInfo.h"
+#include "third_party/WebKit/public/platform/WebCookie.h"
+#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/platform/WebDiscardableMemory.h"
+#include "third_party/WebKit/public/platform/WebGestureCurve.h"
+#include "third_party/WebKit/public/platform/WebPluginListBuilder.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
 #include "ui/base/layout.h"
 #include "webkit/base/file_path_string_conversions.h"
-#include "webkit/compositor_bindings/web_compositor_support_impl.h"
-#include "webkit/glue/fling_curve_configuration.h"
-#include "webkit/glue/touch_fling_gesture_curve.h"
-#include "webkit/glue/web_discardable_memory_impl.h"
+#include "webkit/common/user_agent/user_agent.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/websocketstreamhandle_impl.h"
-#include "webkit/glue/webthread_impl.h"
 #include "webkit/glue/weburlloader_impl.h"
-#include "webkit/glue/worker_task_runner.h"
-#include "webkit/media/audio_decoder.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/webplugininfo.h"
-#include "webkit/user_agent/user_agent.h"
-
-#if defined(OS_ANDROID)
-#include "webkit/glue/fling_animator_impl_android.h"
-#endif
 
 using WebKit::WebAudioBus;
 using WebKit::WebCookie;
@@ -67,7 +57,6 @@ using WebKit::WebLocalizedString;
 using WebKit::WebPluginListBuilder;
 using WebKit::WebString;
 using WebKit::WebSocketStreamHandle;
-using WebKit::WebThemeEngine;
 using WebKit::WebURL;
 using WebKit::WebURLError;
 using WebKit::WebURLLoader;
@@ -122,14 +111,6 @@ class MemoryUsageCache {
 
   base::Lock lock_;
 };
-
-#if defined(OS_ANDROID)
-void NullRunWebAudioMediaCodec(
-    base::SharedMemoryHandle encoded_data_handle,
-    base::FileDescriptor pcm_output,
-    size_t data_size) {
-}
-#endif
 
 }  // anonymous namespace
 
@@ -366,27 +347,13 @@ static int ToMessageID(WebLocalizedString::Name name) {
 }
 
 WebKitPlatformSupportImpl::WebKitPlatformSupportImpl()
-    : main_loop_(MessageLoop::current()),
+    : main_loop_(base::MessageLoop::current()),
       shared_timer_func_(NULL),
       shared_timer_fire_time_(0.0),
       shared_timer_fire_time_was_set_while_suspended_(false),
-      shared_timer_suspended_(0),
-      current_thread_slot_(&DestroyCurrentThread),
-      compositor_support_(new webkit::WebCompositorSupportImpl),
-      fling_curve_configuration_(new FlingCurveConfiguration) {
-}
+      shared_timer_suspended_(0) {}
 
 WebKitPlatformSupportImpl::~WebKitPlatformSupportImpl() {
-}
-
-void WebKitPlatformSupportImpl::SetFlingCurveParameters(
-    const std::vector<float>& new_touchpad,
-    const std::vector<float>& new_touchscreen) {
-  fling_curve_configuration_->SetCurveParameters(new_touchpad, new_touchscreen);
-}
-
-WebThemeEngine* WebKitPlatformSupportImpl::themeEngine() {
-  return &theme_engine_;
 }
 
 WebURLLoader* WebKitPlatformSupportImpl::createURLLoader() {
@@ -399,6 +366,20 @@ WebSocketStreamHandle* WebKitPlatformSupportImpl::createSocketStreamHandle() {
 
 WebString WebKitPlatformSupportImpl::userAgent(const WebURL& url) {
   return WebString::fromUTF8(webkit_glue::GetUserAgent(url));
+}
+
+WebData WebKitPlatformSupportImpl::parseDataURL(
+    const WebURL& url,
+    WebString& mimetype_out,
+    WebString& charset_out) {
+  std::string mime_type, char_set, data;
+  if (net::DataURL::Parse(url, &mime_type, &char_set, &data)
+      && net::IsSupportedMimeType(mime_type)) {
+    mimetype_out = WebString::fromUTF8(mime_type);
+    charset_out = WebString::fromUTF8(char_set);
+    return data;
+  }
+  return WebData();
 }
 
 WebURLError WebKitPlatformSupportImpl::cancelledError(
@@ -469,16 +450,19 @@ const unsigned char* WebKitPlatformSupportImpl::getTraceCategoryEnabledFlag(
 
 long* WebKitPlatformSupportImpl::getTraceSamplingState(
     const unsigned thread_bucket) {
-  switch(thread_bucket) {
-  case 0:
-    return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(0));
-  case 1:
-    return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(1));
-  case 2:
-    return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(2));
-  default:
-    NOTREACHED() << "Unknown thread bucket type.";
+  // Not supported in split-dll build. http://crbug.com/237249
+#if !defined(CHROME_SPLIT_DLL)
+  switch (thread_bucket) {
+    case 0:
+      return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(0));
+    case 1:
+      return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(1));
+    case 2:
+      return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(2));
+    default:
+      NOTREACHED() << "Unknown thread bucket type.";
   }
+#endif
   return NULL;
 }
 
@@ -661,7 +645,6 @@ const DataResource kDataResources[] = {
   { "genericCC", IDR_AUTOFILL_CC_GENERIC, ui::SCALE_FACTOR_100P },
   { "jcbCC", IDR_AUTOFILL_CC_JCB, ui::SCALE_FACTOR_100P },
   { "masterCardCC", IDR_AUTOFILL_CC_MASTERCARD, ui::SCALE_FACTOR_100P },
-  { "soloCC", IDR_AUTOFILL_CC_SOLO, ui::SCALE_FACTOR_100P },
   { "visaCC", IDR_AUTOFILL_CC_VISA, ui::SCALE_FACTOR_100P },
   { "generatePassword", IDR_PASSWORD_GENERATION_ICON, ui::SCALE_FACTOR_100P },
   { "generatePasswordHover",
@@ -697,25 +680,6 @@ WebData WebKitPlatformSupportImpl::loadResource(const char* name) {
 
   NOTREACHED() << "Unknown image resource " << name;
   return WebData();
-}
-
-bool WebKitPlatformSupportImpl::loadAudioResource(
-    WebKit::WebAudioBus* destination_bus, const char* audio_file_data,
-    size_t data_size, double sample_rate) {
-#if !defined(OS_ANDROID)
-  return webkit_media::DecodeAudioFileData(destination_bus,
-                                           audio_file_data,
-                                           data_size,
-                                           sample_rate);
-#else
-  webkit_media::WebAudioMediaCodecRunner runner = GetWebAudioMediaCodecRunner();
-  return webkit_media::DecodeAudioFileData(
-      destination_bus,
-      audio_file_data,
-      data_size,
-      sample_rate,
-      runner);
-#endif
 }
 
 WebString WebKitPlatformSupportImpl::queryLocalizedString(
@@ -810,30 +774,6 @@ void WebKitPlatformSupportImpl::stopSharedTimer() {
 void WebKitPlatformSupportImpl::callOnMainThread(
     void (*func)(void*), void* context) {
   main_loop_->PostTask(FROM_HERE, base::Bind(func, context));
-}
-
-WebKit::WebThread* WebKitPlatformSupportImpl::createThread(const char* name) {
-  return new WebThreadImpl(name);
-}
-
-WebKit::WebThread* WebKitPlatformSupportImpl::currentThread() {
-  WebThreadImplForMessageLoop* thread =
-      static_cast<WebThreadImplForMessageLoop*>(current_thread_slot_.Get());
-  if (thread)
-    return (thread);
-
-  scoped_refptr<base::MessageLoopProxy> message_loop =
-      base::MessageLoopProxy::current();
-  if (!message_loop)
-    return NULL;
-
-  thread = new WebThreadImplForMessageLoop(message_loop);
-  current_thread_slot_.Set(thread);
-  return thread;
-}
-
-WebKit::WebCompositorSupport* WebKitPlatformSupportImpl::compositorSupport() {
-  return compositor_support_.get();
 }
 
 base::PlatformFile WebKitPlatformSupportImpl::databaseOpenFile(
@@ -949,60 +889,5 @@ void WebKitPlatformSupportImpl::ResumeSharedTimer() {
         shared_timer_fire_time_ - monotonicallyIncreasingTime());
   }
 }
-
-// static
-void WebKitPlatformSupportImpl::DestroyCurrentThread(void* thread) {
-  WebThreadImplForMessageLoop* impl =
-      static_cast<WebThreadImplForMessageLoop*>(thread);
-  delete impl;
-}
-
-void WebKitPlatformSupportImpl::didStartWorkerRunLoop(
-    const WebKit::WebWorkerRunLoop& runLoop) {
-  WorkerTaskRunner* worker_task_runner = WorkerTaskRunner::Instance();
-  worker_task_runner->OnWorkerRunLoopStarted(runLoop);
-}
-
-void WebKitPlatformSupportImpl::didStopWorkerRunLoop(
-    const WebKit::WebWorkerRunLoop& runLoop) {
-  WorkerTaskRunner* worker_task_runner = WorkerTaskRunner::Instance();
-  worker_task_runner->OnWorkerRunLoopStopped(runLoop);
-}
-
-WebKit::WebGestureCurve* WebKitPlatformSupportImpl::createFlingAnimationCurve(
-    int device_source,
-    const WebKit::WebFloatPoint& velocity,
-    const WebKit::WebSize& cumulative_scroll) {
-
-#if defined(OS_ANDROID)
-  return FlingAnimatorImpl::CreateAndroidGestureCurve(velocity,
-                                                      cumulative_scroll);
-#endif
-
-  if (device_source == WebKit::WebGestureEvent::Touchscreen)
-    return fling_curve_configuration_->CreateForTouchScreen(velocity,
-                                                            cumulative_scroll);
-
-  return fling_curve_configuration_->CreateForTouchPad(velocity,
-                                                       cumulative_scroll);
-}
-
-WebKit::WebDiscardableMemory*
-    WebKitPlatformSupportImpl::allocateAndLockDiscardableMemory(size_t bytes) {
-  if (!base::DiscardableMemory::Supported())
-    return NULL;
-  scoped_ptr<WebDiscardableMemoryImpl> discardable(
-      new WebDiscardableMemoryImpl());
-  if (discardable->InitializeAndLock(bytes))
-    return discardable.release();
-  return NULL;
-}
-
-#if defined(OS_ANDROID)
-webkit_media::WebAudioMediaCodecRunner
-    WebKitPlatformSupportImpl::GetWebAudioMediaCodecRunner() {
-  return base::Bind(&NullRunWebAudioMediaCodec);
-}
-#endif
 
 }  // namespace webkit_glue

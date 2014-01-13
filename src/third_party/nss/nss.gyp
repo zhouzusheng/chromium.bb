@@ -985,10 +985,6 @@
         'SOFTOKEN_SHLIB_VERSION=\"3\"',
         'USE_UTIL_DIRECTLY',
       ],
-      'defines!': [
-        # Regrettably, NSS can't be compiled with NO_NSPR_10_SUPPORT yet.
-        'NO_NSPR_10_SUPPORT',
-      ],
       'include_dirs': [
         'nss/lib/base',
         'nss/lib/certdb',

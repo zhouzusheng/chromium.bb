@@ -41,6 +41,8 @@
 #include "WebFrame.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
+#include "WebHelperPluginImpl.h"
+#include "WebHitTestResult.h"
 #include "WebInputEvent.h"
 #include "WebSettings.h"
 #include "WebViewClient.h"
@@ -49,10 +51,11 @@
 #include "core/dom/Element.h"
 #include "core/html/HTMLDocument.h"
 #include "core/page/FrameView.h"
-#include <public/Platform.h>
-#include <public/WebSize.h>
-#include <public/WebThread.h>
-#include <public/WebUnitTestSupport.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebSize.h"
+#include "public/platform/WebThread.h"
+#include "public/platform/WebUnitTestSupport.h"
+#include "public/web/WebWidgetClient.h"
 
 using namespace WebKit;
 using WebKit::FrameTestHelpers::runPendingTasks;
@@ -159,6 +162,45 @@ private:
     int m_longpressY;
 };
 
+class HelperPluginCreatingWebViewClient : public WebViewClient {
+public:
+    // WebViewClient methods
+    virtual WebKit::WebWidget* createPopupMenu(WebKit::WebPopupType popupType) OVERRIDE
+    {
+        EXPECT_EQ(WebPopupTypeHelperPlugin, popupType);
+        m_helperPluginWebWidget = WebKit::WebHelperPlugin::create(this);
+        // The caller owns the object, but we retain a pointer for use in closeWidgetSoon().
+        return m_helperPluginWebWidget;
+    }
+
+    virtual void initializeHelperPluginWebFrame(WebKit::WebHelperPlugin* plugin) OVERRIDE
+    {
+        ASSERT_TRUE(m_webFrameClient);
+        plugin->initializeFrame(m_webFrameClient);
+    }
+
+    // WebWidgetClient methods
+    virtual void closeWidgetSoon() OVERRIDE
+    {
+        ASSERT_TRUE(m_helperPluginWebWidget);
+        m_helperPluginWebWidget->close();
+        m_helperPluginWebWidget = 0;
+    }
+
+    // Local methods
+    HelperPluginCreatingWebViewClient()
+        :   m_helperPluginWebWidget(0)
+        ,   m_webFrameClient(0)
+    {
+    }
+
+    void setWebFrameClient(WebFrameClient* client) { m_webFrameClient = client; }
+
+private:
+    WebWidget* m_helperPluginWebWidget;
+    WebFrameClient* m_webFrameClient;
+};
+
 class WebViewTest : public testing::Test {
 public:
     WebViewTest()
@@ -225,6 +267,30 @@ TEST_F(WebViewTest, ActiveState)
 
     webView->setIsActive(true);
     EXPECT_TRUE(webView->isActive());
+
+    webView->close();
+}
+
+TEST_F(WebViewTest, HitTestResultAtWithPageScale)
+{
+    std::string url = m_baseURL + "specify_size.html?" + "50px" + ":" + "50px";
+    URLTestHelpers::registerMockedURLLoad(toKURL(url), "specify_size.html");
+    WebView* webView = FrameTestHelpers::createWebViewAndLoad(url, true, 0);
+    webView->resize(WebSize(100, 100));
+    WebPoint hitPoint(75, 75);
+
+    // Image is at top left quandrant, so should not hit it.
+    WebHitTestResult negativeResult = webView->hitTestResultAt(hitPoint);
+    ASSERT_EQ(WebNode::ElementNode, negativeResult.node().nodeType());
+    EXPECT_FALSE(negativeResult.node().to<WebElement>().hasTagName("img"));
+    negativeResult.reset();
+
+    // Scale page up 2x so image should occupy the whole viewport.
+    webView->setPageScaleFactor(2.0f, WebPoint(0, 0));
+    WebHitTestResult positiveResult = webView->hitTestResultAt(hitPoint);
+    ASSERT_EQ(WebNode::ElementNode, positiveResult.node().nodeType());
+    EXPECT_TRUE(positiveResult.node().to<WebElement>().hasTagName("img"));
+    positiveResult.reset();
 
     webView->close();
 }
@@ -340,12 +406,11 @@ void WebViewTest::testTextInputType(WebTextInputType expectedType, const std::st
     URLTestHelpers::registerMockedURLFromBaseURL(WebString::fromUTF8(m_baseURL.c_str()), WebString::fromUTF8(htmlFile.c_str()));
     WebView* webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + htmlFile);
     webView->setInitialFocus(false);
-    EXPECT_EQ(expectedType, webView->textInputType());
+    EXPECT_EQ(expectedType, webView->textInputInfo().type);
     webView->close();
 }
 
-// Disabled for https://bugs.webkit.org/show_bug.cgi?id=78746#c29
-TEST_F(WebViewTest, DISABLED_TextInputType)
+TEST_F(WebViewTest, TextInputType)
 {
     testTextInputType(WebTextInputTypeText, "input_field_default.html");
     testTextInputType(WebTextInputTypePassword, "input_field_password.html");
@@ -354,15 +419,6 @@ TEST_F(WebViewTest, DISABLED_TextInputType)
     testTextInputType(WebTextInputTypeNumber, "input_field_number.html");
     testTextInputType(WebTextInputTypeTelephone, "input_field_tel.html");
     testTextInputType(WebTextInputTypeURL, "input_field_url.html");
-    testTextInputType(WebTextInputTypeDate, "input_field_date.html");
-#if ENABLE(INPUT_TYPE_DATETIME_INCOMPLETE)
-    testTextInputType(WebTextInputTypeDateTime, "input_field_datetime.html");
-#endif
-    testTextInputType(WebTextInputTypeDateTimeLocal, "input_field_datetimelocal.html");
-    testTextInputType(WebTextInputTypeMonth, "input_field_month.html");
-    testTextInputType(WebTextInputTypeTime, "input_field_time.html");
-    testTextInputType(WebTextInputTypeWeek, "input_field_week.html");
-
 }
 
 TEST_F(WebViewTest, SetEditableSelectionOffsetsAndTextInputInfo)
@@ -468,7 +524,7 @@ TEST_F(WebViewTest, IsSelectionAnchorFirst)
     webView->close();
 }
 
-TEST_F(WebViewTest, ResetScrollAndScaleState)
+TEST_F(WebViewTest, HistoryResetScrollAndScaleState)
 {
     URLTestHelpers::registerMockedURLFromBaseURL(WebString::fromUTF8(m_baseURL.c_str()), WebString::fromUTF8("hello_world.html"));
     WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(FrameTestHelpers::createWebViewAndLoad(m_baseURL + "hello_world.html"));
@@ -510,6 +566,54 @@ TEST_F(WebViewTest, ResetScrollAndScaleState)
     EXPECT_EQ(1.0f, webViewImpl->pageScaleFactor());
     EXPECT_EQ(0, webViewImpl->mainFrame()->scrollOffset().width);
     EXPECT_EQ(0, webViewImpl->mainFrame()->scrollOffset().height);
+    webViewImpl->close();
+}
+
+class EnterFullscreenWebViewClient : public WebViewClient {
+public:
+    // WebViewClient methods
+    virtual bool enterFullScreen() { return true; }
+    virtual void exitFullScreen() { }
+};
+
+
+TEST_F(WebViewTest, EnterFullscreenResetScrollAndScaleState)
+{
+    EnterFullscreenWebViewClient client;
+    URLTestHelpers::registerMockedURLFromBaseURL(WebString::fromUTF8(m_baseURL.c_str()), WebString::fromUTF8("hello_world.html"));
+    WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(FrameTestHelpers::createWebViewAndLoad(m_baseURL + "hello_world.html", true, 0, &client));
+    webViewImpl->settings()->setFullScreenEnabled(true);
+    webViewImpl->resize(WebSize(640, 480));
+    webViewImpl->layout();
+    EXPECT_EQ(0, webViewImpl->mainFrame()->scrollOffset().width);
+    EXPECT_EQ(0, webViewImpl->mainFrame()->scrollOffset().height);
+
+    // Make the page scale and scroll with the given paremeters.
+    webViewImpl->setPageScaleFactor(2.0f, WebPoint(116, 84));
+    EXPECT_EQ(2.0f, webViewImpl->pageScaleFactor());
+    EXPECT_EQ(116, webViewImpl->mainFrame()->scrollOffset().width);
+    EXPECT_EQ(84, webViewImpl->mainFrame()->scrollOffset().height);
+
+    RefPtr<WebCore::Element> element = static_cast<PassRefPtr<WebCore::Element> >(webViewImpl->mainFrame()->document().body());
+    webViewImpl->enterFullScreenForElement(element.get());
+    webViewImpl->willEnterFullScreen();
+    webViewImpl->didEnterFullScreen();
+
+    // Page scale factor must be 1.0 during fullscreen for elements to be sized
+    // properly.
+    EXPECT_EQ(1.0f, webViewImpl->pageScaleFactor());
+
+    // Make sure fullscreen nesting doesn't disrupt scroll/scale saving.
+    RefPtr<WebCore::Element> otherElement = static_cast<PassRefPtr<WebCore::Element> >(webViewImpl->mainFrame()->document().head());
+    webViewImpl->enterFullScreenForElement(otherElement.get());
+
+    // Confirm that exiting fullscreen restores the parameters.
+    webViewImpl->willExitFullScreen();
+    webViewImpl->didExitFullScreen();
+    EXPECT_EQ(2.0f, webViewImpl->pageScaleFactor());
+    EXPECT_EQ(116, webViewImpl->mainFrame()->scrollOffset().width);
+    EXPECT_EQ(84, webViewImpl->mainFrame()->scrollOffset().height);
+
     webViewImpl->close();
 }
 
@@ -807,6 +911,44 @@ TEST_F(WebViewTest, ConfirmCompositionTriggersAutofillTextChange)
 
     webView->setAutofillClient(0);
     webView->close();
+}
+
+TEST_F(WebViewTest, ShadowRoot)
+{
+    URLTestHelpers::registerMockedURLFromBaseURL(WebString::fromUTF8(m_baseURL.c_str()), WebString::fromUTF8("shadow_dom_test.html"));
+    WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(FrameTestHelpers::createWebViewAndLoad(m_baseURL + "shadow_dom_test.html", true));
+
+    WebDocument document = webViewImpl->mainFrame()->document();
+    {
+        WebElement elementWithShadowRoot = document.getElementById("shadowroot");
+        EXPECT_FALSE(elementWithShadowRoot.isNull());
+        WebNode shadowRoot = elementWithShadowRoot.shadowRoot();
+        EXPECT_FALSE(shadowRoot.isNull());
+    }
+    {
+        WebElement elementWithoutShadowRoot = document.getElementById("noshadowroot");
+        EXPECT_FALSE(elementWithoutShadowRoot.isNull());
+        WebNode shadowRoot = elementWithoutShadowRoot.shadowRoot();
+        EXPECT_TRUE(shadowRoot.isNull());
+    }
+    webViewImpl->close();
+}
+
+TEST_F(WebViewTest, HelperPlugin)
+{
+    HelperPluginCreatingWebViewClient client;
+    WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(FrameTestHelpers::createWebView(true, 0, &client));
+
+    WebFrameImpl* frame = static_cast<WebFrameImpl*>(webViewImpl->mainFrame());
+    client.setWebFrameClient(frame->client());
+
+    WebHelperPluginImpl* helperPlugin = webViewImpl->createHelperPlugin("dummy-plugin-type", frame->document());
+    EXPECT_TRUE(helperPlugin);
+    EXPECT_EQ(0, helperPlugin->getPlugin()); // Invalid plugin type means no plugin.
+
+    webViewImpl->closeHelperPluginSoon(helperPlugin);
+
+    webViewImpl->close();
 }
 
 }

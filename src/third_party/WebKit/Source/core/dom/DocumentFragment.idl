@@ -18,10 +18,13 @@
  */
 
 [
-    SkipVTableValidation
+    Constructor,
+    ConstructorCallWith=ScriptExecutionContext
 ] interface DocumentFragment : Node {
     // NodeSelector - Selector API
     [RaisesException] Element querySelector(DOMString selectors);
     [RaisesException] NodeList querySelectorAll(DOMString selectors);
 };
+
+DocumentFragment implements ParentNode;
 

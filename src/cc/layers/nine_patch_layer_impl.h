@@ -34,10 +34,11 @@ class CC_EXPORT NinePatchLayerImpl : public LayerImpl {
       OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
 
+  virtual bool WillDraw(DrawMode draw_mode,
+                        ResourceProvider* resource_provider) OVERRIDE;
   virtual void AppendQuads(QuadSink* quad_sink,
                            AppendQuadsData* append_quads_data) OVERRIDE;
   virtual ResourceProvider::ResourceId ContentsResourceId() const OVERRIDE;
-  virtual void DumpLayerProperties(std::string* str, int indent) const OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
 
   virtual base::DictionaryValue* LayerTreeAsJson() const OVERRIDE;

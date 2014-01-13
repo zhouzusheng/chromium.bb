@@ -28,6 +28,7 @@
 #include "config.h"
 #include "core/dom/ScriptExecutionContext.h"
 
+#include "core/dom/ContextLifecycleNotifier.h"
 #include "core/dom/ErrorEvent.h"
 #include "core/dom/EventTarget.h"
 #include "core/dom/MessagePort.h"
@@ -45,7 +46,7 @@
 
 namespace WTF {
 
-template<> struct SequenceMemoryInstrumentationTraits<WebCore::ContextDestructionObserver*> {
+template<> struct SequenceMemoryInstrumentationTraits<WebCore::ContextLifecycleObserver*> {
     template <typename I> static void reportMemoryUsage(I, I, MemoryClassInfo&) { }
 };
 
@@ -87,9 +88,7 @@ void ScriptExecutionContext::AddConsoleMessageTask::performTask(ScriptExecutionC
 }
 
 ScriptExecutionContext::ScriptExecutionContext()
-    : m_iteratingActiveDOMObjects(false)
-    , m_inDestructor(false)
-    , m_circularSequentialID(0)
+    : m_circularSequentialID(0)
     , m_inDispatchErrorEvent(false)
     , m_activeDOMObjectsAreSuspended(false)
     , m_reasonForSuspendingActiveDOMObjects(static_cast<ActiveDOMObject::ReasonForSuspension>(-1))
@@ -99,21 +98,11 @@ ScriptExecutionContext::ScriptExecutionContext()
 
 ScriptExecutionContext::~ScriptExecutionContext()
 {
-    m_inDestructor = true;
-    for (HashSet<ContextDestructionObserver*>::iterator iter = m_destructionObservers.begin(); iter != m_destructionObservers.end(); iter = m_destructionObservers.begin()) {
-        ContextDestructionObserver* observer = *iter;
-        m_destructionObservers.remove(observer);
-        ASSERT(observer->scriptExecutionContext() == this);
-        observer->contextDestroyed();
-    }
-
     HashSet<MessagePort*>::iterator messagePortsEnd = m_messagePorts.end();
     for (HashSet<MessagePort*>::iterator iter = m_messagePorts.begin(); iter != messagePortsEnd; ++iter) {
         ASSERT((*iter)->scriptExecutionContext() == this);
         (*iter)->contextDestroyed();
     }
-    if (m_publicURLManager)
-        m_publicURLManager->contextDestroyed();
 }
 
 void ScriptExecutionContext::processMessagePortMessagesSoon()
@@ -143,7 +132,7 @@ void ScriptExecutionContext::createdMessagePort(MessagePort* port)
 {
     ASSERT(port);
     ASSERT((isDocument() && isMainThread())
-        || (isWorkerContext() && currentThread() == static_cast<WorkerContext*>(this)->thread()->threadID()));
+        || (isWorkerContext() && static_cast<WorkerContext*>(this)->thread()->isCurrentThread()));
 
     m_messagePorts.add(port);
 }
@@ -152,39 +141,33 @@ void ScriptExecutionContext::destroyedMessagePort(MessagePort* port)
 {
     ASSERT(port);
     ASSERT((isDocument() && isMainThread())
-        || (isWorkerContext() && currentThread() == static_cast<WorkerContext*>(this)->thread()->threadID()));
+        || (isWorkerContext() && static_cast<WorkerContext*>(this)->thread()->isCurrentThread()));
 
     m_messagePorts.remove(port);
 }
 
 bool ScriptExecutionContext::canSuspendActiveDOMObjects()
 {
-    // No protection against m_activeDOMObjects changing during iteration: canSuspend() shouldn't execute arbitrary JS.
-    m_iteratingActiveDOMObjects = true;
-    ActiveDOMObjectsSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
-    for (ActiveDOMObjectsSet::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
-        ASSERT((*iter)->scriptExecutionContext() == this);
-        ASSERT((*iter)->suspendIfNeededCalled());
-        if (!(*iter)->canSuspend()) {
-            m_iteratingActiveDOMObjects = false;
-            return false;
-        }
+    return lifecycleNotifier()->canSuspendActiveDOMObjects();
+}
+
+bool ScriptExecutionContext::hasPendingActivity()
+{
+    if (lifecycleNotifier()->hasPendingActivity())
+        return true;
+
+    HashSet<MessagePort*>::const_iterator messagePortsEnd = m_messagePorts.end();
+    for (HashSet<MessagePort*>::const_iterator iter = m_messagePorts.begin(); iter != messagePortsEnd; ++iter) {
+        if ((*iter)->hasPendingActivity())
+            return true;
     }
-    m_iteratingActiveDOMObjects = false;
-    return true;
+
+    return false;
 }
 
 void ScriptExecutionContext::suspendActiveDOMObjects(ActiveDOMObject::ReasonForSuspension why)
 {
-    // No protection against m_activeDOMObjects changing during iteration: suspend() shouldn't execute arbitrary JS.
-    m_iteratingActiveDOMObjects = true;
-    ActiveDOMObjectsSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
-    for (ActiveDOMObjectsSet::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
-        ASSERT((*iter)->scriptExecutionContext() == this);
-        ASSERT((*iter)->suspendIfNeededCalled());
-        (*iter)->suspend(why);
-    }
-    m_iteratingActiveDOMObjects = false;
+    lifecycleNotifier()->notifySuspendingActiveDOMObjects(why);
     m_activeDOMObjectsAreSuspended = true;
     m_reasonForSuspendingActiveDOMObjects = why;
 }
@@ -192,70 +175,33 @@ void ScriptExecutionContext::suspendActiveDOMObjects(ActiveDOMObject::ReasonForS
 void ScriptExecutionContext::resumeActiveDOMObjects()
 {
     m_activeDOMObjectsAreSuspended = false;
-    // No protection against m_activeDOMObjects changing during iteration: resume() shouldn't execute arbitrary JS.
-    m_iteratingActiveDOMObjects = true;
-    ActiveDOMObjectsSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
-    for (ActiveDOMObjectsSet::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
-        ASSERT((*iter)->scriptExecutionContext() == this);
-        ASSERT((*iter)->suspendIfNeededCalled());
-        (*iter)->resume();
-    }
-    m_iteratingActiveDOMObjects = false;
+    lifecycleNotifier()->notifyResumingActiveDOMObjects();
 }
 
 void ScriptExecutionContext::stopActiveDOMObjects()
 {
     m_activeDOMObjectsAreStopped = true;
-    // No protection against m_activeDOMObjects changing during iteration: stop() shouldn't execute arbitrary JS.
-    m_iteratingActiveDOMObjects = true;
-    ActiveDOMObjectsSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
-    for (ActiveDOMObjectsSet::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
-        ASSERT((*iter)->scriptExecutionContext() == this);
-        ASSERT((*iter)->suspendIfNeededCalled());
-        (*iter)->stop();
-    }
-    m_iteratingActiveDOMObjects = false;
-
+    lifecycleNotifier()->notifyStoppingActiveDOMObjects();
     // Also close MessagePorts. If they were ActiveDOMObjects (they could be) then they could be stopped instead.
     closeMessagePorts();
 }
 
 void ScriptExecutionContext::suspendActiveDOMObjectIfNeeded(ActiveDOMObject* object)
 {
-    ASSERT(m_activeDOMObjects.contains(object));
+    ASSERT(lifecycleNotifier()->contains(object));
     // Ensure all ActiveDOMObjects are suspended also newly created ones.
     if (m_activeDOMObjectsAreSuspended)
         object->suspend(m_reasonForSuspendingActiveDOMObjects);
 }
 
-void ScriptExecutionContext::didCreateActiveDOMObject(ActiveDOMObject* object)
+void ScriptExecutionContext::wasObservedBy(ContextLifecycleObserver* observer, ContextLifecycleObserver::Type as)
 {
-    ASSERT(object);
-    ASSERT(!m_inDestructor);
-    if (m_iteratingActiveDOMObjects)
-        CRASH();
-    m_activeDOMObjects.add(object);
+    lifecycleNotifier()->addObserver(observer, as);
 }
 
-void ScriptExecutionContext::willDestroyActiveDOMObject(ActiveDOMObject* object)
+void ScriptExecutionContext::wasUnobservedBy(ContextLifecycleObserver* observer, ContextLifecycleObserver::Type as)
 {
-    ASSERT(object);
-    if (m_iteratingActiveDOMObjects)
-        CRASH();
-    m_activeDOMObjects.remove(object);
-}
-
-void ScriptExecutionContext::didCreateDestructionObserver(ContextDestructionObserver* observer)
-{
-    ASSERT(observer);
-    ASSERT(!m_inDestructor);
-    m_destructionObservers.add(observer);
-}
-
-void ScriptExecutionContext::willDestroyDestructionObserver(ContextDestructionObserver* observer)
-{
-    ASSERT(observer);
-    m_destructionObservers.remove(observer);
+    lifecycleNotifier()->removeObserver(observer, as);
 }
 
 void ScriptExecutionContext::closeMessagePorts() {
@@ -335,7 +281,7 @@ int ScriptExecutionContext::circularSequentialID()
 PublicURLManager& ScriptExecutionContext::publicURLManager()
 {
     if (!m_publicURLManager)
-        m_publicURLManager = PublicURLManager::create();
+        m_publicURLManager = PublicURLManager::create(this);
     return *m_publicURLManager;
 }
 
@@ -352,13 +298,24 @@ double ScriptExecutionContext::timerAlignmentInterval() const
     return DOMTimer::visiblePageAlignmentInterval();
 }
 
+ContextLifecycleNotifier* ScriptExecutionContext::lifecycleNotifier()
+{
+    if (!m_lifecycleNotifier)
+        m_lifecycleNotifier = const_cast<ScriptExecutionContext*>(this)->createLifecycleNotifier();
+    return m_lifecycleNotifier.get();
+}
+
+PassOwnPtr<ContextLifecycleNotifier> ScriptExecutionContext::createLifecycleNotifier()
+{
+    return ContextLifecycleNotifier::create(this);
+}
+
 void ScriptExecutionContext::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
     SecurityContext::reportMemoryUsage(memoryObjectInfo);
     info.addMember(m_messagePorts, "messagePorts");
-    info.addMember(m_destructionObservers, "destructionObservers");
-    info.addMember(m_activeDOMObjects, "activeDOMObjects");
+    info.addMember(m_lifecycleNotifier, "lifecycleObserver");
     info.addMember(m_timeouts, "timeouts");
     info.addMember(m_pendingExceptions, "pendingExceptions");
     info.addMember(m_publicURLManager, "publicURLManager");
@@ -370,7 +327,6 @@ ScriptExecutionContext::Task::~Task()
 
 void ScriptExecutionContext::setDatabaseContext(DatabaseContext* databaseContext)
 {
-    ASSERT(!m_databaseContext);
     m_databaseContext = databaseContext;
 }
 

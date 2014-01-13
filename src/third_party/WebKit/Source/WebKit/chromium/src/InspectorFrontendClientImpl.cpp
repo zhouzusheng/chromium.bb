@@ -40,8 +40,8 @@
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/platform/NotImplemented.h"
-#include <public/WebFloatPoint.h>
-#include <public/WebString.h>
+#include "public/platform/WebFloatPoint.h"
+#include "public/platform/WebString.h"
 #include <wtf/text/WTFString.h>
 
 using namespace WebCore;
@@ -67,7 +67,8 @@ void InspectorFrontendClientImpl::windowObjectCleared()
     v8::Handle<v8::Context> frameContext = m_frontendPage->mainFrame() ? m_frontendPage->mainFrame()->script()->currentWorldContext() : v8::Local<v8::Context>();
     v8::Context::Scope contextScope(frameContext);
 
-    ASSERT(!m_frontendHost);
+    if (m_frontendHost)
+        m_frontendHost->disconnectClient();
     m_frontendHost = InspectorFrontendHost::create(this, m_frontendPage);
     v8::Handle<v8::Value> frontendHostObj = toV8(m_frontendHost.get(), v8::Handle<v8::Object>(), frameContext->GetIsolate());
     v8::Handle<v8::Object> global = frameContext->Global();
@@ -94,9 +95,9 @@ void InspectorFrontendClientImpl::requestSetDockSide(DockSide side)
 {
     String sideString = "undocked";
     switch (side) {
-    case DOCKED_TO_RIGHT: sideString = "right"; break;
-    case DOCKED_TO_BOTTOM: sideString = "bottom"; break;
-    case UNDOCKED: sideString = "undocked"; break;
+    case DockedToRight: sideString = "right"; break;
+    case DockedToBottom: sideString = "bottom"; break;
+    case Undocked: sideString = "undocked"; break;
     }
     m_client->requestSetDockSide(sideString);
 }

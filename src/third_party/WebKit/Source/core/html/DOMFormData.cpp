@@ -32,21 +32,22 @@
 #include "core/html/DOMFormData.h"
 
 #include "core/fileapi/Blob.h"
-#include "core/html/HTMLFormControlElement.h"
 #include "core/html/HTMLFormElement.h"
-#include "core/platform/text/TextEncoding.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/TextEncoding.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-DOMFormData::DOMFormData(const TextEncoding& encoding)
+DOMFormData::DOMFormData(const WTF::TextEncoding& encoding)
     : FormDataList(encoding)
 {
+    ScriptWrappable::init(this);
 }
 
 DOMFormData::DOMFormData(HTMLFormElement* form)
     : FormDataList(UTF8Encoding())
 {
+    ScriptWrappable::init(this);
     if (!form)
         return;
 

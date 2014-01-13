@@ -37,13 +37,13 @@ public:
     virtual PassRefPtr<RenderStyle> createInnerTextStyle(const RenderStyle* startStyle) const = 0;
 
 protected:
-    RenderTextControl(Element*);
+    RenderTextControl(HTMLTextFormControlElement*);
 
     // This convenience function should not be made public because innerTextElement may outlive the render tree.
     HTMLElement* innerTextElement() const;
 
     int scrollbarThickness() const;
-    void adjustInnerTextStyle(const RenderStyle* startStyle, RenderStyle* textBlockStyle) const;
+    void adjustInnerTextStyle(RenderStyle* textBlockStyle) const;
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 

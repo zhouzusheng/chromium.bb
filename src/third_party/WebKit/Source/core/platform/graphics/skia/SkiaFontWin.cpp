@@ -31,22 +31,24 @@
 #include "config.h"
 #include "core/platform/graphics/skia/SkiaFontWin.h"
 
-#include "SkCanvas.h"
-#include "SkDevice.h"
-#include "SkPaint.h"
-#include "SkShader.h"
-#include "SkTemplates.h"
 #include "core/platform/graphics/Gradient.h"
+#include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/Pattern.h"
 #include "core/platform/graphics/SimpleFontData.h"
 #include "core/platform/graphics/chromium/FontPlatformDataChromiumWin.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
 #include "core/platform/graphics/transforms/AffineTransform.h"
+
+#include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkDevice.h"
+#include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkShader.h"
+#include "third_party/skia/include/core/SkTemplates.h"
 
 namespace WebCore {
 
 static void skiaDrawText(GraphicsContext* context,
                          const SkPoint& point,
+                         const SkRect& textRect,
                          SkPaint* paint,
                          const WORD* glyphs,
                          const int* advances,
@@ -70,7 +72,7 @@ static void skiaDrawText(GraphicsContext* context,
                        y + -SkIntToScalar(offsets[i].dv));
             x += SkIntToScalar(advances[i]);
         }
-        context->drawPosText(glyphs, numGlyphs * sizeof(uint16_t), pos, *paint);
+        context->drawPosText(glyphs, numGlyphs * sizeof(uint16_t), pos, textRect, *paint);
     } else {
         SkAutoSTArray<kLocalGlyphMax * 2, SkScalar> storage(numGlyphs);
         SkScalar* xpos = storage.get();
@@ -79,17 +81,17 @@ static void skiaDrawText(GraphicsContext* context,
             x += SkIntToScalar(advances[i]);
         }
         context->drawPosTextH(glyphs, numGlyphs * sizeof(uint16_t),
-                             xpos, y, *paint);
+                             xpos, y, textRect, *paint);
     }
 }
 
-static void setupPaintForFont(SkPaint* paint, PlatformContextSkia* pcs,
+static void setupPaintForFont(SkPaint* paint, GraphicsContext* context,
                               SkTypeface* face, float size, uint32_t textFlags)
 {
     paint->setTextSize(SkFloatToScalar(size));
     paint->setTypeface(face);
 
-    if (!pcs->couldUseLCDRenderedText()) {
+    if (!context->couldUseLCDRenderedText()) {
         textFlags &= ~SkPaint::kLCDRenderText_Flag;
         // If we *just* clear our request for LCD, then GDI seems to
         // sometimes give us AA text, and sometimes give us BW text. Since the
@@ -117,36 +119,36 @@ static void paintSkiaText(GraphicsContext* context, HFONT hfont,
                           const WORD* glyphs,
                           const int* advances,
                           const GOFFSET* offsets,
-                          const SkPoint* origin)
+                          const SkPoint& origin,
+                          const SkRect& textRect)
 {
-    PlatformContextSkia* platformContext = context->platformContext();
-    TextDrawingModeFlags textMode = platformContext->getTextDrawingMode();
+    TextDrawingModeFlags textMode = context->textDrawingMode();
     // Ensure font load for printing, because PDF device needs it.
-    if (platformContext->isVector())
+    if (context->isPrintingDevice())
         FontPlatformData::ensureFontLoaded(hfont);
 
     // Filling (if necessary). This is the common case.
     SkPaint paint;
-    platformContext->setupPaintForFilling(&paint);
+    context->setupPaintForFilling(&paint);
     paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-    setupPaintForFont(&paint, platformContext, face, size, textFlags);
+    setupPaintForFont(&paint, context, face, size, textFlags);
 
     bool didFill = false;
 
     if ((textMode & TextModeFill) && (SkColorGetA(paint.getColor()) || paint.getLooper())) {
-        skiaDrawText(context, *origin, &paint, &glyphs[0], &advances[0], &offsets[0], numGlyphs);
+        skiaDrawText(context, origin, textRect, &paint, &glyphs[0], &advances[0], &offsets[0], numGlyphs);
         didFill = true;
     }
 
     // Stroking on top (if necessary).
     if ((textMode & TextModeStroke)
-        && platformContext->getStrokeStyle() != NoStroke
-        && platformContext->getStrokeThickness() > 0) {
+        && context->strokeStyle() != NoStroke
+        && context->strokeThickness() > 0) {
 
         paint.reset();
-        platformContext->setupPaintForStroking(&paint, 0, 0);
+        context->setupPaintForStroking(&paint);
         paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-        setupPaintForFont(&paint, platformContext, face, size, textFlags);
+        setupPaintForFont(&paint, context, face, size, textFlags);
 
         if (didFill) {
             // If there is a shadow and we filled above, there will already be
@@ -161,7 +163,7 @@ static void paintSkiaText(GraphicsContext* context, HFONT hfont,
             paint.setLooper(0);
         }
 
-        skiaDrawText(context, *origin, &paint, &glyphs[0], &advances[0], &offsets[0], numGlyphs);
+        skiaDrawText(context, origin, textRect, &paint, &glyphs[0], &advances[0], &offsets[0], numGlyphs);
     }
 }
 
@@ -173,10 +175,11 @@ void paintSkiaText(GraphicsContext* context,
                    const WORD* glyphs,
                    const int* advances,
                    const GOFFSET* offsets,
-                   const SkPoint* origin)
+                   const SkPoint& origin,
+                   const SkRect& textRect)
 {
     paintSkiaText(context, data.hfont(), data.typeface(), data.size(), data.paintTextFlags(),
-                  numGlyphs, glyphs, advances, offsets, origin);
+                  numGlyphs, glyphs, advances, offsets, origin, textRect);
 }
 
 void paintSkiaText(GraphicsContext* context,
@@ -185,14 +188,15 @@ void paintSkiaText(GraphicsContext* context,
                    const WORD* glyphs,
                    const int* advances,
                    const GOFFSET* offsets,
-                   const SkPoint* origin)
+                   const SkPoint& origin,
+                   const SkRect& textRect)
 {
     int size;
     int paintTextFlags;
     SkTypeface* face = CreateTypefaceFromHFont(hfont, &size, &paintTextFlags);
     SkAutoUnref aur(face);
 
-    paintSkiaText(context, hfont, face, size, paintTextFlags, numGlyphs, glyphs, advances, offsets, origin);
+    paintSkiaText(context, hfont, face, size, paintTextFlags, numGlyphs, glyphs, advances, offsets, origin, textRect);
 }
 
 }  // namespace WebCore

@@ -32,12 +32,13 @@
 #define InspectorResourceAgent_h
 
 #include "InspectorFrontend.h"
+#include "bindings/v8/ScriptString.h"
 #include "core/inspector/InspectorBaseAgent.h"
-
-#include <wtf/PassOwnPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/Vector.h"
+#include "wtf/text/TextPosition.h"
+#include "wtf/text/WTFString.h"
 
 
 namespace WTF {
@@ -47,18 +48,18 @@ class String;
 namespace WebCore {
 
 class CachedResource;
+struct CachedResourceInitiatorInfo;
 class Document;
 class DocumentLoader;
 class FormData;
 class Frame;
 class HTTPHeaderMap;
-class InspectorArray;
 class InspectorClient;
 class InspectorFrontend;
-class InspectorObject;
 class InspectorPageAgent;
 class InspectorState;
 class InstrumentingAgents;
+class JSONObject;
 class KURL;
 class NetworkResourcesData;
 class Page;
@@ -92,21 +93,20 @@ public:
 
     ~InspectorResourceAgent();
 
-    void willSendResourceRequest(unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse);
+    void willSendRequest(unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const CachedResourceInitiatorInfo&);
     void markResourceAsCached(unsigned long identifier);
-    void didReceiveResourceResponse(unsigned long identifier, DocumentLoader* laoder, const ResourceResponse&, ResourceLoader*);
+    void didReceiveResourceResponse(unsigned long identifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
     void didReceiveData(unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
-    void didFinishLoading(unsigned long identifier, DocumentLoader*, double finishTime);
+    void didFinishLoading(unsigned long identifier, DocumentLoader*, double monotonicFinishTime);
     void didFailLoading(unsigned long identifier, DocumentLoader*, const ResourceError&);
-    void didLoadResourceFromMemoryCache(DocumentLoader*, CachedResource*);
-    void mainFrameNavigated(DocumentLoader*);
+    void didCommitLoad(Frame*, DocumentLoader*);
     void scriptImported(unsigned long identifier, const String& sourceString);
     void didReceiveScriptResponse(unsigned long identifier);
 
     void documentThreadableLoaderStartedLoadingForClient(unsigned long identifier, ThreadableLoaderClient*);
     void willLoadXHR(ThreadableLoaderClient*, const String& method, const KURL&, bool async, PassRefPtr<FormData> body, const HTTPHeaderMap& headers, bool includeCrendentials);
     void didFailXHRLoading(ThreadableLoaderClient*);
-    void didFinishXHRLoading(ThreadableLoaderClient*, unsigned long identifier, const String& sourceString, const String&, const String&, unsigned);
+    void didFinishXHRLoading(ThreadableLoaderClient*, unsigned long identifier, ScriptString sourceString, const String&, const String&, unsigned);
     void didReceiveXHRResponse(unsigned long identifier);
     void willLoadXHRSynchronously();
     void didLoadXHRSynchronously();
@@ -120,7 +120,7 @@ public:
     void didRecalculateStyle();
     void didScheduleStyleRecalculation(Document*);
 
-    PassRefPtr<TypeBuilder::Network::Initiator> buildInitiatorObject(Document*);
+    PassRefPtr<TypeBuilder::Network::Initiator> buildInitiatorObject(Document*, const CachedResourceInitiatorInfo&);
 
     void didCreateWebSocket(Document*, unsigned long identifier, const KURL& requestURL, const String&);
     void willSendWebSocketHandshakeRequest(Document*, unsigned long identifier, const WebSocketHandshakeRequest&);
@@ -137,7 +137,7 @@ public:
     virtual void enable(ErrorString*);
     virtual void disable(ErrorString*);
     virtual void setUserAgentOverride(ErrorString*, const String& userAgent);
-    virtual void setExtraHTTPHeaders(ErrorString*, const RefPtr<InspectorObject>&);
+    virtual void setExtraHTTPHeaders(ErrorString*, const RefPtr<JSONObject>&);
     virtual void getResponseBody(ErrorString*, const String& requestId, String* content, bool* base64Encoded);
 
     virtual void replayXHR(ErrorString*, const String& requestId);
@@ -147,6 +147,8 @@ public:
     virtual void canClearBrowserCookies(ErrorString*, bool*);
     virtual void clearBrowserCookies(ErrorString*);
     virtual void setCacheDisabled(ErrorString*, bool cacheDisabled);
+
+    virtual void loadResourceForFrontend(ErrorString*, const String& frameId, const String& url, PassRefPtr<LoadResourceForFrontendCallback>);
 
     virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 

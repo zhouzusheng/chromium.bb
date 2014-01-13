@@ -12,7 +12,7 @@
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "media/audio/audio_util.h"
 #include "media/base/audio_splicer.h"
@@ -42,13 +42,14 @@ AudioRendererImpl::AudioRendererImpl(
     const scoped_refptr<base::MessageLoopProxy>& message_loop,
     media::AudioRendererSink* sink,
     ScopedVector<AudioDecoder> decoders,
-    const SetDecryptorReadyCB& set_decryptor_ready_cb)
+    const SetDecryptorReadyCB& set_decryptor_ready_cb,
+    bool increase_preroll_on_underflow)
     : message_loop_(message_loop),
       weak_factory_(this),
       sink_(sink),
       decoder_selector_(new AudioDecoderSelector(
           message_loop, decoders.Pass(), set_decryptor_ready_cb)),
-      now_cb_(base::Bind(&base::Time::Now)),
+      now_cb_(base::Bind(&base::TimeTicks::Now)),
       state_(kUninitialized),
       sink_playing_(false),
       pending_read_(false),
@@ -57,6 +58,7 @@ AudioRendererImpl::AudioRendererImpl(
       audio_time_buffered_(kNoTimestamp()),
       current_time_(kNoTimestamp()),
       underflow_disabled_(false),
+      increase_preroll_on_underflow_(increase_preroll_on_underflow),
       preroll_aborted_(false),
       actual_frames_per_buffer_(0) {
 }
@@ -147,7 +149,7 @@ void AudioRendererImpl::Stop(const base::Closure& callback) {
   // TODO(scherkus): Consider invalidating |weak_factory_| and replacing
   // task-running guards that check |state_| with DCHECK().
 
-  if (sink_) {
+  if (sink_.get()) {
     sink_->Stop();
     sink_ = NULL;
   }
@@ -212,7 +214,7 @@ void AudioRendererImpl::Initialize(DemuxerStream* stream,
   DCHECK(!disabled_cb.is_null());
   DCHECK(!error_cb.is_null());
   DCHECK_EQ(kUninitialized, state_);
-  DCHECK(sink_);
+  DCHECK(sink_.get());
 
   weak_this_ = weak_factory_.GetWeakPtr();
   init_cb_ = init_cb;
@@ -236,7 +238,7 @@ void AudioRendererImpl::OnDecoderSelected(
   scoped_ptr<AudioDecoderSelector> deleter(decoder_selector_.Pass());
 
   if (state_ == kStopped) {
-    DCHECK(!sink_);
+    DCHECK(!sink_.get());
     return;
   }
 
@@ -274,7 +276,7 @@ void AudioRendererImpl::OnDecoderSelected(
 
   HistogramRendererEvent(INITIALIZED);
 
-  sink_->Initialize(audio_parameters_, weak_this_);
+  sink_->Initialize(audio_parameters_, weak_this_.get());
   sink_->Start();
 
   // Some sinks play on start...
@@ -284,7 +286,7 @@ void AudioRendererImpl::OnDecoderSelected(
   base::ResetAndReturn(&init_cb_).Run(PIPELINE_OK);
 }
 
-void AudioRendererImpl::ResumeAfterUnderflow(bool buffer_more_audio) {
+void AudioRendererImpl::ResumeAfterUnderflow() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
   if (state_ == kUnderflow) {
@@ -294,7 +296,7 @@ void AudioRendererImpl::ResumeAfterUnderflow(bool buffer_more_audio) {
     // number of bytes that need to be buffered for preroll to complete)
     // does not increase due to an aborted preroll.
     // TODO(vrk): Fix this bug correctly! (crbug.com/151352)
-    if (buffer_more_audio && !preroll_aborted_)
+    if (increase_preroll_on_underflow_ && !preroll_aborted_)
       algorithm_->IncreaseQueueCapacity();
 
     state_ = kRebuffering;
@@ -303,7 +305,7 @@ void AudioRendererImpl::ResumeAfterUnderflow(bool buffer_more_audio) {
 
 void AudioRendererImpl::SetVolume(float volume) {
   DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK(sink_);
+  DCHECK(sink_.get());
   sink_->SetVolume(volume);
 }
 
@@ -330,7 +332,7 @@ void AudioRendererImpl::DecodedAudioReady(
   }
 
   DCHECK_EQ(status, AudioDecoder::kOk);
-  DCHECK(buffer);
+  DCHECK(buffer.get());
 
   if (!splicer_->AddInput(buffer)) {
     HandleAbortedReadOrDecodeError(true);
@@ -436,7 +438,7 @@ bool AudioRendererImpl::CanRead_Locked() {
 void AudioRendererImpl::SetPlaybackRate(float playback_rate) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_GE(playback_rate, 0);
-  DCHECK(sink_);
+  DCHECK(sink_.get());
 
   // We have two cases here:
   // Play: current_playback_rate == 0 && playback_rate != 0
@@ -453,8 +455,8 @@ void AudioRendererImpl::SetPlaybackRate(float playback_rate) {
 
 bool AudioRendererImpl::IsBeforePrerollTime(
     const scoped_refptr<DataBuffer>& buffer) {
-  return (state_ == kPrerolling) && buffer && !buffer->IsEndOfStream() &&
-      (buffer->GetTimestamp() + buffer->GetDuration()) < preroll_timestamp_;
+  return (state_ == kPrerolling) && buffer.get() && !buffer->IsEndOfStream() &&
+         (buffer->GetTimestamp() + buffer->GetDuration()) < preroll_timestamp_;
 }
 
 int AudioRendererImpl::Render(AudioBus* audio_bus,
@@ -522,7 +524,7 @@ uint32 AudioRendererImpl::FillBuffer(uint8* dest,
     // Otherwise the buffer has data we can send to the device.
     frames_written = algorithm_->FillBuffer(dest, requested_frames);
     if (frames_written == 0) {
-      base::Time now = now_cb_.Run();
+      const base::TimeTicks now = now_cb_.Run();
 
       if (received_end_of_stream_ && !rendered_end_of_stream_ &&
           now >= earliest_end_time_) {
@@ -596,7 +598,8 @@ uint32 AudioRendererImpl::FillBuffer(uint8* dest,
 }
 
 void AudioRendererImpl::UpdateEarliestEndTime_Locked(
-    int frames_filled, base::TimeDelta playback_delay, base::Time time_now) {
+    int frames_filled, const base::TimeDelta& playback_delay,
+    const base::TimeTicks& time_now) {
   if (frames_filled <= 0)
     return;
 

@@ -6,8 +6,9 @@
 
 #include "base/callback_helpers.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -18,15 +19,35 @@
 
 namespace net {
 
+namespace {
+
+// Note: these values must be kept in sync with the corresponding values in:
+// tools/metrics/histograms/histograms.xml
+enum HandshakeState {
+  STATE_STARTED = 0,
+  STATE_ENCRYPTION_ESTABLISHED = 1,
+  STATE_HANDSHAKE_CONFIRMED = 2,
+  STATE_FAILED = 3,
+  NUM_HANDSHAKE_STATES = 4
+};
+
+void RecordHandshakeState(HandshakeState state) {
+  UMA_HISTOGRAM_ENUMERATION("Net.QuicHandshakeState", state,
+                            NUM_HANDSHAKE_STATES);
+}
+
+}  // namespace
+
 QuicClientSession::QuicClientSession(
     QuicConnection* connection,
     DatagramClientSocket* socket,
     QuicStreamFactory* stream_factory,
     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
     const string& server_hostname,
+    const QuicConfig& config,
     QuicCryptoClientConfig* crypto_config,
     NetLog* net_log)
-    : QuicSession(connection, false),
+    : QuicSession(connection, config, false),
       weak_factory_(this),
       stream_factory_(stream_factory),
       socket_(socket),
@@ -35,13 +56,11 @@ QuicClientSession::QuicClientSession(
       num_total_streams_(0),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_QUIC_SESSION)),
       logger_(net_log_) {
-  config_.SetDefaults();
   crypto_stream_.reset(
       crypto_client_stream_factory ?
           crypto_client_stream_factory->CreateQuicCryptoClientStream(
-              server_hostname, config_, this, crypto_config) :
-          new QuicCryptoClientStream(
-              server_hostname, config_, this, crypto_config));
+              server_hostname, this, crypto_config) :
+          new QuicCryptoClientStream(server_hostname, this, crypto_config));
 
   connection->set_debug_visitor(&logger_);
   // TODO(rch): pass in full host port proxy pair
@@ -51,9 +70,22 @@ QuicClientSession::QuicClientSession(
 }
 
 QuicClientSession::~QuicClientSession() {
-  DCHECK(callback_.is_null());
   connection()->set_debug_visitor(NULL);
   net_log_.EndEvent(NetLog::TYPE_QUIC_SESSION);
+
+  if (IsEncryptionEstablished())
+    RecordHandshakeState(STATE_ENCRYPTION_ESTABLISHED);
+  if (IsCryptoHandshakeConfirmed())
+    RecordHandshakeState(STATE_HANDSHAKE_CONFIRMED);
+  else
+    RecordHandshakeState(STATE_FAILED);
+
+  UMA_HISTOGRAM_COUNTS("Net.QuicNumSentClientHellos",
+                       crypto_stream_->num_sent_client_hellos());
+  if (IsCryptoHandshakeConfirmed()) {
+    UMA_HISTOGRAM_COUNTS("Net.QuicNumSentClientHellosCryptoHandshakeConfirmed",
+                         crypto_stream_->num_sent_client_hellos());
+  }
 }
 
 QuicReliableClientStream* QuicClientSession::CreateOutgoingReliableStream() {
@@ -83,6 +115,7 @@ QuicCryptoClientStream* QuicClientSession::GetCryptoStream() {
 };
 
 int QuicClientSession::CryptoConnect(const CompletionCallback& callback) {
+  RecordHandshakeState(STATE_STARTED);
   if (!crypto_stream_->CryptoConnect()) {
     // TODO(wtc): change crypto_stream_.CryptoConnect() to return a
     // QuicErrorCode and map it to a net error code.
@@ -133,7 +166,8 @@ void QuicClientSession::StartReading() {
     return;
   }
   read_pending_ = true;
-  int rv = socket_->Read(read_buffer_, read_buffer_->size(),
+  int rv = socket_->Read(read_buffer_.get(),
+                         read_buffer_->size(),
                          base::Bind(&QuicClientSession::OnReadComplete,
                                     weak_factory_.GetWeakPtr()));
   if (rv == ERR_IO_PENDING) {
@@ -143,7 +177,7 @@ void QuicClientSession::StartReading() {
   // Data was read, process it.
   // Schedule the work through the message loop to avoid recursive
   // callbacks.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&QuicClientSession::OnReadComplete,
                  weak_factory_.GetWeakPtr(), rv));
@@ -166,8 +200,8 @@ void QuicClientSession::CloseSessionOnError(int error) {
   stream_factory_->OnSessionClose(this);
 }
 
-Value* QuicClientSession::GetInfoAsValue(const HostPortPair& pair) const {
-  DictionaryValue* dict = new DictionaryValue();
+base::Value* QuicClientSession::GetInfoAsValue(const HostPortPair& pair) const {
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("host_port_pair", pair.ToString());
   dict->SetInteger("open_streams", GetNumOpenStreams());
   dict->SetInteger("total_streams", num_total_streams_);
@@ -178,8 +212,10 @@ Value* QuicClientSession::GetInfoAsValue(const HostPortPair& pair) const {
 
 void QuicClientSession::OnReadComplete(int result) {
   read_pending_ = false;
-  // TODO(rch): Inform the connection about the result.
-  if (result <= 0) {
+  if (result == 0)
+    result = ERR_CONNECTION_CLOSED;
+
+  if (result < 0) {
     DLOG(INFO) << "Closing session on read error: " << result;
     CloseSessionOnError(result);
     return;

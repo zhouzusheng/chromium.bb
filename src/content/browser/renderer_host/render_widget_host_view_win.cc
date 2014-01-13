@@ -6,12 +6,12 @@
 
 #include <dwmapi.h>
 #include <InputScope.h>
+#include <wtsapi32.h>
+#pragma comment(lib, "wtsapi32.lib")
 
 #include <algorithm>
 #include <map>
 #include <stack>
-#include <wtsapi32.h>
-#pragma comment(lib, "wtsapi32.lib")
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -40,7 +40,6 @@
 #include "content/browser/renderer_host/ui_events_helper.h"
 #include "content/common/accessibility_messages.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/common/plugin_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
@@ -52,11 +51,10 @@
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/process_type.h"
 #include "skia/ext/skia_utils_win.h"
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/win/WebInputEventFactory.h"
 #include "third_party/skia/include/core/SkRegion.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/win/WebInputEventFactory.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/win/WebScreenInfoFactory.h"
 #include "ui/base/events/event.h"
 #include "ui/base/events/event_utils.h"
 #include "ui/base/ime/composition_text.h"
@@ -74,7 +72,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
-#include "webkit/glue/webcursor.h"
+#include "webkit/common/cursors/webcursor.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
@@ -307,11 +305,31 @@ bool ShouldSendPinchGesture() {
   return pinch_allowed;
 }
 
-void GetScreenInfoForWindow(WebKit::WebScreenInfo* results,
-                            gfx::NativeViewId id) {
-  *results = WebKit::WebScreenInfoFactory::screenInfo(
-      gfx::NativeViewFromId(id));
-  results->deviceScaleFactor = ui::win::GetDeviceScaleFactor();
+void GetScreenInfoForWindow(gfx::NativeViewId id,
+                            WebKit::WebScreenInfo* results) {
+  HWND window = gfx::NativeViewFromId(id);
+
+  HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY);
+
+  MONITORINFOEX monitor_info;
+  monitor_info.cbSize = sizeof(MONITORINFOEX);
+  if (!GetMonitorInfo(monitor, &monitor_info))
+    return;
+
+  DEVMODE dev_mode;
+  dev_mode.dmSize = sizeof(dev_mode);
+  dev_mode.dmDriverExtra = 0;
+  EnumDisplaySettings(monitor_info.szDevice, ENUM_CURRENT_SETTINGS, &dev_mode);
+
+  WebKit::WebScreenInfo screen_info;
+  screen_info.depth = dev_mode.dmBitsPerPel;
+  screen_info.depthPerComponent = dev_mode.dmBitsPerPel / 3;  // Assumes RGB
+  screen_info.deviceScaleFactor = ui::win::GetDeviceScaleFactor();
+  screen_info.isMonochrome = dev_mode.dmColor == DMCOLOR_MONOCHROME;
+  screen_info.rect = gfx::Rect(monitor_info.rcMonitor);
+  screen_info.availableRect = gfx::Rect(monitor_info.rcWork);
+
+  *results = screen_info;
 }
 
 void SetDwmPresentParameters(HWND window) {
@@ -489,6 +507,8 @@ void RenderWidgetHostViewWin::WasHidden() {
 
   if (GetBrowserAccessibilityManager())
     GetBrowserAccessibilityManager()->WasHidden();
+
+  web_contents_switch_paint_time_ = base::TimeTicks();
 }
 
 void RenderWidgetHostViewWin::SetSize(const gfx::Size& size) {
@@ -681,13 +701,13 @@ void RenderWidgetHostViewWin::SetIsLoading(bool is_loading) {
   UpdateCursorIfOverSelf();
 }
 
-void RenderWidgetHostViewWin::TextInputStateChanged(
-    const ViewHostMsg_TextInputState_Params& params) {
-  if (text_input_type_ != params.type ||
-      can_compose_inline_ != params.can_compose_inline) {
-    const bool text_input_type_changed = (text_input_type_ != params.type);
-    text_input_type_ = params.type;
-    can_compose_inline_ = params.can_compose_inline;
+void RenderWidgetHostViewWin::TextInputTypeChanged(ui::TextInputType type,
+                                                   bool can_compose_inline) {
+  if (text_input_type_ != type ||
+      can_compose_inline_ != can_compose_inline) {
+    const bool text_input_type_changed = (text_input_type_ != type);
+    text_input_type_ = type;
+    can_compose_inline_ = can_compose_inline;
     UpdateIMEState();
     if (text_input_type_changed)
       UpdateInputScopeIfNecessary(text_input_type_);
@@ -748,7 +768,9 @@ void RenderWidgetHostViewWin::Redraw() {
 void RenderWidgetHostViewWin::DidUpdateBackingStore(
     const gfx::Rect& scroll_rect,
     const gfx::Vector2d& scroll_delta,
-    const std::vector<gfx::Rect>& copy_rects) {
+    const std::vector<gfx::Rect>& copy_rects,
+    const ui::LatencyInfo& latency_info) {
+  software_latency_info_.MergeWith(latency_info);
   if (is_hidden_)
     return;
 
@@ -792,6 +814,8 @@ bool RenderWidgetHostViewWin::CanSubscribeFrame() const {
 
 void RenderWidgetHostViewWin::WillWmDestroy() {
   CleanupCompositorWindow();
+  if (base::win::IsTSFAwareRequired() && GetFocus() == m_hWnd)
+    ui::TSFBridge::GetInstance()->RemoveFocusedClient(this);
 }
 
 void RenderWidgetHostViewWin::Destroy() {
@@ -900,7 +924,7 @@ void RenderWidgetHostViewWin::SetBackground(const SkBitmap& background) {
 }
 
 void RenderWidgetHostViewWin::ProcessAckedTouchEvent(
-    const WebKit::WebTouchEvent& touch, InputEventAckState ack_result) {
+    const TouchEventWithLatencyInfo& touch, InputEventAckState ack_result) {
   DCHECK(touch_events_enabled_);
 
   ScopedVector<ui::TouchEvent> events;
@@ -911,6 +935,10 @@ void RenderWidgetHostViewWin::ProcessAckedTouchEvent(
       INPUT_EVENT_ACK_STATE_CONSUMED) ? ui::ER_HANDLED : ui::ER_UNHANDLED;
   for (ScopedVector<ui::TouchEvent>::iterator iter = events.begin(),
       end = events.end(); iter != end; ++iter)  {
+    (*iter)->latency()->AddLatencyNumber(
+        ui::INPUT_EVENT_LATENCY_ACKED_COMPONENT,
+        static_cast<int64>(ack_result),
+        0);
     scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
     gestures.reset(gesture_recognizer_->ProcessTouchEventForGesture(
         *(*iter), result, this));
@@ -967,7 +995,8 @@ bool RenderWidgetHostViewWin::DispatchCancelTouchEvent(
   WebKit::WebTouchEvent cancel_event;
   cancel_event.type = WebKit::WebInputEvent::TouchCancel;
   cancel_event.timeStampSeconds = event->time_stamp().InSecondsF();
-  render_widget_host_->ForwardTouchEvent(cancel_event);
+  render_widget_host_->ForwardTouchEventWithLatencyInfo(
+      cancel_event, *event->latency());
   return true;
 }
 
@@ -1034,6 +1063,10 @@ void RenderWidgetHostViewWin::InsertChar(char16 ch, int flags) {
   }
   // TODO(nona): Implement this function.
   NOTIMPLEMENTED();
+}
+
+gfx::NativeWindow RenderWidgetHostViewWin::GetAttachedWindow() const {
+  return m_hWnd;
 }
 
 ui::TextInputType RenderWidgetHostViewWin::GetTextInputType() const {
@@ -1389,6 +1422,10 @@ void RenderWidgetHostViewWin::OnPaint(HDC unused_dc) {
       // recorded.
       web_contents_switch_paint_time_ = TimeTicks();
     }
+
+    software_latency_info_.swap_timestamp = TimeTicks::HighResNow();
+    render_widget_host_->FrameSwapped(software_latency_info_);
+    software_latency_info_.Clear();
   } else {
     DrawBackground(paint_dc.m_ps.rcPaint, &paint_dc);
     if (whiteout_start_time_.is_null())
@@ -1766,6 +1803,44 @@ LRESULT RenderWidgetHostViewWin::OnMouseEvent(UINT message, WPARAM wparam,
                 reinterpret_cast<LPARAM>(&msg));
   }
 
+  // Due to a bug in Windows, the simulated mouse events for a touch event
+  // outside our bounds are delivered to us if we were previously focused
+  // causing crbug.com/159982. As a workaround, we check if this event is a
+  // simulated mouse event outside our bounds, and if so, we send it to the
+  // right window.
+  if ((message == WM_LBUTTONDOWN || message == WM_LBUTTONUP) &&
+      ui::IsMouseEventFromTouch(message)) {
+    CPoint cursor_pos(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
+    ClientToScreen(&cursor_pos);
+    if (!GetPixelBounds().Contains(cursor_pos.x, cursor_pos.y)) {
+      HWND window = WindowFromPoint(cursor_pos);
+      if (window) {
+        LRESULT nc_hit_result = SendMessage(window, WM_NCHITTEST, 0,
+            MAKELPARAM(cursor_pos.x, cursor_pos.y));
+        const bool in_client_area = (nc_hit_result == HTCLIENT);
+        int event_type;
+        if (message == WM_LBUTTONDOWN)
+          event_type = in_client_area ? WM_LBUTTONDOWN : WM_NCLBUTTONDOWN;
+        else
+          event_type = in_client_area ? WM_LBUTTONUP : WM_NCLBUTTONUP;
+
+        // Convert the coordinates to the target window.
+        RECT window_bounds;
+        ::GetWindowRect(window, &window_bounds);
+        int window_x = cursor_pos.x - window_bounds.left;
+        int window_y = cursor_pos.y - window_bounds.top;
+        if (in_client_area) {
+          ::PostMessage(window, event_type, wparam,
+              MAKELPARAM(window_x, window_y));
+        } else {
+          ::PostMessage(window, event_type, nc_hit_result,
+              MAKELPARAM(cursor_pos.x, cursor_pos.y));
+        }
+        return 0;
+      }
+    }
+  }
+
   // TODO(jcampan): I am not sure if we should forward the message to the
   // WebContentsImpl first in the case of popups.  If we do, we would need to
   // convert the click from the popup window coordinates to the WebContentsImpl'
@@ -1950,9 +2025,15 @@ LRESULT RenderWidgetHostViewWin::OnWheelEvent(UINT message, WPARAM wparam,
   }
 
   if (render_widget_host_) {
-    render_widget_host_->ForwardWheelEvent(
-        WebInputEventFactory::mouseWheelEvent(m_hWnd, message, wparam,
-                                              lparam));
+    WebKit::WebMouseWheelEvent wheel_event =
+        WebInputEventFactory::mouseWheelEvent(m_hWnd, message, wparam, lparam);
+    float scale = ui::win::GetDeviceScaleFactor();
+    wheel_event.x /= scale;
+    wheel_event.y /= scale;
+    wheel_event.deltaX /= scale;
+    wheel_event.deltaY /= scale;
+
+    render_widget_host_->ForwardWheelEvent(wheel_event);
   }
   handled = TRUE;
   return 0;
@@ -2119,9 +2200,11 @@ bool WebTouchState::UpdateTouchPoint(
   if (touch_input->dwMask & TOUCHINPUTMASKF_CONTACTAREA) {
     // Some touch drivers send a contact area of "-1", yet flag it as valid.
     radius_x = std::max(1,
-        static_cast<int>(TOUCH_COORD_TO_PIXEL(touch_input->cxContact)));
+        static_cast<int>(TOUCH_COORD_TO_PIXEL(touch_input->cxContact) /
+                         ui::win::GetUndocumentedDPIScale()));
     radius_y = std::max(1,
-        static_cast<int>(TOUCH_COORD_TO_PIXEL(touch_input->cyContact)));
+        static_cast<int>(TOUCH_COORD_TO_PIXEL(touch_input->cyContact) /
+                         ui::win::GetUndocumentedDPIScale()));
   }
 
   // Detect and exclude stationary moves.
@@ -2137,8 +2220,9 @@ bool WebTouchState::UpdateTouchPoint(
   touch_point->screenPosition.x = coordinates.x;
   touch_point->screenPosition.y = coordinates.y;
   window_->ScreenToClient(&coordinates);
-  touch_point->position.x = coordinates.x;
-  touch_point->position.y = coordinates.y;
+  static float scale = ui::win::GetDeviceScaleFactor();
+  touch_point->position.x = coordinates.x / scale;
+  touch_point->position.y = coordinates.y / scale;
   touch_point->radiusX = radius_x;
   touch_point->radiusY = radius_y;
   touch_point->force = 0;
@@ -2195,7 +2279,8 @@ LRESULT RenderWidgetHostViewWin::OnTouchEvent(UINT message, WPARAM wparam,
     start += touch_state_->UpdateTouchPoints(points + start, total - start);
     if (should_forward) {
       if (touch_state_->is_changed())
-        render_widget_host_->ForwardTouchEvent(touch_state_->touch_event());
+        render_widget_host_->ForwardTouchEventWithLatencyInfo(
+            touch_state_->touch_event(), ui::LatencyInfo());
     } else {
       const WebKit::WebTouchEvent& touch_event = touch_state_->touch_event();
       base::TimeDelta timestamp = base::TimeDelta::FromMilliseconds(
@@ -2432,7 +2517,7 @@ void RenderWidgetHostViewWin::AcceleratedPaint(HDC dc) {
 }
 
 void RenderWidgetHostViewWin::GetScreenInfo(WebKit::WebScreenInfo* results) {
-  GetScreenInfoForWindow(results, GetNativeViewId());
+  GetScreenInfoForWindow(GetNativeViewId(), results);
 }
 
 gfx::Rect RenderWidgetHostViewWin::GetBoundsInRootWindow() {
@@ -2836,7 +2921,7 @@ void RenderWidgetHostViewWin::ForwardMouseEventToRenderer(UINT message,
   gfx::Point point = ui::win::ScreenToDIPPoint(
       gfx::Point(static_cast<short>(LOWORD(lparam)),
                  static_cast<short>(HIWORD(lparam))));
-  lparam = (point.y() << 16) + point.x();
+  lparam = MAKELPARAM(point.x(), point.y());
 
   WebMouseEvent event(
       WebInputEventFactory::mouseEvent(m_hWnd, message, wparam, lparam));
@@ -3139,7 +3224,7 @@ RenderWidgetHostView* RenderWidgetHostView::CreateViewForWidget(
 // static
 void RenderWidgetHostViewPort::GetDefaultScreenInfo(
       WebKit::WebScreenInfo* results) {
-  GetScreenInfoForWindow(results, 0);
+  GetScreenInfoForWindow(0, results);
 }
 
 }  // namespace content

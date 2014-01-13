@@ -7,12 +7,12 @@
 
 #include <set>
 #include <string>
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/sys_info.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gles2_cmd_validation.h"
-#include "gpu/command_buffer/service/gpu_driver_bug_workaround_type.h"
+#include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/gpu_export.h"
 
 class CommandLine;
@@ -44,6 +44,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool enable_shader_name_hashing;
     bool enable_samplers;
     bool ext_draw_buffers;
+    bool ext_frag_depth;
   };
 
   struct Workarounds {

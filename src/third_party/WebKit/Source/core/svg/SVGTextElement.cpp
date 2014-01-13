@@ -20,19 +20,15 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGTextElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/transforms/AffineTransform.h"
-#include "core/rendering/style/SVGRenderStyle.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGText.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGTSpanElement.h"
 
 namespace WebCore {
 
@@ -62,7 +58,7 @@ bool SVGTextElement::isSupportedAttribute(const QualifiedName& attrName)
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty())
         supportedAttributes.add(SVGNames::transformAttr);
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGTextElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -136,9 +132,9 @@ AffineTransform* SVGTextElement::supplementalTransform()
     return m_supplementalTransform.get();
 }
 
-RenderObject* SVGTextElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGTextElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGText(this);
+    return new (document()->renderArena()) RenderSVGText(this);
 }
 
 bool SVGTextElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
@@ -179,5 +175,3 @@ void SVGTextElement::svgAttributeChanged(const QualifiedName& attrName)
 }
 
 }
-
-#endif // ENABLE(SVG)

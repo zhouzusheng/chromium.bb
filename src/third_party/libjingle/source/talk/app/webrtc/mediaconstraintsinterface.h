@@ -75,6 +75,7 @@ class MediaConstraintsInterface {
   // Constraint keys used by a local audio source.
   // These keys are google specific.
   static const char kEchoCancellation[];  // googEchoCancellation
+  static const char kExperimentalEchoCancellation[];  // googEchoCancellation2
   static const char kAutoGainControl[];  // googAutoGainControl
   static const char kExperimentalAutoGainControl[];  // googAutoGainControl2
   static const char kNoiseSuppression[];  // googNoiseSuppression
@@ -102,7 +103,17 @@ class MediaConstraintsInterface {
   // Temporary pseudo-constraints used to enable DTLS-SRTP
   static const char kEnableDtlsSrtp[];  // Enable DTLS-SRTP
   // Temporary pseudo-constraints used to enable DataChannels
-  static const char kEnableRtpDataChannels[];  // Enable DataChannels
+  static const char kEnableRtpDataChannels[];  // Enable RTP DataChannels
+  static const char kEnableSctpDataChannels[];  // Enable SCTP DataChannels
+
+  // The prefix of internal-only constraints whose JS set values should be
+  // stripped by Chrome before passed down to Libjingle.
+  static const char kInternalConstraintPrefix[];
+
+  // This constraint is for internal use only, representing the Chrome command
+  // line flag. So it is prefixed with "internal" so JS values will be removed.
+  // Used by a local audio source.
+  static const char kInternalAecDump[];  // internalAecDump
 
  protected:
   // Dtor protected as objects shouldn't be deleted via this interface

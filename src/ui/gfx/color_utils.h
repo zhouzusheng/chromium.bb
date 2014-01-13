@@ -62,10 +62,17 @@ UI_EXPORT void BuildLumaHistogram(const SkBitmap& bitmap, int histogram[256]);
 UI_EXPORT SkColor AlphaBlend(SkColor foreground, SkColor background,
                              SkAlpha alpha);
 
-// Given a foreground and background color, try to return a foreground color
-// that is "readable" over the background color by luma-inverting the foreground
-// color and then picking whichever foreground color has higher contrast against
-// the background color.
+// Makes a dark color lighter or a light color darker by blending |color| with
+// white or black depending on its current luminance.  |alpha| controls the
+// amount of white or black that will be alpha-blended into |color|.
+UI_EXPORT SkColor BlendTowardOppositeLuminance(SkColor color, SkAlpha alpha);
+
+// Given an opaque foreground and background color, try to return a foreground
+// color that is "readable" over the background color by luma-inverting the
+// foreground color and then picking whichever foreground color has higher
+// contrast against the background color.  You should not pass colors with
+// non-255 alpha to this routine, since determining the correct behavior in such
+// cases can be impossible.
 //
 // NOTE: This won't do anything but waste time if the supplied foreground color
 // has a luma value close to the midpoint (0.5 in the HSL representation).

@@ -31,10 +31,11 @@
 #ifndef ResourceLoaderOptions_h
 #define ResourceLoaderOptions_h
 
+#include "core/loader/cache/CachedResourceInitiatorInfo.h"
 #include "core/platform/network/ResourceHandleTypes.h"
 
 namespace WebCore {
-    
+
 enum SendCallbackPolicy {
     SendCallbacks,
     DoNotSendCallbacks
@@ -60,25 +61,63 @@ enum SecurityCheckPolicy {
     DoSecurityCheck
 };
 
+enum ContentSecurityPolicyCheck {
+    CheckContentSecurityPolicy,
+    DoNotCheckContentSecurityPolicy
+};
+
+enum RequestOriginPolicy {
+    UseDefaultOriginRestrictionsForType,
+    RestrictToSameOrigin
+};
+
 struct ResourceLoaderOptions {
-    ResourceLoaderOptions() : sendLoadCallbacks(DoNotSendCallbacks), sniffContent(DoNotSniffContent), dataBufferingPolicy(BufferData), allowCredentials(DoNotAllowStoredCredentials), crossOriginCredentialPolicy(DoNotAskClientForCrossOriginCredentials), securityCheck(DoSecurityCheck) { }
-    ResourceLoaderOptions(SendCallbackPolicy sendLoadCallbacks, ContentSniffingPolicy sniffContent, DataBufferingPolicy dataBufferingPolicy, StoredCredentials allowCredentials, ClientCrossOriginCredentialPolicy crossOriginCredentialPolicy, SecurityCheckPolicy securityCheck)
+    ResourceLoaderOptions()
+        : sendLoadCallbacks(DoNotSendCallbacks)
+        , sniffContent(DoNotSniffContent)
+        , dataBufferingPolicy(BufferData)
+        , allowCredentials(DoNotAllowStoredCredentials)
+        , credentialsRequested(ClientDidNotRequestCredentials)
+        , crossOriginCredentialPolicy(DoNotAskClientForCrossOriginCredentials)
+        , securityCheck(DoSecurityCheck)
+        , contentSecurityPolicyOption(CheckContentSecurityPolicy)
+        , requestOriginPolicy(UseDefaultOriginRestrictionsForType)
+    {
+    }
+
+    ResourceLoaderOptions(
+        SendCallbackPolicy sendLoadCallbacks,
+        ContentSniffingPolicy sniffContent,
+        DataBufferingPolicy dataBufferingPolicy,
+        StoredCredentials allowCredentials,
+        CredentialRequest credentialsRequested,
+        ClientCrossOriginCredentialPolicy crossOriginCredentialPolicy,
+        SecurityCheckPolicy securityCheck,
+        ContentSecurityPolicyCheck contentSecurityPolicyOption,
+        RequestOriginPolicy requestOriginPolicy)
         : sendLoadCallbacks(sendLoadCallbacks)
         , sniffContent(sniffContent)
         , dataBufferingPolicy(dataBufferingPolicy)
         , allowCredentials(allowCredentials)
+        , credentialsRequested(credentialsRequested)
         , crossOriginCredentialPolicy(crossOriginCredentialPolicy)
         , securityCheck(securityCheck)
+        , contentSecurityPolicyOption(contentSecurityPolicyOption)
+        , requestOriginPolicy(requestOriginPolicy)
     {
     }
     SendCallbackPolicy sendLoadCallbacks;
     ContentSniffingPolicy sniffContent;
     DataBufferingPolicy dataBufferingPolicy;
     StoredCredentials allowCredentials; // Whether HTTP credentials and cookies are sent with the request.
+    CredentialRequest credentialsRequested; // Whether the client (e.g. XHR) wanted credentials in the first place.
     ClientCrossOriginCredentialPolicy crossOriginCredentialPolicy; // Whether we will ask the client for credentials (if we allow credentials at all).
     SecurityCheckPolicy securityCheck;
+    ContentSecurityPolicyCheck contentSecurityPolicyOption;
+    CachedResourceInitiatorInfo initiatorInfo;
+    RequestOriginPolicy requestOriginPolicy;
 };
 
-} // namespace WebCore    
+} // namespace WebCore
 
 #endif // ResourceLoaderOptions_h

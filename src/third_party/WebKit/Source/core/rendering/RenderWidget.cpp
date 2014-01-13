@@ -26,10 +26,8 @@
 
 #include "core/accessibility/AXObjectCache.h"
 #include "core/page/Frame.h"
-#include "core/page/animation/AnimationController.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderCounter.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderLayerBacking.h"
 #include "core/rendering/RenderView.h"
@@ -55,8 +53,8 @@ WidgetHierarchyUpdatesSuspensionScope::WidgetToParentMap& WidgetHierarchyUpdates
 
 void WidgetHierarchyUpdatesSuspensionScope::moveWidgets()
 {
-    WidgetToParentMap map = widgetNewParentMap();
-    widgetNewParentMap().clear();
+    WidgetToParentMap map;
+    widgetNewParentMap().swap(map);
     WidgetToParentMap::iterator end = map.end();
     for (WidgetToParentMap::iterator it = map.begin(); it != end; ++it) {
         Widget* child = it->key.get();
@@ -204,6 +202,9 @@ void RenderWidget::setWidget(PassRefPtr<Widget> widget)
         }
         moveWidgetToParentSoon(m_widget.get(), m_frameView);
     }
+
+    if (AXObjectCache* cache = document()->existingAXObjectCache())
+        cache->childrenChanged(this);
 }
 
 void RenderWidget::layout()
@@ -260,6 +261,8 @@ void RenderWidget::paintContents(PaintInfo& paintInfo, const LayoutPoint& paintO
 
 void RenderWidget::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
+    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
+
     if (!shouldPaint(paintInfo, paintOffset))
         return;
 
@@ -301,7 +304,7 @@ void RenderWidget::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
     // Paint a partially transparent wash over selected widgets.
     if (isSelected() && !document()->printing()) {
         // FIXME: selectionRect() is in absolute, not painting coordinates.
-        paintInfo.context->fillRect(pixelSnappedIntRect(selectionRect()), selectionBackgroundColor(), style()->colorSpace());
+        paintInfo.context->fillRect(pixelSnappedIntRect(selectionRect()), selectionBackgroundColor());
     }
 
     if (hasLayer() && layer()->canResize())

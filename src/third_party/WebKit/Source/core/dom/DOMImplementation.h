@@ -25,10 +25,8 @@
 #define DOMImplementation_h
 
 #include "core/dom/Document.h"
-#include "core/platform/graphics/MediaPlayer.h"
-#include <wtf/Forward.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include "wtf/Forward.h"
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
@@ -58,7 +56,7 @@ public:
     DOMImplementation* getInterface(const String& feature);
 
     // From the DOMImplementationCSS interface
-    static PassRefPtr<CSSStyleSheet> createCSSStyleSheet(const String& title, const String& media, ExceptionCode&);
+    static PassRefPtr<CSSStyleSheet> createCSSStyleSheet(const String& title, const String& media);
 
     // From the HTMLDOMImplementation interface
     PassRefPtr<HTMLDocument> createHTMLDocument(const String& title);

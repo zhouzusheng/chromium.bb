@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFEBlendElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
@@ -65,7 +63,7 @@ bool SVGFEBlendElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::inAttr);
         supportedAttributes.add(SVGNames::in2Attr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFEBlendElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -144,5 +142,3 @@ PassRefPtr<FilterEffect> SVGFEBlendElement::build(SVGFilterBuilder* filterBuilde
 }
 
 }
-
-#endif // ENABLE(SVG)

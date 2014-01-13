@@ -22,10 +22,8 @@
 #ifndef PageRuleCollector_h
 #define PageRuleCollector_h
 
-#include "core/css/DocumentRuleSets.h"
-#include "core/css/StyleResolver.h"
-#include <wtf/RefPtr.h>
-#include <wtf/Vector.h>
+#include "core/css/resolver/StyleResolver.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -33,7 +31,7 @@ class StyleRulePage;
 
 class PageRuleCollector {
 public:
-    PageRuleCollector(const StyleResolver::State&, int pageIndex);
+    PageRuleCollector(const StyleResolverState&, int pageIndex);
 
     void matchPageRules(RuleSet* rules);
     StyleResolver::MatchResult& matchedResult() { return m_result; }
@@ -46,7 +44,7 @@ private:
 
     void matchPageRulesForList(Vector<StyleRulePage*>& matchedRules, const Vector<StyleRulePage*>& rules, bool isLeftPage, bool isFirstPage, const String& pageName);
 
-    const StyleResolver::State& m_state;
+    const StyleResolverState& m_state;
     const bool m_isLeftPage;
     const bool m_isFirstPage;
     const String m_pageName;

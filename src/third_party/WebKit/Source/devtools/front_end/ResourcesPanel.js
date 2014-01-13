@@ -109,7 +109,7 @@ WebInspector.ResourcesPanel = function(database)
     if (WebInspector.resourceTreeModel.cachedResourcesLoaded())
         this._cachedResourcesLoaded();
 
-    WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.OnLoad, this._onLoadEventFired, this);
+    WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.Load, this._loadEventFired, this);
     WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.CachedResourcesLoaded, this._cachedResourcesLoaded, this);
     WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.WillLoadCachedResources, this._resetWithFrames, this);
 
@@ -140,7 +140,7 @@ WebInspector.ResourcesPanel.prototype = {
         }
     },
 
-    _onLoadEventFired: function()
+    _loadEventFired: function()
     {
         this._initDefaultSelection();
     },
@@ -408,9 +408,11 @@ WebInspector.ResourcesPanel.prototype = {
     },
 
     /**
+     * @param {WebInspector.Resource} resource
      * @param {number=} line
+     * @param {number=} column
      */
-    showResource: function(resource, line)
+    showResource: function(resource, line, column)
     {
         var resourceTreeElement = this._findTreeElementForResource(resource);
         if (resourceTreeElement)
@@ -418,8 +420,8 @@ WebInspector.ResourcesPanel.prototype = {
 
         if (typeof line === "number") {
             var view = this._resourceViewForResource(resource);
-            if (view.canHighlightLine())
-                view.highlightLine(line);
+            if (view.canHighlightPosition())
+                view.highlightPosition(line, column);
         }
         return true;
     },
@@ -699,27 +701,57 @@ WebInspector.ResourcesPanel.prototype = {
         var regex = WebInspector.SourceFrame.createSearchRegex(query);
         var totalMatchesCount = 0;
 
-        function callback(error, result)
+        /**
+         * @param {WebInspector.Resource} resource
+         * @param {number} matchesCount
+         */
+        function addMatchesToResource(resource, matchesCount)
         {
-            if (!error) {
-                for (var i = 0; i < result.length; i++) {
-                    var searchResult = result[i];
-                    var frameTreeElement = this._treeElementForFrameId[searchResult.frameId];
-                    if (!frameTreeElement)
-                        continue;
-                    var resource = frameTreeElement.resourceByURL(searchResult.url);
+            this._findTreeElementForResource(resource).searchMatchesFound(matchesCount);
+            totalMatchesCount += matchesCount;
+        }
 
-                    // FIXME: When the same script is used in several frames and this script contains at least
-                    // one search result then some search results can not be matched with a resource on panel.
-                    // https://bugs.webkit.org/show_bug.cgi?id=66005
-                    if (!resource)
-                        continue;
+        /**
+         * @param {?Protocol.Error} error
+         * @param {Array.<PageAgent.SearchResult>} result
+         */
+        function searchInResourcesCallback(error, result)
+        {
+            if (error)
+                return;
 
-                    this._findTreeElementForResource(resource).searchMatchesFound(searchResult.matchesCount);
-                    totalMatchesCount += searchResult.matchesCount;
-                }
+            for (var i = 0; i < result.length; i++) {
+                var searchResult = result[i];
+                var frameTreeElement = this._treeElementForFrameId[searchResult.frameId];
+                if (!frameTreeElement)
+                    continue;
+                var resource = frameTreeElement.resourceByURL(searchResult.url);
+
+                // FIXME: When the same script is used in several frames and this script contains at least
+                // one search result then some search results can not be matched with a resource on panel.
+                // https://bugs.webkit.org/show_bug.cgi?id=66005
+                if (!resource)
+                    continue;
+
+                addMatchesToResource.call(this, resource, searchResult.matchesCount)
             }
+            if (!--callbacksLeft)
+                searchFinished.call(this);
+        }
 
+        /**
+         * @param {WebInspector.Resource} resource
+         * @param {Array.<WebInspector.ContentProvider.SearchMatch>} result
+         */
+        function searchInContentCallback(resource, result)
+        {
+            addMatchesToResource.call(this, resource, result.length);
+            if (!--callbacksLeft)
+                searchFinished.call(this);
+        }
+
+        function searchFinished()
+        {
             WebInspector.searchController.updateSearchMatchesCount(totalMatchesCount, this);
             this._searchController = new WebInspector.ResourcesSearchController(this.resourcesListTreeElement, totalMatchesCount);
 
@@ -727,7 +759,13 @@ WebInspector.ResourcesPanel.prototype = {
                 this.jumpToNextSearchResult();
         }
 
-        PageAgent.searchInResources(regex.source, !regex.ignoreCase, true, callback.bind(this));
+        var frames = WebInspector.resourceTreeModel.frames();
+        var callbacksLeft = 1 + frames.length;
+        for (var i = 0; i < frames.length; ++i) {
+            var mainResource = frames[i].mainResource;
+            mainResource.searchInContent(regex.source, !regex.ignoreCase, true, searchInContentCallback.bind(this, mainResource));
+        }
+        PageAgent.searchInResources(regex.source, !regex.ignoreCase, true, searchInResourcesCallback.bind(this));
     },
 
     _ensureViewSearchPerformed: function(callback)

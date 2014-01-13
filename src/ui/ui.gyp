@@ -9,6 +9,7 @@
   'includes': [
     'shell_dialogs.gypi',
     'ui_resources.gypi',
+    'ui_unittests.gypi',
   ],
   'targets': [
     {
@@ -19,13 +20,13 @@
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:base_static',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/libpng/libpng.gyp:libpng',
         '../third_party/zlib/zlib.gyp:zlib',
+        '../url/url.gyp:url_lib',
         'base/strings/ui_strings.gyp:ui_strings',
         'ui_resources',
       ],
@@ -76,15 +77,16 @@
         'base/animation/throb_animation.h',
         'base/animation/tween.cc',
         'base/animation/tween.h',
+        'base/base_window.h',
         'base/clipboard/clipboard.cc',
         'base/clipboard/clipboard.h',
         'base/clipboard/clipboard_android.cc',
         'base/clipboard/clipboard_android_initialization.h',
         'base/clipboard/clipboard_aura.cc',
         'base/clipboard/clipboard_aurax11.cc',
+        'base/clipboard/clipboard_constants.cc',
         'base/clipboard/clipboard_gtk.cc',
         'base/clipboard/clipboard_mac.mm',
-        'base/clipboard/clipboard_sourcetag.h',
         'base/clipboard/clipboard_util_win.cc',
         'base/clipboard/clipboard_util_win.h',
         'base/clipboard/clipboard_win.cc',
@@ -94,11 +96,20 @@
         'base/clipboard/custom_data_helper_mac.mm',
         'base/clipboard/scoped_clipboard_writer.cc',
         'base/clipboard/scoped_clipboard_writer.h',
+        'base/cocoa/animation_utils.h',
         'base/cocoa/base_view.h',
         'base/cocoa/base_view.mm',
+        'base/cocoa/cocoa_event_utils.h',
+        'base/cocoa/cocoa_event_utils.mm',
+        'base/cocoa/controls/hover_image_menu_button.h',
+        'base/cocoa/controls/hover_image_menu_button.mm',
+        'base/cocoa/controls/hover_image_menu_button_cell.h',
+        'base/cocoa/controls/hover_image_menu_button_cell.mm',
         'base/cocoa/events_mac.mm',
         'base/cocoa/find_pasteboard.h',
         'base/cocoa/find_pasteboard.mm',
+        'base/cocoa/flipped_view.h',
+        'base/cocoa/flipped_view.mm',
         'base/cocoa/focus_tracker.h',
         'base/cocoa/focus_tracker.mm',
         'base/cocoa/focus_window_set.h',
@@ -109,12 +120,18 @@
         'base/cocoa/hover_button.mm',
         'base/cocoa/hover_image_button.h',
         'base/cocoa/hover_image_button.mm',
+        'base/cocoa/menu_controller.h',
+        'base/cocoa/menu_controller.mm',
         'base/cocoa/nib_loading.h',
         'base/cocoa/nib_loading.mm',
+        'base/cocoa/nsgraphics_context_additions.h',
+        'base/cocoa/nsgraphics_context_additions.mm',
         'base/cocoa/tracking_area.h',
         'base/cocoa/tracking_area.mm',
         'base/cocoa/underlay_opengl_hosting_window.h',
         'base/cocoa/underlay_opengl_hosting_window.mm',
+        'base/cocoa/view_description.h',
+        'base/cocoa/view_description.mm',
         'base/cocoa/window_size_constants.h',
         'base/cocoa/window_size_constants.mm',
         'base/cursor/cursor.cc',
@@ -131,9 +148,11 @@
         'base/cursor/cursor_x11.cc',
         'base/cursor/cursors_aura.cc',
         'base/cursor/cursors_aura.h',
+        'base/default_theme_provider.cc',
+        'base/default_theme_provider.h',
+        'base/default_theme_provider_mac.mm',
         'base/dragdrop/cocoa_dnd_util.h',
         'base/dragdrop/cocoa_dnd_util.mm',
-        'base/dragdrop/desktop_selection_provider_aurax11.h',
         'base/dragdrop/drag_drop_types.h',
         'base/dragdrop/drag_drop_types_win.cc',
         'base/dragdrop/drag_source_win.cc',
@@ -167,8 +186,6 @@
         'base/events/event_target.h',
         'base/events/event_utils.cc',
         'base/events/event_utils.h',
-        'base/events/key_identifier_conversion.cc',
-        'base/events/key_identifier_conversion.h',
         'base/gestures/gesture_configuration.cc',
         'base/gestures/gesture_configuration.h',
         'base/gestures/gesture_point.cc',
@@ -224,6 +241,8 @@
         'base/keycodes/keyboard_code_conversion_x.h',
         'base/keycodes/keyboard_codes.h',
         'base/keycodes/usb_keycode_map.h',
+        'base/latency_info.cc',
+        'base/latency_info.h',
         'base/l10n/l10n_font_util.cc',
         'base/l10n/l10n_font_util.h',
         'base/l10n/l10n_util.cc',
@@ -243,6 +262,8 @@
         'base/models/button_menu_item_model.h',
         'base/models/combobox_model.cc',
         'base/models/combobox_model.h',
+        'base/models/dialog_model.cc',
+        'base/models/dialog_model.h',
         'base/models/list_model.h',
         'base/models/list_model_observer.h',
         'base/models/list_selection_model.cc',
@@ -260,6 +281,18 @@
         'base/models/tree_model.h',
         'base/models/tree_node_iterator.h',
         'base/models/tree_node_model.h',
+        'base/ozone/events_ozone.cc',
+        'base/ozone/event_factory_ozone.cc',
+        'base/ozone/event_factory_ozone.h',
+        'base/ozone/event_converter_ozone.cc',
+        'base/ozone/event_converter_ozone.h',
+        'base/ozone/events_ozone.cc',
+        'base/ozone/key_event_converter_ozone.cc',
+        'base/ozone/key_event_converter_ozone.h',
+        'base/ozone/surface_factory_ozone.cc',
+        'base/ozone/surface_factory_ozone.h',
+        'base/ozone/touch_event_converter_ozone.cc',
+        'base/ozone/touch_event_converter_ozone.h',
         'base/range/range.cc',
         'base/range/range.h',
         'base/range/range_mac.mm',
@@ -290,6 +323,7 @@
         'base/touch/touch_device.h',
         'base/touch/touch_device_android.cc',
         'base/touch/touch_device_aurax11.cc',
+        'base/touch/touch_device_ozone.cc',
         'base/touch/touch_device_win.cc',
         'base/touch/touch_editing_controller.cc',
         'base/touch/touch_editing_controller.h',
@@ -302,6 +336,7 @@
         'base/ui_base_switches.h',
         'base/ui_base_switches_util.cc',
         'base/ui_base_switches_util.h',
+        'base/ui_base_types.cc',
         'base/ui_base_types.h',
         'base/ui_export.h',
         'base/view_prop.cc',
@@ -345,6 +380,8 @@
         'base/x/active_window_watcher_x.cc',
         'base/x/active_window_watcher_x.h',
         'base/x/active_window_watcher_x_observer.h',
+        'base/x/device_data_manager.cc',
+        'base/x/device_data_manager.h',
         'base/x/device_list_cache_x.cc',
         'base/x/device_list_cache_x.h',
         'base/x/events_x.cc',
@@ -356,8 +393,6 @@
         'base/x/selection_requestor.h',
         'base/x/selection_utils.cc',
         'base/x/selection_utils.h',
-        'base/x/valuators.cc',
-        'base/x/valuators.h',
         'base/x/work_area_watcher_x.cc',
         'base/x/work_area_watcher_x.h',
         'base/x/x11_atom_cache.cc',
@@ -577,8 +612,6 @@
             ['include', '(^|/)ios/'],
             ['include', '^gfx/'],
             ['exclude', '^gfx/codec/jpeg_codec\\.cc$'],
-            ['exclude', '^gfx/pango_util\\.'],
-            ['exclude', '^gfx/platform_font_pango\\.'],
             ['include', '^base/animation/'],
             ['include', '^base/l10n/'],
             ['include', '^base/layout'],
@@ -636,7 +669,12 @@
             'base/x/selection_utils.h',
           ]
         }],
-        
+        ['use_pango==0', {
+          'sources/': [
+            ['exclude', '^gfx/pango_util\\.'],
+            ['exclude', '^gfx/platform_font_pango\\.'],
+          ],
+        }],
         ['use_aura==0 or OS!="linux"', {
           'sources!': [
             'base/resource/resource_bundle_auralinux.cc',
@@ -657,7 +695,6 @@
             # font_gtk.cc uses fontconfig.
             '../build/linux/system.gyp:fontconfig',
             '../build/linux/system.gyp:glib',
-            '../build/linux/system.gyp:pangocairo',
           ],
           'conditions': [
             ['toolkit_views==0', {
@@ -674,6 +711,11 @@
               # 'sources/' rather than 'sources!'.
               'sources/': [
                 ['include', '^base/dragdrop/os_exchange_data.cc'],
+              ],
+            }],
+            ['use_pango==1', {
+              'dependencies': [
+                '../build/linux/system.gyp:pangocairo',
               ],
             }],
           ],
@@ -716,10 +758,6 @@
           ],
           'sources!': [
             'base/touch/touch_device.cc',
-            'gfx/pango_util.h',
-            'gfx/pango_util.cc',
-            'gfx/platform_font_pango.cc',
-            'gfx/platform_font_pango.h',
           ],
           'include_dirs': [
             '../',
@@ -772,10 +810,6 @@
           'sources!': [
             'base/dragdrop/drag_utils.cc',
             'base/dragdrop/drag_utils.h',
-            'gfx/pango_util.h',
-            'gfx/pango_util.cc',
-            'gfx/platform_font_pango.h',
-            'gfx/platform_font_pango.cc',
           ],
           'link_settings': {
             'libraries': [
@@ -794,7 +828,6 @@
               'libraries': [
                 '-lX11',
                 '-lXcursor',
-                '-lXrandr',  # For XRR* function calls in x11_util.cc.
                 '-lXrender',  # For XRender* function calls in x11_util.cc.
               ],
             },
@@ -803,7 +836,6 @@
             'libraries': [
               '-lX11',
               '-lXcursor',
-              '-lXrandr',  # For XRR* function calls in x11_util.cc.
               '-lXrender',  # For XRender* function calls in x11_util.cc.
             ],
           },
@@ -835,8 +867,6 @@
             'base/events/event_handler.h',
             'base/events/event_target.cc',
             'base/events/event_target.h',
-            'base/events/key_identifier_conversion.cc',
-            'base/events/key_identifier_conversion.h',
             'base/x/events_x.cc',
           ],
         }],
@@ -845,10 +875,6 @@
             'base/dragdrop/drag_utils.cc',
             'base/dragdrop/drag_utils.h',
             'base/touch/touch_device.cc',
-            'gfx/pango_util.cc',
-            'gfx/pango_util.h',
-            'gfx/platform_font_pango.cc',
-            'gfx/platform_font_pango.h',
           ],
           'dependencies': [
             'ui_jni_headers',
@@ -878,11 +904,6 @@
             '-ldl',
           ],
         }],
-        ['inside_chromium_build==0', {
-          'dependencies': [
-            '<(DEPTH)/webkit/support/setup_third_party.gyp:third_party_headers',
-          ],
-        }],
         ['use_system_icu==1', {
           # When using the system icu, the icu targets generate shim headers
           # which are included by public headers in the ui target, so we need
@@ -891,13 +912,17 @@
         }],
       ],
     },
+    {
+      'target_name': 'webui_test_support',
+      'type': 'none',
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources',
+        ]
+      }
+    }
   ],
   'conditions': [
-    ['inside_chromium_build == 1', {
-      'includes': [
-        'ui_unittests.gypi',
-      ]},
-    ],
     ['OS=="android"' , {
        'targets': [
          {

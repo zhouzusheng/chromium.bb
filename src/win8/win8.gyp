@@ -51,6 +51,20 @@
       ],
     },
     {
+      'target_name': 'metro_viewer',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../ipc/ipc.gyp:ipc',
+      ],
+      'sources': [
+        'viewer/metro_viewer_constants.cc',
+        'viewer/metro_viewer_constants.h',
+        'viewer/metro_viewer_process_host.cc',
+        'viewer/metro_viewer_process_host.h',
+      ],
+    },
+    {
       'target_name': 'test_support_win8',
       'type': 'static_library',
       'dependencies': [

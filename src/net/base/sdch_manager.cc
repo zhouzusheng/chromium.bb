@@ -7,8 +7,8 @@
 #include "base/base64.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "crypto/sha2.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/url_request/url_request_http_job.h"
@@ -109,7 +109,9 @@ bool SdchManager::Dictionary::CanSet(const std::string& domain,
     SdchErrorRecovery(DICTIONARY_MISSING_DOMAIN_SPECIFIER);
     return false;  // Domain is required.
   }
-  if (RegistryControlledDomainService::GetDomainAndRegistry(domain).empty()) {
+  if (registry_controlled_domains::GetDomainAndRegistry(
+        domain,
+        registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES).empty()) {
     SdchErrorRecovery(DICTIONARY_SPECIFIES_TOP_LEVEL_DOMAIN);
     return false;  // domain was a TLD.
   }

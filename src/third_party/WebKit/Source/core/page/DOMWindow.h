@@ -27,19 +27,17 @@
 #ifndef DOMWindow_h
 #define DOMWindow_h
 
-#include "core/dom/ContextDestructionObserver.h"
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/EventTarget.h"
 #include "core/page/FrameDestructionObserver.h"
-#include "core/platform/KURL.h"
 #include "core/platform/Supplementable.h"
+#include "wtf/Forward.h"
 
 namespace WebCore {
-
-    class BarInfo;
+    class BarProp;
     class CSSRuleList;
     class CSSStyleDeclaration;
     class Console;
-    class Crypto;
     class DOMApplicationCache;
     class DOMPoint;
     class DOMSelection;
@@ -81,14 +79,9 @@ namespace WebCore {
 
     enum SetLocationLocking { LockHistoryBasedOnGestureState, LockHistoryAndBackForwardList };
 
-    // FIXME: DOMWindow shouldn't subclass FrameDestructionObserver and instead should get to Frame via its Document.
-    class DOMWindow : public RefCounted<DOMWindow>
-                    , public EventTarget
-                    , public ContextDestructionObserver
-                    , public FrameDestructionObserver
-                    , public Supplementable<DOMWindow> {
+    class DOMWindow : public RefCounted<DOMWindow>, public ScriptWrappable, public EventTarget, public FrameDestructionObserver, public Supplementable<DOMWindow> {
     public:
-        static PassRefPtr<DOMWindow> create(Document* document) { return adoptRef(new DOMWindow(document)); }
+        static PassRefPtr<DOMWindow> create(Frame* frame) { return adoptRef(new DOMWindow(frame)); }
         virtual ~DOMWindow();
 
         // In some rare cases, we'll re-used a DOMWindow for a new Document. For example,
@@ -98,7 +91,7 @@ namespace WebCore {
         // won't be blown away when the network load commits. To make that happen, we
         // "securely transition" the existing DOMWindow to the Document that results from
         // the network load. See also SecurityContext::isSecureTransitionTo.
-        void didSecureTransitionTo(Document*);
+        void setDocument(PassRefPtr<Document>);
 
         virtual const AtomicString& interfaceName() const;
         virtual ScriptExecutionContext* scriptExecutionContext() const;
@@ -128,13 +121,12 @@ namespace WebCore {
 
         Screen* screen() const;
         History* history() const;
-        Crypto* crypto() const;
-        BarInfo* locationbar() const;
-        BarInfo* menubar() const;
-        BarInfo* personalbar() const;
-        BarInfo* scrollbars() const;
-        BarInfo* statusbar() const;
-        BarInfo* toolbar() const;
+        BarProp* locationbar() const;
+        BarProp* menubar() const;
+        BarProp* personalbar() const;
+        BarProp* scrollbars() const;
+        BarProp* statusbar() const;
+        BarProp* toolbar() const;
         Navigator* navigator() const;
         Navigator* clientInformation() const { return navigator(); }
 
@@ -249,9 +241,7 @@ namespace WebCore {
         void resizeTo(float width, float height) const;
 
         // Timers
-        int setTimeout(PassOwnPtr<ScheduledAction>, int timeout, ExceptionCode&);
         void clearTimeout(int timeoutId);
-        int setInterval(PassOwnPtr<ScheduledAction>, int timeout, ExceptionCode&);
         void clearInterval(int timeoutId);
 
         // WebKit animation extensions
@@ -340,10 +330,10 @@ namespace WebCore {
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationiteration, webkitAnimationIteration);
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationend, webkitAnimationEnd);
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkittransitionend, webkitTransitionEnd);
-        DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(transitionend, transitionend);
+        DEFINE_ATTRIBUTE_EVENT_LISTENER(transitionend);
 
-        void captureEvents();
-        void releaseEvents();
+        void captureEvents() { }
+        void releaseEvents() { }
 
         void finishedLoading();
 
@@ -376,6 +366,8 @@ namespace WebCore {
         DEFINE_ATTRIBUTE_EVENT_LISTENER(touchend);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(touchcancel);
 
+        void reportMemoryUsage(MemoryObjectInfo*) const;
+
         Performance* performance() const;
 
         // FIXME: When this DOMWindow is no longer the active DOMWindow (i.e.,
@@ -385,9 +377,10 @@ namespace WebCore {
         bool isCurrentlyDisplayedInFrame() const;
 
         void willDetachDocumentFromFrame();
+        DOMWindow* anonymousIndexedGetter(uint32_t);
 
     private:
-        explicit DOMWindow(Document*);
+        explicit DOMWindow(Frame*);
 
         Page* page();
 
@@ -407,19 +400,20 @@ namespace WebCore {
         void resetDOMWindowProperties();
         void willDestroyDocumentInFrame();
 
+        RefPtr<Document> m_document;
+
         bool m_shouldPrintWhenFinishedLoading;
 
         HashSet<DOMWindowProperty*> m_properties;
 
         mutable RefPtr<Screen> m_screen;
         mutable RefPtr<History> m_history;
-        mutable RefPtr<Crypto>  m_crypto;
-        mutable RefPtr<BarInfo> m_locationbar;
-        mutable RefPtr<BarInfo> m_menubar;
-        mutable RefPtr<BarInfo> m_personalbar;
-        mutable RefPtr<BarInfo> m_scrollbars;
-        mutable RefPtr<BarInfo> m_statusbar;
-        mutable RefPtr<BarInfo> m_toolbar;
+        mutable RefPtr<BarProp> m_locationbar;
+        mutable RefPtr<BarProp> m_menubar;
+        mutable RefPtr<BarProp> m_personalbar;
+        mutable RefPtr<BarProp> m_scrollbars;
+        mutable RefPtr<BarProp> m_statusbar;
+        mutable RefPtr<BarProp> m_toolbar;
         mutable RefPtr<Console> m_console;
         mutable RefPtr<Navigator> m_navigator;
         mutable RefPtr<Location> m_location;

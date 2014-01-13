@@ -27,11 +27,8 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/DOMTimeStamp.h"
 #include "core/dom/EventContext.h"
-#include "core/dom/EventNames.h"
-#include <wtf/HashMap.h>
-#include <wtf/ListHashSet.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/AtomicString.h>
+#include "wtf/RefCounted.h"
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
@@ -94,6 +91,7 @@ public:
     void initEvent(const AtomicString& type, bool canBubble, bool cancelable);
 
     const AtomicString& type() const { return m_type; }
+    void setType(const AtomicString& type) { m_type = type; }
     
     EventTarget* target() const { return m_target.get(); }
     void setTarget(PassRefPtr<EventTarget>);
@@ -157,6 +155,7 @@ public:
     void setUnderlyingEvent(PassRefPtr<Event>);
 
     EventPath& eventPath() { return m_eventPath; }
+    PassRefPtr<NodeList> path() const;
 
     virtual bool storesResultAsString() const;
     virtual void storeResult(const String&);

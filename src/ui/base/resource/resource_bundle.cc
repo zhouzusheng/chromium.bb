@@ -14,8 +14,8 @@
 #include "base/path_service.h"
 #include "base/stl_util.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
-#include "base/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "net/base/big_endian.h"
 #include "skia/ext/image_operations.h"
@@ -33,10 +33,6 @@
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skbitmap_operations.h"
-
-#if defined(OS_CHROMEOS)
-#include "base/chromeos/chromeos_version.h"
-#endif
 
 namespace ui {
 
@@ -608,7 +604,7 @@ bool ResourceBundle::LoadBitmap(const ResourceHandle& data_handle,
   DCHECK(fell_back_to_1x);
   scoped_refptr<base::RefCountedMemory> memory(
       data_handle.GetStaticMemory(resource_id));
-  if (!memory)
+  if (!memory.get())
     return false;
 
   if (DecodePNG(memory->front(), memory->size(), bitmap, fell_back_to_1x))

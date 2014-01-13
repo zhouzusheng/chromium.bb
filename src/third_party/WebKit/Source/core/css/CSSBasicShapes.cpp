@@ -30,7 +30,6 @@
 #include "config.h"
 
 #include "core/css/CSSBasicShapes.h"
-#include "core/css/CSSPrimitiveValueMappings.h"
 
 #include <wtf/text/StringBuilder.h>
 
@@ -44,7 +43,7 @@ static String buildRectangleString(const String& x, const String& y, const Strin
     char separator[] = ", ";
     StringBuilder result;
     // Compute the required capacity in advance to reduce allocations.
-    result.reserveCapacity((sizeof(opening) - 1) + (5 * (sizeof(separator) -1 )) + 1 + x.length() + y.length() + width.length() + height.length() + radiusX.length() + radiusY.length());
+    result.reserveCapacity((sizeof(opening) - 1) + (5 * (sizeof(separator) - 1)) + 1 + x.length() + y.length() + width.length() + height.length() + radiusX.length() + radiusY.length());
     result.appendLiteral(opening);
     result.append(x);
     result.appendLiteral(separator);
@@ -77,7 +76,7 @@ String CSSBasicShapeRectangle::cssText() const
 
 bool CSSBasicShapeRectangle::equals(const CSSBasicShape& shape) const
 {
-    if (shape.type() != CSS_BASIC_SHAPE_RECTANGLE)
+    if (shape.type() != CSSBasicShapeRectangleType)
         return false;
 
     const CSSBasicShapeRectangle& other = static_cast<const CSSBasicShapeRectangle&>(shape);
@@ -121,7 +120,7 @@ String CSSBasicShapeCircle::cssText() const
 
 bool CSSBasicShapeCircle::equals(const CSSBasicShape& shape) const
 {
-    if (shape.type() != CSS_BASIC_SHAPE_CIRCLE)
+    if (shape.type() != CSSBasicShapeCircleType)
         return false;
 
     const CSSBasicShapeCircle& other = static_cast<const CSSBasicShapeCircle&>(shape);
@@ -156,7 +155,7 @@ String CSSBasicShapeEllipse::cssText() const
 
 bool CSSBasicShapeEllipse::equals(const CSSBasicShape& shape) const
 {
-    if (shape.type() != CSS_BASIC_SHAPE_ELLIPSE)
+    if (shape.type() != CSSBasicShapeEllipseType)
         return false;
 
     const CSSBasicShapeEllipse& other = static_cast<const CSSBasicShapeEllipse&>(shape);
@@ -233,7 +232,7 @@ String CSSBasicShapePolygon::cssText() const
 
 bool CSSBasicShapePolygon::equals(const CSSBasicShape& shape) const
 {
-    if (shape.type() != CSS_BASIC_SHAPE_POLYGON)
+    if (shape.type() != CSSBasicShapePolygonType)
         return false;
 
     const CSSBasicShapePolygon& rhs = static_cast<const CSSBasicShapePolygon&>(shape);
@@ -258,6 +257,77 @@ bool CSSBasicShapePolygon::hasVariableReference() const
             return true;
     }
     return false;
+}
+
+static String buildInsetRectangleString(const String& top, const String& right, const String& bottom, const String& left, const String& radiusX, const String& radiusY)
+{
+    char opening[] = "inset-rectangle(";
+    char separator[] = ", ";
+    StringBuilder result;
+    // Compute the required capacity in advance to reduce allocations.
+    result.reserveCapacity((sizeof(opening) - 1) + (5 * (sizeof(separator) - 1)) + 1 + top.length() + right.length() + bottom.length() + left.length() + radiusX.length() + radiusY.length());
+    result.appendLiteral(opening);
+    result.append(top);
+    result.appendLiteral(separator);
+    result.append(right);
+    result.appendLiteral(separator);
+    result.append(bottom);
+    result.appendLiteral(separator);
+    result.append(left);
+    if (!radiusX.isNull()) {
+        result.appendLiteral(separator);
+        result.append(radiusX);
+        if (!radiusY.isNull()) {
+            result.appendLiteral(separator);
+            result.append(radiusY);
+        }
+    }
+    result.append(')');
+    return result.toString();
+}
+
+String CSSBasicShapeInsetRectangle::cssText() const
+{
+    return buildInsetRectangleString(m_top->cssText(),
+        m_right->cssText(),
+        m_bottom->cssText(),
+        m_left->cssText(),
+        m_radiusX.get() ? m_radiusX->cssText() : String(),
+        m_radiusY.get() ? m_radiusY->cssText() : String());
+}
+
+bool CSSBasicShapeInsetRectangle::equals(const CSSBasicShape& shape) const
+{
+    if (shape.type() != CSSBasicShapeInsetRectangleType)
+        return false;
+
+    const CSSBasicShapeInsetRectangle& other = static_cast<const CSSBasicShapeInsetRectangle&>(shape);
+    return compareCSSValuePtr(m_top, other.m_top)
+        && compareCSSValuePtr(m_right, other.m_right)
+        && compareCSSValuePtr(m_bottom, other.m_bottom)
+        && compareCSSValuePtr(m_left, other.m_left)
+        && compareCSSValuePtr(m_radiusX, other.m_radiusX)
+        && compareCSSValuePtr(m_radiusY, other.m_radiusY);
+}
+
+String CSSBasicShapeInsetRectangle::serializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
+{
+    return buildInsetRectangleString(m_top->serializeResolvingVariables(variables),
+        m_right->serializeResolvingVariables(variables),
+        m_bottom->serializeResolvingVariables(variables),
+        m_left->serializeResolvingVariables(variables),
+        m_radiusX.get() ? m_radiusX->serializeResolvingVariables(variables) : String(),
+        m_radiusY.get() ? m_radiusY->serializeResolvingVariables(variables) : String());
+}
+
+bool CSSBasicShapeInsetRectangle::hasVariableReference() const
+{
+    return m_top->hasVariableReference()
+        || m_right->hasVariableReference()
+        || m_bottom->hasVariableReference()
+        || m_left->hasVariableReference()
+        || (m_radiusX.get() && m_radiusX->hasVariableReference())
+        || (m_radiusY.get() && m_radiusY->hasVariableReference());
 }
 
 } // namespace WebCore

@@ -38,8 +38,7 @@
 #include "core/css/StyleRule.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
-#include <wtf/MemoryInstrumentationVector.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -69,8 +68,8 @@ unsigned CSSGroupingRule::insertRule(const String& ruleString, unsigned index, E
         return 0;
     }
 
-    CSSParser parser(parserContext());
     CSSStyleSheet* styleSheet = parentStyleSheet();
+    CSSParser parser(parserContext(), UseCounter::getFrom(styleSheet));
     RefPtr<StyleRuleBase> newRule = parser.parseRule(styleSheet ? styleSheet->contents() : 0, ruleString);
     if (!newRule) {
         // SYNTAX_ERR: Raised if the specified rule has a syntax error and is unparsable.

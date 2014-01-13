@@ -27,6 +27,7 @@
 #include "core/html/shadow/ClearButtonElement.h"
 
 #include "core/dom/MouseEvent.h"
+#include "core/html/shadow/ShadowElementNames.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/rendering/RenderView.h"
@@ -40,21 +41,23 @@ inline ClearButtonElement::ClearButtonElement(Document* document, ClearButtonOwn
     , m_clearButtonOwner(&clearButtonOwner)
     , m_capturing(false)
 {
-    setPseudo(AtomicString("-webkit-clear-button", AtomicString::ConstructFromLiteral));
 }
 
 PassRefPtr<ClearButtonElement> ClearButtonElement::create(Document* document, ClearButtonOwner& clearButtonOwner)
 {
-    return adoptRef(new ClearButtonElement(document, clearButtonOwner));
+    RefPtr<ClearButtonElement> element = adoptRef(new ClearButtonElement(document, clearButtonOwner));
+    element->setPseudo(AtomicString("-webkit-clear-button", AtomicString::ConstructFromLiteral));
+    element->setAttribute(idAttr, ShadowElementNames::clearButton());
+    return element.release();
 }
 
-void ClearButtonElement::detach()
+void ClearButtonElement::detach(const AttachContext& context)
 {
     if (m_capturing) {
         if (Frame* frame = document()->frame())
             frame->eventHandler()->setCapturingMouseEventsNode(0);
     }
-    HTMLDivElement::detach();
+    HTMLDivElement::detach(context);
 }
 
 void ClearButtonElement::releaseCapture()
@@ -82,7 +85,7 @@ void ClearButtonElement::defaultEventHandler(Event* event)
         return;
     }
 
-    if (event->type() == eventNames().mousedownEvent && event->isMouseEvent() && static_cast<MouseEvent*>(event)->button() == LeftButton) {
+    if (event->type() == eventNames().mousedownEvent && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         if (renderer() && renderer()->visibleToHitTesting()) {
             if (Frame* frame = document()->frame()) {
                 frame->eventHandler()->setCapturingMouseEventsNode(this);
@@ -92,7 +95,7 @@ void ClearButtonElement::defaultEventHandler(Event* event)
         m_clearButtonOwner->focusAndSelectClearButtonOwner();
         event->setDefaultHandled();
     }
-    if (event->type() == eventNames().mouseupEvent && event->isMouseEvent() && static_cast<MouseEvent*>(event)->button() == LeftButton) {
+    if (event->type() == eventNames().mouseupEvent && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         if (m_capturing) {
             if (Frame* frame = document()->frame()) {
                 frame->eventHandler()->setCapturingMouseEventsNode(0);
@@ -107,6 +110,11 @@ void ClearButtonElement::defaultEventHandler(Event* event)
 
     if (!event->defaultHandled())
         HTMLDivElement::defaultEventHandler(event);
+}
+
+bool ClearButtonElement::isClearButtonElement() const
+{
+    return true;
 }
 
 }

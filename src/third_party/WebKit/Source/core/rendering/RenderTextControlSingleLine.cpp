@@ -25,22 +25,12 @@
 #include "core/rendering/RenderTextControlSingleLine.h"
 
 #include "CSSValueKeywords.h"
-#include "HTMLNames.h"
-#include "core/css/CSSFontSelector.h"
-#include "core/css/StyleResolver.h"
 #include "core/editing/FrameSelection.h"
-#include "core/html/shadow/TextControlInnerElements.h"
-#include "core/page/Chrome.h"
 #include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/LocalizedStrings.h"
 #include "core/platform/PlatformKeyboardEvent.h"
 #include "core/platform/graphics/SimpleFontData.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderScrollbar.h"
 #include "core/rendering/RenderTheme.h"
 
 using namespace std;
@@ -49,13 +39,12 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-RenderTextControlSingleLine::RenderTextControlSingleLine(Element* element)
+RenderTextControlSingleLine::RenderTextControlSingleLine(HTMLInputElement* element)
     : RenderTextControl(element)
     , m_shouldDrawCapsLockIndicator(false)
     , m_desiredInnerTextLogicalHeight(-1)
 {
-    ASSERT(element->isHTMLElement());
-    ASSERT(element->toInputElement());
+    ASSERT(element->hasTagName(inputTag));
 }
 
 RenderTextControlSingleLine::~RenderTextControlSingleLine()
@@ -319,7 +308,7 @@ LayoutUnit RenderTextControlSingleLine::preferredContentLogicalWidth(float charW
     if (factor <= 0)
         factor = 20;
 
-    LayoutUnit result = static_cast<LayoutUnit>(ceiledLayoutUnit(charWidth * factor));
+    LayoutUnit result = LayoutUnit::fromFloatCeil(charWidth * factor);
 
     float maxCharWidth = 0.f;
     AtomicString family = style()->font().family().family();
@@ -363,7 +352,7 @@ PassRefPtr<RenderStyle> RenderTextControlSingleLine::createInnerTextStyle(const 
 {
     RefPtr<RenderStyle> textBlockStyle = RenderStyle::create();   
     textBlockStyle->inheritFrom(startStyle);
-    adjustInnerTextStyle(startStyle, textBlockStyle.get());
+    adjustInnerTextStyle(textBlockStyle.get());
 
     textBlockStyle->setWhiteSpace(PRE);
     textBlockStyle->setOverflowWrap(NormalOverflowWrap);
@@ -477,7 +466,7 @@ bool RenderTextControlSingleLine::logicalScroll(ScrollLogicalDirection direction
 
 HTMLInputElement* RenderTextControlSingleLine::inputElement() const
 {
-    return node()->toInputElement();
+    return toHTMLInputElement(node());
 }
 
 }

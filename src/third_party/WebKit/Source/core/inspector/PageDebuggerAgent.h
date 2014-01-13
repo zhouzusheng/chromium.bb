@@ -33,6 +33,7 @@
 
 #include "bindings/v8/PageScriptDebugServer.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
+#include "core/inspector/InspectorOverlayHost.h"
 
 namespace WebCore {
 
@@ -41,14 +42,16 @@ class InspectorPageAgent;
 class Page;
 class PageScriptDebugServer;
 
-class PageDebuggerAgent : public InspectorDebuggerAgent {
+class PageDebuggerAgent :
+    public InspectorDebuggerAgent,
+    public InspectorOverlayHost::Listener {
     WTF_MAKE_NONCOPYABLE(PageDebuggerAgent);
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<PageDebuggerAgent> create(InstrumentingAgents*, InspectorCompositeState*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
+    static PassOwnPtr<PageDebuggerAgent> create(InstrumentingAgents*, InspectorCompositeState*, PageScriptDebugServer*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
     virtual ~PageDebuggerAgent();
 
-    void didClearMainFrameWindowObject();
+    void didClearWindowObjectInWorld(Frame*, DOMWrapperWorld*);
 
 protected:
     virtual void enable();
@@ -60,11 +63,17 @@ private:
     virtual PageScriptDebugServer& scriptDebugServer();
     virtual void muteConsole();
     virtual void unmuteConsole();
+    virtual void addConsoleMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL);
+
+    // InspectorOverlayHost::Listener implementation.
+    virtual void overlayResumed();
+    virtual void overlaySteppedOver();
 
     virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId);
     virtual void setOverlayMessage(ErrorString*, const String*);
 
-    PageDebuggerAgent(InstrumentingAgents*, InspectorCompositeState*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
+    PageDebuggerAgent(InstrumentingAgents*, InspectorCompositeState*, PageScriptDebugServer*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
+    PageScriptDebugServer* m_pageScriptDebugServer;
     InspectorPageAgent* m_pageAgent;
     InspectorOverlay* m_overlay;
 };

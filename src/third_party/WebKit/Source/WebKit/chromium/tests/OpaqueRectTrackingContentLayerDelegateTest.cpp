@@ -29,10 +29,9 @@
 #include "core/platform/graphics/Color.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
 #include "skia/ext/platform_canvas.h"
-#include <public/WebFloatRect.h>
-#include <public/WebRect.h>
+#include "public/platform/WebFloatRect.h"
+#include "public/platform/WebRect.h"
 
 #include <gtest/gtest.h>
 
@@ -67,8 +66,8 @@ struct PaintFillOpaque : public PaintCallback {
         Color opaque(255, 0, 0, 255);
         IntRect top(contentRect.x(), contentRect.y(), contentRect.width(), contentRect.height() / 2);
         IntRect bottom(contentRect.x(), contentRect.y() + contentRect.height() / 2, contentRect.width(), contentRect.height() / 2);
-        context.fillRect(top, opaque, ColorSpaceDeviceRGB);
-        context.fillRect(bottom, opaque, ColorSpaceDeviceRGB);
+        context.fillRect(top, opaque);
+        context.fillRect(bottom, opaque);
     }
 };
 
@@ -76,7 +75,7 @@ struct PaintFillAlpha : public PaintCallback {
     virtual void operator()(GraphicsContext& context, const IntRect& contentRect)
     {
         Color alpha(0, 0, 0, 0);
-        context.fillRect(contentRect, alpha, ColorSpaceDeviceRGB);
+        context.fillRect(contentRect, alpha);
     }
 };
 
@@ -89,13 +88,13 @@ struct PaintFillPartialOpaque : public PaintCallback {
     virtual void operator()(GraphicsContext& context, const IntRect& contentRect)
     {
         Color alpha(0, 0, 0, 0);
-        context.fillRect(contentRect, alpha, ColorSpaceDeviceRGB);
+        context.fillRect(contentRect, alpha);
 
         IntRect fillOpaque = m_opaqueRect;
         fillOpaque.intersect(contentRect);
 
         Color opaque(255, 255, 255, 255);
-        context.fillRect(fillOpaque, opaque, ColorSpaceDeviceRGB);
+        context.fillRect(fillOpaque, opaque);
     }
 
     IntRect m_opaqueRect;

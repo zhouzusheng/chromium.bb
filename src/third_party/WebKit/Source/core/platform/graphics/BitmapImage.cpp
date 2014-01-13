@@ -27,17 +27,19 @@
 #include "config.h"
 #include "core/platform/graphics/BitmapImage.h"
 
-#include "core/platform/MIMETypeRegistry.h"
 #include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/Timer.h"
 #include "core/platform/graphics/FloatRect.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/ImageObserver.h"
-#include "core/platform/graphics/IntRect.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/MemoryInstrumentationVector.h>
-#include <wtf/MemoryObjectInfo.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "core/platform/graphics/skia/NativeImageSkia.h"
+#include "core/platform/graphics/skia/SkiaUtils.h"
+#include "wtf/CurrentTime.h"
+#include "wtf/MemoryInstrumentationVector.h"
+#include "wtf/MemoryObjectInfo.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -64,9 +66,40 @@ BitmapImage::BitmapImage(ImageObserver* observer)
 {
 }
 
+BitmapImage::BitmapImage(PassRefPtr<NativeImageSkia> nativeImage, ImageObserver* observer)
+    : Image(observer)
+    , m_size(nativeImage->bitmap().width(), nativeImage->bitmap().height())
+    , m_currentFrame(0)
+    , m_frames(0)
+    , m_frameTimer(0)
+    , m_repetitionCount(cAnimationNone)
+    , m_repetitionCountStatus(Unknown)
+    , m_repetitionsComplete(0)
+    , m_decodedSize(nativeImage->decodedSize())
+    , m_decodedPropertiesSize(0)
+    , m_frameCount(1)
+    , m_isSolidColor(false)
+    , m_checkedForSolidColor(false)
+    , m_animationFinished(true)
+    , m_allDataReceived(true)
+    , m_haveSize(true)
+    , m_sizeAvailable(true)
+    , m_haveFrameCount(true)
+{
+    // Since we don't have a decoder, we can't figure out the image orientation.
+    // Set m_sizeRespectingOrientation to be the same as m_size so it's not 0x0.
+    m_sizeRespectingOrientation = m_size;
+
+    m_frames.grow(1);
+    m_frames[0].m_hasAlpha = !nativeImage->bitmap().isOpaque();
+    m_frames[0].m_frame = nativeImage;
+    m_frames[0].m_haveMetadata = true;
+
+    checkForSolidColor();
+}
+
 BitmapImage::~BitmapImage()
 {
-    invalidatePlatformData();
     stopAnimation();
 }
 
@@ -81,47 +114,35 @@ bool BitmapImage::hasSingleSecurityOrigin() const
 }
 
 
-void BitmapImage::destroyDecodedData(bool destroyAll)
+void BitmapImage::destroyDecodedData()
 {
-    unsigned frameBytesCleared = 0;
-    const size_t clearBeforeFrame = destroyAll ? m_frames.size() : m_currentFrame;
-
-    // Because we can advance frames without always needing to decode the actual
-    // bitmap data, |m_currentFrame| may be larger than m_frames.size();
-    // make sure not to walk off the end of the container in this case.
-    for (size_t i = 0; i < std::min(clearBeforeFrame, m_frames.size()); ++i) {
+    for (size_t i = 0; i < m_frames.size(); ++i) {
         // The underlying frame isn't actually changing (we're just trying to
         // save the memory for the framebuffer data), so we don't need to clear
         // the metadata.
-        unsigned frameBytes = m_frames[i].m_frameBytes;
-        if (m_frames[i].clear(false))
-            frameBytesCleared += frameBytes;
+        m_frames[i].clear(false);
     }
 
-    destroyMetadataAndNotify(frameBytesCleared);
-
-    m_source.clear(destroyAll, clearBeforeFrame, data(), m_allDataReceived);
-    return;
+    destroyMetadataAndNotify(m_source.clearCacheExceptFrame(m_currentFrame));
 }
 
-void BitmapImage::destroyDecodedDataIfNecessary(bool destroyAll)
+void BitmapImage::destroyDecodedDataIfNecessary()
 {
     // Animated images >5MB are considered large enough that we'll only hang on
     // to one frame at a time.
-    static const unsigned cLargeAnimationCutoff = 5242880;
-    unsigned allFrameBytes = 0;
+    static const size_t cLargeAnimationCutoff = 5242880;
+    size_t allFrameBytes = 0;
     for (size_t i = 0; i < m_frames.size(); ++i)
         allFrameBytes += m_frames[i].m_frameBytes;
 
     if (allFrameBytes > cLargeAnimationCutoff)
-        destroyDecodedData(destroyAll);
+        destroyDecodedData();
 }
 
-void BitmapImage::destroyMetadataAndNotify(unsigned frameBytesCleared)
+void BitmapImage::destroyMetadataAndNotify(size_t frameBytesCleared)
 {
     m_isSolidColor = false;
     m_checkedForSolidColor = false;
-    invalidatePlatformData();
 
     ASSERT(m_decodedSize >= frameBytesCleared);
     m_decodedSize -= frameBytesCleared;
@@ -136,8 +157,6 @@ void BitmapImage::destroyMetadataAndNotify(unsigned frameBytesCleared)
 void BitmapImage::cacheFrame(size_t index)
 {
     size_t numFrames = frameCount();
-    ASSERT(m_decodedSize == 0 || numFrames > 1);
-    
     if (m_frames.size() < numFrames)
         m_frames.grow(numFrames);
 
@@ -269,6 +288,56 @@ String BitmapImage::filenameExtension() const
     return m_source.filenameExtension();
 }
 
+void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, BlendMode blendMode)
+{
+    draw(ctxt, dstRect, srcRect, compositeOp, blendMode, DoNotRespectImageOrientation);
+}
+
+void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, BlendMode blendMode, RespectImageOrientationEnum shouldRespectImageOrientation)
+{
+    // Spin the animation to the correct frame before we try to draw it, so we
+    // don't draw an old frame and then immediately need to draw a newer one,
+    // causing flicker and wasting CPU.
+    startAnimation();
+
+    RefPtr<NativeImageSkia> bm = nativeImageForCurrentFrame();
+    if (!bm)
+        return; // It's too early and we don't have an image yet.
+
+    FloatRect normDstRect = adjustForNegativeSize(dstRect);
+    FloatRect normSrcRect = adjustForNegativeSize(srcRect);
+    normSrcRect.intersect(FloatRect(0, 0, bm->bitmap().width(), bm->bitmap().height()));
+
+    if (normSrcRect.isEmpty() || normDstRect.isEmpty())
+        return; // Nothing to draw.
+
+    ImageOrientation orientation = DefaultImageOrientation;
+    if (shouldRespectImageOrientation == RespectImageOrientation)
+        orientation = frameOrientationAtIndex(m_currentFrame);
+
+    GraphicsContextStateSaver saveContext(*ctxt, false);
+    if (orientation != DefaultImageOrientation) {
+        saveContext.save();
+
+        // ImageOrientation expects the origin to be at (0, 0)
+        ctxt->translate(normDstRect.x(), normDstRect.y());
+        normDstRect.setLocation(FloatPoint());
+
+        ctxt->concatCTM(orientation.transformFromDefault(normDstRect.size()));
+
+        if (orientation.usesWidthAsHeight()) {
+            // The destination rect will have it's width and height already reversed for the orientation of
+            // the image, as it was needed for page layout, so we need to reverse it back here.
+            normDstRect = FloatRect(normDstRect.x(), normDstRect.y(), normDstRect.height(), normDstRect.width());
+        }
+    }
+
+    paintSkBitmap(ctxt, *bm, normSrcRect, normDstRect, WebCoreCompositeToSkiaComposite(compositeOp, blendMode));
+
+    if (ImageObserver* observer = imageObserver())
+        observer->didDraw(this);
+}
+
 size_t BitmapImage::frameCount()
 {
     if (!m_haveFrameCount) {
@@ -303,7 +372,7 @@ bool BitmapImage::ensureFrameIsCached(size_t index)
     return true;
 }
 
-PassNativeImagePtr BitmapImage::frameAtIndex(size_t index)
+PassRefPtr<NativeImageSkia> BitmapImage::frameAtIndex(size_t index)
 {
     if (!ensureFrameIsCached(index))
         return 0;
@@ -324,7 +393,7 @@ float BitmapImage::frameDurationAtIndex(size_t index)
     return m_source.frameDurationAtIndex(index);
 }
 
-PassNativeImagePtr BitmapImage::nativeImageForCurrentFrame()
+PassRefPtr<NativeImageSkia> BitmapImage::nativeImageForCurrentFrame()
 {
     return frameAtIndex(currentFrame());
 }
@@ -502,7 +571,7 @@ void BitmapImage::resetAnimation()
     m_animationFinished = false;
     
     // For extremely large animations, when the animation is reset, we just throw everything away.
-    destroyDecodedDataIfNecessary(true);
+    destroyDecodedDataIfNecessary();
 }
 
 unsigned BitmapImage::decodedSize() const
@@ -532,7 +601,6 @@ bool BitmapImage::internalAdvanceAnimation(bool skippingFrames)
 
     ++m_currentFrame;
     bool advancedAnimation = true;
-    bool destroyAll = false;
     if (m_currentFrame >= frameCount()) {
         ++m_repetitionsComplete;
 
@@ -546,18 +614,36 @@ bool BitmapImage::internalAdvanceAnimation(bool skippingFrames)
             m_desiredFrameStartTime = 0;
             --m_currentFrame;
             advancedAnimation = false;
-        } else {
+        } else
             m_currentFrame = 0;
-            destroyAll = true;
-        }
     }
-    destroyDecodedDataIfNecessary(destroyAll);
+    destroyDecodedDataIfNecessary();
 
     // We need to draw this frame if we advanced to it while not skipping, or if
     // while trying to skip frames we hit the last frame and thus had to stop.
     if (skippingFrames != advancedAnimation)
         imageObserver()->animationAdvanced(this);
     return advancedAnimation;
+}
+
+void BitmapImage::checkForSolidColor()
+{
+    m_isSolidColor = false;
+    m_checkedForSolidColor = true;
+
+    if (frameCount() > 1)
+        return;
+
+    RefPtr<NativeImageSkia> frame = frameAtIndex(0);
+
+    if (frame && size().width() == 1 && size().height() == 1) {
+        SkAutoLockPixels lock(frame->bitmap());
+        if (!frame->bitmap().getPixels())
+            return;
+
+        m_isSolidColor = true;
+        m_solidColor = Color(frame->bitmap().getColor(0, 0));
+    }
 }
 
 bool BitmapImage::mayFillWithSolidColor()
@@ -588,7 +674,7 @@ void FrameData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Image);
     memoryObjectInfo->setClassName("FrameData");
-    info.addMember(m_frame, "frame", WTF::RetainingPointer);
+    info.addMember(m_frame, "frame");
 }
 
 }

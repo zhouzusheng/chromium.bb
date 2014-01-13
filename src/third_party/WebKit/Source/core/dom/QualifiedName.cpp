@@ -26,6 +26,7 @@
 #endif
 
 #include "HTMLNames.h"
+#include "SVGNames.h"
 #include "XLinkNames.h"
 #include "XMLNSNames.h"
 #include "XMLNames.h"
@@ -35,16 +36,10 @@
 #include <wtf/HashSet.h>
 #include <wtf/StaticConstructors.h>
 
-#if ENABLE(SVG)
-#include "SVGNames.h"
-#endif
-
 namespace WebCore {
 
 static const int staticQualifiedNamesCount = HTMLNames::HTMLTagsCount + HTMLNames::HTMLAttrsCount
-#if ENABLE(SVG)
     + SVGNames::SVGTagsCount + SVGNames::SVGAttrsCount
-#endif
     + XLinkNames::XLinkAttrsCount
     + XMLNSNames::XMLNSAttrsCount
     + XMLNames::XMLAttrsCount;
@@ -77,7 +72,7 @@ QualifiedName::QualifiedName(const AtomicString& p, const AtomicString& l, const
     if (!gNameCache)
         gNameCache = new QNameSet;
     QualifiedNameComponents components = { p.impl(), l.impl(), n.isEmpty() ? nullAtom.impl() : n.impl() };
-    QNameSet::AddResult addResult = gNameCache->add<QualifiedNameComponents, QNameComponentsTranslator>(components);
+    QNameSet::AddResult addResult = gNameCache->add<QNameComponentsTranslator>(components);
     m_impl = *addResult.iterator;
     if (!addResult.isNewEntry)
         m_impl->ref();
@@ -120,11 +115,6 @@ DEFINE_GLOBAL(QualifiedName, anyName, nullAtom, starAtom, starAtom)
 
 void QualifiedName::init()
 {
-    static bool initialized;
-    if (initialized)
-        return;
-    initialized = true;
-
     ASSERT(starAtom.impl());
     new ((void*)&anyName) QualifiedName(nullAtom, starAtom, starAtom);
 }

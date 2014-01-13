@@ -52,22 +52,21 @@ icu::BreakIterator* BreakIterator::UnpackBreakIterator(
 }
 
 void BreakIterator::DeleteBreakIterator(v8::Isolate* isolate,
-                                        v8::Persistent<v8::Value> object,
+                                        v8::Persistent<v8::Object>* object,
                                         void* param) {
-  v8::Persistent<v8::Object> persistent_object =
-      v8::Persistent<v8::Object>::Cast(object);
-
   // First delete the hidden C++ object.
   // Unpacking should never return NULL here. That would only happen if
   // this method is used as the weak callback for persistent handles not
   // pointing to a break iterator.
-  delete UnpackBreakIterator(persistent_object);
+  v8::HandleScope handle_scope(isolate);
+  v8::Local<v8::Object> handle = v8::Local<v8::Object>::New(isolate, *object);
+  delete UnpackBreakIterator(handle);
 
   delete static_cast<icu::UnicodeString*>(
-      persistent_object->GetAlignedPointerFromInternalField(1));
+      handle->GetAlignedPointerFromInternalField(1));
 
   // Then dispose of the persistent handle to JS object.
-  persistent_object.Dispose(isolate);
+  object->Dispose(isolate);
 }
 
 // Throws a JavaScript exception.
@@ -97,59 +96,63 @@ icu::UnicodeString* ResetAdoptedText(
   return text;
 }
 
-v8::Handle<v8::Value> BreakIterator::JSInternalBreakIteratorAdoptText(
-    const v8::Arguments& args) {
+void BreakIterator::JSInternalBreakIteratorAdoptText(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   if (args.Length() != 2 || !args[0]->IsObject() || !args[1]->IsString()) {
-    return v8::ThrowException(v8::Exception::Error(
+    v8::ThrowException(v8::Exception::Error(
         v8::String::New(
             "Internal error. Iterator and text have to be specified.")));
+    return;
   }
 
   icu::BreakIterator* break_iterator = UnpackBreakIterator(args[0]->ToObject());
   if (!break_iterator) {
-    return ThrowUnexpectedObjectError();
+    ThrowUnexpectedObjectError();
+    return;
   }
 
   break_iterator->setText(*ResetAdoptedText(args[0]->ToObject(), args[1]));
-
-  return v8::Undefined();
 }
 
-v8::Handle<v8::Value> BreakIterator::JSInternalBreakIteratorFirst(
-    const v8::Arguments& args) {
+void BreakIterator::JSInternalBreakIteratorFirst(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   icu::BreakIterator* break_iterator = UnpackBreakIterator(args[0]->ToObject());
   if (!break_iterator) {
-    return ThrowUnexpectedObjectError();
+    ThrowUnexpectedObjectError();
+    return;
   }
 
-  return v8::Int32::New(break_iterator->first());
+  args.GetReturnValue().Set(static_cast<int32_t>(break_iterator->first()));
 }
 
-v8::Handle<v8::Value> BreakIterator::JSInternalBreakIteratorNext(
-    const v8::Arguments& args) {
+void BreakIterator::JSInternalBreakIteratorNext(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   icu::BreakIterator* break_iterator = UnpackBreakIterator(args[0]->ToObject());
   if (!break_iterator) {
-    return ThrowUnexpectedObjectError();
+    ThrowUnexpectedObjectError();
+    return;
   }
 
-  return v8::Int32::New(break_iterator->next());
+  args.GetReturnValue().Set(static_cast<int32_t>(break_iterator->next()));
 }
 
-v8::Handle<v8::Value> BreakIterator::JSInternalBreakIteratorCurrent(
-    const v8::Arguments& args) {
+void BreakIterator::JSInternalBreakIteratorCurrent(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   icu::BreakIterator* break_iterator = UnpackBreakIterator(args[0]->ToObject());
   if (!break_iterator) {
-    return ThrowUnexpectedObjectError();
+    ThrowUnexpectedObjectError();
+    return;
   }
 
-  return v8::Int32::New(break_iterator->current());
+  args.GetReturnValue().Set(static_cast<int32_t>(break_iterator->current()));
 }
 
-v8::Handle<v8::Value> BreakIterator::JSInternalBreakIteratorBreakType(
-    const v8::Arguments& args) {
+void BreakIterator::JSInternalBreakIteratorBreakType(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   icu::BreakIterator* break_iterator = UnpackBreakIterator(args[0]->ToObject());
   if (!break_iterator) {
-    return ThrowUnexpectedObjectError();
+    ThrowUnexpectedObjectError();
+    return;
   }
 
   // TODO(cira): Remove cast once ICU fixes base BreakIterator class.
@@ -157,33 +160,34 @@ v8::Handle<v8::Value> BreakIterator::JSInternalBreakIteratorBreakType(
       static_cast<icu::RuleBasedBreakIterator*>(break_iterator);
   int32_t status = rule_based_iterator->getRuleStatus();
   // Keep return values in sync with JavaScript BreakType enum.
+  v8::Handle<v8::String> result;
   if (status >= UBRK_WORD_NONE && status < UBRK_WORD_NONE_LIMIT) {
-    return v8::String::New("none");
+    result = v8::String::New("none");
   } else if (status >= UBRK_WORD_NUMBER && status < UBRK_WORD_NUMBER_LIMIT) {
-    return v8::String::New("number");
+    result = v8::String::New("number");
   } else if (status >= UBRK_WORD_LETTER && status < UBRK_WORD_LETTER_LIMIT) {
-    return v8::String::New("letter");
+    result = v8::String::New("letter");
   } else if (status >= UBRK_WORD_KANA && status < UBRK_WORD_KANA_LIMIT) {
-    return v8::String::New("kana");
+    result = v8::String::New("kana");
   } else if (status >= UBRK_WORD_IDEO && status < UBRK_WORD_IDEO_LIMIT) {
-    return v8::String::New("ideo");
+    result = v8::String::New("ideo");
   } else {
-    return v8::String::New("unknown");
+    result = v8::String::New("unknown");
   }
+  args.GetReturnValue().Set(result);
 }
 
-v8::Handle<v8::Value> BreakIterator::JSCreateBreakIterator(
-    const v8::Arguments& args) {
-  if (args.Length() != 3 ||
-      !args[0]->IsString() ||
-      !args[1]->IsObject() ||
+void BreakIterator::JSCreateBreakIterator(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  if (args.Length() != 3 || !args[0]->IsString() || !args[1]->IsObject() ||
       !args[2]->IsObject()) {
-    return v8::ThrowException(v8::Exception::Error(
+    v8::ThrowException(v8::Exception::Error(
         v8::String::New("Internal error, wrong parameters.")));
+    return;
   }
 
   v8::Isolate* isolate = args.GetIsolate();
-  v8::Persistent<v8::ObjectTemplate> break_iterator_template =
+  v8::Local<v8::ObjectTemplate> break_iterator_template =
       Utils::GetTemplate2(isolate);
 
   // Create an empty object wrapper.
@@ -191,36 +195,37 @@ v8::Handle<v8::Value> BreakIterator::JSCreateBreakIterator(
   // But the handle shouldn't be empty.
   // That can happen if there was a stack overflow when creating the object.
   if (local_object.IsEmpty()) {
-    return local_object;
+    args.GetReturnValue().Set(local_object);
+    return;
   }
-
-  v8::Persistent<v8::Object> wrapper =
-      v8::Persistent<v8::Object>::New(isolate, local_object);
 
   // Set break iterator as internal field of the resulting JS object.
   icu::BreakIterator* break_iterator = InitializeBreakIterator(
       args[0]->ToString(), args[1]->ToObject(), args[2]->ToObject());
 
   if (!break_iterator) {
-    return v8::ThrowException(v8::Exception::Error(v8::String::New(
+    v8::ThrowException(v8::Exception::Error(v8::String::New(
         "Internal error. Couldn't create ICU break iterator.")));
+    return;
   } else {
-    wrapper->SetAlignedPointerInInternalField(0, break_iterator);
+    local_object->SetAlignedPointerInInternalField(0, break_iterator);
     // Make sure that the pointer to adopted text is NULL.
-    wrapper->SetAlignedPointerInInternalField(1, NULL);
+    local_object->SetAlignedPointerInInternalField(1, NULL);
 
     v8::TryCatch try_catch;
-    wrapper->Set(v8::String::New("breakIterator"), v8::String::New("valid"));
+    local_object->Set(v8::String::New("breakIterator"), v8::String::New("valid"));
     if (try_catch.HasCaught()) {
-      return v8::ThrowException(v8::Exception::Error(
+      v8::ThrowException(v8::Exception::Error(
           v8::String::New("Internal error, couldn't set property.")));
+      return;
     }
   }
 
+  v8::Persistent<v8::Object> wrapper(isolate, local_object);
   // Make object handle weak so we can delete iterator once GC kicks in.
-  wrapper.MakeWeak(isolate, NULL, DeleteBreakIterator);
-
-  return wrapper;
+  wrapper.MakeWeak<void>(NULL, &DeleteBreakIterator);
+  args.GetReturnValue().Set(wrapper);
+  wrapper.ClearAndLeak();
 }
 
 static icu::BreakIterator* InitializeBreakIterator(

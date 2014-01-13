@@ -27,9 +27,8 @@
 #include <gtest/gtest.h>
 #include "core/platform/graphics/GraphicsLayer.h"
 #include "core/platform/graphics/Image.h"
-#include "core/platform/graphics/chromium/GraphicsLayerChromium.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
-#include <public/WebImageLayer.h>
+#include "public/platform/WebImageLayer.h"
 #include <wtf/PassOwnPtr.h>
 
 using namespace WebCore;
@@ -38,8 +37,8 @@ namespace {
 
 class MockGraphicsLayerClient : public GraphicsLayerClient {
   public:
-    virtual void notifyAnimationStarted(const GraphicsLayer*, double time) { }
-    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) { }
+    virtual void notifyAnimationStarted(const GraphicsLayer*, double time) OVERRIDE { }
+    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) OVERRIDE { }
 };
 
 class TestImage : public Image {
@@ -61,22 +60,22 @@ public:
         m_nativeImage->bitmap().setIsOpaque(opaque);
     }
 
-    virtual bool isBitmapImage() const
+    virtual bool isBitmapImage() const OVERRIDE
     {
         return true;
     }
 
-    virtual bool currentFrameKnownToBeOpaque()
+    virtual bool currentFrameKnownToBeOpaque() OVERRIDE
     {
         return m_nativeImage->bitmap().isOpaque();
     }
 
-    virtual IntSize size() const
+    virtual IntSize size() const OVERRIDE
     {
         return m_size;
     }
 
-    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame()
+    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() OVERRIDE
     {
         if (m_size.isZero())
             return 0;
@@ -85,18 +84,16 @@ public:
     }
 
     // Stub implementations of pure virtual Image functions.
-    virtual void destroyDecodedData(bool)
+    virtual void destroyDecodedData() OVERRIDE
     {
     }
 
-    virtual unsigned int decodedSize() const
+    virtual unsigned decodedSize() const OVERRIDE
     {
         return 0u;
     }
 
-    virtual void draw(WebCore::GraphicsContext*, const WebCore::FloatRect&,
-                      const WebCore::FloatRect&, WebCore::ColorSpace,
-                      WebCore::CompositeOperator, WebCore::BlendMode)
+    virtual void draw(GraphicsContext*, const FloatRect&, const FloatRect&, CompositeOperator, BlendMode) OVERRIDE
     {
     }
 
@@ -107,10 +104,16 @@ private:
     RefPtr<NativeImageSkia> m_nativeImage;
 };
 
+class GraphicsLayerForTesting : public GraphicsLayer {
+public:
+    explicit GraphicsLayerForTesting(GraphicsLayerClient* client)
+        : GraphicsLayer(client) { };
+};
+
 TEST(ImageLayerChromiumTest, opaqueImages)
 {
     MockGraphicsLayerClient client;
-    OwnPtr<GraphicsLayerChromium> graphicsLayer = adoptPtr(new GraphicsLayerChromium(&client));
+    OwnPtr<GraphicsLayerForTesting> graphicsLayer = adoptPtr(new GraphicsLayerForTesting(&client));
     ASSERT_TRUE(graphicsLayer.get());
 
     RefPtr<Image> opaqueImage = TestImage::create(IntSize(100, 100), true);

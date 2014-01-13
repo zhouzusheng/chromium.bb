@@ -30,15 +30,17 @@
 
 #include "config.h"
 
-#include <public/WebMediaStreamSource.h>
+#include "public/platform/WebMediaStreamSource.h"
 
 #include "core/platform/audio/AudioBus.h"
+#include "core/platform/mediastream/MediaConstraints.h"
 #include "core/platform/mediastream/MediaStreamSource.h"
-#include <public/WebAudioDestinationConsumer.h>
-#include <public/WebString.h>
-#include <wtf/MainThread.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/Vector.h>
+#include "public/platform/WebAudioDestinationConsumer.h"
+#include "public/platform/WebMediaConstraints.h"
+#include "public/platform/WebString.h"
+#include "wtf/MainThread.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/Vector.h"
 
 using namespace WebCore;
 
@@ -153,6 +155,12 @@ void WebMediaStreamSource::setExtraData(ExtraData* extraData)
         extraData->setOwner(m_private.get());
 
     m_private->setExtraData(new ExtraDataContainer(extraData));
+}
+
+WebMediaConstraints WebMediaStreamSource::constraints()
+{
+    ASSERT(!m_private.isNull());
+    return m_private->constraints();
 }
 
 WebString WebMediaStreamSource::deviceId() const

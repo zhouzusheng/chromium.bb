@@ -23,10 +23,9 @@
 #include "config.h"
 #include "core/dom/Event.h"
 
-#include "core/dom/EventDispatcher.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/EventTarget.h"
-#include "core/dom/UserGestureIndicator.h"
+#include "core/dom/StaticNodeList.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include <wtf/CurrentTime.h>
 #include <wtf/text/AtomicString.h>
@@ -199,6 +198,21 @@ void Event::setUnderlyingEvent(PassRefPtr<Event> ue)
         if (e == this)
             return;
     m_underlyingEvent = ue;
+}
+
+PassRefPtr<NodeList> Event::path() const
+{
+    if (!m_currentTarget || !m_currentTarget->toNode())
+        return StaticNodeList::createEmpty();
+    Node* node = m_currentTarget->toNode();
+    size_t eventPathSize = m_eventPath.size();
+    for (size_t i = 0; i < eventPathSize; ++i) {
+        if (node == m_eventPath[i]->node()) {
+            ASSERT(m_eventPath[i]->eventPath());
+            return m_eventPath[i]->eventPath();
+        }
+    }
+    return StaticNodeList::createEmpty();
 }
 
 } // namespace WebCore

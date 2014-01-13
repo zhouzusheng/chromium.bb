@@ -22,11 +22,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimateTransformElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/svg/SVGTransformable.h"
 
 namespace WebCore {
@@ -58,7 +56,7 @@ bool SVGAnimateTransformElement::isSupportedAttribute(const QualifiedName& attrN
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty())
         supportedAttributes.add(SVGNames::typeAttr);
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGAnimateTransformElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -79,5 +77,3 @@ void SVGAnimateTransformElement::parseAttribute(const QualifiedName& name, const
 }
 
 }
-
-#endif // ENABLE(SVG)

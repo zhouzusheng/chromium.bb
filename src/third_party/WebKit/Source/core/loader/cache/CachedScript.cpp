@@ -29,8 +29,6 @@
 
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/loader/TextResourceDecoder.h"
-#include "core/loader/cache/CachedResourceClient.h"
-#include "core/loader/cache/CachedResourceClientWalker.h"
 #include "core/loader/cache/MemoryCache.h"
 #include "core/platform/MIMETypeRegistry.h"
 #include "core/platform/SharedBuffer.h"
@@ -43,10 +41,12 @@ CachedScript::CachedScript(const ResourceRequest& resourceRequest, const String&
     : CachedResource(resourceRequest, Script)
     , m_decoder(TextResourceDecoder::create("application/javascript", charset))
 {
+    DEFINE_STATIC_LOCAL(const AtomicString, acceptScript, ("*/*", AtomicString::ConstructFromLiteral));
+
     // It's javascript we want.
     // But some websites think their scripts are <some wrong mimetype here>
     // and refuse to serve them if we only accept application/x-javascript.
-    setAccept("*/*");
+    setAccept(acceptScript);
 }
 
 CachedScript::~CachedScript()
@@ -71,23 +71,19 @@ String CachedScript::mimeType() const
 const String& CachedScript::script()
 {
     ASSERT(!isPurgeable());
+    ASSERT(isLoaded());
 
     if (!m_script && m_data) {
         m_script = m_decoder->decode(m_data->data(), encodedSize());
         m_script.append(m_decoder->flush());
-        setDecodedSize(m_script.sizeInBytes());
+        m_data.clear();
+        // We lie a it here and claim that m_script counts as encoded data (even though it's really decoded data).
+        // That's because the MemoryCache thinks that it can clear out decoded data by calling destroyDecodedData(),
+        // but we can't destroy m_script in destroyDecodedData because that's our only copy of the data!
+        setEncodedSize(m_script.sizeInBytes());
     }
-    m_decodedDataDeletionTimer.startOneShot(0);
-    
-    return m_script;
-}
 
-void CachedScript::destroyDecodedData()
-{
-    m_script = String();
-    setDecodedSize(0);
-    if (!MemoryCache::shouldMakeResourcePurgeableOnEviction() && isSafeToMakePurgeable())
-        makePurgeable(true);
+    return m_script;
 }
 
 bool CachedScript::mimeTypeAllowedByNosniff() const

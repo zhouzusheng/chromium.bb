@@ -19,7 +19,6 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGElementInstanceList.h"
 
 namespace WebCore {
@@ -27,6 +26,7 @@ namespace WebCore {
 SVGElementInstanceList::SVGElementInstanceList(PassRefPtr<SVGElementInstance> rootInstance)
     : m_rootInstance(rootInstance)
 {
+    ScriptWrappable::init(this);
 }
 
 SVGElementInstanceList::~SVGElementInstanceList()
@@ -54,7 +54,3 @@ SVGElementInstance* SVGElementInstanceList::item(unsigned index)
 }
 
 }
-
-#endif // ENABLE(SVG)
-
-// vim:ts=4:noet

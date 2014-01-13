@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2011, 2012 Google Inc. All rights reserved.
+ * Copyright (C) 2013, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -37,19 +38,18 @@
 #include "core/loader/CrossOriginPreflightResultCache.h"
 #include "core/loader/DocumentThreadableLoaderClient.h"
 #include "core/loader/FrameLoader.h"
-#include "core/loader/ProgressTracker.h"
 #include "core/loader/ResourceLoader.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "core/loader/cache/CachedRawResource.h"
 #include "core/loader/cache/CachedResourceLoader.h"
 #include "core/loader/cache/CachedResourceRequest.h"
+#include "core/page/ContentSecurityPolicy.h"
 #include "core/page/Frame.h"
-#include "core/page/SecurityOrigin.h"
-#include "core/platform/SchemeRegistry.h"
 #include "core/platform/network/ResourceError.h"
 #include "core/platform/network/ResourceRequest.h"
-#include <wtf/Assertions.h>
-#include <wtf/UnusedParam.h>
+#include "weborigin/SchemeRegistry.h"
+#include "weborigin/SecurityOrigin.h"
+#include "wtf/Assertions.h"
 
 namespace WebCore {
 
@@ -75,6 +75,7 @@ DocumentThreadableLoader::DocumentThreadableLoader(Document* document, Threadabl
     , m_sameOriginRequest(securityOrigin()->canRequest(request.url()))
     , m_simpleRequest(true)
     , m_async(blockingBehavior == LoadAsynchronously)
+    , m_timeoutTimer(this, &DocumentThreadableLoader::didTimeout)
 {
     ASSERT(document);
     ASSERT(client);
@@ -142,14 +143,22 @@ DocumentThreadableLoader::~DocumentThreadableLoader()
 
 void DocumentThreadableLoader::cancel()
 {
+    cancelWithError(ResourceError());
+}
+
+void DocumentThreadableLoader::cancelWithError(const ResourceError& error)
+{
     RefPtr<DocumentThreadableLoader> protect(this);
 
     // Cancel can re-enter and m_resource might be null here as a result.
     if (m_client && m_resource) {
-        // FIXME: This error is sent to the client in didFail(), so it should not be an internal one. Use FrameLoaderClient::cancelledError() instead.
-        ResourceError error(errorDomainWebKitInternal, 0, m_resource->url(), "Load cancelled");
-        error.setIsCancellation(true);
-        didFail(m_resource->identifier(), error);
+        ResourceError errorForCallback = error;
+        if (errorForCallback.isNull()) {
+            // FIXME: This error is sent to the client in didFail(), so it should not be an internal one. Use FrameLoaderClient::cancelledError() instead.
+            errorForCallback = ResourceError(errorDomainWebKitInternal, 0, m_resource->url().string(), "Load cancelled");
+            errorForCallback.setIsCancellation(true);
+        }
+        didFail(m_resource->identifier(), errorForCallback);
     }
     clearResource();
     m_client = 0;
@@ -179,6 +188,12 @@ void DocumentThreadableLoader::redirectReceived(CachedResource* resource, Resour
     ASSERT_UNUSED(resource, resource == m_resource);
 
     RefPtr<DocumentThreadableLoader> protect(this);
+    if (!isAllowedByPolicy(request.url())) {
+        m_client->didFailRedirectCheck();
+        request = ResourceRequest();
+        return;
+    }
+
     // Allow same origin requests to continue after allowing clients to audit the redirect.
     if (isAllowedRedirect(request.url())) {
         if (m_client->isDocumentThreadableLoaderClient())
@@ -187,7 +202,8 @@ void DocumentThreadableLoader::redirectReceived(CachedResource* resource, Resour
     }
 
     // When using access control, only simple cross origin requests are allowed to redirect. The new request URL must have a supported
-    // scheme and not contain the userinfo production. In addition, the redirect response must pass the access control check.
+    // scheme and not contain the userinfo production. In addition, the redirect response must pass the access control check if the
+    // original request was not same-origin.
     if (m_options.crossOriginRequestPolicy == UseAccessControl) {
         bool allowRedirect = false;
         if (m_simpleRequest) {
@@ -195,20 +211,27 @@ void DocumentThreadableLoader::redirectReceived(CachedResource* resource, Resour
             allowRedirect = SchemeRegistry::shouldTreatURLSchemeAsCORSEnabled(request.url().protocol())
                             && request.url().user().isEmpty()
                             && request.url().pass().isEmpty()
-                            && passesAccessControlCheck(redirectResponse, m_options.allowCredentials, securityOrigin(), accessControlErrorDescription);
+                            && (m_sameOriginRequest || passesAccessControlCheck(redirectResponse, m_options.allowCredentials, securityOrigin(), accessControlErrorDescription));
         }
 
         if (allowRedirect) {
             if (m_resource)
                 clearResource();
 
-            RefPtr<SecurityOrigin> originalOrigin = SecurityOrigin::createFromString(redirectResponse.url());
-            RefPtr<SecurityOrigin> requestOrigin = SecurityOrigin::createFromString(request.url());
-            // If the request URL origin is not same origin with the original URL origin, set source origin to a globally unique identifier.
-            if (!originalOrigin->isSameSchemeHostPort(requestOrigin.get()))
+            RefPtr<SecurityOrigin> originalOrigin = SecurityOrigin::create(redirectResponse.url());
+            RefPtr<SecurityOrigin> requestOrigin = SecurityOrigin::create(request.url());
+            // If the original request wasn't same-origin, then if the request URL origin is not same origin with the original URL origin,
+            // set the source origin to a globally unique identifier. (If the original request was same-origin, the origin of the new request
+            // should be the original URL origin.)
+            if (!m_sameOriginRequest && !originalOrigin->isSameSchemeHostPort(requestOrigin.get()))
                 m_options.securityOrigin = SecurityOrigin::createUnique();
             // Force any subsequent requests to use these checks.
             m_sameOriginRequest = false;
+
+            // Since the request is no longer same-origin, if the user didn't request credentials in
+            // the first place, update our state so we neither request them nor expect they must be allowed.
+            if (m_options.credentialsRequested == ClientDidNotRequestCredentials)
+                m_options.allowCredentials = DoNotAllowStoredCredentials;
 
             // Remove any headers that may have been added by the network layer that cause access control to fail.
             request.clearHTTPContentType();
@@ -258,7 +281,7 @@ void DocumentThreadableLoader::didReceiveResponse(unsigned long identifier, cons
         InspectorInstrumentation::didReceiveResourceResponse(cookie, identifier, loader, response, 0);
 
         if (!passesAccessControlCheck(response, m_options.allowCredentials, securityOrigin(), accessControlErrorDescription)) {
-            preflightFailure(identifier, response.url(), accessControlErrorDescription);
+            preflightFailure(identifier, response.url().string(), accessControlErrorDescription);
             return;
         }
 
@@ -266,7 +289,7 @@ void DocumentThreadableLoader::didReceiveResponse(unsigned long identifier, cons
         if (!preflightResult->parse(response, accessControlErrorDescription)
             || !preflightResult->allowsCrossOriginMethod(m_actualRequest->httpMethod(), accessControlErrorDescription)
             || !preflightResult->allowsCrossOriginHeaders(m_actualRequest->httpHeaderFields(), accessControlErrorDescription)) {
-            preflightFailure(identifier, response.url(), accessControlErrorDescription);
+            preflightFailure(identifier, response.url().string(), accessControlErrorDescription);
             return;
         }
 
@@ -306,6 +329,8 @@ void DocumentThreadableLoader::notifyFinished(CachedResource* resource)
 {
     ASSERT(m_client);
     ASSERT_UNUSED(resource, resource == m_resource);
+
+    m_timeoutTimer.stop();
         
     if (m_resource->errorOccurred())
         didFail(m_resource->identifier(), m_resource->resourceError());
@@ -316,7 +341,7 @@ void DocumentThreadableLoader::notifyFinished(CachedResource* resource)
 void DocumentThreadableLoader::didFinishLoading(unsigned long identifier, double finishTime)
 {
     if (m_actualRequest) {
-        InspectorInstrumentation::didFinishLoading(m_document->frame(), m_document->frame()->loader()->documentLoader(), identifier, finishTime);
+        InspectorInstrumentation::didFinishLoading(m_document->frame(), identifier, m_document->frame()->loader()->documentLoader(), finishTime);
         ASSERT(!m_sameOriginRequest);
         ASSERT(m_options.crossOriginRequestPolicy == UseAccessControl);
         preflightSuccess();
@@ -327,9 +352,21 @@ void DocumentThreadableLoader::didFinishLoading(unsigned long identifier, double
 void DocumentThreadableLoader::didFail(unsigned long identifier, const ResourceError& error)
 {
     if (m_actualRequest)
-        InspectorInstrumentation::didFailLoading(m_document->frame(), m_document->frame()->loader()->documentLoader(), identifier, error);
+        InspectorInstrumentation::didFailLoading(m_document->frame(), identifier, m_document->frame()->loader()->documentLoader(), error);
 
     m_client->didFail(error);
+}
+
+void DocumentThreadableLoader::didTimeout(Timer<DocumentThreadableLoader>* timer)
+{
+    ASSERT_UNUSED(timer, timer == &m_timeoutTimer);
+
+    // Using values from net/base/net_error_list.h ERR_TIMED_OUT,
+    // Same as existing FIXME above - this error should be coming from FrameLoaderClient to be identifiable.
+    static const int timeoutError = -7;
+    ResourceError error("net", timeoutError, m_resource->url(), String());
+    error.setIsTimeout(true);
+    cancelWithError(error);
 }
 
 void DocumentThreadableLoader::preflightSuccess()
@@ -349,7 +386,7 @@ void DocumentThreadableLoader::preflightFailure(unsigned long identifier, const 
 {
     ResourceError error(errorDomainWebKitInternal, 0, url, errorDescription);
     if (m_actualRequest)
-        InspectorInstrumentation::didFailLoading(m_document->frame(), m_document->frame()->loader()->documentLoader(), identifier, error);
+        InspectorInstrumentation::didFailLoading(m_document->frame(), identifier, m_document->frame()->loader()->documentLoader(), error);
     m_actualRequest = nullptr; // Prevent didFinishLoading() from bypassing access check.
     m_client->didFailAccessControlCheck(error);
 }
@@ -373,27 +410,35 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Secur
             options.dataBufferingPolicy = BufferData;
         }
 
-        CachedResourceRequest newRequest(request, options);
-        newRequest.setInitiator(m_options.initiator);
+        if (m_options.timeoutMilliseconds > 0)
+            m_timeoutTimer.startOneShot(m_options.timeoutMilliseconds / 1000.0);
+
+        CachedResourceRequest newRequest(request, m_options.initiator, options);
         ASSERT(!m_resource);
         m_resource = m_document->cachedResourceLoader()->requestRawResource(newRequest);
         if (m_resource) {
             if (m_resource->loader()) {
-                unsigned long identifier = m_resource->loader()->identifier();
+                unsigned long identifier = m_resource->identifier();
                 InspectorInstrumentation::documentThreadableLoaderStartedLoadingForClient(m_document, identifier, m_client);
             }
             m_resource->addClient(this);
         }
         return;
     }
-    
+
     // FIXME: ThreadableLoaderOptions.sniffContent is not supported for synchronous requests.
     Vector<char> data;
     ResourceError error;
     ResourceResponse response;
     unsigned long identifier = std::numeric_limits<unsigned long>::max();
-    if (m_document->frame())
-        identifier = m_document->frame()->loader()->loadResourceSynchronously(request, m_options.allowCredentials, error, response, data);
+    if (Frame* frame = m_document->frame()) {
+        Frame* top = frame->tree()->top();
+        if (!top->loader()->mixedContentChecker()->canDisplayInsecureContent(top->document()->securityOrigin(), requestURL)) {
+            m_client->didFail(error);
+            return;
+        }
+        identifier = frame->loader()->loadResourceSynchronously(request, m_options.allowCredentials, error, response, data);
+    }
 
     InspectorInstrumentation::documentThreadableLoaderStartedLoadingForClient(m_document, identifier, m_client);
 
@@ -407,7 +452,7 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Secur
     // FIXME: FrameLoader::loadSynchronously() does not tell us whether a redirect happened or not, so we guess by comparing the
     // request and response URLs. This isn't a perfect test though, since a server can serve a redirect to the same URL that was
     // requested. Also comparing the request and response URLs as strings will fail if the requestURL still has its credentials.
-    if (requestURL != response.url() && !isAllowedRedirect(response.url())) {
+    if (requestURL != response.url() && (!isAllowedByPolicy(response.url()) || !isAllowedRedirect(response.url()))) {
         m_client->didFailRedirectCheck();
         return;
     }
@@ -421,12 +466,19 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Secur
     didFinishLoading(identifier, 0.0);
 }
 
-bool DocumentThreadableLoader::isAllowedRedirect(const KURL& url)
+bool DocumentThreadableLoader::isAllowedRedirect(const KURL& url) const
 {
     if (m_options.crossOriginRequestPolicy == AllowCrossOriginRequests)
         return true;
 
     return m_sameOriginRequest && securityOrigin()->canRequest(url);
+}
+
+bool DocumentThreadableLoader::isAllowedByPolicy(const KURL& url) const
+{
+    if (m_options.contentSecurityPolicyEnforcement != EnforceConnectSrcDirective)
+        return true;
+    return m_document->contentSecurityPolicy()->allowConnectToSource(url);
 }
 
 SecurityOrigin* DocumentThreadableLoader::securityOrigin() const

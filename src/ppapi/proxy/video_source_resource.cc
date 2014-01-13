@@ -9,6 +9,7 @@
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/pp_video_frame_private.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/proxy/ppb_image_data_proxy.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/shared_impl/var.h"
@@ -46,7 +47,7 @@ int32_t VideoSourceResource::Open(
 
   scoped_refptr<StringVar> stream_url_var = StringVar::FromPPVar(stream_url);
   const uint32_t kMaxStreamIdSizeInBytes = 16384;
-  if (!stream_url_var ||
+  if (!stream_url_var.get() ||
       stream_url_var->value().size() > kMaxStreamIdSizeInBytes)
     return PP_ERROR_BADARGUMENT;
   Call<PpapiPluginMsg_VideoSource_OpenReply>(RENDERER,
@@ -65,7 +66,6 @@ int32_t VideoSourceResource::GetFrame(
     return PP_ERROR_INPROGRESS;
 
   get_frame_callback_ = callback;
-
   Call<PpapiPluginMsg_VideoSource_GetFrameReply>(RENDERER,
       PpapiHostMsg_VideoSource_GetFrame(),
       base::Bind(&VideoSourceResource::OnPluginMsgGetFrameComplete, this,
@@ -83,9 +83,9 @@ void VideoSourceResource::Close() {
 }
 
 void VideoSourceResource::OnPluginMsgOpenComplete(
-    const ResourceMessageReplyParams& params) {
+    const ResourceMessageReplyParams& reply_params) {
   if (TrackedCallback::IsPending(open_callback_)) {
-    int32_t result = params.result();
+    int32_t result = reply_params.result();
     if (result == PP_OK)
       is_open_ = true;
     open_callback_->Run(result);
@@ -94,15 +94,23 @@ void VideoSourceResource::OnPluginMsgOpenComplete(
 
 void VideoSourceResource::OnPluginMsgGetFrameComplete(
     PP_VideoFrame_Private* frame,
-    const ResourceMessageReplyParams& params,
+    const ResourceMessageReplyParams& reply_params,
     const HostResource& image_data,
+    const PP_ImageDataDesc& image_desc,
     PP_TimeTicks timestamp) {
   // The callback may have been aborted by Close().
   if (TrackedCallback::IsPending(get_frame_callback_)) {
-    int32_t result = params.result();
-    if (result == PP_OK) {
+    int32_t result = reply_params.result();
+    if (result == PP_OK &&
+        PPB_ImageData_Shared::IsImageDataDescValid(image_desc)) {
       frame->timestamp = timestamp;
-      frame->image_data = image_data.host_resource();
+
+      base::SharedMemoryHandle handle;
+      if (!reply_params.TakeSharedMemoryHandleAtIndex(0, &handle))
+        frame->image_data = 0;
+      frame->image_data =
+          (new SimpleImageData(
+              image_data, image_desc, handle))->GetReference();
     }
     get_frame_callback_->Run(result);
   }

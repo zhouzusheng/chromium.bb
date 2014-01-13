@@ -33,6 +33,7 @@
 
 #include "V8MessagePort.h"
 #include "bindings/v8/V8Binding.h"
+#include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/V8Utilities.h"
 #include "core/dom/Document.h"
 #include "core/dom/MessageChannel.h"
@@ -43,7 +44,7 @@
 
 namespace WebCore {
 
-v8::Handle<v8::Value> V8MessageChannel::constructorCustom(const v8::Arguments& args)
+void V8MessageChannel::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     ScriptExecutionContext* context = getScriptExecutionContext();
 
@@ -58,7 +59,7 @@ v8::Handle<v8::Value> V8MessageChannel::constructorCustom(const v8::Arguments& a
     V8HiddenPropertyName::setNamedHiddenReference(wrapper, "port2", toV8(obj->port2(), args.Holder(), args.GetIsolate()));
 
     V8DOMWrapper::associateObjectWithWrapper(obj.release(), &info, wrapper, args.GetIsolate(), WrapperConfiguration::Dependent);
-    return wrapper;
+    args.GetReturnValue().Set(wrapper);
 }
 
 } // namespace WebCore

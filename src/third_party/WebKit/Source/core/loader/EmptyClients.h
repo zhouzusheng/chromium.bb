@@ -39,12 +39,14 @@
 #include "core/page/EditorClient.h"
 #include "core/page/FocusDirection.h"
 #include "core/page/Page.h"
+#include "core/platform/DragImage.h"
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/network/ResourceError.h"
 #include "core/platform/text/TextCheckerClient.h"
 #include "modules/device_orientation/DeviceMotionClient.h"
+#include "public/platform/WebScreenInfo.h"
+#include "wtf/Forward.h"
 
-#include <public/WebScreenInfo.h>
 #include <v8.h>
 
 /*
@@ -115,14 +117,11 @@ public:
     virtual bool runJavaScriptPrompt(Frame*, const String&, const String&, String&) OVERRIDE { return false; }
 
     virtual bool hasOpenedPopup() const OVERRIDE { return false; }
-    virtual PassRefPtr<PopupMenu> createPopupMenu(PopupMenuClient*) const OVERRIDE;
-    virtual PassRefPtr<SearchPopupMenu> createSearchPopupMenu(PopupMenuClient*) const OVERRIDE;
-#if ENABLE(PAGE_POPUP)
+    virtual PassRefPtr<PopupMenu> createPopupMenu(Frame&, PopupMenuClient*) const OVERRIDE;
     virtual PagePopup* openPagePopup(PagePopupClient*, const IntRect&) OVERRIDE { return 0; }
     virtual void closePagePopup(PagePopup*) OVERRIDE { }
     virtual void setPagePopupDriver(PagePopupDriver*) OVERRIDE { }
     virtual void resetPagePopupDriver() OVERRIDE { }
-#endif
 
     virtual void setStatusbarText(const String&) OVERRIDE { }
 
@@ -140,7 +139,6 @@ public:
     virtual WebKit::WebScreenInfo screenInfo() const OVERRIDE { return WebKit::WebScreenInfo(); }
     virtual void contentsSizeChanged(Frame*, const IntSize&) const OVERRIDE { }
 
-    virtual void scrollbarsModeDidChange() const OVERRIDE { }
     virtual void mouseDidMoveOverElement(const HitTestResult&, unsigned) OVERRIDE { }
 
     virtual void setToolTip(const String&, TextDirection) OVERRIDE { }
@@ -149,9 +147,7 @@ public:
 
     virtual void enumerateChosenDirectory(FileChooser*) OVERRIDE { }
 
-#if ENABLE(INPUT_TYPE_COLOR)
     virtual PassOwnPtr<ColorChooser> createColorChooser(ColorChooserClient*, const Color&) OVERRIDE;
-#endif
 
     virtual PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) OVERRIDE;
 
@@ -160,11 +156,7 @@ public:
 
     virtual void formStateDidChange(const Node*) OVERRIDE { }
 
-    virtual void elementDidFocus(const Node*) OVERRIDE { }
-    virtual void elementDidBlur(const Node*) OVERRIDE { }
-
     virtual void setCursor(const Cursor&) OVERRIDE { }
-    virtual void setCursorHiddenUntilMouseMoves(bool) OVERRIDE { }
 
     virtual void attachRootGraphicsLayer(Frame*, GraphicsLayer*) OVERRIDE { }
     virtual void scheduleCompositingLayerFlush() OVERRIDE { }
@@ -182,6 +174,10 @@ public:
     virtual void popupOpened(PopupContainer* popupContainer, const IntRect& bounds,
                              bool handleExternal) { }
     virtual void popupClosed(PopupContainer* popupContainer) OVERRIDE { }
+
+    virtual void annotatedRegionsChanged() OVERRIDE { }
+    virtual bool paintCustomOverhangArea(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&) OVERRIDE { return false; }
+    virtual String acceptLanguages() OVERRIDE;
 };
 
 class EmptyFrameLoaderClient : public FrameLoaderClient {
@@ -249,7 +245,6 @@ public:
 
     virtual bool shouldFallBack(const ResourceError&) OVERRIDE { return false; }
 
-    virtual bool canHandleRequest(const ResourceRequest&) const OVERRIDE { return false; }
     virtual bool canShowMIMEType(const String&) const OVERRIDE { return false; }
     virtual String generatedMIMETypeForURLScheme(const String&) const OVERRIDE { return ""; }
 
@@ -282,7 +277,7 @@ public:
     virtual void willReleaseScriptContext(v8::Handle<v8::Context>, int worldId) OVERRIDE { }
     virtual bool allowScriptExtension(const String& extensionName, int extensionGroup, int worldId) OVERRIDE { return false; }
 
-    virtual PassRefPtr<FrameNetworkingContext> createNetworkingContext() OVERRIDE;
+    virtual WebKit::WebCookieJar* cookieJar() const { return 0; }
 
     virtual void didRequestAutocomplete(PassRefPtr<FormState>) OVERRIDE;
 };
@@ -290,17 +285,9 @@ public:
 class EmptyTextCheckerClient : public TextCheckerClient {
 public:
     virtual bool shouldEraseMarkersAfterChangeSelection(TextCheckingType) const OVERRIDE { return true; }
-    virtual void ignoreWordInSpellDocument(const String&) OVERRIDE { }
-    virtual void learnWord(const String&) OVERRIDE { }
     virtual void checkSpellingOfString(const UChar*, int, int*, int*) OVERRIDE { }
     virtual String getAutoCorrectSuggestionForMisspelledWord(const String&) OVERRIDE { return String(); }
     virtual void checkGrammarOfString(const UChar*, int, Vector<GrammarDetail>&, int*, int*) OVERRIDE { }
-
-#if USE(UNIFIED_TEXT_CHECKING)
-    virtual void checkTextOfParagraph(const UChar*, int, TextCheckingTypeMask, Vector<TextCheckingResult>&) OVERRIDE { };
-#endif
-
-    virtual void getGuessesForWord(const String&, const String&, Vector<String>&) OVERRIDE { }
     virtual void requestCheckingOfString(PassRefPtr<TextCheckingRequest>) OVERRIDE;
 };
 
@@ -309,8 +296,6 @@ class EmptyEditorClient : public EditorClient {
 public:
     EmptyEditorClient() { }
     virtual ~EmptyEditorClient() { }
-    virtual void pageDestroyed() OVERRIDE { }
-    virtual void frameWillDetachPage(Frame*) OVERRIDE { }
 
     virtual bool shouldDeleteRange(Range*) OVERRIDE { return false; }
     virtual bool smartInsertDeleteEnabled() OVERRIDE { return false; }
@@ -318,8 +303,6 @@ public:
     virtual bool isContinuousSpellCheckingEnabled() OVERRIDE { return false; }
     virtual void toggleContinuousSpellChecking() OVERRIDE { }
     virtual bool isGrammarCheckingEnabled() OVERRIDE { return false; }
-    virtual void toggleGrammarChecking() OVERRIDE { }
-    virtual int spellCheckerDocumentTag() OVERRIDE { return -1; }
 
     virtual bool shouldBeginEditing(Range*) OVERRIDE { return false; }
     virtual bool shouldEndEditing(Range*) OVERRIDE { return false; }
@@ -328,16 +311,12 @@ public:
     virtual bool shouldChangeSelectedRange(Range*, Range*, EAffinity, bool) OVERRIDE { return false; }
 
     virtual bool shouldApplyStyle(StylePropertySet*, Range*) OVERRIDE { return false; }
-    virtual bool shouldMoveRangeAfterDelete(Range*, Range*) OVERRIDE { return false; }
 
     virtual void didBeginEditing() OVERRIDE { }
     virtual void respondToChangedContents() OVERRIDE { }
     virtual void respondToChangedSelection(Frame*) OVERRIDE { }
     virtual void didEndEditing() OVERRIDE { }
-    virtual void willWriteSelectionToPasteboard(Range*) OVERRIDE { }
-    virtual void didWriteSelectionToPasteboard() OVERRIDE { }
-    virtual void getClientPasteboardDataForRange(Range*, Vector<String>&, Vector<RefPtr<SharedBuffer> >&) OVERRIDE { }
-    virtual void didSetSelectionTypesForPasteboard() OVERRIDE { }
+    virtual void didCancelCompositionOnSelectionChange() OVERRIDE { }
 
     virtual void registerUndoStep(PassRefPtr<UndoStep>) OVERRIDE;
     virtual void registerRedoStep(PassRefPtr<UndoStep>) OVERRIDE;
@@ -352,40 +331,18 @@ public:
     virtual void redo() OVERRIDE { }
 
     virtual void handleKeyboardEvent(KeyboardEvent*) OVERRIDE { }
-    virtual void handleInputMethodKeydown(KeyboardEvent*) OVERRIDE { }
 
-    virtual void textFieldDidBeginEditing(Element*) OVERRIDE { }
     virtual void textFieldDidEndEditing(Element*) OVERRIDE { }
     virtual void textDidChangeInTextField(Element*) OVERRIDE { }
     virtual bool doTextFieldCommandFromEvent(Element*, KeyboardEvent*) OVERRIDE { return false; }
-    virtual void textWillBeDeletedInTextField(Element*) OVERRIDE { }
-    virtual void textDidChangeInTextArea(Element*) OVERRIDE { }
-
-#if USE(AUTOMATIC_TEXT_REPLACEMENT)
-    virtual void showSubstitutionsPanel(bool) OVERRIDE { }
-    virtual bool substitutionsPanelIsShowing() OVERRIDE { return false; }
-    virtual void toggleSmartInsertDelete() OVERRIDE { }
-    virtual bool isAutomaticQuoteSubstitutionEnabled() OVERRIDE { return false; }
-    virtual void toggleAutomaticQuoteSubstitution() OVERRIDE { }
-    virtual bool isAutomaticLinkDetectionEnabled() OVERRIDE { return false; }
-    virtual void toggleAutomaticLinkDetection() OVERRIDE { }
-    virtual bool isAutomaticDashSubstitutionEnabled() OVERRIDE { return false; }
-    virtual void toggleAutomaticDashSubstitution() OVERRIDE { }
-    virtual bool isAutomaticTextReplacementEnabled() OVERRIDE { return false; }
-    virtual void toggleAutomaticTextReplacement() OVERRIDE { }
-    virtual bool isAutomaticSpellingCorrectionEnabled() OVERRIDE { return false; }
-    virtual void toggleAutomaticSpellingCorrection() OVERRIDE { }
-#endif
 
     TextCheckerClient* textChecker() { return &m_textCheckerClient; }
 
-    virtual void updateSpellingUIWithGrammarString(const String&, const GrammarDetail&) OVERRIDE { }
     virtual void updateSpellingUIWithMisspelledWord(const String&) OVERRIDE { }
     virtual void showSpellingUI(bool) OVERRIDE { }
     virtual bool spellingUIIsShowing() OVERRIDE { return false; }
 
     virtual void willSetInputMethodState() OVERRIDE { }
-    virtual void setInputMethodState(bool) OVERRIDE { }
 
 private:
     EmptyTextCheckerClient m_textCheckerClient;
@@ -396,7 +353,7 @@ class EmptyContextMenuClient : public ContextMenuClient {
 public:
     EmptyContextMenuClient() { }
     virtual ~EmptyContextMenuClient() {  }
-    virtual PassOwnPtr<ContextMenu> customizeMenu(PassOwnPtr<ContextMenu>) OVERRIDE;
+    virtual void showContextMenu(const ContextMenu*) OVERRIDE { }
 };
 
 class EmptyDragClient : public DragClient {
@@ -404,12 +361,8 @@ class EmptyDragClient : public DragClient {
 public:
     EmptyDragClient() { }
     virtual ~EmptyDragClient() {}
-    virtual void willPerformDragDestinationAction(DragDestinationAction, DragData*) OVERRIDE { }
-    virtual void willPerformDragSourceAction(DragSourceAction, const IntPoint&, Clipboard*) OVERRIDE { }
     virtual DragDestinationAction actionMaskForDrag(DragData*) OVERRIDE { return DragDestinationActionNone; }
-    virtual DragSourceAction dragSourceActionMaskForPoint(const IntPoint&) OVERRIDE { return DragSourceActionNone; }
-    virtual void startDrag(DragImageRef, const IntPoint&, const IntPoint&, Clipboard*, Frame*, bool) OVERRIDE { }
-    virtual void dragControllerDestroyed() OVERRIDE { }
+    virtual void startDrag(DragImage*, const IntPoint&, const IntPoint&, Clipboard*, Frame*, bool) OVERRIDE { }
 };
 
 class EmptyInspectorClient : public InspectorClient {

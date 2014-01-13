@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMessagePortChannelClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebMessagePortChannelClient.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 
 using WebKit::WebMessagePortChannel;
 using WebKit::WebMessagePortChannelArray;
@@ -59,11 +59,12 @@ void TestWebMessagePortChannel::entangle(WebMessagePortChannel* remote) {
 
 void TestWebMessagePortChannel::postMessage(const WebString& data,
     WebMessagePortChannelArray* ports) {
-  if (remote_ == NULL)
+  if (remote_.get() == NULL)
     return;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(&TestWebMessagePortChannel::queueMessage, remote_.get(),
+      base::Bind(&TestWebMessagePortChannel::queueMessage,
+                 remote_.get(),
                  new Message(data, ports)));
 }
 

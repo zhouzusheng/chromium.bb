@@ -5,8 +5,8 @@
 #include "content/browser/web_contents/navigation_entry_impl.h"
 
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/net_util.h"
@@ -135,12 +135,12 @@ const string16& NavigationEntryImpl::GetTitle() const {
   return title_;
 }
 
-void NavigationEntryImpl::SetContentState(const std::string& state) {
-  content_state_ = state;
+void NavigationEntryImpl::SetPageState(const PageState& state) {
+  page_state_ = state;
 }
 
-const std::string& NavigationEntryImpl::GetContentState() const {
-  return content_state_;
+const PageState& NavigationEntryImpl::GetPageState() const {
+  return page_state_;
 }
 
 void NavigationEntryImpl::SetPageID(int page_id) {
@@ -194,7 +194,7 @@ const string16& NavigationEntryImpl::GetTitleForDisplay(
 }
 
 bool NavigationEntryImpl::IsViewSourceMode() const {
-  return virtual_url_.SchemeIs(chrome::kViewSourceScheme);
+  return virtual_url_.SchemeIs(kViewSourceScheme);
 }
 
 void NavigationEntryImpl::SetTransitionType(
@@ -314,7 +314,7 @@ void NavigationEntryImpl::ClearExtraData(const std::string& key) {
 void NavigationEntryImpl::SetScreenshotPNGData(
     scoped_refptr<base::RefCountedBytes> png_data) {
   screenshot_ = png_data;
-  if (screenshot_)
+  if (screenshot_.get())
     UMA_HISTOGRAM_MEMORY_KB("Overscroll.ScreenshotSize", screenshot_->size());
 }
 

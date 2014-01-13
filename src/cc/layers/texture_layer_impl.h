@@ -26,14 +26,14 @@ class CC_EXPORT TextureLayerImpl : public LayerImpl {
       OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
 
-  virtual void WillDraw(ResourceProvider* resource_provider) OVERRIDE;
+  virtual bool WillDraw(DrawMode draw_mode,
+                        ResourceProvider* resource_provider) OVERRIDE;
   virtual void AppendQuads(QuadSink* quad_sink,
                            AppendQuadsData* append_quads_data) OVERRIDE;
   virtual void DidDraw(ResourceProvider* resource_provider) OVERRIDE;
 
   virtual void DidLoseOutputSurface() OVERRIDE;
 
-  virtual void DumpLayerProperties(std::string* str, int indent) const OVERRIDE;
   virtual void DidBecomeActive() OVERRIDE;
 
   unsigned texture_id() const { return texture_id_; }

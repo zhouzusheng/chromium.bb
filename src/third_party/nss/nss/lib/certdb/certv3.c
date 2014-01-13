@@ -4,8 +4,6 @@
 
 /*
  * Code for dealing with X509.V3 extensions.
- *
- * $Id$
  */
 
 #include "cert.h"
@@ -74,7 +72,7 @@ CERT_FindCertURLExtension(CERTCertificate *cert, int tag, int catag)
     SECItem baseitem = {siBuffer,0};
     SECItem urlstringitem = {siBuffer,0};
     SECItem basestringitem = {siBuffer,0};
-    PRArenaPool *arena = NULL;
+    PLArenaPool *arena = NULL;
     PRBool hasbase;
     char *urlstring;
     char *str;
@@ -201,7 +199,7 @@ CERT_FindNSStringExtension(CERTCertificate *cert, int oidtag)
 {
     SECItem wrapperItem, tmpItem = {siBuffer,0};
     SECStatus rv;
-    PRArenaPool *arena = NULL;
+    PLArenaPool *arena = NULL;
     char *retstring = NULL;
     
     wrapperItem.data = NULL;
@@ -314,7 +312,7 @@ CERT_FindBasicConstraintExten(CERTCertificate *cert,
 }
 
 CERTAuthKeyID *
-CERT_FindAuthKeyIDExten (PRArenaPool *arena, CERTCertificate *cert)
+CERT_FindAuthKeyIDExten (PLArenaPool *arena, CERTCertificate *cert)
 {
     SECItem encodedExtenValue;
     SECStatus rv;

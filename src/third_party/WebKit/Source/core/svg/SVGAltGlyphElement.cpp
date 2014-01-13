@@ -29,10 +29,8 @@
 #include "XLinkNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeRenderingContext.h"
-#include "core/rendering/RenderInline.h"
 #include "core/rendering/svg/RenderSVGTSpan.h"
 #include "core/svg/SVGAltGlyphDefElement.h"
-#include "core/svg/SVGGlyphElement.h"
 
 namespace WebCore {
 
@@ -84,9 +82,9 @@ bool SVGAltGlyphElement::childShouldCreateRenderer(const NodeRenderingContext& c
     return false;
 }
 
-RenderObject* SVGAltGlyphElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGAltGlyphElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGTSpan(this);
+    return new (document()->renderArena()) RenderSVGTSpan(this);
 }
 
 bool SVGAltGlyphElement::hasValidGlyphElements(Vector<String>& glyphNames) const
@@ -110,4 +108,4 @@ bool SVGAltGlyphElement::hasValidGlyphElements(Vector<String>& glyphNames) const
 
 }
 
-#endif // ENABLE(SVG)
+#endif

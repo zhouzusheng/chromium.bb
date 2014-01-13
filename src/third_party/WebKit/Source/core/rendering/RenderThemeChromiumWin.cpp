@@ -39,17 +39,15 @@
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/chromium/FontUtilsChromiumWin.h"
 #include "core/platform/graphics/chromium/TransparencyWin.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
 #include "core/platform/win/SystemInfo.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderProgress.h"
 #include "core/rendering/RenderSlider.h"
-#include "core/rendering/RenderThemeChromiumCommon.h"
-#include <public/Platform.h>
-#include <public/WebColor.h>
-#include <public/WebRect.h>
-#include <public/win/WebThemeEngine.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebColor.h"
+#include "public/platform/WebRect.h"
+#include "public/platform/win/WebThemeEngine.h"
 #include <wtf/CurrentTime.h>
 
 
@@ -105,7 +103,7 @@ private:
     {
         if (!context->isCertainlyOpaque()) // Might have transparent background.
             return TransparencyWin::WhiteLayer;
-        if (context->platformContext()->canvas()->isDrawingToLayer()) // Needs antialiasing help.
+        if (context->canvas()->isDrawingToLayer()) // Needs antialiasing help.
             return TransparencyWin::OpaqueCompositeLayer;
         // Nothing interesting.
         return transformMode == TransparencyWin::KeepTransform ? TransparencyWin::NoLayer : TransparencyWin::OpaqueCompositeLayer;
@@ -256,7 +254,7 @@ static int cssValueIdToSysColorIndex(int cssValueId)
     }
 }
 
-Color RenderThemeChromiumWin::systemColor(int cssValueId) const
+Color RenderThemeChromiumWin::systemColor(CSSValueID cssValueId) const
 {
     int sysColorIndex = cssValueIdToSysColorIndex(cssValueId);
     if (isRunningLayoutTest() || (sysColorIndex == -1))
@@ -266,7 +264,6 @@ Color RenderThemeChromiumWin::systemColor(int cssValueId) const
     return Color(GetRValue(color), GetGValue(color), GetBValue(color));
 }
 
-#if ENABLE(DATALIST_ELEMENT)
 IntSize RenderThemeChromiumWin::sliderTickSize() const
 {
     return IntSize(1, 3);
@@ -276,7 +273,6 @@ int RenderThemeChromiumWin::sliderTickOffsetFromTrackCenter() const
 {
     return 11;
 }
-#endif
 
 void RenderThemeChromiumWin::adjustSliderThumbSize(RenderStyle* style, Element* element) const
 {
@@ -307,7 +303,7 @@ bool RenderThemeChromiumWin::paintButton(RenderObject* o, const PaintInfo& i, co
     const ThemeData& themeData = getThemeData(o);
 
     ThemePainter painter(i.context, r);
-    WebKit::WebCanvas* canvas = painter.context()->platformContext()->canvas();
+    WebKit::WebCanvas* canvas = painter.context()->canvas();
     WebKit::Platform::current()->themeEngine()->paintButton(canvas, themeData.m_part, themeData.m_state, themeData.m_classicState, WebKit::WebRect(painter.drawRect()));
     return false;
 }
@@ -322,12 +318,10 @@ bool RenderThemeChromiumWin::paintSliderTrack(RenderObject* o, const PaintInfo& 
     const ThemeData& themeData = getThemeData(o);
 
     ThemePainter painter(i.context, r);
-    WebKit::WebCanvas* canvas = painter.context()->platformContext()->canvas();
+    WebKit::WebCanvas* canvas = painter.context()->canvas();
     WebKit::Platform::current()->themeEngine()->paintTrackbar(canvas, themeData.m_part, themeData.m_state, themeData.m_classicState, WebKit::WebRect(painter.drawRect()));
 
-#if ENABLE(DATALIST_ELEMENT)
     paintSliderTicks(o, i, r);
-#endif
 
     return false;
 }
@@ -337,7 +331,7 @@ bool RenderThemeChromiumWin::paintSliderThumb(RenderObject* o, const PaintInfo& 
     const ThemeData& themeData = getThemeData(o);
 
     ThemePainter painter(i.context, r);
-    WebKit::WebCanvas* canvas = painter.context()->platformContext()->canvas();
+    WebKit::WebCanvas* canvas = painter.context()->canvas();
     WebKit::Platform::current()->themeEngine()->paintTrackbar(canvas, themeData.m_part, themeData.m_state, themeData.m_classicState, WebKit::WebRect(painter.drawRect()));
 
     return false;
@@ -402,7 +396,7 @@ bool RenderThemeChromiumWin::paintMenuListButton(RenderObject* o, const PaintInf
 
     // Get the correct theme data for a textfield and paint the menu.
     ThemePainter painter(i.context, rect);
-    WebKit::WebCanvas* canvas = painter.context()->platformContext()->canvas();
+    WebKit::WebCanvas* canvas = painter.context()->canvas();
     WebKit::Platform::current()->themeEngine()->paintMenuList(canvas, CP_DROPDOWNBUTTON, determineState(o), determineClassicState(o), WebKit::WebRect(painter.drawRect()));
     return false;
 }
@@ -579,7 +573,7 @@ bool RenderThemeChromiumWin::paintTextFieldInternal(RenderObject* o,
     {
         const ThemeData& themeData = getThemeData(o);
         ThemePainter painter(i.context, r);
-        WebKit::WebCanvas* canvas = painter.context()->platformContext()->canvas();
+        WebKit::WebCanvas* canvas = painter.context()->canvas();
         WebKit::Platform::current()->themeEngine()->paintTextField(canvas, themeData.m_part, themeData.m_state, themeData.m_classicState, WebKit::WebRect(painter.drawRect()), backgroundColor.rgb(), fillContentArea, drawEdges);
         // End of block commits the painter before restoring context.
     }
@@ -588,7 +582,7 @@ bool RenderThemeChromiumWin::paintTextFieldInternal(RenderObject* o,
     return false;
 }
 
-void RenderThemeChromiumWin::adjustInnerSpinButtonStyle(StyleResolver*, RenderStyle* style, Element*) const
+void RenderThemeChromiumWin::adjustInnerSpinButtonStyle(RenderStyle* style, Element*) const
 {
     int width = ScrollbarTheme::theme()->scrollbarThickness();
     style->setWidth(Length(width, Fixed));
@@ -604,7 +598,7 @@ bool RenderThemeChromiumWin::paintInnerSpinButton(RenderObject* object, const Pa
         half.setHeight(rect.height() / 2);
         const ThemeData& upThemeData = getThemeData(object, SpinButtonUp);
         ThemePainter upPainter(info.context, half);
-        WebKit::WebCanvas* canvas = upPainter.context()->platformContext()->canvas();
+        WebKit::WebCanvas* canvas = upPainter.context()->canvas();
         WebKit::Platform::current()->themeEngine()->paintSpinButton(canvas, upThemeData.m_part, upThemeData.m_state, upThemeData.m_classicState, WebKit::WebRect(upPainter.drawRect()));
     }
 
@@ -612,7 +606,7 @@ bool RenderThemeChromiumWin::paintInnerSpinButton(RenderObject* object, const Pa
         half.setY(rect.y() + rect.height() / 2);
         const ThemeData& downThemeData = getThemeData(object, SpinButtonDown);
         ThemePainter downPainter(info.context, half);
-        WebKit::WebCanvas* canvas = downPainter.context()->platformContext()->canvas();
+        WebKit::WebCanvas* canvas = downPainter.context()->canvas();
         WebKit::Platform::current()->themeEngine()->paintSpinButton(canvas, downThemeData.m_part, downThemeData.m_state, downThemeData.m_classicState, WebKit::WebRect(downPainter.drawRect()));
     }
     return false;
@@ -634,7 +628,7 @@ double RenderThemeChromiumWin::animationDurationForProgressBar(RenderProgress* r
     return progressAnimationFrameRate;
 }
 
-void RenderThemeChromiumWin::adjustProgressBarStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderThemeChromiumWin::adjustProgressBarStyle(RenderStyle*, Element*) const
 {
 }
 
@@ -650,7 +644,7 @@ bool RenderThemeChromiumWin::paintProgressBar(RenderObject* o, const PaintInfo& 
     double animatedSeconds = renderProgress->animationStartTime() ?  WTF::currentTime() - renderProgress->animationStartTime() : 0;
     ThemePainter painter(i.context, r);
     DirectionFlippingScope scope(o, i, r);
-    WebKit::WebCanvas* canvas = painter.context()->platformContext()->canvas();
+    WebKit::WebCanvas* canvas = painter.context()->canvas();
     WebKit::Platform::current()->themeEngine()->paintProgressBar(canvas, WebKit::WebRect(r), WebKit::WebRect(valueRect), renderProgress->isDeterminate(), animatedSeconds);
     return false;
 }
@@ -658,6 +652,14 @@ bool RenderThemeChromiumWin::paintProgressBar(RenderObject* o, const PaintInfo& 
 bool RenderThemeChromiumWin::shouldOpenPickerWithF4Key() const
 {
     return true;
+}
+
+bool RenderThemeChromiumWin::shouldUseFallbackTheme(RenderStyle* style) const
+{
+    ControlPart part = style->appearance();
+    if (part == CheckboxPart || part == RadioPart)
+        return style->effectiveZoom() != 1;
+    return false;
 }
 
 } // namespace WebCore

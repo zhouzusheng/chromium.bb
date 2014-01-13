@@ -36,7 +36,6 @@
 #include "InspectorFrontend.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
-#include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorConsoleAgent.h"
 #include "core/inspector/InspectorFrontendChannel.h"
 #include "core/inspector/InspectorHeapProfilerAgent.h"
@@ -94,30 +93,19 @@ WorkerInspectorController::WorkerInspectorController(WorkerContext* workerContex
     , m_state(adoptPtr(new InspectorCompositeState(m_stateClient.get())))
     , m_instrumentingAgents(InstrumentingAgents::create())
     , m_injectedScriptManager(InjectedScriptManager::createForWorker())
-    , m_runtimeAgent(0)
+    , m_debugServer(adoptPtr(new WorkerScriptDebugServer(workerContext, WorkerDebuggerAgent::debuggerTaskMode)))
 {
-    OwnPtr<InspectorRuntimeAgent> runtimeAgent = WorkerRuntimeAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get(), workerContext);
-    m_runtimeAgent = runtimeAgent.get();
-    m_agents.append(runtimeAgent.release());
+    m_agents.append(WorkerRuntimeAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get(), m_debugServer.get(), workerContext));
 
     OwnPtr<InspectorConsoleAgent> consoleAgent = WorkerConsoleAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get());
-    OwnPtr<InspectorDebuggerAgent> debuggerAgent = WorkerDebuggerAgent::create(m_instrumentingAgents.get(), m_state.get(), workerContext, m_injectedScriptManager.get());
-    InspectorDebuggerAgent* debuggerAgentPtr = debuggerAgent.get();
-    m_runtimeAgent->setScriptDebugServer(&debuggerAgent->scriptDebugServer());
-    m_agents.append(debuggerAgent.release());
+    m_agents.append(WorkerDebuggerAgent::create(m_instrumentingAgents.get(), m_state.get(), m_debugServer.get(), workerContext, m_injectedScriptManager.get()));
 
-    m_agents.append(InspectorProfilerAgent::create(m_instrumentingAgents.get(), consoleAgent.get(), workerContext, m_state.get(), m_injectedScriptManager.get()));
+    m_agents.append(InspectorProfilerAgent::create(m_instrumentingAgents.get(), consoleAgent.get(), m_state.get(), m_injectedScriptManager.get()));
     m_agents.append(InspectorHeapProfilerAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get()));
-    m_agents.append(InspectorTimelineAgent::create(m_instrumentingAgents.get(), 0, 0, m_state.get(), InspectorTimelineAgent::WorkerInspector, 0));
+    m_agents.append(InspectorTimelineAgent::create(m_instrumentingAgents.get(), 0, 0, 0, m_state.get(), InspectorTimelineAgent::WorkerInspector, 0));
     m_agents.append(consoleAgent.release());
 
-    m_injectedScriptManager->injectedScriptHost()->init(0
-        , 0
-        , 0
-        , 0
-        , 0
-        , debuggerAgentPtr
-    );
+    m_injectedScriptManager->injectedScriptHost()->init(m_instrumentingAgents.get(), m_debugServer.get());
 }
  
 WorkerInspectorController::~WorkerInspectorController()
@@ -168,8 +156,10 @@ void WorkerInspectorController::dispatchMessageFromFrontend(const String& messag
 
 void WorkerInspectorController::resume()
 {
-    ErrorString unused;
-    m_runtimeAgent->run(&unused);
+    if (WorkerRuntimeAgent* runtimeAgent = m_instrumentingAgents->workerRuntimeAgent()) {
+        ErrorString unused;
+        runtimeAgent->run(&unused);
+    }
 }
 
 }

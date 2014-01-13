@@ -14,15 +14,20 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/url_constants.h"
+#include "content/shell/common/shell_switches.h"
 #include "content/shell/shell.h"
 #include "content/shell/shell_browser_context.h"
 #include "content/shell/shell_devtools_delegate.h"
-#include "content/shell/shell_switches.h"
 #include "googleurl/src/gurl.h"
 #include "grit/net_resources.h"
 #include "net/base/net_module.h"
 #include "net/base/net_util.h"
 #include "ui/base/resource/resource_bundle.h"
+
+#if defined(ENABLE_PLUGINS)
+#include "content/public/browser/plugin_service.h"
+#include "content/shell/shell_plugin_service_filter.h"
+#endif
 
 #if defined(OS_ANDROID)
 #include "net/android/network_change_notifier_factory_android.h"
@@ -72,11 +77,7 @@ base::StringPiece PlatformResourceProvider(int key) {
 
 ShellBrowserMainParts::ShellBrowserMainParts(
     const MainFunctionParams& parameters)
-    : BrowserMainParts(),
-      parameters_(parameters),
-      run_message_loop_(true),
-      devtools_delegate_(NULL) {
-}
+    : BrowserMainParts(), parameters_(parameters), run_message_loop_(true) {}
 
 ShellBrowserMainParts::~ShellBrowserMainParts() {
 }
@@ -112,7 +113,7 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   Shell::Initialize();
   net::NetModule::SetResourceProvider(PlatformResourceProvider);
 
-  devtools_delegate_ = new ShellDevToolsDelegate(browser_context_.get());
+  devtools_delegate_.reset(new ShellDevToolsDelegate(browser_context_.get()));
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
     Shell::CreateNewWindow(browser_context_.get(),
@@ -121,6 +122,14 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
                            MSG_ROUTING_NONE,
                            gfx::Size());
   }
+
+#if defined(ENABLE_PLUGINS)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
+    PluginService* plugin_service = PluginService::GetInstance();
+    plugin_service_filter_.reset(new ShellPluginServiceFilter);
+    plugin_service->SetFilter(plugin_service_filter_.get());
+  }
+#endif
 
   if (parameters_.ui_task) {
     parameters_.ui_task->Run();

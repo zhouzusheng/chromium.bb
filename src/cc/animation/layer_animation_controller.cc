@@ -11,7 +11,7 @@
 #include "cc/animation/keyframed_animation_curve.h"
 #include "cc/animation/layer_animation_value_observer.h"
 #include "cc/base/scoped_ptr_algorithm.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebAnimationDelegate.h"
+#include "third_party/WebKit/public/platform/WebAnimationDelegate.h"
 #include "ui/gfx/transform.h"
 
 namespace cc {
@@ -130,19 +130,8 @@ void LayerAnimationController::PushAnimationUpdatesTo(
   UpdateActivation(NormalActivation);
 }
 
-void LayerAnimationController::TransferAnimationsTo(
-    LayerAnimationController* other_controller) {
-  other_controller->active_animations_.clear();
-  active_animations_.swap(other_controller->active_animations_);
-  UpdateActivation(NormalActivation);
-  set_force_sync();
-  other_controller->UpdateActivation(NormalActivation);
-  other_controller->set_force_sync();
-  other_controller->SetAnimationRegistrar(registrar_);
-}
-
 void LayerAnimationController::Animate(double monotonic_time) {
-  if (!HasActiveValueObserver())
+  if (!HasValueObserver())
     return;
 
   StartAnimationsWaitingForNextTick(monotonic_time);
@@ -714,6 +703,15 @@ void LayerAnimationController::NotifyObserversTransformAnimated(
   FOR_EACH_OBSERVER(LayerAnimationValueObserver,
                     value_observers_,
                     OnTransformAnimated(transform));
+}
+
+bool LayerAnimationController::HasValueObserver() {
+  if (value_observers_.might_have_observers()) {
+    ObserverListBase<LayerAnimationValueObserver>::Iterator it(
+        value_observers_);
+    return it.GetNext() != NULL;
+  }
+  return false;
 }
 
 bool LayerAnimationController::HasActiveValueObserver() {

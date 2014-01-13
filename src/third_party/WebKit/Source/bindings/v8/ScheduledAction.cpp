@@ -35,7 +35,7 @@
 #include "bindings/v8/ScriptSourceCode.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8GCController.h"
-#include "bindings/v8/V8RecursionScope.h"
+#include "bindings/v8/V8ScriptRunner.h"
 #include "core/dom/Document.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/page/Frame.h"
@@ -53,7 +53,7 @@ ScheduledAction::ScheduledAction(v8::Handle<v8::Context> context, v8::Handle<v8:
 {
     m_args.reserveCapacity(argc);
     for (int i = 0; i < argc; ++i)
-        m_args.append(v8::Persistent<v8::Value>::New(m_isolate, argv[i]));
+        m_args.append(UnsafePersistent<v8::Value>(m_isolate, argv[i]));
 }
 
 ScheduledAction::ScheduledAction(v8::Handle<v8::Context> context, const String& code, const KURL& url, v8::Isolate* isolate)
@@ -65,10 +65,8 @@ ScheduledAction::ScheduledAction(v8::Handle<v8::Context> context, const String& 
 
 ScheduledAction::~ScheduledAction()
 {
-    for (size_t i = 0; i < m_args.size(); ++i) {
-        m_args[i].Dispose(m_isolate);
-        m_args[i].Clear();
-    }
+    for (size_t i = 0; i < m_args.size(); ++i)
+        m_args[i].dispose();
 }
 
 void ScheduledAction::execute(ScriptExecutionContext* context)
@@ -88,18 +86,20 @@ void ScheduledAction::execute(ScriptExecutionContext* context)
 
 void ScheduledAction::execute(Frame* frame)
 {
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(m_isolate);
 
-    v8::Handle<v8::Context> context = v8::Local<v8::Context>::New(m_context.get());
+    v8::Handle<v8::Context> context = m_context.newLocal(m_isolate);
     if (context.IsEmpty())
         return;
     v8::Context::Scope scope(context);
 
     TRACE_EVENT0("v8", "ScheduledAction::execute");
 
-    if (!m_function.isEmpty())
-        frame->script()->callFunction(m_function.get(), context->Global(), m_args.size(), m_args.data());
-    else
+    if (!m_function.isEmpty()) {
+        Vector<v8::Handle<v8::Value> > args;
+        createLocalHandlesForArgs(&args);
+        frame->script()->callFunction(m_function.newLocal(m_isolate), context->Global(), args.size(), args.data());
+    } else
         frame->script()->compileAndRunScript(m_code);
 
     // The frame might be invalid at this point because JavaScript could have released it.
@@ -107,22 +107,24 @@ void ScheduledAction::execute(Frame* frame)
 
 void ScheduledAction::execute(WorkerContext* worker)
 {
-    ASSERT(worker->thread()->threadID() == currentThread());
-
-    V8RecursionScope recursionScope(worker);
-
+    ASSERT(worker->thread()->isCurrentThread());
+    v8::HandleScope handleScope(m_isolate);
+    v8::Handle<v8::Context> context = m_context.newLocal(m_isolate);
+    ASSERT(!context.IsEmpty());
+    v8::Context::Scope scope(context);
     if (!m_function.isEmpty()) {
-        V8GCController::checkMemoryUsage();
-
-        v8::HandleScope handleScope;
-
-        v8::Handle<v8::Context> context = v8::Local<v8::Context>::New(m_context.get());
-        ASSERT(!context.IsEmpty());
-        v8::Context::Scope scope(context);
-
-        m_function->Call(context->Global(), m_args.size(), m_args.data());
+        Vector<v8::Handle<v8::Value> > args;
+        createLocalHandlesForArgs(&args);
+        V8ScriptRunner::callFunction(m_function.newLocal(m_isolate), worker, context->Global(), args.size(), args.data());
     } else
         worker->script()->evaluate(m_code);
+}
+
+void ScheduledAction::createLocalHandlesForArgs(Vector<v8::Handle<v8::Value> >* handles)
+{
+    handles->reserveCapacity(m_args.size());
+    for (size_t i = 0; i < m_args.size(); ++i)
+        handles->append(m_args[i].newLocal(m_isolate));
 }
 
 } // namespace WebCore

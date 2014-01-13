@@ -11,16 +11,16 @@
 #include "base/memory/scoped_handle.h"
 #include "base/shared_memory.h"
 #include "build/build_config.h"
-#include "content/common/npobject_proxy.h"
-#include "content/common/npobject_util.h"
-#include "content/common/plugin_messages.h"
+#include "content/child/npobject_proxy.h"
+#include "content/child/npobject_util.h"
+#include "content/child/plugin_messages.h"
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
 #include "skia/ext/platform_canvas.h"
 #include "skia/ext/platform_device.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
 #include "ui/gfx/blit.h"
 #include "ui/gfx/canvas.h"
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
@@ -36,6 +36,7 @@
 #endif
 
 #if defined(OS_WIN)
+#include "content/common/plugin_process_messages.h"
 #include "content/public/common/sandbox_init.h"
 #endif
 
@@ -219,8 +220,15 @@ NPObject* WebPluginProxy::GetWindowScriptNPObject() {
   if (!success)
     return NULL;
 
-  window_npobject_ = NPObjectProxy::Create(
-      channel_, npobject_route_id, host_render_view_routing_id_, page_url_);
+  // PluginChannel creates a dummy owner identifier for unknown owners, so
+  // use that.
+  NPP owner = channel_->GetExistingNPObjectOwner(MSG_ROUTING_NONE);
+
+  window_npobject_ = NPObjectProxy::Create(channel_.get(),
+                                           npobject_route_id,
+                                           host_render_view_routing_id_,
+                                           page_url_,
+                                           owner);
 
   return window_npobject_;
 }
@@ -236,8 +244,15 @@ NPObject* WebPluginProxy::GetPluginElement() {
   if (!success)
     return NULL;
 
-  plugin_element_ = NPObjectProxy::Create(
-      channel_, npobject_route_id, host_render_view_routing_id_, page_url_);
+  // PluginChannel creates a dummy owner identifier for unknown owners, so
+  // use that.
+  NPP owner = channel_->GetExistingNPObjectOwner(MSG_ROUTING_NONE);
+
+  plugin_element_ = NPObjectProxy::Create(channel_.get(),
+                                          npobject_route_id,
+                                          host_render_view_routing_id_,
+                                          page_url_,
+                                          owner);
 
   return plugin_element_;
 }
@@ -277,7 +292,7 @@ WebPluginResourceClient* WebPluginProxy::GetResourceClient(int id) {
 }
 
 int WebPluginProxy::GetRendererId() {
-  if (channel_)
+  if (channel_.get())
     return channel_->renderer_id();
   return -1;
 }
@@ -488,7 +503,7 @@ void WebPluginProxy::CreateDIBAndCGContextFromHandle(
     const TransportDIB::Handle& dib_handle,
     const gfx::Rect& window_rect,
     scoped_ptr<TransportDIB>* dib_out,
-    base::mac::ScopedCFTypeRef<CGContextRef>* cg_context_out) {
+    base::ScopedCFTypeRef<CGContextRef>* cg_context_out) {
   // Convert the shared memory handle to a handle that works in our process,
   // and then use that to create a CGContextRef.
   TransportDIB* dib = TransportDIB::Map(dib_handle);
@@ -523,7 +538,7 @@ void WebPluginProxy::SetWindowlessBuffers(
                                   &windowless_contexts_[1]);
 }
 
-#elif defined(USE_X11)
+#elif defined(TOOLKIT_GTK)
 
 void WebPluginProxy::CreateDIBAndCanvasFromHandle(
     const TransportDIB::Handle& dib_handle,
@@ -589,7 +604,7 @@ void WebPluginProxy::SetWindowlessBuffers(
   }
 }
 
-#elif defined(OS_ANDROID)
+#else
 
 void WebPluginProxy::SetWindowlessBuffers(
     const TransportDIB::Handle& windowless_buffer0,

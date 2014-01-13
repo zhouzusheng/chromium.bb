@@ -21,40 +21,39 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
-#include "base/utf_string_conversions.h"
 #include "net/base/escape.h"
 #include "net/url_request/url_request.h"
 #include "skia/ext/platform_canvas.h"
 #if defined(OS_MACOSX)
 #include "skia/ext/skia_utils_mac.h"
 #endif
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileInfo.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebImage.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebGlyphCache.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/platform/WebFileInfo.h"
+#include "third_party/WebKit/public/platform/WebImage.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebDevToolsAgent.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebGlyphCache.h"
+#include "third_party/WebKit/public/web/WebHistoryItem.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebPrintParams.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #if defined(OS_WIN)
-#include "third_party/WebKit/Source/WebKit/chromium/public/win/WebInputEventFactory.h"
+#include "third_party/WebKit/public/web/win/WebInputEventFactory.h"
 #endif
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "v8/include/v8.h"
-#include "webkit/glue/glue_serialize.h"
 
 using WebKit::WebCanvas;
 using WebKit::WebData;
@@ -85,9 +84,6 @@ static const char kFileTestPrefix[] = "(file test):";
 
 namespace webkit_glue {
 
-// Global variable used by the plugin quirk "die after unload".
-bool g_forcefully_terminate_plugin_process = false;
-
 void SetJavaScriptFlags(const std::string& str) {
   v8::V8::SetFlagsFromString(str.data(), static_cast<int>(str.size()));
 }
@@ -99,43 +95,6 @@ void EnableWebCoreLogChannels(const std::string& channels) {
   while (t.GetNext()) {
     WebKit::enableLogChannel(t.token().c_str());
   }
-}
-
-base::string16 DumpDocumentText(WebFrame* web_frame) {
-  // We use the document element's text instead of the body text here because
-  // not all documents have a body, such as XML documents.
-  WebElement document_element = web_frame->document().documentElement();
-  if (document_element.isNull())
-    return base::string16();
-
-  return document_element.innerText();
-}
-
-base::string16 DumpFramesAsText(WebFrame* web_frame, bool recursive) {
-  base::string16 result;
-
-  // Add header for all but the main frame. Skip empty frames.
-  if (web_frame->parent() &&
-      !web_frame->document().documentElement().isNull()) {
-    result.append(ASCIIToUTF16("\n--------\nFrame: '"));
-    result.append(web_frame->uniqueName());
-    result.append(ASCIIToUTF16("'\n--------\n"));
-  }
-
-  result.append(DumpDocumentText(web_frame));
-  result.append(ASCIIToUTF16("\n"));
-
-  if (recursive) {
-    WebFrame* child = web_frame->firstChild();
-    for (; child; child = child->nextSibling())
-      result.append(DumpFramesAsText(child, recursive));
-  }
-
-  return result;
-}
-
-base::string16 DumpRenderer(WebFrame* web_frame) {
-  return web_frame->renderTreeAsText();
 }
 
 int NumberOfPages(WebFrame* web_frame,
@@ -152,95 +111,6 @@ int NumberOfPages(WebFrame* web_frame,
   int number_of_pages = web_frame->printBegin(print_params);
   web_frame->printEnd();
   return number_of_pages;
-}
-
-base::string16 DumpFrameScrollPosition(WebFrame* web_frame, bool recursive) {
-  gfx::Size offset = web_frame->scrollOffset();
-  std::string result_utf8;
-
-  if (offset.width() > 0 || offset.height() > 0) {
-    if (web_frame->parent()) {
-      base::StringAppendF(&result_utf8, "frame '%s' ",
-                          UTF16ToUTF8(web_frame->uniqueName()).c_str());
-    }
-    base::StringAppendF(&result_utf8, "scrolled to %d,%d\n",
-                        offset.width(), offset.height());
-  }
-
-  base::string16 result = UTF8ToUTF16(result_utf8);
-
-  if (recursive) {
-    WebFrame* child = web_frame->firstChild();
-    for (; child; child = child->nextSibling())
-      result.append(DumpFrameScrollPosition(child, recursive));
-  }
-
-  return result;
-}
-
-// Returns True if item1 < item2.
-static bool HistoryItemCompareLess(const WebHistoryItem& item1,
-                                   const WebHistoryItem& item2) {
-  base::string16 target1 = item1.target();
-  base::string16 target2 = item2.target();
-  std::transform(target1.begin(), target1.end(), target1.begin(), tolower);
-  std::transform(target2.begin(), target2.end(), target2.begin(), tolower);
-  return target1 < target2;
-}
-
-// Writes out a HistoryItem into a UTF-8 string in a readable format.
-static std::string DumpHistoryItem(const WebHistoryItem& item,
-                                   int indent, bool is_current) {
-  std::string result;
-
-  if (is_current) {
-    result.append("curr->");
-    result.append(indent - 6, ' ');  // 6 == "curr->".length()
-  } else {
-    result.append(indent, ' ');
-  }
-
-  std::string url = item.urlString().utf8();
-  size_t pos;
-  if (url.find(kFileUrlPattern) == 0 &&
-      ((pos = url.find(kLayoutTestsPattern)) != std::string::npos)) {
-    // adjust file URLs to match upstream results.
-    url.replace(0, pos + kLayoutTestsPatternSize, kFileTestPrefix);
-  } else if (url.find(kDataUrlPattern) == 0) {
-    // URL-escape data URLs to match results upstream.
-    std::string path = net::EscapePath(url.substr(kDataUrlPatternSize));
-    url.replace(kDataUrlPatternSize, url.length(), path);
-  }
-
-  result.append(url);
-  if (!item.target().isEmpty())
-    result.append(" (in frame \"" + UTF16ToUTF8(item.target()) + "\")");
-  if (item.isTargetItem())
-    result.append("  **nav target**");
-  result.append("\n");
-
-  const WebVector<WebHistoryItem>& children = item.children();
-  if (!children.isEmpty()) {
-    // Must sort to eliminate arbitrary result ordering which defeats
-    // reproducible testing.
-    // TODO(darin): WebVector should probably just be a std::vector!!
-    std::vector<WebHistoryItem> sorted_children;
-    for (size_t i = 0; i < children.size(); ++i)
-      sorted_children.push_back(children[i]);
-    std::sort(sorted_children.begin(), sorted_children.end(),
-              HistoryItemCompareLess);
-    for (size_t i = 0; i < sorted_children.size(); i++)
-      result += DumpHistoryItem(sorted_children[i], indent+4, false);
-  }
-
-  return result;
-}
-
-base::string16 DumpHistoryState(const std::string& history_state, int indent,
-                          bool is_current) {
-  return UTF8ToUTF16(
-      DumpHistoryItem(HistoryItemFromString(history_state), indent,
-                      is_current));
 }
 
 #ifndef NDEBUG
@@ -285,14 +155,6 @@ void PlatformFileInfoToWebFileInfo(
     web_file_info->type = WebKit::WebFileInfo::TypeDirectory;
   else
     web_file_info->type = WebKit::WebFileInfo::TypeFile;
-}
-
-void SetForcefullyTerminatePluginProcess(bool value) {
-  g_forcefully_terminate_plugin_process = value;
-}
-
-bool ShouldForcefullyTerminatePluginProcess() {
-  return g_forcefully_terminate_plugin_process;
 }
 
 WebCanvas* ToWebCanvas(skia::PlatformCanvas* canvas) {

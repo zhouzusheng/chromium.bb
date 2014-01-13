@@ -11,15 +11,17 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
-#include "base/synchronization/waitable_event.h"
 #include "base/timer.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/global_request_id.h"
+#include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ui/surface/transport_dib.h"
 
 class CommandLine;
+struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
 
 namespace base {
 class MessageLoop;
@@ -61,7 +63,8 @@ class StoragePartitionImpl;
 // to access the partition they are assigned to.
 class CONTENT_EXPORT RenderProcessHostImpl
     : public RenderProcessHost,
-      public ChildProcessLauncher::Client {
+      public ChildProcessLauncher::Client,
+      public GpuDataManagerObserver {
  public:
   RenderProcessHostImpl(BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
@@ -73,8 +76,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void EnableSendQueue() OVERRIDE;
   virtual bool Init() OVERRIDE;
   virtual int GetNextRoutingID() OVERRIDE;
-  virtual void SimulateSwapOutACK(const ViewMsg_SwapOut_Params& params)
-      OVERRIDE;
+  virtual void AddRoute(int32 routing_id, IPC::Listener* listener) OVERRIDE;
+  virtual void RemoveRoute(int32 routing_id) OVERRIDE;
   virtual bool WaitForBackingStoreMsg(int render_widget_id,
                                       const base::TimeDelta& max_delay,
                                       IPC::Message* msg) OVERRIDE;
@@ -88,25 +91,20 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void DumpHandles() OVERRIDE;
   virtual base::ProcessHandle GetHandle() const OVERRIDE;
   virtual TransportDIB* GetTransportDIB(TransportDIB::Id dib_id) OVERRIDE;
+  virtual TransportDIB* MapTransportDIB(TransportDIB::Id dib_id) OVERRIDE;
   virtual BrowserContext* GetBrowserContext() const OVERRIDE;
   virtual bool InSameStoragePartition(
       StoragePartition* partition) const OVERRIDE;
   virtual int GetID() const OVERRIDE;
   virtual bool HasConnection() const OVERRIDE;
-  virtual RenderWidgetHost* GetRenderWidgetHostByID(int routing_id)
-      OVERRIDE;
   virtual void SetIgnoreInputEvents(bool ignore_input_events) OVERRIDE;
   virtual bool IgnoreInputEvents() const OVERRIDE;
-  virtual void Attach(RenderWidgetHost* host, int routing_id)
-      OVERRIDE;
-  virtual void Release(int routing_id) OVERRIDE;
   virtual void Cleanup() OVERRIDE;
   virtual void AddPendingView() OVERRIDE;
   virtual void RemovePendingView() OVERRIDE;
   virtual void SetSuddenTerminationAllowed(bool enabled) OVERRIDE;
   virtual bool SuddenTerminationAllowed() const OVERRIDE;
   virtual IPC::ChannelProxy* GetChannel() OVERRIDE;
-  virtual RenderWidgetHostsIterator GetRenderWidgetHostsIterator() OVERRIDE;
   virtual bool FastShutdownForPageCount(size_t count) OVERRIDE;
   virtual bool FastShutdownStarted() const OVERRIDE;
   virtual base::TimeDelta GetChildProcessIdleTime() const OVERRIDE;
@@ -123,6 +121,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // ChildProcessLauncher::Client implementation.
   virtual void OnProcessLaunched() OVERRIDE;
+
+  // Tells the ResourceDispatcherHost to resume a deferred navigation without
+  // transferring it to a new renderer process.
+  void ResumeDeferredNavigation(const GlobalRequestID& request_id);
 
   // Call this function when it is evident that the child process is actively
   // performing some operation, for example if we just received an IPC message.
@@ -152,12 +154,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
                              BrowserContext* browser_context,
                              const GURL& site_url);
 
-  // Returns whether the process-per-site model is in use (globally or just for
-  // the current site), in which case we should ensure there is only one
-  // RenderProcessHost per site for the entire browser context.
-  static bool ShouldUseProcessPerSite(BrowserContext* browser_context,
-                                      const GURL& url);
-
   // Returns an existing RenderProcessHost for |url| in |browser_context|,
   // if one exists.  Otherwise a new RenderProcessHost should be created and
   // registered using RegisterProcessHostForSite().
@@ -185,10 +181,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // browser_process.h)
   scoped_ptr<IPC::ChannelProxy> channel_;
 
-  // The registered render widget hosts. When this list is empty or all NULL,
-  // we should delete ourselves
-  IDMap<RenderWidgetHost> render_widget_hosts_;
-
   // True if fast shutdown has been performed on this RPH.
   bool fast_shutdown_started_;
 
@@ -214,11 +206,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void OnSavedPageAsMHTML(int job_id, int64 mhtml_file_size);
 
   // CompositorSurfaceBuffersSwapped handler when there's no RWH.
-  void OnCompositorSurfaceBuffersSwappedNoHost(int32 surface_id,
-                                               uint64 surface_handle,
-                                               int32 route_id,
-                                               const gfx::Size& size,
-                                               int32 gpu_process_host_id);
+  void OnCompositorSurfaceBuffersSwappedNoHost(
+      const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params);
 
   // Generates a command line to be used to spawn a renderer and appends the
   // results to |*command_line|.
@@ -235,6 +224,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Handle termination of our process.
   void ProcessDied(bool already_dead);
+
+  virtual void OnGpuSwitching() OVERRIDE;
+
+  // The registered IPC listener objects. When this list is empty, we should
+  // delete ourselves.
+  IDMap<IPC::Listener> listeners_;
 
   // The count of currently visible widgets.  Since the host can be a container
   // for multiple widgets, it uses this count to determine when it should be
@@ -263,9 +258,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
     // This is the maximum size of |cached_dibs_|
     MAX_MAPPED_TRANSPORT_DIBS = 3,
   };
-
-  // Map a transport DIB from its Id and return it. Returns NULL on error.
-  TransportDIB* MapTransportDIB(TransportDIB::Id dib_id);
 
   void ClearTransportDIBCache();
   // This is used to clear our cache five seconds after the last use.
@@ -310,15 +302,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Records the last time we regarded the child process active.
   base::TimeTicks child_process_activity_time_;
 
-#if defined(OS_ANDROID)
-  // Android WebView needs to use a SyncChannel to block the browser process
-  // for synchronous find-in-page API support. In that case the shutdown event
-  // makes no sense as the Android port doesn't shutdown, but gets killed.
-  // SyncChannel still expects a shutdown event, so create a dummy one that
-  // will never will be signaled.
-  base::WaitableEvent dummy_shutdown_event_;
-#endif
-
   // Indicates whether this is a RenderProcessHost that has permission to embed
   // Browser Plugins.
   bool supports_browser_plugin_;
@@ -330,6 +313,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Forwards messages between WebRTCInternals in the browser process
   // and PeerConnectionTracker in the renderer process.
   scoped_refptr<PeerConnectionTrackerHost> peer_connection_tracker_host_;
+
+  // Prevents the class from being added as a GpuDataManagerImpl observer more
+  // than once.
+  bool gpu_observer_registered_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessHostImpl);
 };

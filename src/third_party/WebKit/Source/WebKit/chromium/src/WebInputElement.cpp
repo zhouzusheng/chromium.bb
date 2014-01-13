@@ -32,16 +32,17 @@
 #include "WebInputElement.h"
 
 #include "HTMLNames.h"
+#include "RuntimeEnabledFeatures.h"
 #include "TextFieldDecoratorImpl.h"
 #include "WebNodeCollection.h"
 #include "WebTextFieldDecoratorClient.h"
-#include "core/dom/ElementShadow.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ElementShadow.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/TextControlInnerElements.h"
 #include "core/html/shadow/TextFieldDecorationElement.h"
-#include <public/WebString.h>
+#include "public/platform/WebString.h"
 #include <wtf/PassRefPtr.h>
 
 using namespace WebCore;
@@ -190,11 +191,11 @@ bool WebInputElement::isMultiple() const
 
 WebNodeCollection WebInputElement::dataListOptions() const
 {
-#if ENABLE(DATALIST_ELEMENT)
-    HTMLDataListElement* dataList = static_cast<HTMLDataListElement*>(constUnwrap<HTMLInputElement>()->list());
-    if (dataList)
-        return WebNodeCollection(dataList->options());
-#endif
+    if (RuntimeEnabledFeatures::dataListElementEnabled()) {
+        HTMLDataListElement* dataList = static_cast<HTMLDataListElement*>(constUnwrap<HTMLInputElement>()->list());
+        if (dataList)
+            return WebNodeCollection(dataList->options());
+    }
     return WebNodeCollection();
 }
 
@@ -246,6 +247,11 @@ int WebInputElement::defaultMaxLength()
     return HTMLInputElement::maximumLength;
 }
 
+WebString WebInputElement::directionForFormData() const
+{
+    return constUnwrap<HTMLInputElement>()->directionForFormData();
+}
+
 WebElement WebInputElement::decorationElementFor(WebTextFieldDecoratorClient* decoratorClient)
 {
     ShadowRoot* shadowRoot = unwrap<HTMLInputElement>()->youngestShadowRoot();
@@ -271,13 +277,12 @@ WebInputElement& WebInputElement::operator=(const PassRefPtr<HTMLInputElement>& 
 
 WebInputElement::operator PassRefPtr<HTMLInputElement>() const
 {
-    return static_cast<HTMLInputElement*>(m_private.get());
+    return toHTMLInputElement(m_private.get());
 }
 
 WebInputElement* toWebInputElement(WebElement* webElement)
 {
-    HTMLInputElement* inputElement = webElement->unwrap<Element>()->toInputElement();
-    if (!inputElement)
+    if (!webElement->unwrap<Element>()->hasTagName(HTMLNames::inputTag))
         return 0;
 
     return static_cast<WebInputElement*>(webElement);

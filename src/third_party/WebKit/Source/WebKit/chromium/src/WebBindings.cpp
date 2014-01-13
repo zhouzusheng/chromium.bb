@@ -39,7 +39,6 @@
 #include "WebArrayBufferView.h"
 #include "WebElement.h"
 #include "WebRange.h"
-#include "bindings/v8/BindingState.h"
 #include "bindings/v8/NPV8Object.h"  // for PrivateIdentifier
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8DOMWrapper.h"
@@ -165,6 +164,19 @@ bool WebBindings::setProperty(NPP npp, NPObject* object, NPIdentifier identifier
     return _NPN_SetProperty(npp, object, identifier, value);
 }
 
+void WebBindings::registerObjectOwner(NPP)
+{
+}
+
+void WebBindings::unregisterObjectOwner(NPP)
+{
+}
+
+NPP WebBindings::getObjectOwner(NPObject* object)
+{
+    return 0;
+}
+
 void WebBindings::unregisterObject(NPObject* object)
 {
     _NPN_UnregisterObject(object);
@@ -197,7 +209,8 @@ static bool getRangeImpl(NPObject* object, WebRange* webRange, v8::Isolate* isol
         return false;
 
     V8NPObject* v8NPObject = reinterpret_cast<V8NPObject*>(object);
-    v8::Handle<v8::Object> v8Object(v8NPObject->v8Object);
+    v8::HandleScope handleScope(isolate);
+    v8::Handle<v8::Object> v8Object = v8::Local<v8::Object>::New(isolate, v8NPObject->v8Object);
     if (!V8Range::info.equals(toWrapperTypeInfo(v8Object)))
         return false;
 
@@ -215,7 +228,8 @@ static bool getNodeImpl(NPObject* object, WebNode* webNode, v8::Isolate* isolate
         return false;
 
     V8NPObject* v8NPObject = reinterpret_cast<V8NPObject*>(object);
-    v8::Handle<v8::Object> v8Object(v8NPObject->v8Object);
+    v8::HandleScope handleScope(isolate);
+    v8::Handle<v8::Object> v8Object = v8::Local<v8::Object>::New(isolate, v8NPObject->v8Object);
     Node* native = V8Node::HasInstanceInAnyWorld(v8Object, isolate) ? V8Node::toNative(v8Object) : 0;
     if (!native)
         return false;
@@ -230,7 +244,8 @@ static bool getElementImpl(NPObject* object, WebElement* webElement, v8::Isolate
         return false;
 
     V8NPObject* v8NPObject = reinterpret_cast<V8NPObject*>(object);
-    v8::Handle<v8::Object> v8Object(v8NPObject->v8Object);
+    v8::HandleScope handleScope(isolate);
+    v8::Handle<v8::Object> v8Object = v8::Local<v8::Object>::New(isolate, v8NPObject->v8Object);
     Element* native = V8Element::HasInstanceInAnyWorld(v8Object, isolate) ? V8Element::toNative(v8Object) : 0;
     if (!native)
         return false;
@@ -245,7 +260,8 @@ static bool getArrayBufferImpl(NPObject* object, WebArrayBuffer* arrayBuffer, v8
         return false;
 
     V8NPObject* v8NPObject = reinterpret_cast<V8NPObject*>(object);
-    v8::Handle<v8::Object> v8Object(v8NPObject->v8Object);
+    v8::HandleScope handleScope(isolate);
+    v8::Handle<v8::Object> v8Object = v8::Local<v8::Object>::New(isolate, v8NPObject->v8Object);
     ArrayBuffer* native = V8ArrayBuffer::HasInstanceInAnyWorld(v8Object, isolate) ? V8ArrayBuffer::toNative(v8Object) : 0;
     if (!native)
         return false;
@@ -260,7 +276,8 @@ static bool getArrayBufferViewImpl(NPObject* object, WebArrayBufferView* arrayBu
         return false;
 
     V8NPObject* v8NPObject = reinterpret_cast<V8NPObject*>(object);
-    v8::Handle<v8::Object> v8Object(v8NPObject->v8Object);
+    v8::HandleScope handleScope(isolate);
+    v8::Handle<v8::Object> v8Object = v8::Local<v8::Object>::New(isolate, v8NPObject->v8Object);
     ArrayBufferView* native = V8ArrayBufferView::HasInstanceInAnyWorld(v8Object, isolate) ? V8ArrayBufferView::toNative(v8Object) : 0;
     if (!native)
         return false;
@@ -282,10 +299,11 @@ static NPObject* makeIntArrayImpl(const WebVector<int>& data)
 
 static NPObject* makeStringArrayImpl(const WebVector<WebString>& data)
 {
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HandleScope handleScope;
     v8::Handle<v8::Array> result = v8::Array::New(data.size());
     for (size_t i = 0; i < data.size(); ++i)
-        result->Set(i, data[i].data() ? v8::String::New(reinterpret_cast<const uint16_t*>((data[i].data())), data[i].length()) : v8::String::New(""));
+        result->Set(i, v8String(data[i], isolate));
 
     DOMWindow* window = toDOMWindow(v8::Context::GetCurrent());
     return npCreateV8ScriptObject(0, result, window);

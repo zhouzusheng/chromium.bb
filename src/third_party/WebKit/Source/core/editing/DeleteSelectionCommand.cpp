@@ -28,8 +28,6 @@
 
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/DocumentFragment.h"
-#include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Element.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
@@ -38,8 +36,6 @@
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/HTMLTextAreaElement.h"
-#include "core/page/EditorClient.h"
 #include "core/page/Frame.h"
 #include "core/rendering/RenderTableCell.h"
 
@@ -427,8 +423,10 @@ void DeleteSelectionCommand::makeStylingElementsDirectChildrenOfEditableRootToPr
         if ((node->hasTagName(styleTag) && !(toElement(node.get())->hasAttribute(scopedAttr))) || node->hasTagName(linkTag)) {
             nextNode = NodeTraversal::nextSkippingChildren(node.get());
             RefPtr<ContainerNode> rootEditableElement = node->rootEditableElement();
-            removeNode(node);
-            appendNode(node, rootEditableElement);
+            if (rootEditableElement.get()) {
+                removeNode(node);
+                appendNode(node, rootEditableElement);
+            }
         }
         node = nextNode;
     }
@@ -646,12 +644,7 @@ void DeleteSelectionCommand::mergeParagraphs()
         m_endingPosition = m_upstreamStart;
         return;
     }
-    
-    RefPtr<Range> range = Range::create(document(), startOfParagraphToMove.deepEquivalent().parentAnchoredEquivalent(), endOfParagraphToMove.deepEquivalent().parentAnchoredEquivalent());
-    RefPtr<Range> rangeToBeReplaced = Range::create(document(), mergeDestination.deepEquivalent().parentAnchoredEquivalent(), mergeDestination.deepEquivalent().parentAnchoredEquivalent());
-    if (!document()->frame()->editor()->client()->shouldMoveRangeAfterDelete(range.get(), rangeToBeReplaced.get()))
-        return;
-    
+
     // moveParagraphs will insert placeholders if it removes blocks that would require their use, don't let block
     // removals that it does cause the insertion of *another* placeholder.
     bool needPlaceholder = m_needPlaceholder;
@@ -736,30 +729,6 @@ void DeleteSelectionCommand::clearTransientState()
     m_leadingWhitespace.clear();
     m_trailingWhitespace.clear();
 }
-    
-String DeleteSelectionCommand::originalStringForAutocorrectionAtBeginningOfSelection()
-{
-    if (!m_selectionToDelete.isRange())
-        return String();
-
-    VisiblePosition startOfSelection = m_selectionToDelete.start();
-    if (!isStartOfWord(startOfSelection))
-        return String();
-
-    VisiblePosition nextPosition = startOfSelection.next();
-    if (nextPosition.isNull())
-        return String();
-
-    RefPtr<Range> rangeOfFirstCharacter = Range::create(document(), startOfSelection.deepEquivalent(), nextPosition.deepEquivalent());
-    Vector<DocumentMarker*> markers = document()->markers()->markersInRange(rangeOfFirstCharacter.get(), DocumentMarker::Autocorrected);
-    for (size_t i = 0; i < markers.size(); ++i) {
-        const DocumentMarker* marker = markers[i];
-        int startOffset = marker->startOffset();
-        if (startOffset == startOfSelection.deepEquivalent().offsetInContainerNode())
-            return marker->description();
-    }
-    return String();
-}
 
 // This method removes div elements with no attributes that have only one child or no children at all.
 void DeleteSelectionCommand::removeRedundantBlocks()
@@ -788,15 +757,6 @@ void DeleteSelectionCommand::doApply()
 
     if (!m_selectionToDelete.isNonOrphanedRange())
         return;
-
-    String originalString = originalStringForAutocorrectionAtBeginningOfSelection();
-
-    // If the deletion is occurring in a text field, and we're not deleting to replace the selection, then let the frame call across the bridge to notify the form delegate. 
-    if (!m_replace) {
-        Element* textControl = enclosingTextFormControl(m_selectionToDelete.start());
-        if (textControl && textControl->focused())
-            document()->frame()->editor()->textWillBeDeletedInTextField(textControl);
-    }
 
     // save this to later make the selection with
     EAffinity affinity = m_selectionToDelete.affinity();
@@ -852,11 +812,6 @@ void DeleteSelectionCommand::doApply()
     rebalanceWhitespaceAt(m_endingPosition);
 
     calculateTypingStyleAfterDelete();
-
-    if (!originalString.isEmpty()) {
-        if (Frame* frame = document()->frame())
-            frame->editor()->deletedAutocorrectionAtPosition(m_endingPosition, originalString);
-    }
 
     setEndingSelection(VisibleSelection(m_endingPosition, affinity, endingSelection().isDirectional()));
     clearTransientState();

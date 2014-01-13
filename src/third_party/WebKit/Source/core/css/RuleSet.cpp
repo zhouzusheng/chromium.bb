@@ -30,31 +30,35 @@
 #include "core/css/RuleSet.h"
 
 #include "HTMLNames.h"
+#include "RuntimeEnabledFeatures.h"
 #include "core/css/CSSFontSelector.h"
+#include "core/css/CSSKeyframesRule.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSSelectorList.h"
 #include "core/css/MediaQueryEvaluator.h"
 #include "core/css/SelectorChecker.h"
 #include "core/css/SelectorCheckerFastPath.h"
 #include "core/css/SelectorFilter.h"
-#include "core/css/StyleResolver.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleRuleImport.h"
 #include "core/css/StyleSheetContents.h"
-#include "core/css/WebKitCSSKeyframesRule.h"
+#include "core/css/resolver/StyleResolver.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/page/SecurityOrigin.h"
-#include <wtf/MemoryInstrumentationHashMap.h>
-#include <wtf/MemoryInstrumentationHashSet.h>
-#include <wtf/MemoryInstrumentationVector.h>
-
 #include "core/html/track/TextTrackCue.h"
+#include "weborigin/SecurityOrigin.h"
+#include "wtf/MemoryInstrumentationHashMap.h"
+#include "wtf/MemoryInstrumentationVector.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
 // -----------------------------------------------------------------
+
+static inline bool isDocumentScope(const ContainerNode* scope)
+{
+    return !scope || scope->isDocumentNode();
+}
 
 static inline bool isSelectorMatchingHTMLBasedOnRuleHash(const CSSSelector* selector)
 {
@@ -194,28 +198,28 @@ static void collectFeaturesFromRuleData(RuleFeatureSet& features, const RuleData
         features.uncommonAttributeRules.append(RuleFeature(ruleData.rule(), ruleData.selectorIndex(), ruleData.hasDocumentSecurityOrigin()));
 }
     
-void RuleSet::addToRuleSet(AtomicStringImpl* key, AtomRuleMap& map, const RuleData& ruleData)
+void RuleSet::addToRuleSet(AtomicStringImpl* key, PendingRuleMap& map, const RuleData& ruleData)
 {
     if (!key)
         return;
-    OwnPtr<Vector<RuleData> >& rules = map.add(key, nullptr).iterator->value;
+    OwnPtr<LinkedStack<RuleData> >& rules = map.add(key, nullptr).iterator->value;
     if (!rules)
-        rules = adoptPtr(new Vector<RuleData>);
-    rules->append(ruleData);
+        rules = adoptPtr(new LinkedStack<RuleData>);
+    rules->push(ruleData);
 }
 
 bool RuleSet::findBestRuleSetAndAdd(const CSSSelector* component, RuleData& ruleData)
 {
     if (component->m_match == CSSSelector::Id) {
-        addToRuleSet(component->value().impl(), m_idRules, ruleData);
+        addToRuleSet(component->value().impl(), ensurePendingRules()->idRules, ruleData);
         return true;
     }
     if (component->m_match == CSSSelector::Class) {
-        addToRuleSet(component->value().impl(), m_classRules, ruleData);
+        addToRuleSet(component->value().impl(), ensurePendingRules()->classRules, ruleData);
         return true;
     }
     if (component->isCustomPseudoElement()) {
-        addToRuleSet(component->value().impl(), m_shadowPseudoElementRules, ruleData);
+        addToRuleSet(component->value().impl(), ensurePendingRules()->shadowPseudoElementRules, ruleData);
         return true;
     }
     if (component->pseudoType() == CSSSelector::PseudoCue) {
@@ -246,7 +250,7 @@ bool RuleSet::findBestRuleSetAndAdd(const CSSSelector* component, RuleData& rule
                 && findBestRuleSetAndAdd(component->tagHistory(), ruleData))
                 return true;
 
-            addToRuleSet(component->tagQName().localName().impl(), m_tagRules, ruleData);
+            addToRuleSet(component->tagQName().localName().impl(), ensurePendingRules()->tagRules, ruleData);
             return true;
         }
     }
@@ -266,11 +270,13 @@ void RuleSet::addRule(StyleRule* rule, unsigned selectorIndex, AddRuleFlags addR
 
 void RuleSet::addPageRule(StyleRulePage* rule)
 {
+    ensurePendingRules(); // So that m_pageRules.shrinkToFit() gets called.
     m_pageRules.append(rule);
 }
 
 void RuleSet::addRegionRule(StyleRuleRegion* regionRule, bool hasDocumentSecurityOrigin)
 {
+    ensurePendingRules(); // So that m_regionSelectorsAndRuleSets.shrinkToFit() gets called.
     OwnPtr<RuleSet> regionRuleSet = RuleSet::create();
     // The region rule set should take into account the position inside the parent rule set.
     // Otherwise, the rules inside region block might be incorrectly positioned before other similar rules from
@@ -300,16 +306,15 @@ void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const M
 
         if (rule->isStyleRule()) {
             StyleRule* styleRule = static_cast<StyleRule*>(rule);
-            if (!scope)
-                addStyleRule(styleRule, addRuleFlags);
-            else {
-                const CSSSelectorList& selectorList = styleRule->selectorList();
-                for (size_t selectorIndex = 0; selectorIndex != notFound; selectorIndex = selectorList.indexOfNextSelectorAfter(selectorIndex)) {
-                    if (selectorList.hasShadowDistributedAt(selectorIndex))
-                        resolver->ruleSets().shadowDistributedRules().addRule(styleRule, selectorIndex, const_cast<ContainerNode*>(scope), addRuleFlags);
-                    else
-                        addRule(styleRule, selectorIndex, addRuleFlags);
-                }
+
+            const CSSSelectorList& selectorList = styleRule->selectorList();
+            for (size_t selectorIndex = 0; selectorIndex != notFound; selectorIndex = selectorList.indexOfNextSelectorAfter(selectorIndex)) {
+                if (selectorList.hasShadowDistributedAt(selectorIndex)) {
+                    if (isDocumentScope(scope))
+                        continue;
+                    resolver->ruleSets().shadowDistributedRules().addRule(styleRule, selectorIndex, const_cast<ContainerNode*>(scope), addRuleFlags);
+                } else
+                    addRule(styleRule, selectorIndex, addRuleFlags);
             }
         } else if (rule->isPageRule())
             addPageRule(static_cast<StyleRulePage*>(rule));
@@ -320,33 +325,29 @@ void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const M
         } else if (rule->isFontFaceRule() && resolver) {
             // Add this font face to our set.
             // FIXME(BUG 72461): We don't add @font-face rules of scoped style sheets for the moment.
-            if (scope)
+            if (!isDocumentScope(scope))
                 continue;
             const StyleRuleFontFace* fontFaceRule = static_cast<StyleRuleFontFace*>(rule);
             resolver->fontSelector()->addFontFaceRule(fontFaceRule);
             resolver->invalidateMatchedPropertiesCache();
         } else if (rule->isKeyframesRule() && resolver) {
             // FIXME (BUG 72462): We don't add @keyframe rules of scoped style sheets for the moment.
-            if (scope)
+            if (!isDocumentScope(scope))
                 continue;
             resolver->addKeyframeStyle(static_cast<StyleRuleKeyframes*>(rule));
         }
         else if (rule->isRegionRule() && resolver) {
             // FIXME (BUG 72472): We don't add @-webkit-region rules of scoped style sheets for the moment.
-            if (scope)
-                continue;
             addRegionRule(static_cast<StyleRuleRegion*>(rule), hasDocumentSecurityOrigin);
         }
         else if (rule->isHostRule())
-            resolver->addHostRule(static_cast<StyleRuleHost*>(rule), hasDocumentSecurityOrigin, scope);
-#if ENABLE(CSS_DEVICE_ADAPTATION)
-        else if (rule->isViewportRule() && resolver) {
+            resolver->ensureScopedStyleResolver(scope->shadowHost())->addHostRule(static_cast<StyleRuleHost*>(rule), hasDocumentSecurityOrigin, scope);
+        else if (RuntimeEnabledFeatures::cssViewportEnabled() && rule->isViewportRule() && resolver) {
             // @viewport should not be scoped.
-            if (scope)
+            if (!isDocumentScope(scope))
                 continue;
             resolver->viewportStyleResolver()->addViewportRule(static_cast<StyleRuleViewport*>(rule));
         }
-#endif
         else if (rule->isSupportsRule() && static_cast<StyleRuleSupports*>(rule)->conditionIsSupported())
             addChildRules(static_cast<StyleRuleSupports*>(rule)->childRules(), medium, resolver, scope, hasDocumentSecurityOrigin, addRuleFlags);
     }
@@ -367,9 +368,6 @@ void RuleSet::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvalu
     AddRuleFlags addRuleFlags = static_cast<AddRuleFlags>((hasDocumentSecurityOrigin ? RuleHasDocumentSecurityOrigin : 0) | (!scope ? RuleCanUseFastCheckSelector : 0));
 
     addChildRules(sheet->childRules(), medium, resolver, scope, hasDocumentSecurityOrigin, addRuleFlags);
-
-    if (m_autoShrinkToFitEnabled)
-        shrinkToFit();
 }
 
 void RuleSet::addStyleRule(StyleRule* rule, AddRuleFlags addRuleFlags)
@@ -378,19 +376,37 @@ void RuleSet::addStyleRule(StyleRule* rule, AddRuleFlags addRuleFlags)
         addRule(rule, selectorIndex, addRuleFlags);
 }
 
-static inline void shrinkMapVectorsToFit(RuleSet::AtomRuleMap& map)
+void RuleSet::compactPendingRules(PendingRuleMap& pendingMap, CompactRuleMap& compactMap)
 {
-    RuleSet::AtomRuleMap::iterator end = map.end();
-    for (RuleSet::AtomRuleMap::iterator it = map.begin(); it != end; ++it)
-        it->value->shrinkToFit();
+    PendingRuleMap::iterator end = pendingMap.end();
+    for (PendingRuleMap::iterator it = pendingMap.begin(); it != end; ++it) {
+        OwnPtr<LinkedStack<RuleData> > pendingRules = it->value.release();
+        size_t pendingSize = pendingRules->size();
+        ASSERT(pendingSize);
+
+        OwnPtr<Vector<RuleData> >& compactRules = compactMap.add(it->key, nullptr).iterator->value;
+        if (!compactRules) {
+            compactRules = adoptPtr(new Vector<RuleData>);
+            compactRules->reserveInitialCapacity(pendingSize);
+        } else {
+            compactRules->reserveCapacity(compactRules->size() + pendingSize);
+        }
+
+        while (!pendingRules->isEmpty()) {
+            compactRules->append(pendingRules->peek());
+            pendingRules->pop();
+        }
+    }
 }
 
-void RuleSet::shrinkToFit()
+void RuleSet::compactRules()
 {
-    shrinkMapVectorsToFit(m_idRules);
-    shrinkMapVectorsToFit(m_classRules);
-    shrinkMapVectorsToFit(m_tagRules);
-    shrinkMapVectorsToFit(m_shadowPseudoElementRules);
+    ASSERT(m_pendingRules);
+    OwnPtr<PendingRuleMaps> pendingRules = m_pendingRules.release();
+    compactPendingRules(pendingRules->idRules, m_idRules);
+    compactPendingRules(pendingRules->classRules, m_classRules);
+    compactPendingRules(pendingRules->tagRules, m_tagRules);
+    compactPendingRules(pendingRules->shadowPseudoElementRules, m_shadowPseudoElementRules);
     m_linkPseudoClassRules.shrinkToFit();
     m_cuePseudoRules.shrinkToFit();
     m_focusPseudoClassRules.shrinkToFit();

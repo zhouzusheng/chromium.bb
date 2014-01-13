@@ -26,7 +26,6 @@
 #include "config.h"
 #include "ColorChooserPopupUIController.h"
 
-#if ENABLE(INPUT_TYPE_COLOR) && ENABLE(PAGE_POPUP)
 #include "ChromeClientImpl.h"
 #include "ColorSuggestionPicker.h"
 #include "PickerCommon.h"
@@ -36,8 +35,8 @@
 #include "core/platform/ColorChooserClient.h"
 #include "core/platform/LocalizedStrings.h"
 #include "core/platform/graphics/IntRect.h"
-#include <public/Platform.h>
-#include <public/WebLocalizedString.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebLocalizedString.h"
 
 using namespace WebCore;
 
@@ -151,4 +150,3 @@ void ColorChooserPopupUIController::closePopup()
 }
 
 }
-#endif // ENABLE(INPUT_TYPE_COLOR) && ENABLE(PAGE_POPUP)

@@ -62,14 +62,15 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
 #include "base/time.h"
+#include "content/browser/renderer_host/media/video_capture_oracle.h"
 #include "content/browser/renderer_host/media/web_contents_capture_util.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -103,17 +104,6 @@ const int kMinFrameHeight = 2;
 const int kMaxFramesInFlight = 2;
 const int kMaxSnapshotsInFlight = 1;
 
-// This value controls how many redundant, timer-base captures occur when the
-// content is static. Redundantly capturing the same frame allows iterative
-// quality enhancement, and also allows the buffer to fill in "buffered mode".
-//
-// TODO(nick): Controlling this here is a hack and a layering violation, since
-// it's a strategy specific to the WebRTC consumer, and probably just papers
-// over some frame dropping and quality bugs. It should either be controlled at
-// a higher level, or else redundant frame generation should be pushed down
-// further into the WebRTC encoding stack.
-const int kNumRedundantCapturesOfStaticContent = 200;
-
 // TODO(nick): Remove this once frame subscription is supported on Aura and
 // Linux.
 #if (defined(OS_WIN) || defined(OS_MACOSX)) || defined(USE_AURA)
@@ -121,8 +111,6 @@ const bool kAcceleratedSubscriberIsSupported = true;
 #else
 const bool kAcceleratedSubscriberIsSupported = false;
 #endif
-
-typedef base::Callback<void(base::Time, bool)> DeliverFrameCallback;
 
 // Returns the nearest even integer closer to zero.
 template<typename IntType>
@@ -145,36 +133,27 @@ gfx::Rect ComputeYV12LetterboxRegion(const gfx::Size& frame_size,
   return result;
 }
 
-// CaptureOracle is informed of every update to a particular web content view.
-// This empowers it look into the future and decide whether a particular frame
-// ought to be captured in order to achieve its target frame rate.
-class CaptureOracle : public base::RefCountedThreadSafe<CaptureOracle> {
+// Thread-safe, refcounted proxy to the VideoCaptureOracle.  This proxy wraps
+// the VideoCaptureOracle, which decides which frames to capture, and a
+// VideoCaptureDevice::EventHandler, which allocates and receives the captured
+// frames, in a lock to synchronize state between the two.
+class ThreadSafeCaptureOracle
+    : public base::RefCountedThreadSafe<ThreadSafeCaptureOracle> {
  public:
-  enum Event {
-    TIMER_POLL,
-    COMPOSITOR_UPDATE,
-    SOFTWARE_PAINT
-  };
+  ThreadSafeCaptureOracle(media::VideoCaptureDevice::EventHandler* consumer,
+                          scoped_ptr<VideoCaptureOracle> oracle);
 
-  CaptureOracle(media::VideoCaptureDevice::EventHandler* consumer,
-                base::TimeDelta capture_period);
-
-  // Record an event of type |event|, and decide whether the caller should do a
-  // frame capture immediately. Decisions of the oracle are final: the caller
-  // must do what it is told.
-  //
-  // If a capture should not occur, returns false. Otherwise returns true, and
-  // |storage| and |callback| will be populated with a buffer into which a
-  // capture should be done, and a callback to invoke once the frame is ready.
   bool ObserveEventAndDecideCapture(
-      Event event,
+      VideoCaptureOracle::Event event,
       base::Time event_time,
       scoped_refptr<media::VideoFrame>* storage,
-      DeliverFrameCallback* callback);
+      RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback* callback);
 
-  base::TimeDelta capture_period() const { return capture_period_; }
+  base::TimeDelta capture_period() const {
+    return oracle_->capture_period();
+  }
 
-  // Allow new captures to start occuring.
+  // Allow new captures to start occurring.
   void Start();
 
   // Stop new captures from happening (but doesn't forget the consumer).
@@ -188,17 +167,14 @@ class CaptureOracle : public base::RefCountedThreadSafe<CaptureOracle> {
   void InvalidateConsumer();
 
  private:
-  friend class base::RefCountedThreadSafe<CaptureOracle>;
-  virtual ~CaptureOracle() {}
+  friend class base::RefCountedThreadSafe<ThreadSafeCaptureOracle>;
+  virtual ~ThreadSafeCaptureOracle() {}
 
-  // Callback invoked upon completion of all captures.
+  // Callback invoked on completion of all captures.
   void DidCaptureFrame(const scoped_refptr<media::VideoFrame>& frame,
                        int frame_number,
                        base::Time timestamp,
                        bool success);
-
-  // Time between frames.
-  const base::TimeDelta capture_period_;
 
   // Protects everything below it.
   base::Lock lock_;
@@ -206,30 +182,21 @@ class CaptureOracle : public base::RefCountedThreadSafe<CaptureOracle> {
   // Recipient of our capture activity. Becomes null after it is invalidated.
   media::VideoCaptureDevice::EventHandler* consumer_;
 
-  // Incremented every time a paint or update event occurs.
-  int frame_number_;
-
-  // Stores the frame number from the last delivered frame.
-  int last_delivered_frame_number_;
-
-  // Stores the timestamp of the last delivered frame.
-  base::Time last_delivered_frame_timestamp_;
+  // Makes the decision to capture a frame.
+  const scoped_ptr<VideoCaptureOracle> oracle_;
 
   // Whether capturing is currently allowed. Can toggle back and forth.
   bool is_started_;
-
-  // Tracks present/paint history.
-  SmoothEventSampler sampler_;
 };
 
-// FrameSubscriber is a proxy to the CaptureOracle that's compatible with
-// RenderWidgetHostViewFrameSubscriber. We create one per event type.
+// FrameSubscriber is a proxy to the ThreadSafeCaptureOracle that's compatible
+// with RenderWidgetHostViewFrameSubscriber. We create one per event type.
 class FrameSubscriber : public RenderWidgetHostViewFrameSubscriber {
  public:
-  FrameSubscriber(CaptureOracle::Event event_type,
-                  const scoped_refptr<CaptureOracle>& oracle)
+  FrameSubscriber(VideoCaptureOracle::Event event_type,
+                  const scoped_refptr<ThreadSafeCaptureOracle>& oracle)
       : event_type_(event_type),
-        oracle_(oracle) {}
+        oracle_proxy_(oracle) {}
 
   virtual bool ShouldCaptureFrame(
       base::Time present_time,
@@ -238,8 +205,8 @@ class FrameSubscriber : public RenderWidgetHostViewFrameSubscriber {
           deliver_frame_cb) OVERRIDE;
 
  private:
-  const CaptureOracle::Event event_type_;
-  scoped_refptr<CaptureOracle> oracle_;
+  const VideoCaptureOracle::Event event_type_;
+  scoped_refptr<ThreadSafeCaptureOracle> oracle_proxy_;
 };
 
 // ContentCaptureSubscription is the relationship between a RenderWidgetHost
@@ -259,16 +226,18 @@ class FrameSubscriber : public RenderWidgetHostViewFrameSubscriber {
 // autonomously on some other thread.
 class ContentCaptureSubscription : public content::NotificationObserver {
  public:
-  typedef base::Callback<void(const base::Time&,
-                              const scoped_refptr<media::VideoFrame>&,
-                              const DeliverFrameCallback&)> CaptureCallback;
+  typedef base::Callback<void(
+      const base::Time&,
+      const scoped_refptr<media::VideoFrame>&,
+      const RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback&)>
+          CaptureCallback;
 
   // Create a subscription. Whenever a manual capture is required, the
   // subscription will invoke |capture_callback| on the UI thread to do the
   // work.
   ContentCaptureSubscription(
       const RenderWidgetHost& source,
-      const scoped_refptr<CaptureOracle>& oracle,
+      const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy,
       const CaptureCallback& capture_callback);
   virtual ~ContentCaptureSubscription();
 
@@ -323,7 +292,7 @@ class CaptureMachine : public WebContentsObserver,
       int render_process_id,
       int render_view_id,
       const scoped_refptr<base::SequencedTaskRunner>& render_task_runner,
-      const scoped_refptr<CaptureOracle>& oracle);
+      const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy);
 
   // Starts a copy from the backing store or the composited surface. Must be run
   // on the UI BrowserThread. |deliver_frame_cb| will be run when the operation
@@ -333,7 +302,8 @@ class CaptureMachine : public WebContentsObserver,
   void Capture(
       const base::Time& start_time,
       const scoped_refptr<media::VideoFrame>& target,
-      const DeliverFrameCallback& deliver_frame_cb);
+      const RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback&
+          deliver_frame_cb);
 
   // content::WebContentsObserver implementation.
   virtual void DidShowFullscreenWidget(int routing_id) OVERRIDE {
@@ -366,7 +336,7 @@ class CaptureMachine : public WebContentsObserver,
  private:
   CaptureMachine(
      const scoped_refptr<base::SequencedTaskRunner>& render_task_runner,
-     const scoped_refptr<CaptureOracle>& oracle);
+     const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy);
 
   // Starts observing the web contents, returning false if lookup fails.
   bool StartObservingWebContents(int initial_render_process_id,
@@ -379,14 +349,16 @@ class CaptureMachine : public WebContentsObserver,
   void DidCopyFromBackingStore(
       const base::Time& start_time,
       const scoped_refptr<media::VideoFrame>& target,
-      const DeliverFrameCallback& deliver_frame_cb,
+      const RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback&
+          deliver_frame_cb,
       bool success,
       const SkBitmap& bitmap);
 
   // Response callback for RWHVP::CopyFromCompositingSurfaceToVideoFrame().
   void DidCopyFromCompositingSurfaceToVideoFrame(
       const base::Time& start_time,
-      const DeliverFrameCallback& deliver_frame_cb,
+      const RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback&
+          deliver_frame_cb,
       bool success);
 
   // Remove the old subscription, and start a new one. This should be called
@@ -399,7 +371,7 @@ class CaptureMachine : public WebContentsObserver,
   const scoped_refptr<base::SequencedTaskRunner> render_task_runner_;
 
   // Makes all the decisions about which frames to copy, and how.
-  const scoped_refptr<CaptureOracle> oracle_;
+  const scoped_refptr<ThreadSafeCaptureOracle> oracle_proxy_;
 
   // Routing ID of any active fullscreen render widget or MSG_ROUTING_NONE
   // otherwise.
@@ -435,21 +407,19 @@ class VideoFrameDeliveryLog {
   DISALLOW_COPY_AND_ASSIGN(VideoFrameDeliveryLog);
 };
 
-CaptureOracle::CaptureOracle(media::VideoCaptureDevice::EventHandler* consumer,
-                             base::TimeDelta capture_period)
-    : capture_period_(capture_period),
-      consumer_(consumer),
-      frame_number_(0),
-      last_delivered_frame_number_(0),
-      is_started_(false),
-      sampler_(capture_period_, kAcceleratedSubscriberIsSupported,
-               kNumRedundantCapturesOfStaticContent) {}
+ThreadSafeCaptureOracle::ThreadSafeCaptureOracle(
+    media::VideoCaptureDevice::EventHandler* consumer,
+    scoped_ptr<VideoCaptureOracle> oracle)
+    : consumer_(consumer),
+      oracle_(oracle.Pass()),
+      is_started_(false) {
+}
 
-bool CaptureOracle::ObserveEventAndDecideCapture(
-      Event event,
-      base::Time event_time,
-      scoped_refptr<media::VideoFrame>* storage,
-      RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback* callback) {
+bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
+    VideoCaptureOracle::Event event,
+    base::Time event_time,
+    scoped_refptr<media::VideoFrame>* storage,
+    RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback* callback) {
   base::AutoLock guard(lock_);
 
   if (!consumer_ || !is_started_)
@@ -457,29 +427,25 @@ bool CaptureOracle::ObserveEventAndDecideCapture(
 
   scoped_refptr<media::VideoFrame> output_buffer =
       consumer_->ReserveOutputBuffer();
+  const bool should_capture =
+      oracle_->ObserveEventAndDecideCapture(event, event_time);
+  const bool content_is_dirty =
+      (event == VideoCaptureOracle::kCompositorUpdate ||
+       event == VideoCaptureOracle::kSoftwarePaint);
+  const char* event_name =
+      (event == VideoCaptureOracle::kTimerPoll ? "poll" :
+       (event == VideoCaptureOracle::kCompositorUpdate ? "gpu" :
+       "paint"));
 
-  // Record |event| and decide whether it's a good time to capture.
-  const bool content_is_dirty = (event == COMPOSITOR_UPDATE ||
-                                 event == SOFTWARE_PAINT);
-  bool should_sample;
-  if (content_is_dirty) {
-    frame_number_++;
-    should_sample = sampler_.AddEventAndConsiderSampling(event_time);
-  } else {
-    should_sample = sampler_.IsOverdueForSamplingAt(event_time);
-  }
-
-  const char* event_name = (event == TIMER_POLL ? "poll" :
-                            (event == COMPOSITOR_UPDATE ? "gpu" :
-                             "paint"));
-
-  // Step 3: Consider the various reasons not to initiate a capture.
-  if (should_sample && !output_buffer) {
-    TRACE_EVENT_INSTANT1("mirroring", "EncodeLimited",
+  // Consider the various reasons not to initiate a capture.
+  if (should_capture && !output_buffer.get()) {
+    TRACE_EVENT_INSTANT1("mirroring",
+                         "EncodeLimited",
                          TRACE_EVENT_SCOPE_THREAD,
-                         "trigger", event_name);
+                         "trigger",
+                         event_name);
     return false;
-  } else if (!should_sample && output_buffer) {
+  } else if (!should_capture && output_buffer.get()) {
     if (content_is_dirty) {
       // This is a normal and acceptable way to drop a frame. We've hit our
       // capture rate limit: for example, the content is animating at 60fps but
@@ -489,7 +455,7 @@ bool CaptureOracle::ObserveEventAndDecideCapture(
                            "trigger", event_name);
     }
     return false;
-  } else if (!should_sample && !output_buffer) {
+  } else if (!should_capture && !output_buffer.get()) {
     // We decided not to capture, but we wouldn't have been able to if we wanted
     // to because no output buffer was available.
     TRACE_EVENT_INSTANT1("mirroring", "NearlyEncodeLimited",
@@ -497,35 +463,33 @@ bool CaptureOracle::ObserveEventAndDecideCapture(
                          "trigger", event_name);
     return false;
   }
-
-  // Step 4: Initiate a capture.
-  sampler_.RecordSample();
+  int frame_number = oracle_->RecordCapture();
   TRACE_EVENT_ASYNC_BEGIN2("mirroring", "Capture", output_buffer.get(),
-                           "frame_number", frame_number_,
+                           "frame_number", frame_number,
                            "trigger", event_name);
   *storage = output_buffer;
-  *callback = base::Bind(&CaptureOracle::DidCaptureFrame,
-                         this, output_buffer, frame_number_);
+  *callback = base::Bind(&ThreadSafeCaptureOracle::DidCaptureFrame,
+                         this, output_buffer, frame_number);
   return true;
 }
 
-void CaptureOracle::Start() {
+void ThreadSafeCaptureOracle::Start() {
   base::AutoLock guard(lock_);
   is_started_ = true;
 }
 
-void CaptureOracle::Stop() {
+void ThreadSafeCaptureOracle::Stop() {
   base::AutoLock guard(lock_);
   is_started_ = false;
 }
 
-void CaptureOracle::ReportError() {
+void ThreadSafeCaptureOracle::ReportError() {
   base::AutoLock guard(lock_);
   if (consumer_)
     consumer_->OnError();
 }
 
-void CaptureOracle::InvalidateConsumer() {
+void ThreadSafeCaptureOracle::InvalidateConsumer() {
   base::AutoLock guard(lock_);
 
   TRACE_EVENT_INSTANT0("mirroring", "InvalidateConsumer",
@@ -535,7 +499,7 @@ void CaptureOracle::InvalidateConsumer() {
   consumer_ = NULL;
 }
 
-void CaptureOracle::DidCaptureFrame(
+void ThreadSafeCaptureOracle::DidCaptureFrame(
     const scoped_refptr<media::VideoFrame>& frame,
     int frame_number,
     base::Time timestamp,
@@ -549,27 +513,9 @@ void CaptureOracle::DidCaptureFrame(
   if (!consumer_ || !is_started_)
     return;  // Capture is stopped.
 
-  if (success) {
-    // Drop frame if previous frame number is higher or we're trying to deliver
-    // a frame with the same timestamp.
-    if (last_delivered_frame_number_ > frame_number ||
-        last_delivered_frame_timestamp_ == timestamp) {
-      LOG(ERROR) << "Frame with same timestamp or out of order delivery. "
-                 << "Dropping frame.";
-      return;
-    }
-
-    if (last_delivered_frame_timestamp_ > timestamp) {
-      // We should not get here unless time was adjusted backwards.
-      LOG(ERROR) << "Frame with past timestamp (" << timestamp.ToInternalValue()
-                 << ") was delivered";
-    }
-
-    last_delivered_frame_number_ = frame_number;
-    last_delivered_frame_timestamp_ = timestamp;
-
-    consumer_->OnIncomingCapturedVideoFrame(frame, timestamp);
-  }
+  if (success)
+    if (oracle_->CompleteCapture(frame_number, timestamp))
+      consumer_->OnIncomingCapturedVideoFrame(frame, timestamp);
 }
 
 bool FrameSubscriber::ShouldCaptureFrame(
@@ -579,18 +525,18 @@ bool FrameSubscriber::ShouldCaptureFrame(
   TRACE_EVENT1("mirroring", "FrameSubscriber::ShouldCaptureFrame",
                "instance", this);
 
-  return oracle_->ObserveEventAndDecideCapture(event_type_, present_time,
-                                               storage, deliver_frame_cb);
+  return oracle_proxy_->ObserveEventAndDecideCapture(event_type_, present_time,
+                                                     storage, deliver_frame_cb);
 }
 
 ContentCaptureSubscription::ContentCaptureSubscription(
     const RenderWidgetHost& source,
-    const scoped_refptr<CaptureOracle>& oracle,
+    const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy,
     const CaptureCallback& capture_callback)
     : render_process_id_(source.GetProcess()->GetID()),
       render_view_id_(source.GetRoutingID()),
-      paint_subscriber_(CaptureOracle::SOFTWARE_PAINT, oracle),
-      timer_subscriber_(CaptureOracle::TIMER_POLL, oracle),
+      paint_subscriber_(VideoCaptureOracle::kSoftwarePaint, oracle_proxy),
+      timer_subscriber_(VideoCaptureOracle::kTimerPoll, oracle_proxy),
       capture_callback_(capture_callback),
       timer_(true, true) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -602,7 +548,8 @@ ContentCaptureSubscription::ContentCaptureSubscription(
   // oracle.
   if (view && kAcceleratedSubscriberIsSupported) {
     scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber(
-        new FrameSubscriber(CaptureOracle::COMPOSITOR_UPDATE, oracle));
+        new FrameSubscriber(VideoCaptureOracle::kCompositorUpdate,
+            oracle_proxy));
     view->BeginFrameSubscription(subscriber.Pass());
   }
 
@@ -613,7 +560,7 @@ ContentCaptureSubscription::ContentCaptureSubscription(
       Source<RenderWidgetHost>(&source));
 
   // Subscribe to timer events. This instance will service these as well.
-  timer_.Start(FROM_HERE, oracle->capture_period(),
+  timer_.Start(FROM_HERE, oracle_proxy->capture_period(),
                base::Bind(&ContentCaptureSubscription::OnTimer,
                           base::Unretained(this)));
 }
@@ -644,7 +591,8 @@ void ContentCaptureSubscription::Observe(
 
   // This message occurs on window resizes and visibility changes even when
   // accelerated compositing is active, so we need to filter out these cases.
-  if (!rwh || !rwh->GetView() || rwh->is_accelerated_compositing_active())
+  if (!rwh || !rwh->GetView() || (rwh->is_accelerated_compositing_active() &&
+                                  rwh->GetView()->IsSurfaceAvailableForCopy()))
     return;
 
   TRACE_EVENT1("mirroring", "ContentCaptureSubscription::Observe",
@@ -714,10 +662,21 @@ void RenderVideoFrame(const SkBitmap& input,
   SkBitmap scaled_bitmap;
   if (input.width() != region_in_frame.width() ||
       input.height() != region_in_frame.height()) {
+
+    skia::ImageOperations::ResizeMethod method;
+    if (input.width() < region_in_frame.width() ||
+        input.height() < region_in_frame.height()) {
+      // Avoid box filtering when magnifying, because it's actually
+      // nearest-neighbor.
+      method = skia::ImageOperations::RESIZE_HAMMING1;
+    } else {
+      method = skia::ImageOperations::RESIZE_BOX;
+    }
+
     TRACE_EVENT_ASYNC_STEP0("mirroring", "Capture", output.get(), "Scale");
-    scaled_bitmap = skia::ImageOperations::Resize(
-        input, skia::ImageOperations::RESIZE_BOX,
-        region_in_frame.width(), region_in_frame.height());
+    scaled_bitmap = skia::ImageOperations::Resize(input, method,
+                                                  region_in_frame.width(),
+                                                  region_in_frame.height());
   } else {
     scaled_bitmap = input;
   }
@@ -730,7 +689,7 @@ void RenderVideoFrame(const SkBitmap& input,
         reinterpret_cast<uint8*>(scaled_bitmap.getPixels()),
         scaled_bitmap.rowBytes(),
         region_in_frame,
-        output);
+        output.get());
   }
 
   // The result is now ready.
@@ -782,12 +741,12 @@ scoped_ptr<CaptureMachine> CaptureMachine::Create(
     int render_process_id,
     int render_view_id,
     const scoped_refptr<base::SequencedTaskRunner>& render_task_runner,
-    const scoped_refptr<CaptureOracle>& oracle) {
+    const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(render_task_runner);
-  DCHECK(oracle);
+  DCHECK(render_task_runner.get());
+  DCHECK(oracle_proxy.get());
   scoped_ptr<CaptureMachine> machine(
-      new CaptureMachine(render_task_runner, oracle));
+      new CaptureMachine(render_task_runner, oracle_proxy));
 
   if (!machine->StartObservingWebContents(render_process_id, render_view_id))
     machine.reset();
@@ -797,9 +756,9 @@ scoped_ptr<CaptureMachine> CaptureMachine::Create(
 
 CaptureMachine::CaptureMachine(
     const scoped_refptr<base::SequencedTaskRunner>& render_task_runner,
-    const scoped_refptr<CaptureOracle>& oracle)
+    const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy)
     : render_task_runner_(render_task_runner),
-      oracle_(oracle),
+      oracle_proxy_(oracle_proxy),
       fullscreen_widget_id_(MSG_ROUTING_NONE) {}
 
 CaptureMachine::~CaptureMachine() {
@@ -817,7 +776,8 @@ CaptureMachine::~CaptureMachine() {
 void CaptureMachine::Capture(
     const base::Time& start_time,
     const scoped_refptr<media::VideoFrame>& target,
-    const DeliverFrameCallback& deliver_frame_cb) {
+    const RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback&
+        deliver_frame_cb) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   RenderWidgetHost* rwh = GetTarget();
@@ -903,7 +863,7 @@ void CaptureMachine::WebContentsDestroyed(WebContents* web_contents) {
 
   subscription_.reset();
   web_contents->DecrementCapturerCount();
-  oracle_->ReportError();
+  oracle_proxy_->ReportError();
 }
 
 RenderWidgetHost* CaptureMachine::GetTarget() {
@@ -914,8 +874,8 @@ RenderWidgetHost* CaptureMachine::GetTarget() {
   RenderWidgetHost* rwh = NULL;
   if (fullscreen_widget_id_ != MSG_ROUTING_NONE) {
     RenderProcessHost* process = web_contents()->GetRenderProcessHost();
-    rwh = process ? process->GetRenderWidgetHostByID(fullscreen_widget_id_)
-                  : NULL;
+    if (process)
+      rwh = RenderWidgetHost::FromID(process->GetID(), fullscreen_widget_id_);
   } else {
     rwh = web_contents()->GetRenderViewHost();
   }
@@ -926,7 +886,8 @@ RenderWidgetHost* CaptureMachine::GetTarget() {
 void CaptureMachine::DidCopyFromBackingStore(
     const base::Time& start_time,
     const scoped_refptr<media::VideoFrame>& target,
-    const DeliverFrameCallback& deliver_frame_cb,
+    const RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback&
+        deliver_frame_cb,
     bool success,
     const SkBitmap& bitmap) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -947,7 +908,8 @@ void CaptureMachine::DidCopyFromBackingStore(
 
 void CaptureMachine::DidCopyFromCompositingSurfaceToVideoFrame(
     const base::Time& start_time,
-    const DeliverFrameCallback& deliver_frame_cb,
+    const RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback&
+        deliver_frame_cb,
     bool success) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::Time now = base::Time::Now();
@@ -971,7 +933,7 @@ void CaptureMachine::RenewFrameSubscription() {
   if (!rwh || !rwh->GetView())
     return;
 
-  subscription_.reset(new ContentCaptureSubscription(*rwh, oracle_,
+  subscription_.reset(new ContentCaptureSubscription(*rwh, oracle_proxy_,
       base::Bind(&CaptureMachine::Capture, this->AsWeakPtr())));
 }
 
@@ -1056,7 +1018,7 @@ class WebContentsVideoCaptureDevice::Impl : public base::SupportsWeakPtr<Impl> {
   // Our thread-safe capture oracle which serves as the gateway to the video
   // capture pipeline. Besides the WCVCD itself, it is the only component of the
   // system with direct access to |consumer_|.
-  scoped_refptr<CaptureOracle> oracle_;
+  scoped_refptr<ThreadSafeCaptureOracle> oracle_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(Impl);
 };
@@ -1123,7 +1085,12 @@ void WebContentsVideoCaptureDevice::Impl::Allocate(
 
   consumer_ = consumer;
   consumer_->OnFrameInfo(settings);
-  oracle_ = new CaptureOracle(consumer_, capture_period);
+  scoped_ptr<VideoCaptureOracle> oracle(
+      new VideoCaptureOracle(capture_period,
+                             kAcceleratedSubscriberIsSupported));
+  oracle_proxy_ = new ThreadSafeCaptureOracle(
+      consumer_,
+      oracle.Pass());
 
   // Allocates the CaptureMachine. The CaptureMachine will be tracking render
   // view swapping over its lifetime, and we don't want to lose our reference to
@@ -1135,7 +1102,7 @@ void WebContentsVideoCaptureDevice::Impl::Allocate(
       base::Bind(&CaptureMachine::Create,
                  initial_render_process_id_,
                  initial_render_view_id_,
-                 render_thread_.message_loop_proxy(), oracle_),
+                 render_thread_.message_loop_proxy(), oracle_proxy_),
       base::Bind(&Impl::AssignCaptureMachine, AsWeakPtr()));
 
   TransitionStateTo(kAllocated);
@@ -1150,16 +1117,16 @@ void WebContentsVideoCaptureDevice::Impl::Start() {
 
   TransitionStateTo(kCapturing);
 
-  oracle_->Start();
+  oracle_proxy_->Start();
 }
 
 // static
 void WebContentsVideoCaptureDevice::Impl::AssignCaptureMachine(
     base::WeakPtr<WebContentsVideoCaptureDevice::Impl> impl,
     scoped_ptr<CaptureMachine> capture_machine) {
-  DCHECK(!impl || impl->thread_checker_.CalledOnValidThread());
+  DCHECK(!impl.get() || impl->thread_checker_.CalledOnValidThread());
 
-  if (!impl) {
+  if (!impl.get()) {
     // If WCVD::Impl was destroyed before we got back on it's thread and
     // capture_machine is not NULL, then we need to return to the UI thread to
     // safely cleanup the CaptureMachine.
@@ -1182,7 +1149,7 @@ void WebContentsVideoCaptureDevice::Impl::Stop() {
   if (state_ != kCapturing) {
     return;
   }
-  oracle_->Stop();
+  oracle_proxy_->Stop();
 
   TransitionStateTo(kAllocated);
 }
@@ -1194,9 +1161,9 @@ void WebContentsVideoCaptureDevice::Impl::DeAllocate() {
   }
   if (state_ == kAllocated) {
     // |consumer_| is about to be deleted, so we mustn't use it anymore.
-    oracle_->InvalidateConsumer();
+    oracle_proxy_->InvalidateConsumer();
     consumer_ = NULL;
-    oracle_ = NULL;
+    oracle_proxy_ = NULL;
     render_thread_.Stop();
 
     TransitionStateTo(kIdle);
@@ -1302,83 +1269,6 @@ void WebContentsVideoCaptureDevice::DeAllocate() {
 const media::VideoCaptureDevice::Name&
 WebContentsVideoCaptureDevice::device_name() {
   return device_name_;
-}
-
-SmoothEventSampler::SmoothEventSampler(base::TimeDelta capture_period,
-                                       bool events_are_reliable,
-                                       int redundant_capture_goal)
-    :  events_are_reliable_(events_are_reliable),
-       capture_period_(capture_period),
-       redundant_capture_goal_(redundant_capture_goal),
-       token_bucket_capacity_(capture_period + capture_period / 2),
-       overdue_sample_count_(0),
-       token_bucket_(token_bucket_capacity_) {
-  DCHECK_GT(capture_period_.InMicroseconds(), 0);
-}
-
-bool SmoothEventSampler::AddEventAndConsiderSampling(base::Time event_time) {
-  DCHECK(!event_time.is_null());
-
-  // Add tokens to the bucket based on advancement in time.  Then, re-bound the
-  // number of tokens in the bucket.  Overflow occurs when there is too much
-  // time between events (a common case), or when RecordSample() is not being
-  // called often enough (a bug).  On the other hand, if RecordSample() is being
-  // called too often (e.g., as a reaction to IsOverdueForSamplingAt()), the
-  // bucket will underflow.
-  if (!current_event_.is_null()) {
-    if (current_event_ < event_time) {
-      token_bucket_ += event_time - current_event_;
-      if (token_bucket_ > token_bucket_capacity_)
-        token_bucket_ = token_bucket_capacity_;
-    }
-    // Side note: If the system clock is reset, causing |current_event_| to be
-    // greater than |event_time|, everything here will simply gracefully adjust.
-    if (token_bucket_ < base::TimeDelta())
-      token_bucket_ = base::TimeDelta();
-    TRACE_COUNTER1("mirroring",
-                   "MirroringTokenBucketUsec", token_bucket_.InMicroseconds());
-  }
-  current_event_ = event_time;
-
-  // Return true if one capture period's worth of tokens are in the bucket.
-  return token_bucket_ >= capture_period_;
-}
-
-void SmoothEventSampler::RecordSample() {
-  token_bucket_ -= capture_period_;
-  TRACE_COUNTER1("mirroring",
-                 "MirroringTokenBucketUsec", token_bucket_.InMicroseconds());
-  if (HasUnrecordedEvent()) {
-    last_sample_ = current_event_;
-    overdue_sample_count_ = 0;
-  } else {
-    ++overdue_sample_count_;
-  }
-}
-
-bool SmoothEventSampler::IsOverdueForSamplingAt(base::Time event_time) const {
-  DCHECK(!event_time.is_null());
-
-  // If we don't get events on compositor updates on this platform, then we
-  // don't reliably know whether we're dirty.
-  if (events_are_reliable_) {
-    if (!HasUnrecordedEvent() &&
-        overdue_sample_count_ >= redundant_capture_goal_) {
-      return false;  // Not dirty.
-    }
-  }
-
-  // If we're dirty but not yet old, then we've recently gotten updates, so we
-  // won't request a sample just yet.
-  base::TimeDelta dirty_interval = event_time - last_sample_;
-  if (dirty_interval < capture_period_ * 4)
-    return false;
-  else
-    return true;
-}
-
-bool SmoothEventSampler::HasUnrecordedEvent() const {
-  return !current_event_.is_null() && current_event_ != last_sample_;
 }
 
 }  // namespace content

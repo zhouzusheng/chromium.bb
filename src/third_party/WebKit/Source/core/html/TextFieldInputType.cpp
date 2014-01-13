@@ -34,12 +34,10 @@
 
 #include "HTMLNames.h"
 #include "core/dom/BeforeTextInsertedEvent.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/KeyboardEvent.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/dom/TextEvent.h"
-#include "core/dom/WheelEvent.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/TextIterator.h"
@@ -50,6 +48,7 @@
 #include "core/page/ChromeClient.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
+#include "core/page/Settings.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderTextControlSingleLine.h"
 #include "core/rendering/RenderTheme.h"
@@ -85,9 +84,18 @@ bool TextFieldInputType::isTextField() const
     return true;
 }
 
+static inline bool shouldIgnoreRequiredAttribute(const HTMLInputElement& input)
+{
+    if (!input.document()->settings() || !input.document()->settings()->needsSiteSpecificQuirks())
+        return false;
+    if (!equalIgnoringCase(input.document()->url().host(), "egov.uscis.gov"))
+        return false;
+    return input.fastGetAttribute(requiredAttr) == "no";
+}
+
 bool TextFieldInputType::valueMissing(const String& value) const
 {
-    return element()->isRequired() && value.isEmpty();
+    return !shouldIgnoreRequiredAttribute(*element()) && element()->isRequired() && value.isEmpty();
 }
 
 bool TextFieldInputType::canSetSuggestedValue()
@@ -203,9 +211,9 @@ bool TextFieldInputType::shouldSubmitImplicitly(Event* event)
     return (event->type() == eventNames().textInputEvent && event->hasInterface(eventNames().interfaceForTextEvent) && static_cast<TextEvent*>(event)->data() == "\n") || InputType::shouldSubmitImplicitly(event);
 }
 
-RenderObject* TextFieldInputType::createRenderer(RenderArena* arena, RenderStyle*) const
+RenderObject* TextFieldInputType::createRenderer(RenderStyle*) const
 {
-    return new (arena) RenderTextControlSingleLine(element());
+    return new (element()->document()->renderArena()) RenderTextControlSingleLine(element());
 }
 
 bool TextFieldInputType::needsContainer() const
@@ -233,7 +241,7 @@ void TextFieldInputType::createShadowSubtree()
     ASSERT(!m_innerSpinButton);
 
     Document* document = element()->document();
-    ChromeClient* chromeClient = document->page() ? document->page()->chrome()->client() : 0;
+    ChromeClient* chromeClient = document->page() ? document->page()->chrome().client() : 0;
     bool shouldAddDecorations = chromeClient && chromeClient->willAddTextFieldDecorationsTo(element());
     bool shouldHaveSpinButton = this->shouldHaveSpinButton();
     bool createsContainer = shouldHaveSpinButton || needsContainer() || shouldAddDecorations;
@@ -477,11 +485,8 @@ void TextFieldInputType::didSetValueByUserEdit(ValueChangeState state)
 {
     if (!element()->focused())
         return;
-    if (Frame* frame = element()->document()->frame()) {
-        if (state == ValueChangeStateNone)
-            frame->editor()->textFieldDidBeginEditing(element());
+    if (Frame* frame = element()->document()->frame())
         frame->editor()->textDidChangeInTextField(element());
-    }
 }
 
 void TextFieldInputType::spinButtonStepDown()

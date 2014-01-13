@@ -21,7 +21,6 @@
 #ifndef SVGClipPathElement_h
 #define SVGClipPathElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
@@ -52,7 +51,7 @@ private:
     virtual void svgAttributeChanged(const QualifiedName&);
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGClipPathElement)
         DECLARE_ANIMATED_ENUMERATION(ClipPathUnits, clipPathUnits, SVGUnitTypes::SVGUnitType)
@@ -67,5 +66,4 @@ private:
 
 }
 
-#endif
 #endif

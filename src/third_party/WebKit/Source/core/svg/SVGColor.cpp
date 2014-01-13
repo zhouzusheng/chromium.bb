@@ -21,13 +21,11 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGColor.h"
 
 #include "core/css/CSSParser.h"
 #include "core/css/RGBColor.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/svg/SVGException.h"
 
 namespace WebCore {
 
@@ -116,5 +114,3 @@ void SVGColor::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) c
 }
 
 }
-
-#endif // ENABLE(SVG)

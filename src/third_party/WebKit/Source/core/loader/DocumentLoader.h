@@ -63,7 +63,6 @@ namespace WebCore {
     class Page;
     class ResourceLoader;
     class SharedBuffer;
-    class SubstituteResource;
 
     typedef HashSet<RefPtr<ResourceLoader> > ResourceLoaderSet;
 
@@ -82,10 +81,12 @@ namespace WebCore {
         void detachFromFrame();
 
         FrameLoader* frameLoader() const;
-        ResourceLoader* mainResourceLoader() const;
-        PassRefPtr<SharedBuffer> mainResourceData() const;
-        
-        DocumentWriter* writer() const { return &m_writer; }
+
+        unsigned long mainResourceIdentifier() const;
+
+        void replaceDocument(const String& source, Document*);
+        DocumentWriter* beginWriting(const String& mimeType, const String& encoding, const KURL& = KURL());
+        String mimeType() const;
 
         const ResourceRequest& originalRequest() const;
         const ResourceRequest& originalRequestCopy() const;
@@ -121,18 +122,7 @@ namespace WebCore {
         void setTitle(const StringWithDirection&);
         const String& overrideEncoding() const { return m_overrideEncoding; }
 
-        void setArchive(PassRefPtr<MHTMLArchive>);
-        void addAllArchiveResources(MHTMLArchive*);
-        PassRefPtr<MHTMLArchive> popArchiveForSubframe(const String& frameName, const KURL&);
-
-        bool scheduleArchiveLoad(ResourceLoader*, const ResourceRequest&);
-
-        // Return the ArchiveResource for the URL only when loading an Archive
-        ArchiveResource* archiveResourceForURL(const KURL&) const;
-
-#ifndef NDEBUG
-        bool isSubstituteLoadPending(ResourceLoader*) const;
-#endif
+        bool scheduleArchiveLoad(CachedResource*, const ResourceRequest&);
         void cancelPendingSubstituteLoad(ResourceLoader*);
 
         bool shouldContinueForNavigationPolicy(const ResourceRequest&);
@@ -145,13 +135,11 @@ namespace WebCore {
         KURL urlForHistory() const;
         
         void setDefersLoading(bool);
-        void setMainResourceDataBufferingPolicy(DataBufferingPolicy);
 
         void startLoadingMainResource();
         void cancelMainResourceLoad(const ResourceError&);
 
         bool isLoadingMainResource() const { return m_loadingMainResource; }
-        bool isLoadingMultipartContent() const { return m_isLoadingMultipartContent; }
 
         void stopLoadingSubresources();
         void addResourceLoader(ResourceLoader*);
@@ -160,19 +148,6 @@ namespace WebCore {
         void subresourceLoaderFinishedLoadingOnePart(ResourceLoader*);
 
         void setDeferMainResourceDataLoad(bool defer) { m_deferMainResourceDataLoad = defer; }
-        
-        void didTellClientAboutLoad(const String& url)
-        { 
-            // Don't include data urls here, as if a lot of data is loaded
-            // that way, we hold on to the (large) url string for too long.
-            if (protocolIs(url, "data"))
-                return;
-            if (!url.isEmpty())
-                m_resourcesClientKnowsAbout.add(url);
-        }
-        bool haveToldClientAboutLoad(const String& url) { return m_resourcesClientKnowsAbout.contains(url); }
-        void recordMemoryCacheLoadForFutureClientNotification(const String& url);
-        void takeMemoryCacheLoadsForClientNotification(Vector<String>& loads);
 
         DocumentLoadTiming* timing() { return &m_documentLoadTiming; }
         void resetTiming() { m_documentLoadTiming = DocumentLoadTiming(); }
@@ -203,12 +178,15 @@ namespace WebCore {
         void setMainDocumentError(const ResourceError&);
         void commitLoad(const char*, int);
         void clearMainResourceLoader();
+        ResourceLoader* mainResourceLoader() const;
+        void clearMainResourceHandle();
+        PassRefPtr<SharedBuffer> mainResourceData() const;
 
-        void setupForReplace();
-        void maybeFinishLoadingMultipartContent();
-        
         bool maybeCreateArchive();
         void clearArchiveResources();
+
+        void prepareSubframeArchiveLoadIfNeeded();
+        void addAllArchiveResources(MHTMLArchive*);
 
         void willSendRequest(ResourceRequest&, const ResourceResponse&);
         void finishedLoading(double finishTime);
@@ -220,7 +198,6 @@ namespace WebCore {
 
         bool maybeLoadEmpty();
 
-        bool isMultipartReplacingLoad() const;
         bool isPostOrRedirectAfterPost(const ResourceRequest&, const ResourceResponse&);
 
         bool shouldContinueForResponse() const;
@@ -232,9 +209,6 @@ namespace WebCore {
         void handleSubstituteDataLoadSoon();
         void handleSubstituteDataLoadNow(DocumentLoaderTimer*);
         void startDataLoadTimer();
-
-        void deliverSubstituteResourcesAfterDelay();
-        void substituteResourceDeliveryTimerFired(Timer<DocumentLoader>*);
                 
         Frame* m_frame;
         RefPtr<CachedResourceLoader> m_cachedResourceLoader;
@@ -266,12 +240,10 @@ namespace WebCore {
     
         ResourceError m_mainDocumentError;    
 
-        bool m_originalSubstituteDataWasValid;
         bool m_committed;
         bool m_isStopping;
         bool m_gotFirstByte;
         bool m_isClientRedirect;
-        bool m_isLoadingMultipartContent;
 
         // FIXME: Document::m_processingLoadEvent and DocumentLoader::m_wasOnloadHandled are roughly the same
         // and should be merged.
@@ -284,16 +256,9 @@ namespace WebCore {
         // The action that triggered loading - we keep this around for the
         // benefit of the various policy handlers.
         NavigationAction m_triggeringAction;
-        
-        typedef HashMap<RefPtr<ResourceLoader>, RefPtr<SubstituteResource> > SubstituteResourceMap;
-        SubstituteResourceMap m_pendingSubstituteResources;
-        Timer<DocumentLoader> m_substituteResourceDeliveryTimer;
 
         OwnPtr<ArchiveResourceCollection> m_archiveResourceCollection;
         RefPtr<MHTMLArchive> m_archive;
-
-        HashSet<String> m_resourcesClientKnowsAbout;
-        Vector<String> m_resourcesLoadedFromMemoryCacheForClientNotification;
 
         bool m_loadingMainResource;
         DocumentLoadTiming m_documentLoadTiming;
@@ -306,18 +271,6 @@ namespace WebCore {
         friend class ApplicationCacheHost;  // for substitute resource delivery
         OwnPtr<ApplicationCacheHost> m_applicationCacheHost;
     };
-
-    inline void DocumentLoader::recordMemoryCacheLoadForFutureClientNotification(const String& url)
-    {
-        m_resourcesLoadedFromMemoryCacheForClientNotification.append(url);
-    }
-
-    inline void DocumentLoader::takeMemoryCacheLoadsForClientNotification(Vector<String>& loadsSet)
-    {
-        loadsSet.swap(m_resourcesLoadedFromMemoryCacheForClientNotification);
-        m_resourcesLoadedFromMemoryCacheForClientNotification.clear();
-    }
-
 }
 
 #endif // DocumentLoader_h

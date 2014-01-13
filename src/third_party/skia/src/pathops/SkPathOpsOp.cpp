@@ -20,7 +20,7 @@ static SkOpSegment* findChaseOp(SkTDArray<SkOpSpan*>& chase, int& nextStart, int
         const SkOpSpan& backPtr = span->fOther->span(span->fOtherIndex);
         SkOpSegment* segment = backPtr.fOther;
         nextStart = backPtr.fOtherIndex;
-        SkTDArray<SkOpAngle> angles;
+        SkSTArray<SkOpAngle::kStackBasedCount, SkOpAngle, true> angles;
         int done = 0;
         if (segment->activeAngle(nextStart, &done, &angles)) {
             SkOpAngle* last = angles.end() - 1;
@@ -36,8 +36,9 @@ static SkOpSegment* findChaseOp(SkTDArray<SkOpSpan*>& chase, int& nextStart, int
         if (done == angles.count()) {
             continue;
         }
-        SkTDArray<SkOpAngle*> sorted;
-        bool sortable = SkOpSegment::SortAngles(angles, &sorted);
+        SkSTArray<SkOpAngle::kStackBasedCount, SkOpAngle*, true> sorted;
+        bool sortable = SkOpSegment::SortAngles(angles, &sorted,
+                SkOpSegment::kMayBeUnordered_SortAngleKind);
         int angleCount = sorted.count();
 #if DEBUG_SORT
         sorted[0]->segment()->debugShowSort(__FUNCTION__, sorted, 0);
@@ -125,7 +126,7 @@ static bool windingIsActive(int winding, int oppWinding, int spanWinding, int op
 }
 */
 
-static bool bridgeOp(SkTDArray<SkOpContour*>& contourList, const SkPathOp op,
+static bool bridgeOp(SkTArray<SkOpContour*, true>& contourList, const SkPathOp op,
         const int xorMask, const int xorOpMask, SkPathWriter* simple) {
     bool firstContour = true;
     bool unsortable = false;
@@ -149,11 +150,15 @@ static bool bridgeOp(SkTDArray<SkOpContour*>& contourList, const SkPathOp op,
         do {
             if (current->activeOp(index, endIndex, xorMask, xorOpMask, op)) {
                 do {
-            #if DEBUG_ACTIVE_SPANS
                     if (!unsortable && current->done()) {
+            #if DEBUG_ACTIVE_SPANS
                         DebugShowActiveSpans(contourList);
-                    }
             #endif
+                        if (simple->isEmpty()) {
+                            simple->init();
+                            break;
+                        }
+                    }
                     SkASSERT(unsortable || !current->done());
                     int nextStart = index;
                     int nextEnd = endIndex;
@@ -177,10 +182,10 @@ static bool bridgeOp(SkTDArray<SkOpContour*>& contourList, const SkPathOp op,
                     current = next;
                     index = nextStart;
                     endIndex = nextEnd;
-                } while (!simple->isClosed() && ((!unsortable)
+                } while (!simple->isClosed() && (!unsortable
                         || !current->done(SkMin32(index, endIndex))));
                 if (current->activeWinding(index, endIndex) && !simple->isClosed()) {
-                    SkASSERT(unsortable);
+                    SkASSERT(unsortable || simple->isEmpty());
                     int min = SkMin32(index, endIndex);
                     if (!current->done(min)) {
                         current->addCurveTo(index, endIndex, simple, true);
@@ -227,6 +232,12 @@ static const bool gOutInverse[kReverseDifference_PathOp + 1][2][2] = {
 };
 
 bool Op(const SkPath& one, const SkPath& two, SkPathOp op, SkPath* result) {
+#if DEBUG_SHOW_PATH
+    ShowFunctionHeader();
+    ShowPath(one, "path");
+    ShowPath(two, "pathB");
+    ShowOp(op, "path", "pathB");
+#endif
     op = gOpInverse[op][one.isInverseFillType()][two.isInverseFillType()];
     SkPath::FillType fillType = gOutInverse[op][one.isInverseFillType()][two.isInverseFillType()]
             ? SkPath::kInverseEvenOdd_FillType : SkPath::kEvenOdd_FillType;
@@ -252,7 +263,7 @@ bool Op(const SkPath& one, const SkPath& two, SkPathOp op, SkPath* result) {
     result->reset();
     result->setFillType(fillType);
     const int xorOpMask = builder.xorMask();
-    SkTDArray<SkOpContour*> contourList;
+    SkTArray<SkOpContour*, true> contourList;
     MakeContourList(contours, contourList, xorMask == kEvenOdd_PathOpsMask,
             xorOpMask == kEvenOdd_PathOpsMask);
     SkOpContour** currentPtr = contourList.begin();
@@ -288,7 +299,7 @@ bool Op(const SkPath& one, const SkPath& two, SkPathOp op, SkPath* result) {
 #endif
     FixOtherTIndex(&contourList);
     SortSegments(&contourList);
-#if DEBUG_ACTIVE_SPANS
+#if DEBUG_ACTIVE_SPANS || DEBUG_ACTIVE_SPANS_FIRST_ONLY
     DebugShowActiveSpans(contourList);
 #endif
     // construct closed contours

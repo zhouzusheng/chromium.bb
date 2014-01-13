@@ -27,7 +27,6 @@
 #define ContentSecurityPolicy_h
 
 #include "bindings/v8/ScriptState.h"
-#include "core/platform/KURL.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/text/TextPosition.h>
@@ -42,6 +41,7 @@ namespace WebCore {
 
 class CSPDirectiveList;
 class DOMStringList;
+class KURL;
 class ScriptExecutionContext;
 class SecurityOrigin;
 
@@ -92,7 +92,6 @@ public:
     bool allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
     bool allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
     bool allowEval(ScriptState* = 0, ReportingStatus = SendReport) const;
-    bool allowScriptNonce(const String& nonce, const String& contextURL, const WTF::OrdinalNumber& contextLine, const KURL& = KURL()) const;
     bool allowPluginType(const String& type, const String& typeAttribute, const KURL&, ReportingStatus = SendReport) const;
 
     bool allowScriptFromSource(const KURL&, ReportingStatus = SendReport) const;
@@ -105,6 +104,7 @@ public:
     bool allowConnectToSource(const KURL&, ReportingStatus = SendReport) const;
     bool allowFormAction(const KURL&, ReportingStatus = SendReport) const;
     bool allowBaseURI(const KURL&, ReportingStatus = SendReport) const;
+    bool allowScriptNonce(const String& nonce) const;
 
     ReflectedXSSDisposition reflectedXSSDisposition() const;
 
@@ -135,6 +135,8 @@ public:
     String evalDisabledErrorMessage() const;
 
     bool experimentalFeaturesEnabled() const;
+
+    static bool shouldBypassMainWorld(ScriptExecutionContext*);
 
 private:
     explicit ContentSecurityPolicy(ScriptExecutionContext*);

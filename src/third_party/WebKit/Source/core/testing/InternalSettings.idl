@@ -39,19 +39,11 @@
     [RaisesException] void setTextAutosizingEnabled(boolean enabled);
     [RaisesException] void setTextAutosizingWindowSizeOverride(long width, long height);
     [RaisesException] void setTextAutosizingFontScaleFactor(float fontScaleFactor);
-    [RaisesException] void setResolutionOverride(long dotsPerCSSInchHorizontally, long dotsPerCSSInchVertically);
     [RaisesException] void setMediaTypeOverride(DOMString mediaTypeOverride);
     [RaisesException] void setEditingBehavior(DOMString behavior);
 
-    [RaisesException] void setShouldDisplayTrackKind(DOMString kind, boolean enabled);
-    [RaisesException] boolean shouldDisplayTrackKind(DOMString trackKind);
     [RaisesException] void setImagesEnabled(boolean enabled);
     [RaisesException] void setDefaultVideoPosterURL(DOMString poster);
-
-    // FIXME: cssVariablesEnabled is a real Setting and not a
-    // RuntimeEnabledFeature, but it should be changed to be a REF.
-    [RaisesException] boolean cssVariablesEnabled();
-    [RaisesException] void setCSSVariablesEnabled(boolean enabled);
 
     // FIXME: The following are RuntimeEnabledFeatures and likely
     // cannot be changed after process start.  These setters should
@@ -60,6 +52,7 @@
     void setCSSExclusionsEnabled(boolean enabled);
     void setDialogElementEnabled(boolean enabled);
     void setExperimentalShadowDOMEnabled(boolean enabled);
+    void setExperimentalWebSocketEnabled(boolean enabled);
     void setLangAttributeAwareFormControlUIEnabled(boolean enabled);
     void setLazyLayoutEnabled(boolean enabled);
     void setStyleScopedEnabled(boolean enabled);

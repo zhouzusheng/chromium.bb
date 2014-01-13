@@ -45,10 +45,10 @@ public:
     // instance or the prototype ObjectTemplate, based on |onPrototype|.
     struct BatchedAttribute {
         const char* const name;
-        v8::AccessorGetter getter;
-        v8::AccessorSetter setter;
-        v8::AccessorGetter getterForMainWorld;
-        v8::AccessorSetter setterForMainWorld;
+        v8::AccessorGetterCallback getter;
+        v8::AccessorSetterCallback setter;
+        v8::AccessorGetterCallback getterForMainWorld;
+        v8::AccessorSetterCallback setterForMainWorld;
         WrapperTypeInfo* data;
         v8::AccessControl settings;
         v8::PropertyAttribute attribute;
@@ -71,8 +71,8 @@ public:
     template<class ObjectOrTemplate>
     static inline void configureAttribute(v8::Handle<ObjectOrTemplate> instance, v8::Handle<ObjectOrTemplate> prototype, const BatchedAttribute& attribute, v8::Isolate*, WrapperWorldType currentWorldType)
     {
-        v8::AccessorGetter getter = attribute.getter;
-        v8::AccessorSetter setter = attribute.setter;
+        v8::AccessorGetterCallback getter = attribute.getter;
+        v8::AccessorSetterCallback setter = attribute.setter;
         if (currentWorldType == MainWorld) {
             if (attribute.getterForMainWorld)
                 getter = attribute.getterForMainWorld;
@@ -100,14 +100,14 @@ public:
     // BatchedMethod translates into calls to Set() on the prototype ObjectTemplate.
     struct BatchedMethod {
         const char* const name;
-        v8::InvocationCallback callback;
-        v8::InvocationCallback callbackForMainWorld;
+        v8::FunctionCallback callback;
+        v8::FunctionCallback callbackForMainWorld;
         int length;
     };
 
     static void batchConfigureCallbacks(v8::Handle<v8::ObjectTemplate>, v8::Handle<v8::Signature>, v8::PropertyAttribute, const BatchedMethod*, size_t callbackCount, v8::Isolate*, WrapperWorldType);
 
-    static v8::Local<v8::Signature> configureTemplate(v8::Persistent<v8::FunctionTemplate>, const char* interfaceName, v8::Persistent<v8::FunctionTemplate> parentClass, size_t fieldCount, const BatchedAttribute*, size_t attributeCount, const BatchedMethod*, size_t callbackCount, v8::Isolate*, WrapperWorldType);
+    static v8::Local<v8::Signature> configureTemplate(v8::Handle<v8::FunctionTemplate>, const char* interfaceName, v8::Handle<v8::FunctionTemplate> parentClass, size_t fieldCount, const BatchedAttribute*, size_t attributeCount, const BatchedMethod*, size_t callbackCount, v8::Isolate*, WrapperWorldType);
 };
 
 } // namespace WebCore

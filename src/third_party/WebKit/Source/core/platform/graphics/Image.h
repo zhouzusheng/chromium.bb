@@ -28,11 +28,11 @@
 #define Image_h
 
 #include "core/platform/graphics/Color.h"
-#include "core/platform/graphics/ColorSpace.h"
 #include "core/platform/graphics/GraphicsTypes.h"
 #include "core/platform/graphics/ImageOrientation.h"
 #include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/NativeImagePtr.h"
+#include "core/platform/graphics/skia/NativeImageSkia.h"
+#include "third_party/skia/include/core/SkXfermode.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
@@ -41,7 +41,6 @@
 
 namespace WebCore {
 
-class AffineTransform;
 class FloatPoint;
 class FloatRect;
 class FloatSize;
@@ -60,7 +59,7 @@ class Image : public RefCounted<Image> {
 
 public:
     virtual ~Image();
-    
+
     static PassRefPtr<Image> create(ImageObserver* = 0);
     static PassRefPtr<Image> loadPlatformResource(const char* name);
     static bool supportsType(const String&); 
@@ -90,10 +89,10 @@ public:
 
     bool setData(PassRefPtr<SharedBuffer> data, bool allDataReceived);
     virtual bool dataChanged(bool /*allDataReceived*/) { return false; }
-    
+
     virtual String filenameExtension() const { return String(); } // null string if unknown
 
-    virtual void destroyDecodedData(bool destroyAll = true) = 0;
+    virtual void destroyDecodedData() = 0;
     virtual unsigned decodedSize() const = 0;
 
     SharedBuffer* data() { return m_encodedImageData.get(); }
@@ -103,21 +102,18 @@ public:
     virtual void startAnimation(bool /*catchUpIfNecessary*/ = true) { }
     virtual void stopAnimation() {}
     virtual void resetAnimation() {}
-    
+
     // Typically the CachedImage that owns us.
     ImageObserver* imageObserver() const { return m_imageObserver; }
     void setImageObserver(ImageObserver* observer) { m_imageObserver = observer; }
 
     enum TileRule { StretchTile, RoundTile, SpaceTile, RepeatTile };
 
-    virtual PassNativeImagePtr nativeImageForCurrentFrame() { return 0; }
+    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() { return 0; }
 
-    virtual void drawPattern(GraphicsContext*, const FloatRect& srcRect, const AffineTransform& patternTransform,
-        const FloatPoint& phase, ColorSpace styleColorSpace, CompositeOperator, const FloatRect& destRect, BlendMode = BlendModeNormal);
-
-#if ENABLE(IMAGE_DECODER_DOWN_SAMPLING)
-    FloatRect adjustSourceRectForDownSampling(const FloatRect& srcRect, const IntSize& scaledSize) const;
-#endif
+    virtual void drawPattern(GraphicsContext*, const FloatRect&,
+        const FloatSize&, const FloatPoint& phase, CompositeOperator,
+        const FloatRect&, BlendMode = BlendModeNormal);
 
 #if !ASSERT_DISABLED
     virtual bool notSolidColor() { return true; }
@@ -128,19 +124,22 @@ public:
 protected:
     Image(ImageObserver* = 0);
 
-    static void fillWithSolidColor(GraphicsContext*, const FloatRect& dstRect, const Color&, ColorSpace styleColorSpace, CompositeOperator);
+    static void fillWithSolidColor(GraphicsContext*, const FloatRect& dstRect, const Color&, CompositeOperator);
+    static FloatRect adjustForNegativeSize(const FloatRect&); // A helper method for translating negative width and height values.
 
-    // The ColorSpace parameter will only be used for untagged images.
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, BlendMode) = 0;
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, BlendMode, RespectImageOrientationEnum);
-    void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize, ColorSpace styleColorSpace,
+    // FIXME (crbug.com/242060): This does not belong on Image.
+    static void paintSkBitmap(GraphicsContext*, const NativeImageSkia&, const SkRect& /*srcRect*/, const SkRect& /*destRect*/, const SkXfermode::Mode&);
+
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, BlendMode) = 0;
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, BlendMode, RespectImageOrientationEnum);
+    void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize,
         CompositeOperator , BlendMode);
-    void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, ColorSpace styleColorSpace, CompositeOperator);
+    void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, CompositeOperator);
 
     // Supporting tiled drawing
     virtual bool mayFillWithSolidColor() { return false; }
     virtual Color solidColor() const { return Color(); }
-    
+
 private:
     RefPtr<SharedBuffer> m_encodedImageData;
     ImageObserver* m_imageObserver;

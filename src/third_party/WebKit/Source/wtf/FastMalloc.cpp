@@ -75,9 +75,16 @@
 //   goes from about 1100 ns to about 300 ns.
 
 #include "config.h"
-#include "FastMalloc.h"
+#include "wtf/FastMalloc.h"
 
-#include "Assertions.h"
+#include "wtf/Assertions.h"
+#include "wtf/CPU.h"
+#include "wtf/StdLibExtras.h"
+#include "wtf/UnusedParam.h"
+
+#if OS(DARWIN)
+#include <AvailabilityMacros.h>
+#endif
 
 #include <limits>
 #if OS(WINDOWS)
@@ -86,8 +93,6 @@
 #include <pthread.h>
 #endif
 #include <string.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/UnusedParam.h>
 
 #ifndef NO_TCMALLOC_SAMPLES
 #define NO_TCMALLOC_SAMPLES
@@ -390,20 +395,6 @@ FastMallocStatistics fastMallocStatistics()
     return statistics;
 }
 
-size_t fastMallocSize(const void* p)
-{
-#if ENABLE(WTF_MALLOC_VALIDATION)
-    return Internal::fastMallocValidationHeader(const_cast<void*>(p))->m_size;
-#elif OS(DARWIN)
-    return malloc_size(p);
-#elif OS(WINDOWS)
-    return _msize(const_cast<void*>(p));
-#else
-    UNUSED_PARAM(p);
-    return 1;
-#endif
-}
-
 } // namespace WTF
 
 #if OS(DARWIN)
@@ -452,10 +443,6 @@ extern "C"  const int jscore_fastmalloc_introspection = 0;
 #if __has_include(<System/pthread_machdep.h>)
 
 #include <System/pthread_machdep.h>
-
-#if defined(__PTK_FRAMEWORK_JAVASCRIPTCORE_KEY0)
-#define WTF_USE_PTHREAD_GETSPECIFIC_DIRECT 1
-#endif
 
 #endif
 #endif
@@ -1909,8 +1896,8 @@ void TCMalloc_PageHeap::initializeScavenger()
 void* TCMalloc_PageHeap::runScavengerThread(void* context)
 {
     static_cast<TCMalloc_PageHeap*>(context)->scavengerThread();
-#if (COMPILER(MSVC) || COMPILER(SUNCC))
-    // Without this, Visual Studio and Sun Studio will complain that this method does not return a value.
+#if COMPILER(MSVC)
+    // Without this, Visual Studio will complain that this method does not return a value.
     return 0;
 #endif
 }
@@ -2699,11 +2686,7 @@ static __thread TCMalloc_ThreadCache *threadlocal_heap;
 // Therefore, we use TSD keys only after tsd_inited is set to true.
 // Until then, we use a slow path to get the heap object.
 static bool tsd_inited = false;
-#if USE(PTHREAD_GETSPECIFIC_DIRECT)
-static const pthread_key_t heap_key = __PTK_FRAMEWORK_JAVASCRIPTCORE_KEY0;
-#else
 static pthread_key_t heap_key;
-#endif
 #if OS(WINDOWS)
 DWORD tlsIndex = TLS_OUT_OF_INDEXES;
 #endif
@@ -3849,29 +3832,6 @@ FastMallocStatistics fastMallocStatistics()
     return statistics;
 }
 
-size_t fastMallocSize(const void* ptr)
-{
-#if ENABLE(WTF_MALLOC_VALIDATION)
-    return Internal::fastMallocValidationHeader(const_cast<void*>(ptr))->m_size;
-#else
-    const PageID p = reinterpret_cast<uintptr_t>(ptr) >> kPageShift;
-    Span* span = pageheap->GetDescriptorEnsureSafe(p);
-
-    if (!span || span->free)
-        return 0;
-
-    for (HardenedSLL free = span->objects; free; free = SLL_Next(free, HARDENING_ENTROPY)) {
-        if (ptr == free.value())
-            return 0;
-    }
-
-    if (size_t cl = span->sizeclass)
-        return ByteSizeForClass(cl);
-
-    return span->length << kPageShift;
-#endif
-}
-
 #if OS(DARWIN)
 
 template <typename T>
@@ -4020,9 +3980,8 @@ public:
         if (!span || !span->start)
             return 1;
 
-        if (m_seenPointers.contains(ptr))
+        if (!m_seenPointers.add(ptr).isNewEntry)
             return span->length;
-        m_seenPointers.add(ptr);
 
         if (!m_coalescedSpans.size()) {
             m_coalescedSpans.append(span);

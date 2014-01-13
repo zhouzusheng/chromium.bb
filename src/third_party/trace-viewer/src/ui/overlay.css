@@ -1,6 +1,7 @@
 /* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file. */
+ * found in the LICENSE file.
+ */
 
 .overlay-root * {
   -webkit-user-select: none;
@@ -8,12 +9,11 @@
 }
 
 .overlay-root {
-  -webkit-box-align: stretch;
-  -webkit-box-orient: horizontal;
-  -webkit-box-pack: center;
+  -webkit-flex-flow: row;
+  -webkit-justify-content: center;
   -webkit-user-select: none;
   background: rgba(0, 0, 0, 0.8);
-  display: -webkit-box;
+  display: -webkit-flex;
   font-family: sans-serif;
   height: 100%;
   left: 0;
@@ -29,15 +29,34 @@
 }
 
 .overlay-root > .content-host {
-  -webkit-box-align: stretch;
-  -webkit-box-orient: vertical;
-  -webkit-box-pack: center;
+  -webkit-flex-flow: column;
+  -webkit-justify-content: center;
   -webkit-user-select: auto;
-  display: -webkit-box;
+  display: -webkit-flex;
+}
+
+.overlay * {
+  -webkit-user-select: auto;
 }
 
 .overlay-root > .content-host > * {
   background: rgb(255, 255, 255);
+}
+
+.overlay-root > .content-host .tool-bar {
+  cursor: pointer;
+  display: -webkit-flex;
+  height: 24px;
+  padding: 1px;
+}
+
+.overlay-root > .content-host .tool-bar .exit-button {
+  background-color: rgba(0,0,0, 0.8);
+  border: 1px solid white;
+  color: white;
+  height:  100%;
+  padding-left: 4px;
+  width:  19px;
 }
 
 .overlay {

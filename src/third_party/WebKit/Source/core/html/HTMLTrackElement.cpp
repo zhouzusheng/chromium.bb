@@ -27,10 +27,8 @@
 #include "core/html/HTMLTrackElement.h"
 
 #include "HTMLNames.h"
-#include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Event.h"
 #include "core/html/HTMLMediaElement.h"
-#include "core/inspector/ScriptCallStack.h"
 #include "core/page/ContentSecurityPolicy.h"
 #include "RuntimeEnabledFeatures.h"
 #include "core/platform/Logging.h"
@@ -74,6 +72,8 @@ PassRefPtr<HTMLTrackElement> HTMLTrackElement::create(const QualifiedName& tagNa
 
 Node::InsertionNotificationRequest HTMLTrackElement::insertedInto(ContainerNode* insertionPoint)
 {
+    LOG(Media, "HTMLTrackElement::insertedInto");
+
     // Since we've moved to a new parent, we may now be able to load.
     scheduleLoad();
 
@@ -93,7 +93,7 @@ void HTMLTrackElement::removedFrom(ContainerNode* insertionPoint)
 
 void HTMLTrackElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (RuntimeEnabledFeatures::webkitVideoTrackEnabled()) {
+    if (RuntimeEnabledFeatures::videoTrackEnabled()) {
         if (name == srcAttr) {
             if (!value.isEmpty())
                 scheduleLoad();
@@ -189,12 +189,14 @@ bool HTMLTrackElement::isURLAttribute(const Attribute& attribute) const
 
 void HTMLTrackElement::scheduleLoad()
 {
+    LOG(Media, "HTMLTrackElement::scheduleLoad");
+
     // 1. If another occurrence of this algorithm is already running for this text track and its track element,
     // abort these steps, letting that other algorithm take care of this element.
     if (m_loadTimer.isActive())
         return;
 
-    if (!RuntimeEnabledFeatures::webkitVideoTrackEnabled())
+    if (!RuntimeEnabledFeatures::videoTrackEnabled())
         return;
 
     // 2. If the text track's text track mode is not set to one of hidden or showing, abort these steps.
@@ -214,6 +216,8 @@ void HTMLTrackElement::loadTimerFired(Timer<HTMLTrackElement>*)
     if (!fastHasAttribute(srcAttr))
         return;
 
+    LOG(Media, "HTMLTrackElement::loadTimerFired");
+
     // 6. Set the text track readiness state to loading.
     setReadyState(HTMLTrackElement::LOADING);
 
@@ -232,7 +236,7 @@ void HTMLTrackElement::loadTimerFired(Timer<HTMLTrackElement>*)
 
 bool HTMLTrackElement::canLoadUrl(const KURL& url)
 {
-    if (!RuntimeEnabledFeatures::webkitVideoTrackEnabled())
+    if (!RuntimeEnabledFeatures::videoTrackEnabled())
         return false;
 
     HTMLMediaElement* parent = mediaElement();

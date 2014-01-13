@@ -64,13 +64,11 @@ class RenderGeometryMap;
 class RenderLayer;
 class RenderLayerModelObject;
 class RenderNamedFlowThread;
+class RenderSVGResourceContainer;
 class RenderTable;
 class RenderTheme;
 class TransformState;
 class VisiblePosition;
-#if ENABLE(SVG)
-class RenderSVGResourceContainer;
-#endif
 
 struct PaintInfo;
 
@@ -338,6 +336,7 @@ public:
     virtual bool isListBox() const { return false; }
     virtual bool isListItem() const { return false; }
     virtual bool isListMarker() const { return false; }
+    virtual bool isMarquee() const { return false; }
     virtual bool isMedia() const { return false; }
     virtual bool isMenuList() const { return false; }
     virtual bool isMeter() const { return false; }
@@ -392,8 +391,6 @@ public:
     bool isHR() const;
     bool isLegend() const;
 
-    bool isHTMLMarquee() const;
-
     bool isTablePart() const { return isTableCell() || isRenderTableCol() || isTableCaption() || isTableRow() || isTableSection(); }
 
     inline bool isBeforeContent() const;
@@ -442,7 +439,6 @@ public:
 
     virtual bool requiresForcedStyleRecalcPropagation() const { return false; }
 
-#if ENABLE(SVG)
     // FIXME: Until all SVG renders can be subclasses of RenderSVGModelObject we have
     // to add SVG renderer methods to RenderObject with an ASSERT_NOT_REACHED() default implementation.
     virtual bool isSVGRoot() const { return false; }
@@ -497,7 +493,6 @@ public:
     // coordinates instead of in repaint container coordinates.  Eventually the
     // rest of the rendering tree will move to a similar model.
     virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction);
-#endif
 
     bool isAnonymous() const { return m_bitfields.isAnonymous(); }
     bool isAnonymousBlock() const
@@ -589,11 +584,7 @@ public:
 
     bool hasFilter() const { return style() && style()->hasFilter(); }
 
-#if ENABLE(CSS_COMPOSITING)
-    bool hasBlendMode() const { return style() && style()->hasBlendMode(); }
-#else
-    bool hasBlendMode() const { return false; }
-#endif
+    bool hasBlendMode() const;
 
     inline bool preservesNewline() const;
 
@@ -724,11 +715,7 @@ public:
 
     bool canContainFixedPositionObjects() const
     {
-        return isRenderView() || (hasTransform() && isRenderBlock())
-#if ENABLE(SVG)
-                || isSVGForeignObject()
-#endif
-                || isOutOfFlowRenderFlowThread();
+        return isRenderView() || (hasTransform() && isRenderBlock()) || isSVGForeignObject() || isOutOfFlowRenderFlowThread();
     }
 
     // Convert the given local point to absolute coordinates
@@ -931,8 +918,9 @@ public:
 
     AnimationController* animation() const;
 
-    bool visibleToHitTestRequest(const HitTestRequest& request) const { return style()->visibility() == VISIBLE && (request.ignorePointerEventsNone() || style()->pointerEvents() != PE_NONE); }
-    bool visibleToHitTesting() const { return style()->visibility() == VISIBLE && style()->pointerEvents() != PE_NONE; }
+    bool isInert() const;
+    bool visibleToHitTestRequest(const HitTestRequest& request) const { return style()->visibility() == VISIBLE && (request.ignorePointerEventsNone() || style()->pointerEvents() != PE_NONE) && !isInert(); }
+    bool visibleToHitTesting() const { return style()->visibility() == VISIBLE && style()->pointerEvents() != PE_NONE && !isInert(); }
 
     // Map points and quads through elements, potentially via 3d transforms. You should never need to call these directly; use
     // localToAbsolute/absoluteToLocal methods instead.
@@ -996,6 +984,9 @@ private:
     RenderFlowThread* locateFlowThreadContainingBlock() const;
     void removeFromRenderFlowThread();
     void removeFromRenderFlowThreadRecursive(RenderFlowThread*);
+
+    bool shouldRepaintForStyleDifference(StyleDifference) const;
+    bool hasImmediateNonWhitespaceTextChild() const;
 
     RenderStyle* cachedFirstLineStyle() const;
     StyleDifference adjustStyleDifference(StyleDifference, unsigned contextSensitiveProperties) const;
@@ -1238,24 +1229,20 @@ inline void RenderObject::setNeedsSimplifiedNormalFlowLayout()
 
 inline bool RenderObject::preservesNewline() const
 {
-#if ENABLE(SVG)
     if (isSVGInlineText())
         return false;
-#endif
-        
+
     return style()->preserveNewline();
 }
 
 inline bool RenderObject::layerCreationAllowedForSubtree() const
 {
-#if ENABLE(SVG)
     RenderObject* parentRenderer = parent();
     while (parentRenderer) {
         if (parentRenderer->isSVGHiddenContainer())
             return false;
         parentRenderer = parentRenderer->parent();
     }
-#endif
 
     return true;
 }

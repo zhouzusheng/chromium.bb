@@ -29,7 +29,6 @@
 #include "core/html/HTMLSelectElement.h"
 
 #include "HTMLNames.h"
-#include "bindings/v8/ScriptEventListener.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/EventNames.h"
@@ -41,11 +40,8 @@
 #include "core/html/FormController.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormElement.h"
-#include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLOptionsCollection.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
@@ -55,8 +51,6 @@
 #include "core/rendering/RenderListBox.h"
 #include "core/rendering/RenderMenuList.h"
 #include "core/rendering/RenderTheme.h"
-#include <wtf/text/StringBuilder.h>
-#include <wtf/unicode/Unicode.h>
 
 using namespace std;
 using namespace WTF::Unicode;
@@ -146,8 +140,7 @@ bool HTMLSelectElement::hasPlaceholderLabelOption() const
     ASSERT(listIndex >= 0);
     if (listIndex < 0)
         return false;
-    HTMLOptionElement* option = static_cast<HTMLOptionElement*>(listItems()[listIndex]);
-    return !listIndex && option->value().isEmpty();
+    return !listIndex && toHTMLOptionElement(listItems()[listIndex])->value().isEmpty();
 }
 
 String HTMLSelectElement::validationMessage() const
@@ -244,8 +237,8 @@ String HTMLSelectElement::value() const
 {
     const Vector<HTMLElement*>& items = listItems();
     for (unsigned i = 0; i < items.size(); i++) {
-        if (items[i]->hasLocalName(optionTag) && static_cast<HTMLOptionElement*>(items[i])->selected())
-            return static_cast<HTMLOptionElement*>(items[i])->value();
+        if (items[i]->hasLocalName(optionTag) && toHTMLOptionElement(items[i])->selected())
+            return toHTMLOptionElement(items[i])->value();
     }
     return "";
 }
@@ -263,7 +256,7 @@ void HTMLSelectElement::setValue(const String &value)
     unsigned optionIndex = 0;
     for (unsigned i = 0; i < items.size(); i++) {
         if (items[i]->hasLocalName(optionTag)) {
-            if (static_cast<HTMLOptionElement*>(items[i])->value() == value) {
+            if (toHTMLOptionElement(items[i])->value() == value) {
                 setSelectedIndex(optionIndex);
                 return;
             }
@@ -307,7 +300,7 @@ void HTMLSelectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         m_size = size;
         setNeedsValidityCheck();
         if (m_size != oldSize && attached()) {
-            reattach();
+            lazyReattach();
             setRecalcListItems();
         }
     } else if (name == multipleAttr)
@@ -338,11 +331,11 @@ bool HTMLSelectElement::canSelectAll() const
     return !usesMenuList();
 }
 
-RenderObject* HTMLSelectElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* HTMLSelectElement::createRenderer(RenderStyle*)
 {
     if (usesMenuList())
-        return new (arena) RenderMenuList(this);
-    return new (arena) RenderListBox(this);
+        return new (document()->renderArena()) RenderMenuList(this);
+    return new (document()->renderArena()) RenderListBox(this);
 }
 
 bool HTMLSelectElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
@@ -350,8 +343,8 @@ bool HTMLSelectElement::childShouldCreateRenderer(const NodeRenderingContext& ch
     if (!HTMLFormControlElementWithState::childShouldCreateRenderer(childContext))
         return false;
     if (!usesMenuList())
-        return childContext.node()->hasTagName(HTMLNames::optionTag) || childContext.node()->hasTagName(HTMLNames::optgroupTag) || validationMessageShadowTreeContains(childContext.node());
-    return validationMessageShadowTreeContains(childContext.node());
+        return childContext.node()->hasTagName(HTMLNames::optionTag) || childContext.node()->hasTagName(HTMLNames::optgroupTag);
+    return false;
 }
 
 PassRefPtr<HTMLCollection> HTMLSelectElement::selectedOptions()
@@ -377,6 +370,7 @@ void HTMLSelectElement::childrenChanged(bool changedByParser, Node* beforeChange
 {
     setRecalcListItems();
     setNeedsValidityCheck();
+    m_lastOnChangeSelection.clear();
 
     HTMLFormControlElementWithState::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
 }
@@ -645,6 +639,7 @@ void HTMLSelectElement::listBoxOnChange()
 
     // If the cached selection list is empty, or the size has changed, then fire
     // dispatchFormControlChangeEvent, and return early.
+    // FIXME: Why? This looks unreasonable.
     if (m_lastOnChangeSelection.isEmpty() || m_lastOnChangeSelection.size() != items.size()) {
         dispatchFormControlChangeEvent();
         return;
@@ -963,7 +958,7 @@ size_t HTMLSelectElement::searchOptionsForValue(const String& value, size_t list
     for (size_t i = listIndexStart; i < loopEndIndex; ++i) {
         if (!items[i]->hasLocalName(optionTag))
             continue;
-        if (static_cast<HTMLOptionElement*>(items[i])->value() == value)
+        if (toHTMLOptionElement(items[i])->value() == value)
             return i;
     }
     return notFound;
@@ -981,7 +976,7 @@ void HTMLSelectElement::restoreFormControlState(const FormControlState& state)
     for (size_t i = 0; i < itemsSize; ++i) {
         if (!items[i]->hasLocalName(optionTag))
             continue;
-        static_cast<HTMLOptionElement*>(items[i])->setSelectedState(false);
+        toHTMLOptionElement(items[i])->setSelectedState(false);
     }
 
     if (!multiple()) {
@@ -1012,7 +1007,7 @@ void HTMLSelectElement::parseMultipleAttribute(const AtomicString& value)
     m_multiple = !value.isNull();
     setNeedsValidityCheck();
     if (oldUsesMenuList != usesMenuList())
-        reattachIfAttached();
+        lazyReattachIfAttached();
 }
 
 bool HTMLSelectElement::appendFormData(FormDataList& list, bool)
@@ -1213,7 +1208,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
             event->setDefaultHandled();
     }
 
-    if (event->type() == eventNames().mousedownEvent && event->isMouseEvent() && static_cast<MouseEvent*>(event)->button() == LeftButton) {
+    if (event->type() == eventNames().mousedownEvent && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         focus();
         if (renderer() && renderer()->isMenuList()) {
             if (RenderMenuList* menuList = toRenderMenuList(renderer())) {
@@ -1294,14 +1289,14 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
 {
     const Vector<HTMLElement*>& listItems = this->listItems();
 
-    if (event->type() == eventNames().mousedownEvent && event->isMouseEvent() && static_cast<MouseEvent*>(event)->button() == LeftButton) {
+    if (event->type() == eventNames().mousedownEvent && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         focus();
         // Calling focus() may cause us to lose our renderer, in which case do not want to handle the event.
         if (!renderer())
             return;
 
         // Convert to coords relative to the list box if needed.
-        MouseEvent* mouseEvent = static_cast<MouseEvent*>(event);
+        MouseEvent* mouseEvent = toMouseEvent(event);
         IntPoint localOffset = roundedIntPoint(renderer()->absoluteToLocal(mouseEvent->absoluteLocation(), UseTransforms));
         int listIndex = toRenderListBox(renderer())->listIndexAtOffset(toIntSize(localOffset));
         if (listIndex >= 0) {
@@ -1318,7 +1313,7 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
             event->setDefaultHandled();
         }
     } else if (event->type() == eventNames().mousemoveEvent && event->isMouseEvent() && !toRenderBox(renderer())->canBeScrolledAndHasScrollableArea()) {
-        MouseEvent* mouseEvent = static_cast<MouseEvent*>(event);
+        MouseEvent* mouseEvent = toMouseEvent(event);
         if (mouseEvent->button() != LeftButton || !mouseEvent->buttonDown())
             return;
 
@@ -1341,7 +1336,7 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
             }
             event->setDefaultHandled();
         }
-    } else if (event->type() == eventNames().mouseupEvent && event->isMouseEvent() && static_cast<MouseEvent*>(event)->button() == LeftButton && document()->frame()->eventHandler()->autoscrollRenderer() != renderer()) {
+    } else if (event->type() == eventNames().mouseupEvent && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton && renderer() && !toRenderBox(renderer())->autoscrollInProgress()) {
         // We didn't start this click/drag on any options.
         if (m_lastOnChangeSelection.isEmpty())
             return;
@@ -1575,6 +1570,22 @@ void HTMLSelectElement::finishParsingChildren()
     HTMLFormControlElementWithState::finishParsingChildren();
     m_isParsingInProgress = false;
     updateListItemSelectedStates();
+}
+
+bool HTMLSelectElement::anonymousIndexedSetter(unsigned index, PassRefPtr<HTMLOptionElement> value, ExceptionCode& ec)
+{
+    if (!value) {
+        ec = TYPE_MISMATCH_ERR;
+        return false;
+    }
+    setOption(index, value.get(), ec);
+    return true;
+}
+
+bool HTMLSelectElement::anonymousIndexedSetterRemove(unsigned index, ExceptionCode& ec)
+{
+    remove(index);
+    return true;
 }
 
 } // namespace

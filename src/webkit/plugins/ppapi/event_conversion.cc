@@ -10,16 +10,16 @@
 #include "base/i18n/char_iterator.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversion_utils.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ppapi/c/pp_input_event.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
 #include "ppapi/shared_impl/time_conversion.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/platform/WebGamepads.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/usb_key_code_conversion.h"
 
@@ -513,7 +513,7 @@ void GetKeyCode(const std::string& char_text,
       WebString web_char_text =
           WebString::fromUTF8(char_text.data(), char_text.size());
       DCHECK_EQ(web_char_text.length(), 1U);
-      vk_text = vk_code = web_char_text.data()[0];
+      vk_text = vk_code = web_char_text.at(0);
       *needs_shift_modifier =
           (vk_code & 0xFF) >= 'A' && (vk_code & 0xFF) <= 'Z';
       if ((vk_code & 0xFF) >= 'a' && (vk_code & 0xFF) <= 'z')

@@ -22,14 +22,11 @@
 #include "config.h"
 #include "core/rendering/style/StyleRareNonInheritedData.h"
 
-#include "core/css/StyleResolver.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/rendering/RenderCounter.h"
 #include "core/rendering/style/ContentData.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/ShadowData.h"
 #include "core/rendering/style/StyleFilterData.h"
-#include "core/rendering/style/StyleImage.h"
 #include "core/rendering/style/StyleTransformData.h"
 #include <wtf/MemoryInstrumentationHashMap.h>
 #include <wtf/MemoryInstrumentationVector.h>
@@ -57,7 +54,7 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_order(RenderStyle::initialOrder())
     , m_flowThread(RenderStyle::initialFlowThread())
     , m_regionThread(RenderStyle::initialRegionThread())
-    , m_regionOverflow(RenderStyle::initialRegionOverflow())
+    , m_regionFragment(RenderStyle::initialRegionFragment())
     , m_regionBreakAfter(RenderStyle::initialPageBreak())
     , m_regionBreakBefore(RenderStyle::initialPageBreak())
     , m_regionBreakInside(RenderStyle::initialPageBreak())
@@ -75,16 +72,13 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_appearance(RenderStyle::initialAppearance())
     , m_borderFit(RenderStyle::initialBorderFit())
     , m_textCombine(RenderStyle::initialTextCombine())
-#if ENABLE(CSS3_TEXT)
     , m_textDecorationStyle(RenderStyle::initialTextDecorationStyle())
-#endif // CSS3_TEXT
     , m_wrapFlow(RenderStyle::initialWrapFlow())
     , m_wrapThrough(RenderStyle::initialWrapThrough())
     , m_runningAcceleratedAnimation(false)
     , m_hasAspectRatio(false)
-#if ENABLE(CSS_COMPOSITING)
     , m_effectiveBlendMode(RenderStyle::initialBlendMode())
-#endif
+    , m_touchAction(RenderStyle::initialTouchAction())
 {
     m_maskBoxImage.setMaskDefaults();
 }
@@ -121,10 +115,8 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_shapeMargin(o.m_shapeMargin)
     , m_shapePadding(o.m_shapePadding)
     , m_clipPath(o.m_clipPath)
-#if ENABLE(CSS3_TEXT)
     , m_textDecorationColor(o.m_textDecorationColor)
     , m_visitedLinkTextDecorationColor(o.m_visitedLinkTextDecorationColor)
-#endif // CSS3_TEXT
     , m_visitedLinkBackgroundColor(o.m_visitedLinkBackgroundColor)
     , m_visitedLinkOutlineColor(o.m_visitedLinkOutlineColor)
     , m_visitedLinkBorderLeftColor(o.m_visitedLinkBorderLeftColor)
@@ -134,7 +126,7 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_order(o.m_order)
     , m_flowThread(o.m_flowThread)
     , m_regionThread(o.m_regionThread)
-    , m_regionOverflow(o.m_regionOverflow)
+    , m_regionFragment(o.m_regionFragment)
     , m_regionBreakAfter(o.m_regionBreakAfter)
     , m_regionBreakBefore(o.m_regionBreakBefore)
     , m_regionBreakInside(o.m_regionBreakInside)
@@ -152,16 +144,13 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_appearance(o.m_appearance)
     , m_borderFit(o.m_borderFit)
     , m_textCombine(o.m_textCombine)
-#if ENABLE(CSS3_TEXT)
     , m_textDecorationStyle(o.m_textDecorationStyle)
-#endif // CSS3_TEXT
     , m_wrapFlow(o.m_wrapFlow)
     , m_wrapThrough(o.m_wrapThrough)
     , m_runningAcceleratedAnimation(o.m_runningAcceleratedAnimation)
     , m_hasAspectRatio(o.m_hasAspectRatio)
-#if ENABLE(CSS_COMPOSITING)
     , m_effectiveBlendMode(o.m_effectiveBlendMode)
-#endif
+    , m_touchAction(o.m_touchAction)
 {
 }
 
@@ -201,10 +190,8 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_shapeMargin == o.m_shapeMargin
         && m_shapePadding == o.m_shapePadding
         && m_clipPath == o.m_clipPath
-#if ENABLE(CSS3_TEXT)
         && m_textDecorationColor == o.m_textDecorationColor
         && m_visitedLinkTextDecorationColor == o.m_visitedLinkTextDecorationColor
-#endif // CSS3_TEXT
         && m_visitedLinkBackgroundColor == o.m_visitedLinkBackgroundColor
         && m_visitedLinkOutlineColor == o.m_visitedLinkOutlineColor
         && m_visitedLinkBorderLeftColor == o.m_visitedLinkBorderLeftColor
@@ -214,7 +201,7 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_order == o.m_order
         && m_flowThread == o.m_flowThread
         && m_regionThread == o.m_regionThread
-        && m_regionOverflow == o.m_regionOverflow
+        && m_regionFragment == o.m_regionFragment
         && m_regionBreakAfter == o.m_regionBreakAfter
         && m_regionBreakBefore == o.m_regionBreakBefore
         && m_regionBreakInside == o.m_regionBreakInside
@@ -232,16 +219,13 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_appearance == o.m_appearance
         && m_borderFit == o.m_borderFit
         && m_textCombine == o.m_textCombine
-#if ENABLE(CSS3_TEXT)
         && m_textDecorationStyle == o.m_textDecorationStyle
-#endif // CSS3_TEXT
         && m_wrapFlow == o.m_wrapFlow
         && m_wrapThrough == o.m_wrapThrough
         && !m_runningAcceleratedAnimation && !o.m_runningAcceleratedAnimation
-#if ENABLE(CSS_COMPOSITING)
         && m_effectiveBlendMode == o.m_effectiveBlendMode
-#endif
-        && m_hasAspectRatio == o.m_hasAspectRatio;
+        && m_hasAspectRatio == o.m_hasAspectRatio
+        && m_touchAction == o.m_touchAction;
 }
 
 bool StyleRareNonInheritedData::contentDataEquivalent(const StyleRareNonInheritedData& o) const
@@ -261,7 +245,7 @@ bool StyleRareNonInheritedData::counterDataEquivalent(const StyleRareNonInherite
 {
     if (m_counterDirectives.get() == o.m_counterDirectives.get())
         return true;
-        
+
     if (m_counterDirectives && o.m_counterDirectives && *m_counterDirectives == *o.m_counterDirectives)
         return true;
 

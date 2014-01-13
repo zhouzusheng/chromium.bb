@@ -38,20 +38,20 @@
 
 namespace WebCore {
 
-PassRefPtr<RTCDataChannel> RTCDataChannel::create(ScriptExecutionContext* context, RTCPeerConnectionHandler* peerConnectionHandler, const String& label, bool reliable, ExceptionCode& ec)
+PassRefPtr<RTCDataChannel> RTCDataChannel::create(ScriptExecutionContext* context, PassOwnPtr<RTCDataChannelHandler> handler)
 {
-    OwnPtr<RTCDataChannelHandler> handler = peerConnectionHandler->createDataChannel(label, reliable);
+    ASSERT(handler);
+    return adoptRef(new RTCDataChannel(context, handler));
+}
+
+PassRefPtr<RTCDataChannel> RTCDataChannel::create(ScriptExecutionContext* context, RTCPeerConnectionHandler* peerConnectionHandler, const String& label, const WebKit::WebRTCDataChannelInit& init, ExceptionCode& ec)
+{
+    OwnPtr<RTCDataChannelHandler> handler = peerConnectionHandler->createDataChannel(label, init);
     if (!handler) {
         ec = NOT_SUPPORTED_ERR;
         return 0;
     }
     return adoptRef(new RTCDataChannel(context, handler.release()));
-}
-
-PassRefPtr<RTCDataChannel> RTCDataChannel::create(ScriptExecutionContext* context, PassOwnPtr<RTCDataChannelHandler> handler)
-{
-    ASSERT(handler);
-    return adoptRef(new RTCDataChannel(context, handler));
 }
 
 RTCDataChannel::RTCDataChannel(ScriptExecutionContext* context, PassOwnPtr<RTCDataChannelHandler> handler)
@@ -62,6 +62,7 @@ RTCDataChannel::RTCDataChannel(ScriptExecutionContext* context, PassOwnPtr<RTCDa
     , m_binaryType(BinaryTypeArrayBuffer)
     , m_scheduledEventTimer(this, &RTCDataChannel::scheduledEventTimerFired)
 {
+    ScriptWrappable::init(this);
     m_handler->setClient(this);
 }
 

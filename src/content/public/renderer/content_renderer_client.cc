@@ -63,10 +63,6 @@ WebKit::WebClipboard* ContentRendererClient::OverrideWebClipboard() {
   return NULL;
 }
 
-WebKit::WebMimeRegistry* ContentRendererClient::OverrideWebMimeRegistry() {
-  return NULL;
-}
-
 WebKit::WebHyphenator* ContentRendererClient::OverrideWebHyphenator() {
   return NULL;
 }
@@ -101,6 +97,7 @@ bool ContentRendererClient::ShouldFork(WebKit::WebFrame* frame,
                                        const GURL& url,
                                        const std::string& http_method,
                                        bool is_initial_navigation,
+                                       bool is_server_redirect,
                                        bool* send_referrer) {
   return false;
 }
@@ -127,6 +124,11 @@ bool ContentRendererClient::IsLinkVisited(unsigned long long link_hash) {
   return false;
 }
 
+WebKit::WebPrescientNetworking*
+ContentRendererClient::GetPrescientNetworking() {
+  return NULL;
+}
+
 bool ContentRendererClient::ShouldOverridePageVisibilityState(
     const RenderView* render_view,
     WebKit::WebPageVisibilityState* override_state) const {
@@ -149,17 +151,18 @@ bool ContentRendererClient::HandleSetCookieRequest(
   return false;
 }
 
+bool ContentRendererClient::IsPluginAllowedToCallRequestOSFileHandle(
+    WebKit::WebPluginContainer* container) const {
+  return false;
+}
+
 bool ContentRendererClient::AllowBrowserPlugin(
     WebKit::WebPluginContainer* container) const {
   return false;
 }
 
-MessageLoop* ContentRendererClient::OverrideCompositorMessageLoop() const {
-  return NULL;
-}
-
-bool ContentRendererClient::ShouldCreateCompositorInputHandler() const {
-  return true;
+bool ContentRendererClient::AllowPepperMediaStreamAPI(const GURL& url) const {
+  return false;
 }
 
 }  // namespace content

@@ -27,7 +27,6 @@
 
 #include "core/html/canvas/WebGLShader.h"
 
-#include "core/html/canvas/WebGLContextGroup.h"
 #include "core/html/canvas/WebGLRenderingContext.h"
 
 namespace WebCore {
@@ -42,6 +41,7 @@ WebGLShader::WebGLShader(WebGLRenderingContext* ctx, GC3Denum type)
     , m_type(type)
     , m_source("")
 {
+    ScriptWrappable::init(this);
     setObject(ctx->graphicsContext3D()->createShader(type));
 }
 

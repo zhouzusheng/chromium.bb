@@ -26,57 +26,58 @@
 #include "config.h"
 #include "core/platform/graphics/GeneratorGeneratedImage.h"
 
-#include "core/platform/Length.h"
 #include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 
 namespace WebCore {
 
-void GeneratorGeneratedImage::draw(GraphicsContext* destContext, const FloatRect& destRect, const FloatRect& srcRect, ColorSpace, CompositeOperator compositeOp, BlendMode)
+void GeneratorGeneratedImage::draw(GraphicsContext* destContext, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator compositeOp, BlendMode blendMode)
 {
     GraphicsContextStateSaver stateSaver(*destContext);
-    destContext->setCompositeOperation(compositeOp);
+    destContext->setCompositeOperation(compositeOp, blendMode);
     destContext->clip(destRect);
     destContext->translate(destRect.x(), destRect.y());
     if (destRect.size() != srcRect.size())
         destContext->scale(FloatSize(destRect.width() / srcRect.width(), destRect.height() / srcRect.height()));
     destContext->translate(-srcRect.x(), -srcRect.y());
-    destContext->fillRect(FloatRect(FloatPoint(), m_size), *m_generator.get());
+    destContext->setFillGradient(m_gradient);
+    destContext->fillRect(FloatRect(FloatPoint(), m_size));
 }
 
-void GeneratorGeneratedImage::drawPattern(GraphicsContext* destContext, const FloatRect& srcRect, const AffineTransform& patternTransform,
-    const FloatPoint& phase, ColorSpace styleColorSpace, CompositeOperator compositeOp, const FloatRect& destRect, BlendMode)
+void GeneratorGeneratedImage::drawPattern(GraphicsContext* destContext, const FloatRect& srcRect, const FloatSize& scale,
+    const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& destRect, BlendMode)
 {
     // Allow the generator to provide visually-equivalent tiling parameters for better performance.
     IntSize adjustedSize = m_size;
     FloatRect adjustedSrcRect = srcRect;
-    m_generator->adjustParametersForTiledDrawing(adjustedSize, adjustedSrcRect);
+    m_gradient->adjustParametersForTiledDrawing(adjustedSize, adjustedSrcRect);
 
-    // Factor in the destination context's scale to generate at the best resolution
+    // Factor in the destination context's scale to generate at the best resolution.
+    // FIXME: No need to get the full CTM here, we just need the scale.
     AffineTransform destContextCTM = destContext->getCTM(GraphicsContext::DefinitelyIncludeDeviceScale);
-    double xScale = fabs(destContextCTM.xScale());
-    double yScale = fabs(destContextCTM.yScale());
-    AffineTransform adjustedPatternCTM = patternTransform;
-    adjustedPatternCTM.scale(1.0 / xScale, 1.0 / yScale);
+    float xScale = fabs(destContextCTM.xScale());
+    float yScale = fabs(destContextCTM.yScale());
+    FloatSize scaleWithoutCTM(scale.width() / xScale, scale.height() / yScale);
     adjustedSrcRect.scale(xScale, yScale);
 
-    unsigned generatorHash = m_generator->hash();
+    unsigned generatorHash = m_gradient->hash();
 
     if (!m_cachedImageBuffer || m_cachedGeneratorHash != generatorHash || m_cachedAdjustedSize != adjustedSize || !destContext->isCompatibleWithBuffer(m_cachedImageBuffer.get())) {
-        m_cachedImageBuffer = destContext->createCompatibleBuffer(adjustedSize, m_generator->hasAlpha());
+        m_cachedImageBuffer = destContext->createCompatibleBuffer(adjustedSize, m_gradient->hasAlpha());
         if (!m_cachedImageBuffer)
             return;
 
         // Fill with the generated image.
-        m_cachedImageBuffer->context()->fillRect(FloatRect(FloatPoint(), adjustedSize), *m_generator);
+        m_cachedImageBuffer->context()->setFillGradient(m_gradient);
+        m_cachedImageBuffer->context()->fillRect(FloatRect(FloatPoint(), adjustedSize));
 
         m_cachedGeneratorHash = generatorHash;
         m_cachedAdjustedSize = adjustedSize;
     }
 
     // Tile the image buffer into the context.
-    m_cachedImageBuffer->drawPattern(destContext, adjustedSrcRect, adjustedPatternCTM, phase, styleColorSpace, compositeOp, destRect);
+    m_cachedImageBuffer->drawPattern(destContext, adjustedSrcRect, scaleWithoutCTM, phase, compositeOp, destRect);
     m_cacheTimer.restart();
 }
 
@@ -90,7 +91,7 @@ void GeneratorGeneratedImage::reportMemoryUsage(MemoryObjectInfo* memoryObjectIn
 {
     MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Image);
     GeneratedImage::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_generator, "generator");
+    info.addMember(m_gradient, "gradient");
     info.addMember(m_cachedImageBuffer, "cachedImageBuffer");
     info.addMember(m_cacheTimer, "cacheTimer");
 }

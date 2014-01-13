@@ -28,21 +28,18 @@
 #include "core/html/shadow/DateTimeEditElement.h"
 
 #include "HTMLNames.h"
-#include "core/css/StyleResolver.h"
-#include "core/dom/KeyboardEvent.h"
 #include "core/dom/MouseEvent.h"
 #include "core/dom/Text.h"
 #include "core/html/DateTimeFieldsState.h"
 #include "core/html/shadow/DateTimeFieldElements.h"
-#include "core/html/shadow/DateTimeSymbolicFieldElement.h"
-#include "core/page/EventHandler.h"
+#include "core/html/shadow/ShadowElementNames.h"
 #include "core/platform/DateComponents.h"
 #include "core/platform/graphics/FontCache.h"
 #include "core/platform/text/DateTimeFormat.h"
 #include "core/platform/text/PlatformLocale.h"
 #include "core/rendering/style/RenderStyle.h"
-#include <wtf/DateMath.h>
-#include <wtf/text/StringBuilder.h>
+#include "core/rendering/style/StyleInheritedData.h"
+#include "wtf/DateMath.h"
 
 namespace WebCore {
 
@@ -94,9 +91,7 @@ DateTimeEditBuilder::DateTimeEditBuilder(DateTimeEditElement& elemnt, const Date
     , m_secondRange(0, 59)
     , m_millisecondRange(0, 999)
 {
-    if (m_dateValue.type() == DateComponents::Date
-        || m_dateValue.type() == DateComponents::DateTimeLocal
-        || m_dateValue.type() == DateComponents::DateTime) {
+    if (m_dateValue.type() == DateComponents::Date || m_dateValue.type() == DateComponents::DateTimeLocal) {
         if (m_parameters.minimum.type() != DateComponents::Invalid
             && m_parameters.maximum.type() != DateComponents::Invalid
             && m_parameters.minimum.fullYear() == m_parameters.maximum.fullYear()
@@ -352,7 +347,7 @@ bool DateTimeEditBuilder::shouldHourFieldDisabled() const
 
     if (m_dateValue.type() == DateComponents::Time)
         return false;
-    ASSERT(m_dateValue.type() == DateComponents::DateTimeLocal || m_dateValue.type() == DateComponents::DateTime);
+    ASSERT(m_dateValue.type() == DateComponents::DateTimeLocal);
 
     if (shouldDayOfMonthFieldDisabled()) {
         ASSERT(m_parameters.minimum.fullYear() == m_parameters.maximum.fullYear());
@@ -448,8 +443,6 @@ DateTimeEditElement::DateTimeEditElement(Document* document, EditControlOwner& e
     : HTMLDivElement(divTag, document)
     , m_editControlOwner(&editControlOwner)
 {
-    DEFINE_STATIC_LOCAL(AtomicString, dateTimeEditPseudoId, ("-webkit-datetime-edit", AtomicString::ConstructFromLiteral));
-    setPseudo(dateTimeEditPseudoId);
     setHasCustomStyleCallbacks();
 }
 
@@ -491,6 +484,8 @@ void DateTimeEditElement::blurByOwner()
 PassRefPtr<DateTimeEditElement> DateTimeEditElement::create(Document* document, EditControlOwner& editControlOwner)
 {
     RefPtr<DateTimeEditElement> container = adoptRef(new DateTimeEditElement(document, editControlOwner));
+    container->setPseudo(AtomicString("-webkit-datetime-edit", AtomicString::ConstructFromLiteral));
+    container->setAttribute(idAttr, ShadowElementNames::dateTimeEdit());
     return container.release();
 }
 
@@ -498,7 +493,7 @@ PassRefPtr<RenderStyle> DateTimeEditElement::customStyleForRenderer()
 {
     // FIXME: This is a kind of layout. We might want to introduce new renderer.
     FontCachePurgePreventer fontCachePurgePreventer;
-    RefPtr<RenderStyle> originalStyle = document()->styleResolver()->styleForElement(this);
+    RefPtr<RenderStyle> originalStyle = originalStyleForRenderer();
     RefPtr<RenderStyle> style = RenderStyle::clone(originalStyle.get());
     float width = 0;
     for (Node* child = fieldsWrapperElement()->firstChild(); child; child = child->nextSibling()) {
@@ -624,6 +619,11 @@ bool DateTimeEditElement::focusOnPreviousField(const DateTimeFieldElement& field
         }
     }
     return false;
+}
+
+bool DateTimeEditElement::isDateTimeEditElement() const
+{
+    return true;
 }
 
 bool DateTimeEditElement::isDisabled() const

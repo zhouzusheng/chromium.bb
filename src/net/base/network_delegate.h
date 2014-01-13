@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/threading/non_thread_safe.h"
 #include "net/base/auth.h"
 #include "net/base/completion_callback.h"
@@ -97,6 +97,8 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   bool CanAccessFile(const URLRequest& request,
                      const base::FilePath& path) const;
   bool CanThrottleRequest(const URLRequest& request) const;
+  bool CanEnablePrivacyMode(const GURL& url,
+                            const GURL& first_party_for_cookies) const;
 
   int NotifyBeforeSocketStreamConnect(SocketStream* socket,
                                       const CompletionCallback& callback);
@@ -214,7 +216,6 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
                               const std::string& cookie_line,
                               CookieOptions* options) = 0;
 
-
   // Called when a file access is attempted to allow the network delegate to
   // allow or block access to the given file path.  Returns true if access is
   // allowed.
@@ -225,6 +226,13 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   // URLRequestThrottlerManager believes the server servicing the
   // request is overloaded or down.
   virtual bool OnCanThrottleRequest(const URLRequest& request) const = 0;
+
+  // Returns true if the given |url| has to be requested over connection that
+  // is not tracked by the server. Usually is false, unless user privacy
+  // settings block cookies from being get or set.
+  virtual bool OnCanEnablePrivacyMode(
+      const GURL& url,
+      const GURL& first_party_for_cookies) const;
 
   // Called before a SocketStream tries to connect.
   virtual int OnBeforeSocketStreamConnect(

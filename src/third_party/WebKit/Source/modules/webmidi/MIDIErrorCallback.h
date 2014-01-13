@@ -31,21 +31,16 @@
 #ifndef MIDIErrorCallback_h
 #define MIDIErrorCallback_h
 
-#include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
 class DOMError;
-class ScriptExecutionContext;
 
 class MIDIErrorCallback : public RefCounted<MIDIErrorCallback> {
 public:
     virtual ~MIDIErrorCallback() { }
     virtual bool handleEvent(DOMError*) = 0;
-
-    // Helper to post callback task.
-    void scheduleCallback(ScriptExecutionContext*, PassRefPtr<DOMError>);
 };
 
 } // namespace WebCore

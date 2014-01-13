@@ -10,10 +10,11 @@
 #include "ppapi/c/dev/ppp_scrollbar_dev.h"
 #include "ppapi/thunk/thunk.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginScrollbar.h"
+#include "third_party/WebKit/public/platform/WebCanvas.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebPluginScrollbar.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/event_conversion.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
@@ -83,18 +84,18 @@ uint32_t PPB_Scrollbar_Impl::GetValue() {
 }
 
 void PPB_Scrollbar_Impl::SetValue(uint32_t value) {
-  if (scrollbar_.get())
+  if (scrollbar_)
     scrollbar_->setValue(value);
 }
 
 void PPB_Scrollbar_Impl::SetDocumentSize(uint32_t size) {
-  if (scrollbar_.get())
+  if (scrollbar_)
     scrollbar_->setDocumentSize(size);
 }
 
 void PPB_Scrollbar_Impl::SetTickMarks(const PP_Rect* tick_marks,
                                       uint32_t count) {
-  if (!scrollbar_.get())
+  if (!scrollbar_)
     return;
   tickmarks_.resize(count);
   for (uint32 i = 0; i < count; ++i) {
@@ -108,7 +109,7 @@ void PPB_Scrollbar_Impl::SetTickMarks(const PP_Rect* tick_marks,
 }
 
 void PPB_Scrollbar_Impl::ScrollBy(PP_ScrollBy_Dev unit, int32_t multiplier) {
-  if (!scrollbar_.get())
+  if (!scrollbar_)
     return;
 
   WebScrollbar::ScrollDirection direction = multiplier >= 0 ?
@@ -135,11 +136,11 @@ PP_Bool PPB_Scrollbar_Impl::PaintInternal(const gfx::Rect& rect,
                                           PPB_ImageData_Impl* image) {
   ImageDataAutoMapper mapper(image);
   skia::PlatformCanvas* canvas = image->GetPlatformCanvas();
-  if (!canvas || !scrollbar_.get())
+  if (!canvas || !scrollbar_)
     return PP_FALSE;
   canvas->save();
   canvas->scale(scale(), scale());
-  scrollbar_->paint(webkit_glue::ToWebCanvas(canvas), rect);
+  scrollbar_->paint(canvas, rect);
   canvas->restore();
 
 #if defined(OS_WIN)
@@ -153,14 +154,14 @@ PP_Bool PPB_Scrollbar_Impl::PaintInternal(const gfx::Rect& rect,
 PP_Bool PPB_Scrollbar_Impl::HandleEventInternal(
     const ::ppapi::InputEventData& data) {
   scoped_ptr<WebInputEvent> web_input_event(CreateWebInputEvent(data));
-  if (!web_input_event.get() || !scrollbar_.get())
+  if (!web_input_event.get() || !scrollbar_)
     return PP_FALSE;
 
   return PP_FromBool(scrollbar_->handleInputEvent(*web_input_event.get()));
 }
 
 void PPB_Scrollbar_Impl::SetLocationInternal(const PP_Rect* location) {
-  if (!scrollbar_.get())
+  if (!scrollbar_)
     return;
   scrollbar_->setLocation(WebRect(location->point.x,
                                   location->point.y,
@@ -217,7 +218,7 @@ void PPB_Scrollbar_Impl::invalidateScrollbarRect(
   // Note: we use a WeakPtrFactory here so that a lingering callback can not
   // modify the lifetime of this object. Otherwise, WebKit::WebPluginScrollbar
   // could outlive WebKit::WebPluginContainer, which is against its contract.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&PPB_Scrollbar_Impl::NotifyInvalidate,
                  weak_ptr_factory_.GetWeakPtr()));

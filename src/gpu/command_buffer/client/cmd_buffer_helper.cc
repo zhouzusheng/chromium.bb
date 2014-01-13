@@ -4,9 +4,9 @@
 
 // This file contains the implementation of the command buffer helper class.
 
-#include "../client/cmd_buffer_helper.h"
-#include "../common/command_buffer.h"
-#include "../common/trace_event.h"
+#include "gpu/command_buffer/client/cmd_buffer_helper.h"
+#include "gpu/command_buffer/common/command_buffer.h"
+#include "gpu/command_buffer/common/trace_event.h"
 
 namespace gpu {
 
@@ -271,11 +271,6 @@ CommandBufferEntry* CommandBufferHelper::GetSpace(uint32 entries) {
     put_ = 0;
   }
   return space;
-}
-
-error::Error CommandBufferHelper::GetError() {
-  CommandBuffer::State state = command_buffer_->GetState();
-  return static_cast<error::Error>(state.error);
 }
 
 }  // namespace gpu

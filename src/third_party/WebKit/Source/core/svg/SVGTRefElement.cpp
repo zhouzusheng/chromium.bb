@@ -21,19 +21,18 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGTRefElement.h"
 
 #include "SVGNames.h"
 #include "XLinkNames.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/EventListener.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/MutationEvent.h"
 #include "core/dom/NodeRenderingContext.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/dom/Text.h"
+#include "core/dom/shadow/ElementShadow.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/page/UseCounter.h"
 #include "core/rendering/style/StyleInheritedData.h"
 #include "core/rendering/svg/RenderSVGInline.h"
@@ -191,7 +190,7 @@ bool SVGTRefElement::isSupportedAttribute(const QualifiedName& attrName)
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty())
         SVGURIReference::addSupportedAttributes(supportedAttributes);
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGTRefElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -226,9 +225,9 @@ void SVGTRefElement::svgAttributeChanged(const QualifiedName& attrName)
     ASSERT_NOT_REACHED();
 }
 
-RenderObject* SVGTRefElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGTRefElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGInline(this);
+    return new (document()->renderArena()) RenderSVGInline(this);
 }
 
 bool SVGTRefElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
@@ -297,5 +296,3 @@ void SVGTRefElement::removedFrom(ContainerNode* rootParent)
 }
 
 }
-
-#endif // ENABLE(SVG)

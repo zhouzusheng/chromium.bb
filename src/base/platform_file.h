@@ -19,17 +19,11 @@
 
 namespace base {
 
-#if defined(OS_WIN)
-typedef HANDLE PlatformFile;
-const PlatformFile kInvalidPlatformFileValue = INVALID_HANDLE_VALUE;
-#elif defined(OS_POSIX)
-typedef int PlatformFile;
-const PlatformFile kInvalidPlatformFileValue = -1;
-#endif
-
 // PLATFORM_FILE_(OPEN|CREATE).* are mutually exclusive. You should specify
 // exactly one of the five (possibly combining with other flags) when opening
 // or creating a file.
+// PLATFORM_FILE_(WRITE|APPEND) are mutually exclusive. This is so that APPEND
+// behavior will be consistent with O_APPEND on POSIX.
 enum PlatformFileFlags {
   PLATFORM_FILE_OPEN = 1 << 0,             // Opens a file, only if it exists.
   PLATFORM_FILE_CREATE = 1 << 1,           // Creates a new file, only if it
@@ -40,23 +34,24 @@ enum PlatformFileFlags {
                                            // only if it exists.
   PLATFORM_FILE_READ = 1 << 5,
   PLATFORM_FILE_WRITE = 1 << 6,
-  PLATFORM_FILE_EXCLUSIVE_READ = 1 << 7,   // EXCLUSIVE is opposite of Windows
+  PLATFORM_FILE_APPEND = 1 << 7,
+  PLATFORM_FILE_EXCLUSIVE_READ = 1 << 8,   // EXCLUSIVE is opposite of Windows
                                            // SHARE
-  PLATFORM_FILE_EXCLUSIVE_WRITE = 1 << 8,
-  PLATFORM_FILE_ASYNC = 1 << 9,
-  PLATFORM_FILE_TEMPORARY = 1 << 10,       // Used on Windows only
-  PLATFORM_FILE_HIDDEN = 1 << 11,          // Used on Windows only
-  PLATFORM_FILE_DELETE_ON_CLOSE = 1 << 12,
+  PLATFORM_FILE_EXCLUSIVE_WRITE = 1 << 9,
+  PLATFORM_FILE_ASYNC = 1 << 10,
+  PLATFORM_FILE_TEMPORARY = 1 << 11,       // Used on Windows only
+  PLATFORM_FILE_HIDDEN = 1 << 12,          // Used on Windows only
+  PLATFORM_FILE_DELETE_ON_CLOSE = 1 << 13,
 
-  PLATFORM_FILE_WRITE_ATTRIBUTES = 1 << 13,  // Used on Windows only
-  PLATFORM_FILE_ENUMERATE = 1 << 14,         // May enumerate directory
+  PLATFORM_FILE_WRITE_ATTRIBUTES = 1 << 14,  // Used on Windows only
+  PLATFORM_FILE_ENUMERATE = 1 << 15,         // May enumerate directory
 
-  PLATFORM_FILE_SHARE_DELETE = 1 << 15,      // Used on Windows only
+  PLATFORM_FILE_SHARE_DELETE = 1 << 16,      // Used on Windows only
 
-  PLATFORM_FILE_TERMINAL_DEVICE = 1 << 16,   // Serial port flags
-  PLATFORM_FILE_BACKUP_SEMANTICS = 1 << 17,  // Used on Windows only
+  PLATFORM_FILE_TERMINAL_DEVICE = 1 << 17,   // Serial port flags
+  PLATFORM_FILE_BACKUP_SEMANTICS = 1 << 18,  // Used on Windows only
 
-  PLATFORM_FILE_EXECUTE = 1 << 18,           // Used on Windows only
+  PLATFORM_FILE_EXECUTE = 1 << 19,           // Used on Windows only
 };
 
 // PLATFORM_FILE_ERROR_ACCESS_DENIED is returned when a call fails because of
@@ -119,6 +114,16 @@ struct BASE_EXPORT PlatformFileInfo {
   base::Time creation_time;
 };
 
+#if defined(OS_WIN)
+typedef HANDLE PlatformFile;
+const PlatformFile kInvalidPlatformFileValue = INVALID_HANDLE_VALUE;
+PlatformFileError LastErrorToPlatformFileError(DWORD saved_errno);
+#elif defined(OS_POSIX)
+typedef int PlatformFile;
+const PlatformFile kInvalidPlatformFileValue = -1;
+PlatformFileError ErrnoToPlatformFileError(int saved_errno);
+#endif
+
 // Creates or opens the given file. If |created| is provided, it will be set to
 // true if a new file was created [or an old one truncated to zero length to
 // simulate a new file, which can happen with PLATFORM_FILE_CREATE_ALWAYS], and
@@ -176,6 +181,8 @@ BASE_EXPORT int ReadPlatformFileCurPosNoBestEffort(PlatformFile file,
 // data that was previously there. Returns the number of bytes written, or -1
 // on error. Note that this function makes a best effort to write all data on
 // all platforms.
+// Ignores the offset and writes to the end of the file if the file was opened
+// with PLATFORM_FILE_APPEND.
 BASE_EXPORT int WritePlatformFile(PlatformFile file, int64 offset,
                                   const char* data, int size);
 

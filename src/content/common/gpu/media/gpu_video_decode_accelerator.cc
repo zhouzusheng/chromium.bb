@@ -42,7 +42,7 @@ namespace content {
 
 static bool MakeDecoderContextCurrent(
     const base::WeakPtr<GpuCommandBufferStub> stub) {
-  if (!stub) {
+  if (!stub.get()) {
     DLOG(ERROR) << "Stub is gone; won't MakeCurrent().";
     return false;
   }
@@ -55,13 +55,11 @@ static bool MakeDecoderContextCurrent(
   return true;
 }
 
-GpuVideoDecodeAccelerator::GpuVideoDecodeAccelerator(
-    int32 host_route_id,
-    GpuCommandBufferStub* stub)
+GpuVideoDecodeAccelerator::GpuVideoDecodeAccelerator(int32 host_route_id,
+                                                     GpuCommandBufferStub* stub)
     : init_done_msg_(NULL),
       host_route_id_(host_route_id),
       stub_(stub),
-      video_decode_accelerator_(NULL),
       texture_target_(0) {
   DCHECK(stub_);
   stub_->AddDestructionObserver(this);
@@ -247,12 +245,14 @@ void GpuVideoDecodeAccelerator::OnAssignPictureBuffers(
       NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
       return;
     }
-    gpu::gles2::Texture* info = texture_manager->GetTexture(texture_ids[i]);
-    if (!info) {
+    gpu::gles2::TextureRef* texture_ref = texture_manager->GetTexture(
+        texture_ids[i]);
+    if (!texture_ref) {
       DLOG(FATAL) << "Failed to find texture id " << texture_ids[i];
       NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
       return;
     }
+    gpu::gles2::Texture* info = texture_ref->texture();
     if (info->target() != texture_target_) {
       DLOG(FATAL) << "Texture target mismatch for texture id "
                   << texture_ids[i];
@@ -270,7 +270,7 @@ void GpuVideoDecodeAccelerator::OnAssignPictureBuffers(
         return;
       }
     }
-    if (!texture_manager->ClearRenderableLevels(command_decoder, info)) {
+    if (!texture_manager->ClearRenderableLevels(command_decoder, texture_ref)) {
       DLOG(FATAL) << "Failed to Clear texture id " << texture_ids[i];
       NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
       return;

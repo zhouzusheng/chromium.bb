@@ -56,7 +56,7 @@ void FEMerge::applySoftware()
     GraphicsContext* filterContext = resultImage->context();
     for (unsigned i = 0; i < size; ++i) {
         FilterEffect* in = inputEffect(i);
-        filterContext->drawImageBuffer(in->asImageBuffer(), ColorSpaceDeviceRGB, drawingRegionOfInputImage(in->absolutePaintRect()));
+        filterContext->drawImageBuffer(in->asImageBuffer(), drawingRegionOfInputImage(in->absolutePaintRect()));
     }
 }
 
@@ -67,7 +67,7 @@ SkImageFilter* FEMerge::createImageFilter(SkiaImageFilterBuilder* builder)
     OwnArrayPtr<SkAutoTUnref<SkImageFilter> > inputRefs = adoptArrayPtr(new SkAutoTUnref<SkImageFilter>[size]);
     OwnArrayPtr<SkImageFilter*> inputs = adoptArrayPtr(new SkImageFilter*[size]);
     for (unsigned i = 0; i < size; ++i) {
-        inputRefs[i].reset(builder->build(inputEffect(i)));
+        inputRefs[i].reset(builder->build(inputEffect(i), operatingColorSpace()));
         inputs[i] = inputRefs[i].get();
     }
     return new SkMergeImageFilter(inputs.get(), size);

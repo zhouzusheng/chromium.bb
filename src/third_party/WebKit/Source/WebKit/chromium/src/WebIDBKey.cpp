@@ -26,7 +26,7 @@
  */
 
 #include "config.h"
-#include <public/WebIDBKey.h>
+#include "public/platform/WebIDBKey.h"
 
 #include "modules/indexeddb/IDBKey.h"
 
@@ -103,6 +103,7 @@ static PassRefPtr<IDBKey> convertFromWebIDBKeyArray(const WebVector<WebIDBKey>& 
             keys.append(IDBKey::createInvalid());
             break;
         case WebIDBKey::NullType:
+        case WebIDBKey::MinType:
             ASSERT_NOT_REACHED();
             break;
         }

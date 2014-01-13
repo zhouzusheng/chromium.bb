@@ -26,13 +26,14 @@
 #ifndef WTF_MathExtras_h
 #define WTF_MathExtras_h
 
+#include "wtf/CPU.h"
+#include "wtf/StdLibExtras.h"
 #include <algorithm>
 #include <cmath>
 #include <float.h>
 #include <limits>
 #include <stdint.h>
 #include <stdlib.h>
-#include <wtf/StdLibExtras.h>
 
 #if OS(SOLARIS)
 #include <ieeefp.h>
@@ -150,10 +151,6 @@ inline float log2f(float num)
 #endif
 
 #if COMPILER(MSVC)
-// The 64bit version of abs() is already defined in stdlib.h which comes with VC10
-#if COMPILER(MSVC9_OR_LOWER)
-inline long long abs(long long num) { return _abs64(num); }
-#endif
 
 namespace std {
 
@@ -336,29 +333,6 @@ template<typename T> inline T timesThreePlusOneDividedByTwo(T value)
 #define UINT64_C(c) c ## ull
 #endif
 #endif
-
-#if COMPILER(MINGW64) && (!defined(__MINGW64_VERSION_RC) || __MINGW64_VERSION_RC < 1)
-inline double wtf_pow(double x, double y)
-{
-    // MinGW-w64 has a custom implementation for pow.
-    // This handles certain special cases that are different.
-    if ((x == 0.0 || std::isinf(x)) && std::isfinite(y)) {
-        double f;
-        if (modf(y, &f) != 0.0)
-            return ((x == 0.0) ^ (y > 0.0)) ? std::numeric_limits<double>::infinity() : 0.0;
-    }
-
-    if (x == 2.0) {
-        int yInt = static_cast<int>(y);
-        if (y == yInt)
-            return ldexp(1.0, yInt);
-    }
-
-    return pow(x, y);
-}
-#define pow(x, y) wtf_pow(x, y)
-#endif // COMPILER(MINGW64) && (!defined(__MINGW64_VERSION_RC) || __MINGW64_VERSION_RC < 1)
-
 
 // decompose 'number' to its sign, exponent, and mantissa components.
 // The result is interpreted as:

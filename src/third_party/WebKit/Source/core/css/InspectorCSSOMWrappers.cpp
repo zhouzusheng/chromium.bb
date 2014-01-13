@@ -33,16 +33,15 @@
 #include "core/css/CSSHostRule.h"
 #include "core/css/CSSImportRule.h"
 #include "core/css/CSSMediaRule.h"
+#include "core/css/CSSRegionRule.h"
 #include "core/css/CSSRule.h"
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSSupportsRule.h"
 #include "core/css/StyleSheetContents.h"
-#include "core/css/WebKitCSSRegionRule.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
 
-#include <wtf/MemoryInstrumentationHashMap.h>
-#include <wtf/MemoryInstrumentationHashSet.h>
+#include "wtf/MemoryInstrumentationHashMap.h"
 
 namespace WebCore {
 
@@ -77,7 +76,7 @@ void InspectorCSSOMWrappers::collect(ListType* listType)
             collect(static_cast<CSSSupportsRule*>(cssRule));
             break;
         case CSSRule::WEBKIT_REGION_RULE:
-            collect(static_cast<WebKitCSSRegionRule*>(cssRule));
+            collect(static_cast<CSSRegionRule*>(cssRule));
             break;
         case CSSRule::HOST_RULE:
             collect(static_cast<CSSHostRule*>(cssRule));
@@ -127,7 +126,7 @@ CSSStyleRule* InspectorCSSOMWrappers::getWrapperForRuleInSheets(StyleRule* rule,
 
         collectFromDocumentStyleSheetCollection(styleSheetCollection);
     }
-    return m_styleRuleToCSSOMWrapperMap.get(rule).get();
+    return m_styleRuleToCSSOMWrapperMap.get(rule);
 }
 
 void InspectorCSSOMWrappers::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const

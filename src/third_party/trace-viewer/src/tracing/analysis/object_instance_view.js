@@ -7,13 +7,21 @@
 base.require('ui');
 
 base.exportTo('tracing.analysis', function() {
-  var ObjectInstanceView = ui.define('div');
+  var ObjectInstanceView = ui.define('object-instance-view');
 
   ObjectInstanceView.prototype = {
     __proto__: HTMLDivElement.prototype,
 
     decorate: function() {
       this.objectInstance_ = undefined;
+    },
+
+    set modelObject(obj) {
+      this.objectInstance = obj;
+    },
+
+    get modelObject(obj) {
+      return this.objectInstance;
     },
 
     get objectInstance() {
@@ -30,16 +38,29 @@ base.exportTo('tracing.analysis', function() {
     }
   };
 
-  ObjectInstanceView.typeNameToViewConstructorMap = {};
-  ObjectInstanceView.register = function(typeName, viewConstructor) {
-    if (ObjectInstanceView.typeNameToViewConstructorMap[typeName])
+  ObjectInstanceView.typeNameToViewInfoMap = {};
+  ObjectInstanceView.register = function(typeName,
+                                         viewConstructor,
+                                         opt_options) {
+    if (ObjectInstanceView.typeNameToViewInfoMap[typeName])
       throw new Error('Handler already registerd for ' + typeName);
-    ObjectInstanceView.typeNameToViewConstructorMap[typeName] =
-      viewConstructor;
+    var options = opt_options || {
+      showInTrackView: true
+    };
+    ObjectInstanceView.typeNameToViewInfoMap[typeName] = {
+      constructor: viewConstructor,
+      options: options
+    };
   };
 
-  ObjectInstanceView.getViewConstructor = function(typeName) {
-    return ObjectInstanceView.typeNameToViewConstructorMap[typeName];
+  ObjectInstanceView.unregister = function(typeName) {
+    if (ObjectInstanceView.typeNameToViewInfoMap[typeName] === undefined)
+      throw new Error(typeName + ' not registered');
+    delete ObjectInstanceView.typeNameToViewInfoMap[typeName];
+  };
+
+  ObjectInstanceView.getViewInfo = function(typeName) {
+    return ObjectInstanceView.typeNameToViewInfoMap[typeName];
   };
 
 

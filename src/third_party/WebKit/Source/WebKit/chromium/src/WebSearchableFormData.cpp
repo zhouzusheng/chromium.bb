@@ -45,7 +45,7 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/page/Frame.h"
 #include "core/platform/network/FormDataBuilder.h"
-#include "core/platform/text/TextEncoding.h"
+#include "wtf/text/TextEncoding.h"
 
 using namespace WebCore;
 using namespace HTMLNames;
@@ -53,20 +53,20 @@ using namespace HTMLNames;
 namespace {
 
 // Gets the encoding for the form.
-void GetFormEncoding(const HTMLFormElement* form, TextEncoding* encoding)
+void GetFormEncoding(const HTMLFormElement* form, WTF::TextEncoding* encoding)
 {
     String str(form->getAttribute(HTMLNames::accept_charsetAttr));
     str.replace(',', ' ');
     Vector<String> charsets;
     str.split(' ', charsets);
     for (Vector<String>::const_iterator i(charsets.begin()); i != charsets.end(); ++i) {
-        *encoding = TextEncoding(*i);
+        *encoding = WTF::TextEncoding(*i);
         if (encoding->isValid())
             return;
     }
     if (!form->document()->loader())
          return;
-    *encoding = TextEncoding(form->document()->encoding());
+    *encoding = WTF::TextEncoding(form->document()->encoding());
 }
 
 // Returns true if the submit request results in an HTTP URL.
@@ -85,14 +85,15 @@ HTMLFormControlElement* GetButtonToActivate(HTMLFormElement* form)
     HTMLFormControlElement* firstSubmitButton = 0;
     // FIXME: Consider refactoring this code so that we don't call form->associatedElements() twice.
     for (Vector<FormAssociatedElement*>::const_iterator i(form->associatedElements().begin()); i != form->associatedElements().end(); ++i) {
-      if (!(*i)->isFormControlElement())
-          continue;
-      HTMLFormControlElement* formElement = static_cast<HTMLFormControlElement*>(*i);
-      if (formElement->isActivatedSubmit())
-          // There's a button that is already activated for submit, return 0.
-          return 0;
-      if (!firstSubmitButton && formElement->isSuccessfulSubmitButton())
-          firstSubmitButton = formElement;
+        if (!(*i)->isFormControlElement())
+            continue;
+        HTMLFormControlElement* control = toHTMLFormControlElement(*i);
+        if (control->isActivatedSubmit()) {
+            // There's a button that is already activated for submit, return 0.
+            return 0;
+        }
+        if (!firstSubmitButton && control->isSuccessfulSubmitButton())
+            firstSubmitButton = control;
     }
     return firstSubmitButton;
 }
@@ -138,7 +139,7 @@ bool IsSelectInDefaultState(HTMLSelectElement* select)
 bool IsInDefaultState(HTMLFormControlElement* formElement)
 {
     if (formElement->hasTagName(HTMLNames::inputTag)) {
-        const HTMLInputElement* inputElement = static_cast<HTMLInputElement*>(formElement);
+        const HTMLInputElement* inputElement = toHTMLInputElement(formElement);
         if (inputElement->isCheckbox() || inputElement->isRadioButton())
             return inputElement->checked() == inputElement->hasAttribute(checkedAttr);
     } else if (formElement->hasTagName(HTMLNames::selectTag))
@@ -160,16 +161,16 @@ HTMLInputElement* findSuitableSearchInputElement(const HTMLFormElement* form)
         if (!(*i)->isFormControlElement())
             continue;
 
-        HTMLFormControlElement* formElement = static_cast<HTMLFormControlElement*>(*i);
+        HTMLFormControlElement* control = toHTMLFormControlElement(*i);
 
-        if (formElement->isDisabledFormControl() || formElement->name().isNull())
+        if (control->isDisabledFormControl() || control->name().isNull())
             continue;
 
-        if (!IsInDefaultState(formElement) || formElement->hasTagName(HTMLNames::textareaTag))
+        if (!IsInDefaultState(control) || control->hasTagName(HTMLNames::textareaTag))
             return 0;
 
-        if (formElement->hasTagName(HTMLNames::inputTag) && formElement->willValidate()) {
-            const HTMLInputElement* input = static_cast<const HTMLInputElement*>(formElement);
+        if (control->hasTagName(HTMLNames::inputTag) && control->willValidate()) {
+            const HTMLInputElement* input = toHTMLInputElement(control);
 
             // Return nothing if a file upload field or a password field are found.
             if (input->isFileUpload() || input->isPasswordField())
@@ -181,7 +182,7 @@ HTMLInputElement* findSuitableSearchInputElement(const HTMLFormElement* form)
                     // This form has multiple fields; don't treat it as searchable.
                     return 0;
                 }
-                textElement = static_cast<HTMLInputElement*>(formElement);
+                textElement = toHTMLInputElement(control);
             }
         }
     }
@@ -194,7 +195,7 @@ HTMLInputElement* findSuitableSearchInputElement(const HTMLFormElement* form)
 // "hl=en&source=hp&biw=1085&bih=854&q={searchTerms}&btnG=Google+Search&aq=f&aqi=&aql=&oq="
 // 
 // Return false if the provided HTMLInputElement is not found in the form
-bool buildSearchString(const HTMLFormElement* form, Vector<char>* encodedString, TextEncoding* encoding, const HTMLInputElement* textElement)
+bool buildSearchString(const HTMLFormElement* form, Vector<char>* encodedString, WTF::TextEncoding* encoding, const HTMLInputElement* textElement)
 {
     bool isElementFound = false;   
 
@@ -203,13 +204,13 @@ bool buildSearchString(const HTMLFormElement* form, Vector<char>* encodedString,
         if (!(*i)->isFormControlElement())
             continue;
 
-        HTMLFormControlElement* formElement = static_cast<HTMLFormControlElement*>(*i);
+        HTMLFormControlElement* control = toHTMLFormControlElement(*i);
 
-        if (formElement->isDisabledFormControl() || formElement->name().isNull())
+        if (control->isDisabledFormControl() || control->name().isNull())
             continue;
 
         FormDataList dataList(*encoding);
-        if (!formElement->appendFormData(dataList, false))
+        if (!control->appendFormData(dataList, false))
             continue;
 
         const Vector<FormDataList::Item>& items = dataList.items();
@@ -224,7 +225,7 @@ bool buildSearchString(const HTMLFormElement* form, Vector<char>* encodedString,
                 encodedString->append('=');
             }
             ++j;
-            if (formElement == textElement) {
+            if (control == textElement) {
                 encodedString->append("{searchTerms}", 13);
                 isElementFound = true;
             } else
@@ -249,7 +250,7 @@ WebSearchableFormData::WebSearchableFormData(const WebFormElement& form, const W
         return;
 
     Vector<char> encodedString;
-    TextEncoding encoding;
+    WTF::TextEncoding encoding;
 
     GetFormEncoding(formElement.get(), &encoding);
     if (!encoding.isValid()) {

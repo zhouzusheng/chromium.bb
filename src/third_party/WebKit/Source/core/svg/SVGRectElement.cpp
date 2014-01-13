@@ -20,12 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGRectElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
-#include "core/rendering/svg/RenderSVGPath.h"
 #include "core/rendering/svg/RenderSVGRect.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
@@ -87,7 +84,7 @@ bool SVGRectElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::rxAttr);
         supportedAttributes.add(SVGNames::ryAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGRectElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -167,11 +164,9 @@ bool SVGRectElement::selfHasRelativeLengths() const
         || ry().isRelative();
 }
 
-RenderObject* SVGRectElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGRectElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGRect(this);
+    return new (document()->renderArena()) RenderSVGRect(this);
 }
 
 }
-
-#endif // ENABLE(SVG)

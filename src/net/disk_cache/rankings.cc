@@ -6,6 +6,7 @@
 
 #include "base/metrics/histogram.h"
 #include "net/disk_cache/backend_impl.h"
+#include "net/disk_cache/disk_format.h"
 #include "net/disk_cache/entry_impl.h"
 #include "net/disk_cache/errors.h"
 #include "net/disk_cache/histogram_macros.h"
@@ -532,8 +533,8 @@ bool Rankings::SanityCheck(CacheRankingsBlock* node, bool from_list) const {
 
   Addr next_addr(data->next);
   Addr prev_addr(data->prev);
-  if (!next_addr.SanityCheck() || next_addr.file_type() != RANKINGS ||
-      !prev_addr.SanityCheck() || prev_addr.file_type() != RANKINGS)
+  if (!next_addr.SanityCheckV2() || next_addr.file_type() != RANKINGS ||
+      !prev_addr.SanityCheckV2() || prev_addr.file_type() != RANKINGS)
     return false;
 
   return true;

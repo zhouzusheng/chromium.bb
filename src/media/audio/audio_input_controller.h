@@ -122,11 +122,12 @@ class MEDIA_EXPORT AudioInputController
   // Factory method for creating an AudioInputController.
   // The audio device will be created on the audio thread, and when that is
   // done, the event handler will receive an OnCreated() call from that same
-  // thread.
+  // thread. |device_id| is the unique ID of the audio device to be opened.
   static scoped_refptr<AudioInputController> Create(
       AudioManager* audio_manager,
       EventHandler* event_handler,
-      const AudioParameters& params);
+      const AudioParameters& params,
+      const std::string& device_id);
 
   // Sets the factory used by the static method Create(). AudioInputController
   // does not take ownership of |factory|. A value of NULL results in an
@@ -151,7 +152,7 @@ class MEDIA_EXPORT AudioInputController
   // thread, and when that is done, the event handler will receive an
   // OnCreated() call from that same thread.
   static scoped_refptr<AudioInputController> CreateForStream(
-      AudioManager* audio_manager,
+      const scoped_refptr<base::MessageLoopProxy>& message_loop,
       EventHandler* event_handler,
       AudioInputStream* stream,
       // External synchronous writer for audio controller.

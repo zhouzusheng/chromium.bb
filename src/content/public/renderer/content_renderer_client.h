@@ -7,14 +7,14 @@
 
 #include <string>
 
-#include "base/string16.h"
 #include "base/memory/weak_ptr.h"
-#include "ipc/ipc_message.h"
+#include "base/strings/string16.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/page_transition_types.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationType.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPageVisibilityState.h"
+#include "ipc/ipc_message.h"
+#include "third_party/WebKit/public/web/WebNavigationPolicy.h"
+#include "third_party/WebKit/public/web/WebNavigationType.h"
+#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "v8/include/v8.h"
 
 class GURL;
@@ -32,9 +32,9 @@ class WebHyphenator;
 class WebMediaPlayerClient;
 class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
-class WebMimeRegistry;
 class WebPlugin;
 class WebPluginContainer;
+class WebPrescientNetworking;
 class WebRTCPeerConnectionHandler;
 class WebRTCPeerConnectionHandlerClient;
 class WebSpeechSynthesizer;
@@ -148,10 +148,6 @@ class CONTENT_EXPORT ContentRendererClient {
   // returns NULL the content layer will handle clipboard interactions.
   virtual WebKit::WebClipboard* OverrideWebClipboard();
 
-  // Allows the embedder to override the WebKit::WebMimeRegistry used. If it
-  // returns NULL the content layer will provide its own mime registry.
-  virtual WebKit::WebMimeRegistry* OverrideWebMimeRegistry();
-
   // Allows the embedder to override the WebKit::WebHyphenator used. If it
   // returns NULL the content layer will handle hyphenation.
   virtual WebKit::WebHyphenator* OverrideWebHyphenator();
@@ -185,6 +181,7 @@ class CONTENT_EXPORT ContentRendererClient {
                           const GURL& url,
                           const std::string& http_method,
                           bool is_initial_navigation,
+                          bool is_server_redirect,
                           bool* send_referrer);
 
   // Notifies the embedder that the given frame is requesting the resource at
@@ -213,6 +210,7 @@ class CONTENT_EXPORT ContentRendererClient {
                                              size_t length);
   virtual bool IsLinkVisited(unsigned long long link_hash);
   virtual void PrefetchHostName(const char* hostname, size_t length) {}
+  virtual WebKit::WebPrescientNetworking* GetPrescientNetworking();
   virtual bool ShouldOverridePageVisibilityState(
       const RenderView* render_view,
       WebKit::WebPageVisibilityState* override_state) const;
@@ -234,24 +232,16 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual void RegisterPPAPIInterfaceFactories(
       webkit::ppapi::PpapiInterfaceFactoryManager* factory_manager) {}
 
+  // Returns true if plugin living in the container can use
+  // pp::FileIO::RequestOSFileHandle.
+  virtual bool IsPluginAllowedToCallRequestOSFileHandle(
+      WebKit::WebPluginContainer* container) const;
+
   // Returns whether BrowserPlugin should be allowed within the |container|.
   virtual bool AllowBrowserPlugin(WebKit::WebPluginContainer* container) const;
 
-  // Allow the embedder to specify a different renderer compositor MessageLoop.
-  // If not NULL, the returned MessageLoop must be valid for the lifetime of
-  // RenderThreadImpl. If NULL, then a new thread will be created.
-  virtual base::MessageLoop* OverrideCompositorMessageLoop() const;
-
-  // Called when a render view's compositor instance is created, when the
-  // kEnableSynchronousRendererCompositor flag is used.
-  // NOTE this is called on the Compositor thread: the embedder must
-  // implement OverrideCompositorMessageLoop() when using this interface.
-  virtual void DidCreateSynchronousCompositor(
-      int render_view_id,
-      SynchronousCompositor* compositor) {}
-
-  // Allow the embedder to disable input event filtering by the compositor.
-  virtual bool ShouldCreateCompositorInputHandler() const;
+  // Returns true if the page at |url| can use Pepper MediaStream APIs.
+  virtual bool AllowPepperMediaStreamAPI(const GURL& url) const;
 };
 
 }  // namespace content

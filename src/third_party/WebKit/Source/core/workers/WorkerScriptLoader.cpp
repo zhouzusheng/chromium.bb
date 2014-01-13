@@ -29,11 +29,9 @@
 
 #include "core/workers/WorkerScriptLoader.h"
 
-#include "core/dom/CrossThreadTask.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/loader/TextResourceDecoder.h"
 #include "core/loader/WorkerThreadableLoader.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/platform/network/ResourceResponse.h"
 #include "core/workers/WorkerContext.h"
 #include "core/workers/WorkerScriptLoaderClient.h"
@@ -71,6 +69,8 @@ void WorkerScriptLoader::loadSynchronously(ScriptExecutionContext* scriptExecuti
     options.allowCredentials = AllowStoredCredentials;
     options.crossOriginRequestPolicy = crossOriginRequestPolicy;
     options.sendLoadCallbacks = SendCallbacks;
+    // FIXME: Should we add EnforceScriptSrcDirective here?
+    options.contentSecurityPolicyEnforcement = DoNotEnforceContentSecurityPolicy;
 
     WorkerThreadableLoader::loadResourceSynchronously(static_cast<WorkerContext*>(scriptExecutionContext), *request, *this, options);
 }

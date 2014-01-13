@@ -20,14 +20,10 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGEllipseElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
-#include "core/platform/graphics/FloatPoint.h"
 #include "core/rendering/svg/RenderSVGEllipse.h"
-#include "core/rendering/svg/RenderSVGPath.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGLength.h"
@@ -80,7 +76,7 @@ bool SVGEllipseElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::rxAttr);
         supportedAttributes.add(SVGNames::ryAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGEllipseElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -152,11 +148,9 @@ bool SVGEllipseElement::selfHasRelativeLengths() const
         || ry().isRelative();
 }
 
-RenderObject* SVGEllipseElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGEllipseElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGEllipse(this);
+    return new (document()->renderArena()) RenderSVGEllipse(this);
 }
 
 }
-
-#endif // ENABLE(SVG)

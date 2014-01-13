@@ -29,6 +29,7 @@
 #include "core/loader/cache/CachePolicy.h"
 #include "core/loader/cache/CachedResource.h"
 #include "core/loader/cache/CachedResourceHandle.h"
+#include "core/loader/cache/CachedResourceInitiatorInfo.h"
 #include "core/loader/cache/CachedResourceRequest.h"
 #include "core/platform/Timer.h"
 #include "core/platform/network/ResourceLoadPriority.h"
@@ -41,7 +42,7 @@
 namespace WebCore {
 
 class CachedCSSStyleSheet;
-class CachedSVGDocument;
+class CachedDocument;
 class CachedFont;
 class CachedImage;
 class CachedRawResource;
@@ -79,10 +80,7 @@ public:
     CachedResourceHandle<CachedFont> requestFont(CachedResourceRequest&);
     CachedResourceHandle<CachedRawResource> requestRawResource(CachedResourceRequest&);
     CachedResourceHandle<CachedRawResource> requestMainResource(CachedResourceRequest&);
-
-#if ENABLE(SVG)
-    CachedResourceHandle<CachedSVGDocument> requestSVGDocument(CachedResourceRequest&);
-#endif
+    CachedResourceHandle<CachedDocument> requestSVGDocument(CachedResourceRequest&);
     CachedResourceHandle<CachedXSLStyleSheet> requestXSLStyleSheet(CachedResourceRequest&);
     CachedResourceHandle<CachedResource> requestLinkResource(CachedResource::Type, CachedResourceRequest&);
     CachedResourceHandle<CachedTextTrack> requestTextTrack(CachedResourceRequest&);
@@ -113,7 +111,6 @@ public:
     DocumentLoader* documentLoader() const { return m_documentLoader; }
     void clearDocumentLoader() { m_documentLoader = 0; }
 
-    void removeCachedResource(CachedResource*) const;
     void loadDone(CachedResource*);
     void garbageCollectDocumentResources();
     
@@ -127,7 +124,7 @@ public:
     void preload(CachedResource::Type, CachedResourceRequest&, const String& charset);
     void checkForPendingPreloads();
     void printPreloadStats();
-    bool canRequest(CachedResource::Type, const KURL&, bool forPreload = false);
+    bool canRequest(CachedResource::Type, const KURL&, const ResourceLoaderOptions&, bool forPreload = false);
     
     void reportMemoryUsage(MemoryObjectInfo*) const;
 
@@ -139,6 +136,7 @@ private:
     CachedResourceHandle<CachedResource> requestResource(CachedResource::Type, CachedResourceRequest&);
     CachedResourceHandle<CachedResource> revalidateResource(const CachedResourceRequest&, CachedResource*);
     CachedResourceHandle<CachedResource> loadResource(CachedResource::Type, CachedResourceRequest&, const String& charset);
+    void preCacheDataURIImage(const CachedResourceRequest&);
     void storeResourceTimingInitiatorInformation(const CachedResourceHandle<CachedResource>&, const CachedResourceRequest&);
     void requestPreload(CachedResource::Type, CachedResourceRequest&, const String& charset);
 
@@ -146,6 +144,7 @@ private:
     RevalidationPolicy determineRevalidationPolicy(CachedResource::Type, ResourceRequest&, bool forPreload, CachedResource* existingResource, CachedResourceRequest::DeferOption) const;
 
     void determineTargetType(ResourceRequest&, CachedResource::Type);
+    ResourceRequestCachePolicy resourceRequestCachePolicy(const ResourceRequest&, CachedResource::Type);
     void addAdditionalRequestHeaders(ResourceRequest&, CachedResource::Type);
 
     void notifyLoadedFromMemoryCache(CachedResource*);
@@ -174,11 +173,7 @@ private:
 
     Timer<CachedResourceLoader> m_garbageCollectDocumentResourcesTimer;
 
-    struct InitiatorInfo {
-        AtomicString name;
-        double startTime;
-    };
-    HashMap<CachedResource*, InitiatorInfo> m_initiatorMap;
+    HashMap<CachedResource*, CachedResourceInitiatorInfo> m_initiatorMap;
 
     // 29 bits left
     bool m_autoLoadImages : 1;

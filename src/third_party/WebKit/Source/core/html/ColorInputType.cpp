@@ -29,14 +29,13 @@
  */
 
 #include "config.h"
-#if ENABLE(INPUT_TYPE_COLOR)
 #include "core/html/ColorInputType.h"
 
 #include "CSSPropertyNames.h"
+#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ScriptController.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/MouseEvent.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLInputElement.h"
@@ -44,10 +43,9 @@
 #include "core/html/InputTypeNames.h"
 #include "core/page/Chrome.h"
 #include "core/platform/graphics/Color.h"
-#include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderView.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -144,7 +142,7 @@ void ColorInputType::setValue(const String& value, bool valueChanged, TextFieldE
 
 void ColorInputType::handleDOMActivateEvent(Event* event)
 {
-    if (element()->isDisabledOrReadOnly() || !element()->renderer())
+    if (element()->isDisabledFormControl() || !element()->renderer())
         return;
 
     if (!ScriptController::processingUserGesture())
@@ -174,7 +172,7 @@ bool ColorInputType::typeMismatchFor(const String& value) const
 
 void ColorInputType::didChooseColor(const Color& color)
 {
-    if (element()->isDisabledOrReadOnly() || color == valueAsColor())
+    if (element()->isDisabledFormControl() || color == valueAsColor())
         return;
     element()->setValueFromRenderer(color.serialized());
     updateColorSwatch();
@@ -219,33 +217,30 @@ Color ColorInputType::currentColor()
 
 bool ColorInputType::shouldShowSuggestions() const
 {
-#if ENABLE(DATALIST_ELEMENT)
-    return element()->fastHasAttribute(listAttr);
-#else
+    if (RuntimeEnabledFeatures::dataListElementEnabled())
+        return element()->fastHasAttribute(listAttr);
+
     return false;
-#endif
 }
 
 Vector<Color> ColorInputType::suggestions() const
 {
     Vector<Color> suggestions;
-#if ENABLE(DATALIST_ELEMENT)
-    HTMLDataListElement* dataList = element()->dataList();
-    if (dataList) {
-        RefPtr<HTMLCollection> options = dataList->options();
-        for (unsigned i = 0; HTMLOptionElement* option = toHTMLOptionElement(options->item(i)); i++) {
-            if (!element()->isValidValue(option->value()))
-                continue;
-            Color color(option->value());
-            if (!color.isValid())
-                continue;
-            suggestions.append(color);
+    if (RuntimeEnabledFeatures::dataListElementEnabled()) {
+        HTMLDataListElement* dataList = element()->dataList();
+        if (dataList) {
+            RefPtr<HTMLCollection> options = dataList->options();
+            for (unsigned i = 0; HTMLOptionElement* option = toHTMLOptionElement(options->item(i)); i++) {
+                if (!element()->isValidValue(option->value()))
+                    continue;
+                Color color(option->value());
+                if (!color.isValid())
+                    continue;
+                suggestions.append(color);
+            }
         }
     }
-#endif
     return suggestions;
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(INPUT_TYPE_COLOR)

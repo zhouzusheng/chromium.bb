@@ -19,11 +19,7 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGHiddenContainer.h"
-
-#include "core/rendering/svg/RenderSVGPath.h"
-#include "core/svg/SVGStyledElement.h"
 
 namespace WebCore {
 
@@ -56,5 +52,3 @@ bool RenderSVGHiddenContainer::nodeAtFloatPoint(const HitTestRequest&, HitTestRe
 }
 
 }
-
-#endif // ENABLE(SVG)

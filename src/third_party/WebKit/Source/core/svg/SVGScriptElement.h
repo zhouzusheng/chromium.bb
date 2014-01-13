@@ -21,7 +21,7 @@
 #ifndef SVGScriptElement_h
 #define SVGScriptElement_h
 
-#if ENABLE(SVG)
+#include "SVGNames.h"
 #include "core/dom/ScriptElement.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedString.h"
@@ -86,7 +86,12 @@ private:
     Timer<SVGElement> m_svgLoadEventTimer;
 };
 
+inline SVGScriptElement* toSVGScriptElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::scriptTag));
+    return static_cast<SVGScriptElement*>(node);
+}
+
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

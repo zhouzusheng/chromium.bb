@@ -22,22 +22,18 @@
 #include "config.h"
 #include "core/dom/Text.h"
 
+#include "SVGNames.h"
+#include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/NodeRenderingContext.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/ScopedEventQueue.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/rendering/RenderCombineText.h"
 #include "core/rendering/RenderText.h"
-
-#if ENABLE(SVG)
-#include "SVGNames.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
-#endif
-
-#include "core/css/StyleResolver.h"
-#include "core/rendering/style/StyleInheritedData.h"
-#include <wtf/text/CString.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/text/CString.h"
+#include "wtf/text/StringBuilder.h"
 
 using namespace std;
 
@@ -46,6 +42,11 @@ namespace WebCore {
 PassRefPtr<Text> Text::create(Document* document, const String& data)
 {
     return adoptRef(new Text(document, data, CreateText));
+}
+
+PassRefPtr<Text> Text::create(ScriptExecutionContext* context, const String& data)
+{
+    return adoptRef(new Text(toDocument(context), data, CreateText));
 }
 
 PassRefPtr<Text> Text::createEditingText(Document* document, const String& data)
@@ -64,11 +65,12 @@ PassRefPtr<Text> Text::splitText(unsigned offset, ExceptionCode& ec)
         return 0;
     }
 
+    EventQueueScope scope;
     String oldStr = data();
     RefPtr<Text> newText = cloneWithData(oldStr.substring(offset));
     setDataWithoutUpdate(oldStr.substring(0, offset));
 
-    dispatchModifiedEvent(oldStr);
+    didModifyData(oldStr);
 
     if (parentNode())
         parentNode()->insertBefore(newText.get(), nextSibling(), ec);
@@ -94,8 +96,6 @@ static const Text* earliestLogicallyAdjacentTextNode(const Text* t)
             continue;
         }
 
-        // We would need to visit EntityReference child text nodes if they existed
-        ASSERT(type != Node::ENTITY_REFERENCE_NODE || !n->hasChildNodes());
         break;
     }
     return t;
@@ -111,8 +111,6 @@ static const Text* latestLogicallyAdjacentTextNode(const Text* t)
             continue;
         }
 
-        // We would need to visit EntityReference child text nodes if they existed
-        ASSERT(type != Node::ENTITY_REFERENCE_NODE || !n->hasChildNodes());
         break;
     }
     return t;
@@ -147,7 +145,7 @@ String Text::wholeText() const
     return result.toString();
 }
 
-PassRefPtr<Text> Text::replaceWholeText(const String& newText, ExceptionCode&)
+PassRefPtr<Text> Text::replaceWholeText(const String& newText)
 {
     // Remove all adjacent text nodes, and replace the contents of this one.
 
@@ -178,7 +176,7 @@ PassRefPtr<Text> Text::replaceWholeText(const String& newText, ExceptionCode&)
         return 0;
     }
 
-    setData(newText, IGNORE_EXCEPTION);
+    setData(newText);
     return protectedThis.release();
 }
 
@@ -244,7 +242,6 @@ bool Text::textRendererIsNeeded(const NodeRenderingContext& context)
     return true;
 }
 
-#if ENABLE(SVG)
 static bool isSVGShadowText(Text* text)
 {
     Node* parentNode = text->parentNode();
@@ -256,44 +253,42 @@ static bool isSVGText(Text* text)
     Node* parentOrShadowHostNode = text->parentOrShadowHostNode();
     return parentOrShadowHostNode->isSVGElement() && !parentOrShadowHostNode->hasTagName(SVGNames::foreignObjectTag);
 }
-#endif
 
 void Text::createTextRendererIfNeeded()
 {
     NodeRenderingContext(this).createRendererForTextIfNeeded();
 }
 
-RenderText* Text::createTextRenderer(RenderArena* arena, RenderStyle* style)
+RenderText* Text::createTextRenderer(RenderStyle* style)
 {
-#if ENABLE(SVG)
     if (isSVGText(this) || isSVGShadowText(this))
-        return new (arena) RenderSVGInlineText(this, dataImpl());
-#endif
-    if (style->hasTextCombine())
-        return new (arena) RenderCombineText(this, dataImpl());
+        return new (document()->renderArena()) RenderSVGInlineText(this, dataImpl());
 
-    return new (arena) RenderText(this, dataImpl());
+    if (style->hasTextCombine())
+        return new (document()->renderArena()) RenderCombineText(this, dataImpl());
+
+    return new (document()->renderArena()) RenderText(this, dataImpl());
 }
 
-void Text::attach()
+void Text::attach(const AttachContext& context)
 {
     createTextRendererIfNeeded();
-    CharacterData::attach();
+    CharacterData::attach(context);
 }
 
 void Text::recalcTextStyle(StyleChange change)
 {
     RenderText* renderer = toRenderText(this->renderer());
 
-    if (change != NoChange && renderer)
-        renderer->setStyle(document()->styleResolver()->styleForText(this));
-
-    if (needsStyleRecalc()) {
-        if (renderer)
+    if (renderer) {
+        if (change != NoChange || needsStyleRecalc())
+            renderer->setStyle(document()->styleResolver()->styleForText(this));
+        if (needsStyleRecalc())
             renderer->setText(dataImpl());
-        else
-            reattach();
+    } else if (needsStyleRecalc()) {
+        reattach();
     }
+
     clearNeedsStyleRecalc();
 }
 
@@ -319,15 +314,15 @@ PassRefPtr<Text> Text::cloneWithData(const String& data)
     return create(document(), data);
 }
 
-PassRefPtr<Text> Text::createWithLengthLimit(Document* document, const String& data, unsigned start, unsigned maxChars)
+PassRefPtr<Text> Text::createWithLengthLimit(Document* document, const String& data, unsigned start, unsigned lengthLimit)
 {
     unsigned dataLength = data.length();
 
-    if (!start && dataLength <= maxChars)
+    if (!start && dataLength <= lengthLimit)
         return create(document, data);
 
     RefPtr<Text> result = Text::create(document, String());
-    result->parserAppendData(data, start, maxChars);
+    result->parserAppendData(data, start, lengthLimit);
 
     return result;
 }

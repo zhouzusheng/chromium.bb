@@ -30,12 +30,11 @@
 #ifndef NamedFlow_h
 #define NamedFlow_h
 
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/EventTarget.h"
-
-#include <wtf/ListHashSet.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/AtomicString.h>
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
@@ -46,7 +45,7 @@ class NodeList;
 class RenderNamedFlowThread;
 class ScriptExecutionContext;
 
-class NamedFlow : public RefCounted<NamedFlow>, public EventTarget {
+class NamedFlow : public RefCounted<NamedFlow>, public ScriptWrappable, public EventTarget {
 public:
     static PassRefPtr<NamedFlow> create(PassRefPtr<NamedFlowCollection> manager, const AtomicString& flowThreadName);
 
@@ -79,6 +78,7 @@ public:
     FlowState flowState() const { return m_parentFlowThread ? FlowStateCreated : FlowStateNull; }
 
     void dispatchRegionLayoutUpdateEvent();
+    void dispatchRegionOversetChangeEvent();
 
 private:
     NamedFlow(PassRefPtr<NamedFlowCollection>, const AtomicString&);

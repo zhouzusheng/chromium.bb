@@ -6,7 +6,6 @@
 #define CONTENT_RENDERER_BROWSER_PLUGIN_BROWSER_PLUGIN_MANAGER_IMPL_H_
 
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
-#include "googleurl/src/gurl.h"
 #include "ui/gfx/size.h"
 
 struct BrowserPluginMsg_UpdateRect_Params;
@@ -20,7 +19,7 @@ namespace content {
 
 class BrowserPluginManagerImpl : public BrowserPluginManager {
  public:
-  BrowserPluginManagerImpl(RenderViewImpl* render_view);
+  explicit BrowserPluginManagerImpl(RenderViewImpl* render_view);
 
   // BrowserPluginManager implementation.
   virtual BrowserPlugin* CreateBrowserPlugin(
@@ -41,23 +40,23 @@ class BrowserPluginManagerImpl : public BrowserPluginManager {
 
   void OnAllocateInstanceIDACK(const IPC::Message& message,
                                int request_id,
-                               int instance_id);
+                               int guest_instance_id);
   void OnPluginAtPositionRequest(const IPC::Message& message,
                                  int request_id,
                                  const gfx::Point& position);
   void OnUnhandledSwap(const IPC::Message& message,
-                       int instance_id,
+                       int guest_instance_id,
                        const gfx::Size& size,
                        std::string mailbox_name,
                        int gpu_route_id,
                        int gpu_host_id);
 
-  int request_id_counter_;
-  IDMap<BrowserPlugin> pending_allocate_instance_id_requests_;
+  int browser_plugin_instance_id_counter_;
+  IDMap<BrowserPlugin> pending_allocate_guest_instance_id_requests_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginManagerImpl);
 };
 
 }  // namespace content
 
-#endif //  CONTENT_RENDERER_BROWSER_PLUGIN_BROWSER_PLUGIN_MANAGER_IMPL_H_
+#endif  // CONTENT_RENDERER_BROWSER_PLUGIN_BROWSER_PLUGIN_MANAGER_IMPL_H_

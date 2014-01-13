@@ -24,7 +24,7 @@
  */
 
 [
-    Conditional=WEBGL,
+    NoInterfaceObject,
     DoNotCheckConstants
 ] interface WebGLDepthTexture {
     const unsigned long UNSIGNED_INT_24_8_WEBGL = 0x84FA;

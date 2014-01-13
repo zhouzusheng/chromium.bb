@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 /**
  * @fileoverview State and UI for trace data collection.
  */
@@ -36,8 +35,8 @@ base.exportTo('about_tracing', function() {
     this.stopButton_.textContent = 'Stop tracing';
     this.overlay_.appendChild(this.stopButton_);
 
-    this.traceEvents_ = [];
-    this.systemTraceEvents_ = [];
+    this.traceEventData_ = undefined;
+    this.systemTraceEvents_ = undefined;
 
     this.onKeydownBoundToThis_ = this.onKeydown_.bind(this);
     this.onKeypressBoundToThis_ = this.onKeypress_.bind(this);
@@ -100,8 +99,8 @@ base.exportTo('about_tracing', function() {
 
       this.stopButton_.hidden = false;
       this.statusDiv_.textContent = 'Tracing active.';
-      this.overlay_.visible = true;
       this.overlay_.defaultClickShouldClose = false;
+      this.overlay_.visible = true;
 
       this.tracingEnabled_ = true;
 
@@ -111,9 +110,8 @@ base.exportTo('about_tracing', function() {
       var trace_options = (opt_trace_continuous ? 'record-continuously' :
                                                   'record-until-full');
 
-      this.failedTraceDataString_ = undefined;
-      this.traceEvents_ = [];
-      this.systemTraceEvents_ = [];
+      this.traceEventData_ = undefined;
+      this.systemTraceEvents_ = undefined;
       this.sendFn_(
           'beginTracing',
           [
@@ -123,14 +121,6 @@ base.exportTo('about_tracing', function() {
           ]
       );
       this.beginRequestBufferPercentFull_();
-
-      var e = new base.Event('traceBegun');
-      e.events = this.traceEvents_;
-      this.dispatchEvent(e);
-
-      e = new base.Event('traceEventsChanged');
-      e.numEvents = this.traceEvents_.length;
-      this.dispatchEvent(e);
 
       window.addEventListener('keypress', this.onKeypressBoundToThis_);
       window.addEventListener('keydown', this.onKeydownBoundToThis_);
@@ -173,12 +163,8 @@ base.exportTo('about_tracing', function() {
      * Gets the currently traced events. If tracing is active, then
      * this can change on the fly.
      */
-    get traceEvents() {
-      return this.traceEvents_;
-    },
-
-    get failedTraceDataString() {
-      return this.failedTraceDataString_;
+    get traceEventData() {
+      return this.traceEventData_;
     },
 
     /**
@@ -218,77 +204,12 @@ base.exportTo('about_tracing', function() {
       if (traceDataString[traceDataString.length - 1] != ']')
         traceDataString = traceDataString + ']';
 
-      var ok = false;
-      var errorMessage = undefined;
-      try {
-        this.traceEvents_ = JSON.parse(traceDataString);
-        ok = true;
-      } catch (e) {
-        errorMessage = e;
-      }
+      this.traceEventData_ = traceDataString;
 
-      if (ok) {
-        console.log('onEndTracingComplete p1 with ' +
-                    this.traceEvents_.length + ' events.');
-        var e = new base.Event('traceEnded');
-        e.events = this.traceEvents_;
-        this.dispatchEvent(e);
-        return;
-      }
-
-      // Load error
-      console.log('Error while importing traceData: ' + errorMessage);
-      this.failedTraceDataString_ = traceDataString;
-      this.traceEvents_ = [];
-      var overlay = new ui.Overlay();
-
-      var statusDiv = document.createElement('div');
-      statusDiv.textContent =
-        'There was an error while importing the traceData: ' + errorMessage +
-        'Would you like to save it?';
-      statusDiv.style.maxWidth = '350px';
-
-      var saveButton = document.createElement('button');
-      saveButton.textContent = 'Save it';
-
-      var cancelButton = document.createElement('button');
-      cancelButton.textContent = 'Cancel';
-
-      var buttonContainer = document.createElement('div');
-      buttonContainer.style.display = '-webkit-flex';
-      buttonContainer.style.webkitFlexDirection = 'row-reverse';
-      buttonContainer.appendChild(cancelButton);
-      buttonContainer.appendChild(saveButton);
-      overlay.appendChild(statusDiv);
-      overlay.appendChild(buttonContainer);
-      overlay.visible = true;
-      overlay.autoClose = true;
-      function cancel() {
-        if (overlay.visible)
-          overlay.visible = false;
-        var e = new base.Event('traceEnded');
-        e.events = this.traceEvents_;
-        this.dispatchEvent(e);
-      }
-      cancel = cancel.bind(this);
-
-      cancelButton.addEventListener('click', cancel);
-      overlay.addEventListener('visibleChange', cancel);
-      function onSaveDone() {
-        setTimeout(function() {
-          this.removeEventListener('saveTraceFileComplete', onSaveDone);
-        }.bind(this));
-
-        var e = new base.Event('traceEnded');
-        e.events = this.traceEvents_;
-        this.dispatchEvent(e);
-      }
-      onSaveDone = onSaveDone.bind(this);
-      this.addEventListener('saveTraceFileComplete', onSaveDone);
-      saveButton.addEventListener('click', function() {
-        overlay.visible = false;
-        this.beginSaveTraceFile();
-      }.bind(this));
+      console.log('onEndTracingComplete p1 with ' +
+                  this.traceEventData_.length + ' bytes of data.');
+      var e = new base.Event('traceEnded');
+      this.dispatchEvent(e);
     },
 
     collectCategories: function() {
@@ -329,31 +250,12 @@ base.exportTo('about_tracing', function() {
     /**
      * Called by the browser when a trace file is loaded.
      */
-    onLoadTraceFileComplete: function(traceDataString) {
-      var data;
-      this.failedTraceDataString_ = undefined;
-      try {
-        data = JSON.parse(traceDataString);
-      } catch (e) {
-        console.log('Trace file did not parse.', e);
-        data = [];
-      }
-      if (data.traceEvents) {
-        this.traceEvents_ = data.traceEvents;
-      } else { // path for loading traces saved without metadata
-        if (!data.length)
-          console.log('Expected an array when loading the trace file');
-        else
-          this.traceEvents_ = data;
-      }
-
-      if (data.systemTraceEvents)
-        this.systemTraceEvents_ = data.systemTraceEvents;
-      else
-        this.systemTraceEvents_ = [];
+    onLoadTraceFileComplete: function(traceDataString, opt_filename) {
+      this.traceEventData_ = traceDataString;
+      this.systemTraceEvents_ = undefined;
 
       var e = new base.Event('loadTraceFileComplete');
-      e.events = this.traceEvents_;
+      e.filename = opt_filename || '';
       this.dispatchEvent(e);
     },
 
@@ -368,18 +270,26 @@ base.exportTo('about_tracing', function() {
      * Tells browser to put up a save dialog and save the trace file
      */
     beginSaveTraceFile: function() {
-      if (this.failedTraceDataString_) {
-        this.sendFn_('saveTraceFile', [this.failedTraceDataString_]);
-        return;
-      }
-
+      // this.traceEventData_ is already in JSON form, but now need to insert it
+      // into a data structure containing metadata about the recording. To do
+      // this "right," we should parse the traceEventData_, make the new data
+      // structure and then JSONize the lot. But, the traceEventData_ is huge so
+      // parsing it and stringifying it again is going to consume time and
+      // memory.
+      //
+      // Instead, we make the new data strcture with a placeholder string,
+      // JSONify it, then replace the placeholder string with the
+      // traceEventData_.
       var data = {
-        traceEvents: this.traceEvents_,
+        traceEvents: '__TRACE_EVENT_PLACEHOLDER__',
         systemTraceEvents: this.systemTraceEvents_,
         clientInfo: this.clientInfo_,
         gpuInfo: this.gpuInfo_
       };
-      this.sendFn_('saveTraceFile', [JSON.stringify(data)]);
+      var dataAsString = JSON.stringify(data);
+      dataAsString = dataAsString.replace('"__TRACE_EVENT_PLACEHOLDER__"',
+                                          this.traceEventData_);
+      this.sendFn_('saveTraceFile', [dataAsString]);
     },
 
     /**

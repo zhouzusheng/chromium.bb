@@ -32,8 +32,8 @@
 #include "core/css/SelectorCheckerFastPath.h"
 #include "core/css/SiblingTraversalStrategies.h"
 #include "core/dom/Document.h"
+#include "core/dom/NodeTraversal.h"
 #include "core/dom/StaticNodeList.h"
-#include "core/dom/StyledElement.h"
 
 namespace WebCore {
 
@@ -98,68 +98,93 @@ PassRefPtr<Element> SelectorDataList::queryFirst(Node* rootNode) const
     return toElement(result.first().get());
 }
 
-bool SelectorDataList::canUseIdLookup(Node* rootNode) const
-{
-    // We need to return the matches in document order. To use id lookup while there is possiblity of multiple matches
-    // we would need to sort the results. For now, just traverse the document in that case.
-    if (m_selectors.size() != 1)
-        return false;
-    if (m_selectors[0].selector->m_match != CSSSelector::Id)
-        return false;
-    if (!rootNode->inDocument())
-        return false;
-    if (rootNode->document()->inQuirksMode())
-        return false;
-    if (rootNode->document()->containsMultipleElementsWithId(m_selectors[0].selector->value()))
-        return false;
-    return true;
-}
-
 static inline bool isTreeScopeRoot(Node* node)
 {
     ASSERT(node);
     return node->isDocumentNode() || node->isShadowRoot();
 }
 
+// If the first pair value is true, the returned Node is the single Element that may match the selector query.
+//
+// If the first value is false, the returned Node is the rootNode parameter or a descendant of rootNode representing
+// the subtree for which we can limit the querySelector traversal.
+//
+// The returned Node may be 0, regardless of the returned bool value, if this method finds that the selectors won't
+// match any element.
+std::pair<bool, Node*> SelectorDataList::findTraverseRoot(Node* rootNode) const
+{
+    // We need to return the matches in document order. To use id lookup while there is possiblity of multiple matches
+    // we would need to sort the results. For now, just traverse the document in that case.
+    if (m_selectors.size() != 1)
+        return std::make_pair(false, rootNode);
+    if (!rootNode->inDocument())
+        return std::make_pair(false, rootNode);
+    if (rootNode->document()->inQuirksMode())
+        return std::make_pair(false, rootNode);
+
+    bool matchSingleNode = true;
+    bool startFromParent = false;
+    for (const CSSSelector* selector = m_selectors[0].selector; selector; selector = selector->tagHistory()) {
+        if (selector->m_match == CSSSelector::Id && !rootNode->document()->containsMultipleElementsWithId(selector->value())) {
+            Element* element = rootNode->treeScope()->getElementById(selector->value());
+            if (element && (isTreeScopeRoot(rootNode) || element->isDescendantOf(rootNode)))
+                rootNode = element;
+            else if (!element || matchSingleNode)
+                rootNode = 0;
+            if (matchSingleNode)
+                return std::make_pair(true, rootNode);
+            if (startFromParent && rootNode)
+                rootNode = rootNode->parentNode();
+            return std::make_pair(false, rootNode);
+        }
+        if (selector->relation() == CSSSelector::SubSelector)
+            continue;
+        matchSingleNode = false;
+        if (selector->relation() == CSSSelector::DirectAdjacent || selector->relation() == CSSSelector::IndirectAdjacent)
+            startFromParent = true;
+        else
+            startFromParent = false;
+    }
+    return std::make_pair(false, rootNode);
+}
+
 template <bool firstMatchOnly>
 void SelectorDataList::execute(Node* rootNode, Vector<RefPtr<Node> >& matchedElements) const
 {
-    if (canUseIdLookup(rootNode)) {
+    std::pair<bool, Node*> traverseRoot = findTraverseRoot(rootNode);
+    if (!traverseRoot.second)
+        return;
+    Node* traverseRootNode = traverseRoot.second;
+    if (traverseRoot.first) {
         ASSERT(m_selectors.size() == 1);
-        const CSSSelector* selector = m_selectors[0].selector;
-        Element* element = rootNode->treeScope()->getElementById(selector->value());
-        if (!element || !(isTreeScopeRoot(rootNode) || element->isDescendantOf(rootNode)))
-            return;
+        ASSERT(traverseRootNode->isElementNode());
+        Element* element = toElement(traverseRootNode);
         if (selectorMatches(m_selectors[0], element, rootNode))
             matchedElements.append(element);
         return;
     }
 
     unsigned selectorCount = m_selectors.size();
-
-    Node* n = rootNode->firstChild();
-    while (n) {
-        if (n->isElementNode()) {
-            Element* element = toElement(n);
-            for (unsigned i = 0; i < selectorCount; ++i) {
-                if (selectorMatches(m_selectors[i], element, rootNode)) {
-                    matchedElements.append(element);
-                    if (firstMatchOnly)
-                        return;
-                    break;
-                }
-            }
-            if (element->firstChild()) {
-                n = element->firstChild();
-                continue;
+    if (selectorCount == 1) {
+        const SelectorData& selector = m_selectors[0];
+        for (Element* element = ElementTraversal::firstWithin(rootNode); element; element = ElementTraversal::next(element, rootNode)) {
+            if (selectorMatches(selector, element, rootNode)) {
+                matchedElements.append(element);
+                if (firstMatchOnly)
+                    return;
             }
         }
-        while (!n->nextSibling()) {
-            n = n->parentNode();
-            if (n == rootNode)
-                return;
+        return;
+    }
+    for (Element* element = ElementTraversal::firstWithin(rootNode); element; element = ElementTraversal::next(element, rootNode)) {
+        for (unsigned i = 0; i < selectorCount; ++i) {
+            if (selectorMatches(m_selectors[i], element, rootNode)) {
+                matchedElements.append(element);
+                if (firstMatchOnly)
+                    return;
+                break;
+            }
         }
-        n = n->nextSibling();
     }
 }
 

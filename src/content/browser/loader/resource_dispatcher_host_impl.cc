@@ -68,13 +68,13 @@
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_start.h"
 #include "net/base/auth.h"
-#include "net/cert/cert_status_flags.h"
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_data_stream.h"
+#include "net/cert/cert_status_flags.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_response_headers.h"
@@ -84,10 +84,10 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job_factory.h"
-#include "webkit/appcache/appcache_interceptor.h"
-#include "webkit/appcache/appcache_interfaces.h"
-#include "webkit/blob/blob_storage_controller.h"
-#include "webkit/blob/shareable_file_reference.h"
+#include "webkit/browser/appcache/appcache_interceptor.h"
+#include "webkit/browser/blob/blob_storage_controller.h"
+#include "webkit/common/appcache/appcache_interfaces.h"
+#include "webkit/common/blob/shareable_file_reference.h"
 #include "webkit/glue/resource_request_body.h"
 #include "webkit/glue/webkit_glue.h"
 
@@ -120,6 +120,10 @@ const int kMaxOutstandingRequestsCostPerProcess = 26214400;
 // this should be OK as the load flag is a best-effort thing only,
 // rather than being intended as fully accurate.
 const int kUserGestureWindowMs = 3500;
+
+// Ratio of |max_num_in_flight_requests_| that any one renderer is allowed to
+// use. Arbitrarily chosen.
+const double kMaxRequestsPerProcessRatio = 0.45;
 
 // All possible error codes from the network module. Note that the error codes
 // are all positive (since histograms expect positive sample values).
@@ -178,7 +182,7 @@ bool ShouldServiceRequest(int process_type,
   }
 
   // Check if the renderer is permitted to upload the requested files.
-  if (request_data.request_body) {
+  if (request_data.request_body.get()) {
     const std::vector<ResourceRequestBody::Element>* uploads =
         request_data.request_body->elements();
     std::vector<ResourceRequestBody::Element>::const_iterator iter;
@@ -210,15 +214,6 @@ void RemoveDownloadFileFromChildSecurityPolicy(int child_id,
 #pragma optimize("", on)
 #pragma warning(default: 4748)
 #endif
-
-void OnSwapOutACKHelper(int render_process_id,
-                        int render_view_id,
-                        bool timed_out) {
-  RenderViewHostImpl* rvh = RenderViewHostImpl::FromID(render_process_id,
-                                                       render_view_id);
-  if (rvh)
-    rvh->OnSwapOutACK(timed_out);
-}
 
 net::Error CallbackAndReturn(
     const DownloadResourceHandler::OnStartedCallback& started_cb,
@@ -276,8 +271,8 @@ int BuildLoadFlagsForRequest(
 }
 
 int GetCertID(net::URLRequest* request, int child_id) {
-  if (request->ssl_info().cert) {
-    return CertStore::GetInstance()->StoreCert(request->ssl_info().cert,
+  if (request->ssl_info().cert.get()) {
+    return CertStore::GetInstance()->StoreCert(request->ssl_info().cert.get(),
                                                child_id);
   }
   return 0;
@@ -307,6 +302,11 @@ ResourceDispatcherHostImpl::ResourceDispatcherHostImpl()
     : save_file_manager_(new SaveFileManager()),
       request_id_(-1),
       is_shutdown_(false),
+      num_in_flight_requests_(0),
+      max_num_in_flight_requests_(base::SharedMemory::GetHandleLimit()),
+      max_num_in_flight_requests_per_process_(
+          static_cast<int>(
+              max_num_in_flight_requests_ * kMaxRequestsPerProcessRatio)),
       max_outstanding_requests_cost_per_process_(
           kMaxOutstandingRequestsCostPerProcess),
       filter_(NULL),
@@ -332,6 +332,7 @@ ResourceDispatcherHostImpl::ResourceDispatcherHostImpl()
 }
 
 ResourceDispatcherHostImpl::~ResourceDispatcherHostImpl() {
+  DCHECK(outstanding_requests_stats_map_.empty());
   DCHECK(g_resource_dispatcher_host);
   g_resource_dispatcher_host = NULL;
 }
@@ -378,6 +379,7 @@ void ResourceDispatcherHostImpl::CancelRequestsForContext(
        i != pending_loaders_.end();) {
     if (i->second->GetRequestInfo()->GetContext() == context) {
       loaders_to_cancel.push_back(i->second);
+      IncrementOutstandingRequestsMemory(-1, *i->second->GetRequestInfo());
       pending_loaders_.erase(i++);
     } else {
       ++i;
@@ -403,8 +405,7 @@ void ResourceDispatcherHostImpl::CancelRequestsForContext(
         // We make the assumption that all requests on the list have the same
         // ResourceContext.
         DCHECK_EQ(context, info->GetContext());
-        IncrementOutstandingRequestsMemoryCost(-1 * info->memory_cost(),
-                                               info->GetChildID());
+        IncrementOutstandingRequestsMemory(-1, *info);
         loaders_to_cancel.push_back(loader);
       }
       delete loaders;
@@ -602,7 +603,8 @@ ResourceDispatcherHostImpl::MaybeInterceptAsStream(net::URLRequest* request,
       info->GetChildID(),
       info->GetRouteID(),
       target_id,
-      handler->stream()->CreateHandle(request->url(), mime_type));
+      handler->stream()->CreateHandle(request->url(), mime_type),
+      request->GetExpectedContentSize());
   return (scoped_ptr<ResourceHandler>(handler.release())).Pass();
 }
 
@@ -841,7 +843,6 @@ bool ResourceDispatcherHostImpl::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ResourceHostMsg_DataDownloaded_ACK, OnDataDownloadedACK)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_UploadProgress_ACK, OnUploadProgressACK)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_CancelRequest, OnCancelRequest)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_SwapOut_ACK, OnSwapOutACK)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidLoadResourceFromMemoryCache,
                         OnDidLoadResourceFromMemoryCache)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -928,6 +929,8 @@ void ResourceDispatcherHostImpl::BeginRequest(
     if (it != pending_loaders_.end()) {
       if (it->second->is_transferring()) {
         deferred_loader = it->second;
+        IncrementOutstandingRequestsMemory(-1,
+                                           *deferred_loader->GetRequestInfo());
         pending_loaders_.erase(it);
       } else {
         RecordAction(UserMetricsAction("BadMessageTerminate_RDH"));
@@ -1004,12 +1007,13 @@ void ResourceDispatcherHostImpl::BeginRequest(
   request->SetPriority(request_data.priority);
 
   // Resolve elements from request_body and prepare upload data.
-  if (request_data.request_body) {
+  if (request_data.request_body.get()) {
     request->set_upload(make_scoped_ptr(
         request_data.request_body->ResolveElementsAndCreateUploadDataStream(
             filter_->blob_storage_context()->controller(),
             filter_->file_system_context(),
-            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE))));
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
+                .get())));
   }
 
   bool allow_download = request_data.allow_download &&
@@ -1120,6 +1124,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
 
   if (deferred_loader.get()) {
     pending_loaders_[extra_info->GetGlobalRequestID()] = deferred_loader;
+    IncrementOutstandingRequestsMemory(1, *extra_info);
     deferred_loader->CompleteTransfer(handler.Pass());
   } else {
     BeginRequestInternal(new_request.Pass(), handler.Pass());
@@ -1207,40 +1212,6 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       true);     // is_async
 }
 
-
-void ResourceDispatcherHostImpl::OnSwapOutACK(
-  const ViewMsg_SwapOut_Params& params) {
-  HandleSwapOutACK(params, false);
-}
-
-void ResourceDispatcherHostImpl::OnSimulateSwapOutACK(
-    const ViewMsg_SwapOut_Params& params) {
-  // Call the real implementation with true, which means that we timed out.
-  HandleSwapOutACK(params, true);
-}
-
-void ResourceDispatcherHostImpl::HandleSwapOutACK(
-    const ViewMsg_SwapOut_Params& params, bool timed_out) {
-  // Closes for cross-site transitions are handled such that the cross-site
-  // transition continues.
-  ResourceLoader* loader = GetLoader(params.new_render_process_host_id,
-                                     params.new_request_id);
-  if (loader) {
-    // The response we were meant to resume could have already been canceled.
-    ResourceRequestInfoImpl* info = loader->GetRequestInfo();
-    if (info->cross_site_handler())
-      info->cross_site_handler()->ResumeResponse();
-  }
-
-  // Update the RenderViewHost's internal state after the ACK.
-  BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
-      base::Bind(&OnSwapOutACKHelper,
-                 params.closing_process_id,
-                 params.closing_route_id,
-                 timed_out));
-}
 
 void ResourceDispatcherHostImpl::OnDidLoadResourceFromMemoryCache(
     const GURL& url,
@@ -1331,12 +1302,15 @@ void ResourceDispatcherHostImpl::MarkAsTransferredNavigation(
   GetLoader(id)->MarkAsTransferring();
 }
 
-int ResourceDispatcherHostImpl::GetOutstandingRequestsMemoryCost(
-    int child_id) const {
-  OutstandingRequestsMemoryCostMap::const_iterator entry =
-      outstanding_requests_memory_cost_map_.find(child_id);
-  return (entry == outstanding_requests_memory_cost_map_.end()) ?
-      0 : entry->second;
+void ResourceDispatcherHostImpl::ResumeDeferredNavigation(
+    const GlobalRequestID& id) {
+  ResourceLoader* loader = GetLoader(id);
+  if (loader) {
+    // The response we were meant to resume could have already been canceled.
+    ResourceRequestInfoImpl* info = loader->GetRequestInfo();
+    if (info->cross_site_handler())
+      info->cross_site_handler()->ResumeResponse();
+  }
 }
 
 // The object died, so cancel and detach all requests associated with it except
@@ -1454,8 +1428,7 @@ void ResourceDispatcherHostImpl::RemovePendingLoader(
 
   // Remove the memory credit that we added when pushing the request onto
   // the pending list.
-  IncrementOutstandingRequestsMemoryCost(-1 * info->memory_cost(),
-                                         info->GetChildID());
+  IncrementOutstandingRequestsMemory(-1, *info);
 
   pending_loaders_.erase(iter);
 
@@ -1486,25 +1459,77 @@ void ResourceDispatcherHostImpl::CancelRequest(int child_id,
   loader->CancelRequest(from_renderer);
 }
 
-int ResourceDispatcherHostImpl::IncrementOutstandingRequestsMemoryCost(
-    int cost,
-    int child_id) {
-  // Retrieve the previous value (defaulting to 0 if not found).
-  OutstandingRequestsMemoryCostMap::iterator prev_entry =
-      outstanding_requests_memory_cost_map_.find(child_id);
-  int new_cost = 0;
-  if (prev_entry != outstanding_requests_memory_cost_map_.end())
-    new_cost = prev_entry->second;
+ResourceDispatcherHostImpl::OustandingRequestsStats
+ResourceDispatcherHostImpl::GetOutstandingRequestsStats(
+    const ResourceRequestInfoImpl& info) {
+  OutstandingRequestsStatsMap::iterator entry =
+      outstanding_requests_stats_map_.find(info.GetChildID());
+  OustandingRequestsStats stats = { 0, 0 };
+  if (entry != outstanding_requests_stats_map_.end())
+    stats = entry->second;
+  return stats;
+}
 
-  // Insert/update the total; delete entries when their value reaches 0.
-  new_cost += cost;
-  CHECK(new_cost >= 0);
-  if (new_cost == 0)
-    outstanding_requests_memory_cost_map_.erase(child_id);
+void ResourceDispatcherHostImpl::UpdateOutstandingRequestsStats(
+    const ResourceRequestInfoImpl& info,
+    const OustandingRequestsStats& stats) {
+  if (stats.memory_cost == 0 && stats.num_requests == 0)
+    outstanding_requests_stats_map_.erase(info.GetChildID());
   else
-    outstanding_requests_memory_cost_map_[child_id] = new_cost;
+    outstanding_requests_stats_map_[info.GetChildID()] = stats;
+}
 
-  return new_cost;
+ResourceDispatcherHostImpl::OustandingRequestsStats
+ResourceDispatcherHostImpl::IncrementOutstandingRequestsMemory(
+    int count,
+    const ResourceRequestInfoImpl& info) {
+  DCHECK_EQ(1, abs(count));
+
+  // Retrieve the previous value (defaulting to 0 if not found).
+  OustandingRequestsStats stats = GetOutstandingRequestsStats(info);
+
+  // Insert/update the total; delete entries when their count reaches 0.
+  stats.memory_cost += count * info.memory_cost();
+  DCHECK_GE(stats.memory_cost, 0);
+  UpdateOutstandingRequestsStats(info, stats);
+
+  return stats;
+}
+
+ResourceDispatcherHostImpl::OustandingRequestsStats
+ResourceDispatcherHostImpl::IncrementOutstandingRequestsCount(
+    int count,
+    const ResourceRequestInfoImpl& info) {
+  DCHECK_EQ(1, abs(count));
+  num_in_flight_requests_ += count;
+
+  OustandingRequestsStats stats = GetOutstandingRequestsStats(info);
+  stats.num_requests += count;
+  DCHECK_GE(stats.num_requests, 0);
+  UpdateOutstandingRequestsStats(info, stats);
+
+  return stats;
+}
+
+bool ResourceDispatcherHostImpl::HasSufficientResourcesForRequest(
+    const net::URLRequest* request_) {
+  const ResourceRequestInfoImpl* info =
+      ResourceRequestInfoImpl::ForRequest(request_);
+  OustandingRequestsStats stats = IncrementOutstandingRequestsCount(1, *info);
+
+  if (stats.num_requests > max_num_in_flight_requests_per_process_)
+    return false;
+  if (num_in_flight_requests_ > max_num_in_flight_requests_)
+    return false;
+
+  return true;
+}
+
+void ResourceDispatcherHostImpl::FinishedWithResourcesForRequest(
+    const net::URLRequest* request_) {
+  const ResourceRequestInfoImpl* info =
+      ResourceRequestInfoImpl::ForRequest(request_);
+  IncrementOutstandingRequestsCount(-1, *info);
 }
 
 // static
@@ -1538,12 +1563,11 @@ void ResourceDispatcherHostImpl::BeginRequestInternal(
 
   // Add the memory estimate that starting this request will consume.
   info->set_memory_cost(CalculateApproximateMemoryCost(request.get()));
-  int memory_cost = IncrementOutstandingRequestsMemoryCost(info->memory_cost(),
-                                                           info->GetChildID());
 
   // If enqueing/starting this request will exceed our per-process memory
   // bound, abort it right away.
-  if (memory_cost > max_outstanding_requests_cost_per_process_) {
+  OustandingRequestsStats stats = IncrementOutstandingRequestsMemory(1, *info);
+  if (stats.memory_cost > max_outstanding_requests_cost_per_process_) {
     // We call "CancelWithError()" as a way of setting the net::URLRequest's
     // status -- it has no effect beyond this, since the request hasn't started.
     request->CancelWithError(net::ERR_INSUFFICIENT_RESOURCES);
@@ -1554,8 +1578,7 @@ void ResourceDispatcherHostImpl::BeginRequestInternal(
       NOTREACHED();
     }
 
-    IncrementOutstandingRequestsMemoryCost(-1 * info->memory_cost(),
-                                           info->GetChildID());
+    IncrementOutstandingRequestsMemory(-1, *info);
 
     // A ResourceHandler must not outlive its associated URLRequest.
     handler.reset();
@@ -1750,8 +1773,7 @@ void ResourceDispatcherHostImpl::ProcessBlockedRequestsForRoute(
     linked_ptr<ResourceLoader> loader = *loaders_iter;
     ResourceRequestInfoImpl* info = loader->GetRequestInfo();
     if (cancel_requests) {
-      IncrementOutstandingRequestsMemoryCost(-1 * info->memory_cost(),
-                                             info->GetChildID());
+      IncrementOutstandingRequestsMemory(-1, *info);
     } else {
       StartLoading(info, loader);
     }
@@ -1767,8 +1789,9 @@ ResourceDispatcherHostImpl::HttpAuthResourceTypeOf(net::URLRequest* request) {
   if (!request->first_party_for_cookies().is_valid())
     return HTTP_AUTH_RESOURCE_TOP;
 
-  if (net::RegistryControlledDomainService::SameDomainOrHost(
-          request->first_party_for_cookies(), request->url()))
+  if (net::registry_controlled_domains::SameDomainOrHost(
+          request->first_party_for_cookies(), request->url(),
+          net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES))
     return HTTP_AUTH_RESOURCE_SAME_DOMAIN;
 
   if (allow_cross_origin_auth_prompt())

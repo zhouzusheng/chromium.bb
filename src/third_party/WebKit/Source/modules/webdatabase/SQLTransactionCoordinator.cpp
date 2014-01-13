@@ -32,7 +32,6 @@
 #include "config.h"
 #include "modules/webdatabase/SQLTransactionCoordinator.h"
 
-#include "core/page/SecurityOrigin.h"
 #include "modules/webdatabase/DatabaseBackend.h"
 #include "modules/webdatabase/SQLTransactionBackend.h"
 #include "wtf/Deque.h"

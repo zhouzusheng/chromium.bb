@@ -33,16 +33,14 @@
 #include "AsyncFileWriterChromium.h"
 #include "WebFileSystemCallbacksImpl.h"
 #include "WebFileWriter.h"
-#include "core/fileapi/BlobURL.h"
-#include "core/fileapi/ThreadableBlobRegistry.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/platform/AsyncFileSystemCallbacks.h"
 #include "core/platform/FileMetadata.h"
-#include <public/Platform.h>
-#include <public/WebFileInfo.h>
-#include <public/WebFileSystem.h>
-#include <wtf/text/CString.h>
-#include <wtf/text/StringBuilder.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebFileInfo.h"
+#include "public/platform/WebFileSystem.h"
+#include "weborigin/SecurityOrigin.h"
+#include "wtf/text/CString.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 

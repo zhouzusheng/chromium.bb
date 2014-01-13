@@ -26,10 +26,8 @@
 #include "config.h"
 #include "MockPagePopupDriver.h"
 
-#if ENABLE(PAGE_POPUP)
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
-#include "WebCoreTestSupport.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/DocumentWriter.h"
@@ -71,10 +69,7 @@ inline MockPagePopup::MockPagePopup(PagePopupClient* client, const IntRect& orig
     if (document->body())
         document->body()->appendChild(m_iframe.get());
     Frame* contentFrame = m_iframe->contentFrame();
-    DocumentWriter* writer = contentFrame->loader()->activeDocumentLoader()->writer();
-    writer->setMIMEType("text/html");
-    writer->setEncoding("UTF-8", false);
-    writer->begin();
+    DocumentWriter* writer = contentFrame->loader()->activeDocumentLoader()->beginWriting("text/html", "UTF-8");
     const char scriptToSetUpPagePopupController[] = "<script>window.pagePopupController = parent.internals.pagePopupController;</script>";
     writer->addData(scriptToSetUpPagePopupController, sizeof(scriptToSetUpPagePopupController));
     m_popupClient->writeDocument(*writer);
@@ -144,4 +139,3 @@ void MockPagePopupDriver::closePagePopup(PagePopup* popup)
 }
 
 }
-#endif

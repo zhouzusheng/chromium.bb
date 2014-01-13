@@ -31,9 +31,11 @@
 #ifndef WebSocketChannel_h
 #define WebSocketChannel_h
 
+#include "core/page/ConsoleTypes.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -81,8 +83,21 @@ public:
     virtual SendResult send(const Blob&) = 0;
     virtual unsigned long bufferedAmount() const = 0;
     virtual void close(int code, const String& reason) = 0;
+
     // Log the reason text and close the connection. Will call didClose().
-    virtual void fail(const String& reason) = 0;
+    // The MessageLevel parameter will be used for the level of the message
+    // shown at the devtool console.
+    // sourceURL and lineNumber parameters may be shown with the reason text
+    // at the devtool console.
+    // Even if sourceURL and lineNumber are specified, they may be ignored
+    // and the "current" url and the line number in the sense of
+    // JavaScript execution may be shown if this method is called in
+    // a JS execution context.
+    // You can specify String() and 0 for sourceURL and lineNumber
+    // respectively, if you can't / needn't provide the information.
+    virtual void fail(const String& reason, MessageLevel, const String& sourceURL, unsigned lineNumber) = 0;
+    void fail(const String& reason, MessageLevel level) { fail(reason, level, String(), 0); }
+
     virtual void disconnect() = 0; // Will suppress didClose().
 
     virtual void suspend() = 0;

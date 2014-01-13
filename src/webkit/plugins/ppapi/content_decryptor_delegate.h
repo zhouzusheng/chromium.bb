@@ -13,6 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "media/base/decryptor.h"
+#include "media/base/media_keys.h"
 #include "ppapi/c/private/pp_content_decryptor.h"
 #include "ppapi/c/private/ppp_content_decryptor_private.h"
 #include "ui/gfx/size.h"
@@ -38,14 +39,14 @@ class WEBKIT_PLUGINS_EXPORT ContentDecryptorDelegate {
       PP_Instance pp_instance,
       const PPP_ContentDecryptor_Private* plugin_decryption_interface);
 
+  void Initialize(const std::string& key_system);
+
   void SetKeyEventCallbacks(const media::KeyAddedCB& key_added_cb,
                             const media::KeyErrorCB& key_error_cb,
-                            const media::KeyMessageCB& key_message_cb,
-                            const media::NeedKeyCB& need_key_cb);
+                            const media::KeyMessageCB& key_message_cb);
 
   // Provides access to PPP_ContentDecryptor_Private.
-  bool GenerateKeyRequest(const std::string& key_system,
-                          const std::string& type,
+  bool GenerateKeyRequest(const std::string& type,
                           const uint8* init_data,
                           int init_data_length);
   bool AddKey(const std::string& session_id,
@@ -77,7 +78,9 @@ class WEBKIT_PLUGINS_EXPORT ContentDecryptorDelegate {
       const media::Decryptor::VideoDecodeCB& video_decode_cb);
 
   // PPB_ContentDecryptor_Private dispatching methods.
+  // TODO(ddorwin): Remove this method.
   void NeedKey(PP_Var key_system, PP_Var session_id, PP_Var init_data);
+  // TODO(ddorwin): Remove key_system_var parameter from these methods.
   void KeyAdded(PP_Var key_system, PP_Var session_id);
   void KeyMessage(PP_Var key_system,
                   PP_Var session_id,
@@ -127,11 +130,13 @@ class WEBKIT_PLUGINS_EXPORT ContentDecryptorDelegate {
   const PP_Instance pp_instance_;
   const PPP_ContentDecryptor_Private* const plugin_decryption_interface_;
 
+  // TODO(ddorwin): Remove after updating the Pepper API to not use key system.
+  std::string key_system_;
+
   // Callbacks for firing key events.
   media::KeyAddedCB key_added_cb_;
   media::KeyErrorCB key_error_cb_;
   media::KeyMessageCB key_message_cb_;
-  media::NeedKeyCB need_key_cb_;
 
   gfx::Size natural_size_;
 

@@ -35,31 +35,27 @@
 #include <limits>
 #include "HTMLNames.h"
 #include "core/accessibility/AXObjectCache.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/KeyboardEvent.h"
 #include "core/dom/MouseEvent.h"
 #include "core/dom/ScopedEventQueue.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/dom/Touch.h"
 #include "core/dom/TouchEvent.h"
 #include "core/dom/TouchList.h"
+#include "core/dom/shadow/ShadowRoot.h"
+#include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLInputElement.h"
+#include "core/html/HTMLOptionElement.h"
 #include "core/html/InputTypeNames.h"
 #include "core/html/StepRange.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/SliderThumbElement.h"
 #include "core/platform/PlatformMouseEvent.h"
 #include "core/rendering/RenderSlider.h"
-#include <wtf/MathExtras.h>
-#include <wtf/PassOwnPtr.h>
-
-#if ENABLE(DATALIST_ELEMENT)
-#include "core/html/HTMLDataListElement.h"
-#include "core/html/HTMLOptionElement.h"
-#include <wtf/NonCopyingSort.h>
-#endif
+#include "wtf/MathExtras.h"
+#include "wtf/NonCopyingSort.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
@@ -84,9 +80,7 @@ PassOwnPtr<InputType> RangeInputType::create(HTMLInputElement* element)
 
 RangeInputType::RangeInputType(HTMLInputElement* element)
     : InputType(element)
-#if ENABLE(DATALIST_ELEMENT)
     , m_tickMarkValuesDirty(true)
-#endif
 {
 }
 
@@ -260,9 +254,9 @@ void RangeInputType::createShadowSubtree()
     element()->userAgentShadowRoot()->appendChild(container.release(), IGNORE_EXCEPTION);
 }
 
-RenderObject* RangeInputType::createRenderer(RenderArena* arena, RenderStyle*) const
+RenderObject* RangeInputType::createRenderer(RenderStyle*) const
 {
-    return new (arena) RenderSlider(element());
+    return new (element()->document()->renderArena()) RenderSlider(element());
 }
 
 Decimal RangeInputType::parseToNumber(const String& src, const Decimal& defaultValue) const
@@ -292,7 +286,8 @@ void RangeInputType::minOrMaxAttributeChanged()
     // Sanitize the value.
     if (element()->hasDirtyValue())
         element()->setValue(element()->value());
-    element()->setNeedsStyleRecalc();
+
+    sliderThumbElementOf(element())->setPositionFromValue();
 }
 
 void RangeInputType::setValue(const String& value, bool valueChanged, TextFieldEventBehavior eventBehavior)
@@ -332,7 +327,6 @@ HTMLElement* RangeInputType::sliderTrackElement() const
     return sliderTrackElementOf(element());
 }
 
-#if ENABLE(DATALIST_ELEMENT)
 void RangeInputType::listAttributeTargetChanged()
 {
     m_tickMarkValuesDirty = true;
@@ -401,6 +395,5 @@ Decimal RangeInputType::findClosestTickMarkValue(const Decimal& value)
         return closestRight;
     return closestLeft;
 }
-#endif
 
 } // namespace WebCore

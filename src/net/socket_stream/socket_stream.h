@@ -12,13 +12,13 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
+#include "net/base/privacy_mode.h"
 #include "net/proxy/proxy_service.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/url_request/url_request.h"
@@ -36,6 +36,7 @@ class ServerBoundCertService;
 class SingleRequestHostResolver;
 class StreamSocket;
 class SocketStreamMetrics;
+class TransportSecurityState;
 class URLRequestContext;
 
 // SocketStream is used to implement Web Sockets.
@@ -128,8 +129,14 @@ class NET_EXPORT SocketStream
   Delegate* delegate() const { return delegate_; }
   int max_pending_send_allowed() const { return max_pending_send_allowed_; }
 
-  URLRequestContext* context() const { return context_.get(); }
+  URLRequestContext* context() { return context_; }
+  // There're some asynchronous operations and members that are constructed from
+  // |context|. Be careful when you use this for the second time or more.
   void set_context(URLRequestContext* context);
+
+  const SSLConfig& server_ssl_config() const { return server_ssl_config_; }
+  PrivacyMode privacy_mode() const { return privacy_mode_; }
+  void CheckPrivacyMode();
 
   BoundNetLog* net_log() { return &net_log_; }
 
@@ -322,9 +329,6 @@ class NET_EXPORT SocketStream
   int HandleCertificateError(int result);
   int AllowCertErrorForReconnection(SSLConfig* ssl_config);
 
-  SSLConfigService* ssl_config_service() const;
-  ProxyService* proxy_service() const;
-
   // Returns the sum of the size of buffers in |pending_write_bufs_|.
   size_t GetTotalSizeOfPendingWriteBufs() const;
 
@@ -337,14 +341,11 @@ class NET_EXPORT SocketStream
   //   sum of the size of buffers in |pending_write_bufs_|
   // exceeds this limit, SendData() fails.
   int max_pending_send_allowed_;
-  base::WeakPtr<URLRequestContext> context_;
+  URLRequestContext* context_;
 
   UserDataMap user_data_;
 
   State next_state_;
-  HostResolver* host_resolver_;
-  CertVerifier* cert_verifier_;
-  ServerBoundCertService* server_bound_cert_service_;
   ClientSocketFactory* factory_;
 
   ProxyMode proxy_mode_;
@@ -367,6 +368,7 @@ class NET_EXPORT SocketStream
 
   SSLConfig server_ssl_config_;
   SSLConfig proxy_ssl_config_;
+  PrivacyMode privacy_mode_;
 
   CompletionCallback io_callback_;
 

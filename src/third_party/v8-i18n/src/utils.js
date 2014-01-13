@@ -20,41 +20,55 @@
  * Adds bound method to the prototype of the given object.
  */
 function addBoundMethod(obj, methodName, implementation, length) {
-  Object.defineProperty(obj.prototype, methodName, {
-    get: function() {
-      if (!this || typeof this !== 'object' ||
-          this.__initializedIntlObject === undefined) {
-        throw new TypeError('Method ' + methodName +
-            ' called on a non-object or on a wrong type of object.');
-      }
-      var internalName = '__bound' + methodName + '__';
-      if (this[internalName] === undefined) {
-        var that = this;
-        var boundMethod;
-        if (length === undefined || length === 2) {
-          boundMethod = function(x, y) {
-            return implementation(that, x, y);
+  function getter() {
+    if (!this || typeof this !== 'object' ||
+        this.__initializedIntlObject === undefined) {
+        throw new TypeError('Method ' + methodName + ' called on a ' +
+                            'non-object or on a wrong type of object.');
+    }
+    var internalName = '__bound' + methodName + '__';
+    if (this[internalName] === undefined) {
+      var that = this;
+      var boundMethod;
+      if (length === undefined || length === 2) {
+        boundMethod = function(x, y) {
+          if (%_IsConstructCall()) {
+            throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
           }
-        } else if (length === 1) {
-          boundMethod = function(x) {
-            return implementation(that, x);
+          return implementation(that, x, y);
+        }
+      } else if (length === 1) {
+        boundMethod = function(x) {
+          if (%_IsConstructCall()) {
+            throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
           }
-        } else {
-          boundMethod = function() {
-	    // DateTimeFormat.format needs to be 0 arg method, but can still
-	    // receive optional dateValue param. If one was provided, pass it
-	    // along.
-	    if (arguments.length > 0) {
-              return implementation(that, arguments[0]);
-	    } else {
-	      return implementation(that);
-	    }
+          return implementation(that, x);
+        }
+      } else {
+        boundMethod = function() {
+          if (%_IsConstructCall()) {
+            throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+          }
+          // DateTimeFormat.format needs to be 0 arg method, but can stil
+          // receive optional dateValue param. If one was provided, pass it
+          // along.
+          if (arguments.length > 0) {
+            return implementation(that, arguments[0]);
+          } else {
+            return implementation(that);
           }
         }
-        this[internalName] = boundMethod;
       }
-      return this[internalName];
-    },
+      %FunctionRemovePrototype(boundMethod);
+      this[internalName] = boundMethod;
+    }
+    return this[internalName];
+  }
+
+  %FunctionRemovePrototype(getter);
+
+  Object.defineProperty(obj.prototype, methodName, {
+    get: getter,
     enumerable: false,
     configurable: true
   });

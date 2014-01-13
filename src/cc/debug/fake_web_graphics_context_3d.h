@@ -9,7 +9,7 @@
 
 #include "base/compiler_specific.h"
 #include "cc/base/cc_export.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 
 namespace cc {
 
@@ -591,6 +591,24 @@ class CC_EXPORT FakeWebGraphicsContext3D
 
   virtual void drawBuffersEXT(WebKit::WGC3Dsizei m,
                               const WebKit::WGC3Denum* bufs) {}
+
+  virtual void bindTexImage2DCHROMIUM(WebKit::WGC3Denum target,
+                                      WebKit::WGC3Dint image_id) {}
+
+  // GL_CHROMIUM_gpu_memory_buffer
+  virtual WebKit::WGC3Duint createImageCHROMIUM(
+      WebKit::WGC3Dsizei width,
+      WebKit::WGC3Dsizei height,
+      WebKit::WGC3Denum internalformat);
+  virtual void destroyImageCHROMIUM(WebKit::WGC3Duint image_id) {}
+  virtual void getImageParameterivCHROMIUM(
+      WebKit::WGC3Duint image_id,
+      WebKit::WGC3Denum pname,
+      WebKit::WGC3Dint* params) {}
+  virtual void* mapImageCHROMIUM(
+      WebKit::WGC3Duint image_id,
+      WebKit::WGC3Denum access);
+  virtual void unmapImageCHROMIUM(WebKit::WGC3Duint image_id) {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(FakeWebGraphicsContext3D);

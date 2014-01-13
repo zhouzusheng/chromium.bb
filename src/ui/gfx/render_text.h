@@ -13,7 +13,8 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/i18n/rtl.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
+#include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkRect.h"
@@ -76,7 +77,7 @@ class SkiaTextRenderer {
   bool started_drawing_;
   SkPaint paint_;
   SkRect bounds_;
-  SkRefPtr<SkShader> deferred_fade_shader_;
+  skia::RefPtr<SkShader> deferred_fade_shader_;
   SkScalar underline_thickness_;
   SkScalar underline_position_;
 
@@ -123,13 +124,18 @@ class UI_EXPORT RenderText {
   // Creates a platform-specific RenderText instance.
   static RenderText* CreateInstance();
 
-  const string16& text() const { return text_; }
-  void SetText(const string16& text);
+  const base::string16& text() const { return text_; }
+  void SetText(const base::string16& text);
 
   HorizontalAlignment horizontal_alignment() const {
     return horizontal_alignment_;
   }
   void SetHorizontalAlignment(HorizontalAlignment alignment);
+
+  VerticalAlignment vertical_alignment() const {
+    return vertical_alignment_;
+  }
+  void SetVerticalAlignment(VerticalAlignment alignment);
 
   const FontList& font_list() const { return font_list_; }
   void SetFontList(const FontList& font_list);
@@ -179,6 +185,19 @@ class UI_EXPORT RenderText {
   // In an obscured (password) field, all text is drawn as asterisks or bullets.
   bool obscured() const { return obscured_; }
   void SetObscured(bool obscured);
+
+  // Makes a char in obscured text at |index| to be revealed. |index| should be
+  // a UTF16 text index. If there is a previous revealed index, the previous one
+  // is cleared and only the last set index will be revealed. If |index| is -1
+  // or out of range, no char will be revealed. The revealed index is also
+  // cleared when SetText or SetObscured is called.
+  void SetObscuredRevealIndex(int index);
+
+  // Set the maximum length of the displayed layout text, not the actual text.
+  // A |length| of 0 forgoes a hard limit, but does not guarantee proper
+  // functionality of very long strings. Applies to subsequent SetText calls.
+  // WARNING: Only use this for system limits, it lacks complex text support.
+  void set_truncate_length(size_t length) { truncate_length_ = length; }
 
   const Rect& display_rect() const { return display_rect_; }
   void SetDisplayRect(const Rect& r);
@@ -237,7 +256,9 @@ class UI_EXPORT RenderText {
   // of text that overflows its display area.
   void SelectAll(bool reversed);
 
-  // Selects the word at the current cursor position.
+  // Selects the word at the current cursor position. If there is a non-empty
+  // selection, the selection bounds are extended to their nearest word
+  // boundaries.
   void SelectWord();
 
   const ui::Range& GetCompositionRange() const;
@@ -253,6 +274,10 @@ class UI_EXPORT RenderText {
   // The |range| should be valid, non-reversed, and within [0, text().length()].
   void SetStyle(TextStyle style, bool value);
   void ApplyStyle(TextStyle style, bool value, const ui::Range& range);
+
+  // Returns whether this style is enabled consistently across the entire
+  // RenderText.
+  bool GetStyle(TextStyle style) const;
 
   // Set the text directionality mode and get the text direction yielded.
   void SetDirectionalityMode(DirectionalityMode mode);
@@ -360,11 +385,11 @@ class UI_EXPORT RenderText {
   // Sets the selection model, the argument is assumed to be valid.
   virtual void SetSelectionModel(const SelectionModel& model);
 
-  // Get the height and horizontal bounds (relative to the left of the text, not
-  // the view) of the glyph starting at |index|. If the glyph is RTL then
-  // xspan->is_reversed(). This does not return a Rect because a Rect can't have
-  // a negative width.
-  virtual void GetGlyphBounds(size_t index, ui::Range* xspan, int* height) = 0;
+  // Get the horizontal bounds (relative to the left of the text, not the view)
+  // of the glyph starting at |index|. If the glyph is RTL then the returned
+  // Range will have is_reversed() true.  (This does not return a Rect because a
+  // Rect can't have a negative width.)
+  virtual ui::Range GetGlyphBounds(size_t index) = 0;
 
   // Get the visual bounds containing the logical substring within the |range|.
   // If |range| is empty, the result is empty. These bounds could be visually
@@ -393,8 +418,8 @@ class UI_EXPORT RenderText {
   // Draw the text.
   virtual void DrawVisualText(Canvas* canvas) = 0;
 
-  // Returns the text used for layout, which may be |obscured_text_|.
-  const string16& GetLayoutText() const;
+  // Returns the text used for layout, which may be obscured or truncated.
+  const base::string16& GetLayoutText() const;
 
   // Apply (and undo) temporary composition underlines and selection colors.
   void ApplyCompositionAndSelectionStyles();
@@ -409,12 +434,9 @@ class UI_EXPORT RenderText {
   Point ToTextPoint(const Point& point);
   Point ToViewPoint(const Point& point);
 
-  // Returns display offset based on current text alignment.
+  // Returns the text offset from the origin, taking into account text alignment
+  // only.
   Vector2d GetAlignmentOffset();
-
-  // Returns the offset for drawing text. Does not account for font
-  // baseline, as needed by Skia.
-  Vector2d GetOffsetForDrawing();
 
   // Applies fade effects to |renderer|.
   void ApplyFadeEffects(internal::SkiaTextRenderer* renderer);
@@ -434,9 +456,13 @@ class UI_EXPORT RenderText {
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, SetColorAndStyle);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ApplyColorAndStyle);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ObscuredText);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, RevealObscuredText);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, TruncatedText);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, TruncatedObscuredText);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, GraphemePositions);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, EdgeSelectionModels);
-  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, OriginForDrawing);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, GetTextOffset);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, GetTextOffsetHorizontalDefaultInRTL);
 
   // Set the cursor to |position|, with the caret trailing the previous
   // grapheme, or if there is no previous grapheme, leading the cursor position.
@@ -445,8 +471,8 @@ class UI_EXPORT RenderText {
   // it is a NO-OP.
   void MoveCursorTo(size_t position, bool select);
 
-  // Updates |obscured_text_| if the text is obscured.
-  void UpdateObscuredText();
+  // Updates |layout_text_| if the text is obscured or truncated.
+  void UpdateLayoutText();
 
   // Update the cached bounds and display offset to ensure that the current
   // cursor is within the visible display area.
@@ -456,10 +482,15 @@ class UI_EXPORT RenderText {
   void DrawSelection(Canvas* canvas);
 
   // Logical UTF-16 string data to be drawn.
-  string16 text_;
+  base::string16 text_;
 
-  // Horizontal alignment of the text with respect to |display_rect_|.
+  // Horizontal alignment of the text with respect to |display_rect_|.  The
+  // default is to align left if the application UI is LTR and right if RTL.
   HorizontalAlignment horizontal_alignment_;
+
+  // Vertical alignment of the text with respect to |display_rect_|.  The
+  // default is to align vertically centered.
+  VerticalAlignment vertical_alignment_;
 
   // The text directionality mode, defaults to DIRECTIONALITY_FROM_TEXT.
   DirectionalityMode directionality_mode_;
@@ -514,10 +545,16 @@ class UI_EXPORT RenderText {
   BreakList<bool> saved_underlines_;
   bool composition_and_selection_styles_applied_;
 
-  // A flag and the text to display for obscured (password) fields.
-  // Asterisks are used instead of the actual text glyphs when true.
+  // A flag to obscure actual text with asterisks for password fields.
   bool obscured_;
-  string16 obscured_text_;
+  // The index at which the char should be revealed in the obscured text.
+  int obscured_reveal_index_;
+
+  // The maximum length of text to display, 0 forgoes a hard limit.
+  size_t truncate_length_;
+
+  // The obscured and/or truncated text that will be displayed.
+  base::string16 layout_text_;
 
   // Fade text head and/or tail, if text doesn't fit into |display_rect_|.
   bool fade_head_;

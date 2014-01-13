@@ -39,18 +39,18 @@
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_offset_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/sys_byteorder.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_canon.h"
@@ -180,7 +180,7 @@ UScriptCode NormalizeScript(UScriptCode code) {
   }
 }
 
-bool IsIDNComponentInSingleScript(const char16* str, int str_len) {
+bool IsIDNComponentInSingleScript(const base::char16* str, int str_len) {
   UScriptCode first_script = USCRIPT_INVALID_CODE;
   bool is_first = true;
 
@@ -267,7 +267,7 @@ bool IsComponentCoveredByLang(const icu::UnicodeSet& component_characters,
                               const std::string& lang) {
   CR_DEFINE_STATIC_LOCAL(
       const icu::UnicodeSet, kASCIILetters, ('a', 'z'));
-  icu::UnicodeSet* lang_set;
+  icu::UnicodeSet* lang_set = NULL;
   // We're called from both the UI thread and the history thread.
   {
     base::AutoLock lock(g_lang_set_lock.Get());
@@ -301,7 +301,7 @@ bool IsComponentCoveredByLang(const icu::UnicodeSet& component_characters,
 
 // Returns true if the given Unicode host component is safe to display to the
 // user.
-bool IsIDNComponentSafe(const char16* str,
+bool IsIDNComponentSafe(const base::char16* str,
                         int str_len,
                         const std::string& languages) {
   // Most common cases (non-IDN) do not reach here so that we don't
@@ -399,7 +399,7 @@ bool IsIDNComponentSafe(const char16* str,
 // will be APPENDED to the given output string and will be the same as the input
 // if it is not IDN or the IDN is unsafe to display.  Returns whether any
 // conversion was performed.
-bool IDNToUnicodeOneComponent(const char16* comp,
+bool IDNToUnicodeOneComponent(const base::char16* comp,
                               size_t comp_len,
                               const std::string& languages,
                               base::string16* out) {
@@ -408,9 +408,9 @@ bool IDNToUnicodeOneComponent(const char16* comp,
     return false;
 
   // Only transform if the input can be an IDN component.
-  static const char16 kIdnPrefix[] = {'x', 'n', '-', '-'};
+  static const base::char16 kIdnPrefix[] = {'x', 'n', '-', '-'};
   if ((comp_len > arraysize(kIdnPrefix)) &&
-      !memcmp(comp, kIdnPrefix, arraysize(kIdnPrefix) * sizeof(char16))) {
+      !memcmp(comp, kIdnPrefix, arraysize(kIdnPrefix) * sizeof(base::char16))) {
     // Repeatedly expand the output string until it's big enough.  It looks like
     // ICU will return the required size of the buffer, but that's not
     // documented, so we'll just grow by 2x. This should be rare and is not on a
@@ -1545,7 +1545,7 @@ base::string16 FormatUrlWithOffsets(
   if (offsets_for_adjustment)
     original_offsets = *offsets_for_adjustment;
 
-  // Special handling for view-source:.  Don't use chrome::kViewSourceScheme
+  // Special handling for view-source:.  Don't use content::kViewSourceScheme
   // because this library shouldn't depend on chrome.
   const char* const kViewSource = "view-source";
   // Reject "view-source:view-source:..." to avoid deep recursion.
@@ -1939,7 +1939,7 @@ IPv6SupportResult::IPv6SupportResult(bool ipv6_supported,
 
 base::Value* IPv6SupportResult::ToNetLogValue(
     NetLog::LogLevel /* log_level */) const {
-  base::DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetBoolean("ipv6_supported", ipv6_supported);
   dict->SetString("ipv6_support_status",
                   kFinalStatusNames[ipv6_support_status]);
@@ -2014,6 +2014,17 @@ bool HaveOnlyLoopbackAddresses() {
   NOTIMPLEMENTED();
   return false;
 #endif  // defined(various platforms)
+}
+
+AddressFamily GetAddressFamily(const IPAddressNumber& address) {
+  switch (address.size()) {
+    case kIPv4AddressSize:
+      return ADDRESS_FAMILY_IPV4;
+    case kIPv6AddressSize:
+      return ADDRESS_FAMILY_IPV6;
+    default:
+      return ADDRESS_FAMILY_UNSPECIFIED;
+  }
 }
 
 bool ParseIPLiteralToNumber(const std::string& ip_literal,

@@ -117,10 +117,9 @@ class ChannelManager : public talk_base::MessageHandler,
       VoiceChannel* voice_channel);
   // Destroys a video channel created with the Create API.
   void DestroyVideoChannel(VideoChannel* video_channel);
-  // A codec name == "" means the "default" one, which currently is RTP.
   DataChannel* CreateDataChannel(
       BaseSession* session, const std::string& content_name,
-      bool rtcp, const std::string& codec_name);
+      bool rtcp, DataChannelType data_channel_type);
   // Destroys a data channel created with the Create API.
   void DestroyDataChannel(DataChannel* data_channel);
 
@@ -191,6 +190,9 @@ class ChannelManager : public talk_base::MessageHandler,
   // formats a a pseudo-handle.
   bool StartVideoCapture(VideoCapturer* video_capturer,
                          const VideoFormat& video_format);
+  // When muting, produce black frames then pause the camera.
+  // When unmuting, start the camera. Camera starts unmuted.
+  bool MuteToBlackThenPause(VideoCapturer* video_capturer, bool muted);
   bool StopVideoCapture(VideoCapturer* video_capturer,
                         const VideoFormat& video_format);
   bool RestartVideoCapture(VideoCapturer* video_capturer,
@@ -200,6 +202,7 @@ class ChannelManager : public talk_base::MessageHandler,
 
   bool AddVideoRenderer(VideoCapturer* capturer, VideoRenderer* renderer);
   bool RemoveVideoRenderer(VideoCapturer* capturer, VideoRenderer* renderer);
+  bool IsScreencastRunning() const;
 
   // The operations below occur on the main thread.
 
@@ -249,7 +252,7 @@ class ChannelManager : public talk_base::MessageHandler,
   void DestroyVideoChannel_w(VideoChannel* video_channel);
   DataChannel* CreateDataChannel_w(
       BaseSession* session, const std::string& content_name,
-      bool rtcp, const std::string& codec_name);
+      bool rtcp, DataChannelType data_channel_type);
   void DestroyDataChannel_w(DataChannel* data_channel);
   Soundclip* CreateSoundclip_w();
   void DestroySoundclip_w(Soundclip* soundclip);
@@ -262,6 +265,7 @@ class ChannelManager : public talk_base::MessageHandler,
                                 VideoProcessor* processor);
   bool UnregisterVideoProcessor_w(VideoCapturer* capturer,
                                   VideoProcessor* processor);
+  bool IsScreencastRunning_w() const;
   virtual void OnMessage(talk_base::Message *message);
 
   talk_base::scoped_ptr<MediaEngineInterface> media_engine_;

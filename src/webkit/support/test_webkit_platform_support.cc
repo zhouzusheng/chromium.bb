@@ -9,59 +9,48 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/metrics/stats_counters.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
-#include "cc/base/thread_impl.h"
+#include "base/strings/utf_string_conversions.h"
 #include "cc/output/context_provider.h"
 #include "media/base/media.h"
 #include "net/cookies/cookie_monster.h"
-#include "net/http/http_cache.h"
-#include "net/test/spawned_test_server.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebAudioDevice.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebStorageArea.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebStorageNamespace.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptController.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageEventDispatcher.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
+#include "third_party/WebKit/public/web/WebDatabase.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
+#include "third_party/WebKit/public/web/WebScriptController.h"
+#include "third_party/WebKit/public/web/WebSecurityPolicy.h"
+#include "third_party/WebKit/public/web/WebStorageEventDispatcher.h"
+#include "third_party/WebKit/public/platform/WebAudioDevice.h"
+#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/platform/WebFileSystem.h"
+#include "third_party/WebKit/public/platform/WebGamepads.h"
+#include "third_party/WebKit/public/platform/WebStorageArea.h"
+#include "third_party/WebKit/public/platform/WebStorageNamespace.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "v8/include/v8.h"
-#include "webkit/appcache/web_application_cache_host_impl.h"
-#include "webkit/compositor_bindings/web_compositor_support_impl.h"
-#include "webkit/compositor_bindings/web_layer_tree_view_impl_for_testing.h"
-#include "webkit/database/vfs_backend.h"
+#include "webkit/browser/database/vfs_backend.h"
+#include "webkit/common/gpu/test_context_provider_factory.h"
+#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
+#include "webkit/common/gpu/webgraphicscontext3d_provider_impl.h"
 #include "webkit/glue/simple_webmimeregistry_impl.h"
-#include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webkitplatformsupport_impl.h"
-#include "webkit/gpu/test_context_provider_factory.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
-#include "webkit/gpu/webgraphicscontext3d_provider_impl.h"
 #include "webkit/plugins/npapi/plugin_list.h"
+#include "webkit/renderer/appcache/web_application_cache_host_impl.h"
+#include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 #include "webkit/support/gc_extension.h"
-#include "webkit/support/simple_database_system.h"
+#include "webkit/support/mock_webclipboard_impl.h"
+#include "webkit/support/test_shell_webblobregistry_impl.h"
 #include "webkit/support/test_webmessageportchannel.h"
 #include "webkit/support/web_audio_device_mock.h"
 #include "webkit/support/web_gesture_curve_mock.h"
+#include "webkit/support/web_layer_tree_view_impl_for_testing.h"
 #include "webkit/support/webkit_support.h"
 #include "webkit/support/weburl_loader_mock_factory.h"
-#include "webkit/tools/test_shell/mock_webclipboard_impl.h"
-#include "webkit/tools/test_shell/simple_appcache_system.h"
-#include "webkit/tools/test_shell/simple_file_system.h"
-#include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
-#include "webkit/tools/test_shell/simple_socket_stream_bridge.h"
-#include "webkit/tools/test_shell/simple_webcookiejar_impl.h"
-#include "webkit/tools/test_shell/test_shell_request_context.h"
-#include "webkit/tools/test_shell/test_shell_webblobregistry_impl.h"
 
 #if defined(OS_WIN)
-#include "third_party/WebKit/Source/Platform/chromium/public/win/WebThemeEngine.h"
-#include "webkit/tools/test_shell/test_shell_webthemeengine.h"
+#include "third_party/WebKit/public/platform/win/WebThemeEngine.h"
 #elif defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
 #endif
@@ -69,11 +58,7 @@
 using WebKit::WebScriptController;
 using webkit::WebLayerTreeViewImplForTesting;
 
-TestWebKitPlatformSupport::TestWebKitPlatformSupport(bool unit_test_mode,
-    WebKit::Platform* shadow_platform_delegate)
-    : unit_test_mode_(unit_test_mode),
-      shadow_platform_delegate_(shadow_platform_delegate),
-      threaded_compositing_enabled_(false) {
+TestWebKitPlatformSupport::TestWebKitPlatformSupport() {
   v8::V8::SetCounterFunction(base::StatsTable::FindLocation);
 
   WebKit::initialize(this);
@@ -120,9 +105,6 @@ TestWebKitPlatformSupport::TestWebKitPlatformSupport(bool unit_test_mode,
                     "using in-memory storage.";
     DCHECK(appcache_dir_.path().empty());
   }
-  SimpleAppCacheSystem::InitializeOnUIThread(appcache_dir_.path());
-
-  WebKit::WebDatabase::setObserver(&database_system_);
 
   blob_registry_ = new TestShellWebBlobRegistryImpl();
 
@@ -150,12 +132,7 @@ TestWebKitPlatformSupport::TestWebKitPlatformSupport(bool unit_test_mode,
   SetThemeEngine(NULL);
 #endif
 
-  net::HttpCache::Mode cache_mode = net::HttpCache::NORMAL;
   net::CookieMonster::EnableFileScheme();
-
-  // Initializing with a default context, which means no on-disk cookie DB,
-  // and no support for directory listings.
-  SimpleResourceLoaderBridge::Init(base::FilePath(), cache_mode, true);
 
   // Test shell always exposes the GC.
   webkit_glue::SetJavaScriptFlags(" --expose-gc");
@@ -184,54 +161,22 @@ WebKit::WebSandboxSupport* TestWebKitPlatformSupport::sandboxSupport() {
   return NULL;
 }
 
-WebKit::WebCookieJar* TestWebKitPlatformSupport::cookieJar() {
-  return &cookie_jar_;
-}
-
 WebKit::WebBlobRegistry* TestWebKitPlatformSupport::blobRegistry() {
   return blob_registry_.get();
-}
-
-WebKit::WebFileSystem* TestWebKitPlatformSupport::fileSystem() {
-  return &file_system_;
 }
 
 WebKit::WebHyphenator* TestWebKitPlatformSupport::hyphenator() {
   return &hyphenator_;
 }
 
+WebKit::WebIDBFactory* TestWebKitPlatformSupport::idbFactory() {
+  NOTREACHED() <<
+      "IndexedDB cannot be tested with in-process harnesses.";
+  return NULL;
+}
+
 bool TestWebKitPlatformSupport::sandboxEnabled() {
   return true;
-}
-
-WebKit::Platform::FileHandle
-TestWebKitPlatformSupport::databaseOpenFile(
-    const WebKit::WebString& vfs_file_name, int desired_flags) {
-  return SimpleDatabaseSystem::GetInstance()->OpenFile(
-      vfs_file_name, desired_flags);
-}
-
-int TestWebKitPlatformSupport::databaseDeleteFile(
-    const WebKit::WebString& vfs_file_name, bool sync_dir) {
-  return SimpleDatabaseSystem::GetInstance()->DeleteFile(
-      vfs_file_name, sync_dir);
-}
-
-long TestWebKitPlatformSupport::databaseGetFileAttributes(
-    const WebKit::WebString& vfs_file_name) {
-  return SimpleDatabaseSystem::GetInstance()->GetFileAttributes(
-      vfs_file_name);
-}
-
-long long TestWebKitPlatformSupport::databaseGetFileSize(
-    const WebKit::WebString& vfs_file_name) {
-  return SimpleDatabaseSystem::GetInstance()->GetFileSize(vfs_file_name);
-}
-
-long long TestWebKitPlatformSupport::databaseGetSpaceAvailableForOrigin(
-    const WebKit::WebString& origin_identifier) {
-  return SimpleDatabaseSystem::GetInstance()->GetSpaceAvailable(
-      origin_identifier);
 }
 
 unsigned long long TestWebKitPlatformSupport::visitedLinkHash(
@@ -252,8 +197,6 @@ void TestWebKitPlatformSupport::prefetchHostName(const WebKit::WebString&) {
 }
 
 WebKit::WebURLLoader* TestWebKitPlatformSupport::createURLLoader() {
-  if (!unit_test_mode_)
-    return webkit_glue::WebKitPlatformSupportImpl::createURLLoader();
   return url_loader_factory_.CreateURLLoader(
       webkit_glue::WebKitPlatformSupportImpl::createURLLoader());
 }
@@ -280,32 +223,8 @@ WebKit::WebData TestWebKitPlatformSupport::loadResource(const char* name) {
 
 WebKit::WebString TestWebKitPlatformSupport::queryLocalizedString(
     WebKit::WebLocalizedString::Name name) {
-  // Returns messages same as WebKit's in DRT.
-  // We use different strings for form validation messages and page popup UI
-  // strings.
+  // Returns placeholder strings to check if they are correctly localized.
   switch (name) {
-    case WebKit::WebLocalizedString::ValidationValueMissing:
-    case WebKit::WebLocalizedString::ValidationValueMissingForCheckbox:
-    case WebKit::WebLocalizedString::ValidationValueMissingForFile:
-    case WebKit::WebLocalizedString::ValidationValueMissingForMultipleFile:
-    case WebKit::WebLocalizedString::ValidationValueMissingForRadio:
-    case WebKit::WebLocalizedString::ValidationValueMissingForSelect:
-      return ASCIIToUTF16("value missing");
-    case WebKit::WebLocalizedString::ValidationTypeMismatch:
-    case WebKit::WebLocalizedString::ValidationTypeMismatchForEmail:
-    case WebKit::WebLocalizedString::ValidationTypeMismatchForMultipleEmail:
-    case WebKit::WebLocalizedString::ValidationTypeMismatchForURL:
-      return ASCIIToUTF16("type mismatch");
-    case WebKit::WebLocalizedString::ValidationPatternMismatch:
-      return ASCIIToUTF16("pattern mismatch");
-    case WebKit::WebLocalizedString::ValidationTooLong:
-      return ASCIIToUTF16("too long");
-    case WebKit::WebLocalizedString::ValidationRangeUnderflow:
-      return ASCIIToUTF16("range underflow");
-    case WebKit::WebLocalizedString::ValidationRangeOverflow:
-      return ASCIIToUTF16("range overflow");
-    case WebKit::WebLocalizedString::ValidationStepMismatch:
-      return ASCIIToUTF16("step mismatch");
     case WebKit::WebLocalizedString::OtherDateLabel:
       return ASCIIToUTF16("<<OtherDateLabel>>");
     case WebKit::WebLocalizedString::OtherMonthLabel:
@@ -351,12 +270,6 @@ WebKit::WebString TestWebKitPlatformSupport::defaultLocale() {
   return ASCIIToUTF16("en-US");
 }
 
-WebKit::WebStorageNamespace*
-TestWebKitPlatformSupport::createLocalStorageNamespace(
-    const WebKit::WebString& path, unsigned quota) {
-  return dom_storage_system_.CreateLocalStorageNamespace();
-}
-
 #if defined(OS_WIN) || defined(OS_MACOSX)
 void TestWebKitPlatformSupport::SetThemeEngine(WebKit::WebThemeEngine* engine) {
   active_theme_engine_ = engine ?
@@ -373,23 +286,7 @@ TestWebKitPlatformSupport::createOffscreenGraphicsContext3D(
     const WebKit::WebGraphicsContext3D::Attributes& attributes) {
   using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
   return WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
-      attributes);
-}
-
-WebKit::WebGraphicsContext3D*
-TestWebKitPlatformSupport::sharedOffscreenGraphicsContext3D() {
-  main_thread_contexts_ =
-      webkit::gpu::TestContextProviderFactory::GetInstance()->
-          OffscreenContextProviderForMainThread();
-  if (!main_thread_contexts_)
-    return NULL;
-  return main_thread_contexts_->Context3d();
-}
-
-GrContext* TestWebKitPlatformSupport::sharedOffscreenGrContext() {
-  if (!main_thread_contexts_)
-    return NULL;
-  return main_thread_contexts_->GrContext();
+      attributes).release();
 }
 
 WebKit::WebGraphicsContext3DProvider* TestWebKitPlatformSupport::
@@ -397,7 +294,7 @@ WebKit::WebGraphicsContext3DProvider* TestWebKitPlatformSupport::
   main_thread_contexts_ =
       webkit::gpu::TestContextProviderFactory::GetInstance()->
           OffscreenContextProviderForMainThread();
-  if (!main_thread_contexts_)
+  if (!main_thread_contexts_.get())
     return NULL;
   return new webkit::gpu::WebGraphicsContext3DProviderImpl(
       main_thread_contexts_);
@@ -410,7 +307,12 @@ bool TestWebKitPlatformSupport::canAccelerate2dCanvas() {
 }
 
 bool TestWebKitPlatformSupport::isThreadedCompositingEnabled() {
-  return threaded_compositing_enabled_;
+  return false;
+}
+
+WebKit::WebCompositorSupport*
+TestWebKitPlatformSupport::compositorSupport() {
+  return &compositor_support_;
 }
 
 double TestWebKitPlatformSupport::audioHardwareSampleRate() {
@@ -463,21 +365,21 @@ void TestWebKitPlatformSupport::GetPlugins(
 webkit_glue::ResourceLoaderBridge*
 TestWebKitPlatformSupport::CreateResourceLoader(
     const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info) {
-  return SimpleResourceLoaderBridge::Create(request_info);
+  NOTREACHED();
+  return NULL;
 }
 
 webkit_glue::WebSocketStreamHandleBridge*
 TestWebKitPlatformSupport::CreateWebSocketBridge(
     WebKit::WebSocketStreamHandle* handle,
     webkit_glue::WebSocketStreamHandleDelegate* delegate) {
-  return SimpleSocketStreamBridge::Create(handle, delegate);
+  NOTREACHED();
+  return NULL;
 }
 
 WebKit::WebMediaStreamCenter*
 TestWebKitPlatformSupport::createMediaStreamCenter(
     WebKit::WebMediaStreamCenterClient* client) {
-  if (shadow_platform_delegate_)
-    return shadow_platform_delegate_->createMediaStreamCenter(client);
 
   return webkit_glue::WebKitPlatformSupportImpl::createMediaStreamCenter(
       client);
@@ -486,8 +388,6 @@ TestWebKitPlatformSupport::createMediaStreamCenter(
 WebKit::WebRTCPeerConnectionHandler*
 TestWebKitPlatformSupport::createRTCPeerConnectionHandler(
     WebKit::WebRTCPeerConnectionHandlerClient* client) {
-  if (shadow_platform_delegate_)
-    return shadow_platform_delegate_->createRTCPeerConnectionHandler(client);
 
   return webkit_glue::WebKitPlatformSupportImpl::createRTCPeerConnectionHandler(
       client);
@@ -542,7 +442,7 @@ WebKit::WebLayerTreeView*
       new WebLayerTreeViewImplForTesting(
           webkit_support::FAKE_CONTEXT, NULL));
 
-  if (!view->initialize(scoped_ptr<cc::Thread>()))
+  if (!view->Initialize())
     return NULL;
   return view.release();
 }

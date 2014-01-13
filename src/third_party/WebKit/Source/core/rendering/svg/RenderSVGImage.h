@@ -24,12 +24,7 @@
 #ifndef RenderSVGImage_h
 #define RenderSVGImage_h
 
-#if ENABLE(SVG)
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/svg/RenderSVGModelObject.h"
-#include "core/rendering/svg/SVGRenderSupport.h"
-#include "core/svg/SVGPreserveAspectRatio.h"
 
 namespace WebCore {
 
@@ -105,5 +100,4 @@ void toRenderSVGImage(const RenderSVGImage*);
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif // RenderSVGImage_h

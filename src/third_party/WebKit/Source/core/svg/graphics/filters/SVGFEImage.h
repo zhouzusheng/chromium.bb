@@ -24,7 +24,6 @@
 #ifndef SVGFEImage_h
 #define SVGFEImage_h
 
-#if ENABLE(SVG)
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/svg/SVGPreserveAspectRatio.h"
 
@@ -44,6 +43,7 @@ public:
     virtual FilterEffectType filterEffectType() const { return FilterEffectTypeImage; }
 
     virtual TextStream& externalRepresentation(TextStream&, int indention) const;
+    virtual SkImageFilter* createImageFilter(SkiaImageFilterBuilder*);
     
 private:
     virtual ~FEImage() { }
@@ -62,7 +62,5 @@ private:
 };
 
 } // namespace WebCore
-
-#endif // ENABLE(SVG)
 
 #endif // SVGFEImage_h

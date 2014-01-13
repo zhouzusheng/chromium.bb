@@ -83,16 +83,16 @@ WebInspector.FileSystemProjectDelegate.prototype = {
     },
 
     /**
-     * @param {Array.<string>} path
+     * @param {string} path
      * @return {string}
      */
     _filePathForPath: function(path)
     {
-        return "/" + path.join("/");
+        return "/" + path;
     },
 
     /**
-     * @param {Array.<string>} path
+     * @param {string} path
      * @param {function(?string,boolean,string)} callback
      */
     requestFileContent: function(path, callback)
@@ -119,7 +119,7 @@ WebInspector.FileSystemProjectDelegate.prototype = {
     },
 
     /**
-     * @param {Array.<string>} path
+     * @param {string} path
      * @param {string} newContent
      * @param {function(?string)} callback
      */
@@ -130,7 +130,26 @@ WebInspector.FileSystemProjectDelegate.prototype = {
     },
 
     /**
-     * @param {Array.<string>} path
+     * @return {boolean}
+     */
+    canRename: function()
+    {
+        return true;
+    },
+
+    /**
+     * @param {string} path
+     * @param {string} newName
+     * @param {function(boolean, string=)} callback
+     */
+    rename: function(path, newName, callback)
+    {
+        var filePath = this._filePathForPath(path);
+        this._fileSystem.renameFile(filePath, newName, callback);
+    },
+
+    /**
+     * @param {string} path
      * @param {string} query
      * @param {boolean} caseSensitive
      * @param {boolean} isRegex
@@ -154,16 +173,15 @@ WebInspector.FileSystemProjectDelegate.prototype = {
     },
 
     /**
-     * @param {Array.<string>} path
+     * @param {string} path
      * @return {WebInspector.ResourceType}
      */
     _contentTypeForPath: function(path)
     {
-        var fileName = path[path.length - 1];
-        var extensionIndex = fileName.lastIndexOf(".");
+        var extensionIndex = path.lastIndexOf(".");
         var extension = "";
         if (extensionIndex !== -1)
-            extension = fileName.substring(extensionIndex + 1).toLowerCase();
+            extension = path.substring(extensionIndex + 1).toLowerCase();
         var contentType = WebInspector.resourceTypes.Other;
         if (WebInspector.FileSystemProjectDelegate._scriptExtensions[extension])
             return WebInspector.resourceTypes.Script;
@@ -176,31 +194,30 @@ WebInspector.FileSystemProjectDelegate.prototype = {
 
     populate: function()
     {
-        this._fileSystem.requestFilesRecursive("", fileLoaded.bind(this));
-
-        function fileLoaded(filePath)
-        {
-            var path = filePath.split("/");
-            path.shift();
-            console.assert(path.length);
-            var fullPath = this._fileSystem.path() + filePath;
-            var url = this._workspace.urlForPath(fullPath);
-            var contentType = this._contentTypeForPath(path);
-            var fileDescriptor = new WebInspector.FileDescriptor(path, "file://" + fullPath, url, contentType, true);
-            this._addFile(fileDescriptor);
-        }
+        this._fileSystem.requestFilesRecursive("", this._addFile.bind(this));
     },
 
     /**
-     * @param {WebInspector.FileDescriptor} fileDescriptor
+     * @param {string} filePath
      */
-    _addFile: function(fileDescriptor)
+    _addFile: function(filePath)
     {
+        if (!filePath)
+            console.assert(false);
+        var fullPath = this._fileSystem.path() + "/" + filePath;
+
+        var slash = filePath.lastIndexOf("/");
+        var parentPath = filePath.substring(0, slash);
+        var name = filePath.substring(slash + 1);
+
+        var url = this._workspace.urlForPath(this._fileSystem.path(), filePath);
+        var contentType = this._contentTypeForPath(filePath);
+        var fileDescriptor = new WebInspector.FileDescriptor(parentPath, name, "file://" + fullPath, url, contentType, true);
         this.dispatchEventToListeners(WebInspector.ProjectDelegate.Events.FileAdded, fileDescriptor);
     },
 
     /**
-     * @param {Array.<string>} path
+     * @param {string} path
      */
     _removeFile: function(path)
     {

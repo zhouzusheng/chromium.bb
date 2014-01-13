@@ -40,8 +40,6 @@
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Node.h"
 #include "core/html/HTMLDocument.h"
-#include "core/html/HTMLElement.h"
-#include "core/html/HTMLHeadElement.h"
 #include "core/html/parser/HTMLDocumentParser.h"
 #include "core/inspector/DOMEditor.h"
 #include "core/inspector/InspectorHistory.h"
@@ -94,10 +92,8 @@ void DOMPatchSupport::patchDocument(const String& markup)
         newDocument = HTMLDocument::create(0, KURL());
     else if (m_document->isXHTMLDocument())
         newDocument = HTMLDocument::createXHTML(0, KURL());
-#if ENABLE(SVG)
     else if (m_document->isSVGDocument())
         newDocument = Document::create(0, KURL());
-#endif
 
     ASSERT(newDocument);
     newDocument->setContextFeatures(m_document->contextFeatures());
@@ -317,10 +313,8 @@ bool DOMPatchSupport::innerPatchChildren(ContainerNode* parentNode, const Vector
     HashSet<size_t, WTF::IntHash<size_t>, WTF::UnsignedWithZeroKeyHashTraits<size_t> > usedNewOrdinals;
     for (size_t i = 0; i < oldList.size(); ++i) {
         if (oldMap[i].first) {
-            if (!usedNewOrdinals.contains(oldMap[i].second)) {
-                usedNewOrdinals.add(oldMap[i].second);
+            if (usedNewOrdinals.add(oldMap[i].second).isNewEntry)
                 continue;
-            }
             oldMap[i].first = 0;
             oldMap[i].second = 0;
         }
@@ -339,7 +333,7 @@ bool DOMPatchSupport::innerPatchChildren(ContainerNode* parentNode, const Vector
         // Check if this change is between stable nodes. If it is, consider it as "modified".
         if (!m_unusedNodesMap.contains(oldList[i]->m_sha1) && (!i || oldMap[i - 1].first) && (i == oldMap.size() - 1 || oldMap[i + 1].first)) {
             size_t anchorCandidate = i ? oldMap[i - 1].second + 1 : 0;
-            size_t anchorAfter = i == oldMap.size() - 1 ? anchorCandidate + 1 : oldMap[i + 1].second;
+            size_t anchorAfter = (i == oldMap.size() - 1) ? anchorCandidate + 1 : oldMap[i + 1].second;
             if (anchorAfter - anchorCandidate == 1 && anchorCandidate < newList.size())
                 merges.set(newList[anchorCandidate].get(), oldList[i].get());
             else {

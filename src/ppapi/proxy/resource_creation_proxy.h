@@ -43,6 +43,9 @@ class ResourceCreationProxy : public InterfaceProxy,
                                     const char* path) OVERRIDE;
   virtual PP_Resource CreateFileSystem(PP_Instance instance,
                                        PP_FileSystemType type) OVERRIDE;
+  virtual PP_Resource CreateIsolatedFileSystem(
+      PP_Instance instance,
+      const char* fsid) OVERRIDE;
   virtual PP_Resource CreateIMEInputEvent(PP_Instance instance,
                                           PP_InputEvent_Type type,
                                           PP_TimeTicks time_stamp,
@@ -115,15 +118,25 @@ class ResourceCreationProxy : public InterfaceProxy,
       PP_Instance instance,
       PP_Resource share_context,
       const int32_t* attrib_list) OVERRIDE;
+  virtual PP_Resource CreateHostResolver(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateHostResolverPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateImageData(PP_Instance instance,
                                       PP_ImageDataFormat format,
                                       const PP_Size* size,
                                       PP_Bool init_to_zero) OVERRIDE;
-  virtual PP_Resource CreateImageDataNaCl(PP_Instance instance,
-                                          PP_ImageDataFormat format,
-                                          const PP_Size* size,
-                                          PP_Bool init_to_zero) OVERRIDE;
+  virtual PP_Resource CreateImageDataSimple(PP_Instance instance,
+                                            PP_ImageDataFormat format,
+                                            const PP_Size* size,
+                                            PP_Bool init_to_zero) OVERRIDE;
+  virtual PP_Resource CreateNetAddressFromIPv4Address(
+      PP_Instance instance,
+      const PP_NetAddress_IPv4* ipv4_addr) OVERRIDE;
+  virtual PP_Resource CreateNetAddressFromIPv6Address(
+      PP_Instance instance,
+      const PP_NetAddress_IPv6* ipv6_addr) OVERRIDE;
+  virtual PP_Resource CreateNetAddressFromNetAddressPrivate(
+      PP_Instance instance,
+      const PP_NetAddress_Private& private_addr) OVERRIDE;
   virtual PP_Resource CreateNetworkMonitor(
       PP_Instance instance,
       PPB_NetworkMonitor_Callback callback,
@@ -131,8 +144,12 @@ class ResourceCreationProxy : public InterfaceProxy,
   virtual PP_Resource CreatePrinting(PP_Instance) OVERRIDE;
   virtual PP_Resource CreateTCPServerSocketPrivate(
       PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateTCPSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateUDPSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateVideoDestination(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateVideoSource(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateWebSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateX509CertificatePrivate(
       PP_Instance instance) OVERRIDE;
@@ -144,7 +161,7 @@ class ResourceCreationProxy : public InterfaceProxy,
       const PP_BrowserFont_Trusted_Description* description) OVERRIDE;
   virtual PP_Resource CreateBuffer(PP_Instance instance,
                                    uint32_t size) OVERRIDE;
-  virtual PP_Resource CreateFlashDeviceID(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateFlashDRM(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateFlashFontFile(
       PP_Instance instance,
       const PP_BrowserFont_Trusted_Description* description,
@@ -160,8 +177,6 @@ class ResourceCreationProxy : public InterfaceProxy,
       PP_Instance instance,
       PP_Resource context3d_id,
       PP_VideoDecoder_Profile profile) OVERRIDE;
-  virtual PP_Resource CreateVideoDestination(PP_Instance instance) OVERRIDE;
-  virtual PP_Resource CreateVideoSource(PP_Instance instance) OVERRIDE;
 #endif  // !defined(OS_NACL)
 
   virtual bool Send(IPC::Message* msg) OVERRIDE;

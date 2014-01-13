@@ -59,7 +59,6 @@ WebInspector.ExtensionServer = function()
     this._registerHandler(commands.GetPageResources, this._onGetPageResources.bind(this));
     this._registerHandler(commands.GetRequestContent, this._onGetRequestContent.bind(this));
     this._registerHandler(commands.GetResourceContent, this._onGetResourceContent.bind(this));
-    this._registerHandler(commands.Log, this._onLog.bind(this));
     this._registerHandler(commands.Reload, this._onReload.bind(this));
     this._registerHandler(commands.SetOpenResourceHandler, this._onSetOpenResourceHandler.bind(this));
     this._registerHandler(commands.SetResourceContent, this._onSetResourceContent.bind(this));
@@ -69,6 +68,7 @@ WebInspector.ExtensionServer = function()
     this._registerHandler(commands.ShowPanel, this._onShowPanel.bind(this));
     this._registerHandler(commands.StopAuditCategoryRun, this._onStopAuditCategoryRun.bind(this));
     this._registerHandler(commands.Subscribe, this._onSubscribe.bind(this));
+    this._registerHandler(commands.OpenResource, this._onOpenResource.bind(this));
     this._registerHandler(commands.Unsubscribe, this._onUnsubscribe.bind(this));
     this._registerHandler(commands.UpdateButton, this._onUpdateButton.bind(this));
     this._registerHandler(commands.UpdateAuditProgress, this._onUpdateAuditProgress.bind(this));
@@ -121,6 +121,16 @@ WebInspector.ExtensionServer.prototype = {
     },
 
     /**
+     * @param {string} type
+     * @return {boolean}
+     */
+    hasSubscribers: function(type)
+    {
+        return !!this._subscribers[type];
+    },
+
+    /**
+     * @param {string} type
      * @param {...*} vararg
      */
     _postNotification: function(type, vararg)
@@ -273,6 +283,14 @@ WebInspector.ExtensionServer.prototype = {
         sidebar.setPage(this._expandResourcePath(port._extensionOrigin, message.page));
     },
 
+    _onOpenResource: function(message)
+    {
+        var a = document.createElement("a");
+        a.href = message.url;
+        a.lineNumber = message.lineNumber;
+        return WebInspector.showAnchorLocation(a) ? this._status.OK() : this._status.E_NOTFOUND(message.url);
+    },
+
     _onSetOpenResourceHandler: function(message, port)
     {
         var name = this._registeredExtensions[port._extensionOrigin].name || ("Extension " + port._extensionOrigin);
@@ -298,11 +316,6 @@ WebInspector.ExtensionServer.prototype = {
             lineNumber: lineNumber
         });
         return true;
-    },
-
-    _onLog: function(message)
-    {
-        WebInspector.log(message.message);
     },
 
     _onReload: function(message)
@@ -567,7 +580,7 @@ WebInspector.ExtensionServer.prototype = {
             WebInspector.networkManager, WebInspector.NetworkManager.EventTypes.RequestFinished, this._notifyRequestFinished);
         this._registerAutosubscriptionHandler(WebInspector.extensionAPI.Events.ResourceAdded,
             WebInspector.workspace,
-            WebInspector.UISourceCodeProvider.Events.UISourceCodeAdded,
+            WebInspector.Workspace.Events.UISourceCodeAdded,
             this._notifyResourceAdded);
         this._registerAutosubscriptionHandler(WebInspector.extensionAPI.Events.ElementsPanelObjectSelected,
             WebInspector.notifications,

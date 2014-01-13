@@ -27,7 +27,6 @@
 
 #include "LinkHighlight.h"
 
-#include "NonCompositedContentHost.h"
 #include "SkMatrix44.h"
 #include "WebFrameImpl.h"
 #include "WebKit.h"
@@ -36,20 +35,19 @@
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/platform/graphics/Color.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderLayerBacking.h"
 #include "core/rendering/RenderLayerModelObject.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/style/ShadowData.h"
-#include <public/Platform.h>
-#include <public/WebAnimationCurve.h>
-#include <public/WebCompositorSupport.h>
-#include <public/WebFloatAnimationCurve.h>
-#include <public/WebFloatPoint.h>
-#include <public/WebRect.h>
-#include <public/WebSize.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebAnimationCurve.h"
+#include "public/platform/WebCompositorSupport.h"
+#include "public/platform/WebFloatAnimationCurve.h"
+#include "public/platform/WebFloatPoint.h"
+#include "public/platform/WebRect.h"
+#include "public/platform/WebSize.h"
 #include <wtf/CurrentTime.h>
 
 using namespace WebCore;
@@ -67,7 +65,6 @@ LinkHighlight::LinkHighlight(Node* node, WebViewImpl* owningWebViewImpl)
     : m_node(node)
     , m_owningWebViewImpl(owningWebViewImpl)
     , m_currentGraphicsLayer(0)
-    , m_usingNonCompositedContentHost(false)
     , m_geometryNeedsUpdate(false)
     , m_isAnimating(false)
     , m_startTime(monotonicallyIncreasingTime())
@@ -129,12 +126,15 @@ RenderLayer* LinkHighlight::computeEnclosingCompositingLayer()
     if (!renderLayer || !renderLayer->isComposited())
         return 0;
 
-    GraphicsLayerChromium* newGraphicsLayer = static_cast<GraphicsLayerChromium*>(renderLayer->backing()->graphicsLayer());
+    GraphicsLayer* newGraphicsLayer = renderLayer->backing()->graphicsLayer();
     m_clipLayer->setSublayerTransform(SkMatrix44());
-    m_usingNonCompositedContentHost = !newGraphicsLayer->drawsContent();
-    if (m_usingNonCompositedContentHost ) {
-        m_clipLayer->setSublayerTransform(newGraphicsLayer->platformLayer()->transform());
-        newGraphicsLayer = static_cast<GraphicsLayerChromium*>(m_owningWebViewImpl->nonCompositedContentHost()->topLevelRootLayer());
+
+    if (!newGraphicsLayer->drawsContent()) {
+        if (renderLayer->usesCompositedScrolling()) {
+            ASSERT(renderLayer->backing() && renderLayer->backing()->scrollingContentsLayer());
+            newGraphicsLayer = renderLayer->backing()->scrollingContentsLayer();
+        } else
+            ASSERT_NOT_REACHED();
     }
 
     if (m_currentGraphicsLayer != newGraphicsLayer) {
@@ -197,31 +197,13 @@ bool LinkHighlight::computeHighlightLayerPathAndPosition(RenderLayer* compositin
     m_node->renderer()->absoluteQuads(quads);
     ASSERT(quads.size());
 
-    FloatRect positionAdjust;
-    if (!m_usingNonCompositedContentHost) {
-        const RenderStyle* style = m_node->renderer()->style();
-        // If we have a box shadow, and are non-relative, then must manually adjust
-        // for its size.
-        if (const ShadowData* shadow = style->boxShadow()) {
-            int outlineSize = m_node->renderer()->outlineStyleForRepaint()->outlineSize();
-            shadow->adjustRectForShadow(positionAdjust, outlineSize);
-        }
-
-        // If absolute or fixed, need to subtract out our fixed positioning.
-        // FIXME: should we use RenderLayer::staticBlockPosition() here instead?
-        // Perhaps consider this if out-of-flow elements cause further problems.
-        if (m_node->renderer()->isOutOfFlowPositioned()) {
-            FloatPoint delta(style->left().getFloatValue(), style->top().getFloatValue());
-            positionAdjust.moveBy(delta);
-        }
-    }
+    // Adjust for offset between target graphics layer and the node's renderer.
+    FloatPoint positionAdjust = IntPoint(m_currentGraphicsLayer->offsetFromRenderer());
 
     Path newPath;
     for (unsigned quadIndex = 0; quadIndex < quads.size(); ++quadIndex) {
-
-        FloatQuad localQuad = m_node->renderer()->absoluteToLocalQuad(quads[quadIndex], UseTransforms);
-        localQuad.move(-positionAdjust.location().x(), -positionAdjust.location().y());
-        FloatQuad absoluteQuad = m_node->renderer()->localToAbsoluteQuad(localQuad, UseTransforms);
+        FloatQuad absoluteQuad = quads[quadIndex];
+        absoluteQuad.move(-positionAdjust.x(), -positionAdjust.y());
 
         // Transform node quads in target absolute coords to local coordinates in the compositor layer.
         FloatQuad transformedQuad;
@@ -260,7 +242,7 @@ void LinkHighlight::paintContents(WebCanvas* canvas, const WebRect& webClipRect,
     GraphicsContext gc(canvas);
     IntRect clipRect(IntPoint(webClipRect.x, webClipRect.y), IntSize(webClipRect.width, webClipRect.height));
     gc.clip(clipRect);
-    gc.setFillColor(m_node->renderer()->style()->tapHighlightColor(), ColorSpaceDeviceRGB);
+    gc.setFillColor(m_node->renderer()->style()->tapHighlightColor());
     gc.fillPath(m_path);
 }
 

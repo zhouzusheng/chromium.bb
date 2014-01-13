@@ -27,13 +27,9 @@
 #ifndef JPEGImageDecoder_h
 #define JPEGImageDecoder_h
 
-#include <stdio.h> // Needed by jpeglib.h for FILE.
 #include "core/platform/image-decoders/ImageDecoder.h"
-#include <wtf/OwnPtr.h>
 
-extern "C" {
-#include "jpeglib.h"
-}
+#include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
@@ -48,23 +44,15 @@ namespace WebCore {
         // ImageDecoder
         virtual String filenameExtension() const { return "jpg"; }
         virtual bool isSizeAvailable();
-        virtual bool setSize(unsigned width, unsigned height);
-        virtual ImageFrame* frameBufferAtIndex(size_t index);
+        virtual ImageFrame* frameBufferAtIndex(size_t);
         // CAUTION: setFailed() deletes |m_reader|.  Be careful to avoid
         // accessing deleted memory, especially when calling this from inside
         // JPEGImageReader!
         virtual bool setFailed();
 
-        bool willDownSample()
-        {
-            ASSERT(ImageDecoder::isSizeAvailable());
-            return m_scaled;
-        }
-
         bool outputScanlines();
         void jpegComplete();
 
-        void setColorProfile(const ColorProfile& colorProfile) { m_colorProfile = colorProfile; }
         void setOrientation(ImageOrientation orientation) { m_orientation = orientation; }
 
     private:
@@ -72,12 +60,6 @@ namespace WebCore {
         // calculating the image size.  If decoding fails but there is no more
         // data coming, sets the "decode failure" flag.
         void decode(bool onlySize);
-
-        template <J_COLOR_SPACE colorSpace>
-        bool outputScanlines(ImageFrame& buffer);
-
-        template <J_COLOR_SPACE colorSpace, bool isScaled>
-        bool outputScanlines(ImageFrame& buffer);
 
         OwnPtr<JPEGImageReader> m_reader;
     };

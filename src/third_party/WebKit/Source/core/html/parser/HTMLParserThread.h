@@ -31,43 +31,22 @@
 #ifndef HTMLParserThread_h
 #define HTMLParserThread_h
 
-#include <wtf/Functional.h>
-#include <wtf/MessageQueue.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/Threading.h>
+#include "wtf/Functional.h"
+#include "wtf/OwnPtr.h"
+#include "public/platform/WebThread.h"
 
 namespace WebCore {
 
-// FIXME:: Closure is the Chromium-name for Function<void()>, but we may want something else for WebCore.
-typedef Function<void()> Closure;
-
 class HTMLParserThread {
 public:
-    static PassOwnPtr<HTMLParserThread> create()
-    {
-        return adoptPtr(new HTMLParserThread());
-    }
-    ~HTMLParserThread();
-
     static HTMLParserThread* shared();
-
-    bool start();
-    void stop();
-
     void postTask(const Closure&);
-
-    ThreadIdentifier threadId() const { return m_threadID; }
 
 private:
     HTMLParserThread();
+    ~HTMLParserThread();
 
-    static void threadStart(void*);
-    void runLoop();
-
-    Mutex m_threadCreationMutex;
-    MessageQueue<Closure> m_queue;
-    ThreadIdentifier m_threadID;
+    OwnPtr<WebKit::WebThread> m_thread;
 };
 
 } // namespace WebCore

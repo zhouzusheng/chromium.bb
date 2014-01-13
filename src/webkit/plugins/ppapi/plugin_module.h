@@ -129,6 +129,13 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
   // returns |base::kNullProcessId| otherwise.
   base::ProcessId GetPeerProcessId();
 
+  // Returns the plugin child process ID if the plugin is running out of
+  // process. Returns 0 otherwise. This is the ID that the browser process uses
+  // to idetify the child process for the plugin. This isn't directly useful
+  // from our process (the renderer) except in messages to the browser to
+  // disambiguate plugins.
+  int GetPluginChildId();
+
   static const PPB_Core* GetCore();
 
   // Returns a pointer to the local GetInterface function for retrieving
@@ -196,6 +203,12 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
   // These should only be called from the main thread.
   void SetBroker(PluginDelegate::Broker* broker);
   PluginDelegate::Broker* GetBroker();
+
+  // In production we purposely leak the HostGlobals object but in unittest
+  // code, this can interfere with subsequent tests. This deletes the
+  // existing HostGlobals. A new one will be constructed when a PluginModule is
+  // instantiated.
+  static void ResetHostGlobalsForTest();
 
  private:
   // Calls the InitializeModule entrypoint. The entrypoint must have been

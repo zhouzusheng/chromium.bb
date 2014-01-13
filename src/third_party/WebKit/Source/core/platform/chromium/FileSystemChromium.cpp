@@ -34,9 +34,9 @@
 #include "core/platform/FileMetadata.h"
 #include "core/platform/NotImplemented.h"
 
-#include <public/Platform.h>
-#include <public/WebFileInfo.h>
-#include <public/WebFileUtilities.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebFileInfo.h"
+#include "public/platform/WebFileUtilities.h"
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
@@ -128,13 +128,6 @@ int readFromFile(PlatformFileHandle handle, char* data, int length)
 int writeToFile(PlatformFileHandle handle, const char* data, int length)
 {
     return WebKit::Platform::current()->fileUtilities()->writeToFile(handle, data, length);
-}
-
-Vector<String> listDirectory(const String& path, const String& filter)
-{
-    notImplemented();
-
-    return Vector<String>();
 }
 
 } // namespace WebCore

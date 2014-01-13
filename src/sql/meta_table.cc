@@ -5,7 +5,7 @@
 #include "sql/meta_table.h"
 
 #include "base/logging.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
@@ -52,6 +52,8 @@ bool MetaTable::Init(Connection* db, int version, int compatible_version) {
     // there, we should create an index.
     SetVersionNumber(version);
     SetCompatibleVersionNumber(compatible_version);
+  } else {
+    db_->AddTaggedHistogram("Sqlite.Version", GetVersionNumber());
   }
   return transaction.Commit();
 }

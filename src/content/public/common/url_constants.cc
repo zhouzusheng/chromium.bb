@@ -4,9 +4,6 @@
 
 #include "content/public/common/url_constants.h"
 
-#include "content/common/savable_url_schemes.h"
-#include "googleurl/src/gurl.h"
-
 namespace chrome {
 
 const char kAboutScheme[] = "about";
@@ -16,6 +13,7 @@ const char kBlobScheme[] = "blob";
 // There are security implications associated with introducing new schemes.
 const char kChromeDevToolsScheme[] = "chrome-devtools";
 const char kChromeInternalScheme[] = "chrome-internal";
+const char kChromeNativeScheme[] = "chrome-native";
 const char kChromeUIScheme[] = "chrome";
 const char kDataScheme[] = "data";
 const char kFileScheme[] = "file";
@@ -28,14 +26,14 @@ const char kJavaScriptScheme[] = "javascript";
 const char kMailToScheme[] = "mailto";
 const char kMetadataScheme[] = "metadata";
 const char kSwappedOutScheme[] = "swappedout";
+}  // namespace chrome
+
+namespace content {
+
 const char kViewSourceScheme[] = "view-source";
 
 const char kAboutBlankURL[] = "about:blank";
 const char kAboutSrcDocURL[] = "about:srcdoc";
-
-}  // namespace chrome
-
-namespace content {
 
 const char kChromeUIAppCacheInternalsHost[] = "appcache-internals";
 const char kChromeUIIndexedDBInternalsHost[] = "indexeddb-internals";
@@ -73,18 +71,5 @@ const char kChromeUIShorthangURL[] = "chrome://shorthang";
 // different renderer process.  It must have a unique origin that cannot be
 // scripted by other pages in the process.
 const char kSwappedOutURL[] = "swappedout://";
-
-const char* const* GetSavableSchemes() {
-  return GetSavableSchemesInternal();
-}
-
-bool HasWebUIScheme(const GURL& url) {
-  return
-#if !defined(OS_IOS)
-         url.SchemeIs(chrome::kChromeDevToolsScheme) ||
-         url.SchemeIs(chrome::kChromeInternalScheme) ||
-#endif
-         url.SchemeIs(chrome::kChromeUIScheme);
-}
 
 }  // namespace content

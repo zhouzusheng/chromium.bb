@@ -33,17 +33,14 @@
 #include "core/platform/graphics/gpu/DrawingBuffer.h"
 
 #include <algorithm>
-#include "core/html/ImageData.h"
-#include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/platform/chromium/TraceEvent.h"
-#include "core/platform/chromium/support/GraphicsContext3DPrivate.h"
 #include "core/platform/graphics/Extensions3D.h"
 #include "core/platform/graphics/GraphicsContext3D.h"
-#include "core/platform/graphics/chromium/GraphicsLayerChromium.h"
-#include <public/Platform.h>
-#include <public/WebCompositorSupport.h>
-#include <public/WebExternalTextureLayer.h>
-#include <public/WebGraphicsContext3D.h>
+#include "core/platform/graphics/GraphicsLayer.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebCompositorSupport.h"
+#include "public/platform/WebExternalTextureLayer.h"
+#include "public/platform/WebGraphicsContext3D.h"
 
 using namespace std;
 
@@ -83,8 +80,7 @@ private:
 PassRefPtr<DrawingBuffer> DrawingBuffer::create(GraphicsContext3D* context, const IntSize& size, PreserveDrawingBuffer preserve, PassRefPtr<ContextEvictionManager> contextEvictionManager)
 {
     Extensions3D* extensions = context->getExtensions();
-    bool multisampleSupported = extensions->maySupportMultisampling()
-        && extensions->supports("GL_ANGLE_framebuffer_blit")
+    bool multisampleSupported = extensions->supports("GL_ANGLE_framebuffer_blit")
         && extensions->supports("GL_ANGLE_framebuffer_multisample")
         && extensions->supports("GL_OES_rgb8_rgba8");
     if (multisampleSupported) {
@@ -177,7 +173,7 @@ WebKit::WebGraphicsContext3D* DrawingBuffer::context()
 {
     if (!m_context)
         return 0;
-    return GraphicsContext3DPrivate::extractWebGraphicsContext3D(m_context.get());
+    return m_context->webContext();
 }
 
 bool DrawingBuffer::prepareMailbox(WebKit::WebExternalTextureMailbox* outMailbox)
@@ -219,7 +215,7 @@ bool DrawingBuffer::prepareMailbox(WebKit::WebExternalTextureMailbox* outMailbox
         m_context->framebufferTexture2D(GraphicsContext3D::FRAMEBUFFER, GraphicsContext3D::COLOR_ATTACHMENT0, GraphicsContext3D::TEXTURE_2D, m_colorBuffer, 0);
     } else {
         Extensions3D* extensions = m_context->getExtensions();
-        extensions->copyTextureCHROMIUM(GraphicsContext3D::TEXTURE_2D, m_colorBuffer, nextFrontColorBuffer->textureId, 0, GraphicsContext3D::RGBA);
+        extensions->copyTextureCHROMIUM(GraphicsContext3D::TEXTURE_2D, m_colorBuffer, nextFrontColorBuffer->textureId, 0, GraphicsContext3D::RGBA, GraphicsContext3D::UNSIGNED_BYTE);
     }
 
     if (multisample() && !m_framebufferBinding)
@@ -361,7 +357,7 @@ Platform3DObject DrawingBuffer::framebuffer() const
     return m_fbo;
 }
 
-PlatformLayer* DrawingBuffer::platformLayer()
+WebKit::WebLayer* DrawingBuffer::platformLayer()
 {
     if (!m_context)
         return 0;
@@ -375,7 +371,7 @@ PlatformLayer* DrawingBuffer::platformLayer()
 
         m_layer->setOpaque(!m_attributes.alpha);
         m_layer->setPremultipliedAlpha(m_attributes.premultipliedAlpha);
-        GraphicsLayerChromium::registerContentsLayer(m_layer->layer());
+        GraphicsLayer::registerContentsLayer(m_layer->layer());
     }
 
     return m_layer->layer();
@@ -391,7 +387,7 @@ void DrawingBuffer::paintCompositedResultsToCanvas(ImageBuffer* imageBuffer)
     // Since the m_frontColorBuffer was produced and sent to the compositor, it cannot be bound to an fbo.
     // We have to make a copy of it here and bind that copy instead.
     unsigned sourceTexture = createColorTexture(m_size);
-    extensions->copyTextureCHROMIUM(GraphicsContext3D::TEXTURE_2D, m_frontColorBuffer, sourceTexture, 0, GraphicsContext3D::RGBA);
+    extensions->copyTextureCHROMIUM(GraphicsContext3D::TEXTURE_2D, m_frontColorBuffer, sourceTexture, 0, GraphicsContext3D::RGBA, GraphicsContext3D::UNSIGNED_BYTE);
 #else
     // FIXME: Re-examine general correctness of this code beacause m_colorBuffer may contain a stale copy of the data
     // that was sent to the compositor at some point in the past.
@@ -484,7 +480,7 @@ void DrawingBuffer::releaseResources()
 #endif  // ENABLE(CANVAS_USES_MAILBOX)
 
     if (m_layer) {
-        GraphicsLayerChromium::unregisterContentsLayer(m_layer->layer());
+        GraphicsLayer::unregisterContentsLayer(m_layer->layer());
         m_layer.clear();
     }
 }

@@ -46,20 +46,23 @@
 #include "WebView.h"
 #include "WebViewBenchmarkSupportImpl.h"
 #include "core/page/PagePopupDriver.h"
+#include "core/page/PageScaleConstraintsSet.h"
+#include "core/platform/Timer.h"
 #include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/GraphicsContext3D.h"
 #include "core/platform/graphics/GraphicsLayer.h"
 #include "core/platform/graphics/IntPoint.h"
 #include "core/platform/graphics/IntRect.h"
-#include <public/WebFloatQuad.h>
-#include <public/WebGestureCurveTarget.h>
-#include <public/WebLayer.h>
-#include <public/WebPoint.h>
-#include <public/WebRect.h>
-#include <public/WebSize.h>
-#include <public/WebString.h>
+#include "public/platform/WebFloatQuad.h"
+#include "public/platform/WebGestureCurveTarget.h"
+#include "public/platform/WebLayer.h"
+#include "public/platform/WebPoint.h"
+#include "public/platform/WebRect.h"
+#include "public/platform/WebSize.h"
+#include "public/platform/WebString.h"
 #include <wtf/OwnPtr.h>
 #include <wtf/RefCounted.h>
+#include <wtf/Vector.h>
 
 namespace WebCore {
 class ChromiumDataObject;
@@ -80,6 +83,7 @@ class PlatformKeyboardEvent;
 class PopupContainer;
 class PopupMenuClient;
 class Range;
+class RenderLayerCompositor;
 class RenderTheme;
 class TextFieldDecorator;
 class Widget;
@@ -88,13 +92,12 @@ class Widget;
 namespace WebKit {
 class AutocompletePopupMenuClient;
 class AutofillPopupMenuClient;
-class BatteryClientImpl;
 class ContextFeaturesClientImpl;
 class ContextMenuClientImpl;
 class DeviceOrientationClientProxy;
 class GeolocationClientProxy;
 class LinkHighlight;
-class NonCompositedContentHost;
+class PinchViewports;
 class PrerendererClientImpl;
 class SpeechInputClientImpl;
 class SpeechRecognitionClientProxy;
@@ -123,9 +126,7 @@ class WebViewBenchmarkSupport;
 class WebViewImpl : public WebView
     , public RefCounted<WebViewImpl>
     , public WebGestureCurveTarget
-#if ENABLE(PAGE_POPUP)
     , public WebCore::PagePopupDriver
-#endif
     , public PageWidgetEventHandler {
 public:
     enum AutoZoomType {
@@ -153,7 +154,6 @@ public:
     virtual bool handleInputEvent(const WebInputEvent&);
     virtual void setCursorVisibilityState(bool isVisible);
     virtual bool hasTouchEventHandlersAt(const WebPoint&);
-    virtual WebInputHandler* createInputHandler() OVERRIDE;
     virtual void applyScrollAndScale(const WebSize&, float);
     virtual void mouseCaptureLost();
     virtual void setFocus(bool enable);
@@ -166,7 +166,6 @@ public:
     virtual bool confirmComposition(const WebString& text);
     virtual bool compositionRange(size_t* location, size_t* length);
     virtual WebTextInputInfo textInputInfo();
-    virtual WebTextInputType textInputType();
     virtual bool setEditableSelectionOffsets(int start, int end);
     virtual bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines);
     virtual void extendSelectionAndDelete(int before, int after);
@@ -226,7 +225,6 @@ public:
                                    double maximumZoomLevel);
     virtual void setInitialPageScaleOverride(float);
     virtual float pageScaleFactor() const;
-    virtual bool isPageScaleFactorSet() const;
     virtual void setPageScaleFactorPreservingScrollOffset(float);
     virtual void setPageScaleFactor(float scaleFactor, const WebPoint& origin);
     virtual void setPageScaleFactorLimits(float minPageScale, float maxPageScale);
@@ -235,7 +233,8 @@ public:
     virtual void saveScrollAndScaleState();
     virtual void restoreScrollAndScaleState();
     virtual void resetScrollAndScaleState();
-    virtual void setIgnoreViewportTagMaximumScale(bool);
+    virtual void setIgnoreViewportTagScaleLimits(bool);
+    virtual WebSize contentsPreferredMinimumSize();
 
     virtual float deviceScaleFactor() const;
     virtual void setDeviceScaleFactor(float);
@@ -310,9 +309,6 @@ public:
     virtual void showContextMenu();
     virtual void addPageOverlay(WebPageOverlay*, int /* zOrder */);
     virtual void removePageOverlay(WebPageOverlay*);
-#if ENABLE(BATTERY_STATUS)
-    virtual void updateBatteryStatus(const WebBatteryStatus&);
-#endif
     virtual void transferActiveWheelFlingAnimation(const WebActiveWheelFlingParameters&);
     virtual WebViewBenchmarkSupport* benchmarkSupport();
     virtual void setShowPaintRects(bool);
@@ -443,8 +439,6 @@ public:
         return m_maxAutoSize;
     }
 
-    WebCore::IntSize scaledSize(float) const;
-
     // Set the disposition for how this webview is to be initially shown.
     void setInitialNavigationPolicy(WebNavigationPolicy policy)
     {
@@ -466,8 +460,7 @@ public:
         return m_emulatedTextZoomFactor;
     }
 
-    void setInitialPageScaleFactor(float initialPageScaleFactor) { m_initialPageScaleFactor = initialPageScaleFactor; }
-    bool ignoreViewportTagMaximumScale() const { return m_ignoreViewportTagMaximumScale; }
+    void updatePageDefinedPageScaleConstraints(const WebCore::ViewportArguments&);
 
     // Determines whether a page should e.g. be opened in a background tab.
     // Returns false if it has no opinion, in which case it doesn't set *policy.
@@ -504,16 +497,15 @@ public:
     // Notification that a popup was opened/closed.
     void popupOpened(WebCore::PopupContainer* popupContainer);
     void popupClosed(WebCore::PopupContainer* popupContainer);
-#if ENABLE(PAGE_POPUP)
     // PagePopupDriver functions.
     virtual WebCore::PagePopup* openPagePopup(WebCore::PagePopupClient*, const WebCore::IntRect& originBoundsInRootView) OVERRIDE;
     virtual void closePagePopup(WebCore::PagePopup*) OVERRIDE;
-#endif
 
     void hideAutofillPopup();
 
     // Creates a Helper Plugin of |pluginType| for |hostDocument|.
     WebHelperPluginImpl* createHelperPlugin(const String& pluginType, const WebDocument& hostDocument);
+    void closeHelperPluginSoon(PassRefPtr<WebHelperPluginImpl>);
 
     // Returns the input event we're currently processing. This is used in some
     // cases where the WebCore DOM event doesn't have the information we need.
@@ -527,10 +519,8 @@ public:
     void setRootGraphicsLayer(WebCore::GraphicsLayer*);
     void scheduleCompositingLayerSync();
     void scrollRootLayerRect(const WebCore::IntSize& scrollDelta, const WebCore::IntRect& clipRect);
-    void paintRootLayer(WebCore::GraphicsContext&, const WebCore::IntRect& contentRect);
-    NonCompositedContentHost* nonCompositedContentHost();
-    void setBackgroundColor(const WebCore::Color&);
     WebCore::GraphicsLayerFactory* graphicsLayerFactory() const;
+    WebCore::RenderLayerCompositor* compositor() const;
     void registerForAnimations(WebLayer*);
     void scheduleAnimation();
 
@@ -539,11 +529,7 @@ public:
     virtual void setVisibilityState(WebPageVisibilityState, bool);
 
     WebCore::PopupContainer* selectPopup() const { return m_selectPopup.get(); }
-#if ENABLE(PAGE_POPUP)
     bool hasOpenedPopup() const { return m_selectPopup || m_pagePopup; }
-#else
-    bool hasOpenedPopup() const { return m_selectPopup; }
-#endif
 
     // Returns true if the event leads to scrolling.
     static bool mapKeyCodeForScroll(int keyCode,
@@ -594,9 +580,10 @@ public:
     WebSettingsImpl* settingsImpl();
 
 private:
-    void computePageScaleFactorLimits();
-    float clampPageScaleFactorToLimits(float scale);
-    WebCore::IntPoint clampOffsetAtScale(const WebCore::IntPoint& offset, float scale) const;
+    void refreshPageScaleFactorAfterLayout();
+    void setUserAgentPageScaleConstraints(WebCore::PageScaleConstraints newConstraints);
+    float clampPageScaleFactorToLimits(float) const;
+    WebCore::IntPoint clampOffsetAtScale(const WebCore::IntPoint& offset, float scale);
     WebCore::IntSize contentsSize() const;
 
     void resetSavedScrollAndScaleState();
@@ -614,6 +601,8 @@ private:
 
     WebViewImpl(WebViewClient*);
     virtual ~WebViewImpl();
+
+    WebTextInputType textInputType();
 
     // Returns true if the event was actually processed.
     bool keyEventDefault(const WebKeyboardEvent&);
@@ -670,6 +659,9 @@ private:
     virtual bool handleCharEvent(const WebKeyboardEvent&) OVERRIDE;
 
     WebViewClient* m_client;
+
+    void closePendingHelperPlugins(WebCore::Timer<WebViewImpl>*);
+
     WebAutofillClient* m_autofillClient;
     WebPermissionClient* m_permissionClient;
     WebSpellCheckClient* m_spellCheckClient;
@@ -726,19 +718,13 @@ private:
 
     double m_maximumZoomLevel;
 
-    // State related to the page scale
-    float m_pageDefinedMinimumPageScaleFactor;
-    float m_pageDefinedMaximumPageScaleFactor;
-    float m_minimumPageScaleFactor;
-    float m_maximumPageScaleFactor;
-    float m_initialPageScaleFactorOverride;
-    float m_initialPageScaleFactor;
-    bool m_ignoreViewportTagMaximumScale;
-    bool m_pageScaleFactorIsSet;
+    WebCore::PageScaleConstraintsSet m_pageScaleConstraintsSet;
 
     // Saved page scale state.
     float m_savedPageScaleFactor; // 0 means that no page scale factor is saved.
     WebCore::IntSize m_savedScrollOffset;
+    float m_exitFullscreenPageScaleFactor;
+    WebCore::IntSize m_exitFullscreenScrollOffset;
 
     // The scale moved to by the latest double tap zoom, if any.
     float m_doubleTapZoomPageScaleFactor;
@@ -792,10 +778,8 @@ private:
     // The popup associated with a select element.
     RefPtr<WebCore::PopupContainer> m_selectPopup;
 
-#if ENABLE(PAGE_POPUP)
     // The popup associated with an input element.
     RefPtr<WebPagePopupImpl> m_pagePopup;
-#endif
 
     OwnPtr<WebDevToolsAgentPrivate> m_devToolsAgent;
     OwnPtr<PageOverlayList> m_pageOverlays;
@@ -830,7 +814,6 @@ private:
     WebViewBenchmarkSupportImpl m_benchmarkSupport;
 
     WebCore::IntRect m_rootLayerScrollDamage;
-    OwnPtr<NonCompositedContentHost> m_nonCompositedContentHost;
     WebLayerTreeView* m_layerTreeView;
     WebLayer* m_rootLayer;
     WebCore::GraphicsLayer* m_rootGraphicsLayer;
@@ -840,8 +823,8 @@ private:
     bool m_compositorCreationFailed;
     // If true, the graphics context is being restored.
     bool m_recreatingGraphicsContext;
-    int m_inputHandlerIdentifier;
     static const WebInputEvent* m_currentInputEvent;
+    OwnPtr<PinchViewports> m_pinchViewports;
 
 #if ENABLE(INPUT_SPEECH)
     OwnPtr<SpeechInputClientImpl> m_speechInputClient;
@@ -850,9 +833,6 @@ private:
 
     OwnPtr<DeviceOrientationClientProxy> m_deviceOrientationClientProxy;
     OwnPtr<GeolocationClientProxy> m_geolocationClientProxy;
-#if ENABLE(BATTERY_STATUS)
-    OwnPtr<BatteryClientImpl> m_batteryClient;
-#endif
 
     float m_emulatedTextZoomFactor;
 
@@ -872,6 +852,9 @@ private:
     bool m_showPaintRects;
     bool m_showDebugBorders;
     bool m_continuousPaintingEnabled;
+
+    WebCore::Timer<WebViewImpl> m_helperPluginCloseTimer;
+    Vector<RefPtr<WebHelperPluginImpl> > m_helperPluginsPendingClose;
 };
 
 } // namespace WebKit

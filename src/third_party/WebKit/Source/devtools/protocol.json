@@ -12,6 +12,10 @@
             {
                 "name": "disable",
                 "description": "Disables inspector domain notifications."
+            },
+            {
+                "name": "reset",
+                "description": "Resets all domains."
             }
         ],
         "events": [
@@ -334,26 +338,10 @@
                 "hidden": true
             },
             {
-                "name": "canShowFPSCounter",
-                "description": "Tells if backend supports a FPS counter display",
-                "returns": [
-                    { "name": "show", "type": "boolean", "description": "True if the FPS count can be shown" }
-                ],
-                "hidden": true
-            },
-            {
                 "name": "setShowFPSCounter",
                 "description": "Requests that backend shows the FPS counter",
                 "parameters": [
                     { "name": "show", "type": "boolean", "description": "True for showing the FPS counter" }
-                ],
-                "hidden": true
-            },
-            {
-                "name": "canContinuouslyPaint",
-                "description": "Tells if backend supports continuous painting",
-                "returns": [
-                    { "name": "value", "type": "boolean", "description": "True if continuous painting is available" }
                 ],
                 "hidden": true
             },
@@ -453,7 +441,24 @@
                 "description": "Accepts or dismisses a JavaScript initiated dialog (alert, confirm, prompt, or onbeforeunload).",
                 "parameters": [
                     { "name": "accept", "type": "boolean", "description": "Whether to accept or dismiss the dialog." },
-                    { "name": "promptText", "type": "string", "optional": "true", "description": "The text to enter into the dialog prompt before accepting. Used only if this is a prompt dialog." }
+                    { "name": "promptText", "type": "string", "optional": true, "description": "The text to enter into the dialog prompt before accepting. Used only if this is a prompt dialog." }
+                ],
+                "hidden": true
+            },
+            {
+                "name": "setShowViewportSizeOnResize",
+                "description": "Paints viewport size upon main frame resize.",
+                "parameters": [
+                    { "name": "show", "type": "boolean", "description": "Whether to paint size or not." },
+                    { "name": "showGrid", "type": "boolean", "optional": true, "description": "Whether to paint grid as well." }
+                ],
+                "hidden": true
+            },
+            {
+                "name": "setForceCompositingMode",
+                "description": "Force accelerated compositing mode for inspected page.",
+                "parameters": [
+                    { "name": "force", "type": "boolean", "description": "Whether to force accelerated compositing or not." }
                 ],
                 "hidden": true
             }
@@ -563,7 +568,7 @@
                     { "name": "value", "type": "any", "optional": true, "description": "Remote object value (in case of primitive values or JSON values if it was requested)." },
                     { "name": "description", "type": "string", "optional": true, "description": "String representation of the object." },
                     { "name": "objectId", "$ref": "RemoteObjectId", "optional": true, "description": "Unique object identifier (for non-primitive values)." },
-                    { "name": "preview", "$ref": "ObjectPreview", "optional": true, "description": "Preview containsing abbreviated property values.", "hidden": true }
+                    { "name": "preview", "$ref": "ObjectPreview", "optional": true, "description": "Preview containing abbreviated property values.", "hidden": true }
                 ]
             },
             {
@@ -681,11 +686,12 @@
                 "name": "getProperties",
                 "parameters": [
                     { "name": "objectId", "$ref": "RemoteObjectId", "description": "Identifier of the object to return properties for." },
-                    { "name": "ownProperties", "optional": true, "type": "boolean", "description": "If true, returns properties belonging only to the element itself, not to its prototype chain." }
+                    { "name": "ownProperties", "optional": true, "type": "boolean", "description": "If true, returns properties belonging only to the element itself, not to its prototype chain." },
+                    { "name": "accessorPropertiesOnly", "optional": true, "type": "boolean", "description": "If true, returns accessor properties (with getter/setter) only; internal properties are not returned either.", "hidden": true }
                 ],
                 "returns": [
                     { "name": "result", "type": "array", "items": { "$ref": "PropertyDescriptor"}, "description": "Object properties." },
-                    { "name": "internalProperties", "optional": true, "type": "array", "items": { "$ref": "InternalPropertyDescriptor"}, "description": "Internal object properties.", "hidden": true }
+                    { "name": "internalProperties", "optional": true, "type": "array", "items": { "$ref": "InternalPropertyDescriptor"}, "description": "Internal object properties (only of the element itself).", "hidden": true }
                 ],
                 "description": "Returns properties of a given object. Object group of the result is inherited from the target object."
             },
@@ -733,6 +739,11 @@
         "description": "Console domain defines methods and events for interaction with the JavaScript console. Console collects messages created by means of the <a href='http://getfirebug.com/wiki/index.php/Console_API'>JavaScript Console API</a>. One needs to enable this domain using <code>enable</code> command in order to start receiving the console messages. Browser collects messages issued while console domain is not enabled as well and reports them using <code>messageAdded</code> notification upon enabling.",
         "types": [
             {
+                "id": "Timestamp",
+                "type": "number",
+                "description": "Number of seconds since epoch."
+            },
+            {
                 "id": "ConsoleMessage",
                 "type": "object",
                 "description": "Console message.",
@@ -746,7 +757,8 @@
                     { "name": "repeatCount", "type": "integer", "optional": true, "description": "Repeat count for repeated messages." },
                     { "name": "parameters", "type": "array", "items": { "$ref": "Runtime.RemoteObject" }, "optional": true, "description": "Message parameters in case of the formatted message." },
                     { "name": "stackTrace", "$ref": "StackTrace", "optional": true, "description": "JavaScript stack trace for assertions and error messages." },
-                    { "name": "networkRequestId", "$ref": "Network.RequestId", "optional": true, "description": "Identifier of the network request associated with this message." }
+                    { "name": "networkRequestId", "$ref": "Network.RequestId", "optional": true, "description": "Identifier of the network request associated with this message." },
+                    { "name": "timestamp", "$ref": "Timestamp", "description": "Timestamp, when this message was fired.", "hidden": true }
                 ]
             },
             {
@@ -815,7 +827,8 @@
             {
                 "name": "messageRepeatCountUpdated",
                 "parameters": [
-                    { "name": "count", "type": "integer", "description": "New repeat count value." }
+                    { "name": "count", "type": "integer", "description": "New repeat count value." },
+                    { "name": "timestamp", "$ref": "Timestamp", "description": "Timestamp of most recent message in batch.", "hidden": true }
                 ],
                 "description": "Issued when subsequent message(s) are equal to the previous one(s)."
             },
@@ -1028,6 +1041,19 @@
                     { "name": "cacheDisabled", "type": "boolean", "description": "Cache disabled state." }
                 ],
                 "description": "Toggles ignoring cache for each request. If <code>true</code>, cache will not be used."
+            },  
+            {
+                "name": "loadResourceForFrontend",
+                "async": true,
+                "parameters": [
+                    { "name": "frameId", "$ref": "FrameId", "description": "Frame to load the resource from." },
+                    { "name": "url", "type": "string", "description": "URL of the resource to load." }
+                ],
+                "returns": [
+                    { "name": "content", "type": "string", "description": "Resource content." }
+                ],
+                "description": "Loads a resource in the context of a frame on the inspected page without cross origin checks.",
+                "hidden": true
             }
         ],
         "events": [
@@ -1932,6 +1958,7 @@
                 "hidden": true,
                 "parameters": [
                     { "name": "enabled", "type": "boolean", "description": "True to enable inspection mode, false to disable it." },
+                    { "name": "inspectShadowDOM", "type": "boolean", "optional": true, "description": "True to enable inspection mode for shadow DOM." },
                     { "name": "highlightConfig", "$ref": "HighlightConfig", "optional": true, "description": "A descriptor for the highlight appearance of hovered-over nodes. May be omitted if <code>enabled == false</code>." }
                 ],
                 "description": "Enters the 'inspect' mode. In this mode, elements that user is hovering over are highlighted. Backend then generates 'inspectNodeRequested' event upon element selection."
@@ -2260,9 +2287,14 @@
                     { "name": "styleSheetId", "$ref": "StyleSheetId", "description": "The stylesheet identifier."},
                     { "name": "frameId", "$ref": "Network.FrameId", "description": "Owner frame identifier."},
                     { "name": "sourceURL", "type": "string", "description": "Stylesheet resource URL."},
+                    { "name": "sourceMapURL", "type": "string", "optional": true, "description": "URL of source map associated with the stylesheet (if any)." },
                     { "name": "origin", "$ref": "StyleSheetOrigin", "description": "Stylesheet origin."},
                     { "name": "title", "type": "string", "description": "Stylesheet title."},
-                    { "name": "disabled", "type": "boolean", "description": "Denotes whether the stylesheet is disabled."}
+                    { "name": "disabled", "type": "boolean", "description": "Denotes whether the stylesheet is disabled."},
+                    { "name": "hasSourceURL", "type": "boolean", "optional": true, "description": "Whether the sourceURL field value comes from the sourceURL comment." },
+                    { "name": "isInline", "type": "boolean", "description": "Whether this stylesheet is created for STYLE tag by parser. This flag is not set for document.written STYLE tags." },
+                    { "name": "startLine", "type": "number", "description": "Line offset of the stylesheet within the resource (zero based)." },
+                    { "name": "startColumn", "type": "number", "description": "Column offset of the stylesheet within the resource (zero based)." }
                 ],
                 "description": "CSS stylesheet metainformation."
             },
@@ -2283,7 +2315,6 @@
                     { "name": "ruleId", "$ref": "CSSRuleId", "optional": true, "description": "The CSS rule identifier (absent for user agent stylesheet and user-specified stylesheet rules)."},
                     { "name": "selectorList", "$ref": "SelectorList", "description": "Rule selector data." },
                     { "name": "sourceURL", "type": "string", "optional": true, "description": "Parent stylesheet resource URL (for regular rules)."},
-                    { "name": "sourceLine", "type": "integer", "description": "Line ordinal of the rule selector start character in the resource."},
                     { "name": "origin", "$ref": "StyleSheetOrigin", "description": "Parent stylesheet's origin."},
                     { "name": "style", "$ref": "CSSStyle", "description": "Associated style declaration." },
                     { "name": "media", "type": "array", "items": { "$ref": "CSSMedia" }, "optional": true, "description": "Media list array (for rules involving media queries). The array enumerates media queries starting with the innermost one, going outwards." }
@@ -2299,7 +2330,7 @@
                     { "name": "endLine", "type": "integer", "description": "End line of range" },
                     { "name": "endColumn", "type": "integer", "description": "End column of range (exclusive)." }
                 ],
-                "description": "Text range within a resource."
+                "description": "Text range within a resource. All numbers are zero-based."
             },
             {
                 "id": "ShorthandEntry",
@@ -2361,7 +2392,7 @@
                     { "name": "text", "type": "string", "description": "Media query text." },
                     { "name": "source", "type": "string", "enum": ["mediaRule", "importRule", "linkedSheet", "inlineSheet"], "description": "Source of the media query: \"mediaRule\" if specified by a @media rule, \"importRule\" if specified by an @import rule, \"linkedSheet\" if specified by a \"media\" attribute in a linked stylesheet's LINK tag, \"inlineSheet\" if specified by a \"media\" attribute in an inline stylesheet's STYLE tag." },
                     { "name": "sourceURL", "type": "string", "optional": true, "description": "URL of the document containing the media query description." },
-                    { "name": "sourceLine", "type": "integer", "optional": true, "description": "Line in the document containing the media query (not defined for the \"stylesheet\" source)." }
+                    { "name": "range", "$ref": "SourceRange", "optional": true, "description": "The associated rule (@media or @import) header range in the enclosing stylesheet (if available)." }
                 ],
                 "description": "CSS media query descriptor."
             },
@@ -2754,6 +2785,20 @@
                     { "name": "object", "$ref": "Runtime.RemoteObject", "description": "Object representing the scope. For <code>global</code> and <code>with</code> scopes it represents the actual object; for the rest of the scopes, it is artificial transient object enumerating scope variables as its properties." }
                 ],
                 "description": "Scope description."
+            },
+            {
+                "id": "SetScriptSourceError",
+                "type": "object",
+                "properties": [
+                    { "name": "compileError", "optional": true, "type": "object", "properties":
+                        [
+                            { "name": "message", "type": "string", "description": "Compiler error message" },
+                            { "name": "lineNumber", "type": "integer", "description": "Compile error line number (1-based)" },
+                            { "name": "columnNumber", "type": "integer", "description": "Compile error column number (1-based)" }
+                        ]
+                    }
+                ],
+                "description": "Error data for setScriptSource command. compileError is a case type for uncompilable script source error."
             }
         ],
         "commands": [
@@ -2864,6 +2909,9 @@
                     { "name": "callFrames", "type": "array", "optional": true, "items": { "$ref": "CallFrame"}, "description": "New stack trace in case editing has happened while VM was stopped." },
                     { "name": "result", "type": "object", "optional": true, "description": "VM-specific description of the changes applied.", "hidden": true }
                 ],
+                "error": {
+                    "$ref": "SetScriptSourceError"
+                },
                 "description": "Edits JavaScript source live."
             },
             {
@@ -3015,8 +3063,9 @@
                 "name": "paused",
                 "parameters": [
                     { "name": "callFrames", "type": "array", "items": { "$ref": "CallFrame" }, "description": "Call stack the virtual machine stopped on." },
-                    { "name": "reason", "type": "string", "enum": [ "XHR", "DOM", "EventListener", "exception", "assert", "CSPViolation", "other" ], "description": "Pause reason." },
-                    { "name": "data", "type": "object", "optional": true, "description": "Object containing break-specific auxiliary properties." }
+                    { "name": "reason", "type": "string", "enum": [ "XHR", "DOM", "EventListener", "exception", "assert", "CSPViolation", "debugCommand", "other" ], "description": "Pause reason." },
+                    { "name": "data", "type": "object", "optional": true, "description": "Object containing break-specific auxiliary properties." },
+                    { "name": "hitBreakpoints", "type": "array", "optional": true, "items": { "type": "string" }, "description": "Hit breakpoints IDs", "hidden": true }
                 ],
                 "description": "Fired when the virtual machine stopped on breakpoint or exception or any other stop criteria."
             },
@@ -3081,7 +3130,7 @@
                 "parameters": [
                     { "name": "eventName", "type": "string", "description": "Instrumentation name to stop on." }
                 ],
-                "description": "Sets breakpoint on particular native event.",
+                "description": "Removes breakpoint on particular native event.",
                 "hidden": true
             },
             {
@@ -3432,7 +3481,10 @@
                 "id": "CallArgument",
                 "type": "object",
                 "properties": [
-                    { "name": "description", "type": "string" }
+                    { "name": "description", "type": "string", "description": "String representation of the object." },
+                    { "name": "resourceId", "$ref": "ResourceId", "optional": true, "description": "Resource identifier. Specified for <code>Resource</code> objects only." },
+                    { "name": "type", "type": "string", "optional": true, "enum": ["object", "function", "undefined", "string", "number", "boolean"], "description": "Object type. Specified for non <code>Resource</code> objects only." },
+                    { "name": "subtype", "type": "string", "optional": true, "enum": ["array", "null", "node", "regexp", "date"], "description": "Object subtype hint. Specified for <code>object</code> type values only." }
                 ]
             },
             {

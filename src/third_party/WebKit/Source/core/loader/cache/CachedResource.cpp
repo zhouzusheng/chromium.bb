@@ -36,20 +36,20 @@
 #include "core/loader/cache/CachedResourceHandle.h"
 #include "core/loader/cache/CachedResourceLoader.h"
 #include "core/loader/cache/MemoryCache.h"
-#include "core/platform/KURL.h"
 #include "core/platform/Logging.h"
 #include "core/platform/PurgeableBuffer.h"
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/network/ResourceHandle.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/MathExtras.h>
-#include <wtf/MemoryInstrumentationHashCountedSet.h>
-#include <wtf/MemoryInstrumentationHashSet.h>
-#include <wtf/MemoryObjectInfo.h>
-#include <wtf/RefCountedLeakCounter.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/text/CString.h>
-#include <wtf/Vector.h>
+#include "weborigin/KURL.h"
+#include "wtf/CurrentTime.h"
+#include "wtf/MathExtras.h"
+#include "wtf/MemoryInstrumentationHashCountedSet.h"
+#include "wtf/MemoryInstrumentationHashSet.h"
+#include "wtf/MemoryObjectInfo.h"
+#include "wtf/RefCountedLeakCounter.h"
+#include "wtf/StdLibExtras.h"
+#include "wtf/Vector.h"
+#include "wtf/text/CString.h"
 
 namespace WTF {
 
@@ -105,47 +105,16 @@ static inline bool shouldUpdateHeaderAfterRevalidation(const AtomicString& heade
     return true;
 }
 
-static ResourceLoadPriority defaultPriorityForResourceType(CachedResource::Type type)
-{
-    switch (type) {
-    case CachedResource::MainResource:
-        return ResourceLoadPriorityVeryHigh;
-    case CachedResource::CSSStyleSheet:
-        return ResourceLoadPriorityHigh;
-    case CachedResource::Script:
-    case CachedResource::FontResource:
-    case CachedResource::RawResource:
-        return ResourceLoadPriorityMedium;
-    case CachedResource::ImageResource:
-        return ResourceLoadPriorityLow;
-    case CachedResource::XSLStyleSheet:
-        return ResourceLoadPriorityHigh;
-#if ENABLE(SVG)
-    case CachedResource::SVGDocumentResource:
-        return ResourceLoadPriorityLow;
-#endif
-    case CachedResource::LinkPrefetch:
-        return ResourceLoadPriorityVeryLow;
-    case CachedResource::LinkSubresource:
-        return ResourceLoadPriorityVeryLow;
-    case CachedResource::TextTrackResource:
-        return ResourceLoadPriorityLow;
-    case CachedResource::ShaderResource:
-        return ResourceLoadPriorityMedium;
-    }
-    ASSERT_NOT_REACHED();
-    return ResourceLoadPriorityLow;
-}
-
 DEFINE_DEBUG_ONLY_GLOBAL(RefCountedLeakCounter, cachedResourceLeakCounter, ("CachedResource"));
 
 CachedResource::CachedResource(const ResourceRequest& request, Type type)
     : m_resourceRequest(request)
-    , m_loadPriority(defaultPriorityForResourceType(type))
     , m_responseTimestamp(currentTime())
     , m_decodedDataDeletionTimer(this, &CachedResource::decodedDataDeletionTimerFired)
+    , m_cancelTimer(this, &CachedResource::cancelTimerFired)
     , m_lastDecodedAccessTime(0)
     , m_loadFinishTime(0)
+    , m_identifier(0)
     , m_encodedSize(0)
     , m_decodedSize(0)
     , m_accessCount(0)
@@ -167,7 +136,6 @@ CachedResource::CachedResource(const ResourceRequest& request, Type type)
     , m_prevInAllResourcesList(0)
     , m_nextInLiveResourcesList(0)
     , m_prevInLiveResourcesList(0)
-    , m_owningCachedResourceLoader(0)
     , m_resourceToRevalidate(0)
     , m_proxyResource(0)
 {
@@ -197,17 +165,11 @@ CachedResource::~CachedResource()
     m_deleted = true;
     cachedResourceLeakCounter.decrement();
 #endif
-
-    if (m_owningCachedResourceLoader)
-        m_owningCachedResourceLoader->removeCachedResource(this);
 }
 
 void CachedResource::failBeforeStarting()
 {
-    // FIXME: What if resources in other frames were waiting for this revalidation?
     LOG(ResourceLoading, "Cannot start loading '%s'", url().string().latin1().data());
-    if (m_resourceToRevalidate) 
-        memoryCache()->revalidationFailed(this); 
     error(CachedResource::LoadError);
 }
 
@@ -224,27 +186,6 @@ void CachedResource::load(CachedResourceLoader* cachedResourceLoader, const Reso
     if (!accept().isEmpty())
         m_resourceRequest.setHTTPAccept(accept());
 
-    if (isCacheValidator()) {
-        CachedResource* resourceToRevalidate = m_resourceToRevalidate;
-        ASSERT(resourceToRevalidate->canUseCacheValidator());
-        ASSERT(resourceToRevalidate->isLoaded());
-        const String& lastModified = resourceToRevalidate->response().httpHeaderField("Last-Modified");
-        const String& eTag = resourceToRevalidate->response().httpHeaderField("ETag");
-        if (!lastModified.isEmpty() || !eTag.isEmpty()) {
-            ASSERT(cachedResourceLoader->cachePolicy(type()) != CachePolicyReload);
-            if (cachedResourceLoader->cachePolicy(type()) == CachePolicyRevalidate)
-                m_resourceRequest.setHTTPHeaderField("Cache-Control", "max-age=0");
-            if (!lastModified.isEmpty())
-                m_resourceRequest.setHTTPHeaderField("If-Modified-Since", lastModified);
-            if (!eTag.isEmpty())
-                m_resourceRequest.setHTTPHeaderField("If-None-Match", eTag);
-        }
-    }
-
-    if (type() == CachedResource::LinkPrefetch || type() == CachedResource::LinkSubresource)
-        m_resourceRequest.setHTTPHeaderField("Purpose", "prefetch");
-    m_resourceRequest.setPriority(loadPriority());
-
     // FIXME: It's unfortunate that the cache layer and below get to know anything about fragment identifiers.
     // We should look into removing the expectation of that knowledge from the platform network stacks.
     ResourceRequest request(m_resourceRequest);
@@ -256,7 +197,6 @@ void CachedResource::load(CachedResourceLoader* cachedResourceLoader, const Reso
     }
 
     m_loader = ResourceLoader::create(cachedResourceLoader->documentLoader(), this, request, options);
-
     if (!m_loader) {
         failBeforeStarting();
         return;
@@ -276,6 +216,8 @@ void CachedResource::checkNotify()
 
 void CachedResource::appendData(const char* data, int length)
 {
+    ASSERT(!m_resourceToRevalidate);
+    ASSERT(!errorOccurred());
     if (m_options.dataBufferingPolicy == DoNotBufferData)
         return;
     if (m_data)
@@ -287,6 +229,12 @@ void CachedResource::appendData(const char* data, int length)
 
 void CachedResource::error(CachedResource::Status status)
 {
+    if (m_resourceToRevalidate)
+        revalidationFailed();
+
+    if (!m_error.isNull() && (m_error.isCancellation() || !isPreloaded()))
+        memoryCache()->remove(this);
+
     setStatus(status);
     ASSERT(errorOccurred());
     m_data.clear();
@@ -301,8 +249,11 @@ void CachedResource::finishOnePart()
     checkNotify();
 }
 
-void CachedResource::finish()
+void CachedResource::finish(double finishTime)
 {
+    ASSERT(!m_resourceToRevalidate);
+    ASSERT(!errorOccurred());
+    m_loadFinishTime = finishTime;
     finishOnePart();
     if (!errorOccurred())
         m_status = Cached;
@@ -368,6 +319,13 @@ void CachedResource::responseReceived(const ResourceResponse& response)
     String encoding = response.textEncodingName();
     if (!encoding.isNull())
         setEncoding(encoding);
+
+    if (!m_resourceToRevalidate)
+        return;
+    if (response.httpStatusCode() == 304)
+        revalidationSucceeded(response);
+    else
+        revalidationFailed();
 }
 
 void CachedResource::setSerializedCachedMetadata(const char* data, size_t size)
@@ -376,6 +334,7 @@ void CachedResource::setSerializedCachedMetadata(const char* data, size_t size)
     // If this triggers, it indicates an efficiency problem which is most
     // likely unexpected in code designed to improve performance.
     ASSERT(!m_cachedMetadata);
+    ASSERT(!m_resourceToRevalidate);
 
     m_cachedMetadata = CachedMetadata::deserialize(data, size);
 }
@@ -398,21 +357,9 @@ CachedMetadata* CachedResource::cachedMetadata(unsigned dataTypeID) const
     return m_cachedMetadata.get();
 }
 
-void CachedResource::stopLoading()
+void CachedResource::clearLoader()
 {
-    ASSERT(m_loader);            
     m_loader = 0;
-
-    CachedResourceHandle<CachedResource> protect(this);
-
-    // All loads finish with finish() or error(), except for
-    // canceled loads, which silently set our request to 0. Be sure to notify our
-    // client in that case, so we don't seem to continue loading forever.
-    if (isLoading()) {
-        setLoading(false);
-        setStatus(LoadError);
-        checkNotify();
-    }
 }
 
 void CachedResource::addClient(CachedResourceClient* client)
@@ -498,6 +445,27 @@ void CachedResource::removeClient(CachedResourceClient* client)
     // This object may be dead here.
 }
 
+void CachedResource::allClientsRemoved()
+{
+    if (!m_loader)
+        return;
+    if (m_type == MainResource || m_type == RawResource)
+        cancelTimerFired(&m_cancelTimer);
+    else if (!m_cancelTimer.isActive())
+        m_cancelTimer.startOneShot(0);
+}
+
+void CachedResource::cancelTimerFired(Timer<CachedResource>* timer)
+{
+    ASSERT_UNUSED(timer, timer == &m_cancelTimer);
+    if (hasClients() || !m_loader)
+        return;
+    CachedResourceHandle<CachedResource> protect(this);
+    m_loader->cancelIfNotFinishing();
+    if (m_status != Cached)
+        memoryCache()->remove(this);
+}
+
 void CachedResource::destroyDecodedDataIfNeeded()
 {
     if (!m_decodedSize)
@@ -563,9 +531,6 @@ void CachedResource::setEncodedSize(unsigned size)
     if (size == m_encodedSize)
         return;
 
-    // The size cannot ever shrink (unless it is being nulled out because of an error).  If it ever does, assert.
-    ASSERT(size == 0 || size >= m_encodedSize);
-    
     int delta = size - m_encodedSize;
 
     // The object must now be moved to a different queue, since its size has been changed.
@@ -573,9 +538,9 @@ void CachedResource::setEncodedSize(unsigned size)
     // queue.
     if (inCache())
         memoryCache()->removeFromLRUList(this);
-    
+
     m_encodedSize = size;
-   
+
     if (inCache()) { 
         // Now insert into the new LRU list.
         memoryCache()->insertInLRUList(this);
@@ -641,6 +606,8 @@ void CachedResource::switchClientsToRevalidatedResource()
 
     LOG(ResourceLoading, "CachedResource %p switchClientsToRevalidatedResource %p", this, m_resourceToRevalidate);
 
+    m_resourceToRevalidate->m_identifier = m_identifier;
+
     m_switchingClientsToRevalidatedResource = true;
     HashSet<CachedResourceHandleBase*>::iterator end = m_handlesToRevalidate.end();
     for (HashSet<CachedResourceHandleBase*>::iterator it = m_handlesToRevalidate.begin(); it != end; ++it) {
@@ -699,6 +666,51 @@ void CachedResource::updateResponseAfterRevalidation(const ResourceResponse& val
             continue;
         m_response.setHTTPHeaderField(it->key, it->value);
     }
+}
+
+void CachedResource::revalidationSucceeded(const ResourceResponse& response)
+{
+    ASSERT(m_resourceToRevalidate);
+    ASSERT(!m_resourceToRevalidate->inCache());
+    ASSERT(m_resourceToRevalidate->isLoaded());
+    ASSERT(inCache());
+
+    // Calling evict() can potentially delete revalidatingResource, which we use
+    // below. This mustn't be the case since revalidation means it is loaded
+    // and so canDelete() is false.
+    ASSERT(!canDelete());
+
+    m_resourceToRevalidate->updateResponseAfterRevalidation(response);
+    memoryCache()->replace(m_resourceToRevalidate, this);
+
+    switchClientsToRevalidatedResource();
+    ASSERT(!m_deleted);
+    // clearResourceToRevalidate deletes this.
+    clearResourceToRevalidate();
+}
+
+void CachedResource::revalidationFailed()
+{
+    ASSERT(WTF::isMainThread());
+    LOG(ResourceLoading, "Revalidation failed for %p", this);
+    ASSERT(resourceToRevalidate());
+    clearResourceToRevalidate();
+}
+
+void CachedResource::updateForAccess()
+{
+    ASSERT(inCache());
+
+    // Need to make sure to remove before we increase the access count, since
+    // the queue will possibly change.
+    memoryCache()->removeFromLRUList(this);
+
+    // If this is the first time the resource has been accessed, adjust the size of the cache to account for its initial size.
+    if (!m_accessCount)
+        memoryCache()->adjustSize(hasClients(), size());
+
+    m_accessCount++;
+    memoryCache()->insertInLRUList(this);
 }
 
 void CachedResource::registerHandle(CachedResourceHandleBase* h)
@@ -785,18 +797,18 @@ bool CachedResource::makePurgeable(bool purgeable)
             return false;
 
         m_purgeableData = m_data->releasePurgeableBuffer();
-        m_purgeableData->setPurgePriority(purgePriority());
-        m_purgeableData->makePurgeable(true);
+        m_purgeableData->unlock();
         m_data.clear();
         return true;
     }
 
     if (!m_purgeableData)
         return true;
+
     ASSERT(!m_data);
     ASSERT(!hasClients());
 
-    if (!m_purgeableData->makePurgeable(false))
+    if (!m_purgeableData->lock())
         return false; 
 
     m_data = SharedBuffer::adoptPurgeableBuffer(m_purgeableData.release());
@@ -819,17 +831,11 @@ unsigned CachedResource::overheadSize() const
     return sizeof(CachedResource) + m_response.memoryUsage() + kAverageClientsHashMapSize + m_resourceRequest.url().string().length() * 2;
 }
 
-void CachedResource::setLoadPriority(ResourceLoadPriority loadPriority)
+void CachedResource::didChangePriority(ResourceLoadPriority loadPriority)
 {
-    if (loadPriority == ResourceLoadPriorityUnresolved)
-        loadPriority = defaultPriorityForResourceType(type());
-    if (loadPriority == m_loadPriority)
-        return;
-    m_loadPriority = loadPriority;
     if (m_loader)
         m_loader->didChangePriority(loadPriority);
 }
-
 
 CachedResource::CachedResourceCallback::CachedResourceCallback(CachedResource* resource, CachedResourceClient* client)
     : m_resource(resource)
@@ -866,7 +872,6 @@ void CachedResource::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     info.addMember(m_prevInAllResourcesList, "prevInAllResourcesList");
     info.addMember(m_nextInLiveResourcesList, "nextInLiveResourcesList");
     info.addMember(m_prevInLiveResourcesList, "prevInLiveResourcesList");
-    info.addMember(m_owningCachedResourceLoader, "owningCachedResourceLoader");
     info.addMember(m_resourceToRevalidate, "resourceToRevalidate");
     info.addMember(m_proxyResource, "proxyResource");
     info.addMember(m_handlesToRevalidate, "handlesToRevalidate");

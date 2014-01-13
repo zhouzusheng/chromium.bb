@@ -153,21 +153,6 @@ public:
         }
     }
 
-    // FIXME: These functions are deprecated. No code should be added that uses these.
-    int bestTruncatedAt() const { return m_legacyPrinting.m_bestTruncatedAt; }
-    void setBestTruncatedAt(int y, RenderBoxModelObject* forRenderer, bool forcedBreak = false);
-    int truncatedAt() const { return m_legacyPrinting.m_truncatedAt; }
-    void setTruncatedAt(int y)
-    { 
-        m_legacyPrinting.m_truncatedAt = y;
-        m_legacyPrinting.m_bestTruncatedAt = 0;
-        m_legacyPrinting.m_truncatorWidth = 0;
-        m_legacyPrinting.m_forcedPageBreak = false;
-    }
-    const IntRect& printRect() const { return m_legacyPrinting.m_printRect; }
-    void setPrintRect(const IntRect& r) { m_legacyPrinting.m_printRect = r; }
-    // End deprecated functions.
-
     // Notification that this view moved into or out of a native window.
     void setIsInWindow(bool);
 
@@ -211,6 +196,8 @@ public:
     
     virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) OVERRIDE;
 
+    virtual bool backgroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect) const OVERRIDE FINAL;
+
 protected:
     virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE;
     virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const OVERRIDE;
@@ -231,8 +218,8 @@ private:
         // We push LayoutState even if layoutState is disabled because it stores layoutDelta too.
         if (!doingFullRepaint() || m_layoutState->isPaginated() || renderer->hasColumns() || renderer->flowThreadContainingBlock()
             || m_layoutState->lineGrid() || (renderer->style()->lineGrid() != RenderStyle::initialLineGrid() && renderer->isBlockFlow())
-            || (renderer->isRenderBlock() && toRenderBlock(renderer)->exclusionShapeInsideInfo())
-            || (m_layoutState->exclusionShapeInsideInfo() && renderer->isRenderBlock() && !toRenderBlock(renderer)->allowsExclusionShapeInsideInfoSharing())
+            || (renderer->isRenderBlock() && toRenderBlock(renderer)->shapeInsideInfo())
+            || (m_layoutState->shapeInsideInfo() && renderer->isRenderBlock() && !toRenderBlock(renderer)->allowsShapeInsideInfoSharing())
             ) {
             m_layoutState = new (renderArena()) LayoutState(m_layoutState, renderer, offset, pageHeight, pageHeightChanged, colInfo);
             return true;
@@ -276,24 +263,6 @@ protected:
     RenderObject* m_selectionEnd;
     int m_selectionStartPos;
     int m_selectionEndPos;
-
-    // FIXME: Only used by embedded WebViews inside AppKit NSViews.  Find a way to remove.
-    struct LegacyPrinting {
-        LegacyPrinting()
-            : m_bestTruncatedAt(0)
-            , m_truncatedAt(0)
-            , m_truncatorWidth(0)
-            , m_forcedPageBreak(false)
-        { }
-
-        int m_bestTruncatedAt;
-        int m_truncatedAt;
-        int m_truncatorWidth;
-        IntRect m_printRect;
-        bool m_forcedPageBreak;
-    };
-    LegacyPrinting m_legacyPrinting;
-    // End deprecated members.
 
     int m_maximalOutlineSize; // Used to apply a fudge factor to dirty-rect checks on blocks/tables.
 

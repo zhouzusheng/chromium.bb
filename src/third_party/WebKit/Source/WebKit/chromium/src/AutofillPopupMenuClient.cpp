@@ -37,15 +37,15 @@
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
 #include "core/css/CSSFontSelector.h"
-#include "core/css/StyleResolver.h"
+#include "core/css/resolver/StyleResolver.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/page/Chrome.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderTheme.h"
-#include <public/WebString.h>
-#include <public/WebVector.h>
+#include "public/platform/WebString.h"
+#include "public/platform/WebVector.h"
 
 using namespace WebCore;
 
@@ -339,7 +339,7 @@ WebViewImpl* AutofillPopupMenuClient::getWebView() const
     if (!page)
         return 0;
 
-    return static_cast<WebViewImpl*>(page->chrome()->client()->webView());
+    return static_cast<WebViewImpl*>(page->chrome().client()->webView());
 }
 
 RenderStyle* AutofillPopupMenuClient::textFieldStyle() const

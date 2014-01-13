@@ -13,6 +13,9 @@
 #include "content/public/browser/content_browser_client.h"
 #include "net/url_request/url_request_job_factory.h"
 
+class PrefRegistrySimple;
+class PrefService;
+
 namespace content {
 
 class DownloadManagerDelegate;
@@ -66,6 +69,8 @@ class ShellBrowserContext : public BrowserContext {
   scoped_ptr<ShellResourceContext> resource_context_;
   scoped_refptr<ShellDownloadManagerDelegate> download_manager_delegate_;
   scoped_refptr<ShellURLRequestContextGetter> url_request_getter_;
+  scoped_refptr<PrefRegistrySimple> pref_registry_;
+  scoped_ptr<PrefService> pref_service_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellBrowserContext);
 };

@@ -23,15 +23,13 @@
 #include "config.h"
 #include "core/dom/Attr.h"
 
-#include "HTMLNames.h"
 #include "XMLNSNames.h"
-#include "core/css/StylePropertySet.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ScopedEventQueue.h"
 #include "core/dom/StyledElement.h"
 #include "core/dom/Text.h"
-#include <wtf/text/AtomicString.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -152,13 +150,7 @@ PassRefPtr<Node> Attr::cloneNode(bool /*deep*/)
 // DOM Section 1.1.1
 bool Attr::childTypeAllowed(NodeType type) const
 {
-    switch (type) {
-        case TEXT_NODE:
-        case ENTITY_REFERENCE_NODE:
-            return true;
-        default:
-            return false;
-    }
+    return TEXT_NODE == type;
 }
 
 void Attr::childrenChanged(bool, Node*, Node*, int)
@@ -167,8 +159,6 @@ void Attr::childrenChanged(bool, Node*, Node*, int)
         return;
 
     invalidateNodeListCachesInAncestors(&qualifiedName(), m_element);
-
-    // FIXME: We should include entity references in the value
 
     StringBuilder valueBuilder;
     for (Node *n = firstChild(); n; n = n->nextSibling()) {
@@ -192,16 +182,6 @@ void Attr::childrenChanged(bool, Node*, Node*, int)
 bool Attr::isId() const
 {
     return qualifiedName().matches(document()->idAttributeName());
-}
-
-CSSStyleDeclaration* Attr::style()
-{
-    // This function only exists to support the Obj-C bindings.
-    if (!m_element || !m_element->isStyledElement())
-        return 0;
-    m_style = StylePropertySet::create();
-    static_cast<StyledElement*>(m_element)->collectStyleForPresentationAttribute(qualifiedName(), value(), static_cast<MutableStylePropertySet*>(m_style.get()));
-    return m_style->ensureCSSStyleDeclaration();
 }
 
 const AtomicString& Attr::value() const

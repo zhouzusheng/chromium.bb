@@ -14,9 +14,7 @@ namespace content {
 
 TouchpadTapSuppressionController::TouchpadTapSuppressionController(
     RenderWidgetHostImpl* /*rwhv*/)
-    : render_widget_host_(NULL),
-      controller_(NULL) {
-}
+    : render_widget_host_(NULL) {}
 
 TouchpadTapSuppressionController::~TouchpadTapSuppressionController() {}
 
@@ -27,7 +25,7 @@ void TouchpadTapSuppressionController::GestureFlingCancelAck(
 }
 
 bool TouchpadTapSuppressionController::ShouldDeferMouseDown(
-    const WebKit::WebMouseEvent& /*event*/) {
+    const MouseEventWithLatencyInfo& /*event*/) {
   return false;
 }
 

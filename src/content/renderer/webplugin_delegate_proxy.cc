@@ -20,15 +20,15 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/version.h"
-#include "content/common/child_process.h"
-#include "content/common/npobject_proxy.h"
-#include "content/common/npobject_stub.h"
-#include "content/common/npobject_util.h"
-#include "content/common/plugin_messages.h"
+#include "content/child/child_process.h"
+#include "content/child/npobject_proxy.h"
+#include "content/child/npobject_stub.h"
+#include "content/child/npobject_util.h"
+#include "content/child/plugin_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/plugin_channel_host.h"
@@ -37,18 +37,18 @@
 #include "ipc/ipc_channel_handle.h"
 #include "net/base/mime_util.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebDragData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/WebKit/public/platform/WebDragData.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "ui/gfx/blit.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
+#include "webkit/common/cursors/webcursor.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/plugin_constants.h"
@@ -125,9 +125,9 @@ class ResourceClientProxy : public webkit::npapi::WebPluginResourceClient {
 
   // PluginResourceClient implementation:
   virtual void WillSendRequest(const GURL& url, int http_status_code) OVERRIDE {
-    DCHECK(channel_ != NULL);
-    channel_->Send(new PluginMsg_WillSendRequest(instance_id_, resource_id_,
-                                                 url, http_status_code));
+    DCHECK(channel_.get() != NULL);
+    channel_->Send(new PluginMsg_WillSendRequest(
+        instance_id_, resource_id_, url, http_status_code));
   }
 
   virtual void DidReceiveResponse(const std::string& mime_type,
@@ -135,7 +135,7 @@ class ResourceClientProxy : public webkit::npapi::WebPluginResourceClient {
                                   uint32 expected_length,
                                   uint32 last_modified,
                                   bool request_is_seekable) OVERRIDE {
-    DCHECK(channel_ != NULL);
+    DCHECK(channel_.get() != NULL);
     PluginMsg_DidReceiveResponseParams params;
     params.id = resource_id_;
     params.mime_type = mime_type;
@@ -152,7 +152,7 @@ class ResourceClientProxy : public webkit::npapi::WebPluginResourceClient {
   virtual void DidReceiveData(const char* buffer,
                               int length,
                               int data_offset) OVERRIDE {
-    DCHECK(channel_ != NULL);
+    DCHECK(channel_.get() != NULL);
     DCHECK_GT(length, 0);
     std::vector<char> data;
     data.resize(static_cast<size_t>(length));
@@ -165,14 +165,14 @@ class ResourceClientProxy : public webkit::npapi::WebPluginResourceClient {
   }
 
   virtual void DidFinishLoading() OVERRIDE {
-    DCHECK(channel_ != NULL);
+    DCHECK(channel_.get() != NULL);
     channel_->Send(new PluginMsg_DidFinishLoading(instance_id_, resource_id_));
     channel_ = NULL;
     base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
   }
 
   virtual void DidFail() OVERRIDE {
-    DCHECK(channel_ != NULL);
+    DCHECK(channel_.get() != NULL);
     channel_->Send(new PluginMsg_DidFail(instance_id_, resource_id_));
     channel_ = NULL;
     base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
@@ -212,6 +212,7 @@ WebPluginDelegateProxy::WebPluginDelegateProxy(
       mime_type_(mime_type),
       instance_id_(MSG_ROUTING_NONE),
       npobject_(NULL),
+      npp_(new NPP_t),
       sad_plugin_(NULL),
       invalidate_pending_(false),
       transparent_(false),
@@ -246,16 +247,20 @@ void WebPluginDelegateProxy::PluginDestroyed() {
   if (window_)
     WillDestroyWindow();
 
-  if (render_view_)
+  if (render_view_.get())
     render_view_->UnregisterPluginDelegate(this);
 
-  if (channel_host_) {
+  if (channel_host_.get()) {
     Send(new PluginMsg_DestroyInstance(instance_id_));
 
     // Must remove the route after sending the destroy message, since
     // RemoveRoute can lead to all the outstanding NPObjects being told the
     // channel went away if this was the last instance.
     channel_host_->RemoveRoute(instance_id_);
+
+    // Remove the mapping between our instance-Id and NPP identifiers, used by
+    // the channel to track object ownership, before releasing it.
+    channel_host_->RemoveMappingForNPObjectOwner(instance_id_);
 
     // Release the channel host now. If we are is the last reference to the
     // channel, this avoids a race where this renderer asks a new connection to
@@ -267,13 +272,14 @@ void WebPluginDelegateProxy::PluginDestroyed() {
     channel_host_ = NULL;
   }
 
-  if (window_script_object_) {
+  if (window_script_object_.get()) {
     // Release the window script object, if the plugin didn't already.
     // If we don't do this then it will linger until the last plugin instance is
     // destroyed.  In the meantime, though, the frame that it refers to may have
     // been destroyed by WebKit, at which point WebKit will forcibly deallocate
     // the window script object.  The window script object stub is unique to the
     // plugin instance, so this won't affect other instances.
+    // TODO(wez): Remove this hack.
     window_script_object_->DeleteSoon();
   }
 
@@ -333,7 +339,7 @@ bool WebPluginDelegateProxy::Initialize(
     channel_host =
         PluginChannelHost::GetPluginChannelHost(
             channel_handle, ChildProcess::current()->io_message_loop_proxy());
-    if (!channel_host) {
+    if (!channel_host.get()) {
       LOG(ERROR) << "Couldn't get PluginChannelHost";
       continue;
     }
@@ -362,6 +368,10 @@ bool WebPluginDelegateProxy::Initialize(
 
   channel_host_->AddRoute(instance_id_, this, NULL);
 
+  // Inform the channel of the mapping between our instance-Id and dummy NPP
+  // identifier, for use in object ownership tracking.
+  channel_host_->AddMappingForNPObjectOwner(instance_id_, GetPluginNPP());
+
   // Now tell the PluginInstance in the plugin process to initialize.
   PluginMsg_Init_Params params;
   params.url = url;
@@ -385,7 +395,7 @@ bool WebPluginDelegateProxy::Initialize(
 }
 
 bool WebPluginDelegateProxy::Send(IPC::Message* msg) {
-  if (!channel_host_) {
+  if (!channel_host_.get()) {
     DLOG(WARNING) << "dropping message because channel host is null";
     delete msg;
     return false;
@@ -646,7 +656,7 @@ bool WebPluginDelegateProxy::CreateSharedBitmap(
   if (!memory->get())
     return false;
 #endif
-#if defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
   TransportDIB::Handle handle;
   IPC::Message* msg = new ViewHostMsg_AllocTransportDIB(size, false, &handle);
   if (!RenderThreadImpl::current()->Send(msg))
@@ -679,7 +689,7 @@ void WebPluginDelegateProxy::Paint(WebKit::WebCanvas* canvas,
 
   // If the plugin is no longer connected (channel crashed) draw a crashed
   // plugin bitmap
-  if (!channel_host_ || !channel_host_->channel_valid()) {
+  if (!channel_host_.get() || !channel_host_->channel_valid()) {
     PaintSadPlugin(canvas, rect);
     return;
   }
@@ -738,9 +748,14 @@ NPObject* WebPluginDelegateProxy::GetPluginScriptableObject() {
     return NULL;
 
   npobject_ = NPObjectProxy::Create(
-      channel_host_.get(), route_id, 0, page_url_);
+      channel_host_.get(), route_id, 0, page_url_, GetPluginNPP());
 
   return WebBindings::retainObject(npobject_);
+}
+
+NPP WebPluginDelegateProxy::GetPluginNPP() {
+  // Return a dummy NPP for WebKit to use to identify this plugin.
+  return npp_.get();
 }
 
 bool WebPluginDelegateProxy::GetFormValue(string16* value) {
@@ -765,7 +780,7 @@ void WebPluginDelegateProxy::SetFocus(bool focused) {
 
 bool WebPluginDelegateProxy::HandleInputEvent(
     const WebInputEvent& event,
-    WebCursorInfo* cursor_info) {
+    WebCursor::CursorInfo* cursor_info) {
   bool handled;
   WebCursor cursor;
   // A windowless plugin can enter a modal loop in the context of a
@@ -776,7 +791,6 @@ bool WebPluginDelegateProxy::HandleInputEvent(
       instance_id_, &event, &handled, &cursor);
   message->set_pump_messages_event(modal_loop_pump_messages_event_.get());
   Send(message);
-  cursor.GetCursorInfo(cursor_info);
   return handled;
 }
 
@@ -915,12 +929,10 @@ void WebPluginDelegateProxy::OnNotifyIMEStatus(int input_type,
   if (!render_view_)
     return;
 
-  ViewHostMsg_TextInputState_Params params;
-  params.type = static_cast<ui::TextInputType>(input_type);
-  params.can_compose_inline = true;
-  render_view_->Send(new ViewHostMsg_TextInputStateChanged(
+  render_view_->Send(new ViewHostMsg_TextInputTypeChanged(
       render_view_->routing_id(),
-      params));
+      static_cast<ui::TextInputType>(input_type),
+      true));
 
   ViewHostMsg_SelectionBounds_Params bounds_params;
   bounds_params.anchor_rect = bounds_params.focus_rect = caret_rect;
@@ -1101,11 +1113,11 @@ void WebPluginDelegateProxy::OnHandleURLRequest(
 webkit::npapi::WebPluginResourceClient*
 WebPluginDelegateProxy::CreateResourceClient(
     unsigned long resource_id, const GURL& url, int notify_id) {
-  if (!channel_host_)
+  if (!channel_host_.get())
     return NULL;
 
-  ResourceClientProxy* proxy = new ResourceClientProxy(channel_host_,
-                                                       instance_id_);
+  ResourceClientProxy* proxy =
+      new ResourceClientProxy(channel_host_.get(), instance_id_);
   proxy->Initialize(resource_id, url, notify_id);
   return proxy;
 }
@@ -1113,11 +1125,11 @@ WebPluginDelegateProxy::CreateResourceClient(
 webkit::npapi::WebPluginResourceClient*
 WebPluginDelegateProxy::CreateSeekableResourceClient(
     unsigned long resource_id, int range_request_id) {
-  if (!channel_host_)
+  if (!channel_host_.get())
     return NULL;
 
-  ResourceClientProxy* proxy = new ResourceClientProxy(channel_host_,
-                                                       instance_id_);
+  ResourceClientProxy* proxy =
+      new ResourceClientProxy(channel_host_.get(), instance_id_);
   proxy->InitializeForSeekableStream(resource_id, range_request_id);
   return proxy;
 }

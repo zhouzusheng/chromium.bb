@@ -14,6 +14,10 @@
 #include "SkPaint.h"
 #include "SkTypeface.h"
 
+#ifdef SK_BUILD_FOR_ANDROID
+    #include "SkPaintOptionsAndroid.h"
+#endif
+
 struct SkGlyph;
 class SkDescriptor;
 class SkMaskFilter;
@@ -180,8 +184,7 @@ public:
     void        getMetrics(SkGlyph*);
     void        getImage(const SkGlyph&);
     void        getPath(const SkGlyph&, SkPath*);
-    void        getFontMetrics(SkPaint::FontMetrics* mX,
-                               SkPaint::FontMetrics* mY);
+    void        getFontMetrics(SkPaint::FontMetrics*);
 
 #ifdef SK_BUILD_FOR_ANDROID
     unsigned getBaseGlyphCount(SkUnichar charCode);
@@ -217,6 +220,10 @@ protected:
 private:
     // never null
     SkAutoTUnref<SkTypeface> fTypeface;
+
+#ifdef SK_BUILD_FOR_ANDROID
+    SkPaintOptionsAndroid fPaintOptionsAndroid;
+#endif
 
     // optional object, which may be null
     SkPathEffect*   fPathEffect;
@@ -263,6 +270,9 @@ private:
 #define kPathEffect_SkDescriptorTag     SkSetFourByteTag('p', 't', 'h', 'e')
 #define kMaskFilter_SkDescriptorTag     SkSetFourByteTag('m', 's', 'k', 'f')
 #define kRasterizer_SkDescriptorTag     SkSetFourByteTag('r', 'a', 's', 't')
+#ifdef SK_BUILD_FOR_ANDROID
+#define kAndroidOpts_SkDescriptorTag    SkSetFourByteTag('a', 'n', 'd', 'r')
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 

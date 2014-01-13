@@ -10,7 +10,7 @@
 #include "base/debug/stack_trace.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_response_body_drainer.h"
@@ -82,7 +82,6 @@ HttpNetworkSession::Params::Params()
       spdy_max_concurrent_streams_limit(0),
       time_func(&base::TimeTicks::Now),
       enable_quic(false),
-      origin_port_to_force_quic_on(0),
       quic_clock(NULL),
       quic_random(NULL),
       enable_user_alternate_protocol_ports(false),
@@ -127,10 +126,11 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                          params.spdy_max_concurrent_streams_limit,
                          params.time_func,
                          params.trusted_spdy_proxy),
-      http_stream_factory_(new HttpStreamFactoryImpl(this)),
+      http_stream_factory_(new HttpStreamFactoryImpl(this, false)),
+      websocket_stream_factory_(new HttpStreamFactoryImpl(this, true)),
       params_(params) {
   DCHECK(proxy_service_);
-  DCHECK(ssl_config_service_);
+  DCHECK(ssl_config_service_.get());
   CHECK(http_server_properties_);
 }
 
@@ -180,21 +180,21 @@ SSLClientSocketPool* HttpNetworkSession::GetSocketPoolForSSLWithProxy(
       proxy_server);
 }
 
-Value* HttpNetworkSession::SocketPoolInfoToValue() const {
+base::Value* HttpNetworkSession::SocketPoolInfoToValue() const {
   // TODO(yutak): Should merge values from normal pools and WebSocket pools.
   return normal_socket_pool_manager_->SocketPoolInfoToValue();
 }
 
-Value* HttpNetworkSession::SpdySessionPoolInfoToValue() const {
+base::Value* HttpNetworkSession::SpdySessionPoolInfoToValue() const {
   return spdy_session_pool_.SpdySessionPoolInfoToValue();
 }
 
-Value* HttpNetworkSession::QuicInfoToValue() const {
+base::Value* HttpNetworkSession::QuicInfoToValue() const {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->Set("sessions", quic_stream_factory_.QuicStreamFactoryInfoToValue());
   dict->SetBoolean("quic_enabled", params_.enable_quic);
-  dict->SetInteger("origin_port_to_force_quic_on",
-                   params_.origin_port_to_force_quic_on);
+  dict->SetString("origin_to_force_quic_on",
+                  params_.origin_to_force_quic_on.ToString());
   return dict;
 }
 

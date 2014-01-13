@@ -34,15 +34,17 @@
  * @extends {WebInspector.Object}
  * @implements {WebInspector.ContentProvider}
  * @param {WebInspector.Project} project
- * @param {Array.<string>} path
+ * @param {string} parentPath
+ * @param {string} name
  * @param {string} url
  * @param {WebInspector.ResourceType} contentType
  * @param {boolean} isEditable
  */
-WebInspector.UISourceCode = function(project, path, originURL, url, contentType, isEditable)
+WebInspector.UISourceCode = function(project, parentPath, name, originURL, url, contentType, isEditable)
 {
     this._project = project;
-    this._path = path;
+    this._parentPath = parentPath;
+    this._name = name;
     this._originURL = originURL;
     this._url = url;
     this._contentType = contentType;
@@ -71,6 +73,7 @@ WebInspector.UISourceCode.Events = {
     WorkingCopyChanged: "WorkingCopyChanged",
     WorkingCopyCommitted: "WorkingCopyCommitted",
     TitleChanged: "TitleChanged",
+    SavedStateUpdated: "SavedStateUpdated",
     ConsoleMessageAdded: "ConsoleMessageAdded",
     ConsoleMessageRemoved: "ConsoleMessageRemoved",
     ConsoleMessagesCleared: "ConsoleMessagesCleared",
@@ -87,19 +90,35 @@ WebInspector.UISourceCode.prototype = {
     },
 
     /**
-     * @return {Array.<string>}
+     * @return {string}
      */
-    path: function()
+    name: function()
     {
-        return this._path;
+        return this._name;
     },
 
     /**
      * @return {string}
      */
-    name: function()
+    parentPath: function()
     {
-        return this._path[this._path.length - 1];
+        return this._parentPath;
+    },
+
+    /**
+     * @return {string}
+     */
+    path: function()
+    {
+        return this._parentPath ? this._parentPath + "/" + this._name : this._name;
+    },
+
+    /**
+     * @return {string}
+     */
+    fullName: function()
+    {
+        return this._project.displayName() + "/" + this.path();
     },
 
     /**
@@ -107,7 +126,7 @@ WebInspector.UISourceCode.prototype = {
      */
     displayName: function()
     {
-        var displayName = this.name() || (this._project.displayName() + "/" + this._path.join("/"));
+        var displayName = this.name() || this.fullName();
         return displayName.trimEnd(100);
     },
 
@@ -116,11 +135,12 @@ WebInspector.UISourceCode.prototype = {
      */
     uri: function()
     {
+        var path = this.path();
         if (!this._project.id())
-            return this._path.join("/");
-        if (!this._path.length)
+            return path;
+        if (!path)
             return this._project.id();
-        return this._project.id() + "/" + this._path.join("/");
+        return this._project.id() + "/" + path;
     },
 
     /**
@@ -132,16 +152,44 @@ WebInspector.UISourceCode.prototype = {
     },
 
     /**
-     * @param {string} newName
+     * @return {boolean}
      */
-    rename: function(newName)
+    canRename: function()
     {
-        if (!this._path.length)
-            return;
-        this._path[this._path.length - 1] = newName;
-        this._url = newName;
-        this._originURL = newName;
-        this.dispatchEventToListeners(WebInspector.UISourceCode.Events.TitleChanged, null);
+        return this._project.canRename();
+    },
+
+    /**
+     * @param {string} newName
+     * @param {function(boolean)} callback
+     */
+    rename: function(newName, callback)
+    {
+        this._project.rename(this, newName, innerCallback.bind(this));
+
+        /**
+         * @param {boolean} success
+         * @param {string=} newName
+         */
+        function innerCallback(success, newName)
+        {
+            if (success)
+                this._updateName(newName);
+            callback(success);
+        }
+    },
+
+    /**
+     * @param {string} name
+     */
+    _updateName: function(name)
+    {
+        var oldURI = this.uri();
+        this._name = name;
+        // FIXME: why?
+        this._url = name;
+        this._originURL = name;
+        this.dispatchEventToListeners(WebInspector.UISourceCode.Events.TitleChanged, oldURI);
     },
 
     /**
@@ -283,13 +331,51 @@ WebInspector.UISourceCode.prototype = {
         }
 
         this._innerResetWorkingCopy();
+        this._hasCommittedChanges = true;
         this.dispatchEventToListeners(WebInspector.UISourceCode.Events.WorkingCopyCommitted);
-        if (this._url && WebInspector.fileManager.isURLSaved(this._url)) {
-            WebInspector.fileManager.save(this._url, this._content, false);
-            WebInspector.fileManager.close(this._url);
-        }
+        if (this._url && WebInspector.fileManager.isURLSaved(this._url))
+            this._saveURLWithFileManager(false, this._content);
         if (shouldSetContentInProject)
             this._project.setFileContent(this, this._content, function() { });
+    },
+
+    /**
+     * @param {boolean} forceSaveAs
+     */
+    _saveURLWithFileManager: function(forceSaveAs, content)
+    {
+        WebInspector.fileManager.save(this._url, content, forceSaveAs, callback.bind(this));
+        WebInspector.fileManager.close(this._url);
+
+        function callback()
+        {
+            this._savedWithFileManager = true;
+            this.dispatchEventToListeners(WebInspector.UISourceCode.Events.SavedStateUpdated);
+        }
+    },
+
+    /**
+     * @param {boolean} forceSaveAs
+     */
+    saveToFileSystem: function(forceSaveAs)
+    {
+        if (this.isDirty()) {
+            this._saveURLWithFileManager(forceSaveAs, this.workingCopy());
+            this.commitWorkingCopy(function() { });
+            return;
+        }
+        this.requestContent(this._saveURLWithFileManager.bind(this, forceSaveAs));
+    },
+
+    /**
+     * @return {boolean}
+     */
+    hasUnsavedCommittedChanges: function()
+    {
+        var mayHavePersistingExtensions = WebInspector.extensionServer.hasSubscribers(WebInspector.extensionAPI.Events.ResourceContentCommitted);
+        if (this._savedWithFileManager || this.project().canSetFileContent() || mayHavePersistingExtensions)
+            return false;
+        return !!this._hasCommittedChanges;
     },
 
     /**
@@ -312,6 +398,9 @@ WebInspector.UISourceCode.prototype = {
 
         function filterOutStale(historyItem)
         {
+            // FIXME: Main frame might not have been loaded yet when uiSourceCodes for snippets are created.
+            if (!WebInspector.resourceTreeModel.mainFrame)
+                return false;
             return historyItem.loaderId === WebInspector.resourceTreeModel.mainFrame.loaderId;
         }
 
@@ -655,6 +744,9 @@ WebInspector.UISourceCode.prototype = {
         if (this._formatted === formatted)
             return;
 
+        if (this.isDirty())
+            return;
+
         this._formatted = formatted;
 
         // Re-request content
@@ -719,26 +811,6 @@ WebInspector.UISourceCode.prototype = {
 }
 
 /**
- * @interface
- * @extends {WebInspector.EventTarget}
- */
-WebInspector.UISourceCodeProvider = function()
-{
-}
-
-WebInspector.UISourceCodeProvider.Events = {
-    UISourceCodeAdded: "UISourceCodeAdded",
-    UISourceCodeRemoved: "UISourceCodeRemoved"
-}
-
-WebInspector.UISourceCodeProvider.prototype = {
-    /**
-     * @return {Array.<WebInspector.UISourceCode>}
-     */
-    uiSourceCodes: function() {},
-}
-
-/**
  * @constructor
  * @param {WebInspector.UISourceCode} uiSourceCode
  * @param {number} lineNumber
@@ -773,7 +845,7 @@ WebInspector.UILocation.prototype = {
      */
     linkText: function()
     {
-        var linkText = this.uiSourceCode.name() || (this.uiSourceCode.project().displayName() + "/" + this.uiSourceCode.path().join("/"));
+        var linkText = this.uiSourceCode.name() || this.uiSourceCode.fullName();
         if (typeof this.lineNumber === "number")
             linkText += ":" + (this.lineNumber + 1);
         return linkText;
@@ -971,6 +1043,9 @@ WebInspector.Revision.prototype = {
 
     _persist: function()
     {
+        if (this._uiSourceCode.project().type() === WebInspector.projectTypes.FileSystem)
+            return;
+
         if (!window.localStorage)
             return;
 

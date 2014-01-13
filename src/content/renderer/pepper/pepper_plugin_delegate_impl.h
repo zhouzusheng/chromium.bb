@@ -18,6 +18,7 @@
 #include "base/observer_list.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
+#include "content/renderer/pepper/pepper_browser_connection.h"
 #include "content/renderer/render_view_pepper_helper.h"
 #include "ppapi/c/pp_file_info.h"
 #include "ppapi/shared_impl/private/ppb_tcp_server_socket_shared.h"
@@ -69,6 +70,10 @@ class PepperPluginDelegateImpl
   virtual ~PepperPluginDelegateImpl();
 
   RenderViewImpl* render_view() { return render_view_; }
+
+  PepperBrowserConnection* pepper_browser_connection() {
+    return &pepper_browser_connection_;
+  }
 
   // Sets up the renderer host and out-of-process proxy for an external plugin
   // module. Returns the renderer host, or NULL if it couldn't be created.
@@ -187,7 +192,6 @@ class PepperPluginDelegateImpl
       webkit::ppapi::PluginInstance* instance,
       PP_Resource resource) OVERRIDE;
   virtual PlatformContext3D* CreateContext3D() OVERRIDE;
-  virtual void ReparentContext(PlatformContext3D*) OVERRIDE;
   virtual PlatformVideoCapture* CreateVideoCapture(
       const std::string& device_id,
       const GURL& document_url,
@@ -218,32 +222,35 @@ class PepperPluginDelegateImpl
   virtual bool MakeDirectory(
       const GURL& path,
       bool recursive,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const StatusCallback& callback) OVERRIDE;
   virtual bool Query(
       const GURL& path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const MetadataCallback& success_callback,
+      const StatusCallback& error_callback) OVERRIDE;
   virtual bool ReadDirectoryEntries(
       const GURL& path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const ReadDirectoryCallback& success_callback,
+      const StatusCallback& error_callback) OVERRIDE;
   virtual bool Touch(
       const GURL& path,
       const base::Time& last_access_time,
       const base::Time& last_modified_time,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const StatusCallback& callback) OVERRIDE;
   virtual bool SetLength(
       const GURL& path,
       int64_t length,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const StatusCallback& callback) OVERRIDE;
   virtual bool Delete(
       const GURL& path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const StatusCallback& callback) OVERRIDE;
   virtual bool Rename(
       const GURL& file_path,
       const GURL& new_file_path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const StatusCallback& callback) OVERRIDE;
   virtual bool ReadDirectory(
       const GURL& directory_path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const ReadDirectoryCallback& success_callback,
+      const StatusCallback& error_callback) OVERRIDE;
   virtual void QueryAvailableSpace(
       const GURL& origin,
       quota::StorageType type,
@@ -275,9 +282,10 @@ class PepperPluginDelegateImpl
   virtual void TCPSocketWrite(uint32 socket_id,
                               const std::string& buffer) OVERRIDE;
   virtual void TCPSocketDisconnect(uint32 socket_id) OVERRIDE;
-  virtual void TCPSocketSetBoolOption(uint32 socket_id,
-                                      PP_TCPSocketOption_Private name,
-                                      bool value) OVERRIDE;
+  virtual void TCPSocketSetOption(
+      uint32 socket_id,
+      PP_TCPSocket_Option name,
+      const ppapi::SocketOptionData& value) OVERRIDE;
   virtual void RegisterTCPSocket(
       webkit::ppapi::PPB_TCPSocket_Private_Impl* socket,
       uint32 socket_id) OVERRIDE;
@@ -331,7 +339,7 @@ class PepperPluginDelegateImpl
 
   void OnTCPSocketConnectACK(uint32 plugin_dispatcher_id,
                              uint32 socket_id,
-                             bool succeeded,
+                             int32_t result,
                              const PP_NetAddress_Private& local_addr,
                              const PP_NetAddress_Private& remote_addr);
   void OnTCPSocketSSLHandshakeACK(
@@ -341,18 +349,18 @@ class PepperPluginDelegateImpl
       const ppapi::PPB_X509Certificate_Fields& certificate_fields);
   void OnTCPSocketReadACK(uint32 plugin_dispatcher_id,
                           uint32 socket_id,
-                          bool succeeded,
+                          int32_t result,
                           const std::string& data);
   void OnTCPSocketWriteACK(uint32 plugin_dispatcher_id,
                            uint32 socket_id,
-                           bool succeeded,
-                           int32_t bytes_written);
-  void OnTCPSocketSetBoolOptionACK(uint32 plugin_dispatcher_id,
-                                   uint32 socket_id,
-                                   bool succeeded);
+                           int32_t result);
+  void OnTCPSocketSetOptionACK(uint32 plugin_dispatcher_id,
+                               uint32 socket_id,
+                               int32_t result);
   void OnTCPServerSocketListenACK(uint32 plugin_dispatcher_id,
                                   PP_Resource socket_resource,
                                   uint32 socket_id,
+                                  const PP_NetAddress_Private& local_addr,
                                   int32_t status);
   void OnTCPServerSocketAcceptACK(uint32 plugin_dispatcher_id,
                                   uint32 socket_id,
@@ -406,6 +414,10 @@ class PepperPluginDelegateImpl
 
   // Pointer to the RenderView that owns us.
   RenderViewImpl* render_view_;
+
+  // Connection for sending and receiving pepper host-related messages to/from
+  // the browser.
+  PepperBrowserConnection pepper_browser_connection_;
 
   std::set<webkit::ppapi::PluginInstance*> active_instances_;
   typedef std::map<webkit::ppapi::PluginInstance*,

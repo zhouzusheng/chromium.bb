@@ -42,7 +42,7 @@ ProxyResolvingClientSocket::ProxyResolvingClientSocket(
                   request_context_getter->GetURLRequestContext()->net_log(),
                   net::NetLog::SOURCE_SOCKET)),
           weak_factory_(this) {
-  DCHECK(request_context_getter);
+  DCHECK(request_context_getter.get());
   net::URLRequestContext* request_context =
       request_context_getter->GetURLRequestContext();
   DCHECK(request_context);
@@ -54,10 +54,10 @@ ProxyResolvingClientSocket::ProxyResolvingClientSocket(
   session_params.client_socket_factory = socket_factory;
   session_params.host_resolver = request_context->host_resolver();
   session_params.cert_verifier = request_context->cert_verifier();
+  session_params.transport_security_state =
+      request_context->transport_security_state();
   // TODO(rkn): This is NULL because ServerBoundCertService is not thread safe.
   session_params.server_bound_cert_service = NULL;
-  // transport_security_state is NULL because it's not thread safe.
-  session_params.transport_security_state = NULL;
   session_params.proxy_service = request_context->proxy_service();
   session_params.ssl_config_service = request_context->ssl_config_service();
   session_params.http_auth_handler_factory =
@@ -192,7 +192,8 @@ void ProxyResolvingClientSocket::ProcessProxyResolveDone(int status) {
   // Now that we have resolved the proxy, we need to connect.
   status = net::InitSocketHandleForRawConnect(
       dest_host_port_pair_, network_session_.get(), proxy_info_, ssl_config_,
-      ssl_config_, bound_net_log_, transport_.get(), connect_callback_);
+      ssl_config_, net::kPrivacyModeDisabled, bound_net_log_, transport_.get(),
+      connect_callback_);
   if (status != net::ERR_IO_PENDING) {
     // Since this method is always called asynchronously. it is OK to call
     // ProcessConnectDone synchronously.

@@ -22,10 +22,10 @@
 #define CSSValue_h
 
 #include "core/dom/ExceptionCode.h"
-#include "core/platform/KURLHash.h"
-#include <wtf/ListHashSet.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
+#include "weborigin/KURL.h"
+#include "wtf/ListHashSet.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -83,28 +83,22 @@ public:
     bool isCubicBezierTimingFunctionValue() const { return m_classType == CubicBezierTimingFunctionClass; }
     bool isLinearTimingFunctionValue() const { return m_classType == LinearTimingFunctionClass; }
     bool isStepsTimingFunctionValue() const { return m_classType == StepsTimingFunctionClass; }
-    bool isWebKitCSSTransformValue() const { return m_classType == WebKitCSSTransformClass; }
+    bool isCSSTransformValue() const { return m_classType == CSSTransformClass; }
     bool isCSSLineBoxContainValue() const { return m_classType == LineBoxContainClass; }
     bool isCalculationValue() const {return m_classType == CalculationClass; }
-    bool isWebKitCSSFilterValue() const { return m_classType == WebKitCSSFilterClass; }
-    bool isWebKitCSSArrayFunctionValue() const { return m_classType == WebKitCSSArrayFunctionValueClass; }
-    bool isWebKitCSSMixFunctionValue() const { return m_classType == WebKitCSSMixFunctionValueClass; }
-    bool isWebKitCSSShaderValue() const { return m_classType == WebKitCSSShaderClass; }
+    bool isCSSFilterValue() const { return m_classType == CSSFilterClass; }
+    bool isCSSArrayFunctionValue() const { return m_classType == CSSArrayFunctionValueClass; }
+    bool isCSSMixFunctionValue() const { return m_classType == CSSMixFunctionValueClass; }
+    bool isCSSShaderValue() const { return m_classType == CSSShaderClass; }
     bool isVariableValue() const { return m_classType == VariableClass; }
-#if ENABLE(SVG)
     bool isSVGColor() const { return m_classType == SVGColorClass || m_classType == SVGPaintClass; }
     bool isSVGPaint() const { return m_classType == SVGPaintClass; }
-    bool isWebKitCSSSVGDocumentValue() const { return m_classType == WebKitCSSSVGDocumentClass; }
-#endif
+    bool isCSSSVGDocumentValue() const { return m_classType == CSSSVGDocumentClass; }
     
     bool isCSSOMSafe() const { return m_isCSSOMSafe; }
     bool isSubtypeExposedToCSSOM() const
     { 
-        return isPrimitiveValue() 
-#if ENABLE(SVG)
-            || isSVGColor()
-#endif
-            || isValueList();
+        return isPrimitiveValue() || isSVGColor() || isValueList();
     }
 
     PassRefPtr<CSSValue> cloneForCSSOM() const;
@@ -154,21 +148,21 @@ protected:
         UnicodeRangeClass,
         LineBoxContainClass,
         CalculationClass,
-        WebKitCSSShaderClass,
+        CSSShaderClass,
         VariableClass,
-#if ENABLE(SVG)
+
+        // SVG classes.
         SVGColorClass,
         SVGPaintClass,
-        WebKitCSSSVGDocumentClass,
-#endif
+        CSSSVGDocumentClass,
 
         // List class types must appear after ValueListClass.
         ValueListClass,
         ImageSetClass,
-        WebKitCSSFilterClass,
-        WebKitCSSArrayFunctionValueClass,
-        WebKitCSSMixFunctionValueClass,
-        WebKitCSSTransformClass,
+        CSSFilterClass,
+        CSSArrayFunctionValueClass,
+        CSSMixFunctionValueClass,
+        CSSTransformClass,
         // Do not append non-list class types here.
     };
 

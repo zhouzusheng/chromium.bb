@@ -30,9 +30,9 @@
 #include "InternalSettingsGenerated.h"
 #include "core/editing/EditingBehaviorTypes.h"
 #include "core/platform/graphics/IntSize.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -51,15 +51,14 @@ public:
         void restoreTo(Settings*);
 
         bool m_originalCSSExclusionsEnabled;
-        bool m_originalCSSVariablesEnabled;
         bool m_originalAuthorShadowDOMForAnyElementEnabled;
         bool m_originalExperimentalShadowDOMEnabled;
+        bool m_originalExperimentalWebSocketEnabled;
         bool m_originalStyleScoped;
         EditingBehaviorType m_originalEditingBehavior;
         bool m_originalTextAutosizingEnabled;
         IntSize m_originalTextAutosizingWindowSizeOverride;
         float m_originalTextAutosizingFontScaleFactor;
-        IntSize m_originalResolutionOverride;
         String m_originalMediaTypeOverride;
         bool m_originalDialogElementEnabled;
         bool m_originalLazyLayoutEnabled;
@@ -96,27 +95,20 @@ public:
     void setImagesEnabled(bool, ExceptionCode&);
     void setMediaTypeOverride(const String& mediaType, ExceptionCode&);
     void setMockScrollbarsEnabled(bool, ExceptionCode&);
-    void setResolutionOverride(int dotsPerCSSInchHorizontally, int dotsPerCSSInchVertically, ExceptionCode&);
     void setTextAutosizingEnabled(bool, ExceptionCode&);
     void setTextAutosizingFontScaleFactor(float fontScaleFactor, ExceptionCode&);
     void setTextAutosizingWindowSizeOverride(int width, int height, ExceptionCode&);
     void setTouchEventEmulationEnabled(bool, ExceptionCode&);
     void setUsesOverlayScrollbars(bool, ExceptionCode&);
 
-    void setShouldDisplayTrackKind(const String& kind, bool, ExceptionCode&);
-    bool shouldDisplayTrackKind(const String& kind, ExceptionCode&);
-
-    // cssVariablesEnabled is not backed by RuntimeEnabledFeatures, but should be.
-    bool cssVariablesEnabled(ExceptionCode&);
-    void setCSSVariablesEnabled(bool, ExceptionCode&);
-
     // FIXME: The following are RuntimeEnabledFeatures and likely
-    // cannot be changed after process start.  These setters should
+    // cannot be changed after process start. These setters should
     // be removed or moved onto internals.runtimeFlags:
     void setAuthorShadowDOMForAnyElementEnabled(bool);
     void setCSSExclusionsEnabled(bool);
     void setDialogElementEnabled(bool);
     void setExperimentalShadowDOMEnabled(bool);
+    void setExperimentalWebSocketEnabled(bool);
     void setLangAttributeAwareFormControlUIEnabled(bool);
     void setLazyLayoutEnabled(bool);
     void setStyleScopedEnabled(bool);

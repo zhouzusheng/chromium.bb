@@ -37,22 +37,11 @@ namespace InspectorInstrumentation {
 
 bool profilerEnabledImpl(InstrumentingAgents*);
 bool isDebuggerPausedImpl(InstrumentingAgents*);
-void willRemoveDOMNodeImpl(InstrumentingAgents*, Node*);
-void didRemoveDOMNodeImpl(InstrumentingAgents*, Node*);
-void didPushShadowRootImpl(InstrumentingAgents*, Element* host, ShadowRoot*);
-void willPopShadowRootImpl(InstrumentingAgents*, Element* host, ShadowRoot*);
-InspectorInstrumentationCookie willProcessRuleImpl(InstrumentingAgents*, StyleRule*, StyleResolver*);
-void continueAfterXFrameOptionsDeniedImpl(Frame*, DocumentLoader*, unsigned long identifier, const ResourceResponse&);
-void continueWithPolicyDownloadImpl(Frame*, DocumentLoader*, unsigned long identifier, const ResourceResponse&);
-void continueWithPolicyIgnoreImpl(Frame*, DocumentLoader*, unsigned long identifier, const ResourceResponse&);
-void willDestroyCachedResourceImpl(CachedResource*);
-void didDispatchDOMStorageEventImpl(InstrumentingAgents*, const String& key, const String& oldValue, const String& newValue, StorageType, SecurityOrigin*, Page*);
 bool collectingHTMLParseErrorsImpl(InstrumentingAgents*);
 
 bool canvasAgentEnabled(ScriptExecutionContext*);
 bool consoleAgentEnabled(ScriptExecutionContext*);
 bool timelineAgentEnabled(ScriptExecutionContext*);
-void willEvaluateWorkerScript(WorkerContext*, int workerThreadStartMode);
 
 inline bool profilerEnabled(Page* page)
 {
@@ -67,71 +56,6 @@ inline bool isDebuggerPaused(Frame* frame)
     if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsForFrame(frame))
         return isDebuggerPausedImpl(instrumentingAgents);
     return false;
-}
-
-
-inline void willRemoveDOMNode(Document* document, Node* node)
-{
-    FAST_RETURN_IF_NO_FRONTENDS(void());
-    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsForDocument(document)) {
-        willRemoveDOMNodeImpl(instrumentingAgents, node);
-        didRemoveDOMNodeImpl(instrumentingAgents, node);
-    }
-}
-
-inline void didPushShadowRoot(Element* host, ShadowRoot* root)
-{
-    FAST_RETURN_IF_NO_FRONTENDS(void());
-    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsForDocument(host->ownerDocument()))
-        didPushShadowRootImpl(instrumentingAgents, host, root);
-}
-
-inline void willPopShadowRoot(Element* host, ShadowRoot* root)
-{
-    FAST_RETURN_IF_NO_FRONTENDS(void());
-    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsForDocument(host->ownerDocument()))
-        willPopShadowRootImpl(instrumentingAgents, host, root);
-}
-
-inline InspectorInstrumentationCookie willProcessRule(Document* document, StyleRule* rule, StyleResolver* styleResolver)
-{
-    FAST_RETURN_IF_NO_FRONTENDS(InspectorInstrumentationCookie());
-    if (!rule)
-        return InspectorInstrumentationCookie();
-    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsForDocument(document))
-        return willProcessRuleImpl(instrumentingAgents, rule, styleResolver);
-    return InspectorInstrumentationCookie();
-}
-
-inline void continueAfterXFrameOptionsDenied(Frame* frame, DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r)
-{
-    FAST_RETURN_IF_NO_FRONTENDS(void());
-    continueAfterXFrameOptionsDeniedImpl(frame, loader, identifier, r);
-}
-
-inline void continueWithPolicyDownload(Frame* frame, DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r)
-{
-    FAST_RETURN_IF_NO_FRONTENDS(void());
-    continueWithPolicyDownloadImpl(frame, loader, identifier, r);
-}
-
-inline void continueWithPolicyIgnore(Frame* frame, DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r)
-{
-    FAST_RETURN_IF_NO_FRONTENDS(void());
-    continueWithPolicyIgnoreImpl(frame, loader, identifier, r);
-}
-
-inline void willDestroyCachedResource(CachedResource* cachedResource)
-{
-    FAST_RETURN_IF_NO_FRONTENDS(void());
-    willDestroyCachedResourceImpl(cachedResource);
-}
-
-inline void didDispatchDOMStorageEvent(const String& key, const String& oldValue, const String& newValue, StorageType storageType, SecurityOrigin* securityOrigin, Page* page)
-{
-    FAST_RETURN_IF_NO_FRONTENDS(void());
-    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsForPage(page))
-        didDispatchDOMStorageEventImpl(instrumentingAgents, key, oldValue, newValue, storageType, securityOrigin, page);
 }
 
 inline bool collectingHTMLParseErrors(Page* page)

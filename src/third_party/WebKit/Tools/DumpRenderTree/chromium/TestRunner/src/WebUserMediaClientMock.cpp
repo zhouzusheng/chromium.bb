@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "WebUserMediaClientMock.h"
 
 #include "MockConstraints.h"
@@ -36,11 +35,11 @@
 #include "WebMediaStreamRegistry.h"
 #include "WebTestDelegate.h"
 #include "WebUserMediaRequest.h"
-#include <public/WebMediaConstraints.h>
-#include <public/WebMediaStream.h>
-#include <public/WebMediaStreamSource.h>
-#include <public/WebMediaStreamTrack.h>
-#include <public/WebVector.h>
+#include "public/platform/WebMediaConstraints.h"
+#include "public/platform/WebMediaStream.h"
+#include "public/platform/WebMediaStreamSource.h"
+#include "public/platform/WebMediaStreamTrack.h"
+#include "public/platform/WebVector.h"
 
 using namespace WebKit;
 
@@ -80,7 +79,7 @@ WebUserMediaClientMock::WebUserMediaClientMock(WebTestDelegate* delegate)
 {
 }
 
-void WebUserMediaClientMock::requestUserMedia(const WebUserMediaRequest& streamRequest, const WebVector<WebMediaStreamSource>& audioSourcesVector, const WebVector<WebMediaStreamSource>& videoSourcesVector)
+void WebUserMediaClientMock::requestUserMedia(const WebUserMediaRequest& streamRequest)
 {
     WEBKIT_ASSERT(!streamRequest.isNull());
     WebUserMediaRequest request = streamRequest;

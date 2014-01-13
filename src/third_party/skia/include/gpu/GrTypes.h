@@ -379,6 +379,11 @@ enum GrTextureFlags {
      * Hint that the CPU may modify this texture after creation.
      */
     kDynamicUpdate_GrTextureFlagBit = 0x4,
+    /**
+     * Indicates that all allocations (color buffer, FBO completeness, etc)
+     * should be verified.
+     */
+    kCheckAllocation_GrTextureFlagBit  = 0x8,
 
     kDummy_GrTextureFlagBit,
     kLastPublic_GrTextureFlagBit = kDummy_GrTextureFlagBit-1,
@@ -499,39 +504,6 @@ enum GrClipType {
     kRect_ClipType,
     kPath_ClipType
 };
-
-/**
- * Commands used to describe a path. Each command
- * is accompanied by some number of points.
- */
-enum GrPathCmd {
-    kMove_PathCmd,      //!< Starts a new subpath at
-                        //   at the returned point
-                        // 1 point
-    kLine_PathCmd,      //!< Adds a line segment
-                        // 2 points
-    kQuadratic_PathCmd, //!< Adds a quadratic segment
-                        // 3 points
-    kCubic_PathCmd,     //!< Adds a cubic segment
-                        // 4 points
-    kClose_PathCmd,     //!< Closes the current subpath
-                        //   by connecting a line to the
-                        //   starting point.
-                        // 0 points
-    kEnd_PathCmd        //!< Indicates the end of the last subpath
-                        //   when iterating
-                        // 0 points.
-};
-
-/**
- * Gets the number of points associated with a path command.
- */
-static int inline NumPathCmdPoints(GrPathCmd cmd) {
-    static const int gNumPoints[] = {
-        1, 2, 3, 4, 0, 0
-    };
-    return gNumPoints[cmd];
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 

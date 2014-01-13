@@ -11,17 +11,14 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/base/math_util.h"
-#include "cc/base/thread.h"
 #include "cc/debug/overdraw_metrics.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
-#include "cc/input/pinch_zoom_scrollbar.h"
-#include "cc/input/pinch_zoom_scrollbar_geometry.h"
-#include "cc/input/pinch_zoom_scrollbar_painter.h"
 #include "cc/input/top_controls_manager.h"
 #include "cc/layers/heads_up_display_layer.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
@@ -49,15 +46,14 @@ namespace cc {
 RendererCapabilities::RendererCapabilities()
     : best_texture_format(0),
       using_partial_swap(false),
-      using_accelerated_painting(false),
       using_set_visibility(false),
-      using_swap_complete_callback(false),
       using_gpu_memory_manager(false),
       using_egl_image(false),
       allow_partial_texture_updates(false),
       using_offscreen_context3d(false),
       max_texture_size(0),
-      avoid_pow2_textures(false) {}
+      avoid_pow2_textures(false),
+      using_map_image(false) {}
 
 RendererCapabilities::~RendererCapabilities() {}
 
@@ -68,10 +64,10 @@ bool LayerTreeHost::AnyLayerTreeHostInstanceExists() {
 scoped_ptr<LayerTreeHost> LayerTreeHost::Create(
     LayerTreeHostClient* client,
     const LayerTreeSettings& settings,
-    scoped_ptr<Thread> impl_thread) {
+    scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
   scoped_ptr<LayerTreeHost> layer_tree_host(new LayerTreeHost(client,
                                                               settings));
-  if (!layer_tree_host->Initialize(impl_thread.Pass()))
+  if (!layer_tree_host->Initialize(impl_task_runner))
     return scoped_ptr<LayerTreeHost>();
   return layer_tree_host.Pass();
 }
@@ -99,7 +95,8 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       background_color_(SK_ColorWHITE),
       has_transparent_background_(false),
       partial_texture_update_requests_(0),
-      in_paint_layer_contents_(false) {
+      in_paint_layer_contents_(false),
+      total_frames_used_for_lcd_text_metrics_(0) {
   if (settings_.accelerated_animation_enabled)
     animation_registrar_ = AnimationRegistrar::Create();
   s_num_layer_tree_instances++;
@@ -108,9 +105,10 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       debug_state_.RecordRenderingStats());
 }
 
-bool LayerTreeHost::Initialize(scoped_ptr<Thread> impl_thread) {
-  if (impl_thread)
-    return InitializeProxy(ThreadProxy::Create(this, impl_thread.Pass()));
+bool LayerTreeHost::Initialize(
+    scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
+  if (impl_task_runner)
+    return InitializeProxy(ThreadProxy::Create(this, impl_task_runner));
   else
     return InitializeProxy(SingleThreadProxy::Create(this));
 }
@@ -133,7 +131,7 @@ bool LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
 
 LayerTreeHost::~LayerTreeHost() {
   TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
-  if (root_layer_)
+  if (root_layer_.get())
     root_layer_->SetLayerTreeHost(NULL);
 
   if (proxy_) {
@@ -146,7 +144,7 @@ LayerTreeHost::~LayerTreeHost() {
   if (it != rate_limiters_.end())
     it->second->Stop();
 
-  if (root_layer_) {
+  if (root_layer_.get()) {
     // The layer tree must be destroyed before the layer tree host. We've
     // made a contract with our animation controllers that the registrar
     // will outlive them, and we must make good.
@@ -154,8 +152,8 @@ LayerTreeHost::~LayerTreeHost() {
   }
 }
 
-void LayerTreeHost::SetSurfaceReady() {
-  proxy_->SetSurfaceReady();
+void LayerTreeHost::SetLayerTreeHostClientReady() {
+  proxy_->SetLayerTreeHostClientReady();
 }
 
 LayerTreeHost::CreateResult
@@ -169,11 +167,6 @@ LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
   if (success) {
     output_surface_lost_ = false;
 
-    // Update settings_ based on capabilities that we got back from the
-    // renderer.
-    settings_.accelerate_painting =
-        proxy_->GetRendererCapabilities().using_accelerated_painting;
-
     // Update settings_ based on partial update capability.
     size_t max_partial_texture_updates = 0;
     if (proxy_->GetRendererCapabilities().allow_partial_texture_updates &&
@@ -184,14 +177,15 @@ LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
     }
     settings_.max_partial_texture_updates = max_partial_texture_updates;
 
-    if (!contents_texture_manager_) {
+    if (!contents_texture_manager_ &&
+        (!settings_.impl_side_painting || !settings_.solid_color_scrollbars)) {
       contents_texture_manager_ =
           PrioritizedResourceManager::Create(proxy_.get());
       surface_memory_placeholder_ =
           contents_texture_manager_->CreateTexture(gfx::Size(), GL_RGBA);
     }
 
-    client_->DidRecreateOutputSurface(true);
+    client_->DidInitializeOutputSurface(true);
     return CreateSucceeded;
   }
 
@@ -206,7 +200,7 @@ LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
     // We have tried too many times to recreate the output surface. Tell the
     // host to fall back to software rendering.
     output_surface_can_be_initialized_ = false;
-    client_->DidRecreateOutputSurface(false);
+    client_->DidInitializeOutputSurface(false);
     return CreateFailedAndGaveUp;
   }
 
@@ -229,13 +223,10 @@ void LayerTreeHost::DidBeginFrame() {
   client_->DidBeginFrame();
 }
 
-void LayerTreeHost::UpdateAnimations(base::TimeTicks frame_begin_time) {
+void LayerTreeHost::UpdateClientAnimations(base::TimeTicks frame_begin_time) {
   animating_ = true;
   client_->Animate((frame_begin_time - base::TimeTicks()).InSecondsF());
-  AnimateLayers(frame_begin_time);
   animating_ = false;
-
-  rendering_stats_instrumentation_->IncrementAnimationFrameCount();
 }
 
 void LayerTreeHost::DidStopFlinging() {
@@ -262,23 +253,26 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   // If there are linked evicted backings, these backings' resources may be put
   // into the impl tree, so we can't draw yet. Determine this before clearing
   // all evicted backings.
-  bool new_impl_tree_has_no_evicted_resources =
-      !contents_texture_manager_->LinkedEvictedBackingsExist();
+  bool new_impl_tree_has_no_evicted_resources = false;
+  if (contents_texture_manager_) {
+    new_impl_tree_has_no_evicted_resources =
+        !contents_texture_manager_->LinkedEvictedBackingsExist();
 
-  // If the memory limit has been increased since this now-finishing
-  // commit began, and the extra now-available memory would have been used,
-  // then request another commit.
-  if (contents_texture_manager_->MaxMemoryLimitBytes() <
-      host_impl->memory_allocation_limit_bytes() &&
-      contents_texture_manager_->MaxMemoryLimitBytes() <
-      contents_texture_manager_->MaxMemoryNeededBytes()) {
-    host_impl->SetNeedsCommit();
+    // If the memory limit has been increased since this now-finishing
+    // commit began, and the extra now-available memory would have been used,
+    // then request another commit.
+    if (contents_texture_manager_->MaxMemoryLimitBytes() <
+            host_impl->memory_allocation_limit_bytes() &&
+        contents_texture_manager_->MaxMemoryLimitBytes() <
+            contents_texture_manager_->MaxMemoryNeededBytes()) {
+      host_impl->SetNeedsCommit();
+    }
+
+    host_impl->set_max_memory_needed_bytes(
+        contents_texture_manager_->MaxMemoryNeededBytes());
+
+    contents_texture_manager_->UpdateBackingsInDrawingImplTree();
   }
-
-  host_impl->set_max_memory_needed_bytes(
-      contents_texture_manager_->MaxMemoryNeededBytes());
-
-  contents_texture_manager_->UpdateBackingsInDrawingImplTree();
 
   // In impl-side painting, synchronize to the pending tree so that it has
   // time to raster before being displayed.  If no pending tree is needed,
@@ -306,7 +300,7 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   sync_tree->set_needs_full_tree_sync(needs_full_tree_sync_);
   needs_full_tree_sync_ = false;
 
-  if (root_layer_ && hud_layer_) {
+  if (hud_layer_.get()) {
     LayerImpl* hud_impl = LayerTreeHostCommon::FindLayerInSubtree(
         sync_tree->root_layer(), hud_layer_->id());
     sync_tree->set_hud_layer(static_cast<HeadsUpDisplayLayerImpl*>(hud_impl));
@@ -362,14 +356,6 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
       sync_tree->ResetContentsTexturesPurged();
   }
 
-  sync_tree->SetPinchZoomHorizontalLayerId(
-      pinch_zoom_scrollbar_horizontal_ ?
-          pinch_zoom_scrollbar_horizontal_->id() : Layer::INVALID_ID);
-
-  sync_tree->SetPinchZoomVerticalLayerId(
-      pinch_zoom_scrollbar_vertical_ ?
-          pinch_zoom_scrollbar_vertical_->id() : Layer::INVALID_ID);
-
   if (!settings_.impl_side_painting) {
     // If we're not in impl-side painting, the tree is immediately
     // considered active.
@@ -379,89 +365,18 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   commit_number_++;
 }
 
-gfx::Size LayerTreeHost::PinchZoomScrollbarSize(
-    WebKit::WebScrollbar::Orientation orientation) const {
-  gfx::Size viewport_size = gfx::ToCeiledSize(
-      gfx::ScaleSize(device_viewport_size(), 1.f / device_scale_factor()));
-  gfx::Size size;
-  int track_width = PinchZoomScrollbarGeometry::kTrackWidth;
-  if (orientation == WebKit::WebScrollbar::Horizontal)
-    size = gfx::Size(viewport_size.width() - track_width, track_width);
-  else
-    size = gfx::Size(track_width, viewport_size.height() - track_width);
-  return size;
-}
-
-void LayerTreeHost::SetPinchZoomScrollbarsBoundsAndPosition() {
-  if (!pinch_zoom_scrollbar_horizontal_ || !pinch_zoom_scrollbar_vertical_)
-    return;
-
-  gfx::Size horizontal_size =
-      PinchZoomScrollbarSize(WebKit::WebScrollbar::Horizontal);
-  gfx::Size vertical_size =
-      PinchZoomScrollbarSize(WebKit::WebScrollbar::Vertical);
-
-  pinch_zoom_scrollbar_horizontal_->SetBounds(horizontal_size);
-  pinch_zoom_scrollbar_horizontal_->SetPosition(
-      gfx::PointF(0, vertical_size.height()));
-  pinch_zoom_scrollbar_vertical_->SetBounds(vertical_size);
-  pinch_zoom_scrollbar_vertical_->SetPosition(
-      gfx::PointF(horizontal_size.width(), 0));
-}
-
-static scoped_refptr<ScrollbarLayer> CreatePinchZoomScrollbar(
-    WebKit::WebScrollbar::Orientation orientation,
-    LayerTreeHost* owner) {
-  scoped_refptr<ScrollbarLayer> scrollbar_layer = ScrollbarLayer::Create(
-      make_scoped_ptr(new PinchZoomScrollbar(orientation, owner)).
-          PassAs<WebKit::WebScrollbar>(),
-      scoped_ptr<ScrollbarThemePainter>(new PinchZoomScrollbarPainter).Pass(),
-      scoped_ptr<WebKit::WebScrollbarThemeGeometry>(
-          new PinchZoomScrollbarGeometry).Pass(),
-      Layer::PINCH_ZOOM_ROOT_SCROLL_LAYER_ID);
-  scrollbar_layer->SetIsDrawable(true);
-  scrollbar_layer->SetOpacity(0.f);
-  return scrollbar_layer;
-}
-
-void LayerTreeHost::CreateAndAddPinchZoomScrollbars() {
-  bool needs_properties_updated = false;
-
-  if (!pinch_zoom_scrollbar_horizontal_ || !pinch_zoom_scrollbar_vertical_) {
-    pinch_zoom_scrollbar_horizontal_ =
-        CreatePinchZoomScrollbar(WebKit::WebScrollbar::Horizontal, this);
-    pinch_zoom_scrollbar_vertical_ =
-        CreatePinchZoomScrollbar(WebKit::WebScrollbar::Vertical, this);
-    needs_properties_updated = true;
-  }
-
-  DCHECK(pinch_zoom_scrollbar_horizontal_ && pinch_zoom_scrollbar_vertical_);
-
-  if (!pinch_zoom_scrollbar_horizontal_->parent())
-    root_layer_->AddChild(pinch_zoom_scrollbar_horizontal_);
-
-  if (!pinch_zoom_scrollbar_vertical_->parent())
-    root_layer_->AddChild(pinch_zoom_scrollbar_vertical_);
-
-  if (needs_properties_updated)
-    SetPinchZoomScrollbarsBoundsAndPosition();
-}
-
 void LayerTreeHost::WillCommit() {
   client_->WillCommit();
-
-  if (settings().use_pinch_zoom_scrollbars)
-    CreateAndAddPinchZoomScrollbars();
 }
 
 void LayerTreeHost::UpdateHudLayer() {
   if (debug_state_.ShowHudInfo()) {
-    if (!hud_layer_)
+    if (!hud_layer_.get())
       hud_layer_ = HeadsUpDisplayLayer::Create();
 
-    if (root_layer_ && !hud_layer_->parent())
+    if (root_layer_.get() && !hud_layer_->parent())
       root_layer_->AddChild(hud_layer_);
-  } else if (hud_layer_) {
+  } else if (hud_layer_.get()) {
     hud_layer_->RemoveFromParent();
     hud_layer_ = NULL;
   }
@@ -473,10 +388,6 @@ void LayerTreeHost::CommitComplete() {
 
 scoped_ptr<OutputSurface> LayerTreeHost::CreateOutputSurface() {
   return client_->CreateOutputSurface();
-}
-
-scoped_ptr<InputHandlerClient> LayerTreeHost::CreateInputHandlerClient() {
-  return client_->CreateInputHandlerClient();
 }
 
 scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
@@ -492,6 +403,7 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
     top_controls_manager_weak_ptr_ =
         host_impl->top_controls_manager()->AsWeakPtr();
   }
+  input_handler_weak_ptr_ = host_impl->AsWeakPtr();
   return host_impl.Pass();
 }
 
@@ -573,7 +485,7 @@ void LayerTreeHost::SetNeedsRedraw() {
 
 void LayerTreeHost::SetNeedsRedrawRect(gfx::Rect damage_rect) {
   proxy_->SetNeedsRedraw(damage_rect);
-  if (!proxy_->ImplThread())
+  if (!proxy_->HasImplThread())
     client_->ScheduleComposite();
 }
 
@@ -617,23 +529,17 @@ void LayerTreeHost::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
 }
 
 void LayerTreeHost::SetRootLayer(scoped_refptr<Layer> root_layer) {
-  if (root_layer_ == root_layer)
+  if (root_layer_.get() == root_layer.get())
     return;
 
-  if (root_layer_)
+  if (root_layer_.get())
     root_layer_->SetLayerTreeHost(NULL);
   root_layer_ = root_layer;
-  if (root_layer_)
+  if (root_layer_.get())
     root_layer_->SetLayerTreeHost(this);
 
-  if (hud_layer_)
+  if (hud_layer_.get())
     hud_layer_->RemoveFromParent();
-
-  if (pinch_zoom_scrollbar_horizontal_)
-    pinch_zoom_scrollbar_horizontal_->RemoveFromParent();
-
-  if (pinch_zoom_scrollbar_vertical_)
-    pinch_zoom_scrollbar_vertical_->RemoveFromParent();
 
   SetNeedsFullTreeSync();
 }
@@ -659,7 +565,6 @@ void LayerTreeHost::SetViewportSize(gfx::Size device_viewport_size) {
 
   device_viewport_size_ = device_viewport_size;
 
-  SetPinchZoomScrollbarsBoundsAndPosition();
   SetNeedsCommit();
 }
 
@@ -694,7 +599,7 @@ void LayerTreeHost::SetVisible(bool visible) {
   proxy_->SetVisible(visible);
 }
 
-void LayerTreeHost::SetLatencyInfo(const LatencyInfo& latency_info) {
+void LayerTreeHost::SetLatencyInfo(const ui::LatencyInfo& latency_info) {
   latency_info_.MergeWith(latency_info);
 }
 
@@ -742,7 +647,7 @@ void LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue,
   if (device_viewport_size().IsEmpty())
     return;
 
-  if (memory_allocation_limit_bytes) {
+  if (contents_texture_manager_ && memory_allocation_limit_bytes) {
     contents_texture_manager_->SetMaxMemoryLimitBytes(
         memory_allocation_limit_bytes);
   }
@@ -766,13 +671,46 @@ static Layer* FindFirstScrollableLayer(Layer* layer) {
   return NULL;
 }
 
-const Layer* LayerTreeHost::RootScrollLayer() const {
-  return FindFirstScrollableLayer(root_layer_.get());
+class CalculateLCDTextMetricsFunctor {
+ public:
+  void operator()(Layer* layer) {
+    LayerTreeHost* layer_tree_host = layer->layer_tree_host();
+    if (!layer_tree_host)
+      return;
+
+    if (!layer->SupportsLCDText())
+      return;
+
+    bool update_total_num_cc_layers_can_use_lcd_text = false;
+    bool update_total_num_cc_layers_will_use_lcd_text = false;
+    if (layer->draw_properties().can_use_lcd_text) {
+      update_total_num_cc_layers_can_use_lcd_text = true;
+      if (layer->contents_opaque())
+        update_total_num_cc_layers_will_use_lcd_text = true;
+    }
+
+    layer_tree_host->IncrementLCDTextMetrics(
+        update_total_num_cc_layers_can_use_lcd_text,
+        update_total_num_cc_layers_will_use_lcd_text);
+  }
+};
+
+void LayerTreeHost::IncrementLCDTextMetrics(
+    bool update_total_num_cc_layers_can_use_lcd_text,
+    bool update_total_num_cc_layers_will_use_lcd_text) {
+  lcd_text_metrics_.total_num_cc_layers++;
+  if (update_total_num_cc_layers_can_use_lcd_text)
+    lcd_text_metrics_.total_num_cc_layers_can_use_lcd_text++;
+  if (update_total_num_cc_layers_will_use_lcd_text) {
+    DCHECK(update_total_num_cc_layers_can_use_lcd_text);
+    lcd_text_metrics_.total_num_cc_layers_will_use_lcd_text++;
+  }
 }
 
 void LayerTreeHost::UpdateLayers(Layer* root_layer,
                                  ResourceUpdateQueue* queue) {
-  TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers");
+  TRACE_EVENT1("cc", "LayerTreeHost::UpdateLayers",
+               "commit_number", commit_number());
 
   LayerList update_list;
   {
@@ -784,12 +722,35 @@ void LayerTreeHost::UpdateLayers(Layer* root_layer,
     LayerTreeHostCommon::CalculateDrawProperties(
         root_layer,
         device_viewport_size(),
+        gfx::Transform(),
         device_scale_factor_,
         page_scale_factor_,
         root_scroll,
         GetRendererCapabilities().max_texture_size,
         settings_.can_use_lcd_text,
+        settings_.layer_transforms_should_scale_layer_contents,
         &update_list);
+
+    if (total_frames_used_for_lcd_text_metrics_ <=
+        kTotalFramesToUseForLCDTextMetrics) {
+      LayerTreeHostCommon::CallFunctionForSubtree<
+          CalculateLCDTextMetricsFunctor, Layer>(root_layer);
+      total_frames_used_for_lcd_text_metrics_++;
+    }
+
+    if (total_frames_used_for_lcd_text_metrics_ ==
+        kTotalFramesToUseForLCDTextMetrics) {
+      total_frames_used_for_lcd_text_metrics_++;
+
+      UMA_HISTOGRAM_PERCENTAGE(
+          "Renderer4.LCDText.PercentageOfCandidateLayers",
+          lcd_text_metrics_.total_num_cc_layers_can_use_lcd_text * 100.0 /
+          lcd_text_metrics_.total_num_cc_layers);
+      UMA_HISTOGRAM_PERCENTAGE(
+          "Renderer4.LCDText.PercentageOfAALayers",
+          lcd_text_metrics_.total_num_cc_layers_will_use_lcd_text * 100.0 /
+          lcd_text_metrics_.total_num_cc_layers_can_use_lcd_text);
+    }
   }
 
   // Reset partial texture update requests.
@@ -832,6 +793,8 @@ void LayerTreeHost::ReduceMemoryUsage() {
 }
 
 void LayerTreeHost::SetPrioritiesForSurfaces(size_t surface_memory_bytes) {
+  DCHECK(surface_memory_placeholder_);
+
   // Surfaces have a place holder for their memory since they are managed
   // independantly but should still be tracked and reduce other memory usage.
   surface_memory_placeholder_->SetTextureManager(
@@ -867,6 +830,9 @@ void LayerTreeHost::SetPrioritiesForLayers(const LayerList& update_list) {
 
 void LayerTreeHost::PrioritizeTextures(
     const LayerList& render_surface_layer_list, OverdrawMetrics* metrics) {
+  if (!contents_texture_manager_)
+    return;
+
   contents_texture_manager_->ClearPriorities();
 
   size_t memory_for_render_surfaces_metric =
@@ -972,8 +938,7 @@ bool LayerTreeHost::PaintLayerContents(
            LayerIteratorType::Begin(&render_surface_layer_list);
        it != end;
        ++it) {
-    bool prevent_occlusion =
-        it.target_render_surface_layer()->HasRequestCopyCallback();
+    bool prevent_occlusion = it.target_render_surface_layer()->HasCopyRequest();
     occlusion_tracker.EnterLayer(it, prevent_occlusion);
 
     if (it.represents_target_render_surface()) {
@@ -999,7 +964,7 @@ bool LayerTreeHost::PaintLayerContents(
 }
 
 void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
-  if (!root_layer_)
+  if (!root_layer_.get())
     return;
 
   Layer* root_scroll_layer = FindFirstScrollableLayer(root_layer_.get());
@@ -1011,11 +976,12 @@ void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
                                                 info.scrolls[i].layer_id);
     if (!layer)
       continue;
-    if (layer == root_scroll_layer)
+    if (layer == root_scroll_layer) {
       root_scroll_delta += info.scrolls[i].scroll_delta;
-    else
-      layer->SetScrollOffset(layer->scroll_offset() +
-                             info.scrolls[i].scroll_delta);
+    } else {
+      layer->SetScrollOffsetFromImplSide(layer->scroll_offset() +
+                                         info.scrolls[i].scroll_delta);
+    }
   }
   if (!root_scroll_delta.IsZero() || info.page_scale_delta != 1.f)
     client_->ApplyScrollAndScale(root_scroll_delta, info.page_scale_delta);
@@ -1031,7 +997,7 @@ void LayerTreeHost::StartRateLimiter(WebKit::WebGraphicsContext3D* context3d) {
     it->second->Start();
   } else {
     scoped_refptr<RateLimiter> rate_limiter =
-        RateLimiter::Create(context3d, this, proxy_->MainThread());
+        RateLimiter::Create(context3d, this, proxy_->MainThreadTaskRunner());
     rate_limiters_[context3d] = rate_limiter;
     rate_limiter->Start();
   }
@@ -1068,23 +1034,24 @@ void LayerTreeHost::SetDeviceScaleFactor(float device_scale_factor) {
   SetNeedsCommit();
 }
 
-void LayerTreeHost::UpdateTopControlsState(bool enable_hiding,
-                                           bool enable_showing,
+void LayerTreeHost::UpdateTopControlsState(TopControlsState constraints,
+                                           TopControlsState current,
                                            bool animate) {
   if (!settings_.calculate_top_controls_position)
     return;
 
   // Top controls are only used in threaded mode.
-  proxy_->ImplThread()->PostTask(
+  proxy_->ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
       base::Bind(&TopControlsManager::UpdateTopControlsState,
                  top_controls_manager_weak_ptr_,
-                 enable_hiding,
-                 enable_showing,
+                 constraints,
+                 current,
                  animate));
 }
 
 bool LayerTreeHost::BlocksPendingCommit() const {
-  if (!root_layer_)
+  if (!root_layer_.get())
     return false;
   return root_layer_->BlocksPendingCommitRecursive();
 }
@@ -1096,11 +1063,12 @@ scoped_ptr<base::Value> LayerTreeHost::AsValue() const {
 }
 
 void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
+  rendering_stats_instrumentation_->IncrementAnimationFrameCount();
   if (!settings_.accelerated_animation_enabled ||
       animation_registrar_->active_animation_controllers().empty())
     return;
 
-  TRACE_EVENT0("cc", "LayerTreeHostImpl::AnimateLayers");
+  TRACE_EVENT0("cc", "LayerTreeHost::AnimateLayers");
 
   double monotonic_time = (time - base::TimeTicks()).InSecondsF();
 

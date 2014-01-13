@@ -21,17 +21,13 @@
 #include "config.h"
 #include "core/css/CSSImageValue.h"
 
-#include "CSSValueKeywords.h"
-#include "core/css/CSSCursorImageValue.h"
 #include "core/css/CSSParser.h"
 #include "core/dom/Document.h"
-#include "core/dom/Element.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/loader/cache/CachedImage.h"
 #include "core/loader/cache/CachedResourceLoader.h"
 #include "core/loader/cache/CachedResourceRequest.h"
 #include "core/loader/cache/CachedResourceRequestInitiators.h"
-#include "core/loader/cache/MemoryCache.h"
 #include "core/rendering/style/StyleCachedImage.h"
 #include "core/rendering/style/StylePendingImage.h"
 
@@ -64,18 +60,14 @@ StyleImage* CSSImageValue::cachedOrPendingImage()
     return m_image.get();
 }
 
-StyleCachedImage* CSSImageValue::cachedImage(CachedResourceLoader* loader)
+StyleCachedImage* CSSImageValue::cachedImage(CachedResourceLoader* loader, const ResourceLoaderOptions& options)
 {
     ASSERT(loader);
 
     if (!m_accessedImage) {
         m_accessedImage = true;
 
-        CachedResourceRequest request(ResourceRequest(loader->document()->completeURL(m_url)));
-        if (m_initiatorName.isEmpty())
-            request.setInitiator(cachedResourceRequestInitiators().css);
-        else
-            request.setInitiator(m_initiatorName);
+        CachedResourceRequest request(ResourceRequest(loader->document()->completeURL(m_url)), m_initiatorName.isEmpty() ? cachedResourceRequestInitiators().css : m_initiatorName, options);
         if (CachedResourceHandle<CachedImage> cachedImage = loader->requestImage(request))
             m_image = StyleCachedImage::create(cachedImage.get());
     }

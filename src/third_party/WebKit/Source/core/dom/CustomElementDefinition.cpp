@@ -32,33 +32,17 @@
 
 #include "core/dom/CustomElementDefinition.h"
 
-#include "bindings/v8/CustomElementHelpers.h"
-#include <wtf/Assertions.h>
-
-#if ENABLE(SVG)
-#include "SVGNames.h"
-#endif
-
 namespace WebCore {
 
-PassRefPtr<CustomElementDefinition> CustomElementDefinition::create(ScriptState* state, const AtomicString& type, const AtomicString& name, const AtomicString& namespaceURI, const ScriptValue& prototype)
+PassRefPtr<CustomElementDefinition> CustomElementDefinition::create(const AtomicString& type, const AtomicString& name, const AtomicString& namespaceURI, PassRefPtr<CustomElementCallback> callback)
 {
-    ASSERT(CustomElementHelpers::isValidPrototypeParameter(prototype, state));
-    ASSERT(name == type || QualifiedName(nullAtom, name, namespaceURI) == *CustomElementHelpers::findLocalName(prototype));
-#if ENABLE(SVG)
-    ASSERT(namespaceURI == HTMLNames::xhtmlNamespaceURI || namespaceURI == SVGNames::svgNamespaceURI);
-#else
-    ASSERT(namespaceURI == HTMLNames::xhtmlNamespaceURI);
-#endif
-
-    RefPtr<CustomElementDefinition> created = adoptRef(new CustomElementDefinition(type, name, namespaceURI, prototype));
-    return created.release();
+    return adoptRef(new CustomElementDefinition(type, name, namespaceURI, callback));
 }
 
-CustomElementDefinition::CustomElementDefinition(const AtomicString& type, const AtomicString& name, const AtomicString& namespaceURI, const ScriptValue& prototype)
-    : m_prototype(prototype)
-    , m_type(type)
+CustomElementDefinition::CustomElementDefinition(const AtomicString& type, const AtomicString& name, const AtomicString& namespaceURI, PassRefPtr<CustomElementCallback> callback)
+    : m_type(type)
     , m_tag(QualifiedName(nullAtom, name, namespaceURI))
+    , m_callback(callback)
 {
 }
 

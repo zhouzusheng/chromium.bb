@@ -20,7 +20,6 @@
 #include "config.h"
 #include "core/css/MediaList.h"
 
-#include "core/css/CSSImportRule.h"
 #include "core/css/CSSParser.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaFeatureNames.h"
@@ -28,72 +27,39 @@
 #include "core/css/MediaQueryExp.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ScriptableDocumentParser.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/page/Console.h"
 #include "core/page/DOMWindow.h"
-#include <wtf/MemoryInstrumentationVector.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/MemoryInstrumentationVector.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
 /* MediaList is used to store 3 types of media related entities which mean the same:
- * Media Queries, Media Types and Media Descriptors.
- * Currently MediaList always tries to parse media queries and if parsing fails,
- * tries to fallback to Media Descriptors if m_fallbackToDescriptor flag is set.
- * Slight problem with syntax error handling:
- * CSS 2.1 Spec (http://www.w3.org/TR/CSS21/media.html)
- * specifies that failing media type parsing is a syntax error
- * CSS 3 Media Queries Spec (http://www.w3.org/TR/css3-mediaqueries/)
- * specifies that failing media query is a syntax error
- * HTML 4.01 spec (http://www.w3.org/TR/REC-html40/present/styles.html#adef-media)
- * specifies that Media Descriptors should be parsed with forward-compatible syntax
- * DOM Level 2 Style Sheet spec (http://www.w3.org/TR/DOM-Level-2-Style/)
- * talks about MediaList.mediaText and refers
- *   -  to Media Descriptors of HTML 4.0 in context of StyleSheet
- *   -  to Media Types of CSS 2.0 in context of CSSMediaRule and CSSImportRule
  *
- * These facts create situation where same (illegal) media specification may result in
- * different parses depending on whether it is media attr of style element or part of
- * css @media rule.
- * <style media="screen and resolution > 40dpi"> ..</style> will be enabled on screen devices where as
- * @media screen and resolution > 40dpi {..} will not.
- * This gets more counter-intuitive in JavaScript:
- * document.styleSheets[0].media.mediaText = "screen and resolution > 40dpi" will be ok and
- * enabled, while
- * document.styleSheets[0].cssRules[0].media.mediaText = "screen and resolution > 40dpi" will
- * throw SYNTAX_ERR exception.
+ * Media Queries, Media Types and Media Descriptors.
+ *
+ * Media queries, as described in the Media Queries Level 3 specification, build on
+ * the mechanism outlined in HTML4. The syntax of media queries fit into the media
+ * type syntax reserved in HTML4. The media attribute of HTML4 also exists in XHTML
+ * and generic XML. The same syntax can also be used inside the @media and @import
+ * rules of CSS.
+ *
+ * However, the parsing rules for media queries are incompatible with those of HTML4
+ * and are consistent with those of media queries used in CSS.
+ *
+ * HTML5 (at the moment of writing still work in progress) references the Media Queries
+ * specification directly and thus updates the rules for HTML.
+ *
+ * CSS 2.1 Spec (http://www.w3.org/TR/CSS21/media.html)
+ * CSS 3 Media Queries Spec (http://www.w3.org/TR/css3-mediaqueries/)
  */
-    
-MediaQuerySet::MediaQuerySet()
-    : m_fallbackToDescriptor(false)
-    , m_lastLine(0)
-{
-}
 
-MediaQuerySet::MediaQuerySet(const String& mediaString, bool fallbackToDescriptor)
-    : m_fallbackToDescriptor(fallbackToDescriptor)
-    , m_lastLine(0)
+MediaQuerySet::MediaQuerySet()
 {
-    bool success = parse(mediaString);
-    // FIXME: parsing can fail. The problem with failing constructor is that
-    // we would need additional flag saying MediaList is not valid
-    // Parse can fail only when fallbackToDescriptor == false, i.e when HTML4 media descriptor
-    // forward-compatible syntax is not in use.
-    // DOMImplementationCSS seems to mandate that media descriptors are used
-    // for both html and svg, even though svg:style doesn't use media descriptors
-    // Currently the only places where parsing can fail are
-    // creating <svg:style>, creating css media / import rules from js
-    
-    // FIXME: This doesn't make much sense.
-    if (!success)
-        parse("invalid");
 }
 
 MediaQuerySet::MediaQuerySet(const MediaQuerySet& o)
     : RefCounted<MediaQuerySet>()
-    , m_fallbackToDescriptor(o.m_fallbackToDescriptor)
-    , m_lastLine(o.m_lastLine)
     , m_queries(o.m_queries.size())
 {
     for (unsigned i = 0; i < m_queries.size(); ++i)
@@ -104,98 +70,75 @@ MediaQuerySet::~MediaQuerySet()
 {
 }
 
-static String parseMediaDescriptor(const String& string)
+PassRefPtr<MediaQuerySet> MediaQuerySet::create(const String& mediaString)
 {
-    // http://www.w3.org/TR/REC-html40/types.html#type-media-descriptors
-    // "Each entry is truncated just before the first character that isn't a
-    // US ASCII letter [a-zA-Z] (ISO 10646 hex 41-5a, 61-7a), digit [0-9] (hex 30-39),
-    // or hyphen (hex 2d)."
-    unsigned length = string.length();
-    unsigned i = 0;
-    for (; i < length; ++i) {
-        unsigned short c = string[i];
-        if (! ((c >= 'a' && c <= 'z')
-               || (c >= 'A' && c <= 'Z')
-               || (c >= '1' && c <= '9')
-               || (c == '-')))
-            break;
-    }
-    return string.left(i);
+    if (mediaString.isEmpty())
+        return MediaQuerySet::create();
+
+    CSSParser parser(CSSStrictMode);
+    return parser.parseMediaQueryList(mediaString);
 }
 
-bool MediaQuerySet::parse(const String& mediaString)
+bool MediaQuerySet::set(const String& mediaString)
 {
-    CSSParser parser(CSSStrictMode);
-    
-    Vector<OwnPtr<MediaQuery> > result;
-    Vector<String> list;
-    mediaString.split(',', list);
-    for (unsigned i = 0; i < list.size(); ++i) {
-        String medium = list[i].stripWhiteSpace();
-        if (medium.isEmpty()) {
-            if (!m_fallbackToDescriptor)
-                return false;
-            continue;
-        }
-        OwnPtr<MediaQuery> mediaQuery = parser.parseMediaQuery(medium);
-        if (!mediaQuery) {
-            if (!m_fallbackToDescriptor)
-                return false;
-            String mediaDescriptor = parseMediaDescriptor(medium);
-            if (mediaDescriptor.isNull())
-                continue;
-            mediaQuery = adoptPtr(new MediaQuery(MediaQuery::None, mediaDescriptor, nullptr));
-        }
-        result.append(mediaQuery.release());
-    }
-    // ",,,," falls straight through, but is not valid unless fallback
-    if (!m_fallbackToDescriptor && list.isEmpty()) {
-        String strippedMediaString = mediaString.stripWhiteSpace();
-        if (!strippedMediaString.isEmpty())
-            return false;
-    }
-    m_queries.swap(result);
+    RefPtr<MediaQuerySet> result = create(mediaString);
+    m_queries.swap(result->m_queries);
     return true;
 }
 
 bool MediaQuerySet::add(const String& queryString)
 {
-    CSSParser parser(CSSStrictMode);
+    // To "parse a media query" for a given string means to follow "the parse
+    // a media query list" steps and return "null" if more than one media query
+    // is returned, or else the returned media query.
+    RefPtr<MediaQuerySet> result = create(queryString);
 
-    OwnPtr<MediaQuery> parsedQuery = parser.parseMediaQuery(queryString);
-    if (!parsedQuery && m_fallbackToDescriptor) {
-        String medium = parseMediaDescriptor(queryString);
-        if (!medium.isNull())
-            parsedQuery = adoptPtr(new MediaQuery(MediaQuery::None, medium, nullptr));
+    // Only continue if exactly one media query is found, as described above.
+    if (result->m_queries.size() != 1)
+        return true;
+
+    OwnPtr<MediaQuery> newQuery = result->m_queries[0].release();
+    ASSERT(newQuery);
+
+    // If comparing with any of the media queries in the collection of media
+    // queries returns true terminate these steps.
+    for (size_t i = 0; i < m_queries.size(); ++i) {
+        MediaQuery* query = m_queries[i].get();
+        if (*query == *newQuery)
+            return true;
     }
-    if (!parsedQuery)
-        return false;
 
-    m_queries.append(parsedQuery.release());
+    m_queries.append(newQuery.release());
     return true;
 }
 
 bool MediaQuerySet::remove(const String& queryStringToRemove)
 {
-    CSSParser parser(CSSStrictMode);
+    // To "parse a media query" for a given string means to follow "the parse
+    // a media query list" steps and return "null" if more than one media query
+    // is returned, or else the returned media query.
+    RefPtr<MediaQuerySet> result = create(queryStringToRemove);
 
-    OwnPtr<MediaQuery> parsedQuery = parser.parseMediaQuery(queryStringToRemove);
-    if (!parsedQuery && m_fallbackToDescriptor) {
-        String medium = parseMediaDescriptor(queryStringToRemove);
-        if (!medium.isNull())
-            parsedQuery = adoptPtr(new MediaQuery(MediaQuery::None, medium, nullptr));
-    }
-    if (!parsedQuery)
-        return false;
-    
+    // Only continue if exactly one media query is found, as described above.
+    if (result->m_queries.size() != 1)
+        return true;
+
+    OwnPtr<MediaQuery> newQuery = result->m_queries[0].release();
+    ASSERT(newQuery);
+
+    // Remove any media query from the collection of media queries for which
+    // comparing with the media query returns true.
+    bool found = false;
     for (size_t i = 0; i < m_queries.size(); ++i) {
         MediaQuery* query = m_queries[i].get();
-        if (*query == *parsedQuery) {
+        if (*query == *newQuery) {
             m_queries.remove(i);
-            return true;
+            --i;
+            found = true;
         }
     }
-    return false;
+
+    return found;
 }
 
 void MediaQuerySet::addMediaQuery(PassOwnPtr<MediaQuery> mediaQuery)
@@ -206,7 +149,7 @@ void MediaQuerySet::addMediaQuery(PassOwnPtr<MediaQuery> mediaQuery)
 String MediaQuerySet::mediaText() const
 {
     StringBuilder text;
-    
+
     bool first = true;
     for (size_t i = 0; i < m_queries.size(); ++i) {
         if (!first)
@@ -223,7 +166,7 @@ void MediaQuerySet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
     info.addMember(m_queries, "queries");
 }
-    
+
 MediaList::MediaList(MediaQuerySet* mediaQueries, CSSStyleSheet* parentSheet)
     : m_mediaQueries(mediaQueries)
     , m_parentStyleSheet(parentSheet)
@@ -242,15 +185,12 @@ MediaList::~MediaList()
 {
 }
 
-void MediaList::setMediaText(const String& value, ExceptionCode& ec)
+void MediaList::setMediaText(const String& value)
 {
     CSSStyleSheet::RuleMutationScope mutationScope(m_parentRule);
 
-    bool success = m_mediaQueries->parse(value);
-    if (!success) {
-        ec = SYNTAX_ERR;
-        return;
-    }
+    m_mediaQueries->set(value);
+
     if (m_parentStyleSheet)
         m_parentStyleSheet->didMutate();
 }
@@ -282,10 +222,10 @@ void MediaList::appendMedium(const String& medium, ExceptionCode& ec)
 
     bool success = m_mediaQueries->add(medium);
     if (!success) {
-        // FIXME: Should this really be INVALID_CHARACTER_ERR?
         ec = INVALID_CHARACTER_ERR;
         return;
     }
+
     if (m_parentStyleSheet)
         m_parentStyleSheet->didMutate();
 }
@@ -304,7 +244,6 @@ void MediaList::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     info.addMember(m_parentRule, "parentRule");
 }
 
-#if ENABLE(RESOLUTION_MEDIA_QUERY)
 static void addResolutionWarningMessageToConsole(Document* document, const String& serializedExpression, const CSSPrimitiveValue* value)
 {
     ASSERT(document);
@@ -329,6 +268,13 @@ static void addResolutionWarningMessageToConsole(Document* document, const Strin
     document->addConsoleMessage(CSSMessageSource, DebugMessageLevel, message);
 }
 
+static inline bool isResolutionMediaFeature(const AtomicString& mediaFeature)
+{
+    return mediaFeature == MediaFeatureNames::resolutionMediaFeature
+        || mediaFeature == MediaFeatureNames::maxResolutionMediaFeature
+        || mediaFeature == MediaFeatureNames::minResolutionMediaFeature;
+}
+
 void reportMediaQueryWarningIfNeeded(Document* document, const MediaQuerySet* mediaQuerySet)
 {
     if (!mediaQuerySet || !document)
@@ -342,23 +288,22 @@ void reportMediaQueryWarningIfNeeded(Document* document, const MediaQuerySet* me
 
     for (size_t i = 0; i < queryCount; ++i) {
         const MediaQuery* query = mediaQueries[i].get();
-        String mediaType = query->mediaType();
-        if (!query->ignored() && !equalIgnoringCase(mediaType, "print")) {
-            const Vector<OwnPtr<MediaQueryExp> >* exps = query->expressions();
-            for (size_t j = 0; j < exps->size(); ++j) {
-                const MediaQueryExp* exp = exps->at(j).get();
-                if (exp->mediaFeature() == MediaFeatureNames::resolutionMediaFeature || exp->mediaFeature() == MediaFeatureNames::max_resolutionMediaFeature || exp->mediaFeature() == MediaFeatureNames::min_resolutionMediaFeature) {
-                    CSSValue* cssValue =  exp->value();
-                    if (cssValue && cssValue->isPrimitiveValue()) {
-                        CSSPrimitiveValue* primitiveValue = static_cast<CSSPrimitiveValue*>(cssValue);
-                        if (primitiveValue->isDotsPerInch() || primitiveValue->isDotsPerCentimeter())
-                            addResolutionWarningMessageToConsole(document, mediaQuerySet->mediaText(), primitiveValue);
-                    }
+        if (equalIgnoringCase(query->mediaType(), "print"))
+            continue;
+
+        const Vector<OwnPtr<MediaQueryExp> >* exps = query->expressions();
+        for (size_t j = 0; j < exps->size(); ++j) {
+            const MediaQueryExp* exp = exps->at(j).get();
+            if (isResolutionMediaFeature(exp->mediaFeature())) {
+                CSSValue* cssValue =  exp->value();
+                if (cssValue && cssValue->isPrimitiveValue()) {
+                    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(cssValue);
+                    if (primitiveValue->isDotsPerInch() || primitiveValue->isDotsPerCentimeter())
+                        addResolutionWarningMessageToConsole(document, mediaQuerySet->mediaText(), primitiveValue);
                 }
             }
         }
     }
 }
-#endif
 
 }

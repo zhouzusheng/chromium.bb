@@ -8,10 +8,10 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "content/browser/byte_stream.h"
 #include "content/browser/download/download_create_info.h"
 #include "content/browser/download/download_interrupt_reasons_impl.h"
@@ -65,8 +65,9 @@ static void StartOnUIThread(
   DownloadItem* item = download_manager->StartDownload(
       info.Pass(), stream.Pass());
 
+  // |item| can be NULL if the download has been removed.
   if (!started_cb.is_null())
-    started_cb.Run(item, net::OK);
+    started_cb.Run(item, item ? net::OK : net::ERR_ABORTED);
 }
 
 }  // namespace
@@ -102,7 +103,6 @@ bool DownloadResourceHandler::OnUploadProgress(int request_id,
   return true;
 }
 
-// Not needed, as this event handler ought to be the final resource.
 bool DownloadResourceHandler::OnRequestRedirected(
     int request_id,
     const GURL& url,
@@ -127,6 +127,10 @@ bool DownloadResourceHandler::OnResponseStarted(
 
   // If it's a download, we don't want to poison the cache with it.
   request_->StopCaching();
+
+  // Lower priority as well, so downloads don't contend for resources
+  // with main frames.
+  request_->SetPriority(net::IDLE);
 
   std::string content_disposition;
   request_->GetResponseHeaderByName("content-disposition",
@@ -188,12 +192,12 @@ bool DownloadResourceHandler::OnResponseStarted(
   }
 
   std::string content_type_header;
-  if (!response->head.headers ||
+  if (!response->head.headers.get() ||
       !response->head.headers->GetMimeType(&content_type_header))
     content_type_header = "";
   info->original_mime_type = content_type_header;
 
-  if (!response->head.headers ||
+  if (!response->head.headers.get() ||
       !response->head.headers->EnumerateHeader(
           NULL, "Accept-Ranges", &accept_ranges_)) {
     accept_ranges_ = "";
@@ -239,7 +243,7 @@ bool DownloadResourceHandler::OnWillRead(int request_id, net::IOBuffer** buf,
                                          int* buf_size, int min_size) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(buf && buf_size);
-  DCHECK(!read_buffer_);
+  DCHECK(!read_buffer_.get());
 
   *buf_size = min_size < 0 ? kReadBufSize : min_size;
   last_buffer_size_ = *buf_size;
@@ -252,7 +256,7 @@ bool DownloadResourceHandler::OnWillRead(int request_id, net::IOBuffer** buf,
 bool DownloadResourceHandler::OnReadCompleted(int request_id, int bytes_read,
                                               bool* defer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DCHECK(read_buffer_);
+  DCHECK(read_buffer_.get());
 
   base::TimeTicks now(base::TimeTicks::Now());
   if (!last_read_time_.is_null()) {
@@ -271,7 +275,7 @@ bool DownloadResourceHandler::OnReadCompleted(int request_id, int bytes_read,
   if (!bytes_read)
     return true;
   bytes_read_ += bytes_read;
-  DCHECK(read_buffer_);
+  DCHECK(read_buffer_.get());
 
   // Take the data ship it down the stream.  If the stream is full, pause the
   // request; the stream callback will resume it.
@@ -343,6 +347,10 @@ bool DownloadResourceHandler::OnResponseCompleted(
     switch(response_code) {
       case -1:                          // Non-HTTP request.
       case net::HTTP_OK:
+      case net::HTTP_CREATED:
+      case net::HTTP_ACCEPTED:
+      case net::HTTP_NON_AUTHORITATIVE_INFORMATION:
+      case net::HTTP_RESET_CONTENT:
       case net::HTTP_PARTIAL_CONTENT:
         // Expected successful codes.
         break;
@@ -361,12 +369,10 @@ bool DownloadResourceHandler::OnResponseCompleted(
         reason = DOWNLOAD_INTERRUPT_REASON_SERVER_NO_RANGE;
         break;
       default:    // All other errors.
-        // Redirection should have been handled earlier in the stack.
-        DCHECK(3 != response_code / 100);
-
-        // Informational codes should have been handled earlier in the
-        // stack.
-        DCHECK(1 != response_code / 100);
+        // Redirection and informational codes should have been handled earlier
+        // in the stack.
+        DCHECK_NE(3, response_code / 100);
+        DCHECK_NE(1, response_code / 100);
         reason = DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED;
         break;
     }

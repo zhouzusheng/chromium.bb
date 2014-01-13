@@ -72,10 +72,7 @@ SkSurface* SkSurface_Gpu::onNewSurface(const SkImage::Info& info) {
 }
 
 SkImage* SkSurface_Gpu::onNewImageSnapshot() {
-
-    GrRenderTarget* rt = (GrRenderTarget*) fDevice->accessRenderTarget();
-
-    return SkImage::NewTexture(rt->asTexture());
+    return SkImage::NewTexture(fDevice->accessBitmap(false));
 }
 
 void SkSurface_Gpu::onDraw(SkCanvas* canvas, SkScalar x, SkScalar y,
@@ -126,7 +123,7 @@ SkSurface* SkSurface::NewRenderTarget(GrContext* ctx, const SkImage::Info& info,
     SkBitmap::Config config = SkImageInfoToBitmapConfig(info, &isOpaque);
 
     GrTextureDesc desc;
-    desc.fFlags = kRenderTarget_GrTextureFlagBit;
+    desc.fFlags = kRenderTarget_GrTextureFlagBit | kCheckAllocation_GrTextureFlagBit;
     desc.fWidth = info.fWidth;
     desc.fHeight = info.fHeight;
     desc.fConfig = SkBitmapConfig2GrPixelConfig(config);

@@ -24,11 +24,18 @@
 
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
+#include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
+#include "core/dom/shadow/ElementShadow.h"
 #include "core/editing/FrameSelection.h"
 #include "core/fileapi/FileList.h"
+#include "core/html/HTMLCollection.h"
+#include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLMeterElement.h"
+#include "core/html/HTMLOptionElement.h"
+#include "core/html/InputTypeNames.h"
+#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/MediaControlElements.h"
 #include "core/html/shadow/SpinButtonElement.h"
 #include "core/html/shadow/TextControlInnerElements.h"
@@ -40,23 +47,18 @@
 #include "core/platform/FloatConversion.h"
 #include "core/platform/LocalizedStrings.h"
 #include "core/platform/graphics/FontSelector.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/StringTruncator.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderMeter.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/style/RenderStyle.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebFallbackThemeEngine.h"
+#include "public/platform/WebRect.h"
 
 #if ENABLE(INPUT_SPEECH)
 #include "core/rendering/RenderInputSpeech.h"
-#endif
-
-#if ENABLE(DATALIST_ELEMENT)
-#include "core/dom/ElementShadow.h"
-#include "core/html/HTMLCollection.h"
-#include "core/html/HTMLDataListElement.h"
-#include "core/html/HTMLOptionElement.h"
-#include "core/html/parser/HTMLParserIdioms.h"
 #endif
 
 // The methods in this file are shared by all themes on every platform.
@@ -71,6 +73,18 @@ static Color& customFocusRingColor()
     return color;
 }
 
+static WebKit::WebFallbackThemeEngine::State getWebFallbackThemeState(const RenderTheme* theme, const RenderObject* o)
+{
+    if (!theme->isEnabled(o))
+        return WebKit::WebFallbackThemeEngine::StateDisabled;
+    if (theme->isPressed(o))
+        return WebKit::WebFallbackThemeEngine::StatePressed;
+    if (theme->isHovered(o))
+        return WebKit::WebFallbackThemeEngine::StateHover;
+
+    return WebKit::WebFallbackThemeEngine::StateNormal;
+}
+
 RenderTheme::RenderTheme()
 #if USE(NEW_THEME)
     : m_theme(platformTheme())
@@ -78,7 +92,7 @@ RenderTheme::RenderTheme()
 {
 }
 
-void RenderTheme::adjustStyle(StyleResolver* styleResolver, RenderStyle* style, Element* e, bool UAHasAppearance, const BorderData& border, const FillLayer& background, const Color& backgroundColor)
+void RenderTheme::adjustStyle(RenderStyle* style, Element* e, bool UAHasAppearance, const BorderData& border, const FillLayer& background, const Color& backgroundColor)
 {
     // Force inline and table display styles to be inline-block (except for table- which is block)
     ControlPart part = style->appearance();
@@ -100,6 +114,11 @@ void RenderTheme::adjustStyle(StyleResolver* styleResolver, RenderStyle* style, 
 
     if (!style->hasAppearance())
         return;
+
+    if (shouldUseFallbackTheme(style)) {
+        adjustStyleUsingFallbackTheme(style, e);
+        return;
+    }
 
 #if USE(NEW_THEME)
     switch (part) {
@@ -184,24 +203,24 @@ void RenderTheme::adjustStyle(StyleResolver* styleResolver, RenderStyle* style, 
     switch (style->appearance()) {
 #if !USE(NEW_THEME)
     case CheckboxPart:
-        return adjustCheckboxStyle(styleResolver, style, e);
+        return adjustCheckboxStyle(style, e);
     case RadioPart:
-        return adjustRadioStyle(styleResolver, style, e);
+        return adjustRadioStyle(style, e);
     case PushButtonPart:
     case SquareButtonPart:
     case ButtonPart:
-        return adjustButtonStyle(styleResolver, style, e);
+        return adjustButtonStyle(style, e);
     case InnerSpinButtonPart:
-        return adjustInnerSpinButtonStyle(styleResolver, style, e);
+        return adjustInnerSpinButtonStyle(style, e);
 #endif
     case TextFieldPart:
-        return adjustTextFieldStyle(styleResolver, style, e);
+        return adjustTextFieldStyle(style, e);
     case TextAreaPart:
-        return adjustTextAreaStyle(styleResolver, style, e);
+        return adjustTextAreaStyle(style, e);
     case MenulistPart:
-        return adjustMenuListStyle(styleResolver, style, e);
+        return adjustMenuListStyle(style, e);
     case MenulistButtonPart:
-        return adjustMenuListButtonStyle(styleResolver, style, e);
+        return adjustMenuListButtonStyle(style, e);
     case MediaPlayButtonPart:
     case MediaCurrentTimePart:
     case MediaTimeRemainingPart:
@@ -209,37 +228,35 @@ void RenderTheme::adjustStyle(StyleResolver* styleResolver, RenderStyle* style, 
     case MediaExitFullscreenButtonPart:
     case MediaMuteButtonPart:
     case MediaVolumeSliderContainerPart:
-        return adjustMediaControlStyle(styleResolver, style, e);
+        return adjustMediaControlStyle(style, e);
     case MediaSliderPart:
     case MediaVolumeSliderPart:
     case MediaFullScreenVolumeSliderPart:
     case SliderHorizontalPart:
     case SliderVerticalPart:
-        return adjustSliderTrackStyle(styleResolver, style, e);
+        return adjustSliderTrackStyle(style, e);
     case SliderThumbHorizontalPart:
     case SliderThumbVerticalPart:
-        return adjustSliderThumbStyle(styleResolver, style, e);
+        return adjustSliderThumbStyle(style, e);
     case SearchFieldPart:
-        return adjustSearchFieldStyle(styleResolver, style, e);
+        return adjustSearchFieldStyle(style, e);
     case SearchFieldCancelButtonPart:
-        return adjustSearchFieldCancelButtonStyle(styleResolver, style, e);
+        return adjustSearchFieldCancelButtonStyle(style, e);
     case SearchFieldDecorationPart:
-        return adjustSearchFieldDecorationStyle(styleResolver, style, e);
+        return adjustSearchFieldDecorationStyle(style, e);
     case SearchFieldResultsDecorationPart:
-        return adjustSearchFieldResultsDecorationStyle(styleResolver, style, e);
-    case SearchFieldResultsButtonPart:
-        return adjustSearchFieldResultsButtonStyle(styleResolver, style, e);
+        return adjustSearchFieldResultsDecorationStyle(style, e);
     case ProgressBarPart:
-        return adjustProgressBarStyle(styleResolver, style, e);
+        return adjustProgressBarStyle(style, e);
     case MeterPart:
     case RelevancyLevelIndicatorPart:
     case ContinuousCapacityLevelIndicatorPart:
     case DiscreteCapacityLevelIndicatorPart:
     case RatingLevelIndicatorPart:
-        return adjustMeterStyle(styleResolver, style, e);
+        return adjustMeterStyle(style, e);
 #if ENABLE(INPUT_SPEECH)
     case InputSpeechButtonPart:
-        return adjustInputFieldSpeechButtonStyle(styleResolver, style, e);
+        return adjustInputFieldSpeechButtonStyle(style, e);
 #endif
     default:
         break;
@@ -260,6 +277,9 @@ bool RenderTheme::paint(RenderObject* o, const PaintInfo& paintInfo, const IntRe
         return false;
 
     ControlPart part = o->style()->appearance();
+
+    if (shouldUseFallbackTheme(o->style()))
+        return paintUsingFallbackTheme(o, paintInfo, r);
 
 #if USE(NEW_THEME)
     switch (part) {
@@ -360,8 +380,6 @@ bool RenderTheme::paint(RenderObject* o, const PaintInfo& paintInfo, const IntRe
         return paintSearchFieldDecoration(o, paintInfo, r);
     case SearchFieldResultsDecorationPart:
         return paintSearchFieldResultsDecoration(o, paintInfo, r);
-    case SearchFieldResultsButtonPart:
-        return paintSearchFieldResultsButton(o, paintInfo, r);
 #if ENABLE(INPUT_SPEECH)
     case InputSpeechButtonPart:
         return paintInputFieldSpeechButton(o, paintInfo, r);
@@ -407,7 +425,6 @@ bool RenderTheme::paintBorderOnly(RenderObject* o, const PaintInfo& paintInfo, c
     case SearchFieldCancelButtonPart:
     case SearchFieldDecorationPart:
     case SearchFieldResultsDecorationPart:
-    case SearchFieldResultsButtonPart:
 #if ENABLE(INPUT_SPEECH)
     case InputSpeechButtonPart:
 #endif
@@ -450,7 +467,6 @@ bool RenderTheme::paintDecorations(RenderObject* o, const PaintInfo& paintInfo, 
     case SearchFieldCancelButtonPart:
     case SearchFieldDecorationPart:
     case SearchFieldResultsDecorationPart:
-    case SearchFieldResultsButtonPart:
 #if ENABLE(INPUT_SPEECH)
     case InputSpeechButtonPart:
 #endif
@@ -459,6 +475,29 @@ bool RenderTheme::paintDecorations(RenderObject* o, const PaintInfo& paintInfo, 
     }
 
     return false;
+}
+
+String RenderTheme::extraDefaultStyleSheet()
+{
+    if (!RuntimeEnabledFeatures::dataListElementEnabled() && !RuntimeEnabledFeatures::dialogElementEnabled())
+        return String();
+    StringBuilder runtimeCSS;
+
+    if (RuntimeEnabledFeatures::dataListElementEnabled()) {
+        runtimeCSS.appendLiteral("datalist {display: none ;}");
+
+        if (RuntimeEnabledFeatures::inputTypeColorEnabled()) {
+            runtimeCSS.appendLiteral("input[type=\"color\"][list] { -webkit-appearance: menulist; width: 88px; height: 23px;}");
+            runtimeCSS.appendLiteral("input[type=\"color\"][list]::-webkit-color-swatch-wrapper { padding-left: 8px; padding-right: 24px;}");
+            runtimeCSS.appendLiteral("input[type=\"color\"][list]::-webkit-color-swatch { border-color: #000000;}");
+        }
+    }
+    if (RuntimeEnabledFeatures::dialogElementEnabled()) {
+        runtimeCSS.appendLiteral("dialog:not([open]) { display: none; }");
+        runtimeCSS.appendLiteral("dialog { position: absolute; left: 0; right: 0; margin: auto; border: solid; padding: 1em; background: white; color: black;}");
+    }
+
+    return runtimeCSS.toString();
 }
 
 String RenderTheme::formatMediaControlsTime(float time) const
@@ -608,9 +647,16 @@ bool RenderTheme::isControlContainer(ControlPart appearance) const
 
 static bool isBackgroundOrBorderStyled(const RenderStyle& style, const BorderData& border, const FillLayer& background, const Color& backgroundColor)
 {
+    // Code below excludes the background-repeat from comparison by resetting it
+    FillLayer backgroundCopy = background;
+    FillLayer backgroundLayersCopy = *style.backgroundLayers();
+    backgroundCopy.setRepeatX(NoRepeatFill);
+    backgroundCopy.setRepeatY(NoRepeatFill);
+    backgroundLayersCopy.setRepeatX(NoRepeatFill);
+    backgroundLayersCopy.setRepeatY(NoRepeatFill);
     // Test the style to see if the UA border and background match.
     return style.border() != border
-        || *style.backgroundLayers() != background
+        || backgroundLayersCopy != backgroundCopy
         || style.visitedDependentColor(CSSPropertyBackgroundColor) != backgroundColor;
 }
 
@@ -721,26 +767,16 @@ bool RenderTheme::isActive(const RenderObject* o) const
 
 bool RenderTheme::isChecked(const RenderObject* o) const
 {
-    if (!o->node())
+    if (!o->node() || !o->node()->hasTagName(inputTag))
         return false;
-
-    HTMLInputElement* inputElement = o->node()->toInputElement();
-    if (!inputElement)
-        return false;
-
-    return inputElement->shouldAppearChecked();
+    return toHTMLInputElement(o->node())->shouldAppearChecked();
 }
 
 bool RenderTheme::isIndeterminate(const RenderObject* o) const
 {
-    if (!o->node())
+    if (!o->node() || !o->node()->hasTagName(inputTag))
         return false;
-
-    HTMLInputElement* inputElement = o->node()->toInputElement();
-    if (!inputElement)
-        return false;
-
-    return inputElement->shouldAppearIndeterminate();
+    return toHTMLInputElement(o->node())->shouldAppearIndeterminate();
 }
 
 bool RenderTheme::isEnabled(const RenderObject* o) const
@@ -810,7 +846,7 @@ bool RenderTheme::isSpinUpButtonPartHovered(const RenderObject* o) const
 
 #if !USE(NEW_THEME)
 
-void RenderTheme::adjustCheckboxStyle(StyleResolver*, RenderStyle* style, Element*) const
+void RenderTheme::adjustCheckboxStyle(RenderStyle* style, Element*) const
 {
     // A summary of the rules for checkbox designed to match WinIE:
     // width/height - honored (WinIE actually scales its control for small widths, but lets it overflow for small heights.)
@@ -825,7 +861,7 @@ void RenderTheme::adjustCheckboxStyle(StyleResolver*, RenderStyle* style, Elemen
     style->resetBorder();
 }
 
-void RenderTheme::adjustRadioStyle(StyleResolver*, RenderStyle* style, Element*) const
+void RenderTheme::adjustRadioStyle(RenderStyle* style, Element*) const
 {
     // A summary of the rules for checkbox designed to match WinIE:
     // width/height - honored (WinIE actually scales its control for small widths, but lets it overflow for small heights.)
@@ -840,7 +876,7 @@ void RenderTheme::adjustRadioStyle(StyleResolver*, RenderStyle* style, Element*)
     style->resetBorder();
 }
 
-void RenderTheme::adjustButtonStyle(StyleResolver*, RenderStyle* style, Element*) const
+void RenderTheme::adjustButtonStyle(RenderStyle* style, Element*) const
 {
     // Most platforms will completely honor all CSS, and so we have no need to
     // adjust the style at all by default. We will still allow the theme a crack
@@ -848,27 +884,27 @@ void RenderTheme::adjustButtonStyle(StyleResolver*, RenderStyle* style, Element*
     setButtonSize(style);
 }
 
-void RenderTheme::adjustInnerSpinButtonStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustInnerSpinButtonStyle(RenderStyle*, Element*) const
 {
 }
 #endif
 
-void RenderTheme::adjustTextFieldStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustTextFieldStyle(RenderStyle*, Element*) const
 {
 }
 
-void RenderTheme::adjustTextAreaStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustTextAreaStyle(RenderStyle*, Element*) const
 {
 }
 
-void RenderTheme::adjustMenuListStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustMenuListStyle(RenderStyle*, Element*) const
 {
 }
 
 #if ENABLE(INPUT_SPEECH)
-void RenderTheme::adjustInputFieldSpeechButtonStyle(StyleResolver* styleResolver, RenderStyle* style, Element* element) const
+void RenderTheme::adjustInputFieldSpeechButtonStyle(RenderStyle* style, Element* element) const
 {
-    RenderInputSpeech::adjustInputFieldSpeechButtonStyle(styleResolver, style, element);
+    RenderInputSpeech::adjustInputFieldSpeechButtonStyle(style, element);
 }
 
 bool RenderTheme::paintInputFieldSpeechButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
@@ -877,7 +913,7 @@ bool RenderTheme::paintInputFieldSpeechButton(RenderObject* object, const PaintI
 }
 #endif
 
-void RenderTheme::adjustMeterStyle(StyleResolver*, RenderStyle* style, Element*) const
+void RenderTheme::adjustMeterStyle(RenderStyle* style, Element*) const
 {
 }
 
@@ -896,23 +932,19 @@ bool RenderTheme::paintMeter(RenderObject*, const PaintInfo&, const IntRect&)
     return true;
 }
 
-#if ENABLE(DATALIST_ELEMENT)
 LayoutUnit RenderTheme::sliderTickSnappingThreshold() const
 {
-    return 0;
+    return 5;
 }
 
 void RenderTheme::paintSliderTicks(RenderObject* o, const PaintInfo& paintInfo, const IntRect& rect)
 {
     Node* node = o->node();
-    if (!node)
+    if (!node || !node->hasTagName(inputTag))
         return;
 
-    HTMLInputElement* input = node->toInputElement();
-    if (!input)
-        return;
-
-    HTMLDataListElement* dataList = static_cast<HTMLDataListElement*>(input->list());
+    HTMLInputElement* input = toHTMLInputElement(node);
+    HTMLDataListElement* dataList = input->dataList();
     if (!dataList)
         return;
 
@@ -965,7 +997,7 @@ void RenderTheme::paintSliderTicks(RenderObject* o, const PaintInfo& paintInfo, 
     }
     RefPtr<HTMLCollection> options = dataList->options();
     GraphicsContextStateSaver stateSaver(*paintInfo.context);
-    paintInfo.context->setFillColor(o->style()->visitedDependentColor(CSSPropertyColor), ColorSpaceDeviceRGB);
+    paintInfo.context->setFillColor(o->style()->visitedDependentColor(CSSPropertyColor));
     for (unsigned i = 0; Node* node = options->item(i); i++) {
         ASSERT(node->hasTagName(optionTag));
         HTMLOptionElement* optionElement = toHTMLOptionElement(node);
@@ -983,7 +1015,6 @@ void RenderTheme::paintSliderTicks(RenderObject* o, const PaintInfo& paintInfo, 
         paintInfo.context->fillRect(tickRect);
     }
 }
-#endif
 
 double RenderTheme::animationRepeatIntervalForProgressBar(RenderProgress*) const
 {
@@ -995,7 +1026,7 @@ double RenderTheme::animationDurationForProgressBar(RenderProgress*) const
     return 0;
 }
 
-void RenderTheme::adjustProgressBarStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustProgressBarStyle(RenderStyle*, Element*) const
 {
 }
 
@@ -1004,19 +1035,19 @@ bool RenderTheme::shouldHaveSpinButton(HTMLInputElement* inputElement) const
     return inputElement->isSteppable() && !inputElement->isRangeControl();
 }
 
-void RenderTheme::adjustMenuListButtonStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustMenuListButtonStyle(RenderStyle*, Element*) const
 {
 }
 
-void RenderTheme::adjustMediaControlStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustMediaControlStyle(RenderStyle*, Element*) const
 {
 }
 
-void RenderTheme::adjustSliderTrackStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustSliderTrackStyle(RenderStyle*, Element*) const
 {
 }
 
-void RenderTheme::adjustSliderThumbStyle(StyleResolver*, RenderStyle* style, Element* element) const
+void RenderTheme::adjustSliderThumbStyle(RenderStyle* style, Element* element) const
 {
     adjustSliderThumbSize(style, element);
 }
@@ -1025,23 +1056,19 @@ void RenderTheme::adjustSliderThumbSize(RenderStyle*, Element*) const
 {
 }
 
-void RenderTheme::adjustSearchFieldStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustSearchFieldStyle(RenderStyle*, Element*) const
 {
 }
 
-void RenderTheme::adjustSearchFieldCancelButtonStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustSearchFieldCancelButtonStyle(RenderStyle*, Element*) const
 {
 }
 
-void RenderTheme::adjustSearchFieldDecorationStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustSearchFieldDecorationStyle(RenderStyle*, Element*) const
 {
 }
 
-void RenderTheme::adjustSearchFieldResultsDecorationStyle(StyleResolver*, RenderStyle*, Element*) const
-{
-}
-
-void RenderTheme::adjustSearchFieldResultsButtonStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustSearchFieldResultsDecorationStyle(RenderStyle*, Element*) const
 {
 }
 
@@ -1060,7 +1087,7 @@ void RenderTheme::platformColorsDidChange()
     Page::scheduleForcedStyleRecalcForAllPages();
 }
 
-Color RenderTheme::systemColor(int cssValueId) const
+Color RenderTheme::systemColor(CSSValueID cssValueId) const
 {
     switch (cssValueId) {
     case CSSValueActiveborder:
@@ -1121,6 +1148,20 @@ Color RenderTheme::systemColor(int cssValueId) const
         return 0xFFCCCCCC;
     case CSSValueWindowtext:
         return 0xFF000000;
+    case CSSValueInternalActiveListBoxSelection:
+        return activeListBoxSelectionBackgroundColor();
+        break;
+    case CSSValueInternalActiveListBoxSelectionText:
+        return activeListBoxSelectionForegroundColor();
+        break;
+    case CSSValueInternalInactiveListBoxSelection:
+        return inactiveListBoxSelectionBackgroundColor();
+        break;
+    case CSSValueInternalInactiveListBoxSelectionText:
+        return inactiveListBoxSelectionForegroundColor();
+        break;
+    default:
+        break;
     }
     return Color();
 }
@@ -1138,30 +1179,6 @@ Color RenderTheme::platformInactiveTextSearchHighlightColor() const
 Color RenderTheme::tapHighlightColor()
 {
     return defaultTheme()->platformTapHighlightColor();
-}
-
-// Value chosen by observation. This can be tweaked.
-static const int minColorContrastValue = 1300;
-// For transparent or translucent background color, use lightening.
-static const int minDisabledColorAlphaValue = 128;
-
-Color RenderTheme::disabledTextColor(const Color& textColor, const Color& backgroundColor) const
-{
-    // The explicit check for black is an optimization for the 99% case (black on white).
-    // This also means that black on black will turn into grey on black when disabled.
-    Color disabledColor;
-    if (textColor.rgb() == Color::black || backgroundColor.alpha() < minDisabledColorAlphaValue || differenceSquared(textColor, Color::white) > differenceSquared(backgroundColor, Color::white))
-        disabledColor = textColor.light();
-    else
-        disabledColor = textColor.dark();
-    
-    // If there's not very much contrast between the disabled color and the background color,
-    // just leave the text color alone. We don't want to change a good contrast color scheme so that it has really bad contrast.
-    // If the the contrast was already poor, then it doesn't do any good to change it to a different poor contrast color scheme.
-    if (differenceSquared(disabledColor, backgroundColor) < minColorContrastValue)
-        return textColor;
-    
-    return disabledColor;
 }
 
 void RenderTheme::setCustomFocusRingColor(const Color& c)
@@ -1200,6 +1217,156 @@ String RenderTheme::fileListNameForWidth(const FileList* fileList, const Font& f
 bool RenderTheme::shouldOpenPickerWithF4Key() const
 {
     return false;
+}
+
+bool RenderTheme::supportsDataListUI(const AtomicString& type) const
+{
+    return type == InputTypeNames::text() || type == InputTypeNames::search() || type == InputTypeNames::url()
+        || type == InputTypeNames::telephone() || type == InputTypeNames::email() || type == InputTypeNames::number()
+        || type == InputTypeNames::color()
+        || type == InputTypeNames::date()
+        || type == InputTypeNames::datetime()
+        || type == InputTypeNames::datetimelocal()
+        || type == InputTypeNames::month()
+        || type == InputTypeNames::week()
+        || type == InputTypeNames::time()
+        || type == InputTypeNames::range();
+}
+
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+bool RenderTheme::supportsCalendarPicker(const AtomicString& type) const
+{
+    return type == InputTypeNames::date()
+        || type == InputTypeNames::datetime()
+        || type == InputTypeNames::datetimelocal()
+        || type == InputTypeNames::month()
+        || type == InputTypeNames::week();
+}
+#endif
+
+bool RenderTheme::shouldUseFallbackTheme(RenderStyle*) const
+{
+    return false;
+}
+
+void RenderTheme::adjustStyleUsingFallbackTheme(RenderStyle* style, Element* e)
+{
+    ControlPart part = style->appearance();
+    switch (part) {
+    case CheckboxPart:
+        return adjustCheckboxStyleUsingFallbackTheme(style, e);
+    case RadioPart:
+        return adjustRadioStyleUsingFallbackTheme(style, e);
+    default:
+        break;
+    }
+}
+
+bool RenderTheme::paintUsingFallbackTheme(RenderObject* o, const PaintInfo& i, const IntRect& r)
+{
+    ControlPart part = o->style()->appearance();
+    switch (part) {
+    case CheckboxPart:
+        return paintCheckboxUsingFallbackTheme(o, i, r);
+    case RadioPart:
+        return paintRadioUsingFallbackTheme(o, i, r);
+    default:
+        break;
+    }
+    return true;
+}
+
+// static
+void RenderTheme::setSizeIfAuto(RenderStyle* style, const IntSize& size)
+{
+    if (style->width().isIntrinsicOrAuto())
+        style->setWidth(Length(size.width(), Fixed));
+    if (style->height().isAuto())
+        style->setHeight(Length(size.height(), Fixed));
+}
+
+bool RenderTheme::paintCheckboxUsingFallbackTheme(RenderObject* o, const PaintInfo& i, const IntRect& r)
+{
+    WebKit::WebFallbackThemeEngine::ExtraParams extraParams;
+    WebKit::WebCanvas* canvas = i.context->canvas();
+    extraParams.button.checked = isChecked(o);
+    extraParams.button.indeterminate = isIndeterminate(o);
+
+    float zoomLevel = o->style()->effectiveZoom();
+    GraphicsContextStateSaver stateSaver(*i.context);
+    IntRect unzoomedRect = r;
+    if (zoomLevel != 1) {
+        unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
+        unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
+        i.context->translate(unzoomedRect.x(), unzoomedRect.y());
+        i.context->scale(FloatSize(zoomLevel, zoomLevel));
+        i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
+    }
+
+    WebKit::Platform::current()->fallbackThemeEngine()->paint(canvas, WebKit::WebFallbackThemeEngine::PartCheckbox, getWebFallbackThemeState(this, o), WebKit::WebRect(unzoomedRect), &extraParams);
+    return false;
+}
+
+void RenderTheme::adjustCheckboxStyleUsingFallbackTheme(RenderStyle* style, Element*) const
+{
+    // If the width and height are both specified, then we have nothing to do.
+    if (!style->width().isIntrinsicOrAuto() && !style->height().isAuto())
+        return;
+
+    IntSize size = WebKit::Platform::current()->fallbackThemeEngine()->getSize(WebKit::WebFallbackThemeEngine::PartCheckbox);
+    float zoomLevel = style->effectiveZoom();
+    size.setWidth(size.width() * zoomLevel);
+    size.setHeight(size.height() * zoomLevel);
+    setSizeIfAuto(style, size);
+
+    // padding - not honored by WinIE, needs to be removed.
+    style->resetPadding();
+
+    // border - honored by WinIE, but looks terrible (just paints in the control box and turns off the Windows XP theme)
+    // for now, we will not honor it.
+    style->resetBorder();
+}
+
+bool RenderTheme::paintRadioUsingFallbackTheme(RenderObject* o, const PaintInfo& i, const IntRect& r)
+{
+    WebKit::WebFallbackThemeEngine::ExtraParams extraParams;
+    WebKit::WebCanvas* canvas = i.context->canvas();
+    extraParams.button.checked = isChecked(o);
+    extraParams.button.indeterminate = isIndeterminate(o);
+
+    float zoomLevel = o->style()->effectiveZoom();
+    GraphicsContextStateSaver stateSaver(*i.context);
+    IntRect unzoomedRect = r;
+    if (zoomLevel != 1) {
+        unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
+        unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
+        i.context->translate(unzoomedRect.x(), unzoomedRect.y());
+        i.context->scale(FloatSize(zoomLevel, zoomLevel));
+        i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
+    }
+
+    WebKit::Platform::current()->fallbackThemeEngine()->paint(canvas, WebKit::WebFallbackThemeEngine::PartRadio, getWebFallbackThemeState(this, o), WebKit::WebRect(unzoomedRect), &extraParams);
+    return false;
+}
+
+void RenderTheme::adjustRadioStyleUsingFallbackTheme(RenderStyle* style, Element*) const
+{
+    // If the width and height are both specified, then we have nothing to do.
+    if (!style->width().isIntrinsicOrAuto() && !style->height().isAuto())
+        return;
+
+    IntSize size = WebKit::Platform::current()->fallbackThemeEngine()->getSize(WebKit::WebFallbackThemeEngine::PartRadio);
+    float zoomLevel = style->effectiveZoom();
+    size.setWidth(size.width() * zoomLevel);
+    size.setHeight(size.height() * zoomLevel);
+    setSizeIfAuto(style, size);
+
+    // padding - not honored by WinIE, needs to be removed.
+    style->resetPadding();
+
+    // border - honored by WinIE, but looks terrible (just paints in the control box and turns off the Windows XP theme)
+    // for now, we will not honor it.
+    style->resetBorder();
 }
 
 } // namespace WebCore

@@ -17,7 +17,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/shared_memory.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "content/common/pepper_renderer_instance_data.h"
 #include "content/public/browser/browser_message_filter.h"
@@ -25,7 +25,7 @@
 #include "media/audio/audio_parameters.h"
 #include "media/base/channel_layout.h"
 #include "net/cookies/canonical_cookie.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
+#include "third_party/WebKit/public/web/WebPopupType.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/surface/transport_dib.h"
 
@@ -55,6 +55,7 @@ class Rect;
 }
 
 namespace media {
+class AudioManager;
 struct MediaLogEvent;
 }
 
@@ -87,6 +88,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
                       BrowserContext* browser_context,
                       net::URLRequestContextGetter* request_context,
                       RenderWidgetHelper* render_widget_helper,
+                      media::AudioManager* audio_manager,
                       MediaInternals* media_internals,
                       DOMStorageContextImpl* dom_storage_context);
 
@@ -121,6 +123,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnGetProcessMemorySizes(size_t* private_bytes, size_t* shared_bytes);
   void OnCreateWindow(const ViewHostMsg_CreateWindow_Params& params,
                       int* route_id,
+                      int* main_frame_route_id,
                       int* surface_id,
                       int64* cloned_session_storage_namespace_id);
   void OnCreateWidget(int opener_id,
@@ -209,7 +212,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnResolveProxy(const GURL& url, IPC::Message* reply_msg);
 
   // Browser side transport DIB allocation
-  void OnAllocTransportDIB(size_t size,
+  void OnAllocTransportDIB(uint32 size,
                            bool cache_in_browser,
                            TransportDIB::Handle* result);
   void OnFreeTransportDIB(TransportDIB::Id dib_id);
@@ -263,7 +266,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
 #if defined(OS_ANDROID)
   void OnWebAudioMediaCodec(base::SharedMemoryHandle encoded_data_handle,
                             base::FileDescriptor pcm_output,
-                            size_t data_size);
+                            uint32_t data_size);
 #endif
 
   // Cached resource request dispatcher host and plugin service, guaranteed to
@@ -301,6 +304,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   // Used for sampling CPU usage of the renderer process.
   scoped_ptr<base::ProcessMetrics> process_metrics_;
 
+  media::AudioManager* audio_manager_;
   MediaInternals* media_internals_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderMessageFilter);

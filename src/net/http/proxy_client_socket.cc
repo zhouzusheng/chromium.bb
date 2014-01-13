@@ -5,7 +5,7 @@
 #include "net/http/proxy_client_socket.h"
 
 #include "base/metrics/histogram.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
@@ -46,7 +46,7 @@ void ProxyClientSocket::BuildTunnelRequest(
 int ProxyClientSocket::HandleProxyAuthChallenge(HttpAuthController* auth,
                                                 HttpResponseInfo* response,
                                                 const BoundNetLog& net_log) {
-  DCHECK(response->headers);
+  DCHECK(response->headers.get());
   int rv = auth->HandleAuthChallenge(response->headers, false, true, net_log);
   response->auth_challenge = auth->auth_info();
   if (rv == OK)
@@ -74,7 +74,7 @@ void ProxyClientSocket::LogBlockedTunnelResponse(int http_status_code,
 // static
 bool ProxyClientSocket::SanitizeProxyRedirect(HttpResponseInfo* response,
                                               const GURL& url) {
-  DCHECK(response && response->headers);
+  DCHECK(response && response->headers.get());
 
   std::string location;
   if (!response->headers->IsRedirect(&location))

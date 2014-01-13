@@ -66,7 +66,6 @@ public:
 
     virtual bool isDisabledFormControl() const OVERRIDE;
 
-    virtual bool isFocusable() const;
     virtual bool isEnumeratable() const { return false; }
 
     bool isRequired() const;
@@ -85,10 +84,12 @@ public:
     virtual bool isActivatedSubmit() const { return false; }
     virtual void setActivatedSubmit(bool) { }
 
+    enum CheckValidityDispatchEvents { CheckValidityDispatchEventsAllowed, CheckValidityDispatchEventsNone };
+
     virtual bool willValidate() const;
     void updateVisibleValidationMessage();
     void hideVisibleValidationMessage();
-    bool checkValidity(Vector<RefPtr<FormAssociatedElement> >* unhandledInvalidControls = 0);
+    bool checkValidity(Vector<RefPtr<FormAssociatedElement> >* unhandledInvalidControls = 0, CheckValidityDispatchEvents = CheckValidityDispatchEventsAllowed);
     // This must be called when a validation constraint or control value is changed.
     void setNeedsValidityCheck();
     virtual void setCustomValidity(const String&) OVERRIDE;
@@ -112,12 +113,13 @@ protected:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void requiredAttributeChanged();
     virtual void disabledAttributeChanged();
-    virtual void attach();
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
 
-    virtual bool supportsFocus() const;
+    virtual bool supportsFocus() const OVERRIDE;
+    virtual bool rendererIsFocusable() const OVERRIDE;
     virtual bool isKeyboardFocusable(KeyboardEvent*) const;
     virtual bool isMouseFocusable() const;
 
@@ -128,8 +130,6 @@ protected:
     // This must be called any time the result of willValidate() has changed.
     void setNeedsWillValidateCheck();
     virtual bool recalcWillValidate() const;
-
-    bool validationMessageShadowTreeContains(Node*) const;
 
 private:
     virtual void refFormAssociatedElement() { ref(); }
@@ -170,6 +170,18 @@ private:
 
     bool m_hasAutofocused : 1;
 };
+
+inline HTMLFormControlElement* toHTMLFormControlElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || (node->isElementNode() && toElement(node)->isFormControlElement()));
+    return static_cast<HTMLFormControlElement*>(node);
+}
+
+inline HTMLFormControlElement* toHTMLFormControlElement(FormAssociatedElement* control)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!control || control->isFormControlElement());
+    return static_cast<HTMLFormControlElement*>(control);
+}
 
 } // namespace
 

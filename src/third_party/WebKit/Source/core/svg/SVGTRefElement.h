@@ -21,7 +21,6 @@
 #ifndef SVGTRefElement_h
 #define SVGTRefElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGTextPositioningElement.h"
 #include "core/svg/SVGURIReference.h"
 
@@ -44,7 +43,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
     virtual bool rendererIsNeeded(const NodeRenderingContext&);
 
@@ -66,5 +65,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

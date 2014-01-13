@@ -10,12 +10,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/process_util.h"
-#include "base/string_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "base/strings/string_util.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/plugin_lib.h"
 #include "webkit/plugins/npapi/plugin_stream_url.h"
+#include "webkit/plugins/npapi/plugin_utils.h"
 
 using WebKit::WebCursorInfo;
 using WebKit::WebInputEvent;
@@ -40,7 +41,7 @@ WebPluginDelegateImpl* WebPluginDelegateImpl::Create(
 
 void WebPluginDelegateImpl::PluginDestroyed() {
   if (handle_event_depth_) {
-    MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+    base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
   } else {
     delete this;
   }
@@ -63,7 +64,7 @@ bool WebPluginDelegateImpl::Initialize(
   }
 
   if (quirks_ & PLUGIN_QUIRK_DIE_AFTER_UNLOAD)
-    webkit_glue::SetForcefullyTerminatePluginProcess(true);
+    webkit::npapi::SetForcefullyTerminatePluginProcess(true);
 
   int argc = 0;
   scoped_ptr<char*[]> argn(new char*[arg_names.size()]);
@@ -101,7 +102,7 @@ bool WebPluginDelegateImpl::Initialize(
 }
 
 void WebPluginDelegateImpl::DestroyInstance() {
-  if (instance_ && (instance_->npp()->ndata != NULL)) {
+  if (instance_.get() && (instance_->npp()->ndata != NULL)) {
     // Shutdown all streams before destroying so that
     // no streams are left "in progress".  Need to do
     // this before calling set_web_plugin(NULL) because the
@@ -185,6 +186,10 @@ NPObject* WebPluginDelegateImpl::GetPluginScriptableObject() {
   return instance_->GetPluginScriptableObject();
 }
 
+NPP WebPluginDelegateImpl::GetPluginNPP() {
+  return instance_->npp();
+}
+
 bool WebPluginDelegateImpl::GetFormValue(base::string16* value) {
   return instance_->GetFormValue(value);
 }
@@ -253,8 +258,9 @@ void WebPluginDelegateImpl::WindowedUpdateGeometry(
   }
 }
 
-bool WebPluginDelegateImpl::HandleInputEvent(const WebInputEvent& event,
-                                             WebCursorInfo* cursor_info) {
+bool WebPluginDelegateImpl::HandleInputEvent(
+    const WebInputEvent& event,
+    WebCursor::CursorInfo* cursor_info) {
   DCHECK(windowless_) << "events should only be received in windowless mode";
 
   bool pop_user_gesture = false;

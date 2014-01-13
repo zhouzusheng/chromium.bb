@@ -36,6 +36,9 @@ importScript("cm/htmlmixed.js");
 importScript("cm/matchbrackets.js");
 importScript("cm/closebrackets.js");
 importScript("cm/markselection.js");
+importScript("cm/showhint.js");
+importScript("cm/comment.js");
+importScript("cm/overlay.js");
 
 /**
  * @constructor
@@ -51,6 +54,7 @@ WebInspector.CodeMirrorTextEditor = function(url, delegate)
     this._url = url;
 
     this.registerRequiredCSS("cm/codemirror.css");
+    this.registerRequiredCSS("cm/showhint.css");
     this.registerRequiredCSS("cm/cmdevtools.css");
 
     this._codeMirror = window.CodeMirror(this.element, {
@@ -62,8 +66,12 @@ WebInspector.CodeMirrorTextEditor = function(url, delegate)
         electricChars: false,
         autoCloseBrackets: true
     });
+    this._codeMirror._codeMirrorTextEditor = this;
+    this._codeMirror.setOption("mode", null);
 
     var extraKeys = {};
+    extraKeys["Ctrl-Space"] = "autocomplete";
+    extraKeys[(WebInspector.isMac() ? "Cmd-" : "Ctrl-") + "/"] = "toggleComment";
     var indent = WebInspector.settings.textEditorIndent.get();
     if (indent === WebInspector.TextUtils.Indent.TabCharacter) {
         this._codeMirror.setOption("indentWithTabs", true);
@@ -79,18 +87,22 @@ WebInspector.CodeMirrorTextEditor = function(url, delegate)
         }
     }
     this._codeMirror.setOption("extraKeys", extraKeys);
+    this._codeMirror.setOption("flattenSpans", false);
+    this._codeMirror.setOption("maxHighlightLength", 1000);
+
+    this._shouldClearHistory = true;
+    this._lineSeparator = "\n";
 
     this._tokenHighlighter = new WebInspector.CodeMirrorTextEditor.TokenHighlighter(this._codeMirror);
     this._blockIndentController = new WebInspector.CodeMirrorTextEditor.BlockIndentController(this._codeMirror);
     this._fixWordMovement = new WebInspector.CodeMirrorTextEditor.FixWordMovement(this._codeMirror);
 
     this._codeMirror.on("change", this._change.bind(this));
+    this._codeMirror.on("beforeChange", this._beforeChange.bind(this));
     this._codeMirror.on("gutterClick", this._gutterClick.bind(this));
     this._codeMirror.on("cursorActivity", this._cursorActivity.bind(this));
     this._codeMirror.on("scroll", this._scroll.bind(this));
     this.element.addEventListener("contextmenu", this._contextMenu.bind(this));
-
-    this._lastRange = this.range();
 
     this.element.firstChild.addStyleClass("source-code");
     this.element.firstChild.addStyleClass("fill");
@@ -98,12 +110,25 @@ WebInspector.CodeMirrorTextEditor = function(url, delegate)
     this._nestedUpdatesCounter = 0;
 
     this.element.addEventListener("focus", this._handleElementFocus.bind(this), false);
+    this.element.addEventListener("keydown", this._handleKeyDown.bind(this), false);
     this.element.tabIndex = 0;
     this._setupSelectionColor();
+    this._setupWhitespaceHighlight();
 }
 
-WebInspector.CodeMirrorTextEditor.prototype = {
+WebInspector.CodeMirrorTextEditor.autocompleteCommand = function(codeMirror)
+{
+    var textEditor = codeMirror._codeMirrorTextEditor;
+    if (!textEditor._dictionary || codeMirror.somethingSelected())
+        return;
+    CodeMirror.showHint(codeMirror, textEditor._autocomplete.bind(textEditor));
+}
+CodeMirror.commands.autocomplete = WebInspector.CodeMirrorTextEditor.autocompleteCommand;
 
+WebInspector.CodeMirrorTextEditor.LongLineModeLineLengthThreshold = 1000;
+WebInspector.CodeMirrorTextEditor.MaximumNumberOfWhitespacesPerSingleSpan = 16;
+
+WebInspector.CodeMirrorTextEditor.prototype = {
     undo: function()
     {
         this._codeMirror.undo();
@@ -122,13 +147,97 @@ WebInspector.CodeMirrorTextEditor.prototype = {
         var backgroundColor = WebInspector.getSelectionBackgroundColor();
         var backgroundColorRule = backgroundColor ? ".CodeMirror .CodeMirror-selected { background-color: " + backgroundColor + ";}" : "";
         var foregroundColor = WebInspector.getSelectionForegroundColor();
-        var foregroundColorRule = foregroundColor ? ".CodeMirror .CodeMirror-selectedtext { color: " + foregroundColor + "!important;}" : "";
+        var foregroundColorRule = foregroundColor ? ".CodeMirror .CodeMirror-selectedtext:not(.CodeMirror-persist-highlight) { color: " + foregroundColor + "!important;}" : "";
         if (!foregroundColorRule && !backgroundColorRule)
             return;
 
         var style = document.createElement("style");
         style.textContent = backgroundColorRule + foregroundColorRule;
         document.head.appendChild(style);
+    },
+
+    _setupWhitespaceHighlight: function()
+    {
+        if (WebInspector.CodeMirrorTextEditor._whitespaceStyleInjected || !WebInspector.settings.showWhitespacesInEditor.get())
+            return;
+        WebInspector.CodeMirrorTextEditor._whitespaceStyleInjected = true;
+        const classBase = ".cm-whitespace-";
+        const spaceChar = "·";
+        var spaceChars = "";
+        var rules = "";
+        for(var i = 1; i <= WebInspector.CodeMirrorTextEditor.MaximumNumberOfWhitespacesPerSingleSpan; ++i) {
+            spaceChars += spaceChar;
+            var rule = classBase + i + "::before { content: '" + spaceChars + "';}\n";
+            rules += rule;
+        }
+        rules += ".cm-tab:before { display: block !important; }\n";
+        var style = document.createElement("style");
+        style.textContent = rules;
+        document.head.appendChild(style);
+    },
+
+    _autocomplete: function(codeMirror)
+    {
+        var cursor = codeMirror.getCursor();
+        var prefixRange = this._wordRangeForCursorPosition(cursor.line, cursor.ch, true);
+        if (!prefixRange)
+            return null;
+        var prefix = this.copyRange(prefixRange);
+        this._dictionary.removeWord(prefix);
+        var wordsWithPrefix = this._dictionary.wordsWithPrefix(this.copyRange(prefixRange));
+        this._dictionary.addWord(prefix);
+
+        var data = {
+            list: wordsWithPrefix,
+            from: new CodeMirror.Pos(prefixRange.startLine, prefixRange.startColumn),
+            to: new CodeMirror.Pos(prefixRange.endLine, prefixRange.endColumn)
+        };
+        CodeMirror.on(data, "close", this._handleAutocompletionClose.bind(this));
+
+        return data;
+    },
+
+    _handleKeyDown: function(e)
+    {
+        if (!!this._consumeEsc && e.keyCode === WebInspector.KeyboardShortcut.Keys.Esc.code)
+            e.consume(true);
+        delete this._consumeEsc;
+    },
+
+    _handleAutocompletionClose: function()
+    {
+        this._consumeEsc = true;
+    },
+
+    /**
+     * @param {string} text
+     */
+    _addTextToCompletionDictionary: function(text)
+    {
+        var words = WebInspector.TextUtils.textToWords(text);
+        for(var i = 0; i < words.length; ++i) {
+            this._dictionary.addWord(words[i]);
+        }
+    },
+
+    /**
+     * @param {string} text
+     */
+    _removeTextFromCompletionDictionary: function(text)
+    {
+        var words = WebInspector.TextUtils.textToWords(text);
+        for(var i = 0; i < words.length; ++i) {
+            this._dictionary.removeWord(words[i]);
+        }
+    },
+
+    /**
+     * @param {WebInspector.CompletionDictionary} dictionary
+     */
+    setCompletionDictionary: function(dictionary)
+    {
+        this._dictionary = dictionary;
+        this._addTextToCompletionDictionary(this.text());
     },
 
     /**
@@ -175,7 +284,7 @@ WebInspector.CodeMirrorTextEditor.prototype = {
             return "javascript-ident";
         if (tokenType === "string-2")
             return "javascript-regexp";
-        if (tokenType === "number" || tokenType === "comment" || tokenType === "string")
+        if (tokenType === "number" || tokenType === "comment" || tokenType === "string" || tokenType === "keyword")
             return "javascript-" + tokenType;
         return null;
     },
@@ -225,16 +334,82 @@ WebInspector.CodeMirrorTextEditor.prototype = {
         this._codeMirror.markClean();
     },
 
+    _hasLongLines: function()
+    {
+        function lineIterator(lineHandle)
+        {
+            if (lineHandle.text.length > WebInspector.CodeMirrorTextEditor.LongLineModeLineLengthThreshold)
+                hasLongLines = true;
+            return hasLongLines;
+        }
+        var hasLongLines = false;
+        this._codeMirror.eachLine(lineIterator);
+        return hasLongLines;
+    },
+
+    _whitespaceOverlayMode: function(mimeType)
+    {
+        var modeName = mimeType + "+whitespaces";
+        if (CodeMirror.modes[modeName])
+            return modeName;
+
+        function modeConstructor(config, parserConfig)
+        {
+            function nextToken(stream)
+            {
+                if (stream.peek() === " ") {
+                    var spaces = 0;
+                    while (spaces < WebInspector.CodeMirrorTextEditor.MaximumNumberOfWhitespacesPerSingleSpan && stream.peek() === " ") {
+                        ++spaces;
+                        stream.next();
+                    }
+                    return "whitespace whitespace-" + spaces;
+                }
+                while (!stream.eol() && stream.peek() !== " ")
+                    stream.next();
+                return null;
+            }
+            var whitespaceMode = {
+                token: nextToken
+            };
+            return CodeMirror.overlayMode(CodeMirror.getMode(config, mimeType), whitespaceMode, false);
+        }
+        CodeMirror.defineMode(modeName, modeConstructor);
+        return modeName;
+    },
+
+    _enableLongLinesMode: function()
+    {
+        this._codeMirror.setOption("matchBrackets", false);
+        this._codeMirror.setOption("styleSelectedText", false);
+        this._longLinesMode = true;
+    },
+
+    _disableLongLinesMode: function()
+    {
+        this._codeMirror.setOption("matchBrackets", true);
+        this._codeMirror.setOption("styleSelectedText", true);
+        this._longLinesMode = false;
+    },
+
     /**
      * @param {string} mimeType
      */
     set mimeType(mimeType)
     {
-        this._codeMirror.setOption("mode", mimeType);
-        switch(mimeType) {
-            case "text/html": this._codeMirror.setOption("theme", "web-inspector-html"); break;
-            case "text/css": this._codeMirror.setOption("theme", "web-inspector-css"); break;
-            case "text/javascript": this._codeMirror.setOption("theme", "web-inspector-js"); break;
+        if (this._hasLongLines())
+            this._enableLongLinesMode();
+        else
+            this._disableLongLinesMode();
+        var showWhitespaces = WebInspector.settings.showWhitespacesInEditor.get();
+        this._codeMirror.setOption("mode", showWhitespaces ? this._whitespaceOverlayMode(mimeType) : mimeType);
+        switch (mimeType) {
+        case "text/html": this._codeMirror.setOption("theme", "web-inspector-html"); break;
+        case "text/css":
+        case "text/x-scss":
+            this._codeMirror.setOption("theme", "web-inspector-css");
+            break;
+        case "text/javascript": this._codeMirror.setOption("theme", "web-inspector-js"); break;
         }
     },
 
@@ -243,7 +418,8 @@ WebInspector.CodeMirrorTextEditor.prototype = {
      */
     setReadOnly: function(readOnly)
     {
-        this._codeMirror.setOption("readOnly", readOnly ? "nocursor" : false);
+        this.element.enableStyleClass("CodeMirror-readonly", readOnly)
+        this._codeMirror.setOption("readOnly", readOnly);
     },
 
     /**
@@ -269,6 +445,7 @@ WebInspector.CodeMirrorTextEditor.prototype = {
      */
     highlightRange: function(range, cssClass)
     {
+        cssClass = "CodeMirror-persist-highlight " + cssClass;
         var pos = this._toPos(range);
         ++pos.end.ch;
         return this._codeMirror.markText(pos.start, pos.end, {
@@ -320,12 +497,12 @@ WebInspector.CodeMirrorTextEditor.prototype = {
     revealLine: function(lineNumber)
     {
         var pos = new CodeMirror.Pos(lineNumber, 0);
-        var topLine = this._topScrolledLine();
-        var bottomLine = this._bottomScrolledLine();
+        var scrollInfo = this._codeMirror.getScrollInfo();
+        var topLine = this._codeMirror.lineAtHeight(scrollInfo.top, "local");
+        var bottomLine = this._codeMirror.lineAtHeight(scrollInfo.top + scrollInfo.clientHeight, "local");
 
         var margin = null;
         var lineMargin = 3;
-        var scrollInfo = this._codeMirror.getScrollInfo();
         if ((lineNumber < topLine + lineMargin) || (lineNumber >= bottomLine - lineMargin)) {
             // scrollIntoView could get into infinite loop if margin exceeds half of the clientHeight.
             margin = (scrollInfo.clientHeight*0.9/2) >>> 0;
@@ -417,25 +594,36 @@ WebInspector.CodeMirrorTextEditor.prototype = {
      */
     markAndRevealRange: function(range)
     {
-        if (range)
-            this.setSelection(range);
+        if (!range)
+            return;
+        this.revealLine(range.startLine);
+        this.setSelection(range);
     },
 
     /**
      * @param {number} lineNumber
+     * @param {number=} columnNumber
      */
-    highlightLine: function(lineNumber)
+    highlightPosition: function(lineNumber, columnNumber)
     {
-        this.clearLineHighlight();
+        if (lineNumber < 0)
+            return;
+        lineNumber = Math.min(lineNumber, this._codeMirror.lineCount() - 1);
+        if (typeof columnNumber !== "number" || columnNumber < 0 || columnNumber > this._codeMirror.getLine(lineNumber).length)
+            columnNumber = 0;
+
+        this.clearPositionHighlight();
         this._highlightedLine = this._codeMirror.getLineHandle(lineNumber);
         if (!this._highlightedLine)
           return;
         this.revealLine(lineNumber);
         this._codeMirror.addLineClass(this._highlightedLine, null, "cm-highlight");
-        this._clearHighlightTimeout = setTimeout(this.clearLineHighlight.bind(this), 2000);
+        this._clearHighlightTimeout = setTimeout(this.clearPositionHighlight.bind(this), 2000);
+        if (!this.readOnly())
+            this._codeMirror.setSelection(new CodeMirror.Pos(lineNumber, columnNumber));
     },
 
-    clearLineHighlight: function()
+    clearPositionHighlight: function()
     {
         if (this._clearHighlightTimeout)
             clearTimeout(this._clearHighlightTimeout);
@@ -480,17 +668,81 @@ WebInspector.CodeMirrorTextEditor.prototype = {
         return newRange;
     },
 
-    _change: function()
+    /**
+     * @param {number} lineNumber
+     * @param {number} column
+     * @param {boolean=} prefixOnly
+     * @return {?WebInspector.TextRange}
+     */
+    _wordRangeForCursorPosition: function(lineNumber, column, prefixOnly)
+    {
+        var line = this.line(lineNumber);
+        if (!WebInspector.TextUtils.isWordChar(line.charAt(column - 1)))
+            return null;
+        var wordStart = column - 1;
+        while(wordStart > 0 && WebInspector.TextUtils.isWordChar(line.charAt(wordStart - 1)))
+            --wordStart;
+        if (prefixOnly)
+            return new WebInspector.TextRange(lineNumber, wordStart, lineNumber, column);
+        var wordEnd = column;
+        while(wordEnd < line.length && WebInspector.TextUtils.isWordChar(line.charAt(wordEnd)))
+            ++wordEnd;
+        return new WebInspector.TextRange(lineNumber, wordStart, lineNumber, wordEnd);
+    },
+
+    _beforeChange: function(codeMirror, changeObject)
+    {
+        if (!this._dictionary)
+            return;
+        this._updatedLines = this._updatedLines || {};
+        for(var i = changeObject.from.line; i <= changeObject.to.line; ++i)
+            this._updatedLines[i] = this.line(i);
+    },
+
+    _change: function(codeMirror, changeObject)
     {
         var widgets = this._elementToWidget.values();
         for (var i = 0; i < widgets.length; ++i)
             this._codeMirror.removeLineWidget(widgets[i]);
         this._elementToWidget.clear();
 
-        var newRange = this.range();
-        if (!this._muteTextChangedEvent)
-            this._delegate.onTextChanged(this._lastRange, newRange);
-        this._lastRange = newRange;
+        if (this._updatedLines) {
+            for(var lineNumber in this._updatedLines)
+                this._removeTextFromCompletionDictionary(this._updatedLines[lineNumber]);
+            delete this._updatedLines;
+        }
+
+        var linesToUpdate = {};
+        do {
+            var oldRange = this._toRange(changeObject.from, changeObject.to);
+            var newRange = oldRange.clone();
+            var linesAdded = changeObject.text.length;
+            if (linesAdded === 0) {
+                newRange.endLine = newRange.startLine;
+                newRange.endColumn = newRange.startColumn;
+            } else if (linesAdded === 1) {
+                newRange.endLine = newRange.startLine;
+                newRange.endColumn = newRange.startColumn + changeObject.text[0].length;
+            } else {
+                newRange.endLine = newRange.startLine + linesAdded - 1;
+                newRange.endColumn = changeObject.text[linesAdded - 1].length;
+            }
+
+            if (!this._muteTextChangedEvent)
+                this._delegate.onTextChanged(oldRange, newRange);
+
+            for(var i = newRange.startLine; i <= newRange.endLine; ++i) {
+                linesToUpdate[i] = true;
+            }
+            if (this._dictionary) {
+                for(var i = newRange.startLine; i <= newRange.endLine; ++i)
+                    linesToUpdate[i] = this.line(i);
+            }
+        } while (changeObject = changeObject.next);
+        if (this._dictionary) {
+            for(var lineNumber in linesToUpdate)
+                this._addTextToCompletionDictionary(linesToUpdate[lineNumber]);
+        }
     },
 
     _cursorActivity: function()
@@ -500,42 +752,12 @@ WebInspector.CodeMirrorTextEditor.prototype = {
         this._delegate.selectionChanged(this._toRange(start, end));
     },
 
-    _coordsCharLocal: function(coords)
-    {
-        var top = coords.top;
-        var totalLines = this._codeMirror.lineCount();
-        var begin = 0;
-        var end = totalLines - 1;
-        while (end - begin > 1) {
-            var middle = (begin + end) >> 1;
-            coords = this._codeMirror.charCoords(new CodeMirror.Pos(middle, 0), "local");
-            if (coords.top >= top)
-                end = middle;
-            else
-                begin = middle;
-        }
-
-        return end;
-    },
-
-    _topScrolledLine: function()
-    {
-        var scrollInfo = this._codeMirror.getScrollInfo();
-        // Workaround for CodeMirror's coordsChar incorrect result for "local" mode.
-        return this._coordsCharLocal(scrollInfo);
-    },
-
-    _bottomScrolledLine: function()
-    {
-        var scrollInfo = this._codeMirror.getScrollInfo();
-        scrollInfo.top += scrollInfo.clientHeight;
-        // Workaround for CodeMirror's coordsChar incorrect result for "local" mode.
-        return this._coordsCharLocal(scrollInfo);
-    },
-
     _scroll: function()
     {
-        this._delegate.scrollChanged(this._topScrolledLine());
+        if (this._scrollTimer)
+            clearTimeout(this._scrollTimer);
+        var topmostLineNumber = this._codeMirror.lineAtHeight(this._codeMirror.getScrollInfo().top, "local");
+        this._scrollTimer = setTimeout(this._delegate.scrollChanged.bind(this._delegate, topmostLineNumber), 100);
     },
 
     /**
@@ -593,11 +815,23 @@ WebInspector.CodeMirrorTextEditor.prototype = {
     /**
      * @param {string} text
      */
+    _detectLineSeparator: function(text)
+    {
+        this._lineSeparator = text.indexOf("\r\n") >= 0 ? "\r\n" : "\n";
+    },
+
+    /**
+     * @param {string} text
+     */
     setText: function(text)
     {
         this._muteTextChangedEvent = true;
         this._codeMirror.setValue(text);
-        this._codeMirror.clearHistory();
+        if (this._shouldClearHistory) {
+            this._codeMirror.clearHistory();
+            this._shouldClearHistory = false;
+        }
+        this._detectLineSeparator(text);
         delete this._muteTextChangedEvent;
     },
 
@@ -606,7 +840,7 @@ WebInspector.CodeMirrorTextEditor.prototype = {
      */
     text: function()
     {
-        return this._codeMirror.getValue();
+        return this._codeMirror.getValue().replace(/\n/g, this._lineSeparator);
     },
 
     /**
@@ -801,8 +1035,8 @@ WebInspector.CodeMirrorTextEditor.BlockIndentController.prototype = {
                 return CodeMirror.Pass;
 
         codeMirror.replaceRange("}", cursor);
-        var matchingBracket = codeMirror.findMatchingBracket();
-        if (!matchingBracket.match)
+        var matchingBracket = codeMirror._codeMirrorTextEditor._longLinesMode ? null : codeMirror.findMatchingBracket();
+        if (!matchingBracket || !matchingBracket.match)
             return;
 
         line = codeMirror.getLine(matchingBracket.to.line);

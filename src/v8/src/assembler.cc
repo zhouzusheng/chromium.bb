@@ -724,7 +724,7 @@ bool RelocInfo::RequiresRelocation(const CodeDesc& desc) {
   // generation.
   int mode_mask = RelocInfo::kCodeTargetMask |
                   RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT) |
-                  RelocInfo::ModeMask(RelocInfo::GLOBAL_PROPERTY_CELL) |
+                  RelocInfo::ModeMask(RelocInfo::CELL) |
                   RelocInfo::kApplyMask;
   RelocIterator it(desc, mode_mask);
   return !it.done();
@@ -754,8 +754,8 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "code target";
     case RelocInfo::CODE_TARGET_WITH_ID:
       return "code target with id";
-    case RelocInfo::GLOBAL_PROPERTY_CELL:
-      return "global property cell";
+    case RelocInfo::CELL:
+      return "property cell";
     case RelocInfo::RUNTIME_ENTRY:
       return "runtime entry";
     case RelocInfo::JS_RETURN:
@@ -830,7 +830,7 @@ void RelocInfo::Verify() {
     case EMBEDDED_OBJECT:
       Object::VerifyPointer(target_object());
       break;
-    case GLOBAL_PROPERTY_CELL:
+    case CELL:
       Object::VerifyPointer(target_cell());
       break;
     case DEBUG_BREAK:
@@ -1200,6 +1200,13 @@ ExternalReference ExternalReference::old_data_space_allocation_limit_address(
     Isolate* isolate) {
   return ExternalReference(
       isolate->heap()->OldDataSpaceAllocationLimitAddress());
+}
+
+
+ExternalReference ExternalReference::
+    new_space_high_promotion_mode_active_address(Isolate* isolate) {
+  return ExternalReference(
+      isolate->heap()->NewSpaceHighPromotionModeActiveAddress());
 }
 
 

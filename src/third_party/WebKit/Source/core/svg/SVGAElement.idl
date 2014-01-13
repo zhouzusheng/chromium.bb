@@ -23,14 +23,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-[
-    Conditional=SVG
-] interface SVGAElement : SVGStyledElement,
-                                          SVGURIReference,
-                                          SVGTests,
-                                          SVGLangSpace,
-                                          SVGExternalResourcesRequired,
-                                          SVGTransformable {
+interface SVGAElement : SVGStyledElement,
+                        SVGLangSpace,
+                        SVGTransformable {
     readonly attribute SVGAnimatedString target;
 };
+
+SVGAElement implements SVGExternalResourcesRequired;
+SVGAElement implements SVGTests;
+SVGAElement implements SVGURIReference;
 

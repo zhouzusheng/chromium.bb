@@ -34,9 +34,9 @@
 
 #include "WebNavigationPolicy.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/platform/KURL.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/RefPtr.h>
+#include "weborigin/KURL.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/RefPtr.h"
 
 namespace WebKit {
 
@@ -125,7 +125,6 @@ public:
     virtual WebCore::ResourceError fileDoesNotExistError(const WebCore::ResourceResponse&);
     virtual WebCore::ResourceError pluginWillHandleLoadError(const WebCore::ResourceResponse&);
     virtual bool shouldFallBack(const WebCore::ResourceError&);
-    virtual bool canHandleRequest(const WebCore::ResourceRequest&) const;
     virtual bool canShowMIMEType(const WTF::String& MIMEType) const;
     virtual WTF::String generatedMIMETypeForURLScheme(const WTF::String& URLScheme) const;
     virtual void didFinishLoad();
@@ -162,7 +161,7 @@ public:
     virtual void didNotAllowScript();
     virtual void didNotAllowPlugins();
 
-    virtual PassRefPtr<WebCore::FrameNetworkingContext> createNetworkingContext();
+    virtual WebCookieJar* cookieJar() const;
     virtual bool willCheckAndDispatchMessageEvent(WebCore::SecurityOrigin* target, WebCore::MessageEvent*) const;
     virtual void didChangeName(const String&);
 

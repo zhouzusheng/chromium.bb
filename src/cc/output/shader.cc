@@ -9,7 +9,7 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "cc/output/gl_renderer.h"  // For the GLC() macro.
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 
 #define SHADER0(Src) #Src
@@ -79,18 +79,23 @@ static std::string SetVertexTexCoordPrecision(const char* shader_string) {
 }
 
 TexCoordPrecision TexCoordPrecisionRequired(WebGraphicsContext3D* context,
+                                            int *highp_threshold_cache,
                                             int highp_threshold_min,
                                             int x, int y) {
-  // Initialize range and precision with minimum spec values for when
-  // GetShaderPrecisionFormat is a test stub.
-  // TODO(brianderson): Implement better stubs of GetShaderPrecisionFormat
-  // everywhere.
-  GLint range[2] = { 14, 14 };
-  GLint precision = 10;
-  GLC(context, context->getShaderPrecisionFormat(GL_FRAGMENT_SHADER,
-                                                 GL_MEDIUM_FLOAT,
-                                                 range, &precision));
-  int highp_threshold = std::max(1 << precision, highp_threshold_min);
+  if (*highp_threshold_cache == 0) {
+    // Initialize range and precision with minimum spec values for when
+    // GetShaderPrecisionFormat is a test stub.
+    // TODO(brianderson): Implement better stubs of GetShaderPrecisionFormat
+    // everywhere.
+    GLint range[2] = { 14, 14 };
+    GLint precision = 10;
+    GLC(context, context->getShaderPrecisionFormat(GL_FRAGMENT_SHADER,
+                                                   GL_MEDIUM_FLOAT,
+                                                   range, &precision));
+    *highp_threshold_cache = 1 << precision;
+  }
+
+  int highp_threshold = std::max(*highp_threshold_cache, highp_threshold_min);
   if (x > highp_threshold || y > highp_threshold)
     return TexCoordPrecisionHigh;
   return TexCoordPrecisionMedium;
@@ -99,16 +104,20 @@ TexCoordPrecision TexCoordPrecisionRequired(WebGraphicsContext3D* context,
 }  // namespace
 
 TexCoordPrecision TexCoordPrecisionRequired(WebGraphicsContext3D* context,
+                                            int *highp_threshold_cache,
                                             int highp_threshold_min,
                                             gfx::Point max_coordinate) {
-  return TexCoordPrecisionRequired(context, highp_threshold_min,
+  return TexCoordPrecisionRequired(context,
+                                   highp_threshold_cache, highp_threshold_min,
                                    max_coordinate.x(), max_coordinate.y());
 }
 
 TexCoordPrecision TexCoordPrecisionRequired(WebGraphicsContext3D* context,
+                                            int *highp_threshold_cache,
                                             int highp_threshold_min,
                                             gfx::Size max_size) {
-  return TexCoordPrecisionRequired(context, highp_threshold_min,
+  return TexCoordPrecisionRequired(context,
+                                   highp_threshold_cache, highp_threshold_min,
                                    max_size.width(), max_size.height());
 }
 
@@ -314,8 +323,7 @@ std::string VertexShaderPosTexIdentity::GetShaderString() const {
 
 VertexShaderQuad::VertexShaderQuad()
     : matrix_location_(-1),
-      point_location_(-1),
-      tex_scale_location_(-1) {}
+      quad_location_(-1) {}
 
 void VertexShaderQuad::Init(WebGraphicsContext3D* context,
                             unsigned program,
@@ -323,8 +331,72 @@ void VertexShaderQuad::Init(WebGraphicsContext3D* context,
                             int* base_uniform_index) {
   static const char* shader_uniforms[] = {
     "matrix",
-    "point",
-    "texScale",
+    "quad",
+  };
+  int locations[2];
+
+  GetProgramUniformLocations(context,
+                             program,
+                             shader_uniforms,
+                             arraysize(shader_uniforms),
+                             arraysize(locations),
+                             locations,
+                             using_bind_uniform,
+                             base_uniform_index);
+
+  matrix_location_ = locations[0];
+  quad_location_ = locations[1];
+  DCHECK_NE(matrix_location_, -1);
+  DCHECK_NE(quad_location_, -1);
+}
+
+std::string VertexShaderQuad::GetShaderString() const {
+#if defined(OS_ANDROID)
+// TODO(epenner): Find the cause of this 'quad' uniform
+// being missing if we don't add dummy variables.
+// http://crbug.com/240602
+  return VERTEX_SHADER(
+    attribute TexCoordPrecision vec4 a_position;
+    attribute float a_index;
+    uniform mat4 matrix;
+    uniform TexCoordPrecision vec2 quad[4];
+    uniform TexCoordPrecision vec2 dummy_uniform;
+    varying TexCoordPrecision vec2 dummy_varying;
+    void main() {
+      vec2 pos = quad[int(a_index)];  // NOLINT
+      gl_Position = matrix * vec4(
+          pos.x, pos.y, a_position.z, a_position.w);
+      dummy_varying = dummy_uniform;
+    }
+  );  // NOLINT(whitespace/parens)
+#else
+  return VERTEX_SHADER(
+    attribute TexCoordPrecision vec4 a_position;
+    attribute float a_index;
+    uniform mat4 matrix;
+    uniform TexCoordPrecision vec2 quad[4];
+    void main() {
+      vec2 pos = quad[int(a_index)];  // NOLINT
+      gl_Position = matrix * vec4(
+          pos.x, pos.y, a_position.z, a_position.w);
+    }
+  );  // NOLINT(whitespace/parens)
+#endif
+}
+
+VertexShaderQuadTexTransform::VertexShaderQuadTexTransform()
+    : matrix_location_(-1),
+      quad_location_(-1),
+      tex_transform_location_(-1) {}
+
+void VertexShaderQuadTexTransform::Init(WebGraphicsContext3D* context,
+                                        unsigned program,
+                                        bool using_bind_uniform,
+                                        int* base_uniform_index) {
+  static const char* shader_uniforms[] = {
+    "matrix",
+    "quad",
+    "texTrans",
   };
   int locations[3];
 
@@ -338,37 +410,33 @@ void VertexShaderQuad::Init(WebGraphicsContext3D* context,
                              base_uniform_index);
 
   matrix_location_ = locations[0];
-  point_location_ = locations[1];
-  tex_scale_location_ = locations[2];
+  quad_location_ = locations[1];
+  tex_transform_location_ = locations[2];
   DCHECK_NE(matrix_location_, -1);
-  DCHECK_NE(point_location_, -1);
-  DCHECK_NE(tex_scale_location_, -1);
+  DCHECK_NE(quad_location_, -1);
+  DCHECK_NE(tex_transform_location_, -1);
 }
 
-std::string VertexShaderQuad::GetShaderString() const {
+std::string VertexShaderQuadTexTransform::GetShaderString() const {
   return VERTEX_SHADER(
     attribute TexCoordPrecision vec4 a_position;
-    attribute TexCoordPrecision vec2 a_texCoord;
+    attribute float a_index;
     uniform mat4 matrix;
-    uniform TexCoordPrecision vec2 point[4];
-    uniform TexCoordPrecision vec2 texScale;
+    uniform TexCoordPrecision vec2 quad[4];
+    uniform TexCoordPrecision vec4 texTrans;
     varying TexCoordPrecision vec2 v_texCoord;
     void main() {
-      TexCoordPrecision vec2 complement = abs(a_texCoord - 1.0);
-      TexCoordPrecision vec4 pos = vec4(0.0, 0.0, a_position.z, a_position.w);
-      pos.xy += (complement.x * complement.y) * point[0];
-      pos.xy += (a_texCoord.x * complement.y) * point[1];
-      pos.xy += (a_texCoord.x * a_texCoord.y) * point[2];
-      pos.xy += (complement.x * a_texCoord.y) * point[3];
-      gl_Position = matrix * pos;
-      v_texCoord = (pos.xy + vec2(0.5)) * texScale;
+      vec2 pos = quad[int(a_index)];  // NOLINT
+      gl_Position = matrix * vec4(
+          pos.x, pos.y, a_position.z, a_position.w);
+      v_texCoord = (pos.xy + vec2(0.5)) * texTrans.zw + texTrans.xy;
     }
   );  // NOLINT(whitespace/parens)
 }
 
 VertexShaderTile::VertexShaderTile()
     : matrix_location_(-1),
-      point_location_(-1),
+      quad_location_(-1),
       vertex_tex_transform_location_(-1) {}
 
 void VertexShaderTile::Init(WebGraphicsContext3D* context,
@@ -377,7 +445,7 @@ void VertexShaderTile::Init(WebGraphicsContext3D* context,
                             int* base_uniform_index) {
   static const char* shader_uniforms[] = {
     "matrix",
-    "point",
+    "quad",
     "vertexTexTransform",
   };
   int locations[3];
@@ -392,28 +460,24 @@ void VertexShaderTile::Init(WebGraphicsContext3D* context,
                              base_uniform_index);
 
   matrix_location_ = locations[0];
-  point_location_ = locations[1];
+  quad_location_ = locations[1];
   vertex_tex_transform_location_ = locations[2];
-  DCHECK(matrix_location_ != -1 && point_location_ != -1 &&
+  DCHECK(matrix_location_ != -1 && quad_location_ != -1 &&
          vertex_tex_transform_location_ != -1);
 }
 
 std::string VertexShaderTile::GetShaderString() const {
   return VERTEX_SHADER(
     attribute TexCoordPrecision vec4 a_position;
-    attribute TexCoordPrecision vec2 a_texCoord;
+    attribute float a_index;
     uniform mat4 matrix;
-    uniform TexCoordPrecision vec2 point[4];
+    uniform TexCoordPrecision vec2 quad[4];
     uniform TexCoordPrecision vec4 vertexTexTransform;
     varying TexCoordPrecision vec2 v_texCoord;
     void main() {
-      TexCoordPrecision vec2 complement = abs(a_texCoord - 1.0);
-      TexCoordPrecision vec4 pos = vec4(0.0, 0.0, a_position.z, a_position.w);
-      pos.xy += (complement.x * complement.y) * point[0];
-      pos.xy += (a_texCoord.x * complement.y) * point[1];
-      pos.xy += (a_texCoord.x * a_texCoord.y) * point[2];
-      pos.xy += (complement.x * a_texCoord.y) * point[3];
-      gl_Position = matrix * pos;
+      vec2 pos = quad[int(a_index)];  // NOLINT
+      gl_Position = matrix * vec4(
+          pos.x, pos.y, a_position.z, a_position.w);
       v_texCoord = pos.xy * vertexTexTransform.zw + vertexTexTransform.xy;
     }
   );  // NOLINT(whitespace/parens)
@@ -1287,6 +1351,79 @@ std::string FragmentShaderYUVVideo::GetShaderString(
       vec3 yuv = vec3(y_raw, u_unsigned, v_unsigned) + yuv_adj;
       vec3 rgb = yuv_matrix * yuv;
       gl_FragColor = vec4(rgb, float(1)) * alpha;  // NOLINT
+    }
+  );  // NOLINT(whitespace/parens)
+}
+
+FragmentShaderYUVAVideo::FragmentShaderYUVAVideo()
+    : y_texture_location_(-1),
+      u_texture_location_(-1),
+      v_texture_location_(-1),
+      a_texture_location_(-1),
+      alpha_location_(-1),
+      yuv_matrix_location_(-1),
+      yuv_adj_location_(-1) {
+}
+
+void FragmentShaderYUVAVideo::Init(WebGraphicsContext3D* context,
+                                   unsigned program,
+                                   bool using_bind_uniform,
+                                   int* base_uniform_index) {
+  static const char* shader_uniforms[] = {
+      "y_texture",
+      "u_texture",
+      "v_texture",
+      "a_texture",
+      "alpha",
+      "cc_matrix",
+      "yuv_adj",
+  };
+  int locations[7];
+
+  GetProgramUniformLocations(context,
+                             program,
+                             shader_uniforms,
+                             arraysize(shader_uniforms),
+                             arraysize(locations),
+                             locations,
+                             using_bind_uniform,
+                             base_uniform_index);
+
+  y_texture_location_ = locations[0];
+  u_texture_location_ = locations[1];
+  v_texture_location_ = locations[2];
+  a_texture_location_ = locations[3];
+  alpha_location_ = locations[4];
+  yuv_matrix_location_ = locations[5];
+  yuv_adj_location_ = locations[6];
+
+  DCHECK(y_texture_location_ != -1 && u_texture_location_ != -1 &&
+         v_texture_location_ != -1 && a_texture_location_ != -1 &&
+         alpha_location_ != -1 && yuv_matrix_location_ != -1 &&
+         yuv_adj_location_ != -1);
+}
+
+std::string FragmentShaderYUVAVideo::GetShaderString(
+    TexCoordPrecision precision) const {
+  return FRAGMENT_SHADER(
+    precision mediump float;
+    precision mediump int;
+    varying TexCoordPrecision vec2 v_texCoord;
+    uniform sampler2D y_texture;
+    uniform sampler2D u_texture;
+    uniform sampler2D v_texture;
+    uniform sampler2D a_texture;
+    uniform float alpha;
+    uniform vec3 yuv_adj;
+    uniform mat3 yuv_matrix;
+    void main() {
+      float y_raw = texture2D(y_texture, v_texCoord).x;
+      float u_unsigned = texture2D(u_texture, v_texCoord).x;
+      float v_unsigned = texture2D(v_texture, v_texCoord).x;
+      float a_raw = texture2D(a_texture, v_texCoord).x;
+      vec3 yuv = vec3(y_raw, u_unsigned, v_unsigned) + yuv_adj;
+      vec3 rgb = yuv_matrix * yuv;
+      gl_FragColor = vec4(rgb, a_raw) * alpha;
     }
   );  // NOLINT(whitespace/parens)
 }

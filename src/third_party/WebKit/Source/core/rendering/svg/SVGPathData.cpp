@@ -20,7 +20,6 @@
 #include "config.h"
 #include "core/rendering/svg/SVGPathData.h"
 
-#if ENABLE(SVG)
 #include "SVGNames.h"
 #include "core/platform/graphics/Path.h"
 #include "core/svg/SVGCircleElement.h"
@@ -125,8 +124,8 @@ static void updatePathFromRectElement(SVGElement* element, Path& path)
         return;
     float x = rect->x().value(lengthContext);
     float y = rect->y().value(lengthContext);
-    bool hasRx = rect->hasAttribute(SVGNames::rxAttr);
-    bool hasRy = rect->hasAttribute(SVGNames::ryAttr);
+    bool hasRx = rect->rx().value(lengthContext) > 0;
+    bool hasRy = rect->ry().value(lengthContext) > 0;
     if (hasRx || hasRy) {
         float rx = rect->rx().value(lengthContext);
         float ry = rect->ry().value(lengthContext);
@@ -167,5 +166,3 @@ void updatePathFromGraphicsElement(SVGElement* element, Path& path)
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(SVG)

@@ -8,11 +8,11 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/id_map.h"
 #include "base/lazy_instance.h"
 #include "base/process_util.h"
-#include "base/string_number_conversions.h"
-#include "base/debug/trace_event.h"
+#include "base/strings/string_number_conversions.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
@@ -90,11 +90,8 @@ RenderWidgetHostViewPort* GetRenderWidgetHostViewFromSurfaceID(
         surface_id, &render_process_id, &render_widget_id))
     return NULL;
 
-  RenderProcessHost* process = RenderProcessHost::FromID(render_process_id);
-  if (!process)
-    return NULL;
-
-  RenderWidgetHost* host = process->GetRenderWidgetHostByID(render_widget_id);
+  RenderWidgetHost* host =
+      RenderWidgetHost::FromID(render_process_id, render_widget_id);
   return host ? RenderWidgetHostViewPort::FromRWHV(host->GetView()) : NULL;
 }
 
@@ -231,10 +228,8 @@ void GpuProcessHostUIShim::OnUpdateVSyncParameters(int surface_id,
       surface_id, &render_process_id, &render_widget_id)) {
     return;
   }
-  RenderProcessHost* host = RenderProcessHost::FromID(render_process_id);
-  if (!host)
-    return;
-  RenderWidgetHost* rwh = host->GetRenderWidgetHostByID(render_widget_id);
+  RenderWidgetHost* rwh =
+      RenderWidgetHost::FromID(render_process_id, render_widget_id);
   if (!rwh)
     return;
   RenderWidgetHostImpl::From(rwh)->UpdateVSyncParameters(timebase, interval);
@@ -248,7 +243,8 @@ void GpuProcessHostUIShim::OnLogMessage(
       level, header, message);
 }
 
-void GpuProcessHostUIShim::OnGraphicsInfoCollected(const GPUInfo& gpu_info) {
+void GpuProcessHostUIShim::OnGraphicsInfoCollected(
+    const gpu::GPUInfo& gpu_info) {
   // OnGraphicsInfoCollected is sent back after the GPU process successfully
   // initializes GL.
   TRACE_EVENT0("test_gpu", "OnGraphicsInfoCollected");
@@ -342,7 +338,8 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
   view->AcceleratedSurfaceBuffersSwapped(params, host_id_);
 }
 
-void GpuProcessHostUIShim::OnFrameDrawn(const cc::LatencyInfo& latency_info) {
+void GpuProcessHostUIShim::OnFrameDrawn(const ui::LatencyInfo& latency_info) {
+  RenderWidgetHostImpl::CompositorFrameDrawn(latency_info);
 }
 
 void GpuProcessHostUIShim::OnAcceleratedSurfacePostSubBuffer(

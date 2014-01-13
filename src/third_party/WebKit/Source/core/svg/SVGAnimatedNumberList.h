@@ -20,7 +20,6 @@
 #ifndef SVGAnimatedNumberList_h
 #define SVGAnimatedNumberList_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/SVGNumberList.h"
 #include "core/svg/properties/SVGAnimatedListPropertyTearOff.h"
@@ -34,7 +33,7 @@ typedef SVGAnimatedListPropertyTearOff<SVGNumberList> SVGAnimatedNumberList;
 DECLARE_ANIMATED_LIST_PROPERTY(SVGAnimatedNumberList, SVGNumberList, UpperProperty, LowerProperty)
 
 #define DEFINE_ANIMATED_NUMBER_LIST(OwnerType, DOMAttribute, UpperProperty, LowerProperty) \
-DEFINE_ANIMATED_PROPERTY(AnimatedNumberList, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty)
+DEFINE_ANIMATED_PROPERTY(AnimatedNumberList, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty, SVGAnimatedNumberList, SVGNumberList)
 
 class SVGAnimationElement;
 
@@ -57,5 +56,4 @@ public:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

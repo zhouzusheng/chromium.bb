@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
@@ -28,6 +28,10 @@ class Message;
 
 namespace gfx {
 class Image;
+}
+
+namespace gpu {
+struct GPUInfo;
 }
 
 namespace sandbox {
@@ -51,7 +55,6 @@ class ContentClient;
 class ContentPluginClient;
 class ContentRendererClient;
 class ContentUtilityClient;
-struct GPUInfo;
 struct PepperPluginInfo;
 
 // Setter and getter for the client.  The client should be set early, before any
@@ -99,7 +102,7 @@ class CONTENT_EXPORT ContentClient {
   virtual void SetActiveURL(const GURL& url) {}
 
   // Sets the data on the current gpu.
-  virtual void SetGpuInfo(const content::GPUInfo& gpu_info) {}
+  virtual void SetGpuInfo(const gpu::GPUInfo& gpu_info) {}
 
   // Gives the embedder a chance to register its own pepper plugins.
   virtual void AddPepperPlugins(
@@ -122,8 +125,9 @@ class CONTENT_EXPORT ContentClient {
   // behalf of a swapped out renderer.
   virtual bool CanHandleWhileSwappedOut(const IPC::Message& message);
 
-  // Returns a string describing the embedder version.  Used as part of the
-  // user agent string.
+  // Returns a string describing the embedder product name and version,
+  // of the form "productname/version", with no other slashes.
+  // Used as part of the user agent string.
   virtual std::string GetProduct() const;
 
   // Returns the user agent.

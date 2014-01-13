@@ -8,9 +8,11 @@
 #include <GLES2/gl2.h>
 
 #include <deque>
-#include "../client/hash_tables.h"
-#include "../common/gles2_cmd_format.h"
+#include <list>
+
 #include "gles2_impl_export.h"
+#include "gpu/command_buffer/client/hash_tables.h"
+#include "gpu/command_buffer/common/gles2_cmd_format.h"
 
 namespace gpu {
 
@@ -154,13 +156,16 @@ class GLES2_IMPL_EXPORT QueryTracker {
 
   Query* CreateQuery(GLuint id, GLenum target);
   Query* GetQuery(GLuint id);
-  void RemoveQuery(GLuint id, bool context_lost);
+  void RemoveQuery(GLuint id);
   void Shrink();
+  void FreeCompletedQueries();
 
  private:
   typedef gpu::hash_map<GLuint, Query*> QueryMap;
+  typedef std::list<Query*> QueryList;
 
   QueryMap queries_;
+  QueryList removed_queries_;
   QuerySyncManager query_sync_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(QueryTracker);

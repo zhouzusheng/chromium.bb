@@ -14,12 +14,12 @@
 #include "cc/animation/animation_events.h"
 #include "cc/animation/animation_registrar.h"
 #include "cc/base/cc_export.h"
-#include "cc/debug/latency_info.h"
 #include "cc/input/input_handler.h"
 #include "cc/input/layer_scroll_offset_delegate.h"
 #include "cc/input/top_controls_manager_client.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/layers/render_pass_sink.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/output/output_surface_client.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/render_pass.h"
@@ -50,18 +50,18 @@ struct RendererCapabilities;
 // LayerTreeHost->Proxy callback interface.
 class LayerTreeHostImplClient {
  public:
+  virtual void DidTryInitializeRendererOnImplThread(
+      bool success,
+      scoped_refptr<ContextProvider> offscreen_context_provider) = 0;
   virtual void DidLoseOutputSurfaceOnImplThread() = 0;
   virtual void OnSwapBuffersCompleteOnImplThread() = 0;
-  virtual void OnVSyncParametersChanged(base::TimeTicks timebase,
-                                        base::TimeDelta interval) = 0;
-  virtual void DidVSync(base::TimeTicks frame_time) = 0;
+  virtual void BeginFrameOnImplThread(const BeginFrameArgs& args) = 0;
   virtual void OnCanDrawStateChanged(bool can_draw) = 0;
   virtual void OnHasPendingTreeStateChanged(bool has_pending_tree) = 0;
   virtual void SetNeedsRedrawOnImplThread() = 0;
   virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect damage_rect) = 0;
   virtual void DidInitializeVisibleTileOnImplThread() = 0;
   virtual void SetNeedsCommitOnImplThread() = 0;
-  virtual void SetNeedsManageTilesOnImplThread() = 0;
   virtual void PostAnimationEventsToMainThreadOnImplThread(
       scoped_ptr<AnimationEventsVector> events,
       base::Time wall_clock_time) = 0;
@@ -74,7 +74,7 @@ class LayerTreeHostImplClient {
   virtual bool IsInsideDraw() = 0;
   virtual void RenewTreePriority() = 0;
   virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay) = 0;
-  virtual void DidReceiveLastInputEventForVSync(base::TimeTicks frame_time) = 0;
+  virtual void DidActivatePendingTree() = 0;
 
  protected:
   virtual ~LayerTreeHostImplClient() {}
@@ -82,11 +82,13 @@ class LayerTreeHostImplClient {
 
 // LayerTreeHostImpl owns the LayerImpl trees as well as associated rendering
 // state.
-class CC_EXPORT LayerTreeHostImpl : public InputHandler,
-                                    public RendererClient,
-                                    public TileManagerClient,
-                                    public OutputSurfaceClient,
-                                    public TopControlsManagerClient {
+class CC_EXPORT LayerTreeHostImpl
+    : public InputHandler,
+      public RendererClient,
+      public TileManagerClient,
+      public OutputSurfaceClient,
+      public TopControlsManagerClient,
+      public base::SupportsWeakPtr<LayerTreeHostImpl> {
  public:
   static scoped_ptr<LayerTreeHostImpl> Create(
       const LayerTreeSettings& settings,
@@ -96,14 +98,14 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
   virtual ~LayerTreeHostImpl();
 
   // InputHandler implementation
+  virtual void BindToClient(InputHandlerClient* client) OVERRIDE;
   virtual InputHandler::ScrollStatus ScrollBegin(
       gfx::Point viewport_point,
       InputHandler::ScrollInputType type) OVERRIDE;
   virtual bool ScrollBy(gfx::Point viewport_point,
                         gfx::Vector2dF scroll_delta) OVERRIDE;
-  virtual bool ScrollVerticallyByPage(
-      gfx::Point viewport_point,
-      WebKit::WebScrollbar::ScrollDirection direction) OVERRIDE;
+  virtual bool ScrollVerticallyByPage(gfx::Point viewport_point,
+                                      ScrollDirection direction) OVERRIDE;
   virtual void SetRootLayerScrollOffsetDelegate(
       LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate) OVERRIDE;
   virtual void OnRootLayerDelegatedScrollOffsetChanged() OVERRIDE;
@@ -121,14 +123,14 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
                                        base::TimeDelta duration) OVERRIDE;
   virtual void ScheduleAnimation() OVERRIDE;
   virtual bool HaveTouchEventHandlersAt(gfx::Point viewport_port) OVERRIDE;
-  virtual void DidReceiveLastInputEventForVSync(
-      base::TimeTicks frame_time) OVERRIDE;
+  virtual void SetLatencyInfoForInputEvent(const ui::LatencyInfo& latency_info)
+      OVERRIDE;
 
   // TopControlsManagerClient implementation.
   virtual void DidChangeTopControlsPosition() OVERRIDE;
   virtual bool HaveRootScrollLayer() const OVERRIDE;
 
-  void StartScrollbarAnimation(base::TimeTicks now);
+  void StartScrollbarAnimation();
 
   struct CC_EXPORT FrameData : public RenderPassSink {
     FrameData();
@@ -142,7 +144,6 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
     LayerImplList will_draw_layers;
     bool contains_incomplete_tile;
     bool has_no_damage;
-    LatencyInfo latency_info;
 
     // RenderPassSink implementation.
     virtual void AppendRenderPass(scoped_ptr<RenderPass> render_pass) OVERRIDE;
@@ -153,6 +154,7 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
   virtual void Animate(base::TimeTicks monotonic_time,
                        base::Time wall_clock_time);
   virtual void UpdateAnimationState(bool start_ready_animations);
+  void MainThreadHasStoppedFlinging();
   void UpdateBackgroundAnimateTicking(bool should_background_tick);
   void SetViewportDamage(gfx::Rect damage_rect);
 
@@ -175,12 +177,11 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
   gfx::SizeF VisibleViewportSize() const;
 
   // RendererClient implementation
+  virtual gfx::Rect DeviceViewport() const OVERRIDE;
  private:
-  virtual gfx::Size DeviceViewportSize() const OVERRIDE;
+  virtual float DeviceScaleFactor() const OVERRIDE;
   virtual const LayerTreeSettings& Settings() const OVERRIDE;
  public:
-  virtual void DidLoseOutputSurface() OVERRIDE;
-  virtual void OnSwapBuffersComplete() OVERRIDE;
   virtual void SetFullRootLayerDamage() OVERRIDE;
   virtual void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy)
       OVERRIDE;
@@ -192,16 +193,19 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
   virtual bool AllowPartialSwap() const OVERRIDE;
 
   // TileManagerClient implementation.
-  virtual void ScheduleManageTiles() OVERRIDE;
   virtual void DidInitializeVisibleTile() OVERRIDE;
+  virtual void NotifyReadyToActivate() OVERRIDE;
 
   // OutputSurfaceClient implementation.
+  virtual bool DeferredInitialize(
+      scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE;
   virtual void SetNeedsRedrawRect(gfx::Rect rect) OVERRIDE;
-  virtual void OnVSyncParametersChanged(base::TimeTicks timebase,
-                                        base::TimeDelta interval) OVERRIDE;
-  virtual void DidVSync(base::TimeTicks frame_time) OVERRIDE;
-  virtual void OnSendFrameToParentCompositorAck(const CompositorFrameAck& ack)
+  virtual void BeginFrame(const BeginFrameArgs& args)
       OVERRIDE;
+  virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
+                                          gfx::Rect viewport) OVERRIDE;
+  virtual void DidLoseOutputSurface() OVERRIDE;
+  virtual void OnSwapBuffersComplete(const CompositorFrameAck* ack) OVERRIDE;
 
   // Called from LayerTreeImpl.
   void OnCanDrawStateChangedForTree();
@@ -210,7 +214,6 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
   bool CanDraw();
   OutputSurface* output_surface() const { return output_surface_.get(); }
 
-  std::string LayerTreeAsText() const;
   std::string LayerTreeAsJson() const;
 
   void FinishAllRendering();
@@ -223,7 +226,8 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
   const RendererCapabilities& GetRendererCapabilities() const;
 
   virtual bool SwapBuffers(const FrameData& frame);
-  void EnableVSyncNotification(bool enable);
+  void SetNeedsBeginFrame(bool enable);
+  void SetNeedsManageTiles() { manage_tiles_needed_ = true; }
 
   void Readback(void* pixels, gfx::Rect rect_in_device_viewport);
 
@@ -232,9 +236,9 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
   LayerTreeImpl* pending_tree() { return pending_tree_.get(); }
   const LayerTreeImpl* pending_tree() const { return pending_tree_.get(); }
   const LayerTreeImpl* recycle_tree() const { return recycle_tree_.get(); }
-  void CreatePendingTree();
+  virtual void CreatePendingTree();
   void CheckForCompletedTileUploads();
-  virtual bool ActivatePendingTreeIfNeeded();
+  virtual void ActivatePendingTreeIfNeeded();
 
   // Shortcuts to layers on the active tree.
   LayerImpl* RootLayer() const;
@@ -246,6 +250,8 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
 
   void SetNeedsCommit() { client_->SetNeedsCommitOnImplThread(); }
   void SetNeedsRedraw() { client_->SetNeedsRedrawOnImplThread(); }
+
+  ManagedMemoryPolicy ActualManagedMemoryPolicy() const;
 
   size_t memory_allocation_limit_bytes() const {
     return managed_memory_policy_.bytes_limit_when_visible;
@@ -259,6 +265,8 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
 
   void SetDeviceScaleFactor(float device_scale_factor);
   float device_scale_factor() const { return device_scale_factor_; }
+
+  const gfx::Transform& DeviceTransform() const;
 
   scoped_ptr<ScrollAndScaleSet> ProcessScrollDeltas();
 
@@ -342,17 +350,25 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
 
   skia::RefPtr<SkPicture> CapturePicture();
 
+  gfx::Vector2dF accumulated_root_overscroll() const {
+    return accumulated_root_overscroll_;
+  }
+  gfx::Vector2dF current_fling_velocity() const {
+    return current_fling_velocity_;
+  }
+
   bool pinch_gesture_active() const { return pinch_gesture_active_; }
 
   void SetTreePriority(TreePriority priority);
 
-  void BeginNextFrame();
+  void ResetCurrentFrameTimeForNextFrame();
   base::TimeTicks CurrentFrameTimeTicks();
   base::Time CurrentFrameTime();
 
+  virtual base::TimeTicks CurrentPhysicalTimeTicks() const;
+
   scoped_ptr<base::Value> AsValue() const;
   scoped_ptr<base::Value> ActivationStateAsValue() const;
-  scoped_ptr<base::Value> FrameStateAsValue() const;
 
   bool page_scale_animation_active() const { return !!page_scale_animation_; }
 
@@ -362,7 +378,7 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
       LayerTreeHostImplClient* client,
       Proxy* proxy,
       RenderingStatsInstrumentation* rendering_stats_instrumentation);
-  void ActivatePendingTree();
+  virtual void ActivatePendingTree();
 
   // Virtual for testing.
   virtual void AnimateLayers(base::TimeTicks monotonic_time,
@@ -380,6 +396,11 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
   Proxy* proxy_;
 
  private:
+  void CreateAndSetRenderer(OutputSurface* output_surface,
+                            ResourceProvider* resource_provider);
+  void ReleaseTreeResources();
+  void EnforceZeroBudget(bool zero_budget);
+
   void AnimatePageScale(base::TimeTicks monotonic_time);
   void AnimateScrollbars(base::TimeTicks monotonic_time);
   void AnimateTopControls(base::TimeTicks monotonic_time);
@@ -402,7 +423,7 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
   // if this helper function is called.
   bool CalculateRenderPasses(FrameData* frame);
 
-  void SendDidLoseOutputSurfaceRecursive(LayerImpl* current);
+  void SendReleaseResourcesRecursive(LayerImpl* current);
   void ClearRenderSurfaces();
   bool EnsureRenderSurfaceLayerList();
   void ClearCurrentlyScrollingLayer();
@@ -410,18 +431,19 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
   void AnimateScrollbarsRecursive(LayerImpl* layer,
                                   base::TimeTicks time);
 
-  void DumpRenderSurfaces(std::string* str,
-                          int indent,
-                          const LayerImpl* layer) const;
-
   static LayerImpl* GetNonCompositedContentLayerRecursive(LayerImpl* layer);
+
+  void UpdateCurrentFrameTime(base::TimeTicks* ticks, base::Time* now) const;
 
   void StartScrollbarAnimationRecursive(LayerImpl* layer, base::TimeTicks time);
 
   scoped_ptr<OutputSurface> output_surface_;
+
+  // |resource_provider_| and |tile_manager_| can be NULL, e.g. when using tile-
+  // free rendering - see OutputSurface::ForcedDrawToSoftwareDevice().
   scoped_ptr<ResourceProvider> resource_provider_;
-  scoped_ptr<Renderer> renderer_;
   scoped_ptr<TileManager> tile_manager_;
+  scoped_ptr<Renderer> renderer_;
 
   // Tree currently being drawn.
   scoped_ptr<LayerTreeImpl> active_tree_;
@@ -434,19 +456,21 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
   // by the next sync from the main thread.
   scoped_ptr<LayerTreeImpl> recycle_tree_;
 
+  InputHandlerClient* input_handler_client_;
   bool did_lock_scrolling_layer_;
   bool should_bubble_scrolls_;
   bool wheel_scrolling_;
+
+  bool manage_tiles_needed_;
+
   // The optional delegate for the root layer scroll offset.
   LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate_;
   LayerTreeSettings settings_;
   LayerTreeDebugState debug_state_;
-  gfx::Size device_viewport_size_;
-  float overdraw_bottom_height_;
-  float device_scale_factor_;
   bool visible_;
   ManagedMemoryPolicy managed_memory_policy_;
 
+  gfx::Vector2dF accumulated_root_overscroll_;
   gfx::Vector2dF current_fling_velocity_;
 
   bool pinch_gesture_active_;
@@ -475,6 +499,27 @@ class CC_EXPORT LayerTreeHostImpl : public InputHandler,
   size_t last_sent_memory_visible_bytes_;
   size_t last_sent_memory_visible_and_nearby_bytes_;
   size_t last_sent_memory_use_bytes_;
+  bool zero_budget_;
+
+  // Viewport size passed in from the main thread, in physical pixels.
+  gfx::Size device_viewport_size_;
+
+  // Conversion factor from CSS pixels to physical pixels when
+  // pageScaleFactor=1.
+  float device_scale_factor_;
+
+  // Vertical amount of the viewport size that's known to covered by a
+  // browser-side UI element, such as an on-screen-keyboard.  This affects
+  // scrollable size since we want to still be able to scroll to the bottom of
+  // the page when the keyboard is up.
+  float overdraw_bottom_height_;
+
+  // Optional top-level constraints that can be set by the OutputSurface.  The
+  // external_viewport_'s size takes precedence over device_viewport_size_ for
+  // DrawQuad generation and Renderer; however, device_viewport_size_ is still
+  // used for scrollable size.
+  gfx::Transform external_transform_;
+  gfx::Rect external_viewport_;
 
   gfx::Rect viewport_damage_rect_;
 

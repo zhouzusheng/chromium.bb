@@ -32,6 +32,9 @@
 #include "config.h"
 #include "core/loader/PingLoader.h"
 
+#include <wtf/OwnPtr.h>
+#include <wtf/text/CString.h>
+#include <wtf/UnusedParam.h>
 #include "core/dom/Document.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/FrameLoader.h"
@@ -39,22 +42,19 @@
 #include "core/loader/UniqueIdentifier.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/SecurityOrigin.h"
-#include "core/page/SecurityPolicy.h"
 #include "core/platform/network/FormData.h"
 #include "core/platform/network/ResourceHandle.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
-#include <wtf/OwnPtr.h>
-#include <wtf/text/CString.h>
-#include <wtf/UnusedParam.h>
+#include "weborigin/SecurityOrigin.h"
+#include "weborigin/SecurityPolicy.h"
 
 namespace WebCore {
 
 void PingLoader::loadImage(Frame* frame, const KURL& url)
 {
     if (!frame->document()->securityOrigin()->canDisplay(url)) {
-        FrameLoader::reportLocalLoadFailed(frame, url);
+        FrameLoader::reportLocalLoadFailed(frame, url.string());
         return;
     }
 
@@ -86,14 +86,14 @@ void PingLoader::sendPing(Frame* frame, const KURL& pingURL, const KURL& destina
     SecurityOrigin* sourceOrigin = frame->document()->securityOrigin();
     RefPtr<SecurityOrigin> pingOrigin = SecurityOrigin::create(pingURL);
     FrameLoader::addHTTPOriginIfNeeded(request, sourceOrigin->toString());
-    request.setHTTPHeaderField("Ping-To", destinationURL);
+    request.setHTTPHeaderField("Ping-To", destinationURL.string());
     if (!SecurityPolicy::shouldHideReferrer(pingURL, frame->loader()->outgoingReferrer())) {
-      request.setHTTPHeaderField("Ping-From", frame->document()->url());
-      if (!sourceOrigin->isSameSchemeHostPort(pingOrigin.get())) {
-          String referrer = SecurityPolicy::generateReferrerHeader(frame->document()->referrerPolicy(), pingURL, frame->loader()->outgoingReferrer());
-          if (!referrer.isEmpty())
-              request.setHTTPReferrer(referrer);
-      }
+        request.setHTTPHeaderField("Ping-From", frame->document()->url().string());
+        if (!sourceOrigin->isSameSchemeHostPort(pingOrigin.get())) {
+            String referrer = SecurityPolicy::generateReferrerHeader(frame->document()->referrerPolicy(), pingURL, frame->loader()->outgoingReferrer());
+            if (!referrer.isEmpty())
+                request.setHTTPReferrer(referrer);
+        }
     }
     OwnPtr<PingLoader> pingLoader = adoptPtr(new PingLoader(frame, request));
 
@@ -114,18 +114,18 @@ void PingLoader::sendViolationReport(Frame* frame, const KURL& reportURL, PassRe
     String referrer = SecurityPolicy::generateReferrerHeader(frame->document()->referrerPolicy(), reportURL, frame->loader()->outgoingReferrer());
     if (!referrer.isEmpty())
         request.setHTTPReferrer(referrer);
-    OwnPtr<PingLoader> pingLoader = adoptPtr(new PingLoader(frame, request));
+    OwnPtr<PingLoader> pingLoader = adoptPtr(new PingLoader(frame, request, SecurityOrigin::create(reportURL)->isSameSchemeHostPort(frame->document()->securityOrigin()) ? AllowStoredCredentials : DoNotAllowStoredCredentials));
 
     // Leak the ping loader, since it will kill itself as soon as it receives a response.
     PingLoader* leakedPingLoader = pingLoader.leakPtr();
     UNUSED_PARAM(leakedPingLoader);
 }
 
-PingLoader::PingLoader(Frame* frame, ResourceRequest& request)
+PingLoader::PingLoader(Frame* frame, ResourceRequest& request, StoredCredentials credentialsAllowed)
     : m_timeout(this, &PingLoader::timeout)
 {
     unsigned long identifier = createUniqueIdentifier();
-    m_handle = ResourceHandle::create(frame->loader()->networkingContext(), request, this, false, false, AllowStoredCredentials);
+    m_handle = ResourceHandle::create(request, this, false, false, credentialsAllowed);
 
     InspectorInstrumentation::continueAfterPingLoader(frame, identifier, frame->loader()->activeDocumentLoader(), request, ResourceResponse());
 

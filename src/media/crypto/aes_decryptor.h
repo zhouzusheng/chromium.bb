@@ -8,13 +8,14 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_piece.h"
 #include "base/synchronization/lock.h"
 #include "media/base/decryptor.h"
 #include "media/base/media_export.h"
+#include "media/base/media_keys.h"
 
 namespace crypto {
 class SymmetricKey;
@@ -24,27 +25,24 @@ namespace media {
 
 // Decrypts an AES encrypted buffer into an unencrypted buffer. The AES
 // encryption must be CTR with a key size of 128bits.
-class MEDIA_EXPORT AesDecryptor : public Decryptor {
+class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
  public:
   AesDecryptor(const KeyAddedCB& key_added_cb,
                const KeyErrorCB& key_error_cb,
-               const KeyMessageCB& key_message_cb,
-               const NeedKeyCB& need_key_cb);
+               const KeyMessageCB& key_message_cb);
   virtual ~AesDecryptor();
 
-  // Decryptor implementation.
-  virtual bool GenerateKeyRequest(const std::string& key_system,
-                                  const std::string& type,
+  // MediaKeys implementation.
+  virtual bool GenerateKeyRequest(const std::string& type,
                                   const uint8* init_data,
                                   int init_data_length) OVERRIDE;
-  virtual void AddKey(const std::string& key_system,
-                      const uint8* key,
-                      int key_length,
-                      const uint8* init_data,
-                      int init_data_length,
+  virtual void AddKey(const uint8* key, int key_length,
+                      const uint8* init_data, int init_data_length,
                       const std::string& session_id) OVERRIDE;
-  virtual void CancelKeyRequest(const std::string& key_system,
-                                const std::string& session_id) OVERRIDE;
+  virtual void CancelKeyRequest(const std::string& session_id) OVERRIDE;
+  virtual Decryptor* GetDecryptor() OVERRIDE;
+
+  // Decryptor implementation.
   virtual void RegisterNewKeyCB(StreamType stream_type,
                                 const NewKeyCB& key_added_cb) OVERRIDE;
   virtual void Decrypt(StreamType stream_type,
@@ -99,7 +97,6 @@ class MEDIA_EXPORT AesDecryptor : public Decryptor {
   KeyAddedCB key_added_cb_;
   KeyErrorCB key_error_cb_;
   KeyMessageCB key_message_cb_;
-  NeedKeyCB need_key_cb_;
 
   // KeyMap owns the DecryptionKey* and must delete them when they are
   // not needed any more.

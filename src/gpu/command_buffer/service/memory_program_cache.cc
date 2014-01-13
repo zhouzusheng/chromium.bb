@@ -8,7 +8,7 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "base/sha1.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/service/disk_cache_proto.pb.h"
 #include "gpu/command_buffer/service/gl_utils.h"
@@ -107,13 +107,17 @@ void MemoryProgramCache::ClearBackend() {
 ProgramCache::ProgramLoadResult MemoryProgramCache::LoadLinkedProgram(
     GLuint program,
     Shader* shader_a,
+    const ShaderTranslatorInterface* translator_a,
     Shader* shader_b,
+    const ShaderTranslatorInterface* translator_b,
     const LocationMap* bind_attrib_location_map,
     const ShaderCacheCallback& shader_callback) const {
   char a_sha[kHashLength];
   char b_sha[kHashLength];
-  ComputeShaderHash(*shader_a->deferred_compilation_source(), a_sha);
-  ComputeShaderHash(*shader_b->deferred_compilation_source(), b_sha);
+  ComputeShaderHash(
+      *shader_a->deferred_compilation_source(), translator_a, a_sha);
+  ComputeShaderHash(
+      *shader_b->deferred_compilation_source(), translator_b, b_sha);
 
   char sha[kHashLength];
   ComputeProgramHash(a_sha,
@@ -160,7 +164,9 @@ ProgramCache::ProgramLoadResult MemoryProgramCache::LoadLinkedProgram(
 void MemoryProgramCache::SaveLinkedProgram(
     GLuint program,
     const Shader* shader_a,
+    const ShaderTranslatorInterface* translator_a,
     const Shader* shader_b,
+    const ShaderTranslatorInterface* translator_b,
     const LocationMap* bind_attrib_location_map,
     const ShaderCacheCallback& shader_callback) {
   GLenum format;
@@ -179,8 +185,10 @@ void MemoryProgramCache::SaveLinkedProgram(
 
   char a_sha[kHashLength];
   char b_sha[kHashLength];
-  ComputeShaderHash(*shader_a->deferred_compilation_source(), a_sha);
-  ComputeShaderHash(*shader_b->deferred_compilation_source(), b_sha);
+  ComputeShaderHash(
+      *shader_a->deferred_compilation_source(), translator_a, a_sha);
+  ComputeShaderHash(
+      *shader_b->deferred_compilation_source(), translator_b, b_sha);
 
   char sha[kHashLength];
   ComputeProgramHash(a_sha,
@@ -194,7 +202,7 @@ void MemoryProgramCache::SaveLinkedProgram(
 
   if (store_.find(sha_string) != store_.end()) {
     const StoreMap::iterator found = store_.find(sha_string);
-    const ProgramCacheValue* evicting = found->second;
+    const ProgramCacheValue* evicting = found->second.get();
     curr_size_bytes_ -= evicting->length;
     Evict(sha_string, evicting->shader_0_hash, evicting->shader_1_hash);
     store_.erase(found);

@@ -35,13 +35,11 @@
 #include "core/editing/RenderedPosition.h"
 #include "core/editing/TextIterator.h"
 #include "core/editing/VisiblePosition.h"
-#include "core/editing/VisibleSelection.h"
 #include "core/editing/htmlediting.h"
 #include "core/platform/text/TextBoundaries.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderObject.h"
-#include <wtf/unicode/Unicode.h>
 
 namespace WebCore {
 
@@ -133,7 +131,7 @@ public:
     
 private:
     const Vector<InlineBox*>& collectBoxes(const RootInlineBox*);
-    int boxIndexInLeaves(const InlineTextBox*);
+    int boxIndexInLeaves(const InlineTextBox*) const;
 
     const RootInlineBox* m_rootInlineBox;
     Vector<InlineBox*> m_leafBoxes;
@@ -192,7 +190,7 @@ const Vector<InlineBox*>& CachedLogicallyOrderedLeafBoxes::collectBoxes(const Ro
     return m_leafBoxes;
 }
 
-int CachedLogicallyOrderedLeafBoxes::boxIndexInLeaves(const InlineTextBox* box)
+int CachedLogicallyOrderedLeafBoxes::boxIndexInLeaves(const InlineTextBox* box) const
 {
     for (size_t i = 0; i < m_leafBoxes.size(); ++i) {
         if (box == m_leafBoxes[i])

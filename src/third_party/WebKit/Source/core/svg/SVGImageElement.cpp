@@ -21,18 +21,15 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGImageElement.h"
 
 #include "CSSPropertyNames.h"
 #include "SVGNames.h"
 #include "XLinkNames.h"
-#include "core/dom/Attribute.h"
 #include "core/rendering/RenderImageResource.h"
 #include "core/rendering/svg/RenderSVGImage.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGSVGElement.h"
 
 namespace WebCore {
 
@@ -89,7 +86,7 @@ bool SVGImageElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::heightAttr);
         supportedAttributes.add(SVGNames::preserveAspectRatioAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 bool SVGImageElement::isPresentationAttribute(const QualifiedName& name) const
@@ -190,9 +187,9 @@ bool SVGImageElement::selfHasRelativeLengths() const
         || height().isRelative();
 }
 
-RenderObject* SVGImageElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGImageElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGImage(this);
+    return new (document()->renderArena()) RenderSVGImage(this);
 }
 
 bool SVGImageElement::haveLoadedRequiredResources()
@@ -200,9 +197,9 @@ bool SVGImageElement::haveLoadedRequiredResources()
     return !externalResourcesRequiredBaseValue() || !m_imageLoader.hasPendingActivity();
 }
 
-void SVGImageElement::attach()
+void SVGImageElement::attach(const AttachContext& context)
 {
-    SVGStyledTransformableElement::attach();
+    SVGStyledTransformableElement::attach(context);
 
     if (RenderSVGImage* imageObj = toRenderSVGImage(renderer())) {
         if (imageObj->imageResource()->hasImage())
@@ -242,5 +239,3 @@ void SVGImageElement::didMoveToNewDocument(Document* oldDocument)
 }
 
 }
-
-#endif // ENABLE(SVG)

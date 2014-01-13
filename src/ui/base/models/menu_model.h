@@ -5,13 +5,12 @@
 #ifndef UI_BASE_MODELS_MENU_MODEL_H_
 #define UI_BASE_MODELS_MENU_MODEL_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/base/models/menu_model_delegate.h"
 #include "ui/base/models/menu_separator_types.h"
 #include "ui/base/ui_export.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
-
 
 namespace gfx {
 class Font;
@@ -56,11 +55,11 @@ class UI_EXPORT MenuModel {
   virtual int GetCommandIdAt(int index) const = 0;
 
   // Returns the label of the item at the specified index.
-  virtual string16 GetLabelAt(int index) const = 0;
+  virtual base::string16 GetLabelAt(int index) const = 0;
 
   // Returns the sublabel of the item at the specified index. The sublabel
   // is rendered beneath the label and using the font GetSublabelFontAt().
-  virtual string16 GetSublabelAt(int index) const;
+  virtual base::string16 GetSublabelAt(int index) const;
 
   // Returns true if the menu item (label/sublabel/icon) at the specified
   // index can change over the course of the menu's lifetime. If this function

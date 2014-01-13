@@ -29,11 +29,9 @@ base.exportTo('tracing.analysis', function() {
     objectHits.addSelection(hitsByType.objectInstances);
 
     if (sliceHits.length == 1) {
-      tracing.analysis.analyzeSingleSliceHit(
-        results, sliceHits[0]);
+      tracing.analysis.analyzeSingleSliceHit(results, sliceHits[0]);
     } else if (sliceHits.length > 1) {
-      tracing.analysis.analyzeMultipleSliceHits(
-        results, sliceHits);
+      tracing.analysis.analyzeMultipleSliceHits(results, sliceHits);
     }
 
     if (counterSampleHits.length == 1) {
@@ -67,7 +65,7 @@ base.exportTo('tracing.analysis', function() {
         var objectSnapshot = hit.objectSnapshot;
         ts = tracing.analysis.tsRound(objectSnapshot.ts);
         objectText = objectSnapshot.objectInstance.typeName + ' ' +
-          objectSnapshot.objectInstance.id;
+            objectSnapshot.objectInstance.id;
         selectionGenerator = function() {
           var selection = new tracing.Selection();
           selection.addObjectSnapshot(hit.track, objectSnapshot);
@@ -82,7 +80,7 @@ base.exportTo('tracing.analysis', function() {
             '-' + deletionTs;
 
         objectText = objectInstance.typeName + ' ' +
-          objectInstance.id;
+            objectInstance.id;
 
         selectionGenerator = function() {
           var selection = new tracing.Selection();
@@ -94,7 +92,7 @@ base.exportTo('tracing.analysis', function() {
       results.appendTableCell(table, row, ts);
       var linkContainer = results.appendTableCell(table, row, '');
       linkContainer.appendChild(
-        results.createSelectionChangingLink(objectText, selectionGenerator));
+          results.createSelectionChangingLink(objectText, selectionGenerator));
     });
   }
 

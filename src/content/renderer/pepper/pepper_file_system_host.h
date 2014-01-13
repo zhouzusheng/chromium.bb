@@ -30,19 +30,23 @@ class PepperFileSystemHost :
   virtual int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
       ppapi::host::HostMessageContext* context) OVERRIDE;
+  virtual PepperFileSystemHost* AsPepperFileSystemHost() OVERRIDE;
 
   // Supports FileRefs direct access on the host side.
   PP_FileSystemType GetType() const { return type_; }
   bool IsOpened() const { return opened_; }
   GURL GetRootUrl() const { return root_url_; }
 
-  // It's public only to allow PlatformCallbackAdaptor to access.
-  void OpenFileSystemReply(int32_t pp_error,
-                           const GURL& root);
-
  private:
+  // Callback for OpenFileSystem.
+  void DidOpenFileSystem(const std::string& name_unused, const GURL& root);
+  void DidFailOpenFileSystem(base::PlatformFileError error);
+
   int32_t OnHostMsgOpen(ppapi::host::HostMessageContext* context,
                         int64_t expected_size);
+  int32_t OnHostMsgInitIsolatedFileSystem(
+      ppapi::host::HostMessageContext* context,
+      const std::string& fsid);
 
   RendererPpapiHost* renderer_ppapi_host_;
   ppapi::host::ReplyMessageContext reply_context_;

@@ -22,12 +22,11 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGLocatable.h"
 
 #include "SVGNames.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/rendering/RenderObject.h"
-#include "core/svg/SVGException.h"
 #include "core/svg/SVGStyledLocatableElement.h"
 
 namespace WebCore {
@@ -106,7 +105,7 @@ AffineTransform SVGLocatable::getTransformToElement(SVGElement* target, Exceptio
     if (target && target->isStyledLocatable()) {
         AffineTransform targetCTM = toSVGStyledLocatableElement(target)->getCTM(styleUpdateStrategy);
         if (!targetCTM.isInvertible()) {
-            ec = SVGException::SVG_MATRIX_NOT_INVERTABLE;
+            ec = INVALID_STATE_ERR;
             return ctm;
         }
         ctm = targetCTM.inverse() * ctm;
@@ -116,5 +115,3 @@ AffineTransform SVGLocatable::getTransformToElement(SVGElement* target, Exceptio
 }
 
 }
-
-#endif // ENABLE(SVG)

@@ -33,14 +33,11 @@
 #include "XMLViewerJS.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
-#include "bindings/v8/ScriptValue.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/Text.h"
 #include "core/page/Frame.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
 
 using namespace std;
 
@@ -69,9 +66,9 @@ void XMLTreeViewer::transformDocumentToTreeView()
 {
     m_document->setIsViewSource(true);
     String scriptString(reinterpret_cast<const char*>(XMLViewer_js), sizeof(XMLViewer_js));
-    m_document->frame()->script()->evaluate(ScriptSourceCode(scriptString));
+    m_document->frame()->script()->executeScriptInMainWorld(ScriptSourceCode(scriptString));
     String noStyleMessage("This XML file does not appear to have any style information associated with it. The document tree is shown below.");
-    m_document->frame()->script()->evaluate(ScriptSourceCode("prepareWebKitXMLViewer('" + noStyleMessage + "');"));
+    m_document->frame()->script()->executeScriptInMainWorld(ScriptSourceCode("prepareWebKitXMLViewer('" + noStyleMessage + "');"));
 
     String cssString(reinterpret_cast<const char*>(XMLViewer_css), sizeof(XMLViewer_css));
     RefPtr<Text> text = m_document->createTextNode(cssString);

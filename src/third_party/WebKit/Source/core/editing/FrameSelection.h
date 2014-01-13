@@ -41,10 +41,10 @@ class CharacterData;
 class Frame;
 class GraphicsContext;
 class HTMLFormElement;
+class MutableStylePropertySet;
 class RenderObject;
 class RenderView;
 class Settings;
-class StylePropertySet;
 class VisiblePosition;
 
 enum EUserTriggered { NotUserTriggered = 0, UserTriggered = 1 };
@@ -121,8 +121,7 @@ public:
         ClearTypingStyle = 1 << 2,
         SpellCorrectionTriggered = 1 << 3,
         DoNotSetFocus = 1 << 4,
-        DictationTriggered = 1 << 5,
-        DoNotUpdateAppearance = 1 << 6,
+        DoNotUpdateAppearance = 1 << 5,
     };
     typedef unsigned SetSelectionOptions; // Union of values in SetSelectionOption and EUserTriggered
     static inline EUserTriggered selectionOptionsToUserTriggered(SetSelectionOptions options)
@@ -244,7 +243,7 @@ public:
     void paintDragCaret(GraphicsContext*, const LayoutPoint&, const LayoutRect& clipRect) const;
 
     EditingStyle* typingStyle() const;
-    PassRefPtr<StylePropertySet> copyTypingStyle() const;
+    PassRefPtr<MutableStylePropertySet> copyTypingStyle() const;
     void setTypingStyle(PassRefPtr<EditingStyle>);
     void clearTypingStyle();
 
@@ -257,6 +256,9 @@ public:
     void revealSelection(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, RevealExtentOption = DoNotRevealExtent);
     void setSelectionFromNone();
 
+    bool shouldShowBlockCursor() const { return m_shouldShowBlockCursor; }
+    void setShouldShowBlockCursor(bool);
+
 private:
     enum EPositionType { START, END, BASE, EXTENT };
 
@@ -267,6 +269,7 @@ private:
     VisiblePosition positionForPlatform(bool isGetStart) const;
     VisiblePosition startForPlatform() const;
     VisiblePosition endForPlatform() const;
+    VisiblePosition nextWordPositionForPlatform(const VisiblePosition&);
 
     VisiblePosition modifyExtendingRight(TextGranularity);
     VisiblePosition modifyExtendingForward(TextGranularity);
@@ -312,6 +315,7 @@ private:
     bool m_caretPaint : 1;
     bool m_isCaretBlinkingSuspended : 1;
     bool m_focused : 1;
+    bool m_shouldShowBlockCursor : 1;
 };
 
 inline EditingStyle* FrameSelection::typingStyle() const

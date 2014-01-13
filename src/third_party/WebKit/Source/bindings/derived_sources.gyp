@@ -41,14 +41,10 @@
     'idl_files': [
       '<@(core_idl_files)',
       '<@(modules_idl_files)',
+      '<@(svg_idl_files)',
     ],
 
     'conditions': [
-      ['enable_svg!=0', {
-        'idl_files': [
-          '<@(svg_idl_files)',
-        ],
-      }],
       ['OS=="win" and buildtype=="Official"', {
         # On windows official release builds, we try to preserve symbol space.
         'derived_sources_aggregate_files': [
@@ -77,6 +73,17 @@
           '<(SHARED_INTERMEDIATE_DIR)/webkit/bindings/V8DerivedSources19.cpp',
         ],
       }],
+      # The bindings generator can not write generated files if they are identical
+      # to the already existing file – that way they don't need to be recompiled.
+      # However, a reverse dependency having a newer timestamp than a
+      # generated binding can confuse some build systems, so only use this on
+      # ninja which explicitly supports this use case (gyp turns all actions into
+      # ninja restat rules).
+      ['"<(GENERATOR)"=="ninja"', {
+        'write_file_only_if_changed': '--write-file-only-if-changed 1',
+      },{
+        'write_file_only_if_changed': '--write-file-only-if-changed 0',
+      }],
     ],
   },
 
@@ -97,26 +104,28 @@
         'idl_files_list': '<|(idl_files_list.tmp <@(idl_files))',
       },
       'inputs': [
-        'scripts/preprocess-idls.pl',
+        'scripts/preprocess_idls.py',
         '<(idl_files_list)',
         '<!@(cat <(idl_files_list))',
        ],
        'outputs': [
          '<(SHARED_INTERMEDIATE_DIR)/supplemental_dependency.tmp',
+         '<(SHARED_INTERMEDIATE_DIR)/WindowConstructors.idl',
+         '<(SHARED_INTERMEDIATE_DIR)/WorkerContextConstructors.idl',
        ],
        'msvs_cygwin_shell': 0,
        'action': [
-         '<(perl_exe)',
-         '-w',
-         '-Iscripts',
-         '-I../core/scripts',
-         'scripts/preprocess-idls.pl',
-         '--defines',
-         '<(feature_defines)',
-         '--idlFilesList',
+         'python',
+         'scripts/preprocess_idls.py',
+         '--idl-files-list',
          '<(idl_files_list)',
-         '--supplementalDependencyFile',
+         '--supplemental-dependency-file',
          '<(SHARED_INTERMEDIATE_DIR)/supplemental_dependency.tmp',
+         '--window-constructors-file',
+         '<(SHARED_INTERMEDIATE_DIR)/WindowConstructors.idl',
+         '--workercontext-constructors-file',
+         '<(SHARED_INTERMEDIATE_DIR)/WorkerContextConstructors.idl',
+         '<@(write_file_only_if_changed)',
        ],
        'message': 'Resolving partial interfaces dependencies in all IDL files',
       }]
@@ -127,7 +136,7 @@
       'hard_dependency': 1,
       'dependencies': [
         'supplemental_dependencies',
-        '../core/core.gyp/core_derived_sources.gyp:generate_settings',
+        '../core/core_derived_sources.gyp:generate_test_support_idls',
       ],
       'sources': [
         '<@(idl_files)',
@@ -136,7 +145,7 @@
       'actions': [{
         'action_name': 'derived_sources_all_in_one',
         'inputs': [
-          '../core/core.gyp/scripts/action_derivedsourcesallinone.py',
+          '../core/scripts/action_derivedsourcesallinone.py',
           '<(SHARED_INTERMEDIATE_DIR)/supplemental_dependency.tmp',
         ],
         'outputs': [
@@ -144,7 +153,7 @@
         ],
         'action': [
           'python',
-          '../core/core.gyp/scripts/action_derivedsourcesallinone.py',
+          '../core/scripts/action_derivedsourcesallinone.py',
           '<(SHARED_INTERMEDIATE_DIR)/supplemental_dependency.tmp',
           '--',
           '<@(derived_sources_aggregate_files)',
@@ -156,12 +165,14 @@
         'msvs_external_rule': 1,
         'inputs': [
           'scripts/generate-bindings.pl',
-          'scripts/CodeGenerator.pm',
           'scripts/CodeGeneratorV8.pm',
           'scripts/IDLParser.pm',
+          'scripts/IDLSerializer.pm',
           'scripts/IDLAttributes.txt',
           '../core/scripts/preprocessor.pm',
           '<!@pymod_do_main(supplemental_idl_files <@(idl_files))',
+          '<(SHARED_INTERMEDIATE_DIR)/WindowConstructors.idl',
+          '<(SHARED_INTERMEDIATE_DIR)/WorkerContextConstructors.idl',
         ],
         'outputs': [
           # FIXME:  The .cpp file should be in webkit/bindings once
@@ -177,6 +188,8 @@
             '--include', '../core',
             '--include', '<(SHARED_INTERMEDIATE_DIR)/webkit',
           ],
+          # Hook for embedders to specify extra directories to find IDL files.
+          'extra_blink_generator_include_dirs%': [],
         },
         'msvs_cygwin_shell': 0,
         # FIXME:  Note that we put the .cpp files in webcore/bindings
@@ -189,6 +202,7 @@
           '-w',
           '-Iscripts',
           '-I../core/scripts',
+          '-I../../../JSON/out/lib/perl5',
           'scripts/generate-bindings.pl',
           '--outputHeadersDir',
           '<(SHARED_INTERMEDIATE_DIR)/webkit/bindings',
@@ -199,12 +213,14 @@
           '--defines',
           '<(feature_defines)',
           '<@(generator_include_dirs)',
+          '<@(extra_blink_generator_include_dirs)',
           '--supplementalDependencyFile',
           '<(SHARED_INTERMEDIATE_DIR)/supplemental_dependency.tmp',
           '--additionalIdlFiles',
           '<(webcore_test_support_idl_files)',
           '<(RULE_INPUT_PATH)',
           '<@(preprocessor)',
+          '<@(write_file_only_if_changed)',
         ],
         'message': 'Generating binding from <(RULE_INPUT_PATH)',
       }],

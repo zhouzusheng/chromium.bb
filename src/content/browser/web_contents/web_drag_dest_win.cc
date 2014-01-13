@@ -11,16 +11,17 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_drag_utils_win.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_drag_dest_delegate.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/clipboard/clipboard_util_win.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/point.h"
-#include "webkit/glue/webdropdata.h"
+#include "webkit/common/webdropdata.h"
 
 using WebKit::WebDragOperationNone;
 using WebKit::WebDragOperationCopy;
@@ -57,6 +58,38 @@ int GetModifierFlags() {
   if (::GetKeyState(VK_RWIN) & kHighBitMaskShort)
     modifier_state |= WebKit::WebInputEvent::MetaKey;
   return modifier_state;
+}
+
+// Helper method for converting Window's specific IDataObject to a WebDropData
+// object.
+void PopulateWebDropData(IDataObject* data_object, WebDropData* drop_data) {
+  base::string16 url_str;
+  if (ui::ClipboardUtil::GetUrl(
+          data_object, &url_str, &drop_data->url_title, false)) {
+    GURL test_url(url_str);
+    if (test_url.is_valid())
+      drop_data->url = test_url;
+  }
+  std::vector<base::string16> filenames;
+  ui::ClipboardUtil::GetFilenames(data_object, &filenames);
+  for (size_t i = 0; i < filenames.size(); ++i)
+    drop_data->filenames.push_back(
+        WebDropData::FileInfo(filenames[i], base::string16()));
+  base::string16 text;
+  ui::ClipboardUtil::GetPlainText(data_object, &text);
+  if (!text.empty()) {
+    drop_data->text = base::NullableString16(text, false);
+  }
+  base::string16 html;
+  std::string html_base_url;
+  ui::ClipboardUtil::GetHtml(data_object, &html, &html_base_url);
+  if (!html.empty()) {
+    drop_data->html = base::NullableString16(html, false);
+  }
+  if (!html_base_url.empty()) {
+    drop_data->html_base_url = GURL(html_base_url);
+  }
+  ui::ClipboardUtil::GetWebCustomData(data_object, &drop_data->custom_data);
 }
 
 }  // namespace
@@ -108,7 +141,8 @@ WebDragDest::WebDragDest(HWND source_hwnd, WebContents* web_contents)
       current_rvh_(NULL),
       drag_cursor_(WebDragOperationNone),
       interstitial_drop_target_(new InterstitialDropTarget(web_contents)),
-      delegate_(NULL) {
+      delegate_(NULL),
+      canceled_(false) {
 }
 
 WebDragDest::~WebDragDest() {
@@ -120,6 +154,24 @@ DWORD WebDragDest::OnDragEnter(IDataObject* data_object,
                                DWORD effects) {
   current_rvh_ = web_contents_->GetRenderViewHost();
 
+  // TODO(tc): PopulateWebDropData can be slow depending on what is in the
+  // IDataObject.  Maybe we can do this in a background thread.
+  scoped_ptr<WebDropData> drop_data;
+  drop_data.reset(new WebDropData());
+  PopulateWebDropData(data_object, drop_data.get());
+
+  if (drop_data->url.is_empty())
+    ui::OSExchangeDataProviderWin::GetPlainTextURL(data_object,
+                                                   &drop_data->url);
+
+  // Give the delegate an opportunity to cancel the drag.
+  canceled_ = !web_contents_->GetDelegate()->CanDragEnter(
+      web_contents_,
+      *drop_data,
+      WinDragOpMaskToWebDragOpMask(effects));
+  if (canceled_)
+    return DROPEFFECT_NONE;
+
   if (delegate_)
     delegate_->DragInitialize(web_contents_);
 
@@ -129,15 +181,7 @@ DWORD WebDragDest::OnDragEnter(IDataObject* data_object,
   if (web_contents_->ShowingInterstitialPage())
     return interstitial_drop_target_->OnDragEnter(data_object, effects);
 
-  // TODO(tc): PopulateWebDropData can be slow depending on what is in the
-  // IDataObject.  Maybe we can do this in a background thread.
-  drop_data_.reset(new WebDropData());
-  WebDropData::PopulateWebDropData(data_object, drop_data_.get());
-
-  if (drop_data_->url.is_empty())
-    ui::OSExchangeDataProviderWin::GetPlainTextURL(data_object,
-                                                   &drop_data_->url);
-
+  drop_data_.swap(drop_data);
   drag_cursor_ = WebDragOperationNone;
 
   POINT client_pt = cursor_position;
@@ -164,6 +208,9 @@ DWORD WebDragDest::OnDragOver(IDataObject* data_object,
   if (current_rvh_ != web_contents_->GetRenderViewHost())
     OnDragEnter(data_object, key_state, cursor_position, effects);
 
+  if (canceled_)
+    return DROPEFFECT_NONE;
+
   if (web_contents_->ShowingInterstitialPage())
     return interstitial_drop_target_->OnDragOver(data_object, effects);
 
@@ -184,6 +231,9 @@ DWORD WebDragDest::OnDragOver(IDataObject* data_object,
 void WebDragDest::OnDragLeave(IDataObject* data_object) {
   DCHECK(current_rvh_);
   if (current_rvh_ != web_contents_->GetRenderViewHost())
+    return;
+
+  if (canceled_)
     return;
 
   if (web_contents_->ShowingInterstitialPage()) {

@@ -31,7 +31,7 @@
 #ifndef CSSParserMode_h
 #define CSSParserMode_h
 
-#include "core/platform/KURL.h"
+#include "weborigin/KURL.h"
 
 namespace WebCore {
 
@@ -41,7 +41,10 @@ enum CSSParserMode {
     CSSQuirksMode,
     CSSStrictMode,
     // SVG should always be in strict mode. For SVG attributes, the rules differ to strict sometimes.
-    SVGAttributeMode
+    SVGAttributeMode,
+    // User agent style sheet should always be in strict mode. Enables internal
+    // only properties and values.
+    UASheetMode
 };
 
 inline CSSParserMode strictToCSSParserMode(bool inStrictMode)
@@ -51,7 +54,7 @@ inline CSSParserMode strictToCSSParserMode(bool inStrictMode)
 
 inline bool isStrictParserMode(CSSParserMode cssParserMode)
 {
-    return cssParserMode == CSSStrictMode || cssParserMode == SVGAttributeMode;
+    return cssParserMode == CSSStrictMode || cssParserMode == SVGAttributeMode || cssParserMode == UASheetMode;
 }
 
 struct CSSParserContext {
@@ -67,8 +70,7 @@ public:
     bool isCSSCustomFilterEnabled;
     bool isCSSStickyPositionEnabled;
     bool isCSSCompositingEnabled;
-    bool isCSSGridLayoutEnabled;
-    bool isCSSVariablesEnabled;
+    bool isCSSTouchActionEnabled;
     bool needsSiteSpecificQuirks;
 };
 

@@ -29,10 +29,10 @@
 #ifndef MediaQuery_h
 #define MediaQuery_h
 
-#include <wtf/PassOwnPtr.h>
-#include <wtf/Vector.h>
-#include <wtf/text/StringHash.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/StringHash.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 class MediaQueryExp;
@@ -54,19 +54,17 @@ public:
     String mediaType() const { return m_mediaType; }
     bool operator==(const MediaQuery& other) const;
     String cssText() const;
-    bool ignored() const { return m_ignored; }
 
     PassOwnPtr<MediaQuery> copy() const { return adoptPtr(new MediaQuery(*this)); }
 
     void reportMemoryUsage(MemoryObjectInfo*) const;
 
- private:
+private:
     MediaQuery(const MediaQuery&);
 
     Restrictor m_restrictor;
     String m_mediaType;
     OwnPtr<ExpressionVector> m_expressions;
-    bool m_ignored;
     String m_serializationCache;
 
     String serialize() const;

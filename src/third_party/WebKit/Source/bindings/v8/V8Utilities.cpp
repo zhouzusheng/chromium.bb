@@ -33,7 +33,6 @@
 
 #include "V8ArrayBuffer.h"
 #include "V8MessagePort.h"
-#include "bindings/v8/BindingState.h"
 #include "bindings/v8/ScriptState.h"
 #include "bindings/v8/V8AbstractEventListener.h"
 #include "bindings/v8/V8Binding.h"
@@ -59,7 +58,7 @@ void createHiddenDependency(v8::Handle<v8::Object> object, v8::Local<v8::Value> 
     }
 
     v8::Local<v8::Array> cacheArray = v8::Local<v8::Array>::Cast(cache);
-    cacheArray->Set(v8Integer(cacheArray->Length(), isolate), value);
+    cacheArray->Set(v8::Integer::New(cacheArray->Length(), isolate), value);
 }
 
 bool extractTransferables(v8::Local<v8::Value> value, MessagePortArray& ports, ArrayBufferArray& arrayBuffers, v8::Isolate* isolate)
@@ -128,7 +127,7 @@ void removeHiddenDependency(v8::Handle<v8::Object> object, v8::Local<v8::Value> 
         return;
     v8::Local<v8::Array> cacheArray = v8::Local<v8::Array>::Cast(cache);
     for (int i = cacheArray->Length() - 1; i >= 0; --i) {
-        v8::Local<v8::Value> cached = cacheArray->Get(v8Integer(i, isolate));
+        v8::Local<v8::Value> cached = cacheArray->Get(v8::Integer::New(i, isolate));
         if (cached->StrictEquals(value)) {
             cacheArray->Delete(i);
             return;
@@ -155,7 +154,7 @@ ScriptExecutionContext* getScriptExecutionContext()
     if (WorkerScriptController* controller = WorkerScriptController::controllerForContext())
         return controller->workerContext();
 
-    return currentDocument(BindingState::instance());
+    return currentDocument();
 }
 
 } // namespace WebCore

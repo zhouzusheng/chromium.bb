@@ -27,6 +27,7 @@
 #ifndef WorkerContext_h
 #define WorkerContext_h
 
+#include "bindings/v8/ScriptWrappable.h"
 #include "bindings/v8/WorkerScriptController.h"
 #include "core/dom/EventListener.h"
 #include "core/dom/EventNames.h"
@@ -53,7 +54,7 @@ namespace WebCore {
     class WorkerNavigator;
     class WorkerThread;
 
-    class WorkerContext : public RefCounted<WorkerContext>, public ScriptExecutionContext, public EventTarget {
+    class WorkerContext : public RefCounted<WorkerContext>, public ScriptWrappable, public ScriptExecutionContext, public EventTarget {
     public:
         virtual ~WorkerContext();
 
@@ -77,8 +78,6 @@ namespace WebCore {
         void clearInspector();
 
         WorkerThread* thread() const { return m_thread; }
-
-        bool hasPendingActivity() const;
 
         virtual void postTask(PassOwnPtr<Task>) OVERRIDE; // Executes the task on context's thread asynchronously.
 
@@ -134,8 +133,10 @@ namespace WebCore {
 
         virtual const SecurityOrigin* topOrigin() const OVERRIDE { return m_topOrigin.get(); }
 
+        double timeOrigin() const { return m_timeOrigin; }
+
     protected:
-        WorkerContext(const KURL&, const String& userAgent, PassOwnPtr<GroupSettings>, WorkerThread*, PassRefPtr<SecurityOrigin> topOrigin);
+        WorkerContext(const KURL&, const String& userAgent, PassOwnPtr<GroupSettings>, WorkerThread*, PassRefPtr<SecurityOrigin> topOrigin, double timeOrigin);
         void applyContentSecurityPolicyFromString(const String& contentSecurityPolicy, ContentSecurityPolicy::HeaderType);
 
         virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, PassRefPtr<ScriptCallStack>) OVERRIDE;
@@ -178,6 +179,8 @@ namespace WebCore {
         OwnPtr<WorkerEventQueue> m_eventQueue;
 
         RefPtr<SecurityOrigin> m_topOrigin;
+
+        double m_timeOrigin;
     };
 
 } // namespace WebCore

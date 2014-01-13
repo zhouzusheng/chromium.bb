@@ -11,10 +11,10 @@
 #include "base/memory/linked_ptr.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_offset_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "cc/layers/texture_layer.h"
 #include "ppapi/c/dev/ppb_find_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
@@ -47,30 +47,30 @@
 #include "printing/metafile_skia_wrapper.h"
 #include "printing/units.h"
 #include "skia/ext/platform_device.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintScalingOption.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScopedUserGesture.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebUserGestureIndicator.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/platform/WebGamepads.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
+#include "third_party/WebKit/public/web/WebCursorInfo.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebPrintParams.h"
+#include "third_party/WebKit/public/web/WebPrintScalingOption.h"
+#include "third_party/WebKit/public/web/WebScopedUserGesture.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "ui/base/range/range.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
-#include "webkit/compositor_bindings/web_layer_impl.h"
 #include "webkit/plugins/plugin_constants.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/content_decryptor_delegate.h"
@@ -89,6 +89,7 @@
 #include "webkit/plugins/ppapi/ppp_pdf.h"
 #include "webkit/plugins/ppapi/url_request_info_util.h"
 #include "webkit/plugins/sad_plugin.h"
+#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 #if defined(OS_MACOSX)
 #include "printing/metafile_impl.h"
@@ -375,7 +376,6 @@ PluginInstance::PluginInstance(
       fullscreen_container_(NULL),
       flash_fullscreen_(false),
       desired_fullscreen_state_(false),
-      message_channel_(NULL),
       sad_plugin_(NULL),
       input_event_mask_(0),
       filtered_input_event_mask_(0),
@@ -385,17 +385,17 @@ PluginInstance::PluginInstance(
       text_input_caret_set_(false),
       selection_caret_(0),
       selection_anchor_(0),
-      pending_user_gesture_(0.0) {
+      pending_user_gesture_(0.0),
+      document_loader_(NULL),
+      npp_(new NPP_t) {
   pp_instance_ = HostGlobals::Get()->AddInstance(this);
 
   memset(&current_print_settings_, 0, sizeof(current_print_settings_));
   DCHECK(delegate);
   module_->InstanceCreated(this);
   delegate_->InstanceCreated(this);
-  message_channel_.reset(new MessageChannel(this));
 
   view_data_.is_page_visible = delegate->IsPageVisible();
-
   resource_creation_ = delegate_->CreateResourceCreationAPI(this);
 }
 
@@ -449,7 +449,7 @@ void PluginInstance::Delete() {
   // If this is a NaCl plugin instance, shut down the NaCl plugin by calling
   // its DidDestroy. Don't call DidDestroy on the untrusted plugin instance,
   // since there is little that it can do at this point.
-  if (original_instance_interface_.get())
+  if (original_instance_interface_)
     original_instance_interface_->DidDestroy(pp_instance());
   else
     instance_interface_->DidDestroy(pp_instance());
@@ -516,15 +516,8 @@ void PluginInstance::ScrollRect(int dx, int dy, const gfx::Rect& rect) {
   }
 }
 
-unsigned PluginInstance::GetBackingTextureId() {
-  if (bound_graphics_3d_.get())
-    return bound_graphics_3d_->GetBackingTextureId();
-
-  return 0;
-}
-
 void PluginInstance::CommitBackingTexture() {
-  if (texture_layer_)
+  if (texture_layer_.get())
     texture_layer_->SetNeedsDisplay();
 }
 
@@ -576,6 +569,8 @@ static void SetGPUHistogram(const ::ppapi::Preferences& prefs,
 bool PluginInstance::Initialize(const std::vector<std::string>& arg_names,
                                 const std::vector<std::string>& arg_values,
                                 bool full_frame) {
+  message_channel_.reset(new MessageChannel(this));
+
   full_frame_ = full_frame;
 
   UpdateTouchEventRequest();
@@ -808,7 +803,7 @@ bool PluginInstance::HandleInputEvent(const WebKit::WebInputEvent& event,
     }
   }
 
-  if (cursor_.get())
+  if (cursor_)
     *cursor_info = *cursor_;
   return rv;
 }
@@ -1218,9 +1213,10 @@ bool PluginInstance::IsAcceptingWheelEvents() const {
 void PluginInstance::ScheduleAsyncDidChangeView() {
   if (view_change_weak_ptr_factory_.HasWeakPtrs())
     return;  // Already scheduled.
-  MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(&PluginInstance::SendAsyncDidChangeView,
-                            view_change_weak_ptr_factory_.GetWeakPtr()));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&PluginInstance::SendAsyncDidChangeView,
+                 view_change_weak_ptr_factory_.GetWeakPtr()));
 }
 
 void PluginInstance::SendAsyncDidChangeView() {
@@ -1326,7 +1322,7 @@ int PluginInstance::PrintBegin(const WebPrintParams& print_params) {
   if (!num_pages)
     return 0;
   current_print_settings_ = print_settings;
-  canvas_ = NULL;
+  canvas_.clear();
   ranges_.clear();
   return num_pages;
 }
@@ -1344,7 +1340,7 @@ bool PluginInstance::PrintPage(int page_number, WebKit::WebCanvas* canvas) {
 #endif
   if (save_for_later) {
     ranges_.push_back(page_range);
-    canvas_ = canvas;
+    canvas_ = skia::SharePtr(canvas);
     return true;
   } else {
     return PrintPageHelper(&page_range, 1, canvas);
@@ -1383,7 +1379,7 @@ void PluginInstance::PrintEnd() {
   scoped_refptr<PluginInstance> ref(this);
   if (!ranges_.empty())
     PrintPageHelper(&(ranges_.front()), ranges_.size(), canvas_.get());
-  canvas_ = NULL;
+  canvas_.clear();
   ranges_.clear();
 
   DCHECK(plugin_print_interface_);
@@ -1492,7 +1488,7 @@ void PluginInstance::FlashSetFullscreen(bool fullscreen, bool delay_report) {
     if (!delay_report) {
       ReportGeometry();
     } else {
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE, base::Bind(&PluginInstance::ReportGeometry, this));
     }
   }
@@ -1509,14 +1505,8 @@ void PluginInstance::UpdateFlashFullscreenState(bool flash_fullscreen) {
   }
 
   PPB_Graphics3D_Impl* graphics_3d  = bound_graphics_3d_.get();
-  if (graphics_3d) {
-    if (flash_fullscreen) {
-      fullscreen_container_->ReparentContext(graphics_3d->platform_context());
-    } else {
-      delegate_->ReparentContext(graphics_3d->platform_context());
-    }
+  if (graphics_3d)
     UpdateLayer();
-  }
 
   bool old_plugin_focus = PluginHasFocus();
   flash_fullscreen_ = flash_fullscreen;
@@ -1605,10 +1595,7 @@ bool PluginInstance::IsViewAccelerated() {
 }
 
 PluginDelegate::PlatformContext3D* PluginInstance::CreateContext3D() {
-  if (fullscreen_container_)
-    return fullscreen_container_->CreateContext3D();
-  else
-    return delegate_->CreateContext3D();
+  return delegate_->CreateContext3D();
 }
 
 bool PluginInstance::PrintPDFOutput(PP_Resource print_output,
@@ -1707,18 +1694,25 @@ PluginDelegate::PlatformGraphics2D* PluginInstance::GetBoundGraphics2D() const {
   return bound_graphics_2d_platform_;
 }
 
+static void IgnoreCallback(unsigned, bool) {}
+
 void PluginInstance::UpdateLayer() {
   if (!container_)
     return;
 
-  bool want_layer = GetBackingTextureId();
+  gpu::Mailbox mailbox;
+  if (bound_graphics_3d_.get()) {
+    PluginDelegate::PlatformContext3D* context =
+        bound_graphics_3d_->platform_context();
+    context->GetBackingMailbox(&mailbox);
+  }
+  bool want_layer = !mailbox.IsZero();
 
   if (want_layer == !!texture_layer_.get() &&
       layer_bound_to_fullscreen_ == !!fullscreen_container_)
     return;
 
-  if (texture_layer_) {
-    texture_layer_->ClearClient();
+  if (texture_layer_.get()) {
     if (!layer_bound_to_fullscreen_)
       container_->setWebLayer(NULL);
     else if (fullscreen_container_)
@@ -1728,7 +1722,7 @@ void PluginInstance::UpdateLayer() {
   }
   if (want_layer) {
     DCHECK(bound_graphics_3d_.get());
-    texture_layer_ = cc::TextureLayer::Create(this);
+    texture_layer_ = cc::TextureLayer::CreateForMailbox(NULL);
     web_layer_.reset(new webkit::WebLayerImpl(texture_layer_));
     if (fullscreen_container_) {
       fullscreen_container_->SetLayer(web_layer_.get());
@@ -1740,6 +1734,8 @@ void PluginInstance::UpdateLayer() {
       container_->setWebLayer(web_layer_.get());
       texture_layer_->SetContentsOpaque(bound_graphics_3d_->IsOpaque());
     }
+    texture_layer_->SetTextureMailbox(
+        cc::TextureMailbox(mailbox, base::Bind(&IgnoreCallback), 0));
   }
   layer_bound_to_fullscreen_ = !!fullscreen_container_;
 }
@@ -2104,20 +2100,6 @@ void PluginInstance::DeliverSamples(PP_Instance instance,
   content_decryptor_delegate_->DeliverSamples(audio_frames, block_info);
 }
 
-unsigned PluginInstance::PrepareTexture(cc::ResourceUpdateQueue* queue) {
-  return GetBackingTextureId();
-}
-
-WebKit::WebGraphicsContext3D* PluginInstance::Context3d() {
-  DCHECK(bound_graphics_3d_.get());
-  DCHECK(bound_graphics_3d_->platform_context());
-  return bound_graphics_3d_->platform_context()->GetParentContext();
-}
-
-bool PluginInstance::PrepareTextureMailbox(cc::TextureMailbox* mailbox) {
-  return false;
-}
-
 void PluginInstance::NumberOfFindResultsChanged(PP_Instance instance,
                                                 int32_t total,
                                                 PP_Bool final_result) {
@@ -2154,17 +2136,19 @@ PP_Bool PluginInstance::GetScreenSize(PP_Instance instance, PP_Size* size) {
   switch (id) {
     case ::ppapi::BROKER_SINGLETON_ID:
     case ::ppapi::BROWSER_FONT_SINGLETON_ID:
+    case ::ppapi::CRX_FILESYSTEM_SINGLETON_ID:
     case ::ppapi::EXTENSIONS_COMMON_SINGLETON_ID:
     case ::ppapi::FLASH_CLIPBOARD_SINGLETON_ID:
     case ::ppapi::FLASH_FILE_SINGLETON_ID:
     case ::ppapi::FLASH_FULLSCREEN_SINGLETON_ID:
     case ::ppapi::FLASH_SINGLETON_ID:
+    case ::ppapi::NETWORK_PROXY_SINGLETON_ID:
     case ::ppapi::PDF_SINGLETON_ID:
     case ::ppapi::TRUETYPE_FONT_SINGLETON_ID:
       NOTIMPLEMENTED();
       return NULL;
     case ::ppapi::GAMEPAD_SINGLETON_ID:
-      return gamepad_impl_;
+      return gamepad_impl_.get();
   }
 
   NOTREACHED();
@@ -2319,7 +2303,8 @@ void PluginInstance::SelectionChanged(PP_Instance instance) {
   // uses a weak pointer rather than exploiting the fact that this class is
   // refcounted because we don't actually want this operation to affect the
   // lifetime of the instance.
-  MessageLoop::current()->PostTask(FROM_HERE,
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
       base::Bind(&PluginInstance::RequestSurroundingText,
                  AsWeakPtr(),
                  static_cast<size_t>(kExtraCharsForTextInput)));
@@ -2459,6 +2444,10 @@ bool PluginInstance::IsValidInstanceOf(PluginModule* module) {
   DCHECK(module);
   return module == module_.get() ||
          module == original_module_.get();
+}
+
+NPP PluginInstance::instanceNPP() {
+  return npp_.get();
 }
 
 void PluginInstance::DoSetCursor(WebCursorInfo* cursor) {

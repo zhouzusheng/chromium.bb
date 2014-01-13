@@ -38,11 +38,13 @@ class CC_EXPORT PictureLayerImpl
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual void AppendQuads(QuadSink* quad_sink,
                            AppendQuadsData* append_quads_data) OVERRIDE;
-  virtual void DumpLayerProperties(std::string* str, int indent) const OVERRIDE;
   virtual void UpdateTilePriorities() OVERRIDE;
   virtual void DidBecomeActive() OVERRIDE;
+  virtual void DidBeginTracing() OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
   virtual void CalculateContentsScale(float ideal_contents_scale,
+                                      float device_scale_factor,
+                                      float page_scale_factor,
                                       bool animating_transform_to_screen,
                                       float* contents_scale_x,
                                       float* contents_scale_y,
@@ -54,14 +56,15 @@ class CC_EXPORT PictureLayerImpl
                                          gfx::Rect content_rect) OVERRIDE;
   virtual void UpdatePile(Tile* tile) OVERRIDE;
   virtual gfx::Size CalculateTileSize(
-      gfx::Size content_bounds) OVERRIDE;
+      gfx::Size content_bounds) const OVERRIDE;
   virtual const Region* GetInvalidation() OVERRIDE;
   virtual const PictureLayerTiling* GetTwinTiling(
       const PictureLayerTiling* tiling) OVERRIDE;
 
-  // PushPropertiesTo active tree => pending tree
+  // PushPropertiesTo active tree => pending tree.
   void SyncFromActiveLayer();
   void SyncTiling(const PictureLayerTiling* tiling);
+  void UpdateTwinLayer();
 
   void CreateTilingSet();
   void TransferTilingSet(scoped_ptr<PictureLayerTilingSet> tilings);
@@ -70,9 +73,7 @@ class CC_EXPORT PictureLayerImpl
   void SetIsMask(bool is_mask);
   virtual ResourceProvider::ResourceId ContentsResourceId() const OVERRIDE;
 
-  virtual bool AreVisibleResourcesReady() const OVERRIDE;
-
-  virtual scoped_ptr<base::Value> AsValue() const OVERRIDE;
+  virtual size_t GPUMemoryUsageInBytes() const OVERRIDE;
 
  protected:
   PictureLayerImpl(LayerTreeImpl* tree_impl, int id);
@@ -88,14 +89,19 @@ class CC_EXPORT PictureLayerImpl
       float* low_res_raster_contents_scale) const;
   void CleanUpTilingsOnActiveLayer(
       std::vector<PictureLayerTiling*> used_tilings);
-  PictureLayerImpl* PendingTwin() const;
-  PictureLayerImpl* ActiveTwin() const;
   float MinimumContentsScale() const;
   void UpdateLCDTextStatus();
   void ResetRasterScale();
+  void MarkVisibleResourcesAsRequired() const;
+
+  bool CanHaveTilings() const;
+  bool CanHaveTilingWithScale(float contents_scale) const;
 
   virtual void GetDebugBorderProperties(
       SkColor* color, float* width) const OVERRIDE;
+  virtual void AsValueInto(base::DictionaryValue* dict) const OVERRIDE;
+
+  PictureLayerImpl* twin_layer_;
 
   scoped_ptr<PictureLayerTilingSet> tilings_;
   scoped_refptr<PicturePileImpl> pile_;

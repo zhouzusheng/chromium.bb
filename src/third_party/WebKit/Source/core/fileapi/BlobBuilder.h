@@ -32,13 +32,15 @@
 #define BlobBuilder_h
 
 #include "core/platform/network/BlobData.h"
-#include <wtf/Forward.h>
-#include <wtf/RefCounted.h>
+#include "wtf/Forward.h"
+
+namespace WTF{
+class TextEncoding;
+}
 
 namespace WebCore {
 
 class Blob;
-class TextEncoding;
 
 typedef int ExceptionCode;
 

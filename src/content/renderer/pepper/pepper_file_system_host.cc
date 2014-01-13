@@ -6,49 +6,39 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "content/common/child_thread.h"
-#include "content/common/fileapi/file_system_dispatcher.h"
+#include "content/child/child_thread.h"
+#include "content/child/fileapi/file_system_dispatcher.h"
+#include "content/public/renderer/render_view.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
-#include "content/renderer/pepper/null_file_system_callback_dispatcher.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/file_type_conversion.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebView.h"
+#include "webkit/common/fileapi/file_system_util.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 
 namespace content {
 
 namespace {
 
-class PlatformCallbackAdaptor : public NullFileSystemCallbackDispatcher {
- public:
-  explicit PlatformCallbackAdaptor(
-      const base::WeakPtr<PepperFileSystemHost>& weak_host)
-      : weak_host_(weak_host) {}
-
-  virtual ~PlatformCallbackAdaptor() {}
-
-  virtual void DidOpenFileSystem(const std::string& /* unused */,
-                                 const GURL& root) OVERRIDE {
-    if (weak_host_)
-      weak_host_->OpenFileSystemReply(PP_OK, root);
+bool LooksLikeAGuid(const std::string& fsid) {
+  const size_t kExpectedFsIdSize = 32;
+  if (fsid.size() != kExpectedFsIdSize)
+    return false;
+  for (std::string::const_iterator it = fsid.begin(); it != fsid.end(); ++it) {
+    if (('A' <= *it && *it <= 'F') ||
+        ('0' <= *it && *it <= '9'))
+      continue;
+    return false;
   }
-
-  virtual void DidFail(base::PlatformFileError platform_error) OVERRIDE {
-    if (weak_host_) {
-      weak_host_->OpenFileSystemReply(
-          ppapi::PlatformFileErrorToPepperError(platform_error), GURL());
-    }
-  }
-
- private:
-  base::WeakPtr<PepperFileSystemHost> weak_host_;
-};
+  return true;
+}
 
 }  // namespace
 
@@ -71,19 +61,36 @@ int32_t PepperFileSystemHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
   IPC_BEGIN_MESSAGE_MAP(PepperFileSystemHost, msg)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileSystem_Open,
-                                      OnHostMsgOpen)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(
+        PpapiHostMsg_FileSystem_Open,
+        OnHostMsgOpen)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(
+        PpapiHostMsg_FileSystem_InitIsolatedFileSystem,
+        OnHostMsgInitIsolatedFileSystem)
   IPC_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
-void PepperFileSystemHost::OpenFileSystemReply(int32_t pp_error,
-                                               const GURL& root) {
-  opened_ = (pp_error == PP_OK);
+PepperFileSystemHost* PepperFileSystemHost::AsPepperFileSystemHost() {
+  return this;
+}
+
+void PepperFileSystemHost::DidOpenFileSystem(
+    const std::string& /* name_unused */,
+    const GURL& root) {
+  opened_ = true;
   root_url_ = root;
+  reply_context_.params.set_result(PP_OK);
+  host()->SendReply(reply_context_, PpapiPluginMsg_FileSystem_OpenReply());
+  reply_context_ = ppapi::host::ReplyMessageContext();
+}
+
+void PepperFileSystemHost::DidFailOpenFileSystem(
+    base::PlatformFileError error) {
+  int32 pp_error = ppapi::PlatformFileErrorToPepperError(error);
+  opened_ = (pp_error == PP_OK);
   reply_context_.params.set_result(pp_error);
-  host()->SendReply(reply_context_,
-                    PpapiPluginMsg_FileSystem_OpenReply());
+  host()->SendReply(reply_context_, PpapiPluginMsg_FileSystem_OpenReply());
   reply_context_ = ppapi::host::ReplyMessageContext();
 }
 
@@ -122,11 +129,32 @@ int32_t PepperFileSystemHost::OnHostMsgOpen(
       GURL(plugin_instance->container()->element().document().url()).
           GetOrigin(),
       file_system_type, expected_size, true /* create */,
-      new PlatformCallbackAdaptor(weak_factory_.GetWeakPtr()))) {
+      base::Bind(&PepperFileSystemHost::DidOpenFileSystem,
+                 weak_factory_.GetWeakPtr()),
+      base::Bind(&PepperFileSystemHost::DidFailOpenFileSystem,
+                 weak_factory_.GetWeakPtr()))) {
     return PP_ERROR_FAILED;
   }
 
   return PP_OK_COMPLETIONPENDING;
+}
+
+int32_t PepperFileSystemHost::OnHostMsgInitIsolatedFileSystem(
+    ppapi::host::HostMessageContext* context,
+    const std::string& fsid) {
+  called_open_ = true;
+  // Do a sanity check.
+  if (!LooksLikeAGuid(fsid))
+    return PP_ERROR_BADARGUMENT;
+  RenderView* view =
+      renderer_ppapi_host_->GetRenderViewForInstance(pp_instance());
+  if (!view)
+    return PP_ERROR_FAILED;
+  const GURL& url = view->GetWebView()->mainFrame()->document().url();
+  root_url_ = GURL(fileapi::GetIsolatedFileSystemRootURIString(
+      url.GetOrigin(), fsid, "crxfs"));
+  opened_ = true;
+  return PP_OK;
 }
 
 }  // namespace content

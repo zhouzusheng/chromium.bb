@@ -28,16 +28,17 @@
 
 #include "V8CSSFontFaceRule.h"
 #include "V8DOMError.h"
-#include "V8DOMWindow.h"
 #include "V8EventTarget.h"
 #include "V8IDBKeyRange.h"
 #include "V8MIDIPort.h"
+#include "V8MediaKeyError.h"
 #include "V8SpeechRecognitionError.h"
 #include "V8SpeechRecognitionResult.h"
 #include "V8SpeechRecognitionResultList.h"
 #include "V8Storage.h"
 #include "V8Uint8Array.h"
 #include "V8VoidCallback.h"
+#include "V8Window.h"
 #include "bindings/v8/ArrayValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
@@ -47,10 +48,6 @@
 #include "modules/speech/SpeechRecognitionResult.h"
 #include "modules/speech/SpeechRecognitionResultList.h"
 #include "wtf/MathExtras.h"
-
-#if ENABLE(ENCRYPTED_MEDIA)
-#include "V8MediaKeyError.h"
-#endif
 
 #include "V8TextTrack.h"
 #include "core/html/track/TrackBase.h"
@@ -253,9 +250,9 @@ bool Dictionary::get(const String& key, RefPtr<DOMWindow>& value) const
     value = 0;
     if (v8Value->IsObject()) {
         v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(v8Value);
-        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(m_isolate, worldTypeInMainThread(m_isolate)));
+        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8Window::GetTemplate(m_isolate, worldTypeInMainThread(m_isolate)));
         if (!window.IsEmpty())
-            value = V8DOMWindow::toNative(window);
+            value = V8Window::toNative(window);
     }
     return true;
 }
@@ -297,7 +294,7 @@ bool Dictionary::get(const String& key, HashSet<AtomicString>& value) const
     ASSERT(m_isolate == v8::Isolate::GetCurrent());
     v8::Local<v8::Array> v8Array = v8::Local<v8::Array>::Cast(v8Value);
     for (size_t i = 0; i < v8Array->Length(); ++i) {
-        v8::Local<v8::Value> indexedValue = v8Array->Get(v8Integer(i, m_isolate));
+        v8::Local<v8::Value> indexedValue = v8Array->Get(v8::Integer::New(i, m_isolate));
         value.add(toWebCoreString(indexedValue));
     }
 
@@ -342,7 +339,6 @@ bool Dictionary::get(const String& key, RefPtr<MIDIPort>& value) const
     return true;
 }
 
-#if ENABLE(ENCRYPTED_MEDIA)
 bool Dictionary::get(const String& key, RefPtr<MediaKeyError>& value) const
 {
     v8::Local<v8::Value> v8Value;
@@ -354,7 +350,6 @@ bool Dictionary::get(const String& key, RefPtr<MediaKeyError>& value) const
         value = V8MediaKeyError::toNative(v8::Handle<v8::Object>::Cast(v8Value));
     return true;
 }
-#endif
 
 bool Dictionary::get(const String& key, RefPtr<TrackBase>& value) const
 {
@@ -435,7 +430,7 @@ bool Dictionary::get(const String& key, RefPtr<EventTarget>& value) const
     // exists on a prototype chain of v8Value.
     if (v8Value->IsObject()) {
         v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(v8Value);
-        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(m_isolate, worldTypeInMainThread(m_isolate)));
+        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8Window::GetTemplate(m_isolate, worldTypeInMainThread(m_isolate)));
         if (!window.IsEmpty()) {
             value = toWrapperTypeInfo(window)->toEventTarget(window);
             return true;

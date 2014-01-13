@@ -35,9 +35,8 @@
 #include "WebNavigationPolicy.h"
 #include "core/page/ChromeClient.h"
 #include "core/platform/PopupMenu.h"
-#include "core/platform/SearchPopupMenu.h"
 #include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
-#include <public/WebColor.h>
+#include "public/platform/WebColor.h"
 #include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
@@ -124,7 +123,6 @@ public:
     virtual void deviceOrPageScaleFactorChanged() const;
     virtual void didProgrammaticallyScroll(WebCore::Frame*, const WebCore::IntPoint&) const;
     virtual void layoutUpdated(WebCore::Frame*) const;
-    virtual void scrollbarsModeDidChange() const;
     virtual void mouseDidMoveOverElement(
         const WebCore::HitTestResult& result, unsigned modifierFlags);
     virtual void setToolTip(const WTF::String& tooltipText, WebCore::TextDirection);
@@ -132,16 +130,13 @@ public:
     virtual void print(WebCore::Frame*);
     virtual void annotatedRegionsChanged();
     virtual bool paintCustomOverhangArea(WebCore::GraphicsContext*, const WebCore::IntRect&, const WebCore::IntRect&, const WebCore::IntRect&);
-#if ENABLE(INPUT_TYPE_COLOR)
     virtual PassOwnPtr<WebCore::ColorChooser> createColorChooser(WebCore::ColorChooserClient*, const WebCore::Color&) OVERRIDE;
     PassOwnPtr<WebColorChooser> createWebColorChooser(WebColorChooserClient*, const WebColor&);
-#endif
     virtual PassRefPtr<WebCore::DateTimeChooser> openDateTimeChooser(WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&) OVERRIDE;
     virtual void runOpenPanel(WebCore::Frame*, PassRefPtr<WebCore::FileChooser>);
     virtual void loadIconForFiles(const Vector<WTF::String>&, WebCore::FileIconLoader*);
     virtual void enumerateChosenDirectory(WebCore::FileChooser*);
     virtual void setCursor(const WebCore::Cursor&);
-    virtual void setCursorHiddenUntilMouseMoves(bool);
     virtual void formStateDidChange(const WebCore::Node*);
     virtual void needTouchEvents(bool needTouchEvents) OVERRIDE;
 
@@ -165,20 +160,18 @@ public:
                              bool handleExternally);
     virtual void popupClosed(WebCore::PopupContainer* popupContainer);
     virtual void postAccessibilityNotification(WebCore::AccessibilityObject*, WebCore::AXObjectCache::AXNotification);
+    virtual String acceptLanguages() OVERRIDE;
 
     // ChromeClientImpl:
     void setCursorForPlugin(const WebCursorInfo&);
     void setNewWindowNavigationPolicy(WebNavigationPolicy);
 
     virtual bool hasOpenedPopup() const OVERRIDE;
-    virtual PassRefPtr<WebCore::PopupMenu> createPopupMenu(WebCore::PopupMenuClient*) const;
-    virtual PassRefPtr<WebCore::SearchPopupMenu> createSearchPopupMenu(WebCore::PopupMenuClient*) const;
-#if ENABLE(PAGE_POPUP)
+    virtual PassRefPtr<WebCore::PopupMenu> createPopupMenu(WebCore::Frame&, WebCore::PopupMenuClient*) const;
     virtual WebCore::PagePopup* openPagePopup(WebCore::PagePopupClient*, const WebCore::IntRect&) OVERRIDE;
     virtual void closePagePopup(WebCore::PagePopup*) OVERRIDE;
     virtual void setPagePopupDriver(WebCore::PagePopupDriver*) OVERRIDE;
     virtual void resetPagePopupDriver() OVERRIDE;
-#endif
     virtual bool willAddTextFieldDecorationsTo(WebCore::HTMLInputElement*) OVERRIDE;
     virtual void addTextFieldDecorationsTo(WebCore::HTMLInputElement*) OVERRIDE;
 
@@ -207,9 +200,7 @@ private:
 
     // The policy for how the next webview to be created will be shown.
     WebNavigationPolicy m_nextNewWindowNavigationPolicy;
-#if ENABLE(PAGE_POPUP)
     WebCore::PagePopupDriver* m_pagePopupDriver;
-#endif
 };
 
 #if ENABLE(NAVIGATOR_CONTENT_UTILS)

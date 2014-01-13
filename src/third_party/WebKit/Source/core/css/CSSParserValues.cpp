@@ -25,7 +25,6 @@
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSSelectorList.h"
-#include "core/css/CSSVariableValue.h"
 
 namespace WebCore {
 
@@ -68,7 +67,7 @@ PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
         return CSSPrimitiveValue::createIdentifier(id);
     
     if (unit == CSSParserValue::Operator) {
-        RefPtr<CSSPrimitiveValue> primitiveValue = CSSPrimitiveValue::createIdentifier(iValue);
+        RefPtr<CSSPrimitiveValue> primitiveValue = CSSPrimitiveValue::createParserOperator(iValue);
         primitiveValue->setPrimitiveType(CSSPrimitiveValue::CSS_PARSER_OPERATOR);
         return primitiveValue;
     }
@@ -80,6 +79,8 @@ PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
     CSSPrimitiveValue::UnitTypes primitiveUnit = static_cast<CSSPrimitiveValue::UnitTypes>(unit);
     switch (primitiveUnit) {
     case CSSPrimitiveValue::CSS_IDENT:
+    case CSSPrimitiveValue::CSS_PROPERTY_ID:
+    case CSSPrimitiveValue::CSS_VALUE_ID:
         return CSSPrimitiveValue::create(string, CSSPrimitiveValue::CSS_PARSER_IDENTIFIER);
     case CSSPrimitiveValue::CSS_NUMBER:
         return CSSPrimitiveValue::create(fValue, isInt ? CSSPrimitiveValue::CSS_PARSER_INTEGER : CSSPrimitiveValue::CSS_NUMBER);
@@ -148,6 +149,7 @@ CSSParserSelector::CSSParserSelector()
 
 CSSParserSelector::CSSParserSelector(const QualifiedName& tagQName)
     : m_selector(adoptPtr(new CSSSelector(tagQName)))
+    , m_functionArgumentSelector(0)
 {
 }
 

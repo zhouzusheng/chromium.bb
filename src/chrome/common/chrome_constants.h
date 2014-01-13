@@ -46,7 +46,6 @@ extern const wchar_t kTestingInterfaceDLL[];
 extern const char    kInitialProfile[];
 extern const char    kMultiProfileDirPrefix[];
 extern const wchar_t kBrowserResourcesDll[];
-extern const wchar_t kNaClAppName[];
 extern const base::FilePath::CharType kExtensionFileExtension[];
 extern const base::FilePath::CharType kExtensionKeyFileExtension[];
 
@@ -93,14 +92,6 @@ extern const base::FilePath::CharType kPepperFlashPluginFilename[];
 // directory names
 extern const wchar_t kUserDataDirname[];
 
-#if defined(OS_CHROMEOS)
-extern const base::FilePath::CharType kDriveCacheDirname[];
-extern const char kOemDeviceRequisitionKey[];
-extern const char kOemIsEnterpriseManagedKey[];
-extern const char kOemCanExitEnterpriseEnrollmentKey[];
-extern const char kOemKeyboardDrivenOobeKey[];
-#endif  // defined(OS_CHROMEOS)
-
 extern const bool kRecordModeEnabled;
 
 // The language code used when the language of a page could not be detected.
@@ -142,6 +133,13 @@ extern const wchar_t kMetroGetCurrentTabInfoMessage[];
 // Used by Metro Chrome to store activation state.
 extern const wchar_t kMetroRegistryPath[];
 extern const wchar_t kLaunchModeValue[];
+#endif
+
+#if defined(OS_CHROMEOS)
+// Chrome OS profile directories have custom prefix.
+// Profile path format: [user_data_dir]/u-[$hash]
+// Ex.: /home/chronos/u-0123456789
+extern const char kProfileDirPrefix[];
 #endif
 
 }  // namespace chrome

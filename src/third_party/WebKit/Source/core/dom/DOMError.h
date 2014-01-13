@@ -26,25 +26,33 @@
 #ifndef DOMError_h
 #define DOMError_h
 
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "bindings/v8/ScriptWrappable.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class DOMError : public RefCounted<DOMError> {
+class DOMError : public RefCounted<DOMError>, public ScriptWrappable {
 public:
     static PassRefPtr<DOMError> create(const String& name)
     {
         return adoptRef(new DOMError(name));
     }
+    static PassRefPtr<DOMError> create(const String& name, const String& message)
+    {
+        return adoptRef(new DOMError(name, message));
+    }
 
     const String& name() const { return m_name; }
+    const String& message() const { return m_message; }
 
 private:
     explicit DOMError(const String& name);
+    explicit DOMError(const String& name, const String& message);
 
     const String m_name;
+    const String m_message;
 };
 
 } // namespace WebCore

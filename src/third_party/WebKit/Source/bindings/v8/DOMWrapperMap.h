@@ -56,14 +56,23 @@ public:
         return m_map.get(key).handle();
     }
 
+    v8::Handle<v8::Object> getNewLocal(v8::Isolate* isolate, KeyType* key)
+    {
+        return m_map.get(key).newLocal(isolate);
+    }
+
     void set(KeyType* key, v8::Handle<v8::Object> wrapper, const WrapperConfiguration& configuration)
     {
-        ASSERT(!m_map.contains(key));
         ASSERT(static_cast<KeyType*>(toNative(wrapper)) == key);
         v8::Persistent<v8::Object> persistent(m_isolate, wrapper);
-        configuration.configureWrapper(persistent, m_isolate);
-        WeakHandleListener<DOMWrapperMap<KeyType> >::makeWeak(m_isolate, persistent, this);
-        m_map.set(key, UnsafePersistent<v8::Object>(persistent));
+        configuration.configureWrapper(&persistent, m_isolate);
+        persistent.MakeWeak(this, &makeWeakCallback);
+        typename MapType::AddResult result = m_map.add(key, UnsafePersistent<v8::Object>());
+        ASSERT(result.isNewEntry);
+        // FIXME: Stop handling this case once duplicate wrappers are guaranteed not to be created.
+        if (!result.isNewEntry)
+            result.iterator->value.dispose();
+        result.iterator->value = UnsafePersistent<v8::Object>(persistent);
     }
 
     void clear()
@@ -73,10 +82,8 @@ public:
             MapType map;
             map.swap(m_map);
             for (typename MapType::iterator it = map.begin(); it != map.end(); ++it) {
-                v8::Persistent<v8::Object> unsafeWrapper;
-                it->value.copyTo(&unsafeWrapper);
-                toWrapperTypeInfo(unsafeWrapper)->derefObject(it->key);
-                unsafeWrapper.Dispose(m_isolate);
+                toWrapperTypeInfo(it->value.handle())->derefObject(it->key);
+                it->value.dispose();
             }
         }
     }
@@ -87,21 +94,31 @@ public:
         info.addMember(m_map, "map");
     }
 
-    void removeAndDispose(KeyType* key, v8::Handle<v8::Object> value, v8::Isolate* isolate)
+    void removeAndDispose(KeyType* key)
     {
-        v8::Persistent<v8::Object> wrapper(*value);
         typename MapType::iterator it = m_map.find(key);
         ASSERT(it != m_map.end());
-        ASSERT(it->value.handle() == wrapper);
+        it->value.dispose();
         m_map.remove(it);
-        wrapper.Dispose(isolate);
-        value.Clear();
     }
 
 private:
+    static void makeWeakCallback(v8::Isolate*, v8::Persistent<v8::Object>* wrapper, DOMWrapperMap<KeyType>*);
+
     v8::Isolate* m_isolate;
     MapType m_map;
 };
+
+template<>
+inline void DOMWrapperMap<void>::makeWeakCallback(v8::Isolate* isolate, v8::Persistent<v8::Object>* wrapper, DOMWrapperMap<void>* map)
+{
+    WrapperTypeInfo* type = toWrapperTypeInfo(*wrapper);
+    ASSERT(type->derefObjectFunction);
+    void* key = static_cast<void*>(toNative(*wrapper));
+    ASSERT(map->get(key) == *wrapper);
+    map->removeAndDispose(key);
+    type->derefObject(key);
+}
 
 } // namespace WebCore
 

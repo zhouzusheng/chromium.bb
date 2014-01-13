@@ -26,38 +26,99 @@
 #include "config.h"
 #include "core/dom/DecodedDataDocumentParser.h"
 
-#include "core/loader/DocumentWriter.h"
+#include "core/dom/Document.h"
+#include "core/dom/Element.h"
 #include "core/loader/TextResourceDecoder.h"
-#include "core/platform/text/SegmentedString.h"
+#include "wtf/text/TextEncodingRegistry.h"
 
 namespace WebCore {
+
+namespace {
+
+class TitleEncodingFixer {
+public:
+    explicit TitleEncodingFixer(Document* document)
+        : m_document(document)
+        , m_firstEncoding(document->decoder()->encoding())
+    {
+    }
+
+    // It's possible for the encoding of the document to change while we're decoding
+    // data. That can only occur while we're processing the <head> portion of the
+    // document. There isn't much user-visible content in the <head>, but there is
+    // the <title> element. This function detects that situation and re-decodes the
+    // document's title so that the user doesn't see an incorrectly decoded title
+    // in the title bar.
+    inline void fixTitleEncodingIfNeeded()
+    {
+        if (m_firstEncoding == m_document->decoder()->encoding())
+            return; // In the common case, the encoding doesn't change and there isn't any work to do.
+        fixTitleEncoding();
+    }
+
+private:
+    void fixTitleEncoding();
+
+    Document* m_document;
+    WTF::TextEncoding m_firstEncoding;
+};
+
+void TitleEncodingFixer::fixTitleEncoding()
+{
+    RefPtr<Element> titleElement = m_document->titleElement();
+    if (!titleElement
+        || titleElement->firstElementChild()
+        || m_firstEncoding != Latin1Encoding()
+        || !titleElement->textContent().containsOnlyLatin1())
+        return; // Either we don't have a title yet or something bizzare as happened and we give up.
+    CString originalBytes = titleElement->textContent().latin1();
+    OwnPtr<TextCodec> codec = newTextCodec(m_document->decoder()->encoding());
+    String correctlyDecodedTitle = codec->decode(originalBytes.data(), originalBytes.length(), true);
+    titleElement->setTextContent(correctlyDecodedTitle, IGNORE_EXCEPTION);
+}
+
+}
 
 DecodedDataDocumentParser::DecodedDataDocumentParser(Document* document)
     : DocumentParser(document)
 {
 }
 
-void DecodedDataDocumentParser::appendBytes(DocumentWriter* writer, const char* data, size_t length)
+size_t DecodedDataDocumentParser::appendBytes(const char* data, size_t length)
 {
     if (!length)
-        return;
+        return 0;
 
-    String decoded = writer->createDecoderIfNeeded()->decode(data, length);
+    TitleEncodingFixer encodingFixer(document());
+
+    String decoded = document()->decoder()->decode(data, length);
+
+    encodingFixer.fixTitleEncodingIfNeeded();
+
     if (decoded.isEmpty())
-        return;
+        return 0;
 
-    writer->reportDataReceived();
+    size_t consumedChars = decoded.length();
     append(decoded.releaseImpl());
+
+    return consumedChars;
 }
 
-void DecodedDataDocumentParser::flush(DocumentWriter* writer)
+size_t DecodedDataDocumentParser::flush()
 {
-    String remainingData = writer->createDecoderIfNeeded()->flush();
+    // null decoder indicates there is no data received.
+    // We have nothing to do in that case.
+    TextResourceDecoder* decoder = document()->decoder();
+    if (!decoder)
+        return 0;
+    String remainingData = decoder->flush();
     if (remainingData.isEmpty())
-        return;
+        return 0;
 
-    writer->reportDataReceived();
+    size_t consumedChars = remainingData.length();
     append(remainingData.releaseImpl());
+
+    return consumedChars;
 }
 
 };

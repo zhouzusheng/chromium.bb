@@ -6,7 +6,7 @@
 
 #include "base/callback_helpers.h"
 #include "base/debug/trace_event.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/channel_layout.h"
@@ -54,7 +54,7 @@ bool MakeBufferResource(PP_Instance instance,
 
   scoped_refptr<PPB_Buffer_Impl> buffer(
       PPB_Buffer_Impl::CreateResource(instance, size));
-  if (!buffer)
+  if (!buffer.get())
     return false;
 
   BufferAutoMapper mapper(buffer.get());
@@ -285,31 +285,31 @@ ContentDecryptorDelegate::ContentDecryptorDelegate(
       weak_this_(weak_ptr_factory_.GetWeakPtr()) {
 }
 
+void ContentDecryptorDelegate::Initialize(const std::string& key_system) {
+  // TODO(ddorwin): Add an Initialize method to PPP_ContentDecryptor_Private.
+  DCHECK(!key_system.empty());
+  key_system_ = key_system;
+}
+
 void ContentDecryptorDelegate::SetKeyEventCallbacks(
     const media::KeyAddedCB& key_added_cb,
     const media::KeyErrorCB& key_error_cb,
-    const media::KeyMessageCB& key_message_cb,
-    const media::NeedKeyCB& need_key_cb) {
+    const media::KeyMessageCB& key_message_cb) {
   key_added_cb_ = key_added_cb;
   key_error_cb_ = key_error_cb;
   key_message_cb_ = key_message_cb;
-  need_key_cb_ = need_key_cb;
 }
 
-bool ContentDecryptorDelegate::GenerateKeyRequest(const std::string& key_system,
-                                                  const std::string& type,
+bool ContentDecryptorDelegate::GenerateKeyRequest(const std::string& type,
                                                   const uint8* init_data,
                                                   int init_data_length) {
-  if (key_system.empty())
-    return false;
-
   PP_Var init_data_array =
       PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(
           init_data_length, init_data);
 
   plugin_decryption_interface_->GenerateKeyRequest(
       pp_instance_,
-      StringVar::StringToPPVar(key_system),
+      StringVar::StringToPPVar(key_system_),  // TODO(ddorwin): Remove.
       StringVar::StringToPPVar(type),
       init_data_array);
   return true;
@@ -353,10 +353,9 @@ bool ContentDecryptorDelegate::Decrypt(
   // now because there is only one pending audio/video decrypt request at any
   // time. This is enforced by the media pipeline.
   scoped_refptr<PPB_Buffer_Impl> encrypted_resource;
-  if (!MakeMediaBufferResource(stream_type,
-                               encrypted_buffer,
-                               &encrypted_resource) ||
-      !encrypted_resource) {
+  if (!MakeMediaBufferResource(
+          stream_type, encrypted_buffer, &encrypted_resource) ||
+      !encrypted_resource.get()) {
     return false;
   }
   ScopedPPResource pp_resource(encrypted_resource.get());
@@ -536,7 +535,7 @@ bool ContentDecryptorDelegate::DecryptAndDecodeAudio(
   }
 
   // The resource should not be NULL for non-EOS buffer.
-  if (!encrypted_buffer->IsEndOfStream() && !encrypted_resource)
+  if (!encrypted_buffer->IsEndOfStream() && !encrypted_resource.get())
     return false;
 
   const uint32_t request_id = next_decryption_request_id_++;
@@ -580,7 +579,7 @@ bool ContentDecryptorDelegate::DecryptAndDecodeVideo(
   }
 
   // The resource should not be 0 for non-EOS buffer.
-  if (!encrypted_buffer->IsEndOfStream() && !encrypted_resource)
+  if (!encrypted_buffer->IsEndOfStream() && !encrypted_resource.get())
     return false;
 
   const uint32_t request_id = next_decryption_request_id_++;
@@ -616,7 +615,8 @@ bool ContentDecryptorDelegate::DecryptAndDecodeVideo(
 void ContentDecryptorDelegate::NeedKey(PP_Var key_system_var,
                                        PP_Var session_id_var,
                                        PP_Var init_data_var) {
-  // TODO(tomfinegan): send the data to media stack.
+  // TODO(ddorwin): Remove from PPB_ContentDecryptor_Private.
+  NOTREACHED();
 }
 
 void ContentDecryptorDelegate::KeyAdded(PP_Var key_system_var,
@@ -624,15 +624,13 @@ void ContentDecryptorDelegate::KeyAdded(PP_Var key_system_var,
   if (key_added_cb_.is_null())
     return;
 
-  StringVar* key_system_string = StringVar::FromPPVar(key_system_var);
   StringVar* session_id_string = StringVar::FromPPVar(session_id_var);
-  if (!key_system_string || !session_id_string) {
-    key_error_cb_.Run(
-        std::string(), std::string(), media::Decryptor::kUnknownError, 0);
+  if (!session_id_string) {
+    key_error_cb_.Run(std::string(), media::MediaKeys::kUnknownError, 0);
     return;
   }
 
-  key_added_cb_.Run(key_system_string->value(), session_id_string->value());
+  key_added_cb_.Run(session_id_string->value());
 }
 
 void ContentDecryptorDelegate::KeyMessage(PP_Var key_system_var,
@@ -642,7 +640,6 @@ void ContentDecryptorDelegate::KeyMessage(PP_Var key_system_var,
   if (key_message_cb_.is_null())
     return;
 
-  StringVar* key_system_string = StringVar::FromPPVar(key_system_var);
   StringVar* session_id_string = StringVar::FromPPVar(session_id_var);
 
   ArrayBufferVar* message_array_buffer =
@@ -656,14 +653,12 @@ void ContentDecryptorDelegate::KeyMessage(PP_Var key_system_var,
 
   StringVar* default_url_string = StringVar::FromPPVar(default_url_var);
 
-  if (!key_system_string || !session_id_string || !default_url_string) {
-    key_error_cb_.Run(
-        std::string(), std::string(), media::Decryptor::kUnknownError, 0);
+  if (!session_id_string || !default_url_string) {
+    key_error_cb_.Run(std::string(), media::MediaKeys::kUnknownError, 0);
     return;
   }
 
-  key_message_cb_.Run(key_system_string->value(),
-                      session_id_string->value(),
+  key_message_cb_.Run(session_id_string->value(),
                       message,
                       default_url_string->value());
 }
@@ -675,19 +670,15 @@ void ContentDecryptorDelegate::KeyError(PP_Var key_system_var,
   if (key_error_cb_.is_null())
     return;
 
-  StringVar* key_system_string = StringVar::FromPPVar(key_system_var);
   StringVar* session_id_string = StringVar::FromPPVar(session_id_var);
-  if (!key_system_string || !session_id_string) {
-    key_error_cb_.Run(
-        std::string(), std::string(), media::Decryptor::kUnknownError, 0);
+  if (!session_id_string) {
+    key_error_cb_.Run(std::string(), media::MediaKeys::kUnknownError, 0);
     return;
   }
 
-  key_error_cb_.Run(
-      key_system_string->value(),
-      session_id_string->value(),
-      static_cast<media::Decryptor::KeyError>(media_error),
-      system_code);
+  key_error_cb_.Run(session_id_string->value(),
+                    static_cast<media::MediaKeys::KeyError>(media_error),
+                    system_code);
 }
 
 void ContentDecryptorDelegate::DecoderInitializeDone(
@@ -978,7 +969,7 @@ bool ContentDecryptorDelegate::MakeMediaBufferResource(
                                                   video_input_resource_;
 
   const size_t data_size = static_cast<size_t>(encrypted_buffer->GetDataSize());
-  if (!media_resource || media_resource->size() < data_size) {
+  if (!media_resource.get() || media_resource->size() < data_size) {
     // Either the buffer hasn't been created yet, or we have one that isn't big
     // enough to fit |size| bytes.
 
@@ -988,8 +979,8 @@ bool ContentDecryptorDelegate::MakeMediaBufferResource(
     // they are usually small (compared to outputs). The over-allocated memory
     // should be negligible.
     const uint32_t kMinimumMediaBufferSize = 1024;
-    uint32_t media_resource_size = media_resource ? media_resource->size() :
-                                                    kMinimumMediaBufferSize;
+    uint32_t media_resource_size =
+        media_resource.get() ? media_resource->size() : kMinimumMediaBufferSize;
     while (media_resource_size < data_size)
       media_resource_size *= 2;
 
@@ -999,11 +990,11 @@ bool ContentDecryptorDelegate::MakeMediaBufferResource(
              << " bytes to fit input.";
     media_resource = PPB_Buffer_Impl::CreateResource(pp_instance_,
                                                      media_resource_size);
-    if (!media_resource)
+    if (!media_resource.get())
       return false;
   }
 
-  BufferAutoMapper mapper(media_resource);
+  BufferAutoMapper mapper(media_resource.get());
   if (!mapper.data() || mapper.size() < data_size) {
     media_resource = NULL;
     return false;

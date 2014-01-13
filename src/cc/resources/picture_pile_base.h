@@ -8,14 +8,17 @@
 #include <list>
 #include <utility>
 
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "cc/base/cc_export.h"
-#include "cc/base/hash_pair.h"
 #include "cc/base/region.h"
 #include "cc/base/tiling_data.h"
 #include "cc/resources/picture.h"
 #include "ui/gfx/size.h"
+
+namespace base {
+class Value;
+}
 
 namespace cc {
 
@@ -41,6 +44,8 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   void SetTileGridSize(gfx::Size tile_grid_size);
   TilingData& tiling() { return tiling_; }
 
+  scoped_ptr<base::Value> AsValue() const;
+
  protected:
   virtual ~PicturePileBase();
 
@@ -60,6 +65,7 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   float min_contents_scale_;
   SkTileGridPicture::TileGridInfo tile_grid_info_;
   SkColor background_color_;
+  bool contents_opaque_;
   int slow_down_raster_scale_factor_for_debug_;
   bool show_debug_picture_borders_;
   int num_raster_threads_;

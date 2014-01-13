@@ -28,7 +28,6 @@
 
 #include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
 
 #include "core/platform/text/TextStream.h"
 #include "core/rendering/RenderTreeAsText.h"
@@ -90,15 +89,20 @@ float FEMorphology::radiusY() const
 
 void FEMorphology::determineAbsolutePaintRect()
 {
-    FloatRect paintRect = inputEffect(0)->absolutePaintRect();
-    Filter* filter = this->filter();
-    paintRect.inflateX(filter->applyHorizontalScale(m_radiusX));
-    paintRect.inflateY(filter->applyVerticalScale(m_radiusY));
+    FloatRect paintRect = mapRect(inputEffect(0)->absolutePaintRect());
     if (clipsToBounds())
         paintRect.intersect(maxEffectRect());
     else
         paintRect.unite(maxEffectRect());
     setAbsolutePaintRect(enclosingIntRect(paintRect));
+}
+
+FloatRect FEMorphology::mapRect(const FloatRect& rect, bool)
+{
+    FloatRect result = rect;
+    result.inflateX(filter()->applyHorizontalScale(m_radiusX));
+    result.inflateY(filter()->applyVerticalScale(m_radiusY));
+    return result;
 }
 
 bool FEMorphology::setRadiusY(float radiusY)
@@ -258,14 +262,14 @@ bool FEMorphology::applySkia()
         paint.setImageFilter(new SkErodeImageFilter(radiusX, radiusY))->unref();
 
     dstContext->saveLayer(0, &paint);
-    dstContext->drawImage(image.get(), ColorSpaceDeviceRGB, drawingRegion.location(), CompositeCopy);
+    dstContext->drawImage(image.get(), drawingRegion.location(), CompositeCopy);
     dstContext->restoreLayer();
     return true;
 }
 
 SkImageFilter* FEMorphology::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    SkAutoTUnref<SkImageFilter> input(builder->build(inputEffect(0)));
+    SkAutoTUnref<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
     SkScalar radiusX = SkFloatToScalar(m_radiusX);
     SkScalar radiusY = SkFloatToScalar(m_radiusY);
     if (m_type == FEMORPHOLOGY_OPERATOR_DILATE)

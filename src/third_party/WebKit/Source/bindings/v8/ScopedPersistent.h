@@ -43,7 +43,7 @@ public:
     ScopedPersistent() { }
 
     explicit ScopedPersistent(v8::Handle<T> handle)
-        : m_handle(v8::Persistent<T>::New(v8::Isolate::GetCurrent(), handle))
+        : m_handle(v8::Isolate::GetCurrent(), handle)
     {
     }
 
@@ -52,15 +52,34 @@ public:
         clear();
     }
 
-    ALWAYS_INLINE v8::Persistent<T> get() const { return m_handle; }
-    ALWAYS_INLINE v8::Persistent<T> operator->() const { return m_handle; }
+    ALWAYS_INLINE v8::Local<T> newLocal(v8::Isolate* isolate) const
+    {
+        return v8::Local<T>::New(isolate, m_handle);
+    }
+
+    // FIXME: This function does an unsafe handle access. Remove it.
+    ALWAYS_INLINE v8::Handle<T> get() const
+    {
+        const v8::Handle<T>* handle = reinterpret_cast<const v8::Handle<T>*>(&m_handle);
+        return *handle;
+    }
+
+    template<typename P>
+    void makeWeak(P* parameters, void (*callback)(v8::Isolate*, v8::Persistent<T>*, P*))
+    {
+        m_handle.MakeWeak(parameters, callback);
+    }
 
     bool isEmpty() const { return m_handle.IsEmpty(); }
+    bool isNull() { return get()->IsNull(); }
+    bool isUndefined() { return get()->IsUndefined(); }
+    bool isFunction() { return get()->IsFunction(); }
+    bool isObject() { return get()->IsObject(); }
+    bool isString() { return get()->IsString(); }
 
-    void set(v8::Handle<T> handle)
+    void set(v8::Isolate* isolate, v8::Handle<T> handle)
     {
-        clear();
-        m_handle = v8::Persistent<T>::New(v8::Isolate::GetCurrent(), handle);
+        m_handle.Reset(isolate, handle);
     }
 
     // Note: This is clear in the OwnPtr sense, not the v8::Handle sense.
@@ -68,11 +87,24 @@ public:
     {
         if (m_handle.IsEmpty())
             return;
-        m_handle.Dispose(v8::Isolate::GetCurrent());
+        m_handle.Dispose();
         m_handle.Clear();
     }
 
+    bool operator==(const ScopedPersistent<T>& other)
+    {
+        return m_handle == other.m_handle;
+    }
+
 private:
+    // FIXME: This function does an unsafe handle access. Remove it.
+    friend class V8AbstractEventListener;
+    friend class V8PerIsolateData;
+    ALWAYS_INLINE v8::Persistent<T>& getUnsafe()
+    {
+        return m_handle;
+    }
+
     v8::Persistent<T> m_handle;
 };
 

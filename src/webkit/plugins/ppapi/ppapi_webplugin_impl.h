@@ -12,9 +12,11 @@
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "ppapi/c/pp_var.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPlugin.h"
+#include "third_party/WebKit/public/web/WebPlugin.h"
 #include "ui/gfx/rect.h"
 #include "webkit/plugins/webkit_plugins_export.h"
+
+struct _NPP;
 
 namespace WebKit {
 struct WebPluginParams;
@@ -43,6 +45,7 @@ class WebPluginImpl : public WebKit::WebPlugin {
   virtual bool initialize(WebKit::WebPluginContainer* container);
   virtual void destroy();
   virtual NPObject* scriptableObject();
+  virtual struct _NPP* pluginNPP();
   virtual bool getFormValue(WebKit::WebString& value);
   virtual void paint(WebKit::WebCanvas* canvas, const WebKit::WebRect& rect);
   virtual void updateGeometry(

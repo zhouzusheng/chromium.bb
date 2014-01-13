@@ -33,12 +33,15 @@
 
 #include "WebExternalPopupMenuClient.h"
 #include "core/platform/PopupMenu.h"
-#include <public/WebCanvas.h>
-#include <public/WebScrollbar.h>
+#include "public/platform/WebCanvas.h"
+#include "public/platform/WebScrollbar.h"
 
 namespace WebCore {
+class FloatQuad;
+class Frame;
 class FrameView;
 class IntRect;
+class IntSize;
 class PopupMenuClient;
 }
 
@@ -54,15 +57,15 @@ class WebInputEvent;
 class ExternalPopupMenu : public WebCore::PopupMenu,
                           public WebExternalPopupMenuClient {
 public:
-    ExternalPopupMenu(WebCore::PopupMenuClient*, WebViewClient*);
+    ExternalPopupMenu(WebCore::Frame&, WebCore::PopupMenuClient*, WebViewClient*);
     virtual ~ExternalPopupMenu();
 
 private:
     // WebCore::PopupMenu methods:
-    virtual void show(const WebCore::IntRect&, WebCore::FrameView*, int index);
-    virtual void hide();
-    virtual void updateFromElement();
-    virtual void disconnectClient();
+    virtual void show(const WebCore::FloatQuad& controlPosition, const WebCore::IntSize&, int index) OVERRIDE;
+    virtual void hide() OVERRIDE;
+    virtual void updateFromElement() OVERRIDE;
+    virtual void disconnectClient() OVERRIDE;
 
     // WebExternalPopupClient methods:
     virtual void didChangeSelection(int index);
@@ -75,6 +78,7 @@ private:
     void getPopupMenuInfo(WebPopupMenuInfo* info);
 
     WebCore::PopupMenuClient* m_popupMenuClient;
+    RefPtr<WebCore::FrameView> m_frameView;
     WebViewClient* m_webViewClient;
 
     // The actual implementor of the show menu.

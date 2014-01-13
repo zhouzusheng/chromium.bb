@@ -252,6 +252,14 @@ void StringStream::Add(const char* format, FmtElm arg0, FmtElm arg1,
 }
 
 
+void StringStream::Add(const char* format, FmtElm arg0, FmtElm arg1,
+                       FmtElm arg2, FmtElm arg3, FmtElm arg4) {
+  const char argc = 5;
+  FmtElm argv[argc] = { arg0, arg1, arg2, arg3, arg4 };
+  Add(CStrVector(format), Vector<FmtElm>(argv, argc));
+}
+
+
 SmartArrayPointer<const char> StringStream::ToCString() const {
   char* str = NewArray<char>(length_ + 1);
   OS::MemCopy(str, buffer_, length_);
@@ -282,7 +290,8 @@ void StringStream::OutputToFile(FILE* out) {
 
 
 Handle<String> StringStream::ToString() {
-  return FACTORY->NewStringFromUtf8(Vector<const char>(buffer_, length_));
+  Factory* factory = Isolate::Current()->factory();
+  return factory->NewStringFromUtf8(Vector<const char>(buffer_, length_));
 }
 
 
@@ -350,9 +359,8 @@ void StringStream::PrintUsingMap(JSObject* js_object) {
   }
   int real_size = map->NumberOfOwnDescriptors();
   DescriptorArray* descs = map->instance_descriptors();
-  for (int i = 0; i < descs->number_of_descriptors(); i++) {
+  for (int i = 0; i < real_size; i++) {
     PropertyDetails details = descs->GetDetails(i);
-    if (details.descriptor_index() > real_size) continue;
     if (details.type() == FIELD) {
       Object* key = descs->GetKey(i);
       if (key->IsString() || key->IsNumber()) {
@@ -368,7 +376,7 @@ void StringStream::PrintUsingMap(JSObject* js_object) {
           key->ShortPrint();
         }
         Add(": ");
-        Object* value = js_object->FastPropertyAt(descs->GetFieldIndex(i));
+        Object* value = js_object->RawFastPropertyAt(descs->GetFieldIndex(i));
         Add("%o\n", value);
       }
     }

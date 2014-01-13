@@ -21,7 +21,6 @@
 #ifndef SVGSVGElement_h
 #define SVGSVGElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGAnimatedPreserveAspectRatio.h"
@@ -146,7 +145,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
     virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -197,5 +196,4 @@ inline SVGSVGElement* toSVGSVGElement(Node* node)
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

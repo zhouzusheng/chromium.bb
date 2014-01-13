@@ -10,49 +10,32 @@
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_result.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_context.h"
+#include "google_apis/google_api_keys.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
-#include "third_party/icu/public/common/unicode/uloc.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace {
 
-// SHEZ: TODO: we need to replace this url with our own
 // The URL for requesting spell checking and sending user feedback.
 const char kSpellingServiceURL[] = "https://www.googleapis.com/rpc";
 
-// Gets the ISO codes for the language and country of this |locale|. The
-// |locale| is an ISO locale ID that may not include a country ID, e.g., "fr" or
-// "de". This method converts the UI locale to a full locale ID and converts the
-// full locale ID to an ISO language code and an ISO3 country code.
-void GetISOLanguageCountryCodeFromLocale(
-    const std::string& locale,
-    std::string* language_code,
-    std::string* country_code) {
-  DCHECK(language_code);
-  DCHECK(country_code);
-  char language[ULOC_LANG_CAPACITY] = ULOC_ENGLISH;
-  const char* country = "USA";
-  if (!locale.empty()) {
-    UErrorCode error = U_ZERO_ERROR;
-    char id[ULOC_LANG_CAPACITY + ULOC_SCRIPT_CAPACITY + ULOC_COUNTRY_CAPACITY];
-    uloc_addLikelySubtags(locale.c_str(), id, arraysize(id), &error);
-    error = U_ZERO_ERROR;
-    uloc_getLanguage(id, language, arraysize(language), &error);
-    country = uloc_getISO3Country(id);
-  }
-  *language_code = std::string(language);
-  *country_code = std::string(country);
-}
+// The location of spellcheck suggestions in JSON response from spelling
+// service.
+const char kMisspellingsPath[] = "result.spellingCheckResponse.misspellings";
+
+// The location of error messages in JSON response from spelling service.
+const char kErrorPath[] = "error";
 
 }  // namespace
 
@@ -75,12 +58,12 @@ bool SpellingServiceClient::RequestTextCheck(
     return false;
   }
 
-  const PrefService* pref = components::UserPrefs::Get(context);
+  const PrefService* pref = user_prefs::UserPrefs::Get(context);
   DCHECK(pref);
 
   std::string language_code;
   std::string country_code;
-  GetISOLanguageCountryCodeFromLocale(
+  chrome::spellcheck_common::GetISOLanguageCountryCodeFromLocale(
       pref->GetString(prefs::kSpellCheckDictionary),
       &language_code,
       &country_code);
@@ -124,7 +107,7 @@ bool SpellingServiceClient::RequestTextCheck(
 bool SpellingServiceClient::IsAvailable(
     content::BrowserContext* context,
     ServiceType type) {
-  const PrefService* pref = components::UserPrefs::Get(context);
+  const PrefService* pref = user_prefs::UserPrefs::Get(context);
   DCHECK(pref);
   // If prefs don't allow spellchecking or if the context is off the record,
   // the spelling service should be unavailable.
@@ -157,37 +140,6 @@ bool SpellingServiceClient::IsAvailable(
     // Only SUGGEST is allowed.
     return type == SUGGEST;
   }
-}
-
-SpellingServiceClient::TextCheckCallbackData::TextCheckCallbackData(
-    TextCheckCompleteCallback callback,
-    string16 text)
-      : callback(callback),
-        text(text) {
-}
-
-SpellingServiceClient::TextCheckCallbackData::~TextCheckCallbackData() {
-}
-
-void SpellingServiceClient::OnURLFetchComplete(
-    const net::URLFetcher* source) {
-  DCHECK(spellcheck_fetchers_[source]);
-  scoped_ptr<const net::URLFetcher> fetcher(source);
-  scoped_ptr<TextCheckCallbackData>
-      callback_data(spellcheck_fetchers_[fetcher.get()]);
-  bool success = false;
-  std::vector<SpellCheckResult> results;
-  if (fetcher->GetResponseCode() / 100 == 2) {
-    std::string data;
-    fetcher->GetResponseAsString(&data);
-    success = ParseResponse(data, &results);
-  }
-  callback_data->callback.Run(success, callback_data->text, results);
-  spellcheck_fetchers_.erase(fetcher.get());
-}
-
-net::URLFetcher* SpellingServiceClient::CreateURLFetcher(const GURL& url) {
-  return net::URLFetcher::Create(url, net::URLFetcher::POST, this);
 }
 
 bool SpellingServiceClient::ParseResponse(
@@ -224,18 +176,31 @@ bool SpellingServiceClient::ParseResponse(
   //     }
   //   }
   // }
+  // If the service is not available, the Spelling service returns JSON with an
+  // error.
+  // {
+  //   "error": {
+  //     "code": 400,
+  //     "message": "Bad Request",
+  //     "data": [...]
+  //   }
+  // }
   scoped_ptr<DictionaryValue> value(
       static_cast<DictionaryValue*>(
           base::JSONReader::Read(data, base::JSON_ALLOW_TRAILING_COMMAS)));
   if (!value.get() || !value->IsType(base::Value::TYPE_DICTIONARY))
     return false;
 
+  // Check for errors from spelling service.
+  DictionaryValue* error = NULL;
+  if (value->GetDictionary(kErrorPath, &error))
+    return false;
+
   // Retrieve the array of Misspelling objects. When the input text does not
   // have misspelled words, it returns an empty JSON. (In this case, its HTTP
   // status is 200.) We just return true for this case.
   ListValue* misspellings = NULL;
-  const char kMisspellings[] = "result.spellingCheckResponse.misspellings";
-  if (!value->GetList(kMisspellings, &misspellings))
+  if (!value->GetList(kMisspellingsPath, &misspellings))
     return true;
 
   for (size_t i = 0; i < misspellings->GetSize(); ++i) {
@@ -266,4 +231,35 @@ bool SpellingServiceClient::ParseResponse(
     results->push_back(result);
   }
   return true;
+}
+
+SpellingServiceClient::TextCheckCallbackData::TextCheckCallbackData(
+    TextCheckCompleteCallback callback,
+    string16 text)
+      : callback(callback),
+        text(text) {
+}
+
+SpellingServiceClient::TextCheckCallbackData::~TextCheckCallbackData() {
+}
+
+void SpellingServiceClient::OnURLFetchComplete(
+    const net::URLFetcher* source) {
+  DCHECK(spellcheck_fetchers_[source]);
+  scoped_ptr<const net::URLFetcher> fetcher(source);
+  scoped_ptr<TextCheckCallbackData>
+      callback_data(spellcheck_fetchers_[fetcher.get()]);
+  bool success = false;
+  std::vector<SpellCheckResult> results;
+  if (fetcher->GetResponseCode() / 100 == 2) {
+    std::string data;
+    fetcher->GetResponseAsString(&data);
+    success = ParseResponse(data, &results);
+  }
+  callback_data->callback.Run(success, callback_data->text, results);
+  spellcheck_fetchers_.erase(fetcher.get());
+}
+
+net::URLFetcher* SpellingServiceClient::CreateURLFetcher(const GURL& url) {
+  return net::URLFetcher::Create(url, net::URLFetcher::POST, this);
 }

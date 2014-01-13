@@ -26,7 +26,6 @@
 #include "config.h"
 #include "core/platform/graphics/chromium/DeferredImageDecoder.h"
 
-#include "core/platform/graphics/chromium/ImageDecodingStore.h"
 #include "core/platform/graphics/chromium/ImageFrameGenerator.h"
 #include "core/platform/graphics/chromium/LazyDecodingPixelRef.h"
 #include <wtf/OwnPtr.h>
@@ -172,12 +171,11 @@ int DeferredImageDecoder::repetitionCount() const
     return m_actualDecoder ? m_actualDecoder->repetitionCount() : cAnimationNone;
 }
 
-void DeferredImageDecoder::clearFrameBufferCache(size_t clearBeforeFrame)
+size_t DeferredImageDecoder::clearCacheExceptFrame(size_t clearExceptFrame)
 {
     // If image decoding is deferred then frame buffer cache is managed by
     // the compositor and this call is ignored.
-    if (m_actualDecoder)
-        m_actualDecoder->clearFrameBufferCache(clearBeforeFrame);
+    return m_actualDecoder ? m_actualDecoder->clearCacheExceptFrame(clearExceptFrame) : 0;
 }
 
 bool DeferredImageDecoder::frameHasAlphaAtIndex(size_t index) const

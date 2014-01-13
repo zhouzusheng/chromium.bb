@@ -28,23 +28,18 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
-#include "core/css/StyleResolver.h"
+#include "core/css/resolver/StyleResolver.h"
 
-#include <stdlib.h>
 #include "CSSPropertyNames.h"
-#include "SVGNames.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/ShadowValue.h"
-#include "core/dom/Document.h"
 #include "core/rendering/style/SVGRenderStyle.h"
 #include "core/rendering/style/SVGRenderStyleDefs.h"
 #include "core/svg/SVGColor.h"
 #include "core/svg/SVGPaint.h"
-#include "core/svg/SVGStyledElement.h"
 #include "core/svg/SVGURIReference.h"
-#include <wtf/MathExtras.h>
+#include "wtf/MathExtras.h"
 
 #define HANDLE_INHERIT(prop, Prop) \
 if (isInherit) \
@@ -107,9 +102,9 @@ void StyleResolver::applySVGProperty(CSSPropertyID id, CSSValue* value)
     ASSERT(value);
     CSSPrimitiveValue* primitiveValue = 0;
     if (value->isPrimitiveValue())
-        primitiveValue = static_cast<CSSPrimitiveValue*>(value);
+        primitiveValue = toCSSPrimitiveValue(value);
 
-    const State& state = m_state;
+    const StyleResolverState& state = m_state;
     SVGRenderStyle* svgstyle = state.style()->accessSVGStyle();
 
     bool isInherit = state.parentNode() && value->isInheritedValue();
@@ -137,8 +132,8 @@ void StyleResolver::applySVGProperty(CSSPropertyID id, CSSValue* value)
             if (!primitiveValue)
                 break;
 
-            if (primitiveValue->getIdent()) {
-                switch (primitiveValue->getIdent()) {
+            if (primitiveValue->getValueID()) {
+                switch (primitiveValue->getValueID()) {
                 case CSSValueBaseline:
                     svgstyle->setBaselineShift(BS_BASELINE);
                     break;
@@ -276,7 +271,7 @@ void StyleResolver::applySVGProperty(CSSPropertyID id, CSSValue* value)
                 break;
             }
 
-            CSSValueList* dashes = static_cast<CSSValueList*>(value);
+            CSSValueList* dashes = toCSSValueList(value);
 
             Vector<SVGLength> array;
             size_t length = dashes->length();
@@ -285,7 +280,7 @@ void StyleResolver::applySVGProperty(CSSPropertyID id, CSSValue* value)
                 if (!currValue->isPrimitiveValue())
                     continue;
 
-                CSSPrimitiveValue* dash = static_cast<CSSPrimitiveValue*>(dashes->itemWithoutBoundsCheck(i));
+                CSSPrimitiveValue* dash = toCSSPrimitiveValue(dashes->itemWithoutBoundsCheck(i));
                 array.append(SVGLength::fromCSSPrimitiveValue(dash));
             }
 
@@ -539,7 +534,7 @@ void StyleResolver::applySVGProperty(CSSPropertyID id, CSSValue* value)
                 ASSERT(orientation != -1);
 
                 svgstyle->setGlyphOrientationVertical((EGlyphOrientation) orientation);
-            } else if (primitiveValue->getIdent() == CSSValueAuto)
+            } else if (primitiveValue->getValueID() == CSSValueAuto)
                 svgstyle->setGlyphOrientationVertical(GO_AUTO);
 
             break;
@@ -557,7 +552,7 @@ void StyleResolver::applySVGProperty(CSSPropertyID id, CSSValue* value)
             if (!value->isValueList())
                 return;
 
-            CSSValueList *list = static_cast<CSSValueList*>(value);
+            CSSValueList* list = toCSSValueList(value);
             if (!list->length())
                 return;
 
@@ -576,7 +571,7 @@ void StyleResolver::applySVGProperty(CSSPropertyID id, CSSValue* value)
             ASSERT(!item->spread);
             ASSERT(!item->style);
 
-            OwnPtr<ShadowData> shadowData = adoptPtr(new ShadowData(location, blur, 0, Normal, false, color.isValid() ? color : Color::transparent));
+            OwnPtr<ShadowData> shadowData = adoptPtr(new ShadowData(location, blur, 0, Normal, color.isValid() ? color : Color::transparent));
             svgstyle->setShadow(shadowData.release());
             return;
         }
@@ -613,5 +608,3 @@ void StyleResolver::applySVGProperty(CSSPropertyID id, CSSValue* value)
 }
 
 }
-
-#endif

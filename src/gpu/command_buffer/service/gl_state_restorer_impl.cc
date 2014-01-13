@@ -16,9 +16,24 @@ GLStateRestorerImpl::GLStateRestorerImpl(
 GLStateRestorerImpl::~GLStateRestorerImpl() {
 }
 
+bool GLStateRestorerImpl::IsInitialized() {
+  DCHECK(decoder_.get());
+  return decoder_->initialized();
+}
+
 void GLStateRestorerImpl::RestoreState() {
   DCHECK(decoder_.get());
   decoder_->RestoreState();
+}
+
+void GLStateRestorerImpl::RestoreAllTextureUnitBindings() {
+  DCHECK(decoder_.get());
+  decoder_->RestoreAllTextureUnitBindings();
+}
+
+void GLStateRestorerImpl::RestoreFramebufferBindings() {
+  DCHECK(decoder_.get());
+  decoder_->RestoreFramebufferBindings();
 }
 
 }  // namespace gpu

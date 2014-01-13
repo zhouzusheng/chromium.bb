@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGViewElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/svg/SVGFitToViewBox.h"
 #include "core/svg/SVGStringList.h"
 #include "core/svg/SVGZoomAndPan.h"
@@ -67,7 +65,7 @@ bool SVGViewElement::isSupportedAttribute(const QualifiedName& attrName)
         SVGZoomAndPan::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::viewTargetAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGViewElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -93,5 +91,3 @@ void SVGViewElement::parseAttribute(const QualifiedName& name, const AtomicStrin
 }
 
 }
-
-#endif // ENABLE(SVG)

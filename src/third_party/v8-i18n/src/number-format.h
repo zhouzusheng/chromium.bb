@@ -26,7 +26,8 @@ namespace v8_i18n {
 
 class NumberFormat {
  public:
-  static v8::Handle<v8::Value> JSCreateNumberFormat(const v8::Arguments& args);
+  static void JSCreateNumberFormat(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Helper methods for various bindings.
 
@@ -36,14 +37,14 @@ class NumberFormat {
   // Release memory we allocated for the NumberFormat once the JS object that
   // holds the pointer gets garbage collected.
   static void DeleteNumberFormat(v8::Isolate* isolate,
-                                 v8::Persistent<v8::Value> object,
+                                 v8::Persistent<v8::Object>* object,
                                  void* param);
 
   // Formats number and returns corresponding string.
-  static v8::Handle<v8::Value> JSInternalFormat(const v8::Arguments& args);
+  static void JSInternalFormat(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Parses a string and returns a number.
-  static v8::Handle<v8::Value> JSInternalParse(const v8::Arguments& args);
+  static void JSInternalParse(const v8::FunctionCallbackInfo<v8::Value>& args);
 
  private:
   NumberFormat();

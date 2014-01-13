@@ -28,12 +28,11 @@
 #ifndef ResourceRequest_h
 #define ResourceRequest_h
 
-#include "core/platform/KURL.h"
 #include "core/platform/network/FormData.h"
 #include "core/platform/network/HTTPHeaderMap.h"
 #include "core/platform/network/ResourceLoadPriority.h"
-
-#include <wtf/OwnPtr.h>
+#include "weborigin/KURL.h"
+#include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
@@ -220,7 +219,7 @@ namespace WebCore {
         ResourceRequestCachePolicy m_cachePolicy;
         double m_timeoutInterval; // 0 is a magic value for platform default on platforms that have one.
         KURL m_firstPartyForCookies;
-        String m_httpMethod;
+        AtomicString m_httpMethod;
         HTTPHeaderMap m_httpHeaderFields;
         RefPtr<FormData> m_httpBody;
         bool m_allowCookies : 1;

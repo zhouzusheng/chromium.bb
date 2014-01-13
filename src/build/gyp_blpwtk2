@@ -65,18 +65,6 @@ import os, sys, glob, shlex
 script_dir = os.path.dirname(os.path.realpath(__file__))
 chrome_src = os.path.abspath(os.path.join(script_dir, os.pardir))
 
-# SHEZ: hack!
-# Touch the gyp_chromium file so that it will be picked up by the minimizer.
-os.utime(os.path.join(script_dir, "gyp_chromium"), None)
-
-# SHEZ: hack!
-# Touch the .gitignore file so that it will be picked up by the minimizer.
-os.utime(os.path.join(chrome_src, ".gitignore"), None)
-
-# SHEZ: hack!
-# Touch the .gitattributes file so that it will be picked up by the minimizer.
-os.utime(os.path.join(chrome_src, ".gitattributes"), None)
-
 sys.path.insert(0, os.path.join(chrome_src, 'tools', 'gyp', 'pylib'))
 import gyp
 
@@ -86,7 +74,8 @@ sys.path.insert(1, os.path.join(chrome_src, 'tools', 'grit'))
 sys.path.insert(1, os.path.join(chrome_src, 'chrome', 'tools', 'build'))
 sys.path.insert(1, os.path.join(chrome_src, 'native_client', 'build'))
 sys.path.insert(1, os.path.join(chrome_src, 'third_party', 'WebKit',
-    'Source', 'WebCore', 'WebCore.gyp', 'scripts'))
+    'Source', 'core', 'scripts'))
+# TODO(adamk): Remove this line once core.gyp is no longer a directory
 sys.path.insert(1, os.path.join(chrome_src, 'third_party', 'WebKit',
     'Source', 'core', 'core.gyp', 'scripts'))
 
@@ -247,6 +236,7 @@ def main(args):
       args.extend(shlex.split(gyp_file))
     else:
       args.append(os.path.join(chrome_src, 'blpwtk2', 'blpwtk2.gyp'))
+      args.extend(['--root-target', 'blpwtk2_all'])
 
   args.extend(['-I' + i for i in additional_include_files(args)])
   args.append('--no-circular-check')

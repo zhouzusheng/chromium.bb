@@ -128,7 +128,9 @@ class GlobalHandles {
   Handle<Object> Create(Object* value);
 
   // Destroy a global handle.
-  void Destroy(Object** location);
+  static void Destroy(Object** location);
+
+  typedef WeakReferenceCallbacks<v8::Value, void>::Revivable RevivableCallback;
 
   // Make the global handle weak and set the callback parameter for the
   // handle.  When the garbage collector recognizes that only weak global
@@ -136,10 +138,9 @@ class GlobalHandles {
   // function is invoked (for each handle) with the handle and corresponding
   // parameter as arguments.  Note: cleared means set to Smi::FromInt(0). The
   // reason is that Smi::FromInt(0) does not change during garage collection.
-  void MakeWeak(Object** location,
-                void* parameter,
-                WeakReferenceCallback weak_reference_callback,
-                NearDeathCallback near_death_callback);
+  static void MakeWeak(Object** location,
+                       void* parameter,
+                       RevivableCallback weak_reference_callback);
 
   void RecordStats(HeapStats* stats);
 
@@ -156,13 +157,13 @@ class GlobalHandles {
   }
 
   // Clear the weakness of a global handle.
-  void ClearWeakness(Object** location);
+  static void ClearWeakness(Object** location);
 
   // Clear the weakness of a global handle.
-  void MarkIndependent(Object** location);
+  static void MarkIndependent(Object** location);
 
   // Mark the reference to this object externaly unreachable.
-  void MarkPartiallyDependent(Object** location);
+  static void MarkPartiallyDependent(Object** location);
 
   static bool IsIndependent(Object** location);
 

@@ -31,23 +31,18 @@
 #include "config.h"
 
 #include "SkBitmap.h"
-#include "SkPixelRef.h"
 #include "SkRect.h"
 #include "SkShader.h"
 #include "core/platform/FloatConversion.h"
-#include "core/platform/Logging.h"
 #include "core/platform/graphics/BitmapImage.h"
 #include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/ImageObserver.h"
+#include "core/platform/graphics/chromium/DeferredImageDecoder.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
 #include "core/platform/graphics/skia/SkiaUtils.h"
 #include "core/platform/graphics/transforms/AffineTransform.h"
 #include <wtf/text/WTFString.h>
-
-#include "skia/ext/image_operations.h"
-#include "skia/ext/platform_canvas.h"
 
 #include <math.h>
 #include <limits>
@@ -143,9 +138,9 @@ static ResamplingMode computeResamplingMode(const SkMatrix& matrix, const Native
     return RESAMPLE_LINEAR;
 }
 
-static ResamplingMode limitResamplingMode(PlatformContextSkia* platformContext, ResamplingMode resampling)
+static ResamplingMode limitResamplingMode(GraphicsContext* context, ResamplingMode resampling)
 {
-    switch (platformContext->interpolationQuality()) {
+    switch (context->imageInterpolationQuality()) {
     case InterpolationNone:
         return RESAMPLE_NONE;
     case InterpolationMedium:
@@ -174,62 +169,6 @@ static bool areBoundariesIntegerAligned(const SkRect& rect)
         && fabs(rect.y() - roundedRect.y()) < epsilon
         && fabs(rect.right() - roundedRect.right()) < epsilon
         && fabs(rect.bottom() - roundedRect.bottom()) < epsilon;
-}
-
-// FIXME: Remove this code when SkCanvas accepts SkRect as source rectangle.
-// See crbug.com/117597 for background.
-//
-// WebKit wants to draw a sub-rectangle (FloatRect) in a bitmap and scale it to
-// another FloatRect. However Skia only allows bitmap to be addressed by a
-// IntRect. This function computes the appropriate IntRect that encloses the
-// source rectangle and the corresponding enclosing destination rectangle,
-// while maintaining the scale factor.
-//
-// |srcRect| is the source rectangle in the bitmap. Return true if fancy
-// alignment is required. User of this function needs to clip to |dstRect|.
-// Return false if clipping is not needed.
-//
-// |dstRect| is the input rectangle that |srcRect| is scaled to.
-//
-// |outSrcRect| and |outDstRect| are the corresponding output rectangles.
-//
-// ALGORITHM
-//
-// The objective is to (a) find an enclosing IntRect for the source rectangle
-// and (b) the corresponding FloatRect in destination space.
-//
-// These are the steps performed:
-//
-// 1. IntRect enclosingSrcRect = enclosingIntRect(srcRect)
-//
-//    Compute the enclosing IntRect for |srcRect|. This ensures the bitmap
-//    image is addressed with integer boundaries.
-//
-// 2. FloatRect enclosingDestRect = mapSrcToDest(enclosingSrcRect)
-//
-//    Map the enclosing source rectangle to destination coordinate space.
-//
-// The output will be enclosingSrcRect and enclosingDestRect from the
-// algorithm above.
-static bool computeBitmapDrawRects(const SkISize& bitmapSize, const SkRect& srcRect, const SkRect& dstRect, SkIRect* outSrcRect, SkRect* outDstRect)
-{
-    if (areBoundariesIntegerAligned(srcRect)) {
-        *outSrcRect = roundedIntRect(srcRect);
-        *outDstRect = dstRect;
-        return false;
-    }
-
-    SkIRect bitmapRect = SkIRect::MakeSize(bitmapSize);
-    SkIRect enclosingSrcRect = enclosingIntRect(srcRect);
-    enclosingSrcRect.intersect(bitmapRect); // Clip to bitmap rectangle.
-    SkRect enclosingDstRect;
-    enclosingDstRect.set(enclosingSrcRect);
-    SkMatrix transform;
-    transform.setRectToRect(srcRect, dstRect, SkMatrix::kFill_ScaleToFit);
-    transform.mapRect(&enclosingDstRect);
-    *outSrcRect = enclosingSrcRect;
-    *outDstRect = enclosingDstRect;
-    return true;
 }
 
 // This function is used to scale an image and extract a scaled fragment.
@@ -261,7 +200,7 @@ static bool computeBitmapDrawRects(const SkISize& bitmapSize, const SkRect& srcR
 // Finally we extract the scaled image fragment using
 // (scaledImageSize, enclosingScaledSrcRect).
 //
-static SkBitmap extractScaledImageFragment(const NativeImageSkia& bitmap, const SkRect& srcRect, float scaleX, float scaleY, SkRect* scaledSrcRect, SkIRect* enclosingScaledSrcRect)
+static SkBitmap extractScaledImageFragment(const NativeImageSkia& bitmap, const SkRect& srcRect, float scaleX, float scaleY, SkRect* scaledSrcRect)
 {
     SkISize imageSize = SkISize::Make(bitmap.bitmap().width(), bitmap.bitmap().height());
     SkISize scaledImageSize = SkISize::Make(clampToInteger(roundf(imageSize.width() * scaleX)),
@@ -275,12 +214,16 @@ static SkBitmap extractScaledImageFragment(const NativeImageSkia& bitmap, const 
     scaleTransform.mapRect(scaledSrcRect, srcRect);
 
     scaledSrcRect->intersect(scaledImageRect);
-    *enclosingScaledSrcRect = enclosingIntRect(*scaledSrcRect);
+    SkIRect enclosingScaledSrcRect = enclosingIntRect(*scaledSrcRect);
 
     // |enclosingScaledSrcRect| can be larger than |scaledImageSize| because
     // of float inaccuracy so clip to get inside.
-    enclosingScaledSrcRect->intersect(SkIRect::MakeSize(scaledImageSize));
-    return bitmap.resizedBitmap(scaledImageSize, *enclosingScaledSrcRect);
+    enclosingScaledSrcRect.intersect(SkIRect::MakeSize(scaledImageSize));
+
+    // scaledSrcRect is relative to the pixel snapped fragment we're extracting.
+    scaledSrcRect->offset(-enclosingScaledSrcRect.x(), -enclosingScaledSrcRect.y());
+
+    return bitmap.resizedBitmap(scaledImageSize, enclosingScaledSrcRect);
 }
 
 // This does a lot of computation to resample only the portion of the bitmap
@@ -298,13 +241,13 @@ static void drawResampledBitmap(GraphicsContext* context, SkPaint& paint, const 
     // the final scale. The final scale is a combination of scale transform
     // in canvas and explicit scaling (srcRect and destRect).
     SkRect screenRect;
-    context->platformContext()->getTotalMatrix().mapRect(&screenRect, destRect);
+    context->getTotalMatrix().mapRect(&screenRect, destRect);
     float realScaleX = screenRect.width() / srcRect.width();
     float realScaleY = screenRect.height() / srcRect.height();
 
     // This part of code limits scaling only to visible portion in the
     SkRect destRectVisibleSubset;
-    ClipRectToCanvas(context->platformContext(), destRect, &destRectVisibleSubset);
+    ClipRectToCanvas(context, destRect, &destRectVisibleSubset);
 
     // ClipRectToCanvas often overshoots, resulting in a larger region than our
     // original destRect. Intersecting gets us back inside.
@@ -318,51 +261,25 @@ static void drawResampledBitmap(GraphicsContext* context, SkPaint& paint, const 
     destToSrcTransform.mapRect(&srcRectVisibleSubset, destRectVisibleSubset);
 
     SkRect scaledSrcRect;
-    SkIRect enclosingScaledSrcRect;
-    SkBitmap scaledImageFragment = extractScaledImageFragment(bitmap, srcRectVisibleSubset, realScaleX, realScaleY, &scaledSrcRect, &enclosingScaledSrcRect);
+    SkBitmap scaledImageFragment = extractScaledImageFragment(bitmap, srcRectVisibleSubset, realScaleX, realScaleY, &scaledSrcRect);
 
-    // Expand the destination rectangle because the source rectangle was
-    // expanded to fit to integer boundaries.
-    SkMatrix scaledSrcToDestTransform;
-    scaledSrcToDestTransform.setRectToRect(scaledSrcRect, destRectVisibleSubset, SkMatrix::kFill_ScaleToFit);
-    SkRect enclosingDestRect;
-    enclosingDestRect.set(enclosingScaledSrcRect);
-    scaledSrcToDestTransform.mapRect(&enclosingDestRect);
-
-    // The reason we do clipping is because Skia doesn't support SkRect as
-    // source rect. See http://crbug.com/145540.
-    // When Skia supports then use this as the source rect to replace 0.
-    //
-    // scaledSrcRect.offset(-enclosingScaledSrcRect.x(), -enclosingScaledSrcRect.y());
-    context->platformContext()->save();
-    context->platformContext()->clipRect(destRectVisibleSubset);
-
-    // Because the image fragment is generated with an approxmiated scaling
-    // factor. This draw will perform a close to 1 scaling.
-    //
-    // NOTE: For future optimization. If the difference in scale is so small
-    // that Skia doesn't produce a difference then we can just blit it directly
-    // to enhance performance.
-    context->drawBitmapRect(scaledImageFragment, 0, enclosingDestRect, &paint);
-    context->platformContext()->restore();
+    context->drawBitmapRect(scaledImageFragment, &scaledSrcRect, destRectVisibleSubset, &paint);
 }
 
-static bool hasNon90rotation(PlatformContextSkia* context)
+static bool hasNon90rotation(GraphicsContext* context)
 {
     return !context->getTotalMatrix().rectStaysRect();
 }
 
-
-static void paintSkBitmap(GraphicsContext* context, const NativeImageSkia& bitmap, const SkRect& srcRect, const SkRect& destRect, const SkXfermode::Mode& compOp)
+void Image::paintSkBitmap(GraphicsContext* context, const NativeImageSkia& bitmap, const SkRect& srcRect, const SkRect& destRect, const SkXfermode::Mode& compOp)
 {
     TRACE_EVENT0("skia", "paintSkBitmap");
-    PlatformContextSkia* platformContext = context->platformContext();
     SkPaint paint;
     paint.setXfermodeMode(compOp);
-    paint.setAlpha(context->platformContext()->getNormalizedAlpha());
-    paint.setLooper(context->platformContext()->getDrawLooper());
+    paint.setAlpha(context->getNormalizedAlpha());
+    paint.setLooper(context->drawLooper());
     // only antialias if we're rotated or skewed
-    paint.setAntiAlias(hasNon90rotation(context->platformContext()));
+    paint.setAntiAlias(hasNon90rotation(context));
 
     ResamplingMode resampling;
     if (context->isAccelerated())
@@ -372,10 +289,10 @@ static void paintSkBitmap(GraphicsContext* context, const NativeImageSkia& bitma
     else {
         // Take into account scale applied to the canvas when computing sampling mode (e.g. CSS scale or page scale).
         SkRect destRectTarget = destRect;
-        if (!(context->platformContext()->getTotalMatrix().getType() & (SkMatrix::kAffine_Mask | SkMatrix::kPerspective_Mask)))
-            context->platformContext()->getTotalMatrix().mapRect(&destRectTarget, destRect);
+        if (!(context->getTotalMatrix().getType() & (SkMatrix::kAffine_Mask | SkMatrix::kPerspective_Mask)))
+            context->getTotalMatrix().mapRect(&destRectTarget, destRect);
 
-        resampling = computeResamplingMode(context->platformContext()->getTotalMatrix(), bitmap,
+        resampling = computeResamplingMode(context->getTotalMatrix(), bitmap,
             SkScalarToFloat(srcRect.width()), SkScalarToFloat(srcRect.height()),
             SkScalarToFloat(destRectTarget.width()), SkScalarToFloat(destRectTarget.height()));
     }
@@ -386,54 +303,29 @@ static void paintSkBitmap(GraphicsContext* context, const NativeImageSkia& bitma
         // being returned from computeResamplingMode.
         resampling = RESAMPLE_LINEAR;
     }
-    resampling = limitResamplingMode(context->platformContext(), resampling);
+    resampling = limitResamplingMode(context, resampling);
     paint.setFilterBitmap(resampling == RESAMPLE_LINEAR);
-    if (resampling == RESAMPLE_AWESOME)
+
+    // FIXME: Bicubic filtering in Skia is only applied to defer-decoded images
+    // as an experiment. Once this filtering code path becomes stable we should
+    // turn this on for all cases, including non-defer-decoded images.
+    bool useBicubicFilter = resampling == RESAMPLE_AWESOME
+        && DeferredImageDecoder::isLazyDecoded(bitmap.bitmap());
+    if (useBicubicFilter)
+        paint.setFlags(paint.getFlags() | SkPaint::kBicubicFilterBitmap_Flag | SkPaint::kFilterBitmap_Flag);
+
+    if (resampling == RESAMPLE_AWESOME && !useBicubicFilter) {
+        // Resample the image and then draw the result to canvas with bilinear
+        // filtering.
         drawResampledBitmap(context, paint, bitmap, srcRect, destRect);
-    else {
-        // No resampling necessary, we can just draw the bitmap. We want to
-        // filter it if we decided to do linear interpolation above, or if there
-        // is something interesting going on with the matrix (like a rotation).
-        // Note: for serialization, we will want to subset the bitmap first so
-        // we don't send extra pixels.
-        SkIRect enclosingSrcRect;
-        SkRect enclosingDestRect;
-        SkISize bitmapSize = SkISize::Make(bitmap.bitmap().width(), bitmap.bitmap().height());
-        bool needsClipping = computeBitmapDrawRects(bitmapSize, srcRect, destRect, &enclosingSrcRect, &enclosingDestRect);
-
-        if (enclosingSrcRect.isEmpty() || enclosingDestRect.isEmpty())
-            return;
-
-        // If destination is enlarged because source rectangle didn't align to
-        // integer boundaries then we draw a slightly larger rectangle and clip
-        // to the original destination rectangle.
-        // See http://crbug.com/145540.
-        if (needsClipping) {
-            context->platformContext()->save();
-            context->platformContext()->clipRect(destRect);
-        }
-
-        context->drawBitmapRect(bitmap.bitmap(), &enclosingSrcRect, enclosingDestRect, &paint);
-
-        if (needsClipping)
-            context->platformContext()->restore();
+    } else {
+        // We want to filter it if we decided to do interpolation above, or if
+        // there is something interesting going on with the matrix (like a rotation).
+        // Note: for serialization, we will want to subset the bitmap first so we
+        // don't send extra pixels.
+        context->drawBitmapRect(bitmap.bitmap(), &srcRect, destRect, &paint);
     }
     context->didDrawRect(destRect, paint, &bitmap.bitmap());
-}
-
-// A helper method for translating negative width and height values.
-FloatRect normalizeRect(const FloatRect& rect)
-{
-    FloatRect norm = rect;
-    if (norm.width() < 0) {
-        norm.setX(norm.x() + norm.width());
-        norm.setWidth(-norm.width());
-    }
-    if (norm.height() < 0) {
-        norm.setY(norm.y() + norm.height());
-        norm.setHeight(-norm.height());
-    }
-    return norm;
 }
 
 bool FrameData::clear(bool clearMetadata)
@@ -453,26 +345,26 @@ bool FrameData::clear(bool clearMetadata)
 
 void Image::drawPattern(GraphicsContext* context,
                         const FloatRect& floatSrcRect,
-                        const AffineTransform& patternTransform,
+                        const FloatSize& scale,
                         const FloatPoint& phase,
-                        ColorSpace styleColorSpace,
                         CompositeOperator compositeOp,
                         const FloatRect& destRect,
-                        BlendMode)
+                        BlendMode blendMode)
 {
     TRACE_EVENT0("skia", "Image::drawPattern");
     RefPtr<NativeImageSkia> bitmap = nativeImageForCurrentFrame();
     if (!bitmap)
         return;
 
-    FloatRect normSrcRect = normalizeRect(floatSrcRect);
+    FloatRect normSrcRect = adjustForNegativeSize(floatSrcRect);
     normSrcRect.intersect(FloatRect(0, 0, bitmap->bitmap().width(), bitmap->bitmap().height()));
     if (destRect.isEmpty() || normSrcRect.isEmpty())
         return; // nothing to draw
 
-    SkMatrix ctm = context->platformContext()->getTotalMatrix();
-    SkMatrix totalMatrix;
-    totalMatrix.setConcat(ctm, patternTransform);
+    SkMatrix totalMatrix = context->getTotalMatrix();
+    SkScalar ctmScaleX = totalMatrix.getScaleX();
+    SkScalar ctmScaleY = totalMatrix.getScaleY();
+    totalMatrix.preScale(scale.width(), scale.height());
 
     // Figure out what size the bitmap will be in the destination. The
     // destination rect is the bounds of the pattern, we need to use the
@@ -489,171 +381,64 @@ void Image::drawPattern(GraphicsContext* context,
         resampling = RESAMPLE_LINEAR;
     else
         resampling = computeResamplingMode(totalMatrix, *bitmap, normSrcRect.width(), normSrcRect.height(), destBitmapWidth, destBitmapHeight);
-    resampling = limitResamplingMode(context->platformContext(), resampling);
+    resampling = limitResamplingMode(context, resampling);
 
-    // Load the transform WebKit requested.
-    SkMatrix matrix(patternTransform);
-
+    SkMatrix shaderTransform;
     SkShader* shader;
-    if (resampling == RESAMPLE_AWESOME) {
+
+    // Bicubic filter is only applied to defer-decoded images, see
+    // paintSkBitmap() for details.
+    bool useBicubicFilter = resampling == RESAMPLE_AWESOME
+        && DeferredImageDecoder::isLazyDecoded(bitmap->bitmap());
+
+    if (resampling == RESAMPLE_AWESOME && !useBicubicFilter) {
         // Do nice resampling.
         float scaleX = destBitmapWidth / normSrcRect.width();
         float scaleY = destBitmapHeight / normSrcRect.height();
         SkRect scaledSrcRect;
-        SkIRect enclosingScaledSrcRect;
 
         // The image fragment generated here is not exactly what is
         // requested. The scale factor used is approximated and image
         // fragment is slightly larger to align to integer
         // boundaries.
-        SkBitmap resampled = extractScaledImageFragment(*bitmap, normSrcRect, scaleX, scaleY, &scaledSrcRect, &enclosingScaledSrcRect);
+        SkBitmap resampled = extractScaledImageFragment(*bitmap, normSrcRect, scaleX, scaleY, &scaledSrcRect);
         shader = SkShader::CreateBitmapShader(resampled, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode);
 
         // Since we just resized the bitmap, we need to remove the scale
         // applied to the pixels in the bitmap shader. This means we need
-        // CTM * patternTransform to have identity scale. Since we
+        // CTM * shaderTransform to have identity scale. Since we
         // can't modify CTM (or the rectangle will be drawn in the wrong
-        // place), we must set patternTransform's scale to the inverse of
+        // place), we must set shaderTransform's scale to the inverse of
         // CTM scale.
-        matrix.setScaleX(ctm.getScaleX() ? 1 / ctm.getScaleX() : 1);
-        matrix.setScaleY(ctm.getScaleY() ? 1 / ctm.getScaleY() : 1);
+        shaderTransform.setScale(ctmScaleX ? 1 / ctmScaleX : 1, ctmScaleY ? 1 / ctmScaleY : 1);
     } else {
-        // No need to do nice resampling.
+        // No need to resample before drawing.
         SkBitmap srcSubset;
         bitmap->bitmap().extractSubset(&srcSubset, enclosingIntRect(normSrcRect));
         shader = SkShader::CreateBitmapShader(srcSubset, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode);
+        // Because no resizing occurred, the shader transform should be
+        // set to the pattern's transform, which just includes scale.
+        shaderTransform.setScale(scale.width(), scale.height());
     }
 
     // We also need to translate it such that the origin of the pattern is the
     // origin of the destination rect, which is what WebKit expects. Skia uses
-    // the coordinate system origin as the base for the patter. If WebKit wants
-    // a shifted image, it will shift it from there using the patternTransform.
-    float adjustedX = phase.x() + normSrcRect.x() *
-                      narrowPrecisionToFloat(patternTransform.a());
-    float adjustedY = phase.y() + normSrcRect.y() *
-                      narrowPrecisionToFloat(patternTransform.d());
-    matrix.postTranslate(SkFloatToScalar(adjustedX),
-                         SkFloatToScalar(adjustedY));
-    shader->setLocalMatrix(matrix);
+    // the coordinate system origin as the base for the pattern. If WebKit wants
+    // a shifted image, it will shift it from there using the shaderTransform.
+    float adjustedX = phase.x() + normSrcRect.x() * scale.width();
+    float adjustedY = phase.y() + normSrcRect.y() * scale.height();
+    shaderTransform.postTranslate(SkFloatToScalar(adjustedX), SkFloatToScalar(adjustedY));
+    shader->setLocalMatrix(shaderTransform);
 
     SkPaint paint;
     paint.setShader(shader)->unref();
-    paint.setXfermodeMode(WebCoreCompositeToSkiaComposite(compositeOp));
+    paint.setXfermodeMode(WebCoreCompositeToSkiaComposite(compositeOp, blendMode));
+
     paint.setFilterBitmap(resampling == RESAMPLE_LINEAR);
+    if (useBicubicFilter)
+        paint.setFlags(paint.getFlags() | SkPaint::kBicubicFilterBitmap_Flag);
 
     context->drawRect(destRect, paint);
-}
-
-// ================================================
-// BitmapImage Class
-// ================================================
-
-// FIXME: These should go to BitmapImageSkia.cpp
-
-BitmapImage::BitmapImage(PassRefPtr<NativeImageSkia> nativeImage, ImageObserver* observer)
-    : Image(observer)
-    , m_size(nativeImage->bitmap().width(), nativeImage->bitmap().height())
-    , m_currentFrame(0)
-    , m_frames(0)
-    , m_frameTimer(0)
-    , m_repetitionCount(cAnimationNone)
-    , m_repetitionCountStatus(Unknown)
-    , m_repetitionsComplete(0)
-    , m_decodedSize(nativeImage->decodedSize())
-    , m_decodedPropertiesSize(0)
-    , m_frameCount(1)
-    , m_isSolidColor(false)
-    , m_checkedForSolidColor(false)
-    , m_animationFinished(true)
-    , m_allDataReceived(true)
-    , m_haveSize(true)
-    , m_sizeAvailable(true)
-    , m_haveFrameCount(true)
-{
-    // Since we don't have a decoder, we can't figure out the image orientation.
-    // Set m_sizeRespectingOrientation to be the same as m_size so it's not 0x0.
-    m_sizeRespectingOrientation = m_size;
-
-    m_frames.grow(1);
-    m_frames[0].m_hasAlpha = !nativeImage->bitmap().isOpaque();
-    m_frames[0].m_frame = nativeImage;
-    m_frames[0].m_haveMetadata = true;
-
-    checkForSolidColor();
-}
-
-void BitmapImage::invalidatePlatformData()
-{
-}
-
-void BitmapImage::checkForSolidColor()
-{
-    m_isSolidColor = false;
-    m_checkedForSolidColor = true;
-
-    if (frameCount() > 1)
-        return;
-
-    RefPtr<NativeImageSkia> frame = frameAtIndex(0);
-
-    if (frame && size().width() == 1 && size().height() == 1) {
-        SkAutoLockPixels lock(frame->bitmap());
-        if (!frame->bitmap().getPixels())
-            return;
-
-        m_isSolidColor = true;
-        m_solidColor = Color(frame->bitmap().getColor(0, 0));
-    }
-}
-
-void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace colorSpace, CompositeOperator compositeOp, BlendMode blendMode)
-{
-    draw(ctxt, dstRect, srcRect, colorSpace, compositeOp, blendMode, DoNotRespectImageOrientation);
-}
-
-void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace colorSpace, CompositeOperator compositeOp, BlendMode, RespectImageOrientationEnum shouldRespectImageOrientation)
-{
-    // Spin the animation to the correct frame before we try to draw it, so we
-    // don't draw an old frame and then immediately need to draw a newer one,
-    // causing flicker and wasting CPU.
-    startAnimation();
-
-    RefPtr<NativeImageSkia> bm = nativeImageForCurrentFrame();
-    if (!bm)
-        return; // It's too early and we don't have an image yet.
-
-    FloatRect normDstRect = normalizeRect(dstRect);
-    FloatRect normSrcRect = normalizeRect(srcRect);
-    normSrcRect.intersect(FloatRect(0, 0, bm->bitmap().width(), bm->bitmap().height()));
-
-    if (normSrcRect.isEmpty() || normDstRect.isEmpty())
-        return; // Nothing to draw.
-
-    ImageOrientation orientation = DefaultImageOrientation;
-    if (shouldRespectImageOrientation == RespectImageOrientation)
-        orientation = frameOrientationAtIndex(m_currentFrame);
-
-    GraphicsContextStateSaver saveContext(*ctxt, false);
-    if (orientation != DefaultImageOrientation) {
-        saveContext.save();
-
-        // ImageOrientation expects the origin to be at (0, 0)
-        ctxt->translate(normDstRect.x(), normDstRect.y());
-        normDstRect.setLocation(FloatPoint());
-
-        ctxt->concatCTM(orientation.transformFromDefault(normDstRect.size()));
-
-        if (orientation.usesWidthAsHeight()) {
-            // The destination rect will have it's width and height already reversed for the orientation of
-            // the image, as it was needed for page layout, so we need to reverse it back here.
-            normDstRect = FloatRect(normDstRect.x(), normDstRect.y(), normDstRect.height(), normDstRect.width());
-        }
-    }
-
-    paintSkBitmap(ctxt, *bm, normSrcRect, normDstRect, WebCoreCompositeToSkiaComposite(compositeOp));
-
-    if (ImageObserver* observer = imageObserver())
-        observer->didDraw(this);
 }
 
 } // namespace WebCore

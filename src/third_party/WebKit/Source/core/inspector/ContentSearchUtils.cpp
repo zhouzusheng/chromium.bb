@@ -30,7 +30,6 @@
 
 #include "core/inspector/ContentSearchUtils.h"
 
-#include "core/inspector/InspectorValues.h"
 #include "core/platform/text/RegularExpression.h"
 #include <wtf/StdLibExtras.h>
 
@@ -163,32 +162,66 @@ PassRefPtr<TypeBuilder::Array<TypeBuilder::Page::SearchMatch> > searchInTextByLi
     return result;
 }
 
-static String findMagicComment(const String& content, const String& name)
+static String findMagicComment(const String& content, const String& name, MagicCommentType commentType, bool* deprecated = 0)
 {
     ASSERT(name.find("=") == notFound);
-    String pattern = "//@[\040\t]" + createSearchRegexSource(name) + "=[\040\t]*[^\\s\'\"]*[\040\t]*$";
+    if (deprecated)
+        *deprecated = false;
+    String pattern;
+    String deprecatedPattern;
+    switch (commentType) {
+    case JavaScriptMagicComment:
+        pattern = "//#[\040\t]" + createSearchRegexSource(name) + "=[\040\t]*([^\\s\'\"]*)[\040\t]*$";
+        deprecatedPattern = "//@[\040\t]" + createSearchRegexSource(name) + "=[\040\t]*([^\\s\'\"]*)[\040\t]*$";
+        break;
+    case CSSMagicComment:
+        pattern = "/\\*#[\040\t]" + createSearchRegexSource(name) + "=[\040\t]*([^\\s]*)[\040\t]*\\*/[\040\t]*$";
+        deprecatedPattern = "/\\*@[\040\t]" + createSearchRegexSource(name) + "=[\040\t]*([^\\s]*)[\040\t]*\\*/[\040\t]*$";
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+        return String();
+    }
     RegularExpression regex(pattern, TextCaseSensitive, MultilineEnabled);
+    RegularExpression deprecatedRegex(deprecatedPattern, TextCaseSensitive, MultilineEnabled);
 
     int matchLength;
     int offset = regex.match(content, 0, &matchLength);
+    if (offset == -1) {
+        offset = deprecatedRegex.match(content, 0, &matchLength);
+        if (offset != -1 && deprecated)
+            *deprecated = true;
+    }
     if (offset == -1)
         return String();
 
     String match = content.substring(offset, matchLength);
     size_t separator = match.find("=");
     ASSERT(separator != notFound);
+    match = match.substring(separator + 1);
 
-    return match.substring(separator + 1).stripWhiteSpace();
+    switch (commentType) {
+    case JavaScriptMagicComment:
+        return match.stripWhiteSpace();
+    case CSSMagicComment: {
+        size_t lastStarIndex = match.reverseFind('*');
+        ASSERT(lastStarIndex != notFound);
+        return match.substring(0, lastStarIndex).stripWhiteSpace();
+    }
+    default:
+        ASSERT_NOT_REACHED();
+        return String();
+    }
 }
 
-String findSourceURL(const String& content)
+String findSourceURL(const String& content, MagicCommentType commentType, bool* deprecated)
 {
-    return findMagicComment(content, "sourceURL");
+    return findMagicComment(content, "sourceURL", commentType, deprecated);
 }
 
-String findSourceMapURL(const String& content)
+String findSourceMapURL(const String& content, MagicCommentType commentType, bool* deprecated)
 {
-    return findMagicComment(content, "sourceMappingURL");
+    return findMagicComment(content, "sourceMappingURL", commentType, deprecated);
 }
 
 } // namespace ContentSearchUtils

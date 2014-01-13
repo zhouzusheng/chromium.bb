@@ -22,11 +22,10 @@
 #ifndef ElementRuleCollector_h
 #define ElementRuleCollector_h
 
-#include "core/css/MediaQueryEvaluator.h"
 #include "core/css/SelectorChecker.h"
-#include "core/css/StyleResolver.h"
-#include <wtf/RefPtr.h>
-#include <wtf/Vector.h>
+#include "core/css/resolver/StyleResolver.h"
+#include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -41,7 +40,7 @@ class StaticCSSRuleList;
 
 class ElementRuleCollector {
 public:
-    ElementRuleCollector(StyleResolver* styleResolver, const StyleResolver::State& state)
+    ElementRuleCollector(StyleResolver* styleResolver, const StyleResolverState& state)
         : m_state(state)
         , m_selectorFilter(styleResolver->selectorFilter())
         , m_inspectorCSSOMWrappers(styleResolver->inspectorCSSOMWrappers())
@@ -50,7 +49,8 @@ public:
         , m_sameOriginOnly(false)
         , m_mode(SelectorChecker::ResolvingStyle)
         , m_canUseFastReject(m_selectorFilter.parentStackIsConsistent(state.parentNode()))
-        , m_behaviorAtBoundary(SelectorChecker::DoesNotCrossBoundary) { }
+        , m_behaviorAtBoundary(SelectorChecker::DoesNotCrossBoundary)
+        , m_matchingUARules(false) { }
 
     void setBehaviorAtBoundary(SelectorChecker::BehaviorAtBoundary boundary) { m_behaviorAtBoundary = boundary; }
     SelectorChecker::BehaviorAtBoundary behaviorAtBoundary() const { return m_behaviorAtBoundary; }
@@ -87,7 +87,7 @@ private:
     StaticCSSRuleList* ensureRuleList();
         
 private:
-    const StyleResolver::State& m_state;
+    const StyleResolverState& m_state;
     SelectorFilter& m_selectorFilter;
     InspectorCSSOMWrappers& m_inspectorCSSOMWrappers;
 

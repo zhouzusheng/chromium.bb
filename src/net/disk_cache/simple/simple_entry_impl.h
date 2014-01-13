@@ -17,7 +17,7 @@
 #include "net/disk_cache/simple/simple_entry_format.h"
 
 namespace base {
-class MessageLoopProxy;
+class TaskRunner;
 }
 
 namespace net {
@@ -110,6 +110,14 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
     STATE_FAILURE,
   };
 
+  // Used in histograms, please only add entries at the end.
+  enum CheckCrcResult {
+    CRC_CHECK_NEVER_READ_TO_END = 0,
+    CRC_CHECK_NOT_DONE = 1,
+    CRC_CHECK_DONE = 2,
+    CRC_CHECK_MAX = 3,
+  };
+
   virtual ~SimpleEntryImpl();
 
   // Sets entry to STATE_UNINITIALIZED.
@@ -170,8 +178,8 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   // point it is.
   void CloseOperationComplete();
 
-  // Called after a SimpleSynchronousEntry has completed an asynchronous IO
-  // operation, such as ReadData() or WriteData(). Calls |completion_callback|.
+  // Internal utility method used by other completion methods. Calls
+  // |completion_callback| after updating state and dooming on errors.
   void EntryOperationComplete(
       int stream_index,
       const CompletionCallback& completion_callback,
@@ -183,6 +191,12 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
       int offset,
       const CompletionCallback& completion_callback,
       scoped_ptr<uint32> read_crc32,
+      scoped_ptr<int> result);
+
+  // Called after an asynchronous write completes.
+  void WriteOperationComplete(
+      int stream_index,
+      const CompletionCallback& completion_callback,
       scoped_ptr<int> result);
 
   // Called after validating the checksums on an entry. Passes through the
@@ -205,6 +219,7 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   base::ThreadChecker io_thread_checker_;
 
   base::WeakPtr<SimpleBackendImpl> backend_;
+  const scoped_refptr<base::TaskRunner> worker_pool_;
   const base::FilePath path_;
   const std::string key_;
   const uint64 entry_hash_;
@@ -231,6 +246,10 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
 
   // If |have_written_[index]| is true, we have written to the stream |index|.
   bool have_written_[kSimpleEntryFileCount];
+
+  // Reflects how much CRC checking has been done with the entry. This state is
+  // reported on closing each entry stream.
+  CheckCrcResult crc_check_state_[kSimpleEntryFileCount];
 
   // The |synchronous_entry_| is the worker thread object that performs IO on
   // entries. It's owned by this SimpleEntryImpl whenever |operation_running_|

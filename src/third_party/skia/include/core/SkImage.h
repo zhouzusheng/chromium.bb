@@ -8,6 +8,7 @@
 #ifndef SkImage_DEFINED
 #define SkImage_DEFINED
 
+#include "SkImageEncoder.h"
 #include "SkRefCnt.h"
 #include "SkScalar.h"
 
@@ -20,8 +21,6 @@ class GrTexture;
 
 // need for TileMode
 #include "SkShader.h"
-
-////// EXPERIMENTAL
 
 /**
  *  SkImage is an abstraction for drawing a rectagle of pixels, though the
@@ -66,7 +65,13 @@ public:
     static SkImage* NewRasterCopy(const Info&, const void* pixels, size_t rowBytes);
     static SkImage* NewRasterData(const Info&, SkData* pixels, size_t rowBytes);
     static SkImage* NewEncodedData(SkData*);
-    static SkImage* NewTexture(GrTexture*);
+
+    /**
+     * GrTexture is a more logical parameter for this factory, but its 
+     * interactions with scratch cache still has issues, so for now we take
+     * SkBitmap instead. This will be changed in the future. skbug.com/1449
+     */
+    static SkImage* NewTexture(const SkBitmap&);
 
     int width() const { return fWidth; }
     int height() const { return fHeight; }
@@ -83,6 +88,16 @@ public:
     SkShader*   newShader(SkShader::TileMode, SkShader::TileMode) const;
 
     void draw(SkCanvas*, SkScalar x, SkScalar y, const SkPaint*);
+
+    /**
+     *  Encode the image's pixels and return the result as a new SkData, which
+     *  the caller must manage (i.e. call unref() when they are done).
+     *
+     *  If the image type cannot be encoded, or the requested encoder type is
+     *  not supported, this will return NULL.
+     */
+    SkData* encode(SkImageEncoder::Type t = SkImageEncoder::kPNG_Type,
+                   int quality = 80) const;
 
 protected:
     SkImage(int width, int height) :

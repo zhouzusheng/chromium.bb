@@ -9,7 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
 #include "base/win/resource_util.h"
 #include "grit/webkit_chromium_resources.h"
@@ -48,10 +48,10 @@ namespace webkit_support {
 // TODO(tkent): Implement some of the followings for platform-dependent tasks
 // such as loading resource.
 
-void BeforeInitialize(bool unit_test_mode) {
+void BeforeInitialize() {
 }
 
-void AfterInitialize(bool unit_test_mode) {
+void AfterInitialize() {
   // TODO(dpranke): update other resource loading to use the pak
   // instead of loading resources directly compiled in.
   base::FilePath path;

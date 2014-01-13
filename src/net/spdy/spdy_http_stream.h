@@ -14,6 +14,7 @@
 #include "net/base/net_log.h"
 #include "net/http/http_stream.h"
 #include "net/spdy/spdy_read_queue.h"
+#include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_stream.h"
 
 namespace net {
@@ -29,16 +30,9 @@ class UploadDataStream;
 class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
                                           public HttpStream {
  public:
-  // |spdy_session| may be NULL, but in that case some functions must
-  // not be called (see comments below).
+  // |spdy_session| must not be NULL.
   SpdyHttpStream(SpdySession* spdy_session, bool direct);
   virtual ~SpdyHttpStream();
-
-  // Initializes this SpdyHttpStream by wrapping an existing
-  // SpdyStream. In particular, this must be called instead of
-  // InitializeStream() if a NULL SpdySession was passed into the
-  // constructor.
-  void InitializeWithExistingStream(SpdyStream* spdy_stream);
 
   SpdyStream* stream() { return stream_.get(); }
 
@@ -47,8 +41,6 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
 
   // HttpStream implementation.
 
-  // Must not be called if a NULL SpdySession was passed into the
-  // constructor.
   virtual int InitializeStream(const HttpRequestInfo* request_info,
                                RequestPriority priority,
                                const BoundNetLog& net_log,
@@ -83,28 +75,31 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   virtual void Drain(HttpNetworkSession* session) OVERRIDE;
 
   // SpdyStream::Delegate implementation.
-  virtual SpdySendStatus OnSendHeadersComplete() OVERRIDE;
-  virtual int OnSendBody() OVERRIDE;
-  virtual SpdySendStatus OnSendBodyComplete(size_t bytes_sent) OVERRIDE;
-  virtual int OnResponseReceived(const SpdyHeaderBlock& response,
-                                 base::Time response_time,
-                                 int status) OVERRIDE;
-  virtual void OnHeadersSent() OVERRIDE;
-  virtual int OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
-  virtual void OnDataSent(size_t bytes_sent) OVERRIDE;
+  virtual void OnRequestHeadersSent() OVERRIDE;
+  virtual SpdyResponseHeadersStatus OnResponseHeadersUpdated(
+      const SpdyHeaderBlock& response_headers) OVERRIDE;
+  virtual void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
+  virtual void OnDataSent() OVERRIDE;
   virtual void OnClose(int status) OVERRIDE;
 
  private:
+  // Must be called only when |request_info_| is non-NULL.
+  bool HasUploadData() const;
+
   void OnStreamCreated(const CompletionCallback& callback, int rv);
 
-  // Reads the data (whether chunked or not) from the request body stream and
-  // sends the data by calling WriteStreamData on the underlying SpdyStream.
-  int SendData();
+  // Reads the remaining data (whether chunked or not) from the
+  // request body stream and sends it if there's any. The read and
+  // subsequent sending may happen asynchronously. Must be called only
+  // when HasUploadData() is true.
+  void ReadAndSendRequestBodyData();
+
+  // Called when data has just been read from the request body stream;
+  // does the actual sending of data.
+  void OnRequestBodyReadCompleted(int status);
 
   // Call the user callback.
   void DoCallback(int rv);
-
-  int OnRequestBodyReadCompleted(int status);
 
   void ScheduleBufferedReadCallback();
 
@@ -116,19 +111,16 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
 
   const scoped_refptr<SpdySession> spdy_session_;
   SpdyStreamRequest stream_request_;
-  scoped_refptr<SpdyStream> stream_;
+  base::WeakPtr<SpdyStream> stream_;
 
   bool stream_closed_;
 
   // Set only when |stream_closed_| is true.
-  bool closed_stream_pushed_;
   int closed_stream_status_;
   SpdyStreamId closed_stream_id_;
 
   // The request to send.
   const HttpRequestInfo* request_info_;
-
-  bool has_upload_data_;
 
   // |response_info_| is the HTTP response data object which is filled in
   // when a SYN_REPLY comes in for the stream.
@@ -137,7 +129,9 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
 
   scoped_ptr<HttpResponseInfo> push_response_info_;
 
-  bool response_headers_received_;  // Indicates waiting for more HEADERS.
+  // We don't use SpdyStream's |response_header_status_| as we
+  // sometimes call back into our delegate before it is updated.
+  SpdyResponseHeadersStatus response_headers_status_;
 
   // We buffer the response body as it arrives asynchronously from the stream.
   SpdyReadQueue response_body_queue_;
@@ -149,9 +143,8 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   int user_buffer_len_;
 
   // Temporary buffer used to read the request body from UploadDataStream.
-  scoped_refptr<IOBufferWithSize> raw_request_body_buf_;
-  // Wraps raw_request_body_buf_ to read the remaining data progressively.
-  scoped_refptr<DrainableIOBuffer> request_body_buf_;
+  scoped_refptr<IOBufferWithSize> request_body_buf_;
+  int request_body_buf_size_;
 
   // Is there a scheduled read callback pending.
   bool buffered_read_callback_pending_;

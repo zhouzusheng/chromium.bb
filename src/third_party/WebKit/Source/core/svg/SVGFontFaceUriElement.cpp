@@ -26,7 +26,6 @@
 #include "SVGNames.h"
 #include "XLinkNames.h"
 #include "core/css/CSSFontFaceSrcValue.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/loader/cache/CachedFont.h"
 #include "core/loader/cache/CachedResourceLoader.h"
@@ -97,8 +96,7 @@ void SVGFontFaceUriElement::loadFont()
     const AtomicString& href = getAttribute(XLinkNames::hrefAttr);
     if (!href.isNull()) {
         CachedResourceLoader* cachedResourceLoader = document()->cachedResourceLoader();
-        CachedResourceRequest request(ResourceRequest(document()->completeURL(href)));
-        request.setInitiator(this);
+        CachedResourceRequest request(ResourceRequest(document()->completeURL(href)), localName());
         m_cachedFont = cachedResourceLoader->requestFont(request);
         if (m_cachedFont) {
             m_cachedFont->addClient(this);

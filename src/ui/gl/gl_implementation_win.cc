@@ -12,7 +12,7 @@
 #include "base/logging.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/win/windows_version.h"
 #include "ui/gl/gl_bindings.h"
@@ -272,6 +272,18 @@ void ClearGLBindings() {
   ClearGLBindingsWGL();
   SetGLImplementation(kGLImplementationNone);
   UnloadGLNativeLibraries();
+}
+
+bool GetGLWindowSystemBindingInfo(GLWindowSystemBindingInfo* info) {
+  switch (GetGLImplementation()) {
+    case kGLImplementationDesktopGL:
+      return GetGLWindowSystemBindingInfoWGL(info);
+    case kGLImplementationEGLGLES2:
+      return GetGLWindowSystemBindingInfoEGL(info);
+    default:
+      return false;
+  }
+  return false;
 }
 
 }  // namespace gfx

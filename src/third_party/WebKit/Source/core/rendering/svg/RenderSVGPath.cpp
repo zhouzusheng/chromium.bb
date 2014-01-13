@@ -27,12 +27,10 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGPath.h"
 
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/svg/SVGSubpathData.h"
-#include "core/svg/SVGPathElement.h"
-#include "core/svg/SVGStyledTransformableElement.h"
 
 namespace WebCore {
 
@@ -74,7 +72,7 @@ static void useStrokeStyleToFill(GraphicsContext* context)
     else if (Pattern* pattern = context->strokePattern())
         context->setFillPattern(pattern);
     else
-        context->setFillColor(context->strokeColor(), context->strokeColorSpace());
+        context->setFillColor(context->strokeColor());
 }
 
 void RenderSVGPath::strokeShape(GraphicsContext* context) const
@@ -163,5 +161,3 @@ void RenderSVGPath::updateZeroLengthSubpaths()
 }
 
 }
-
-#endif // ENABLE(SVG)

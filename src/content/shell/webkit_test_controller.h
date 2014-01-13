@@ -17,13 +17,29 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/render_view_host_observer.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "webkit/glue/webpreferences.h"
+#include "ui/gfx/size.h"
+#include "webkit/common/webpreferences.h"
+
+#if defined(OS_ANDROID)
+#include "base/threading/thread_restrictions.h"
+#endif
 
 class SkBitmap;
 
 namespace content {
 
 class Shell;
+
+#if defined(OS_ANDROID)
+// Android uses a nested message loop for running layout tests because the
+// default message loop, provided by the system, does not offer a blocking
+// Run() method. The loop itself, implemented as NestedMessagePumpAndroid,
+// uses a base::WaitableEvent allowing it to sleep until more events arrive.
+class ScopedAllowWaitForAndroidLayoutTests {
+ private:
+  base::ThreadRestrictions::ScopedAllowWait wait;
+};
+#endif
 
 class WebKitTestResultPrinter {
  public:
@@ -36,6 +52,10 @@ class WebKitTestResultPrinter {
   bool output_finished() const { return state_ == AFTER_TEST; }
   void set_capture_text_only(bool capture_text_only) {
     capture_text_only_ = capture_text_only;
+  }
+
+  void set_encode_binary_data(bool encode_binary_data) {
+    encode_binary_data_ = encode_binary_data;
   }
 
   void PrintTextHeader();
@@ -56,6 +76,8 @@ class WebKitTestResultPrinter {
   void AddErrorMessage(const std::string& message);
 
  private:
+  void PrintEncodedBinaryData(const std::vector<unsigned char>& data);
+
   enum State {
     DURING_TEST,
     IN_TEXT_BLOCK,
@@ -64,7 +86,9 @@ class WebKitTestResultPrinter {
     AFTER_TEST
   };
   State state_;
+
   bool capture_text_only_;
+  bool encode_binary_data_;
 
   std::ostream* output_;
   std::ostream* error_;
@@ -95,6 +119,7 @@ class WebKitTestController : public base::NonThreadSafe,
   void OverrideWebkitPrefs(WebPreferences* prefs);
   void OpenURL(const GURL& url);
   void TestFinishedInSecondaryWindow();
+  bool IsMainWindow(WebContents* web_contents) const;
 
   WebKitTestResultPrinter* printer() { return printer_.get(); }
   void set_printer(WebKitTestResultPrinter* printer) {
@@ -118,6 +143,12 @@ class WebKitTestController : public base::NonThreadSafe,
   virtual void OnGpuProcessCrashed(base::TerminationStatus exit_code) OVERRIDE;
 
  private:
+  enum TestPhase {
+    BETWEEN_TESTS,
+    DURING_TEST,
+    CLEAN_UP
+  };
+
   static WebKitTestController* instance_;
 
   void TimeoutHandler();
@@ -130,7 +161,7 @@ class WebKitTestController : public base::NonThreadSafe,
   void OnTextDump(const std::string& dump);
   void OnPrintMessage(const std::string& message);
   void OnOverridePreferences(const WebPreferences& prefs);
-  void OnTestFinished(bool did_timeout);
+  void OnTestFinished();
   void OnShowDevTools();
   void OnCloseDevTools();
   void OnGoToOffset(int offset);
@@ -154,9 +185,8 @@ class WebKitTestController : public base::NonThreadSafe,
   // created.
   bool send_configuration_to_next_host_;
 
-  // True if we are currently running a layout test, and false during the setup
-  // phase between two layout tests.
-  bool is_running_test_;
+  // What phase of running an individual test we are currently in.
+  TestPhase test_phase_;
 
   // True if the currently running test is a compositing test.
   bool is_compositing_test_;
@@ -164,6 +194,7 @@ class WebKitTestController : public base::NonThreadSafe,
   // Per test config.
   bool enable_pixel_dumping_;
   std::string expected_pixel_hash_;
+  gfx::Size initial_size_;
   GURL test_url_;
 
   // True if the WebPreferences of newly created RenderViewHost should be
@@ -171,9 +202,13 @@ class WebKitTestController : public base::NonThreadSafe,
   bool should_override_prefs_;
   WebPreferences prefs_;
 
-  base::CancelableClosure watchdog_;
-
   NotificationRegistrar registrar_;
+
+#if defined(OS_ANDROID)
+  // Because of the nested message pump implementation, Android needs to allow
+  // waiting on the UI thread while layout tests are being ran.
+  ScopedAllowWaitForAndroidLayoutTests reduced_restrictions_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(WebKitTestController);
 };

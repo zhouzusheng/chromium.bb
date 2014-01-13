@@ -17,6 +17,7 @@
 #include "vpx/vpx_integer.h"
 #include "vp9/common/vp9_common.h"
 
+
 // Constants and Macros used by all idct/dct functions
 #define DCT_CONST_BITS 14
 #define DCT_CONST_ROUNDING  (1 << (DCT_CONST_BITS - 1))
@@ -67,12 +68,6 @@ static const int sinpi_4_9 = 15212;
 static INLINE int dct_const_round_shift(int input) {
   int rv = ROUND_POWER_OF_TWO(input, DCT_CONST_BITS);
   assert(INT16_MIN <= rv && rv <= INT16_MAX);
-  return rv;
-}
-
-static INLINE int dct_32_round(int input) {
-  int rv = ROUND_POWER_OF_TWO(input, DCT_CONST_BITS);
-  assert(-131072 <= rv && rv <= 131071);
   return rv;
 }
 

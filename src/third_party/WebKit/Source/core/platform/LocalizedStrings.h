@@ -43,54 +43,6 @@ namespace WebCore {
     String fileButtonNoFilesSelectedLabel();
     String defaultDetailsSummaryText();
 
-    String contextMenuItemTagOpenLinkInNewWindow();
-    String contextMenuItemTagDownloadLinkToDisk();
-    String contextMenuItemTagCopyLinkToClipboard();
-    String contextMenuItemTagOpenImageInNewWindow();
-    String contextMenuItemTagDownloadImageToDisk();
-    String contextMenuItemTagCopyImageToClipboard();
-    String contextMenuItemTagOpenFrameInNewWindow();
-    String contextMenuItemTagCopy();
-    String contextMenuItemTagGoBack();
-    String contextMenuItemTagGoForward();
-    String contextMenuItemTagStop();
-    String contextMenuItemTagReload();
-    String contextMenuItemTagCut();
-    String contextMenuItemTagPaste();
-    String contextMenuItemTagNoGuessesFound();
-    String contextMenuItemTagIgnoreSpelling();
-    String contextMenuItemTagLearnSpelling();
-    String contextMenuItemTagSearchWeb();
-    String contextMenuItemTagLookUpInDictionary(const String& selectedString);
-    String contextMenuItemTagOpenLink();
-    String contextMenuItemTagIgnoreGrammar();
-    String contextMenuItemTagSpellingMenu();
-    String contextMenuItemTagShowSpellingPanel(bool show);
-    String contextMenuItemTagCheckSpelling();
-    String contextMenuItemTagCheckSpellingWhileTyping();
-    String contextMenuItemTagCheckGrammarWithSpelling();
-    String contextMenuItemTagFontMenu();
-    String contextMenuItemTagBold();
-    String contextMenuItemTagItalic();
-    String contextMenuItemTagUnderline();
-    String contextMenuItemTagOutline();
-    String contextMenuItemTagWritingDirectionMenu();
-    String contextMenuItemTagTextDirectionMenu();
-    String contextMenuItemTagDefaultDirection();
-    String contextMenuItemTagLeftToRight();
-    String contextMenuItemTagRightToLeft();
-    String contextMenuItemTagOpenVideoInNewWindow();
-    String contextMenuItemTagOpenAudioInNewWindow();
-    String contextMenuItemTagCopyVideoLinkToClipboard();
-    String contextMenuItemTagCopyAudioLinkToClipboard();
-    String contextMenuItemTagToggleMediaControls();
-    String contextMenuItemTagToggleMediaLoop();
-    String contextMenuItemTagEnterVideoFullscreen();
-    String contextMenuItemTagMediaPlay();
-    String contextMenuItemTagMediaPause();
-    String contextMenuItemTagMediaMute();
-    String contextMenuItemTagInspectElement();
-
     String searchMenuNoRecentSearchesText();
     String searchMenuRecentSearchesText();
     String searchMenuClearRecentSearchesText();
@@ -100,10 +52,6 @@ namespace WebCore {
     String AXListMarkerText();
     String AXImageMapText();
     String AXHeadingText();
-    String AXDefinitionText();
-    String AXDescriptionListTermText();
-    String AXDescriptionListDetailText();
-    String AXFooterRoleDescriptionText();
     String AXFileUploadButtonText();
     String AXButtonActionVerb();
     String AXRadioButtonActionVerb();
@@ -146,18 +94,12 @@ namespace WebCore {
     String weekFormatInLDML();
 
     String missingPluginText();
-    String crashedPluginText();
     String blockedPluginByContentSecurityPolicyText();
-    String insecurePluginVersionText();
-    String inactivePluginText();
 
     String multipleFileUploadText(unsigned numberOfFiles);
-    String unknownFileSizeText();
 
     String imageTitle(const String& filename, const IntSize& size);
 
-    String mediaElementLoadingStateText();
-    String mediaElementLiveBroadcastStateText();
     String localizedMediaControlElementString(const String&);
     String localizedMediaControlElementHelpText(const String&);
     String localizedMediaTimeDescription(float);

@@ -87,8 +87,7 @@ void WebContentsDelegate::ViewSourceForTab(WebContents* source,
   // Fall back implementation based entirely on the view-source scheme.
   // It suffers from http://crbug.com/523 and that is why browser overrides
   // it with proper implementation.
-  GURL url = GURL(chrome::kViewSourceScheme + std::string(":") +
-                      page_url.spec());
+  GURL url = GURL(kViewSourceScheme + std::string(":") + page_url.spec());
   OpenURLFromTab(source, OpenURLParams(url, Referrer(),
                                        NEW_FOREGROUND_TAB,
                                        PAGE_TRANSITION_LINK, false));
@@ -96,10 +95,9 @@ void WebContentsDelegate::ViewSourceForTab(WebContents* source,
 
 void WebContentsDelegate::ViewSourceForFrame(WebContents* source,
                                              const GURL& frame_url,
-                                             const std::string& content_state) {
+                                             const PageState& page_state) {
   // Same as ViewSourceForTab, but for given subframe.
-  GURL url = GURL(chrome::kViewSourceScheme + std::string(":") +
-                      frame_url.spec());
+  GURL url = GURL(kViewSourceScheme + std::string(":") + frame_url.spec());
   OpenURLFromTab(source, OpenURLParams(url, Referrer(),
                                        NEW_FOREGROUND_TAB,
                                        PAGE_TRANSITION_LINK, false));
@@ -110,6 +108,13 @@ bool WebContentsDelegate::PreHandleKeyboardEvent(
     const NativeWebKeyboardEvent& event,
     bool* is_keyboard_shortcut) {
   return false;
+}
+
+bool WebContentsDelegate::CanDragEnter(
+    WebContents* source,
+    const WebDropData& data,
+    WebKit::WebDragOperationsMask operations_allowed) {
+  return true;
 }
 
 bool WebContentsDelegate::OnGoToEntryOffset(int offset) {
@@ -135,9 +140,7 @@ bool WebContentsDelegate::IsFullscreenForTabOrPending(
 }
 
 content::ColorChooser* WebContentsDelegate::OpenColorChooser(
-    WebContents* web_contents,
-    int color_chooser_id,
-    SkColor color) {
+    WebContents* web_contents, SkColor color) {
   return NULL;
 }
 

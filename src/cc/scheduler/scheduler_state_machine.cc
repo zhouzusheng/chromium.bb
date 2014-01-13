@@ -4,14 +4,16 @@
 
 #include "cc/scheduler/scheduler_state_machine.h"
 
+#include "base/format_macros.h"
 #include "base/logging.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 
 namespace cc {
 
 SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
     : settings_(settings),
       commit_state_(COMMIT_STATE_IDLE),
+      commit_count_(0),
       current_frame_number_(0),
       last_frame_number_where_draw_was_called_(-1),
       last_frame_number_where_tree_activation_attempted_(-1),
@@ -24,9 +26,9 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
       needs_forced_redraw_after_next_commit_(false),
       needs_commit_(false),
       needs_forced_commit_(false),
-      expect_immediate_begin_frame_(false),
+      expect_immediate_begin_frame_for_main_thread_(false),
       main_thread_needs_layer_textures_(false),
-      inside_vsync_(false),
+      inside_begin_frame_(false),
       visible_(false),
       can_start_(false),
       can_draw_(false),
@@ -42,6 +44,7 @@ std::string SchedulerStateMachine::ToString() {
                       "settings_.impl_side_painting = %d; ",
                       settings_.impl_side_painting);
   base::StringAppendF(&str, "commit_state_ = %d; ", commit_state_);
+  base::StringAppendF(&str, "commit_count_ = %d; ", commit_count_);
   base::StringAppendF(
       &str, "current_frame_number_ = %d; ", current_frame_number_);
   base::StringAppendF(&str,
@@ -73,12 +76,20 @@ std::string SchedulerStateMachine::ToString() {
   base::StringAppendF(
       &str, "needs_forced_commit_ = %d; ", needs_forced_commit_);
   base::StringAppendF(&str,
-                      "expect_immediate_begin_frame_ = %d; ",
-                      expect_immediate_begin_frame_);
+                      "expect_immediate_begin_frame_for_main_thread_ = %d; ",
+                      expect_immediate_begin_frame_for_main_thread_);
   base::StringAppendF(&str,
                       "main_thread_needs_layer_textures_ = %d; ",
                       main_thread_needs_layer_textures_);
-  base::StringAppendF(&str, "inside_vsync_ = %d; ", inside_vsync_);
+  base::StringAppendF(&str, "inside_begin_frame_ = %d; ",
+      inside_begin_frame_);
+  base::StringAppendF(&str, "last_frame_time_ = %"PRId64"; ",
+      (last_begin_frame_args_.frame_time - base::TimeTicks())
+          .InMilliseconds());
+  base::StringAppendF(&str, "last_deadline_ = %"PRId64"; ",
+      (last_begin_frame_args_.deadline - base::TimeTicks()).InMilliseconds());
+  base::StringAppendF(&str, "last_interval_ = %"PRId64"; ",
+      last_begin_frame_args_.interval.InMilliseconds());
   base::StringAppendF(&str, "visible_ = %d; ", visible_);
   base::StringAppendF(&str, "can_start_ = %d; ", can_start_);
   base::StringAppendF(&str, "can_draw_ = %d; ", can_draw_);
@@ -129,7 +140,7 @@ bool SchedulerStateMachine::ShouldDraw() const {
 
   if (!ScheduledToDraw())
     return false;
-  if (!inside_vsync_)
+  if (!inside_begin_frame_)
     return false;
   if (HasDrawnThisFrame())
     return false;
@@ -139,7 +150,7 @@ bool SchedulerStateMachine::ShouldDraw() const {
 }
 
 bool SchedulerStateMachine::ShouldAttemptTreeActivation() const {
-  return has_pending_tree_ && inside_vsync_ &&
+  return has_pending_tree_ && inside_begin_frame_ &&
          !HasAttemptedTreeActivationThisFrame();
 }
 
@@ -163,7 +174,7 @@ bool SchedulerStateMachine::ShouldAcquireLayerTexturesForMainThread() const {
   // impl thread is not even scheduled to draw. Guards against deadlocking.
   if (!ScheduledToDraw())
     return true;
-  if (!VSyncCallbackNeeded())
+  if (!BeginFrameNeededToDrawByImplThread())
     return true;
   return false;
 }
@@ -180,7 +191,8 @@ SchedulerStateMachine::Action SchedulerStateMachine::NextAction() const {
       if (output_surface_state_ != OUTPUT_SURFACE_ACTIVE &&
           needs_forced_commit_)
         // TODO(enne): Should probably drop the active tree on force commit.
-        return has_pending_tree_ ? ACTION_NONE : ACTION_BEGIN_FRAME;
+        return has_pending_tree_ ? ACTION_NONE
+                                 : ACTION_SEND_BEGIN_FRAME_TO_MAIN_THREAD;
       if (output_surface_state_ == OUTPUT_SURFACE_LOST && can_start_)
         return ACTION_BEGIN_OUTPUT_SURFACE_CREATION;
       if (output_surface_state_ == OUTPUT_SURFACE_CREATING)
@@ -197,7 +209,8 @@ SchedulerStateMachine::Action SchedulerStateMachine::NextAction() const {
           ((visible_ && output_surface_state_ == OUTPUT_SURFACE_ACTIVE)
            || needs_forced_commit_))
         // TODO(enne): Should probably drop the active tree on force commit.
-        return has_pending_tree_ ? ACTION_NONE : ACTION_BEGIN_FRAME;
+        return has_pending_tree_ ? ACTION_NONE
+                                 : ACTION_SEND_BEGIN_FRAME_TO_MAIN_THREAD;
       return ACTION_NONE;
 
     case COMMIT_STATE_FRAME_IN_PROGRESS:
@@ -228,7 +241,8 @@ SchedulerStateMachine::Action SchedulerStateMachine::NextAction() const {
       // step (similar as in COMMIT_STATE_IDLE).
       bool can_commit = visible_ || needs_forced_commit_;
       if (needs_commit_ && can_commit && DrawSuspendedUntilCommit())
-        return has_pending_tree_ ? ACTION_NONE : ACTION_BEGIN_FRAME;
+        return has_pending_tree_ ? ACTION_NONE
+                                 : ACTION_SEND_BEGIN_FRAME_TO_MAIN_THREAD;
       return ACTION_NONE;
     }
 
@@ -260,7 +274,7 @@ void SchedulerStateMachine::UpdateState(Action action) {
           current_frame_number_;
       return;
 
-    case ACTION_BEGIN_FRAME:
+    case ACTION_SEND_BEGIN_FRAME_TO_MAIN_THREAD:
       DCHECK(!has_pending_tree_);
       DCHECK(visible_ || needs_forced_commit_);
       commit_state_ = COMMIT_STATE_FRAME_IN_PROGRESS;
@@ -269,7 +283,8 @@ void SchedulerStateMachine::UpdateState(Action action) {
       return;
 
     case ACTION_COMMIT:
-      if (expect_immediate_begin_frame_)
+      commit_count_++;
+      if (expect_immediate_begin_frame_for_main_thread_)
         commit_state_ = COMMIT_STATE_WAITING_FOR_FIRST_FORCED_DRAW;
       else
         commit_state_ = COMMIT_STATE_WAITING_FOR_FIRST_DRAW;
@@ -293,12 +308,12 @@ void SchedulerStateMachine::UpdateState(Action action) {
       needs_forced_redraw_ = false;
       draw_if_possible_failed_ = false;
       swap_used_incomplete_tile_ = false;
-      if (inside_vsync_)
+      if (inside_begin_frame_)
         last_frame_number_where_draw_was_called_ = current_frame_number_;
       if (commit_state_ == COMMIT_STATE_WAITING_FOR_FIRST_FORCED_DRAW) {
-        DCHECK(expect_immediate_begin_frame_);
+        DCHECK(expect_immediate_begin_frame_for_main_thread_);
         commit_state_ = COMMIT_STATE_FRAME_IN_PROGRESS;
-        expect_immediate_begin_frame_ = false;
+        expect_immediate_begin_frame_for_main_thread_ = false;
       } else if (commit_state_ == COMMIT_STATE_WAITING_FOR_FIRST_DRAW) {
         commit_state_ = COMMIT_STATE_IDLE;
       }
@@ -327,9 +342,10 @@ void SchedulerStateMachine::SetMainThreadNeedsLayerTextures() {
   main_thread_needs_layer_textures_ = true;
 }
 
-bool SchedulerStateMachine::VSyncCallbackNeeded() const {
+bool SchedulerStateMachine::BeginFrameNeededToDrawByImplThread() const {
   // If we have a pending tree, need to keep getting notifications until
   // the tree is ready to be swapped.
+  // TODO(brianderson): This should be moved to ProactiveBeginFrameNeeded...
   if (has_pending_tree_)
     return true;
 
@@ -347,11 +363,24 @@ bool SchedulerStateMachine::VSyncCallbackNeeded() const {
          output_surface_state_ == OUTPUT_SURFACE_ACTIVE;
 }
 
-void SchedulerStateMachine::DidEnterVSync() { inside_vsync_ = true; }
+bool SchedulerStateMachine::ProactiveBeginFrameWantedByImplThread() const {
+  // Do not be proactive when invisible.
+  if (!visible_ || output_surface_state_ != OUTPUT_SURFACE_ACTIVE)
+    return false;
 
-void SchedulerStateMachine::DidLeaveVSync() {
+  // We should proactively request a BeginFrame if a commit is pending.
+  return (needs_commit_ || needs_forced_commit_ ||
+      commit_state_ != COMMIT_STATE_IDLE);
+}
+
+void SchedulerStateMachine::DidEnterBeginFrame(const BeginFrameArgs& args) {
+  inside_begin_frame_ = true;
+  last_begin_frame_args_ = args;
+}
+
+void SchedulerStateMachine::DidLeaveBeginFrame() {
   current_frame_number_++;
-  inside_vsync_ = false;
+  inside_begin_frame_ = false;
 }
 
 void SchedulerStateMachine::SetVisible(bool visible) { visible_ = visible; }
@@ -389,20 +418,21 @@ void SchedulerStateMachine::SetNeedsCommit() { needs_commit_ = true; }
 
 void SchedulerStateMachine::SetNeedsForcedCommit() {
   needs_forced_commit_ = true;
-  expect_immediate_begin_frame_ = true;
+  expect_immediate_begin_frame_for_main_thread_ = true;
 }
 
-void SchedulerStateMachine::BeginFrameComplete() {
+void SchedulerStateMachine::FinishCommit() {
   DCHECK(commit_state_ == COMMIT_STATE_FRAME_IN_PROGRESS ||
-         (expect_immediate_begin_frame_ && commit_state_ != COMMIT_STATE_IDLE))
+         (expect_immediate_begin_frame_for_main_thread_ &&
+          commit_state_ != COMMIT_STATE_IDLE))
       << ToString();
   commit_state_ = COMMIT_STATE_READY_TO_COMMIT;
 }
 
-void SchedulerStateMachine::BeginFrameAborted() {
+void SchedulerStateMachine::BeginFrameAbortedByMainThread() {
   DCHECK_EQ(commit_state_, COMMIT_STATE_FRAME_IN_PROGRESS);
-  if (expect_immediate_begin_frame_) {
-    expect_immediate_begin_frame_ = false;
+  if (expect_immediate_begin_frame_for_main_thread_) {
+    expect_immediate_begin_frame_for_main_thread_ = false;
   } else {
     commit_state_ = COMMIT_STATE_IDLE;
     SetNeedsCommit();
@@ -429,7 +459,11 @@ void SchedulerStateMachine::DidCreateAndInitializeOutputSurface() {
   if (did_create_and_initialize_first_output_surface_) {
     // TODO(boliu): See if we can remove this when impl-side painting is always
     // on. Does anything on the main thread need to update after recreate?
-    SetNeedsCommit();
+    needs_commit_ = true;
+    // If anything has requested a redraw, we don't want to actually draw
+    // when the output surface is restored until things have a chance to
+    // sort themselves out with a commit.
+    needs_redraw_ = false;
   }
   did_create_and_initialize_first_output_surface_ = true;
 }

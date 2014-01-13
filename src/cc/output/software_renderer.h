@@ -13,11 +13,14 @@
 namespace cc {
 
 class OutputSurface;
-class SoftwareOutputDevice;
-class DebugBorderDrawQuad;
 class RendererClient;
-class RenderPassDrawQuad;
 class ResourceProvider;
+class SoftwareOutputDevice;
+
+class CheckerboardDrawQuad;
+class DebugBorderDrawQuad;
+class PictureDrawQuad;
+class RenderPassDrawQuad;
 class SolidColorDrawQuad;
 class TextureDrawQuad;
 class TileDrawQuad;
@@ -31,16 +34,15 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
 
   virtual ~SoftwareRenderer();
   virtual const RendererCapabilities& Capabilities() const OVERRIDE;
-  virtual void ViewportChanged() OVERRIDE;
   virtual void Finish() OVERRIDE;
-  virtual void SwapBuffers(const LatencyInfo& latency_info) OVERRIDE;
+  virtual void SwapBuffers() OVERRIDE;
   virtual void GetFramebufferPixels(void* pixels, gfx::Rect rect) OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
   virtual void SendManagedMemoryStats(
       size_t bytes_visible,
       size_t bytes_visible_and_nearby,
       size_t bytes_allocated) OVERRIDE  {}
-  virtual void ReceiveCompositorFrameAck(
+  virtual void ReceiveSwapBuffersAck(
       const CompositorFrameAck& ack) OVERRIDE;
 
  protected:
@@ -48,8 +50,8 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
   virtual bool BindFramebufferToTexture(
       DrawingFrame* frame,
       const ScopedResource* texture,
-      gfx::Rect framebuffer_rect) OVERRIDE;
-  virtual void SetDrawViewportSize(gfx::Size viewport_size) OVERRIDE;
+      gfx::Rect target_rect) OVERRIDE;
+  virtual void SetDrawViewport(gfx::Rect window_space_viewport) OVERRIDE;
   virtual void SetScissorTestRect(gfx::Rect scissor_rect) OVERRIDE;
   virtual void ClearFramebuffer(DrawingFrame* frame) OVERRIDE;
   virtual void DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) OVERRIDE;
@@ -60,45 +62,47 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
   virtual void EnsureScissorTestDisabled() OVERRIDE;
   virtual void CopyCurrentRenderPassToBitmap(
       DrawingFrame* frame,
-      const CopyRenderPassCallback& callback) OVERRIDE;
+      scoped_ptr<CopyOutputRequest> request) OVERRIDE;
 
- private:
   SoftwareRenderer(
       RendererClient* client,
       OutputSurface* output_surface,
       ResourceProvider* resource_provider);
 
+ private:
   void ClearCanvas(SkColor color);
   void SetClipRect(gfx::Rect rect);
   bool IsSoftwareResource(ResourceProvider::ResourceId resource_id) const;
 
+  void DrawCheckerboardQuad(const DrawingFrame* frame,
+                            const CheckerboardDrawQuad* quad);
   void DrawDebugBorderQuad(const DrawingFrame* frame,
                            const DebugBorderDrawQuad* quad);
+  void DrawPictureQuad(const DrawingFrame* frame,
+                       const PictureDrawQuad* quad);
+  void DrawRenderPassQuad(const DrawingFrame* frame,
+                          const RenderPassDrawQuad* quad);
   void DrawSolidColorQuad(const DrawingFrame* frame,
                           const SolidColorDrawQuad* quad);
   void DrawTextureQuad(const DrawingFrame* frame,
                        const TextureDrawQuad* quad);
   void DrawTileQuad(const DrawingFrame* frame,
                     const TileDrawQuad* quad);
-  void DrawRenderPassQuad(const DrawingFrame* frame,
-                          const RenderPassDrawQuad* quad);
   void DrawUnsupportedQuad(const DrawingFrame* frame,
                            const DrawQuad* quad);
 
   RendererCapabilities capabilities_;
   bool visible_;
   bool is_scissor_enabled_;
-  bool is_viewport_changed_;
   gfx::Rect scissor_rect_;
 
-  OutputSurface* output_surface_;
   SoftwareOutputDevice* output_device_;
   SkCanvas* root_canvas_;
   SkCanvas* current_canvas_;
   SkPaint current_paint_;
   scoped_ptr<ResourceProvider::ScopedWriteLockSoftware>
       current_framebuffer_lock_;
-  CompositorFrame compositor_frame_;
+  scoped_ptr<SoftwareFrameData> current_frame_data_;
 
   DISALLOW_COPY_AND_ASSIGN(SoftwareRenderer);
 };

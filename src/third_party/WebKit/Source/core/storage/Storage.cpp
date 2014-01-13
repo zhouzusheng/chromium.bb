@@ -26,9 +26,6 @@
 #include "config.h"
 #include "core/storage/Storage.h"
 
-#include "core/page/Frame.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/text/WTFString.h>
 
@@ -54,6 +51,78 @@ Storage::~Storage()
 {
     if (m_storageArea)
         m_storageArea->decrementAccessCount();
+}
+
+String Storage::anonymousIndexedGetter(unsigned index, ExceptionCode& ec)
+{
+    return anonymousNamedGetter(String::number(index), ec);
+}
+
+String Storage::anonymousNamedGetter(const AtomicString& name, ExceptionCode& ec)
+{
+    ec = 0;
+    bool found = contains(name, ec);
+    if (ec || !found)
+        return String();
+    String result = getItem(name, ec);
+    if (ec)
+        return String();
+    return result;
+}
+
+bool Storage::anonymousNamedSetter(const AtomicString& name, const AtomicString& value, ExceptionCode& ec)
+{
+    setItem(name, value, ec);
+    return true;
+}
+
+bool Storage::anonymousIndexedSetter(unsigned index, const AtomicString& value, ExceptionCode& ec)
+{
+    return anonymousNamedSetter(String::number(index), value, ec);
+}
+
+bool Storage::anonymousNamedDeleter(const AtomicString& name, ExceptionCode& ec)
+{
+    bool found = contains(name, ec);
+    if (!found || ec)
+        return false;
+    removeItem(name, ec);
+    if (ec)
+        return false;
+    return true;
+}
+
+bool Storage::anonymousIndexedDeleter(unsigned index, ExceptionCode& ec)
+{
+    return anonymousNamedDeleter(String::number(index), ec);
+}
+
+void Storage::namedPropertyEnumerator(Vector<String>& names, ExceptionCode& ec)
+{
+    unsigned length = this->length(ec);
+    if (ec)
+        return;
+    names.resize(length);
+    for (unsigned i = 0; i < length; ++i) {
+        String key = this->key(i, ec);
+        if (ec)
+            return;
+        ASSERT(!key.isNull());
+        String val = getItem(key, ec);
+        if (ec)
+            return;
+        names[i] = key;
+    }
+}
+
+bool Storage::namedPropertyQuery(const AtomicString& name, ExceptionCode& ec)
+{
+    if (name == "length")
+        return false;
+    bool found = contains(name, ec);
+    if (ec || !found)
+        return false;
+    return true;
 }
 
 }

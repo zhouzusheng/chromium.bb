@@ -39,29 +39,25 @@
 #include "V8DocumentType.h"
 #include "V8Element.h"
 #include "V8Entity.h"
-#include "V8EntityReference.h"
 #include "V8HTMLElement.h"
 #include "V8Node.h"
 #include "V8Notation.h"
 #include "V8ProcessingInstruction.h"
+#include "V8SVGElement.h"
+#include "V8ShadowRoot.h"
 #include "V8Text.h"
-#include "bindings/v8/BindingState.h"
 #include "bindings/v8/V8AbstractEventListener.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8EventListener.h"
 #include "core/dom/Document.h"
 #include "core/dom/EventListener.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "wtf/RefPtr.h"
-
-#if ENABLE(SVG)
-#include "V8SVGElement.h"
-#endif
 
 namespace WebCore {
 
 // This function is customized to take advantage of the optional 4th argument: AttachBehavior
-v8::Handle<v8::Value> V8Node::insertBeforeMethodCustom(const v8::Arguments& args)
+void V8Node::insertBeforeMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     v8::Handle<v8::Object> holder = args.Holder();
     Node* imp = V8Node::toNative(holder);
@@ -69,15 +65,19 @@ v8::Handle<v8::Value> V8Node::insertBeforeMethodCustom(const v8::Arguments& args
     Node* newChild = V8Node::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(args[0])) : 0;
     Node* refChild = V8Node::HasInstance(args[1], args.GetIsolate(), worldType(args.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(args[1])) : 0;
     bool success = imp->insertBefore(newChild, refChild, ec, AttachLazily);
-    if (ec)
-        return setDOMException(ec, args.GetIsolate());
-    if (success)
-        return args[0];
-    return v8Null(args.GetIsolate());
+    if (ec) {
+        setDOMException(ec, args.GetIsolate());
+        return;
+    }
+    if (success) {
+        v8SetReturnValue(args, args[0]);
+        return;
+    }
+    v8SetReturnValueNull(args);
 }
 
 // This function is customized to take advantage of the optional 4th argument: AttachBehavior
-v8::Handle<v8::Value> V8Node::replaceChildMethodCustom(const v8::Arguments& args)
+void V8Node::replaceChildMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     v8::Handle<v8::Object> holder = args.Holder();
     Node* imp = V8Node::toNative(holder);
@@ -85,40 +85,52 @@ v8::Handle<v8::Value> V8Node::replaceChildMethodCustom(const v8::Arguments& args
     Node* newChild = V8Node::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(args[0])) : 0;
     Node* oldChild = V8Node::HasInstance(args[1], args.GetIsolate(), worldType(args.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(args[1])) : 0;
     bool success = imp->replaceChild(newChild, oldChild, ec, AttachLazily);
-    if (ec)
-        return setDOMException(ec, args.GetIsolate());
-    if (success)
-        return args[1];
-    return v8Null(args.GetIsolate());
+    if (ec) {
+        setDOMException(ec, args.GetIsolate());
+        return;
+    }
+    if (success) {
+        v8SetReturnValue(args, args[1]);
+        return;
+    }
+    v8SetReturnValueNull(args);
 }
 
-v8::Handle<v8::Value> V8Node::removeChildMethodCustom(const v8::Arguments& args)
+void V8Node::removeChildMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     v8::Handle<v8::Object> holder = args.Holder();
     Node* imp = V8Node::toNative(holder);
     ExceptionCode ec = 0;
     Node* oldChild = V8Node::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(args[0])) : 0;
     bool success = imp->removeChild(oldChild, ec);
-    if (ec)
-        return setDOMException(ec, args.GetIsolate());
-    if (success)
-        return args[0];
-    return v8Null(args.GetIsolate());
+    if (ec) {
+        setDOMException(ec, args.GetIsolate());
+        return;
+    }
+    if (success) {
+        v8SetReturnValue(args, args[0]);
+        return;
+    }
+    v8SetReturnValueNull(args);
 }
 
 // This function is customized to take advantage of the optional 4th argument: AttachBehavior
-v8::Handle<v8::Value> V8Node::appendChildMethodCustom(const v8::Arguments& args)
+void V8Node::appendChildMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     v8::Handle<v8::Object> holder = args.Holder();
     Node* imp = V8Node::toNative(holder);
     ExceptionCode ec = 0;
     Node* newChild = V8Node::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate())) ? V8Node::toNative(v8::Handle<v8::Object>::Cast(args[0])) : 0;
     bool success = imp->appendChild(newChild, ec, AttachLazily);
-    if (ec)
-        return setDOMException(ec, args.GetIsolate());
-    if (success)
-        return args[0];
-    return v8Null(args.GetIsolate());
+    if (ec) {
+        setDOMException(ec, args.GetIsolate());
+        return;
+    }
+    if (success) {
+        v8SetReturnValue(args, args[0]);
+        return;
+    }
+    v8SetReturnValueNull(args);
 }
 
 v8::Handle<v8::Object> wrap(Node* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
@@ -129,10 +141,8 @@ v8::Handle<v8::Object> wrap(Node* impl, v8::Handle<v8::Object> creationContext, 
         // For performance reasons, this is inlined from V8Element::wrap and must remain in sync.
         if (impl->isHTMLElement())
             return wrap(toHTMLElement(impl), creationContext, isolate);
-#if ENABLE(SVG)
         if (impl->isSVGElement())
             return wrap(toSVGElement(impl), creationContext, isolate);
-#endif
         return V8Element::createWrapper(toElement(impl), creationContext, isolate);
     case Node::ATTRIBUTE_NODE:
         return wrap(static_cast<Attr*>(impl), creationContext, isolate);
@@ -140,8 +150,6 @@ v8::Handle<v8::Object> wrap(Node* impl, v8::Handle<v8::Object> creationContext, 
         return wrap(toText(impl), creationContext, isolate);
     case Node::CDATA_SECTION_NODE:
         return wrap(static_cast<CDATASection*>(impl), creationContext, isolate);
-    case Node::ENTITY_REFERENCE_NODE:
-        return wrap(static_cast<EntityReference*>(impl), creationContext, isolate);
     case Node::ENTITY_NODE:
         return wrap(static_cast<Entity*>(impl), creationContext, isolate);
     case Node::PROCESSING_INSTRUCTION_NODE:
@@ -153,11 +161,13 @@ v8::Handle<v8::Object> wrap(Node* impl, v8::Handle<v8::Object> creationContext, 
     case Node::DOCUMENT_TYPE_NODE:
         return wrap(static_cast<DocumentType*>(impl), creationContext, isolate);
     case Node::DOCUMENT_FRAGMENT_NODE:
+        if (impl->isShadowRoot())
+            return wrap(toShadowRoot(impl), creationContext, isolate);
         return wrap(static_cast<DocumentFragment*>(impl), creationContext, isolate);
     case Node::NOTATION_NODE:
         return wrap(static_cast<Notation*>(impl), creationContext, isolate);
     default:
-        break; // XPATH_NAMESPACE_NODE
+        break; // ENTITY_REFERENCE_NODE or XPATH_NAMESPACE_NODE
     }
     return V8Node::createWrapper(impl, creationContext, isolate);
 }

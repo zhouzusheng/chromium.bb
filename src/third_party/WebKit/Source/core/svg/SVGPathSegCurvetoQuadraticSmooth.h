@@ -21,7 +21,6 @@
 #ifndef SVGPathSegCurvetoQuadraticSmooth_h
 #define SVGPathSegCurvetoQuadraticSmooth_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGPathSegWithContext.h"
 
 namespace WebCore {
@@ -37,6 +36,7 @@ private:
     SVGPathSegCurvetoQuadraticSmoothAbs(SVGPathElement* element, SVGPathSegRole role, float x, float y)
         : SVGPathSegSingleCoordinate(element, role, x, y)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_CURVETO_QUADRATIC_SMOOTH_ABS; }
@@ -54,6 +54,7 @@ private:
     SVGPathSegCurvetoQuadraticSmoothRel(SVGPathElement* element, SVGPathSegRole role, float x, float y)
         : SVGPathSegSingleCoordinate(element, role, x, y)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_CURVETO_QUADRATIC_SMOOTH_REL; }
@@ -62,5 +63,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

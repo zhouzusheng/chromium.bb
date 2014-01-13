@@ -23,10 +23,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/sha1.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "crypto/sha2.h"
 #include "googleurl/src/gurl.h"
@@ -85,6 +85,7 @@ bool AddHash(const char* sha1_hash,
 
 TransportSecurityState::TransportSecurityState()
   : delegate_(NULL) {
+  DCHECK(CalledOnValidThread());
 }
 
 TransportSecurityState::Iterator::Iterator(const TransportSecurityState& state)
@@ -96,6 +97,7 @@ TransportSecurityState::Iterator::~Iterator() {}
 
 void TransportSecurityState::SetDelegate(
     TransportSecurityState::Delegate* delegate) {
+  DCHECK(CalledOnValidThread());
   delegate_ = delegate;
 }
 
@@ -185,7 +187,8 @@ bool TransportSecurityState::GetDomainState(const std::string& host,
 
     // Succeed if we matched the domain exactly or if subdomain matches are
     // allowed.
-    if (i == 0 || j->second.include_subdomains) {
+    if (i == 0 || j->second.sts_include_subdomains ||
+        j->second.pkp_include_subdomains) {
       *result = state;
       return true;
     }
@@ -197,6 +200,7 @@ bool TransportSecurityState::GetDomainState(const std::string& host,
 }
 
 void TransportSecurityState::ClearDynamicData() {
+  DCHECK(CalledOnValidThread());
   enabled_hosts_.clear();
 }
 
@@ -219,7 +223,9 @@ void TransportSecurityState::DeleteAllDynamicDataSince(const base::Time& time) {
     DirtyNotify();
 }
 
-TransportSecurityState::~TransportSecurityState() {}
+TransportSecurityState::~TransportSecurityState() {
+  DCHECK(CalledOnValidThread());
+}
 
 void TransportSecurityState::DirtyNotify() {
   DCHECK(CalledOnValidThread());
@@ -557,7 +563,8 @@ static bool HasPreload(const struct HSTSPreload* entries, size_t num_entries,
       if (!entries[j].include_subdomains && i != 0) {
         *ret = false;
       } else {
-        out->include_subdomains = entries[j].include_subdomains;
+        out->sts_include_subdomains = entries[j].include_subdomains;
+        out->pkp_include_subdomains = entries[j].include_subdomains;
         *ret = true;
         if (!entries[j].https_required)
           out->upgrade_mode = TransportSecurityState::DomainState::MODE_DEFAULT;
@@ -613,16 +620,19 @@ static const struct HSTSPreload* GetHSTSPreload(
 
 bool TransportSecurityState::AddHSTSHeader(const std::string& host,
                                            const std::string& value) {
+  DCHECK(CalledOnValidThread());
+
   base::Time now = base::Time::Now();
+  base::TimeDelta max_age;
   TransportSecurityState::DomainState domain_state;
-  if (ParseHSTSHeader(now, value, &domain_state.upgrade_expiry,
-                      &domain_state.include_subdomains)) {
+  if (ParseHSTSHeader(value, &max_age, &domain_state.sts_include_subdomains)) {
     // Handle max-age == 0
-    if (now == domain_state.upgrade_expiry)
+    if (max_age.InSeconds() == 0)
       domain_state.upgrade_mode = DomainState::MODE_DEFAULT;
     else
       domain_state.upgrade_mode = DomainState::MODE_FORCE_HTTPS;
     domain_state.created = now;
+    domain_state.upgrade_expiry = now + max_age;
     EnableHost(host, domain_state);
     return true;
   }
@@ -632,12 +642,17 @@ bool TransportSecurityState::AddHSTSHeader(const std::string& host,
 bool TransportSecurityState::AddHPKPHeader(const std::string& host,
                                            const std::string& value,
                                            const SSLInfo& ssl_info) {
+  DCHECK(CalledOnValidThread());
+
   base::Time now = base::Time::Now();
+  base::TimeDelta max_age;
   TransportSecurityState::DomainState domain_state;
-  if (ParseHPKPHeader(now, value, ssl_info.public_key_hashes,
-                      &domain_state.dynamic_spki_hashes_expiry,
-                      &domain_state.dynamic_spki_hashes)) {
+  if (ParseHPKPHeader(value, ssl_info.public_key_hashes,
+                      &max_age, &domain_state.dynamic_spki_hashes)) {
+    // TODO(palmer): http://crbug.com/243865 handle max-age == 0
+    // and includeSubdomains.
     domain_state.created = now;
+    domain_state.dynamic_spki_hashes_expiry = now + max_age;
     EnableHost(host, domain_state);
     return true;
   }
@@ -647,6 +662,8 @@ bool TransportSecurityState::AddHPKPHeader(const std::string& host,
 bool TransportSecurityState::AddHSTS(const std::string& host,
                                      const base::Time& expiry,
                                      bool include_subdomains) {
+  DCHECK(CalledOnValidThread());
+
   // Copy-and-modify the existing DomainState for this host (if any).
   TransportSecurityState::DomainState domain_state;
   const std::string canonicalized_host = CanonicalizeHost(host);
@@ -657,7 +674,7 @@ bool TransportSecurityState::AddHSTS(const std::string& host,
     domain_state = i->second;
 
   domain_state.created = base::Time::Now();
-  domain_state.include_subdomains = include_subdomains;
+  domain_state.sts_include_subdomains = include_subdomains;
   domain_state.upgrade_expiry = expiry;
   domain_state.upgrade_mode = DomainState::MODE_FORCE_HTTPS;
   EnableHost(host, domain_state);
@@ -668,6 +685,8 @@ bool TransportSecurityState::AddHPKP(const std::string& host,
                                      const base::Time& expiry,
                                      bool include_subdomains,
                                      const HashValueVector& hashes) {
+  DCHECK(CalledOnValidThread());
+
   // Copy-and-modify the existing DomainState for this host (if any).
   TransportSecurityState::DomainState domain_state;
   const std::string canonicalized_host = CanonicalizeHost(host);
@@ -678,7 +697,7 @@ bool TransportSecurityState::AddHPKP(const std::string& host,
     domain_state = i->second;
 
   domain_state.created = base::Time::Now();
-  domain_state.include_subdomains = include_subdomains;
+  domain_state.pkp_include_subdomains = include_subdomains;
   domain_state.dynamic_spki_hashes_expiry = expiry;
   domain_state.dynamic_spki_hashes = hashes;
   EnableHost(host, domain_state);
@@ -744,7 +763,8 @@ bool TransportSecurityState::GetStaticDomainState(
   DCHECK(CalledOnValidThread());
 
   out->upgrade_mode = DomainState::MODE_FORCE_HTTPS;
-  out->include_subdomains = false;
+  out->sts_include_subdomains = false;
+  out->pkp_include_subdomains = false;
 
   const bool is_build_timely = IsBuildTimely();
 
@@ -752,12 +772,6 @@ bool TransportSecurityState::GetStaticDomainState(
     std::string host_sub_chunk(&canonicalized_host[i],
                                canonicalized_host.size() - i);
     out->domain = DNSDomainToString(host_sub_chunk);
-    std::string hashed_host(HashHost(host_sub_chunk));
-    if (forced_hosts_.find(hashed_host) != forced_hosts_.end()) {
-      *out = forced_hosts_[hashed_host];
-      out->domain = DNSDomainToString(host_sub_chunk);
-      return true;
-    }
     bool ret;
     if (is_build_timely &&
         HasPreload(kPreloadedSTS, kNumPreloadedSTS, canonicalized_host, i, out,
@@ -777,18 +791,15 @@ bool TransportSecurityState::GetStaticDomainState(
 
 void TransportSecurityState::AddOrUpdateEnabledHosts(
     const std::string& hashed_host, const DomainState& state) {
+  DCHECK(CalledOnValidThread());
   enabled_hosts_[hashed_host] = state;
-}
-
-void TransportSecurityState::AddOrUpdateForcedHosts(
-    const std::string& hashed_host, const DomainState& state) {
-  forced_hosts_[hashed_host] = state;
 }
 
 TransportSecurityState::DomainState::DomainState()
     : upgrade_mode(MODE_FORCE_HTTPS),
       created(base::Time::Now()),
-      include_subdomains(false) {
+      sts_include_subdomains(false),
+      pkp_include_subdomains(false) {
 }
 
 TransportSecurityState::DomainState::~DomainState() {
@@ -834,13 +845,6 @@ bool TransportSecurityState::DomainState::ShouldUpgradeToSSL() const {
 }
 
 bool TransportSecurityState::DomainState::ShouldSSLErrorsBeFatal() const {
-  return true;
-}
-
-bool TransportSecurityState::DomainState::Equals(
-    const DomainState& other) const {
-  // TODO(palmer): Implement this
-  (void) other;
   return true;
 }
 

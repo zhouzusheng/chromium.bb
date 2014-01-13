@@ -678,6 +678,10 @@ GL_FUNCTIONS = [
     'GLsync sync, GLenum pname, GLsizei bufSize, GLsizei* length,'
     'GLint* values', },
 { 'return_type': 'void',
+  'names': ['glClientWaitSync'],
+  'arguments':
+    'GLsync sync, GLbitfield flags, GLuint64 timeout', },
+{ 'return_type': 'void',
   'names': ['glDrawArraysInstancedANGLE', 'glDrawArraysInstancedARB'],
   'arguments': 'GLenum mode, GLint first, GLsizei count, GLsizei primcount', },
 { 'return_type': 'void',
@@ -1215,22 +1219,6 @@ class GLContext;
   file.write("struct Procs%s {\n" % set_name.upper())
   for func in functions:
     file.write('  %sProc %sFn;\n' % (func['names'][0], func['names'][0]))
-  file.write('};\n')
-  file.write('\n')
-
-  # Write Driver struct.
-  file.write(
-"""struct GL_EXPORT Driver%(name)s {
-  void InitializeBindings();
-  void InitializeExtensionBindings(GLContext* context);
-  void InitializeDebugBindings();
-  void ClearBindings();
-  void UpdateDebugExtensionBindings();
-
-  Procs%(name)s fn;
-  Procs%(name)s debug_fn;
-  Extensions%(name)s ext;
-""" % {'name': set_name.upper()})
   file.write('};\n')
   file.write('\n')
 

@@ -34,7 +34,7 @@
 #include "WebSerializedScriptValue.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "core/dom/CustomEvent.h"
-#include <public/WebString.h>
+#include "public/platform/WebString.h"
 
 using namespace WebCore;
 
@@ -42,7 +42,7 @@ namespace WebKit {
 
 void WebDOMCustomEvent::initCustomEvent(const WebString& type, bool canBubble, bool cancelable, const WebSerializedScriptValue& webSerializedScriptValue)
 {
-    ASSERT(m_private);
+    ASSERT(m_private.get());
     RefPtr<SerializedScriptValue> serializedScriptValue;
     serializedScriptValue = webSerializedScriptValue;
     unwrap<CustomEvent>()->initCustomEvent(type, canBubble, cancelable, serializedScriptValue.get());

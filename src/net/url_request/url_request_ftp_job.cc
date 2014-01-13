@@ -6,12 +6,13 @@
 
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/auth.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/ftp/ftp_auth_cache.h"
 #include "net/ftp/ftp_response_info.h"
 #include "net/ftp/ftp_transaction_factory.h"
 #include "net/http/http_response_headers.h"
@@ -44,26 +45,6 @@ URLRequestFtpJob::URLRequestFtpJob(
 URLRequestFtpJob::~URLRequestFtpJob() {
   if (pac_request_)
     proxy_service_->CancelPacRequest(pac_request_);
-}
-
-// static
-URLRequestJob* URLRequestFtpJob::Factory(URLRequest* request,
-                                         NetworkDelegate* network_delegate,
-                                         const std::string& scheme) {
-  DCHECK_EQ(scheme, "ftp");
-
-  int port = request->url().IntPort();
-  if (request->url().has_port() &&
-      !IsPortAllowedByFtp(port) && !IsPortAllowedByOverride(port)) {
-    return new URLRequestErrorJob(request,
-                                  network_delegate,
-                                  ERR_UNSAFE_PORT);
-  }
-
-  return new URLRequestFtpJob(request,
-                              network_delegate,
-                              request->context()->ftp_transaction_factory(),
-                              request->context()->ftp_auth_cache());
 }
 
 bool URLRequestFtpJob::IsSafeRedirect(const GURL& location) {
@@ -256,7 +237,7 @@ void URLRequestFtpJob::OnStartCompleted(int result) {
 }
 
 void URLRequestFtpJob::OnStartCompletedAsync(int result) {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&URLRequestFtpJob::OnStartCompleted,
                  weak_factory_.GetWeakPtr(), result));
@@ -276,7 +257,7 @@ void URLRequestFtpJob::OnReadCompleted(int result) {
 }
 
 void URLRequestFtpJob::RestartTransactionWithAuth() {
-  DCHECK(auth_data_ && auth_data_->state == AUTH_STATE_HAVE_AUTH);
+  DCHECK(auth_data_.get() && auth_data_->state == AUTH_STATE_HAVE_AUTH);
 
   // No matter what, we want to report our status as IO pending since we will
   // be notifying our consumer asynchronously via OnStartCompleted.
@@ -311,7 +292,7 @@ LoadState URLRequestFtpJob::GetLoadState() const {
 }
 
 bool URLRequestFtpJob::NeedsAuth() {
-  return auth_data_ && auth_data_->state == AUTH_STATE_NEED_AUTH;
+  return auth_data_.get() && auth_data_->state == AUTH_STATE_NEED_AUTH;
 }
 
 void URLRequestFtpJob::GetAuthChallengeInfo(
@@ -398,7 +379,7 @@ bool URLRequestFtpJob::ReadRawData(IOBuffer* buf,
 void URLRequestFtpJob::HandleAuthNeededResponse() {
   GURL origin = request_->url().GetOrigin();
 
-  if (auth_data_) {
+  if (auth_data_.get()) {
     if (auth_data_->state == AUTH_STATE_CANCELED) {
       NotifyHeadersComplete();
       return;

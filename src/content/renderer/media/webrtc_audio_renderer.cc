@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "content/renderer/render_thread_impl.h"
@@ -38,6 +38,7 @@ const int kValidOutputRates[] = {48000, 44100};
 // low latency, currently 16000 is used to work around audio problem on some
 // Android devices.
 const int kValidOutputRates[] = {48000, 44100, 16000};
+const int kDefaultOutputBufferSize = 2048;
 #else
 const int kValidOutputRates[] = {44100};
 #endif
@@ -46,7 +47,7 @@ const int kValidOutputRates[] = {44100};
 enum AudioFramesPerBuffer {
   k160,
   k320,
-  k440,  // WebRTC works internally with 440 audio frames at 44.1kHz.
+  k440,
   k480,
   k640,
   k880,
@@ -58,11 +59,14 @@ enum AudioFramesPerBuffer {
 
 // Helper method to convert integral values to their respective enum values
 // above, or kUnexpectedAudioBufferSize if no match exists.
+// We map 441 to k440 to avoid changes in the XML part for histograms.
+// It is still possible to map the histogram result to the actual buffer size.
+// See http://crbug.com/243450 for details.
 AudioFramesPerBuffer AsAudioFramesPerBuffer(int frames_per_buffer) {
   switch (frames_per_buffer) {
     case 160: return k160;
     case 320: return k320;
-    case 440: return k440;
+    case 441: return k440;
     case 480: return k480;
     case 640: return k640;
     case 880: return k880;
@@ -92,8 +96,7 @@ WebRtcAudioRenderer::WebRtcAudioRenderer(int source_render_view_id)
       source_(NULL),
       play_ref_count_(0),
       audio_delay_milliseconds_(0),
-      frame_duration_milliseconds_(0),
-      fifo_io_ratio_(1) {
+      fifo_delay_milliseconds_(0) {
 }
 
 WebRtcAudioRenderer::~WebRtcAudioRenderer() {
@@ -108,16 +111,15 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
   base::AutoLock auto_lock(lock_);
   DCHECK_EQ(state_, UNINITIALIZED);
   DCHECK(source);
-  DCHECK(!sink_);
+  DCHECK(!sink_.get());
   DCHECK(!source_);
 
-  // Use mono on all platforms but Windows for now.
-  // TODO(henrika): Tracking at http://crbug.com/166771.
-  media::ChannelLayout channel_layout = media::CHANNEL_LAYOUT_MONO;
-#if defined(OS_WIN)
-  channel_layout = media::CHANNEL_LAYOUT_STEREO;
+  // Use stereo output on all platforms exept Android.
+  media::ChannelLayout channel_layout = media::CHANNEL_LAYOUT_STEREO;
+#if defined(OS_ANDROID)
+  DVLOG(1) << "Using mono audio output for Android";
+  channel_layout = media::CHANNEL_LAYOUT_MONO;
 #endif
-
   // Ask the renderer for the default audio output hardware sample-rate.
   media::AudioHardwareConfig* hardware_config =
       RenderThreadImpl::current()->GetAudioHardwareConfig();
@@ -134,8 +136,13 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
     DVLOG(1) << "Resampling from 48000 to 192000 is required";
     sample_rate = 48000;
   }
-  UMA_HISTOGRAM_ENUMERATION("WebRTC.AudioOutputSampleRate",
-                            sample_rate, media::kUnexpectedAudioSampleRate);
+  media::AudioSampleRate asr = media::AsAudioSampleRate(sample_rate);
+  if (asr != media::kUnexpectedAudioSampleRate) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "WebRTC.AudioOutputSampleRate", asr, media::kUnexpectedAudioSampleRate);
+  } else {
+    UMA_HISTOGRAM_COUNTS("WebRTC.AudioOutputSampleRateUnexpected", sample_rate);
+  }
 
   // Verify that the reported output hardware sample rate is supported
   // on the current platform.
@@ -148,23 +155,12 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
   }
 
   // Set up audio parameters for the source, i.e., the WebRTC client.
+
   // The WebRTC client only supports multiples of 10ms as buffer size where
   // 10ms is preferred for lowest possible delay.
-
   media::AudioParameters source_params;
-  int buffer_size = 0;
-
-  if (sample_rate % 8000 == 0) {
-    buffer_size = (sample_rate / 100);
-  } else if (sample_rate == 44100) {
-    // The resampler in WebRTC does not support 441 as input. We hard code
-    // the size to 440 (~0.9977ms) instead and rely on the internal jitter
-    // buffer in WebRTC to deal with the resulting drift.
-    // TODO(henrika): ensure that WebRTC supports 44100Hz and use 441 instead.
-    buffer_size = 440;
-  } else {
-    return false;
-  }
+  int buffer_size = (sample_rate / 100);
+  DVLOG(1) << "Using WebRTC output buffer size: " << buffer_size;
 
   int channels = ChannelLayoutToChannelCount(channel_layout);
   source_params.Reset(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
@@ -179,13 +175,19 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
 
   media::AudioParameters sink_params;
 
+#if defined(OS_ANDROID)
+  buffer_size = kDefaultOutputBufferSize;
+#else
   buffer_size = hardware_config->GetOutputBufferSize();
+#endif
+
   sink_params.Reset(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
                     channel_layout, channels, 0, sample_rate, 16, buffer_size);
 
   // Create a FIFO if re-buffering is required to match the source input with
   // the sink request. The source acts as provider here and the sink as
   // consumer.
+  fifo_delay_milliseconds_ = 0;
   if (source_params.frames_per_buffer() != sink_params.frames_per_buffer()) {
     DVLOG(1) << "Rebuffering from " << source_params.frames_per_buffer()
              << " to " << sink_params.frames_per_buffer();
@@ -196,14 +198,14 @@ bool WebRtcAudioRenderer::Initialize(WebRtcAudioRendererSource* source) {
             &WebRtcAudioRenderer::SourceCallback,
             base::Unretained(this))));
 
-    // The I/O ratio is used in delay calculations where one scheme is used
-    // for |fifo_io_ratio_| > 1 and another scheme for < 1.0.
-    fifo_io_ratio_ = static_cast<double>(source_params.frames_per_buffer()) /
-        sink_params.frames_per_buffer();
+    if (sink_params.frames_per_buffer() > source_params.frames_per_buffer()) {
+      int frame_duration_milliseconds = base::Time::kMillisecondsPerSecond /
+          static_cast<double>(source_params.sample_rate());
+      fifo_delay_milliseconds_ = (sink_params.frames_per_buffer() -
+        source_params.frames_per_buffer()) * frame_duration_milliseconds;
+    }
   }
 
-  frame_duration_milliseconds_ = base::Time::kMillisecondsPerSecond /
-      static_cast<double>(source_params.sample_rate());
 
   // Allocate local audio buffers based on the parameters above.
   // It is assumed that each audio sample contains 16 bits and each
@@ -308,10 +310,7 @@ int WebRtcAudioRenderer::Render(media::AudioBus* audio_bus,
   DVLOG(2) << "WebRtcAudioRenderer::Render()";
   DVLOG(2) << "audio_delay_milliseconds: " << audio_delay_milliseconds;
 
-  if (fifo_io_ratio_ > 1.0)
-    audio_delay_milliseconds_ += audio_delay_milliseconds;
-  else
-    audio_delay_milliseconds_ = audio_delay_milliseconds;
+  audio_delay_milliseconds_ = audio_delay_milliseconds;
 
   if (audio_fifo_)
     audio_fifo_->Consume(audio_bus, audio_bus->frames());
@@ -334,7 +333,7 @@ void WebRtcAudioRenderer::SourceCallback(
            << audio_bus->frames() << ")";
 
   int output_delay_milliseconds = audio_delay_milliseconds_;
-  output_delay_milliseconds += frame_duration_milliseconds_ * fifo_frame_delay;
+  output_delay_milliseconds += fifo_delay_milliseconds_;
   DVLOG(2) << "output_delay_milliseconds: " << output_delay_milliseconds;
 
   // We need to keep render data for the |source_| regardless of |state_|,
@@ -342,9 +341,6 @@ void WebRtcAudioRenderer::SourceCallback(
   source_->RenderData(reinterpret_cast<uint8*>(buffer_.get()),
                       audio_bus->channels(), audio_bus->frames(),
                       output_delay_milliseconds);
-
-  if (fifo_io_ratio_ > 1.0)
-    audio_delay_milliseconds_ = 0;
 
   // Avoid filling up the audio bus if we are not playing; instead
   // return here and ensure that the returned value in Render() is 0.

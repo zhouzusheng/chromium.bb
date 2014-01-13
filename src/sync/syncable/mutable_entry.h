@@ -84,6 +84,12 @@ class SYNC_EXPORT_PRIVATE MutableEntry : public Entry {
 
   bool Put(BitTemp field, bool value);
 
+  // This is similar to what one would expect from Put(TRANSACTION_VERSION),
+  // except that it doesn't bother to invoke 'SaveOriginals'.  Calling that
+  // function is at best unnecessary, since the transaction will have already
+  // used its list of mutations by the time this function is called.
+  void UpdateTransactionVersion(int64 version);
+
  protected:
   syncable::MetahandleSet* GetDirtyIndexHelper();
 
@@ -98,6 +104,7 @@ class SYNC_EXPORT_PRIVATE MutableEntry : public Entry {
   void* operator new(size_t size) { return (::operator new)(size); }
 
   bool PutUniqueClientTag(const std::string& value);
+  bool PutUniqueServerTag(const std::string& value);
 
   // Adjusts the successor and predecessor entries so that they no longer
   // refer to this entry.

@@ -24,7 +24,6 @@
 #define HTMLPlugInElement_h
 
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/platform/graphics/Image.h"
 
 #include "bindings/v8/ScriptInstance.h"
 
@@ -70,7 +69,7 @@ public:
 protected:
     HTMLPlugInElement(const QualifiedName& tagName, Document*);
 
-    virtual void detach();
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
@@ -85,7 +84,8 @@ private:
 
     virtual RenderWidget* renderWidgetForJSBindings() const = 0;
 
-    virtual bool supportsFocus() const OVERRIDE;
+    virtual bool supportsFocus() const OVERRIDE { return true; };
+    virtual bool rendererIsFocusable() const OVERRIDE;
 
     virtual bool isKeyboardFocusable(KeyboardEvent*) const;
     virtual bool isPluginElement() const;

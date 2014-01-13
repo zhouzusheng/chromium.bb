@@ -24,31 +24,19 @@
 #include "config.h"
 #include "core/rendering/RenderThemeChromiumSkia.h"
 
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
 #include "UserAgentStyleSheets.h"
-#include "core/html/HTMLMediaElement.h"
-#include "core/html/TimeRanges.h"
-#include "core/html/shadow/MediaControlElements.h"
 #include "core/platform/LayoutTestSupport.h"
 #include "core/platform/ScrollbarTheme.h"
-#include "core/platform/graphics/Font.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/Image.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
-#include "core/platform/graphics/transforms/TransformationMatrix.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderMediaControlsChromium.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderProgress.h"
-#include "core/rendering/RenderSlider.h"
 #include "core/rendering/RenderThemeChromiumFontProvider.h"
 
 #include <wtf/CurrentTime.h>
-
-#include "SkGradientShader.h"
-#include "SkShader.h"
 
 namespace WebCore {
 
@@ -69,7 +57,6 @@ static const float maxCancelButtonSize = 21;
 static const float defaultSearchFieldResultsDecorationSize = 13;
 static const float minSearchFieldResultsDecorationSize = 9;
 static const float maxSearchFieldResultsDecorationSize = 30;
-static const float defaultSearchFieldResultsButtonWidth = 18;
 
 RenderThemeChromiumSkia::RenderThemeChromiumSkia()
 {
@@ -82,9 +69,10 @@ RenderThemeChromiumSkia::~RenderThemeChromiumSkia()
 // Use the Windows style sheets to match their metrics.
 String RenderThemeChromiumSkia::extraDefaultStyleSheet()
 {
-    return String(themeWinUserAgentStyleSheet, sizeof(themeWinUserAgentStyleSheet)) +
-           String(themeChromiumSkiaUserAgentStyleSheet, sizeof(themeChromiumSkiaUserAgentStyleSheet)) +
-           String(themeChromiumUserAgentStyleSheet, sizeof(themeChromiumUserAgentStyleSheet));
+    return RenderTheme::extraDefaultStyleSheet() +
+        String(themeWinUserAgentStyleSheet, sizeof(themeWinUserAgentStyleSheet)) +
+        String(themeChromiumSkiaUserAgentStyleSheet, sizeof(themeChromiumSkiaUserAgentStyleSheet)) +
+        String(themeChromiumUserAgentStyleSheet, sizeof(themeChromiumUserAgentStyleSheet));
 }
 
 String RenderThemeChromiumSkia::extraQuirksStyleSheet()
@@ -107,18 +95,6 @@ bool RenderThemeChromiumSkia::supportsFocusRing(const RenderStyle* style) const
     // This causes WebKit to draw the focus rings for us.
     return false;
 }
-
-bool RenderThemeChromiumSkia::supportsDataListUI(const AtomicString& type) const
-{
-    return RenderThemeChromiumCommon::supportsDataListUI(type);
-}
-
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI) && ENABLE(CALENDAR_PICKER)
-bool RenderThemeChromiumSkia::supportsCalendarPicker(const AtomicString& type) const
-{
-    return RenderThemeChromiumCommon::supportsCalendarPicker(type);
-}
-#endif
 
 bool RenderThemeChromiumSkia::supportsClosedCaptioning() const
 {
@@ -161,9 +137,9 @@ double RenderThemeChromiumSkia::caretBlinkInterval() const
     return caretBlinkIntervalInternal();
 }
 
-void RenderThemeChromiumSkia::systemFont(int propId, FontDescription& fontDescription) const
+void RenderThemeChromiumSkia::systemFont(CSSValueID valueID, FontDescription& fontDescription) const
 {
-    RenderThemeChromiumFontProvider::systemFont(propId, fontDescription);
+    RenderThemeChromiumFontProvider::systemFont(valueID, fontDescription);
 }
 
 int RenderThemeChromiumSkia::minimumMenuListSize(RenderStyle* style) const
@@ -208,7 +184,7 @@ void RenderThemeChromiumSkia::setRadioSize(RenderStyle* style) const
     setCheckboxSize(style);
 }
 
-void RenderThemeChromiumSkia::adjustButtonStyle(StyleResolver*, RenderStyle* style, Element*) const
+void RenderThemeChromiumSkia::adjustButtonStyle(RenderStyle* style, Element*) const
 {
     if (style->appearance() == PushButtonPart) {
         // Ignore line-height.
@@ -221,7 +197,7 @@ bool RenderThemeChromiumSkia::paintTextArea(RenderObject* o, const PaintInfo& i,
     return paintTextField(o, i, r);
 }
 
-void RenderThemeChromiumSkia::adjustSearchFieldStyle(StyleResolver*, RenderStyle* style, Element*) const
+void RenderThemeChromiumSkia::adjustSearchFieldStyle(RenderStyle* style, Element*) const
 {
      // Ignore line-height.
      style->setLineHeight(RenderStyle::initialLineHeight());
@@ -232,7 +208,7 @@ bool RenderThemeChromiumSkia::paintSearchField(RenderObject* o, const PaintInfo&
     return paintTextField(o, i, r);
 }
 
-void RenderThemeChromiumSkia::adjustSearchFieldCancelButtonStyle(StyleResolver*, RenderStyle* style, Element*) const
+void RenderThemeChromiumSkia::adjustSearchFieldCancelButtonStyle(RenderStyle* style, Element*) const
 {
     // Scale the button size based on the font size
     float fontScale = style->fontSize() / defaultControlFontPixelSize;
@@ -275,19 +251,18 @@ bool RenderThemeChromiumSkia::paintSearchFieldCancelButton(RenderObject* cancelB
 
     static Image* cancelImage = Image::loadPlatformResource("searchCancel").leakRef();
     static Image* cancelPressedImage = Image::loadPlatformResource("searchCancelPressed").leakRef();
-    paintInfo.context->drawImage(isPressed(cancelButtonObject) ? cancelPressedImage : cancelImage,
-                                 cancelButtonObject->style()->colorSpace(), paintingRect);
+    paintInfo.context->drawImage(isPressed(cancelButtonObject) ? cancelPressedImage : cancelImage, paintingRect);
     return false;
 }
 
-void RenderThemeChromiumSkia::adjustSearchFieldDecorationStyle(StyleResolver*, RenderStyle* style, Element*) const
+void RenderThemeChromiumSkia::adjustSearchFieldDecorationStyle(RenderStyle* style, Element*) const
 {
     IntSize emptySize(1, 11);
     style->setWidth(Length(emptySize.width(), Fixed));
     style->setHeight(Length(emptySize.height(), Fixed));
 }
 
-void RenderThemeChromiumSkia::adjustSearchFieldResultsDecorationStyle(StyleResolver*, RenderStyle* style, Element*) const
+void RenderThemeChromiumSkia::adjustSearchFieldResultsDecorationStyle(RenderStyle* style, Element*) const
 {
     // Scale the decoration size based on the font size
     float fontScale = style->fontSize() / defaultControlFontPixelSize;
@@ -318,41 +293,7 @@ bool RenderThemeChromiumSkia::paintSearchFieldResultsDecoration(RenderObject* ma
     IntRect paintingRect = convertToPaintingRect(inputRenderBox, magnifierObject, magnifierRect, r);
 
     static Image* magnifierImage = Image::loadPlatformResource("searchMagnifier").leakRef();
-    paintInfo.context->drawImage(magnifierImage, magnifierObject->style()->colorSpace(), paintingRect);
-    return false;
-}
-
-void RenderThemeChromiumSkia::adjustSearchFieldResultsButtonStyle(StyleResolver*, RenderStyle* style, Element*) const
-{
-    // Scale the button size based on the font size
-    float fontScale = style->fontSize() / defaultControlFontPixelSize;
-    int magnifierHeight = lroundf(std::min(std::max(minSearchFieldResultsDecorationSize, defaultSearchFieldResultsDecorationSize * fontScale),
-                                           maxSearchFieldResultsDecorationSize));
-    int magnifierWidth = lroundf(magnifierHeight * defaultSearchFieldResultsButtonWidth / defaultSearchFieldResultsDecorationSize);
-    style->setWidth(Length(magnifierWidth, Fixed));
-    style->setHeight(Length(magnifierHeight, Fixed));
-}
-
-bool RenderThemeChromiumSkia::paintSearchFieldResultsButton(RenderObject* magnifierObject, const PaintInfo& paintInfo, const IntRect& r)
-{
-    // Get the renderer of <input> element.
-    Node* input = magnifierObject->node()->shadowHost();
-    RenderObject* baseRenderer = input ? input->renderer() : magnifierObject;
-    if (!baseRenderer->isBox())
-        return false;
-    RenderBox* inputRenderBox = toRenderBox(baseRenderer);
-    LayoutRect inputContentBox = inputRenderBox->contentBoxRect();
-
-    // Make sure the scaled decoration will fit in its parent's box.
-    LayoutUnit magnifierHeight = std::min<LayoutUnit>(inputContentBox.height(), r.height());
-    LayoutUnit magnifierWidth = std::min<LayoutUnit>(inputContentBox.width(), magnifierHeight * defaultSearchFieldResultsButtonWidth / defaultSearchFieldResultsDecorationSize);
-    LayoutRect magnifierRect(magnifierObject->offsetFromAncestorContainer(inputRenderBox).width(),
-                             inputContentBox.y() + (inputContentBox.height() - magnifierHeight + 1) / 2,
-                             magnifierWidth, magnifierHeight);
-    IntRect paintingRect = convertToPaintingRect(inputRenderBox, magnifierObject, magnifierRect, r);
-
-    static Image* magnifierImage = Image::loadPlatformResource("searchMagnifierResults").leakRef();
-    paintInfo.context->drawImage(magnifierImage, magnifierObject->style()->colorSpace(), paintingRect);
+    paintInfo.context->drawImage(magnifierImage, paintingRect);
     return false;
 }
 
@@ -411,15 +352,15 @@ bool RenderThemeChromiumSkia::paintMediaFullscreenButton(RenderObject* object, c
     return RenderMediaControlsChromium::paintMediaControlsPart(MediaEnterFullscreenButton, object, paintInfo, rect);
 }
 
-void RenderThemeChromiumSkia::adjustMenuListStyle(StyleResolver*, RenderStyle* style, WebCore::Element*) const
+void RenderThemeChromiumSkia::adjustMenuListStyle(RenderStyle* style, WebCore::Element*) const
 {
     // Height is locked to auto on all browsers.
     style->setLineHeight(RenderStyle::initialLineHeight());
 }
 
-void RenderThemeChromiumSkia::adjustMenuListButtonStyle(StyleResolver* styleResolver, RenderStyle* style, Element* e) const
+void RenderThemeChromiumSkia::adjustMenuListButtonStyle(RenderStyle* style, Element* e) const
 {
-    adjustMenuListStyle(styleResolver, style, e);
+    adjustMenuListStyle(style, e);
 }
 
 // Used to paint styled menulists (i.e. with a non-default border)
@@ -464,15 +405,6 @@ int RenderThemeChromiumSkia::menuListArrowPadding() const
     return ScrollbarTheme::theme()->scrollbarThickness();
 }
 
-// static
-void RenderThemeChromiumSkia::setSizeIfAuto(RenderStyle* style, const IntSize& size)
-{
-    if (style->width().isIntrinsicOrAuto())
-        style->setWidth(Length(size.width(), Fixed));
-    if (style->height().isAuto())
-        style->setHeight(Length(size.height(), Fixed));
-}
-
 int RenderThemeChromiumSkia::menuListInternalPadding(RenderStyle* style, int paddingType) const
 {
     // This internal padding is in addition to the user-supplied padding.
@@ -495,13 +427,6 @@ bool RenderThemeChromiumSkia::shouldShowPlaceholderWhenFocused() const
 {
     return true;
 }
-
-#if ENABLE(DATALIST_ELEMENT)
-LayoutUnit RenderThemeChromiumSkia::sliderTickSnappingThreshold() const
-{
-    return RenderThemeChromiumCommon::sliderTickSnappingThreshold();
-}
-#endif
 
 //
 // Following values are come from default of GTK+

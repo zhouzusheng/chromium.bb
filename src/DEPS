@@ -8,60 +8,54 @@ vars = {
   "sourceforge_url": "http://%(repo)s.svn.sourceforge.net/svnroot/%(repo)s",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "149738",
+  "webkit_revision": "152953",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "swig_revision": "69281",
-  "nacl_revision": "11298",
+  "nacl_revision": "11601",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
-  "nacl_tools_revision": "11040",  # native_client/DEPS: tools_rev
+  "nacl_tools_revision": "11437",  # native_client/DEPS: tools_rev
   "gtm_revision": "608",
 
-  "libjingle_revision": "310",
+  "libjingle_revision": "347",
   "libphonenumber_revision": "456",
-  "libvpx_revision": "197977",
+  "libvpx_revision": "208227",
   "lss_revision": "20",
 
   # These two FFmpeg variables must be updated together.  One is used for SVN
   # checkouts and the other for Git checkouts.
-  "ffmpeg_revision": "198257",
-  "ffmpeg_hash": "04db474e52bae0eef2cd22341aca1caf427411de",
+  "ffmpeg_revision": "203786",
+  "ffmpeg_hash": "245a8c0cdfdd5ab3da9045089661017e9ddd8d0e",
 
   "sfntly_revision": "134",
-  "skia_revision": "9003",
+  "skia_revision": "9712",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "14510",
+  "v8_revision": "15255",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "3965",
+  "webrtc_revision": "4253",
   "jsoncpp_revision": "248",
-  "nss_revision": "197511",
+  "nss_revision": "206843",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarm_client
   # and whatever else without interference from each other.
-  "swarm_revision": "197757",
+  "swarm_revision": "207216",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
-  "openssl_revision": "194187",
-
-  "ios_webkit_trunk": "http://svn.webkit.org/repository/webkit/trunk",
-  # Three lines of non-changing comments so that
-  # the commit queue can handle CLs rolling openssl
-  # and whatever else without interference from each other.
-  "ios_webkit_revision": "147503",
+  "openssl_revision": "207965",
 }
 
 deps = {
   "src/breakpad/src":
-    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1169",
+    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1182",
 
   "src/googleurl":
-    (Var("googlecode_url") % "google-url") + "/trunk@183",
+    (Var("googlecode_url") % "google-url") + "/trunk@185",
 
   "src/sdch/open-vcdiff":
     (Var("googlecode_url") % "open-vcdiff") + "/trunk@42",
@@ -72,23 +66,24 @@ deps = {
   "src/testing/gmock":
     (Var("googlecode_url") % "googlemock") + "/trunk@410",
 
-  "src/third_party/angle":
-    (Var("googlecode_url") % "angleproject") + "/trunk@2184",
+  "src/third_party/angle_dx11":
+    Var("chromium_git") +
+    "/external/angle.git@f576cb24c8fc02d3f2fb90faebdcf333fb27892f",
 
   "src/third_party/trace-viewer":
-    (Var("googlecode_url") % "trace-viewer") + "/trunk@299",
+    (Var("googlecode_url") % "trace-viewer") + "/trunk@623",
 
   "src/third_party/WebKit":
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu46@192960",
+    "/trunk/deps/third_party/icu46@205936",
 
   "src/third_party/libexif/sources":
     "/trunk/deps/third_party/libexif/sources@146817",
 
   "src/third_party/hunspell":
-   "/trunk/deps/third_party/hunspell@197309",
+   "/trunk/deps/third_party/hunspell@206172",
 
   "src/third_party/hunspell_dictionaries":
     "/trunk/deps/third_party/hunspell_dictionaries@193701",
@@ -98,19 +93,19 @@ deps = {
 
   "src/third_party/cacheinvalidation/src":
     (Var("googlecode_url") % "google-cache-invalidation-api") +
-    "/trunk/src@298",
+    "/trunk/src@309",
 
   "src/third_party/leveldatabase/src":
-    (Var("googlecode_url") % "leveldb") + "/trunk@72",
+    (Var("googlecode_url") % "leveldb") + "/trunk@75",
 
   "src/third_party/snappy/src":
     (Var("googlecode_url") % "snappy") + "/trunk@74",
 
   "src/tools/grit":
-    (Var("googlecode_url") % "grit-i18n") + "/trunk@119",
+    (Var("googlecode_url") % "grit-i18n") + "/trunk@127",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@1611",
+    (Var("googlecode_url") % "gyp") + "/trunk@1652",
 
   "src/tools/swarm_client":
     "/trunk/tools/swarm_client@" + Var("swarm_revision"),
@@ -120,9 +115,6 @@ deps = {
 
   "src/native_client":
     Var("nacl_trunk") + "/src/native_client@" + Var("nacl_revision"),
-
-  "src/third_party/pymox/src":
-    (Var("googlecode_url") % "pymox") + "/trunk@70",
 
   "src/chrome/test/data/extensions/api_test/permissions/nacl_enabled/bin":
     Var("nacl_trunk") + "/src/native_client/tests/prebuilt@" +
@@ -142,7 +134,7 @@ deps = {
     (Var("googlecode_url") % "skia") + "/trunk/include@" + Var("skia_revision"),
 
   "src/third_party/ots":
-    (Var("googlecode_url") % "ots") + "/trunk@97",
+    (Var("googlecode_url") % "ots") + "/trunk@102",
 
   "src/tools/page_cycler/acid3":
     "/trunk/deps/page_cycler/acid3@171600",
@@ -160,80 +152,19 @@ deps = {
     (Var("googlecode_url") % "bidichecker") + "/trunk/lib@4",
 
   "src/third_party/v8-i18n":
-    (Var("googlecode_url") % "v8-i18n") + "/trunk@174",
+    (Var("googlecode_url") % "v8-i18n") + "/trunk@191",
 
   # When roll to another webgl conformance tests revision, please goto
   # chrome/test/gpu and run generate_webgl_conformance_test_list.py.
   "src/third_party/webgl_conformance":
-    "/trunk/deps/third_party/webgl/sdk/tests@170088",
-
-  # We run these layout tests as UI tests. Since many of the buildbots that
-  # run layout tests do NOT have access to the LayoutTest directory, we need
-  # to map them here. In practice, these do not take up much space.
-  #
-  # TODO: crbug.com/230215. Remove these and update the tests to pull directly
-  # from the Blink repo since the layout tests are now always checked out.
-  "src/content/test/data/layout_tests/LayoutTests/fast/events":
-    Var("webkit_trunk") + "/LayoutTests/fast/events@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/fast/js/resources":
-    Var("webkit_trunk") + "/LayoutTests/fast/js/resources@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/fast/workers":
-    Var("webkit_trunk") + "/LayoutTests/fast/workers@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/http/tests/resources":
-    Var("webkit_trunk") + "/LayoutTests/http/tests/resources@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/http/tests/workers":
-    Var("webkit_trunk") + "/LayoutTests/http/tests/workers@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/http/tests/xmlhttprequest":
-    Var("webkit_trunk") + "/LayoutTests/http/tests/xmlhttprequest@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/http/tests/websocket/tests":
-    Var("webkit_trunk") + "/LayoutTests/http/tests/websocket/tests@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/platform/chromium-win/fast/events":
-    Var("webkit_trunk") + "/LayoutTests/platform/chromium-win/fast/events@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/platform/chromium-win/fast/workers":
-    Var("webkit_trunk") + "/LayoutTests/platform/chromium-win/fast/workers@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/http/tests/appcache":
-    Var("webkit_trunk") + "/LayoutTests/http/tests/appcache@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/platform/chromium-win/http/tests/workers":
-    Var("webkit_trunk") + "/LayoutTests/platform/chromium-win/http/tests/workers@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/platform/chromium-win/storage/domstorage":
-    Var("webkit_trunk") + "/LayoutTests/platform/chromium-win/storage/domstorage@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/storage/domstorage":
-    Var("webkit_trunk") + "/LayoutTests/storage/domstorage@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/storage/indexeddb":
-    Var("webkit_trunk") + "/LayoutTests/storage/indexeddb@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/fast/files":
-    Var("webkit_trunk") + "/LayoutTests/fast/files@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/fast/filesystem":
-    Var("webkit_trunk") + "/LayoutTests/fast/filesystem@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/media":
-    Var("webkit_trunk") + "/LayoutTests/media@" +
-    Var("webkit_revision"),
-  "src/content/test/data/layout_tests/LayoutTests/editing/pasteboard/resources":
-    Var("webkit_trunk") + "/LayoutTests/editing/pasteboard/resources@" +
-    Var("webkit_revision"),
+    "/trunk/deps/third_party/webgl/sdk/tests@202601",
 
   "src/third_party/swig/Lib":
     "/trunk/deps/third_party/swig/Lib@" + Var("swig_revision"),
 
   # Make sure you update the two functional.DEPS and webdriver.DEPS too.
   "src/third_party/webdriver/pylib":
-    (Var("googlecode_url") % "selenium") + "/trunk/py@16922",
+    (Var("googlecode_url") % "selenium") + "/trunk/py@18337",
 
   "src/third_party/libvpx":
     "/trunk/deps/third_party/libvpx@" +
@@ -246,6 +177,10 @@ deps = {
   "src/third_party/libjingle/source":
     (Var("googlecode_url") % "libjingle") + "/trunk@" +
     Var("libjingle_revision"),
+
+  "src/third_party/usrsctp/usrsctplib":
+    (Var("googlecode_url") % "sctp-refimpl") +
+    "/trunk/KERN/usrsctp/usrsctplib@8463",
 
   "src/third_party/libsrtp":
     "/trunk/deps/third_party/libsrtp@189528",
@@ -273,7 +208,7 @@ deps = {
     (Var("googlecode_url") % "webrtc") + "/stable/webrtc@" + Var("webrtc_revision"),
 
   "src/third_party/openmax_dl":
-    (Var("googlecode_url") % "webrtc") + "/deps/third_party/openmax@3720",
+    (Var("googlecode_url") % "webrtc") + "/deps/third_party/openmax@4148",
 
   "src/third_party/jsoncpp/source/include":
     (Var("sourceforge_url") % {"repo": "jsoncpp"}) +
@@ -284,10 +219,10 @@ deps = {
         "/trunk/jsoncpp/src/lib_json@" + Var("jsoncpp_revision"),
 
   "src/third_party/libyuv":
-    (Var("googlecode_url") % "libyuv") + "/trunk@682",
+    (Var("googlecode_url") % "libyuv") + "/trunk@723",
 
   "src/third_party/smhasher/src":
-    (Var("googlecode_url") % "smhasher") + "/trunk@148",
+    (Var("googlecode_url") % "smhasher") + "/trunk@149",
 
   "src/third_party/libphonenumber/src/phonenumbers":
      (Var("googlecode_url") % "libphonenumber") +
@@ -299,14 +234,11 @@ deps = {
      (Var("googlecode_url") % "libphonenumber") + "/trunk/resources@" +
          Var("libphonenumber_revision"),
 
-  "src/third_party/undoview":
-    "/trunk/deps/third_party/undoview@119694",
-
   "src/tools/deps2git":
-    "/trunk/tools/deps2git@194189",
+    "/trunk/tools/deps2git@202885",
 
   "src/third_party/webpagereplay":
-    (Var("googlecode_url") % "web-page-replay") + "/trunk@511",
+    (Var("googlecode_url") % "web-page-replay") + "/trunk@515",
 
   "src/third_party/pywebsocket/src":
     (Var("googlecode_url") % "pywebsocket") + "/trunk/src@662",
@@ -317,8 +249,11 @@ deps = {
   "src/third_party/accessibility-developer-tools":
     Var("chromium_git") + "/external/accessibility-developer-tools.git@ad5df9a5341d38778658c90e4aa241c4ebe4e8aa",
 
-  "src/webkit/media/crypto/ppapi/cdm":
+  "src/webkit/renderer/media/crypto/ppapi/cdm":
     "/trunk/deps/cdm@181763",
+
+  "src/third_party/mesa/src":
+    "/trunk/deps/third_party/mesa@204346",
 }
 
 
@@ -381,7 +316,7 @@ deps_os = {
     # Binary level profile guided optimizations. This points to the
     # latest release binaries for the toolchain.
     "src/third_party/syzygy/binaries":
-      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@1462",
+      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@1584",
 
     # Binaries for nacl sdk.
     "src/third_party/nacl_sdk_binaries":
@@ -397,41 +332,17 @@ deps_os = {
 
     # class-dump utility to generate header files for undocumented SDKs
     "src/testing/iossim/third_party/class-dump":
-      "/trunk/deps/third_party/class-dump@147231",
+      "/trunk/deps/third_party/class-dump@199203",
 
-    # Pull only the headers from WebKit.
-    "src/third_party/WebKit/Source/WebKit/chromium/public":
-      Var("ios_webkit_trunk") + "/Source/WebKit/chromium/public@" +
-      Var("ios_webkit_revision"),
-    "src/third_party/WebKit/Source/Platform/chromium/public":
-      Var("ios_webkit_trunk") + "/Source/Platform/chromium/public@" +
-      Var("ios_webkit_revision"),
-
-    # Code that's not needed due to not building everything (especially WebKit).
+    # Code that's not needed due to not building everything
     "src/build/util/support": None,
     "src/chrome/test/data/extensions/api_test/permissions/nacl_enabled/bin": None,
-    "src/content/test/data/layout_tests/LayoutTests/editing/pasteboard/resources": None,
-    "src/content/test/data/layout_tests/LayoutTests/fast/events": None,
-    "src/content/test/data/layout_tests/LayoutTests/fast/filesystem_temp": None,
-    "src/content/test/data/layout_tests/LayoutTests/fast/js/resources": None,
-    "src/content/test/data/layout_tests/LayoutTests/fast/workers": None,
-    "src/content/test/data/layout_tests/LayoutTests/http/tests/appcache": None,
-    "src/content/test/data/layout_tests/LayoutTests/http/tests/resources": None,
-    "src/content/test/data/layout_tests/LayoutTests/http/tests/websocket/tests": None,
-    "src/content/test/data/layout_tests/LayoutTests/http/tests/workers": None,
-    "src/content/test/data/layout_tests/LayoutTests/http/tests/xmlhttprequest": None,
-    "src/content/test/data/layout_tests/LayoutTests/media": None,
-    "src/content/test/data/layout_tests/LayoutTests/platform/chromium-win/fast/events": None,
-    "src/content/test/data/layout_tests/LayoutTests/platform/chromium-win/fast/workers": None,
-    "src/content/test/data/layout_tests/LayoutTests/platform/chromium-win/http/tests/workers": None,
-    "src/content/test/data/layout_tests/LayoutTests/platform/chromium-win/storage/domstorage": None,
-    "src/content/test/data/layout_tests/LayoutTests/storage/indexeddb": None,
-    "src/content/test/data/layout_tests/LayoutTests/storage/domstorage": None,
     "src/chrome/test/data/perf/canvas_bench": None,
     "src/chrome/test/data/perf/frame_rate/content": None,
     "src/native_client": None,
     "src/native_client/src/third_party/ppapi": None,
     "src/third_party/angle": None,
+    "src/third_party/angle_dx11": None,
     "src/third_party/bidichecker": None,
     "src/third_party/webgl_conformance": None,
     "src/third_party/ffmpeg": None,
@@ -444,6 +355,7 @@ deps_os = {
     "src/third_party/libphonenumber/src/test": None,
     "src/third_party/libphonenumber/src/resources": None,
     "src/third_party/libsrtp": None,
+    "src/third_party/usrsctp/usrsctplib": None,
     "src/third_party/libvpx": None,
     "src/third_party/libyuv": None,
     "src/third_party/ots": None,
@@ -460,7 +372,6 @@ deps_os = {
     "src/third_party/webdriver/pylib": None,
     "src/third_party/webpagereplay": None,
     "src/third_party/webrtc": None,
-    "src/third_party/WebKit": None,
     "src/third_party/yasm/source/patched-yasm": None,
     "src/tools/page_cycler/acid3": None,
     "src/v8": None,
@@ -493,7 +404,7 @@ deps_os = {
       "/trunk/deps/reference_builds/chrome_linux@197743",
 
     "src/third_party/xdg-utils":
-      "/trunk/deps/third_party/xdg-utils@149334",
+      "/trunk/deps/third_party/xdg-utils@203785",
 
     "src/third_party/swig/linux":
       "/trunk/deps/third_party/swig/linux@" + Var("swig_revision"),
@@ -506,10 +417,10 @@ deps_os = {
       "/trunk/deps/third_party/openssl@" + Var("openssl_revision"),
 
     "src/third_party/gold":
-      "/trunk/deps/third_party/gold@168091",
+      "/trunk/deps/third_party/gold@203758",
 
     "src/third_party/libmtp":
-      "/trunk/deps/third_party/libmtp@178673",
+      "/trunk/deps/third_party/libmtp@206535",
 
     # Used on Linux only. CrOS already has a copy.
     "src/third_party/mtpd/source":
@@ -524,7 +435,7 @@ deps_os = {
     # For Linux and Chromium OS.
     "src/third_party/cros_system_api":
       Var("chromiumos_git") + "/platform/system_api.git" +
-      "@d28fa3e2665f58687841c4febe0a0ba2b7e2d9cc",
+      "@211c50e14bc96a7b3e040d6287fc66ef80bee44d",
 
     # Note that this is different from Android's freetype repo.
     "src/third_party/freetype2/src":
@@ -534,17 +445,20 @@ deps_os = {
     # Build tools for targeting ChromeOS.
     "src/third_party/chromite":
       Var("chromiumos_git") + "/chromite.git" +
-      "@dfd2710856705831dd4e8cd6267899fd4721e11a",
+      "@785fedc51fc430445d8f397440012ea3b489bac9",
 
     # Dependency of chromite.git.
     "src/third_party/pyelftools":
       Var("chromiumos_git") + "/third_party/pyelftools.git" +
       "@bdc1d380acd88d4bfaf47265008091483b0d614e",
+
+    "src/third_party/undoview":
+      "/trunk/deps/third_party/undoview@119694",
   },
   "android": {
     "src/third_party/android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@6c57b3397787c23888f9ded9f6a0c0c3f3fdc3a5",
+      "@e9da75d5e88d3e122ac60ee1d642cdcc1acb2bd8",
 
     "src/third_party/aosp":
       "/trunk/deps/third_party/aosp@148330",
@@ -635,22 +549,34 @@ hooks = [
     ],
   },
   {
-    # Download arm sysroot image to src/arm-sysroot. This image updates
+    # Downloads an ARM sysroot image to src/arm-sysroot. This image updates
     # at about the same rate that the chrome build deps change.
     # This script is a no-op except for linux users who have
-    # target_arch=arm in thier GYP_DEFINES.
+    # target_arch=arm in their GYP_DEFINES.
     "pattern": ".",
     "action": ["python", "src/build/linux/install-arm-sysroot.py",
                "--linux-only"],
   },
   {
-    # Downloads the Debian Wheezy sysroot to chrome/installer/linux/internal
-    # if needed. This sysroot updates at about the same rate that the chrome
-    # build deps change. This script is a no-op except for linux users who have
-    # src-internal access and are doing official chrome builds.
+    # Downloads the Debian Wheezy sysroot to chrome/installer/linux if needed.
+    # This sysroot updates at about the same rate that the chrome build deps
+    # change. This script is a no-op except for linux users who are doing
+    # official chrome builds.
     "pattern": ".",
-    "action": ["python",
-               "src/build/linux/install-debian.wheezy.sysroot.wrapper.py"],
+    "action": [
+        "python",
+        "src/chrome/installer/linux/sysroot_scripts/install-debian.wheezy.sysroot.py",
+        "--linux-only",
+        "--arch=amd64"],
+  },
+  {
+    # Same as above, but for 32-bit Linux.
+    "pattern": ".",
+    "action": [
+        "python",
+        "src/chrome/installer/linux/sysroot_scripts/install-debian.wheezy.sysroot.py",
+        "--linux-only",
+        "--arch=i386"],
   },
   {
     # Pull clang on mac. If nothing changed, or on non-mac platforms, this takes
@@ -670,6 +596,14 @@ hooks = [
     "pattern": ".",
     "action": ["python", "src/build/util/lastchange.py",
                "-o", "src/build/util/LASTCHANGE"],
+  },
+  {
+    # Update LASTCHANGE.blink. This is also run by export_tarball.py in
+    # src/tools/export_tarball - please keep them in sync.
+    "pattern": ".",
+    "action": ["python", "src/build/util/lastchange.py",
+               "-s", "src/third_party/WebKit",
+               "-o", "src/build/util/LASTCHANGE.blink"],
   },
   {
     # A change to a .gyp, .gypi, or to GYP itself should run the generator.

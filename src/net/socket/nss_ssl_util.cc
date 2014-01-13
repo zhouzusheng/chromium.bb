@@ -8,6 +8,7 @@
 #include <secerr.h>
 #include <ssl.h>
 #include <sslerr.h>
+#include <sslproto.h>
 
 #include <string>
 
@@ -52,10 +53,27 @@ class NSSSSLInitSingleton {
       SSLCipherSuiteInfo info;
       if (SSL_GetCipherSuiteInfo(ssl_ciphers[i], &info,
                                  sizeof(info)) == SECSuccess) {
-        SSL_CipherPrefSetDefault(ssl_ciphers[i],
-                                 (info.effectiveKeyBits >= 80));
+        bool enabled = info.effectiveKeyBits >= 80;
         if (info.authAlgorithm == ssl_auth_ecdsa && disableECDSA)
-          SSL_CipherPrefSetDefault(ssl_ciphers[i], PR_FALSE);
+          enabled = false;
+
+        // Trim the list of cipher suites in order to keep the size of the
+        // ClientHello down. DSS, ECDH, CAMELLIA, SEED and ECC+3DES cipher
+        // suites are disabled.
+        if (info.symCipher == ssl_calg_camellia ||
+            info.symCipher == ssl_calg_seed ||
+            (info.symCipher == ssl_calg_3des && info.keaType != ssl_kea_rsa) ||
+            info.authAlgorithm == ssl_auth_dsa ||
+            info.nonStandard ||
+            strcmp(info.keaTypeName, "ECDH") == 0) {
+          enabled = false;
+        }
+
+        if (ssl_ciphers[i] == TLS_DHE_DSS_WITH_AES_128_CBC_SHA) {
+          // Enabled to allow servers with only a DSA certificate to function.
+          enabled = true;
+        }
+        SSL_CipherPrefSetDefault(ssl_ciphers[i], enabled);
       }
     }
 
@@ -172,6 +190,8 @@ int MapNSSError(PRErrorCode err) {
       return ERR_SSL_CLIENT_AUTH_CERT_NO_PRIVATE_KEY;
     case SEC_ERROR_INVALID_KEY:
     case SSL_ERROR_SIGN_HASHES_FAILURE:
+      LOG(ERROR) << "ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED: NSS error " << err
+                 << ", OS error " << PR_GetOSError();
       return ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED;
     // A handshake (initial or renegotiation) may fail because some signature
     // (for example, the signature in the ServerKeyExchange message for an
@@ -193,6 +213,8 @@ int MapNSSError(PRErrorCode err) {
       return ERR_SSL_DECOMPRESSION_FAILURE_ALERT;
     case SSL_ERROR_BAD_MAC_ALERT:
       return ERR_SSL_BAD_RECORD_MAC_ALERT;
+    case SSL_ERROR_DECRYPT_ERROR_ALERT:
+      return ERR_SSL_DECRYPT_ERROR_ALERT;
     case SSL_ERROR_UNSAFE_NEGOTIATION:
       return ERR_SSL_UNSAFE_NEGOTIATION;
     case SSL_ERROR_WEAK_SERVER_EPHEMERAL_DH_KEY:
@@ -226,12 +248,12 @@ int MapNSSError(PRErrorCode err) {
 // Returns parameters to attach to the NetLog when we receive an error in
 // response to a call to an NSS function.  Used instead of
 // NetLogSSLErrorCallback with events of type TYPE_SSL_NSS_ERROR.
-Value* NetLogSSLFailedNSSFunctionCallback(
+base::Value* NetLogSSLFailedNSSFunctionCallback(
     const char* function,
     const char* param,
     int ssl_lib_error,
     NetLog::LogLevel /* log_level */) {
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("function", function);
   if (param[0] != '\0')
     dict->SetString("param", param);

@@ -32,12 +32,15 @@
 #define V8PerContextData_h
 
 #include "bindings/v8/ScopedPersistent.h"
+#include "bindings/v8/UnsafePersistent.h"
 #include "bindings/v8/V8DOMActivityLogger.h"
 #include "bindings/v8/WrapperTypeInfo.h"
 #include <v8.h>
 #include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/AtomicStringHash.h"
 
 namespace WebCore {
 
@@ -55,7 +58,7 @@ enum V8ContextEmbedderDataField {
 
 class V8PerContextData {
 public:
-    static PassOwnPtr<V8PerContextData> create(v8::Persistent<v8::Context> context)
+    static PassOwnPtr<V8PerContextData> create(v8::Handle<v8::Context> context)
     {
         return adoptPtr(new V8PerContextData(context));
     }
@@ -77,15 +80,15 @@ public:
     // This is faster than going through the full object creation process.
     v8::Local<v8::Object> createWrapperFromCache(WrapperTypeInfo* type)
     {
-        v8::Persistent<v8::Object> boilerplate = m_wrapperBoilerplates.get(type);
-        return !boilerplate.IsEmpty() ? boilerplate->Clone() : createWrapperFromCacheSlowCase(type);
+        UnsafePersistent<v8::Object> boilerplate = m_wrapperBoilerplates.get(type);
+        return !boilerplate.isEmpty() ? boilerplate.newLocal(v8::Isolate::GetCurrent())->Clone() : createWrapperFromCacheSlowCase(type);
     }
 
     v8::Local<v8::Function> constructorForType(WrapperTypeInfo* type)
     {
-        v8::Persistent<v8::Function> function = m_constructorMap.get(type);
-        if (!function.IsEmpty())
-            return v8::Local<v8::Function>::New(function);
+        UnsafePersistent<v8::Function> function = m_constructorMap.get(type);
+        if (!function.isEmpty())
+            return function.newLocal(v8::Isolate::GetCurrent());
         return constructorForTypeSlowCase(type);
     }
 
@@ -104,9 +107,18 @@ public:
         m_activityLogger = logger;
     }
 
+    typedef WTF::HashMap<AtomicString, UnsafePersistent<v8::Object> > CustomElementPrototypeMap;
+
+    CustomElementPrototypeMap* customElementPrototypes()
+    {
+        return &m_customElementPrototypeMap;
+    }
+
 private:
-    explicit V8PerContextData(v8::Persistent<v8::Context> context)
-        : m_activityLogger(0), m_context(context)
+    explicit V8PerContextData(v8::Handle<v8::Context> context)
+        : m_activityLogger(0)
+        , m_isolate(v8::Isolate::GetCurrent())
+        , m_context(m_isolate, context)
     {
     }
 
@@ -117,10 +129,10 @@ private:
 
     // For each possible type of wrapper, we keep a boilerplate object.
     // The boilerplate is used to create additional wrappers of the same type.
-    typedef WTF::HashMap<WrapperTypeInfo*, v8::Persistent<v8::Object> > WrapperBoilerplateMap;
+    typedef WTF::HashMap<WrapperTypeInfo*, UnsafePersistent<v8::Object> > WrapperBoilerplateMap;
     WrapperBoilerplateMap m_wrapperBoilerplates;
 
-    typedef WTF::HashMap<WrapperTypeInfo*, v8::Persistent<v8::Function> > ConstructorMap;
+    typedef WTF::HashMap<WrapperTypeInfo*, UnsafePersistent<v8::Function> > ConstructorMap;
     ConstructorMap m_constructorMap;
 
     V8NPObjectMap m_v8NPObjectMap;
@@ -128,9 +140,11 @@ private:
     // corresponding to this context. The ownership of the pointer is retained
     // by the DOMActivityLoggerMap in DOMWrapperWorld.
     V8DOMActivityLogger* m_activityLogger;
+    v8::Isolate* m_isolate;
     v8::Persistent<v8::Context> m_context;
     ScopedPersistent<v8::Value> m_errorPrototype;
-    ScopedPersistent<v8::Value> m_objectPrototype;
+
+    CustomElementPrototypeMap m_customElementPrototypeMap;
 };
 
 class V8PerContextDebugData {

@@ -27,6 +27,12 @@ enum GLImplementation {
   kGLImplementationMockGL
 };
 
+struct GLWindowSystemBindingInfo {
+  std::string vendor;
+  std::string version;
+  std::string extensions;
+};
+
 void GetAllowedGLImplementations(std::vector<GLImplementation>* impls);
 
 #if defined(OS_WIN)
@@ -45,7 +51,7 @@ GL_EXPORT bool InitializeGLExtensionBindings(GLImplementation implementation,
 // Initialize Debug logging wrappers for GL bindings.
 void InitializeDebugGLBindings();
 
-void ClearGLBindings();
+GL_EXPORT void ClearGLBindings();
 
 // Set the current GL implementation.
 GL_EXPORT void SetGLImplementation(GLImplementation implementation);
@@ -79,6 +85,10 @@ void* GetGLCoreProcAddress(const char* name);
 
 // Find an entry point in the current GL implementation.
 void* GetGLProcAddress(const char* name);
+
+// Return information about the GL window system binding implementation (e.g.,
+// EGL, GLX, WGL). Returns true if the information was retrieved successfully.
+GL_EXPORT bool GetGLWindowSystemBindingInfo(GLWindowSystemBindingInfo* info);
 
 }  // namespace gfx
 

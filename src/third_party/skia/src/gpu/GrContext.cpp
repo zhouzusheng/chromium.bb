@@ -66,6 +66,9 @@ static const int DRAW_BUFFER_IBPOOL_PREALLOC_BUFFERS = 4;
 
 #define ASSERT_OWNED_RESOURCE(R) GrAssert(!(R) || (R)->getContext() == this)
 
+// Glorified typedef to avoid including GrDrawState.h in GrContext.h
+class GrContext::AutoRestoreEffects : public GrDrawState::AutoRestoreEffects {};
+
 GrContext* GrContext::Create(GrBackend backend, GrBackendContext backendContext) {
     GrContext* context = SkNEW(GrContext);
     if (context->init(backend, backendContext)) {
@@ -91,6 +94,7 @@ GrContext::GrContext() {
     ++THREAD_INSTANCE_COUNT;
     fDrawState = NULL;
     fGpu = NULL;
+    fClip = NULL;
     fPathRendererChain = NULL;
     fSoftwarePathRenderer = NULL;
     fTextureCache = NULL;
@@ -100,6 +104,7 @@ GrContext::GrContext() {
     fDrawBufferIBAllocPool = NULL;
     fAARectRenderer = NULL;
     fOvalRenderer = NULL;
+    fViewMatrix.reset();
 }
 
 bool GrContext::init(GrBackend backend, GrBackendContext backendContext) {
@@ -257,7 +262,7 @@ void convolve_gaussian(GrDrawTarget* target,
                                                                        direction,
                                                                        radius,
                                                                        sigma));
-    drawState->setEffect(0, conv);
+    drawState->addColorEffect(conv);
     target->drawSimpleRect(rect, NULL);
 }
 
@@ -370,7 +375,7 @@ GrTexture* GrContext::createResizedTexture(const GrTextureDesc& desc,
         // texels in the resampled image are copies of texels from
         // the original.
         GrTextureParams params(SkShader::kClamp_TileMode, needsFiltering);
-        drawState->createTextureEffect(0, clampedTexture, SkMatrix::I(), params);
+        drawState->addColorTextureEffect(clampedTexture, SkMatrix::I(), params);
 
         drawState->setVertexAttribs<gVertexAttribs>(SK_ARRAY_COUNT(gVertexAttribs));
 
@@ -594,25 +599,14 @@ bool GrContext::supportsIndex8PixelConfig(const GrTextureParams* params,
     return true;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
-const GrClipData* GrContext::getClip() const {
-    return fGpu->getClip();
-}
-
-void GrContext::setClip(const GrClipData* clipData) {
-    fGpu->setClip(clipData);
-
-    fDrawState->setState(GrDrawState::kClip_StateBit,
-                         clipData && clipData->fClipStack && !clipData->fClipStack->isWideOpen());
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 
 void GrContext::clear(const GrIRect* rect,
                       const GrColor color,
                       GrRenderTarget* target) {
-    this->prepareToDraw(NULL, BUFFERED_DRAW)->clear(rect, color, target);
+    AutoRestoreEffects are;
+    this->prepareToDraw(NULL, BUFFERED_DRAW, &are)->clear(rect, color, target);
 }
 
 void GrContext::drawPaint(const GrPaint& origPaint) {
@@ -630,7 +624,7 @@ void GrContext::drawPaint(const GrPaint& origPaint) {
     // map the four corners and bound them with a new rect. This will not
     // produce a correct result for some perspective matrices.
     if (!this->getMatrix().hasPerspective()) {
-        if (!fDrawState->getViewInverse(&inverse)) {
+        if (!fViewMatrix.invert(&inverse)) {
             GrPrintf("Could not invert matrix\n");
             return;
         }
@@ -680,11 +674,8 @@ static void setStrokeRectStrip(GrPoint verts[10], GrRect rect,
     verts[9] = verts[1];
 }
 
-/**
- * Returns true if the rects edges are integer-aligned.
- */
 static bool isIRect(const GrRect& r) {
-    return SkScalarIsInt(r.fLeft) && SkScalarIsInt(r.fTop) &&
+    return SkScalarIsInt(r.fLeft)  && SkScalarIsInt(r.fTop) &&
            SkScalarIsInt(r.fRight) && SkScalarIsInt(r.fBottom);
 }
 
@@ -765,11 +756,7 @@ static bool apply_aa_to_rect(GrDrawTarget* target,
 
     combinedMatrix->mapRect(devRect, rect);
 
-    if (strokeWidth < 0
-#if defined(SHADER_AA_FILL_RECT) || !defined(IGNORE_ROT_AA_RECT_OPT)
-        && drawState.getViewMatrix().preservesAxisAlignment()
-#endif
-        ) {
+    if (strokeWidth < 0) {
         return !isIRect(*devRect);
     } else {
         return true;
@@ -782,33 +769,26 @@ void GrContext::drawRect(const GrPaint& paint,
                          const SkMatrix* matrix) {
     SK_TRACE_EVENT0("GrContext::drawRect");
 
-    GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW);
-    GrDrawState::AutoStageDisable atr(fDrawState);
+    AutoRestoreEffects are;
+    GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW, &are);
 
     GrRect devRect;
     SkMatrix combinedMatrix;
     bool useVertexCoverage;
     bool needAA = paint.isAntiAlias() &&
-                  !this->getRenderTarget()->isMultisampled();
+                  !target->getDrawState().getRenderTarget()->isMultisampled();
     bool doAA = needAA && apply_aa_to_rect(target, rect, width, matrix,
                                            &combinedMatrix, &devRect,
                                            &useVertexCoverage);
     if (doAA) {
-        GrDrawState::AutoDeviceCoordDraw adcd(target->drawState());
-        if (!adcd.succeeded()) {
+        GrDrawState::AutoViewMatrixRestore avmr;
+        if (!avmr.setIdentity(target->drawState())) {
             return;
         }
         if (width >= 0) {
-            GrVec strokeSize;
-            if (width > 0) {
-                strokeSize.set(width, width);
-                combinedMatrix.mapVectors(&strokeSize, 1);
-                strokeSize.setAbs(strokeSize);
-            } else {
-                strokeSize.set(SK_Scalar1, SK_Scalar1);
-            }
-            fAARectRenderer->strokeAARect(this->getGpu(), target, devRect,
-                                          strokeSize, useVertexCoverage);
+            fAARectRenderer->strokeAARect(this->getGpu(), target,
+                                          rect, combinedMatrix, devRect,
+                                          width, useVertexCoverage);
         } else {
             // filled AA rect
             fAARectRenderer->fillAARect(this->getGpu(), target,
@@ -870,9 +850,8 @@ void GrContext::drawRectToRect(const GrPaint& paint,
                                const SkMatrix* dstMatrix,
                                const SkMatrix* localMatrix) {
     SK_TRACE_EVENT0("GrContext::drawRectToRect");
-
-    GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW);
-    GrDrawState::AutoStageDisable atr(fDrawState);
+    AutoRestoreEffects are;
+    GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW, &are);
 
     target->drawRect(dstRect, dstMatrix, &localRect, localMatrix);
 }
@@ -927,8 +906,8 @@ void GrContext::drawVertices(const GrPaint& paint,
 
     GrDrawTarget::AutoReleaseGeometry geo;
 
-    GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW);
-    GrDrawState::AutoStageDisable atr(fDrawState);
+    AutoRestoreEffects are;
+    GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW, &are);
 
     GrDrawState* drawState = target->drawState();
 
@@ -976,15 +955,17 @@ void GrContext::drawRRect(const GrPaint& paint,
                           const SkRRect& rect,
                           const SkStrokeRec& stroke) {
 
-    GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW);
-    GrDrawState::AutoStageDisable atr(fDrawState);
+    AutoRestoreEffects are;
+    GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW, &are);
 
-    bool prAA = paint.isAntiAlias() && !this->getRenderTarget()->isMultisampled();
+    bool useAA = paint.isAntiAlias() &&
+                 !target->getDrawState().getRenderTarget()->isMultisampled() &&
+                 !disable_coverage_aa_for_blend(target);
 
-    if (!fOvalRenderer->drawSimpleRRect(target, this, prAA, rect, stroke)) {
+    if (!fOvalRenderer->drawSimpleRRect(target, this, useAA, rect, stroke)) {
         SkPath path;
         path.addRRect(rect);
-        this->internalDrawPath(target, prAA, path, stroke);
+        this->internalDrawPath(target, useAA, path, stroke);
     }
 }
 
@@ -994,10 +975,12 @@ void GrContext::drawOval(const GrPaint& paint,
                          const GrRect& oval,
                          const SkStrokeRec& stroke) {
 
-    GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW);
-    GrDrawState::AutoStageDisable atr(fDrawState);
+    AutoRestoreEffects are;
+    GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW, &are);
 
-    bool useAA = paint.isAntiAlias() && !this->getRenderTarget()->isMultisampled();
+    bool useAA = paint.isAntiAlias() &&
+                 !target->getDrawState().getRenderTarget()->isMultisampled() &&
+                 !disable_coverage_aa_for_blend(target);
 
     if (!fOvalRenderer->drawOval(target, this, useAA, oval, stroke)) {
         SkPath path;
@@ -1005,6 +988,52 @@ void GrContext::drawOval(const GrPaint& paint,
         this->internalDrawPath(target, useAA, path, stroke);
     }
 }
+
+namespace {
+
+// Can 'path' be drawn as a pair of filled nested rectangles?
+static bool is_nested_rects(GrDrawTarget* target,
+                            const SkPath& path,
+                            const SkStrokeRec& stroke,
+                            SkRect rects[2],
+                            bool* useVertexCoverage) {
+    SkASSERT(stroke.isFillStyle());
+
+    if (path.isInverseFillType()) {
+        return false;
+    }
+
+    const GrDrawState& drawState = target->getDrawState();
+
+    // TODO: this restriction could be lifted if we were willing to apply
+    // the matrix to all the points individually rather than just to the rect
+    if (!drawState.getViewMatrix().preservesAxisAlignment()) {
+        return false;
+    }
+
+    *useVertexCoverage = false;
+    if (!target->getDrawState().canTweakAlphaForCoverage()) {
+        if (disable_coverage_aa_for_blend(target)) {
+            return false;
+        } else {
+            *useVertexCoverage = true;
+        }
+    }
+
+    SkPath::Direction dirs[2];
+    if (!path.isNestedRects(rects, dirs)) {
+        return false;
+    }
+
+    if (SkPath::kWinding_FillType == path.getFillType()) {
+        // The two rects need to be wound opposite to each other
+        return dirs[0] != dirs[1];
+    } else {
+        return true;
+    }
+}
+
+};
 
 void GrContext::drawPath(const GrPaint& paint, const SkPath& path, const SkStrokeRec& stroke) {
 
@@ -1020,12 +1049,32 @@ void GrContext::drawPath(const GrPaint& paint, const SkPath& path, const SkStrok
     // cache. This presents a potential hazard for buffered drawing. However,
     // the writePixels that uploads to the scratch will perform a flush so we're
     // OK.
-    GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW);
-    GrDrawState::AutoStageDisable atr(fDrawState);
+    AutoRestoreEffects are;
+    GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW, &are);
+
+    bool useAA = paint.isAntiAlias() && !target->getDrawState().getRenderTarget()->isMultisampled();
+    if (useAA && stroke.getWidth() < 0 && !path.isConvex()) {
+        // Concave AA paths are expensive - try to avoid them for special cases
+        bool useVertexCoverage;
+        SkRect rects[2];
+
+        if (is_nested_rects(target, path, stroke, rects, &useVertexCoverage)) {
+            SkMatrix origViewMatrix = target->getDrawState().getViewMatrix();
+            GrDrawState::AutoViewMatrixRestore avmr;
+            if (!avmr.setIdentity(target->drawState())) {
+                return;
+            }
+
+            fAARectRenderer->fillAANestedRects(this->getGpu(), target,
+                                               rects,
+                                               origViewMatrix,
+                                               useVertexCoverage);
+            return;
+        }
+    }
 
     SkRect ovalRect;
     bool isOval = path.isOval(&ovalRect);
-    bool useAA = paint.isAntiAlias() && !this->getRenderTarget()->isMultisampled();
 
     if (!isOval || path.isInverseFillType()
         || !fOvalRenderer->drawOval(target, this, useAA, ovalRect, stroke)) {
@@ -1087,7 +1136,9 @@ void GrContext::flush(int flagsBitfield) {
     } else {
         this->flushDrawBuffer();
     }
+    // TODO: Remove this flag
     if (kForceCurrentRenderTarget_FlushBit & flagsBitfield) {
+        fGpu->drawState()->setRenderTarget(this->getRenderTarget());
         fGpu->forceRenderTargetFlush();
     }
 }
@@ -1201,7 +1252,7 @@ bool GrContext::readRenderTargetPixels(GrRenderTarget* target,
     ASSERT_OWNED_RESOURCE(target);
 
     if (NULL == target) {
-        target = fDrawState->getRenderTarget();
+        target = fRenderTarget.get();
         if (NULL == target) {
             return false;
         }
@@ -1225,7 +1276,8 @@ bool GrContext::readRenderTargetPixels(GrRenderTarget* target,
     // dstConfig.
     GrPixelConfig readConfig = dstConfig;
     bool swapRAndB = false;
-    if (GrPixelConfigSwapRAndB(dstConfig) == fGpu->preferredReadPixelsConfig(dstConfig)) {
+    if (GrPixelConfigSwapRAndB(dstConfig) ==
+        fGpu->preferredReadPixelsConfig(dstConfig, target->config())) {
         readConfig = GrPixelConfigSwapRAndB(readConfig);
         swapRAndB = true;
     }
@@ -1298,7 +1350,7 @@ bool GrContext::readRenderTargetPixels(GrRenderTarget* target,
                 GrDrawTarget::AutoGeometryAndStatePush agasp(fGpu, GrDrawTarget::kReset_ASRInit);
                 GrDrawState* drawState = fGpu->drawState();
                 GrAssert(effect);
-                drawState->setEffect(0, effect);
+                drawState->addColorEffect(effect);
 
                 drawState->setRenderTarget(texture->asRenderTarget());
                 GrRect rect = GrRect::MakeWH(SkIntToScalar(width), SkIntToScalar(height));
@@ -1373,7 +1425,7 @@ void GrContext::copyTexture(GrTexture* src, GrRenderTarget* dst, const SkIPoint*
         return;
     }
     sampleM.preTranslate(SkIntToScalar(srcRect.fLeft), SkIntToScalar(srcRect.fTop));
-    drawState->createTextureEffect(0, src, sampleM);
+    drawState->addColorTextureEffect(src, sampleM);
     SkRect dstR = SkRect::MakeWH(SkIntToScalar(srcRect.width()), SkIntToScalar(srcRect.height()));
     fGpu->drawSimpleRect(dstR, NULL);
 }
@@ -1388,7 +1440,7 @@ bool GrContext::writeRenderTargetPixels(GrRenderTarget* target,
     ASSERT_OWNED_RESOURCE(target);
 
     if (NULL == target) {
-        target = fDrawState->getRenderTarget();
+        target = fRenderTarget.get();
         if (NULL == target) {
             return false;
         }
@@ -1423,7 +1475,8 @@ bool GrContext::writeRenderTargetPixels(GrRenderTarget* target,
     // when drawing the scratch to the dst using a conversion effect.
     bool swapRAndB = false;
     GrPixelConfig writeConfig = srcConfig;
-    if (fGpu->preferredWritePixelsConfig(srcConfig) == GrPixelConfigSwapRAndB(srcConfig)) {
+    if (GrPixelConfigSwapRAndB(srcConfig) ==
+        fGpu->preferredWritePixelsConfig(srcConfig, target->config())) {
         writeConfig = GrPixelConfigSwapRAndB(srcConfig);
         swapRAndB = true;
     }
@@ -1485,14 +1538,13 @@ bool GrContext::writeRenderTargetPixels(GrRenderTarget* target,
     // writeRenderTargetPixels can be called in the midst of drawing another
     // object (e.g., when uploading a SW path rendering to the gpu while
     // drawing a rect) so preserve the current geometry.
-    GrDrawTarget::AutoGeometryAndStatePush agasp(fGpu, GrDrawTarget::kReset_ASRInit);
-    GrDrawState* drawState = fGpu->drawState();
-    GrAssert(effect);
-    drawState->setEffect(0, effect);
-
     SkMatrix matrix;
     matrix.setTranslate(SkIntToScalar(left), SkIntToScalar(top));
-    drawState->setViewMatrix(matrix);
+    GrDrawTarget::AutoGeometryAndStatePush agasp(fGpu, GrDrawTarget::kReset_ASRInit, &matrix);
+    GrDrawState* drawState = fGpu->drawState();
+    GrAssert(effect);
+    drawState->addColorEffect(effect);
+
     drawState->setRenderTarget(target);
 
     fGpu->drawSimpleRect(GrRect::MakeWH(SkIntToScalar(width), SkIntToScalar(height)), NULL);
@@ -1500,29 +1552,46 @@ bool GrContext::writeRenderTargetPixels(GrRenderTarget* target,
 }
 ////////////////////////////////////////////////////////////////////////////////
 
-GrDrawTarget* GrContext::prepareToDraw(const GrPaint* paint, BufferedDraw buffered) {
+GrDrawTarget* GrContext::prepareToDraw(const GrPaint* paint,
+                                       BufferedDraw buffered,
+                                       AutoRestoreEffects* are) {
+    // All users of this draw state should be freeing up all effects when they're done.
+    // Otherwise effects that own resources may keep those resources alive indefinitely.
+    GrAssert(0 == fDrawState->numColorStages() && 0 == fDrawState->numCoverageStages());
+
     if (kNo_BufferedDraw == buffered && kYes_BufferedDraw == fLastDrawWasBuffered) {
         this->flushDrawBuffer();
         fLastDrawWasBuffered = kNo_BufferedDraw;
     }
+    ASSERT_OWNED_RESOURCE(fRenderTarget.get());
     if (NULL != paint) {
-        GrAssert(fDrawState->stagesDisabled());
-        fDrawState->setFromPaint(*paint);
+        GrAssert(NULL != are);
+        are->set(fDrawState);
+        fDrawState->setFromPaint(*paint, fViewMatrix, fRenderTarget.get());
 #if GR_DEBUG_PARTIAL_COVERAGE_CHECK
         if ((paint->hasMask() || 0xff != paint->fCoverage) &&
             !fGpu->canApplyCoverage()) {
             GrPrintf("Partial pixel coverage will be incorrectly blended.\n");
         }
 #endif
+    } else {
+        fDrawState->reset(fViewMatrix);
+        fDrawState->setRenderTarget(fRenderTarget.get());
     }
+    GrDrawTarget* target;
     if (kYes_BufferedDraw == buffered) {
-        fDrawBuffer->setClip(fGpu->getClip());
         fLastDrawWasBuffered = kYes_BufferedDraw;
-        return fDrawBuffer;
+        target = fDrawBuffer;
     } else {
         GrAssert(kNo_BufferedDraw == buffered);
-        return fGpu;
+        fLastDrawWasBuffered = kNo_BufferedDraw;
+        target = fGpu;
     }
+    fDrawState->setState(GrDrawState::kClip_StateBit, NULL != fClip &&
+                                                     !fClip->fClipStack->isWideOpen());
+    target->setClip(fClip);
+    GrAssert(fDrawState == target->drawState());
+    return target;
 }
 
 /*
@@ -1560,37 +1629,8 @@ GrPathRenderer* GrContext::getPathRenderer(const SkPath& path,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void GrContext::setRenderTarget(GrRenderTarget* target) {
-    ASSERT_OWNED_RESOURCE(target);
-    fDrawState->setRenderTarget(target);
-}
-
-GrRenderTarget* GrContext::getRenderTarget() {
-    return fDrawState->getRenderTarget();
-}
-
-const GrRenderTarget* GrContext::getRenderTarget() const {
-    return fDrawState->getRenderTarget();
-}
-
 bool GrContext::isConfigRenderable(GrPixelConfig config) const {
     return fGpu->isConfigRenderable(config);
-}
-
-const SkMatrix& GrContext::getMatrix() const {
-    return fDrawState->getViewMatrix();
-}
-
-void GrContext::setMatrix(const SkMatrix& m) {
-    fDrawState->setViewMatrix(m);
-}
-
-void GrContext::setIdentityMatrix() {
-    fDrawState->viewMatrix()->reset();
-}
-
-void GrContext::concatMatrix(const SkMatrix& m) const {
-    fDrawState->preConcatViewMatrix(m);
 }
 
 static inline intptr_t setOrClear(intptr_t bits, int shift, intptr_t pred) {
@@ -1625,8 +1665,8 @@ void GrContext::setupDrawBuffer() {
     fDrawBuffer->setDrawState(fDrawState);
 }
 
-GrDrawTarget* GrContext::getTextTarget(const GrPaint& paint) {
-    return this->prepareToDraw(&paint, BUFFERED_DRAW);
+GrDrawTarget* GrContext::getTextTarget() {
+    return this->prepareToDraw(NULL, BUFFERED_DRAW, NULL);
 }
 
 const GrIndexBuffer* GrContext::getQuadIndexBuffer() const {
@@ -1750,7 +1790,8 @@ GrTexture* GrContext::gaussianBlur(GrTexture* srcTexture,
         }
 
         this->setRenderTarget(dstTexture->asRenderTarget());
-        GrDrawTarget* target = this->prepareToDraw(NULL, BUFFERED_DRAW);
+        AutoRestoreEffects are;
+        GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW, &are);
         convolve_gaussian(target, srcTexture, srcRect, sigmaX, radiusX,
                           Gr1DKernelEffect::kX_Direction);
         srcTexture = dstTexture;
@@ -1767,7 +1808,8 @@ GrTexture* GrContext::gaussianBlur(GrTexture* srcTexture,
         }
 
         this->setRenderTarget(dstTexture->asRenderTarget());
-        GrDrawTarget* target = this->prepareToDraw(NULL, BUFFERED_DRAW);
+        AutoRestoreEffects are;
+        GrDrawTarget* target = this->prepareToDraw(&paint, BUFFERED_DRAW, &are);
         convolve_gaussian(target, srcTexture, srcRect, sigmaY, radiusY,
                           Gr1DKernelEffect::kY_Direction);
         srcTexture = dstTexture;

@@ -5,10 +5,9 @@
 #include "net/base/file_stream_context.h"
 
 #include "base/location.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/task_runner_util.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/threading/worker_pool.h"
 #include "net/base/file_stream_net_log_parameters.h"
 #include "net/base/net_errors.h"
 
@@ -70,12 +69,11 @@ void FileStream::Context::OpenAsync(const base::FilePath& path,
   BeginOpenEvent(path);
 
   const bool posted = base::PostTaskAndReplyWithResult(
-      base::WorkerPool::GetTaskRunner(true /* task_is_slow */),
+      task_runner_.get(),
       FROM_HERE,
-      base::Bind(&Context::OpenFileImpl,
-                 base::Unretained(this), path, open_flags),
-      base::Bind(&Context::OnOpenCompleted,
-                 base::Unretained(this), callback));
+      base::Bind(
+          &Context::OpenFileImpl, base::Unretained(this), path, open_flags),
+      base::Bind(&Context::OnOpenCompleted, base::Unretained(this), callback));
   DCHECK(posted);
 
   async_in_progress_ = true;
@@ -113,12 +111,14 @@ void FileStream::Context::SeekAsync(Whence whence,
   DCHECK(!async_in_progress_);
 
   const bool posted = base::PostTaskAndReplyWithResult(
-      base::WorkerPool::GetTaskRunner(true /* task is slow */),
+      task_runner_.get(),
       FROM_HERE,
-      base::Bind(&Context::SeekFileImpl,
-                 base::Unretained(this), whence, offset),
+      base::Bind(
+          &Context::SeekFileImpl, base::Unretained(this), whence, offset),
       base::Bind(&Context::ProcessAsyncResult,
-                 base::Unretained(this), callback, FILE_ERROR_SOURCE_SEEK));
+                 base::Unretained(this),
+                 callback,
+                 FILE_ERROR_SOURCE_SEEK));
   DCHECK(posted);
 
   async_in_progress_ = true;
@@ -134,12 +134,12 @@ void FileStream::Context::FlushAsync(const CompletionCallback& callback) {
   DCHECK(!async_in_progress_);
 
   const bool posted = base::PostTaskAndReplyWithResult(
-      base::WorkerPool::GetTaskRunner(true /* task is slow */),
+      task_runner_.get(),
       FROM_HERE,
-      base::Bind(&Context::FlushFileImpl,
-                 base::Unretained(this)),
+      base::Bind(&Context::FlushFileImpl, base::Unretained(this)),
       base::Bind(&Context::ProcessAsyncResult,
-                 base::Unretained(this), IntToInt64(callback),
+                 base::Unretained(this),
+                 IntToInt64(callback),
                  FILE_ERROR_SOURCE_FLUSH));
   DCHECK(posted);
 
@@ -217,11 +217,10 @@ void FileStream::Context::CloseAndDelete() {
   if (file_ == base::kInvalidPlatformFileValue) {
     delete this;
   } else {
-    const bool posted = base::WorkerPool::PostTaskAndReply(
+    const bool posted = task_runner_->PostTaskAndReply(
         FROM_HERE,
         base::Bind(base::IgnoreResult(&base::ClosePlatformFile), file_),
-        base::Bind(&Context::OnCloseCompleted, base::Unretained(this)),
-        true /* task_is_slow */);
+        base::Bind(&Context::OnCloseCompleted, base::Unretained(this)));
     DCHECK(posted);
     file_ = base::kInvalidPlatformFileValue;
   }

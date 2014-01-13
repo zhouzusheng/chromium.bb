@@ -27,21 +27,15 @@
 #include "core/dom/EventDispatcher.h"
 
 #include "core/dom/ContainerNode.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/EventContext.h"
 #include "core/dom/EventDispatchMediator.h"
-#include "core/dom/EventPathWalker.h"
 #include "core/dom/EventRetargeter.h"
 #include "core/dom/MouseEvent.h"
 #include "core/dom/ScopedEventQueue.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/dom/WindowEventContext.h"
-#include "core/html/HTMLMediaElement.h"
-#include "core/html/shadow/InsertionPoint.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/FrameView.h"
-#include <wtf/RefPtr.h>
-#include <wtf/UnusedParam.h>
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -67,7 +61,7 @@ EventDispatcher::EventDispatcher(Node* node, PassRefPtr<Event> event)
     ASSERT(m_event.get());
     ASSERT(!m_event->type().isNull()); // JavaScript code can create an event with an empty name, but not null.
     m_view = node->document()->view();
-    EventRetargeter::calculateEventPath(m_node.get(), m_event.get());
+    EventRetargeter::ensureEventPath(m_node.get(), m_event.get());
 }
 
 void EventDispatcher::dispatchScopedEvent(Node* node, PassRefPtr<EventDispatchMediator> mediator)

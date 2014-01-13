@@ -116,7 +116,8 @@ class CONTENT_EXPORT RenderViewHostManager
   // For arguments, see WebContentsImpl constructor.
   void Init(BrowserContext* browser_context,
             SiteInstance* site_instance,
-            int routing_id);
+            int routing_id,
+            int main_frame_routing_id);
 
   // Returns the currently active RenderViewHost.
   //
@@ -165,6 +166,10 @@ class CONTENT_EXPORT RenderViewHostManager
   // with the navigation instead of closing the tab.
   bool ShouldCloseTabOnUnresponsiveRenderer();
 
+  // The RenderViewHost has been swapped out, so we should resume the pending
+  // network response and allow the pending RenderViewHost to commit.
+  void SwappedOut(RenderViewHost* render_view_host);
+
   // Called when a renderer's main frame navigates.
   void DidNavigateMainFrame(RenderViewHost* render_view_host);
 
@@ -205,8 +210,9 @@ class CONTENT_EXPORT RenderViewHostManager
       bool for_cross_site_transition,
       bool proceed,
       const base::TimeTicks& proceed_time) OVERRIDE;
-  virtual void OnCrossSiteResponse(int new_render_process_host_id,
-                                   int new_request_id) OVERRIDE;
+  virtual void OnCrossSiteResponse(
+      RenderViewHost* pending_render_view_host,
+      const GlobalRequestID& global_request_id) OVERRIDE;
 
   // NotificationObserver implementation.
   virtual void Observe(int type,
@@ -223,9 +229,23 @@ class CONTENT_EXPORT RenderViewHostManager
   // Returns the swapped out RenderViewHost for the given SiteInstance, if any.
   RenderViewHostImpl* GetSwappedOutRenderViewHost(SiteInstance* instance);
 
+  // Runs the unload handler in the current page, when we know that a pending
+  // cross-process navigation is going to commit.
+  void SwapOutOldPage();
+
  private:
   friend class RenderViewHostManagerTest;
   friend class TestWebContents;
+
+  // Tracks information about a navigation while a cross-process transition is
+  // in progress.
+  // TODO(creis): Add transfer navigation params for http://crbug.com/238331.
+  struct PendingNavigationParams {
+    PendingNavigationParams();
+    explicit PendingNavigationParams(const GlobalRequestID& global_request_id);
+
+    GlobalRequestID global_request_id;
+  };
 
   // Returns whether this tab should transition to a new renderer for
   // cross-site URLs.  Enabled unless we see the --process-per-tab command line
@@ -260,6 +280,11 @@ class CONTENT_EXPORT RenderViewHostManager
   // doesn't require the pending render_view_host_ pointer to be non-NULL, since
   // there could be Web UI switching as well. Call this for every commit.
   void CommitPending();
+
+  // Shutdown all RenderViewHosts in a SiteInstance. This is called
+  // to shutdown views when all the views in a SiteInstance are
+  // confirmed to be swapped out.
+  void ShutdownRenderViewHostsInSiteInstance(int32 site_instance_id);
 
   // Helper method to terminate the pending RenderViewHost.
   void CancelPending();
@@ -301,6 +326,9 @@ class CONTENT_EXPORT RenderViewHostManager
   // pending pointer will be unused, but there will be a pending Web UI
   // associated with the navigation.
   RenderViewHostImpl* pending_render_view_host_;
+
+  // Tracks information about any current pending cross-process navigation.
+  scoped_ptr<PendingNavigationParams> pending_nav_params_;
 
   // If either of these is non-NULL, the pending navigation is to a chrome:
   // page. The scoped_ptr is used if pending_web_ui_ != web_ui_, the WeakPtr is

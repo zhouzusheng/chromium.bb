@@ -32,13 +32,14 @@
 #include "bindings/v8/ScriptProfiler.h"
 
 #include "V8ArrayBufferView.h"
-#include "V8DOMWindow.h"
 #include "V8Node.h"
+#include "V8Window.h"
 #include "bindings/v8/RetainedDOMInfo.h"
 #include "bindings/v8/ScriptObject.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/WrapperTypeInfo.h"
+#include "core/dom/Document.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/inspector/BindingVisitors.h"
 
@@ -51,14 +52,14 @@ namespace WebCore {
 
 typedef HashMap<String, double> ProfileNameIdleTimeMap;
 
-void ScriptProfiler::start(ScriptState* state, const String& title)
+void ScriptProfiler::start(const String& title)
 {
     ProfileNameIdleTimeMap* profileNameIdleTimeMap = ScriptProfiler::currentProfileNameIdleTimeMap();
     if (profileNameIdleTimeMap->contains(title))
         return;
     profileNameIdleTimeMap->add(title, 0);
 
-    v8::Isolate* isolate = state ? state->isolate() : v8::Isolate::GetCurrent();
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::CpuProfiler* profiler = isolate->GetCpuProfiler();
     if (!profiler)
         return;
@@ -66,27 +67,14 @@ void ScriptProfiler::start(ScriptState* state, const String& title)
     profiler->StartCpuProfiling(v8String(title, isolate), true);
 }
 
-void ScriptProfiler::startForPage(Page*, const String& title)
+PassRefPtr<ScriptProfile> ScriptProfiler::stop(const String& title)
 {
-    return start(0, title);
-}
-
-void ScriptProfiler::startForWorkerContext(WorkerContext*, const String& title)
-{
-    return start(0, title);
-}
-
-PassRefPtr<ScriptProfile> ScriptProfiler::stop(ScriptState* state, const String& title)
-{
-    v8::Isolate* isolate = state ? state->isolate() : v8::Isolate::GetCurrent();
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::CpuProfiler* profiler = isolate->GetCpuProfiler();
     if (!profiler)
         return 0;
     v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Value> securityToken;
-    if (state)
-        securityToken = state->context()->GetSecurityToken();
-    const v8::CpuProfile* profile = profiler->StopCpuProfiling(v8String(title, isolate), securityToken);
+    const v8::CpuProfile* profile = profiler->StopCpuProfiling(v8String(title, isolate));
     if (!profile)
         return 0;
 
@@ -100,18 +88,6 @@ PassRefPtr<ScriptProfile> ScriptProfiler::stop(ScriptState* state, const String&
     }
 
     return ScriptProfile::create(profile, idleTime);
-}
-
-PassRefPtr<ScriptProfile> ScriptProfiler::stopForPage(Page*, const String& title)
-{
-    // Use null script state to avoid filtering by context security token.
-    // All functions from all iframes should be visible from Inspector UI.
-    return stop(0, title);
-}
-
-PassRefPtr<ScriptProfile> ScriptProfiler::stopForWorkerContext(WorkerContext*, const String& title)
-{
-    return stop(0, title);
 }
 
 void ScriptProfiler::collectGarbage()
@@ -143,6 +119,14 @@ ScriptObject ScriptProfiler::objectByHeapObjectId(unsigned id)
         return ScriptObject();
 
     v8::Handle<v8::Object> object = value.As<v8::Object>();
+
+    if (object->InternalFieldCount() >= v8DefaultWrapperInternalFieldCount) {
+        v8::Handle<v8::Value> wrapper = object->GetInternalField(v8DOMWrapperObjectIndex);
+        // Skip wrapper boilerplates which are like regular wrappers but don't have
+        // native object.
+        if (!wrapper.IsEmpty() && wrapper->IsUndefined())
+            return ScriptObject();
+    }
 
     ScriptState* scriptState = ScriptState::forContext(object->CreationContext());
     return ScriptObject(scriptState, object);
@@ -183,8 +167,8 @@ class GlobalObjectNameResolver : public v8::HeapProfiler::ObjectNameResolver {
 public:
     virtual const char* GetName(v8::Handle<v8::Object> object)
     {
-        if (V8DOMWrapper::isWrapperOfType(object, &V8DOMWindow::info)) {
-            DOMWindow* window = V8DOMWindow::toNative(object);
+        if (V8DOMWrapper::isWrapperOfType(object, &V8Window::info)) {
+            DOMWindow* window = V8Window::toNative(object);
             if (window) {
                 CString url = window->document()->url().string().utf8();
                 m_strings.append(url);
@@ -295,15 +279,16 @@ void ScriptProfiler::visitNodeWrappers(WrappedNodeVisitor* visitor)
         {
         }
 
-        virtual void VisitPersistentHandle(v8::Persistent<v8::Value> value, uint16_t classId) OVERRIDE
+        virtual void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) OVERRIDE
         {
             if (classId != v8DOMNodeClassId)
                 return;
-            UNUSED_PARAM(m_isolate);
-            ASSERT(V8Node::HasInstance(value, m_isolate, worldType(m_isolate)));
-            ASSERT(value->IsObject());
-            v8::Persistent<v8::Object> wrapper = v8::Persistent<v8::Object>::Cast(value);
-            m_visitor->visitNode(V8Node::toNative(wrapper));
+            // Casting to Handle is safe here, since the Persistent cannot get
+            // GCd during visiting.
+            v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
+            ASSERT(V8Node::HasInstance(*wrapper, m_isolate, worldType(m_isolate)));
+            ASSERT((*wrapper)->IsObject());
+            m_visitor->visitNode(V8Node::toNative(*wrapper));
         }
 
     private:
@@ -328,15 +313,17 @@ void ScriptProfiler::visitExternalArrays(ExternalArrayVisitor* visitor)
         {
         }
 
-        virtual void VisitPersistentHandle(v8::Persistent<v8::Value> value, uint16_t classId) OVERRIDE
+        virtual void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) OVERRIDE
         {
             if (classId != v8DOMObjectClassId)
                 return;
-            ASSERT(value->IsObject());
-            v8::Persistent<v8::Object> wrapper = v8::Persistent<v8::Object>::Cast(value);
-            if (!toWrapperTypeInfo(wrapper)->isSubclass(&V8ArrayBufferView::info))
+            // Casting to Handle is safe here, since the Persistent cannot get
+            // GCd during visiting.
+            ASSERT((*reinterpret_cast<v8::Handle<v8::Value>*>(value))->IsObject());
+            v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
+            if (!toWrapperTypeInfo(*wrapper)->isSubclass(&V8ArrayBufferView::info))
                 return;
-            m_visitor->visitJSExternalArray(V8ArrayBufferView::toNative(wrapper));
+            m_visitor->visitJSExternalArray(V8ArrayBufferView::toNative(*wrapper));
         }
 
     private:
@@ -368,4 +355,3 @@ ProfileNameIdleTimeMap* ScriptProfiler::currentProfileNameIdleTimeMap()
 }
 
 } // namespace WebCore
-

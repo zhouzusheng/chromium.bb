@@ -6,6 +6,7 @@
 
 #include "content/renderer/media/webrtc_audio_capturer.h"
 #include "content/renderer/media/webrtc_audio_capturer_sink_owner.h"
+#include "third_party/libjingle/source/talk/media/base/audiorenderer.h"
 
 namespace content {
 
@@ -28,16 +29,18 @@ WebRtcLocalAudioTrack::WebRtcLocalAudioTrack(
     : webrtc::MediaStreamTrack<webrtc::AudioTrackInterface>(label),
       capturer_(capturer),
       track_source_(track_source) {
-  DCHECK(capturer);
-  capturer_->AddSink(this);
+  DCHECK(capturer.get());
   DVLOG(1) << "WebRtcLocalAudioTrack::WebRtcLocalAudioTrack()";
 }
 
 WebRtcLocalAudioTrack::~WebRtcLocalAudioTrack() {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(sinks_.empty());
-  capturer_->RemoveSink(this);
   DVLOG(1) << "WebRtcLocalAudioTrack::~WebRtcLocalAudioTrack()";
+
+  // Users might not call Stop() on the track.
+  if (capturer_.get())
+    Stop();
 }
 
 // Content::WebRtcAudioCapturerSink implementation.
@@ -83,6 +86,10 @@ webrtc::AudioSourceInterface* WebRtcLocalAudioTrack::GetSource() const {
   return track_source_;
 }
 
+cricket::AudioRenderer* WebRtcLocalAudioTrack::FrameInput() {
+  return NULL;
+}
+
 std::string WebRtcLocalAudioTrack::kind() const {
   return kAudioTrackKind;
 }
@@ -121,6 +128,22 @@ void WebRtcLocalAudioTrack::RemoveSink(
     // if this method is called while capturing is active.
     (*it)->Reset();
     sinks_.erase(it);
+  }
+}
+
+void WebRtcLocalAudioTrack::Start() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DVLOG(1) << "WebRtcLocalAudioTrack::Start()";
+  if (capturer_.get())
+    capturer_->AddSink(this);
+}
+
+void WebRtcLocalAudioTrack::Stop() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DVLOG(1) << "WebRtcLocalAudioTrack::Stop()";
+  if (capturer_.get()) {
+    capturer_->RemoveSink(this);
+    capturer_ = NULL;
   }
 }
 

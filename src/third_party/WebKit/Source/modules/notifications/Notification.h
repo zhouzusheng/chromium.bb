@@ -29,17 +29,18 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef Notification_h  
+#ifndef Notification_h
 #define Notification_h
 
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/EventTarget.h"
 #include "core/loader/ThreadableLoaderClient.h"
-#include "core/platform/KURL.h"
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/text/TextDirection.h"
 #include "modules/notifications/NotificationClient.h"
+#include "weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -63,7 +64,7 @@ class ThreadableLoader;
 
 typedef int ExceptionCode;
 
-class Notification : public RefCounted<Notification>, public ActiveDOMObject, public EventTarget {
+class Notification : public RefCounted<Notification>, public ScriptWrappable, public ActiveDOMObject, public EventTarget {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     Notification();
@@ -74,7 +75,7 @@ public:
 #if ENABLE(NOTIFICATIONS)
     static PassRefPtr<Notification> create(ScriptExecutionContext*, const String& title, const Dictionary& options);
 #endif
-    
+
     virtual ~Notification();
 
     void show();
@@ -85,7 +86,7 @@ public:
 
     bool isHTML() const { return m_isHTML; }
     void setHTML(bool isHTML) { m_isHTML = isHTML; }
-    
+
 #if ENABLE(LEGACY_NOTIFICATIONS)
     KURL url() const { return m_notificationURL; }
     void setURL(KURL url) { m_notificationURL = url; }
@@ -114,14 +115,13 @@ public:
     TextDirection direction() const { return dir() == "rtl" ? RTL : LTR; }
 
 #if ENABLE(LEGACY_NOTIFICATIONS)
-    EventListener* ondisplay() { return getAttributeEventListener(eventNames().showEvent); }
-    void setOndisplay(PassRefPtr<EventListener> listener) { setAttributeEventListener(eventNames().showEvent, listener); }
+    DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(display, show);
 #endif
     DEFINE_ATTRIBUTE_EVENT_LISTENER(show);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(close);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(click);
-    
+
     void dispatchClickEvent();
     void dispatchCloseEvent();
     void dispatchErrorEvent();
@@ -173,7 +173,7 @@ private:
 #if ENABLE(NOTIFICATIONS)
     void taskTimerFired(Timer<Notification>*);
 #endif
-    
+
     bool m_isHTML;
 
     // Text notifications.
@@ -197,7 +197,7 @@ private:
     NotificationState m_state;
 
     RefPtr<NotificationCenter> m_notificationCenter;
-    
+
     EventTargetData m_eventTargetData;
 
 #if ENABLE(NOTIFICATIONS)

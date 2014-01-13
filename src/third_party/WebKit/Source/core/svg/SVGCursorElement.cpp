@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGCursorElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attr.h"
 #include "core/dom/Document.h"
 #include "core/svg/SVGElementInstance.h"
 
@@ -76,7 +74,7 @@ bool SVGCursorElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::xAttr);
         supportedAttributes.add(SVGNames::yAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGCursorElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -143,5 +141,3 @@ void SVGCursorElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) cons
 }
 
 }
-
-#endif // ENABLE(SVG)

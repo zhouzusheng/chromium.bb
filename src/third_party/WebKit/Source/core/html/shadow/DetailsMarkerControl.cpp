@@ -44,20 +44,14 @@ DetailsMarkerControl::DetailsMarkerControl(Document* document)
 {
 }
 
-RenderObject* DetailsMarkerControl::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* DetailsMarkerControl::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderDetailsMarker(this);
+    return new (document()->renderArena()) RenderDetailsMarker(this);
 }
 
 bool DetailsMarkerControl::rendererIsNeeded(const NodeRenderingContext& context)
 {
     return summaryElement()->isMainSummary() && HTMLDivElement::rendererIsNeeded(context);
-}
-
-const AtomicString& DetailsMarkerControl::shadowPseudoId() const
-{
-    DEFINE_STATIC_LOCAL(AtomicString, pseudId, ("-webkit-details-marker", AtomicString::ConstructFromLiteral));
-    return pseudId;
 }
 
 HTMLSummaryElement* DetailsMarkerControl::summaryElement()

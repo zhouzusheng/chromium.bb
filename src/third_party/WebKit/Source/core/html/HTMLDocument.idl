@@ -19,8 +19,7 @@
  */
 
 [
-    CustomToV8,
-    SkipVTableValidation
+    CustomToV8
 ] interface HTMLDocument : Document {
     [Custom] void open();
     void close();
@@ -33,18 +32,18 @@
 
     // Extensions
 
-    [Replaceable] attribute HTMLAllCollection all;
+    [Replaceable] readonly attribute HTMLAllCollection all;
 
-    void clear();
-
-    void captureEvents();
-    void releaseEvents();
+    [DeprecateAs=DocumentClear] void clear();
 
     readonly attribute long width;
     readonly attribute long height;
              [TreatNullAs=NullString] attribute DOMString dir;
              [TreatNullAs=NullString] attribute DOMString designMode;
     readonly attribute DOMString compatMode;
+
+    [DeprecateAs=CaptureEvents] void captureEvents();
+    [DeprecateAs=ReleaseEvents] void releaseEvents();
 
     readonly attribute Element activeElement;
     boolean hasFocus();

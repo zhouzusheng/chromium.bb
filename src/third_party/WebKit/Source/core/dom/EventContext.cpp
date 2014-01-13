@@ -27,14 +27,13 @@
 #include "config.h"
 #include "core/dom/EventContext.h"
 
-#include "core/dom/Document.h"
 #include "core/dom/Event.h"
 #include "core/dom/FocusEvent.h"
 #include "core/dom/MouseEvent.h"
 #include "core/dom/Node.h"
+#include "core/dom/StaticNodeList.h"
 #include "core/dom/TouchEvent.h"
 #include "core/dom/TouchList.h"
-#include "core/page/DOMWindow.h"
 
 namespace WebCore {
 
@@ -49,6 +48,11 @@ EventContext::EventContext(PassRefPtr<Node> node, PassRefPtr<EventTarget> curren
 
 EventContext::~EventContext()
 {
+}
+
+void EventContext::adoptEventPath(Vector<RefPtr<Node> >& nodes)
+{
+    m_eventPath = StaticNodeList::adopt(nodes);
 }
 
 void EventContext::handleLocalEvents(Event* event) const
@@ -129,7 +133,7 @@ bool TouchEventContext::isTouchEventContext() const
 void TouchEventContext::checkReachability(TouchList* touchList) const
 {
     for (size_t i = 0; i < touchList->length(); ++i)
-        ASSERT(isReachable(touchList->item(i)->target()->toNode()));
+        ASSERT(touchList->item(i)->target()->toNode()->treeScope()->isInclusiveAncestorOf(m_node->treeScope()));
 }
 #endif
 

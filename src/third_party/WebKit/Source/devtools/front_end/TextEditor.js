@@ -157,10 +157,11 @@ WebInspector.TextEditor.prototype = {
 
     /**
      * @param {number} lineNumber
+     * @param {number=} columnNumber
      */
-    highlightLine: function(lineNumber) { },
+    highlightPosition: function(lineNumber, columnNumber) { },
 
-    clearLineHighlight: function() { },
+    clearPositionHighlight: function() { },
 
     /**
      * @return {Array.<Element>}
@@ -259,7 +260,12 @@ WebInspector.TextEditor.prototype = {
 
     wasShown: function() { },
 
-    willHide: function() { }
+    willHide: function() { },
+
+    /**
+     * @param {WebInspector.CompletionDictionary} dictionary
+     */
+    setCompletionDictionary: function(dictionary) { },
 }
 
 /**

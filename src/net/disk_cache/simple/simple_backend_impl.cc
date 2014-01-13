@@ -4,36 +4,71 @@
 
 #include "net/disk_cache/simple/simple_backend_impl.h"
 
+#include <algorithm>
+#include <cstdlib>
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/file_util.h"
 #include "base/location.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/single_thread_task_runner.h"
 #include "base/sys_info.h"
-#include "base/threading/worker_pool.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/time.h"
 #include "net/base/net_errors.h"
 #include "net/disk_cache/backend_impl.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
 #include "net/disk_cache/simple/simple_entry_impl.h"
 #include "net/disk_cache/simple/simple_index.h"
+#include "net/disk_cache/simple/simple_index_file.h"
 #include "net/disk_cache/simple/simple_synchronous_entry.h"
 #include "net/disk_cache/simple/simple_util.h"
 
 using base::Closure;
 using base::FilePath;
 using base::MessageLoopProxy;
+using base::SequencedWorkerPool;
 using base::SingleThreadTaskRunner;
 using base::Time;
-using base::WorkerPool;
 using file_util::DirectoryExists;
 using file_util::CreateDirectory;
 
 namespace {
 
+// Maximum number of concurrent worker pool threads, which also is the limit
+// on concurrent IO (as we use one thread per IO request).
+const int kDefaultMaxWorkerThreads = 50;
+
+const char kThreadNamePrefix[] = "SimpleCacheWorker";
+
 // Cache size when all other size heuristics failed.
 const uint64 kDefaultCacheSize = 80 * 1024 * 1024;
+
+// Maximum fraction of the cache that one entry can consume.
+const int kMaxFileRatio = 8;
+
+// A global sequenced worker pool to use for launching all tasks.
+SequencedWorkerPool* g_sequenced_worker_pool = NULL;
+
+void MaybeCreateSequencedWorkerPool() {
+  if (!g_sequenced_worker_pool) {
+    int max_worker_threads = kDefaultMaxWorkerThreads;
+
+    const std::string thread_count_field_trial =
+        base::FieldTrialList::FindFullName("SimpleCacheMaxThreads");
+    if (!thread_count_field_trial.empty()) {
+      max_worker_threads =
+          std::max(1, std::atoi(thread_count_field_trial.c_str()));
+    }
+
+    g_sequenced_worker_pool = new SequencedWorkerPool(max_worker_threads,
+                                                      kThreadNamePrefix);
+    g_sequenced_worker_pool->AddRef();  // Leak it.
+  }
+}
 
 // Must run on IO Thread.
 void DeleteBackendImpl(disk_cache::Backend** backend,
@@ -129,20 +164,14 @@ void RecordIndexLoad(base::TimeTicks constructed_since, int result) {
 
 namespace disk_cache {
 
-SimpleBackendImpl::SimpleBackendImpl(
-    const FilePath& path,
-    int max_bytes,
-    net::CacheType type,
-    base::SingleThreadTaskRunner* cache_thread,
-    net::NetLog* net_log)
+SimpleBackendImpl::SimpleBackendImpl(const FilePath& path,
+                                     int max_bytes,
+                                     net::CacheType type,
+                                     base::SingleThreadTaskRunner* cache_thread,
+                                     net::NetLog* net_log)
     : path_(path),
-      index_(new SimpleIndex(cache_thread,
-                             MessageLoopProxy::current(),  // io_thread
-                             path)),
       cache_thread_(cache_thread),
       orig_max_size_(max_bytes) {
-  index_->ExecuteWhenReady(base::Bind(&RecordIndexLoad,
-                                      base::TimeTicks::Now()));
 }
 
 SimpleBackendImpl::~SimpleBackendImpl() {
@@ -150,6 +179,18 @@ SimpleBackendImpl::~SimpleBackendImpl() {
 }
 
 int SimpleBackendImpl::Init(const CompletionCallback& completion_callback) {
+  MaybeCreateSequencedWorkerPool();
+
+  worker_pool_ = g_sequenced_worker_pool->GetTaskRunnerWithShutdownBehavior(
+      SequencedWorkerPool::CONTINUE_ON_SHUTDOWN);
+
+  index_.reset(new SimpleIndex(MessageLoopProxy::current(), path_,
+                               make_scoped_ptr(new SimpleIndexFile(
+                                   cache_thread_.get(), worker_pool_.get(),
+                                   path_))));
+  index_->ExecuteWhenReady(base::Bind(&RecordIndexLoad,
+                                      base::TimeTicks::Now()));
+
   InitializeIndexCallback initialize_index_callback =
       base::Bind(&SimpleBackendImpl::InitializeIndex,
                  base::Unretained(this),
@@ -167,6 +208,10 @@ int SimpleBackendImpl::Init(const CompletionCallback& completion_callback) {
 bool SimpleBackendImpl::SetMaxSize(int max_bytes) {
   orig_max_size_ = max_bytes;
   return index_->SetMaxSize(max_bytes);
+}
+
+int SimpleBackendImpl::GetMaxFileSize() const {
+  return index_->max_size() / kMaxFileRatio;
 }
 
 void SimpleBackendImpl::OnDeactivated(const SimpleEntryImpl* entry) {
@@ -226,7 +271,7 @@ void SimpleBackendImpl::IndexReadyForDoom(Time initial_time,
     EntryMap::iterator it = active_entries_.find(entry_hash);
     if (it == active_entries_.end())
       continue;
-    SimpleEntryImpl* entry = it->second;
+    SimpleEntryImpl* entry = it->second.get();
     entry->Doom();
 
     (*removed_key_hashes)[i] = removed_key_hashes->back();
@@ -239,7 +284,7 @@ void SimpleBackendImpl::IndexReadyForDoom(Time initial_time,
                             new_result.get());
   Closure reply = base::Bind(&CallCompletionCallback,
                              callback, base::Passed(&new_result));
-  WorkerPool::PostTaskAndReply(FROM_HERE, task, reply, true);
+  worker_pool_->PostTaskAndReply(FROM_HERE, task, reply);
 }
 
 int SimpleBackendImpl::DoomEntriesBetween(
@@ -270,7 +315,10 @@ void SimpleBackendImpl::EndEnumeration(void** iter) {
 
 void SimpleBackendImpl::GetStats(
     std::vector<std::pair<std::string, std::string> >* stats) {
-  NOTIMPLEMENTED();
+  std::pair<std::string, std::string> item;
+  item.first = "Cache type";
+  item.second = "Simple Cache";
+  stats->push_back(item);
 }
 
 void SimpleBackendImpl::OnExternalCacheHit(const std::string& key) {
@@ -323,12 +371,12 @@ scoped_refptr<SimpleEntryImpl> SimpleBackendImpl::CreateOrFindActiveEntry(
                                             base::WeakPtr<SimpleEntryImpl>()));
   EntryMap::iterator& it = insert_result.first;
   if (insert_result.second)
-    DCHECK(!it->second);
-  if (!it->second) {
+    DCHECK(!it->second.get());
+  if (!it->second.get()) {
     SimpleEntryImpl* entry = new SimpleEntryImpl(this, path_, key, entry_hash);
     it->second = entry->AsWeakPtr();
   }
-  DCHECK(it->second);
+  DCHECK(it->second.get());
   // It's possible, but unlikely, that we have an entry hash collision with a
   // currently active entry.
   if (key != it->second->key()) {

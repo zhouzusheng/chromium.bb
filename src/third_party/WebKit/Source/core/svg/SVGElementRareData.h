@@ -22,7 +22,7 @@
 
 #include "core/css/CSSParserMode.h"
 #include "core/css/StylePropertySet.h"
-#include "core/css/StyleResolver.h"
+#include "core/css/resolver/StyleResolver.h"
 #include <wtf/HashSet.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/StdLibExtras.h>
@@ -75,11 +75,11 @@ public:
     CSSCursorImageValue* cursorImageValue() const { return m_cursorImageValue; }
     void setCursorImageValue(CSSCursorImageValue* cursorImageValue) { m_cursorImageValue = cursorImageValue; }
 
-    StylePropertySet* animatedSMILStyleProperties() const { return m_animatedSMILStyleProperties.get(); }
-    StylePropertySet* ensureAnimatedSMILStyleProperties()
+    MutableStylePropertySet* animatedSMILStyleProperties() const { return m_animatedSMILStyleProperties.get(); }
+    MutableStylePropertySet* ensureAnimatedSMILStyleProperties()
     {
         if (!m_animatedSMILStyleProperties)
-            m_animatedSMILStyleProperties = StylePropertySet::create(SVGAttributeMode);
+            m_animatedSMILStyleProperties = MutableStylePropertySet::create(SVGAttributeMode);
         return m_animatedSMILStyleProperties.get();
     }
 
@@ -114,7 +114,7 @@ private:
     bool m_instancesUpdatesBlocked : 1;
     bool m_useOverrideComputedStyle : 1;
     bool m_needsOverrideComputedStyleUpdate : 1;
-    RefPtr<StylePropertySet> m_animatedSMILStyleProperties;
+    RefPtr<MutableStylePropertySet> m_animatedSMILStyleProperties;
     RefPtr<RenderStyle> m_overrideComputedStyle;
 };
 

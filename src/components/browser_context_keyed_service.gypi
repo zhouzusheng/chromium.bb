@@ -6,10 +6,15 @@
   'targets': [
     {
       'target_name': 'browser_context_keyed_service',
-      'type': 'static_library',
+      'type': '<(component)',
+      'defines': [
+        'BROWSER_CONTEXT_KEYED_SERVICE_IMPLEMENTATION',
+      ],
       'include_dirs': [
         '..',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_prefs',
@@ -18,6 +23,7 @@
         'user_prefs',
       ],
       'sources': [
+        'browser_context_keyed_service/browser_context_keyed_service_export.h',
         'browser_context_keyed_service/browser_context_dependency_manager.cc',
         'browser_context_keyed_service/browser_context_dependency_manager.h',
         'browser_context_keyed_service/browser_context_keyed_base_factory.h',

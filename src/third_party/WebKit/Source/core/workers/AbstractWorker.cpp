@@ -32,15 +32,11 @@
 
 #include "core/workers/AbstractWorker.h"
 
-#include "core/dom/ErrorEvent.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventException.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ScriptExecutionContext.h"
-#include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/ContentSecurityPolicy.h"
-#include "core/page/SecurityOrigin.h"
+#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -55,7 +51,7 @@ AbstractWorker::~AbstractWorker()
 
 void AbstractWorker::contextDestroyed()
 {
-    ActiveDOMObject::contextDestroyed(); 
+    ActiveDOMObject::contextDestroyed();
 }
 
 KURL AbstractWorker::resolveURL(const String& url, ExceptionCode& ec)

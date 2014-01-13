@@ -32,15 +32,13 @@
 #include "core/inspector/InspectorDOMDebuggerAgent.h"
 
 #include "InspectorFrontend.h"
-#include "core/html/HTMLElement.h"
-#include "core/inspector/InspectorAgent.h"
+#include "core/dom/Event.h"
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
-#include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorState.h"
-#include "core/inspector/InspectorValues.h"
 #include "core/inspector/InstrumentingAgents.h"
-#include <wtf/text/WTFString.h>
+#include "core/platform/JSONValues.h"
+#include "wtf/text/WTFString.h"
 
 namespace {
 
@@ -61,18 +59,26 @@ const int domBreakpointDerivedTypeShift = 16;
 
 namespace WebCore {
 
+static const char* const requestAnimationFrameEventName = "requestAnimationFrame";
+static const char* const cancelAnimationFrameEventName = "cancelAnimationFrame";
+static const char* const animationFrameFiredEventName = "animationFrameFired";
+static const char* const setTimerEventName = "setTimer";
+static const char* const clearTimerEventName = "clearTimer";
+static const char* const timerFiredEventName = "timerFired";
+static const char* const webglErrorFiredEventName = "webglErrorFired";
+
 namespace DOMDebuggerAgentState {
 static const char eventListenerBreakpoints[] = "eventListenerBreakpoints";
 static const char pauseOnAllXHRs[] = "pauseOnAllXHRs";
 static const char xhrBreakpoints[] = "xhrBreakpoints";
 }
 
-PassOwnPtr<InspectorDOMDebuggerAgent> InspectorDOMDebuggerAgent::create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent, InspectorAgent* inspectorAgent)
+PassOwnPtr<InspectorDOMDebuggerAgent> InspectorDOMDebuggerAgent::create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent)
 {
-    return adoptPtr(new InspectorDOMDebuggerAgent(instrumentingAgents, inspectorState, domAgent, debuggerAgent, inspectorAgent));
+    return adoptPtr(new InspectorDOMDebuggerAgent(instrumentingAgents, inspectorState, domAgent, debuggerAgent));
 }
 
-InspectorDOMDebuggerAgent::InspectorDOMDebuggerAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent, InspectorAgent*)
+InspectorDOMDebuggerAgent::InspectorDOMDebuggerAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent)
     : InspectorBaseAgent<InspectorDOMDebuggerAgent>("DOMDebugger", instrumentingAgents, inspectorState)
     , m_domAgent(domAgent)
     , m_debuggerAgent(debuggerAgent)
@@ -156,7 +162,7 @@ void InspectorDOMDebuggerAgent::setBreakpoint(ErrorString* error, const String& 
         return;
     }
 
-    RefPtr<InspectorObject> eventListenerBreakpoints = m_state->getObject(DOMDebuggerAgentState::eventListenerBreakpoints);
+    RefPtr<JSONObject> eventListenerBreakpoints = m_state->getObject(DOMDebuggerAgentState::eventListenerBreakpoints);
     eventListenerBreakpoints->setBoolean(eventName, true);
     m_state->setObject(DOMDebuggerAgentState::eventListenerBreakpoints, eventListenerBreakpoints);
 }
@@ -178,7 +184,7 @@ void InspectorDOMDebuggerAgent::removeBreakpoint(ErrorString* error, const Strin
         return;
     }
 
-    RefPtr<InspectorObject> eventListenerBreakpoints = m_state->getObject(DOMDebuggerAgentState::eventListenerBreakpoints);
+    RefPtr<JSONObject> eventListenerBreakpoints = m_state->getObject(DOMDebuggerAgentState::eventListenerBreakpoints);
     eventListenerBreakpoints->remove(eventName);
     m_state->setObject(DOMDebuggerAgentState::eventListenerBreakpoints, eventListenerBreakpoints);
 }
@@ -186,7 +192,7 @@ void InspectorDOMDebuggerAgent::removeBreakpoint(ErrorString* error, const Strin
 void InspectorDOMDebuggerAgent::didInvalidateStyleAttr(Node* node)
 {
     if (hasBreakpoint(node, AttributeModified)) {
-        RefPtr<InspectorObject> eventData = InspectorObject::create();
+        RefPtr<JSONObject> eventData = JSONObject::create();
         descriptionForDOMEvent(node, AttributeModified, false, eventData.get());
         m_debuggerAgent->breakProgram(InspectorFrontend::Debugger::Reason::DOM, eventData.release());
     }
@@ -228,7 +234,7 @@ static int domTypeForName(ErrorString* errorString, const String& typeString)
         return AttributeModified;
     if (typeString == "node-removed")
         return NodeRemoved;
-    *errorString = makeString("Unknown DOM breakpoint type: ", typeString);
+    *errorString = "Unknown DOM breakpoint type: " + typeString;
     return -1;
 }
 
@@ -286,7 +292,7 @@ void InspectorDOMDebuggerAgent::removeDOMBreakpoint(ErrorString* errorString, in
 void InspectorDOMDebuggerAgent::willInsertDOMNode(Node* parent)
 {
     if (hasBreakpoint(parent, SubtreeModified)) {
-        RefPtr<InspectorObject> eventData = InspectorObject::create();
+        RefPtr<JSONObject> eventData = JSONObject::create();
         descriptionForDOMEvent(parent, SubtreeModified, true, eventData.get());
         m_debuggerAgent->breakProgram(InspectorFrontend::Debugger::Reason::DOM, eventData.release());
     }
@@ -296,26 +302,27 @@ void InspectorDOMDebuggerAgent::willRemoveDOMNode(Node* node)
 {
     Node* parentNode = InspectorDOMAgent::innerParentNode(node);
     if (hasBreakpoint(node, NodeRemoved)) {
-        RefPtr<InspectorObject> eventData = InspectorObject::create();
+        RefPtr<JSONObject> eventData = JSONObject::create();
         descriptionForDOMEvent(node, NodeRemoved, false, eventData.get());
         m_debuggerAgent->breakProgram(InspectorFrontend::Debugger::Reason::DOM, eventData.release());
     } else if (parentNode && hasBreakpoint(parentNode, SubtreeModified)) {
-        RefPtr<InspectorObject> eventData = InspectorObject::create();
+        RefPtr<JSONObject> eventData = JSONObject::create();
         descriptionForDOMEvent(node, SubtreeModified, false, eventData.get());
         m_debuggerAgent->breakProgram(InspectorFrontend::Debugger::Reason::DOM, eventData.release());
     }
+    didRemoveDOMNode(node);
 }
 
 void InspectorDOMDebuggerAgent::willModifyDOMAttr(Element* element, const AtomicString&, const AtomicString&)
 {
     if (hasBreakpoint(element, AttributeModified)) {
-        RefPtr<InspectorObject> eventData = InspectorObject::create();
+        RefPtr<JSONObject> eventData = JSONObject::create();
         descriptionForDOMEvent(element, AttributeModified, false, eventData.get());
         m_debuggerAgent->breakProgram(InspectorFrontend::Debugger::Reason::DOM, eventData.release());
     }
 }
 
-void InspectorDOMDebuggerAgent::descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, InspectorObject* description)
+void InspectorDOMDebuggerAgent::descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, JSONObject* description)
 {
     ASSERT(hasBreakpoint(target, breakpointType));
 
@@ -372,23 +379,74 @@ void InspectorDOMDebuggerAgent::updateSubtreeBreakpoints(Node* node, uint32_t ro
         updateSubtreeBreakpoints(child, newRootMask, set);
 }
 
-void InspectorDOMDebuggerAgent::pauseOnNativeEventIfNeeded(bool isDOMEvent, const String& eventName, bool synchronous)
+void InspectorDOMDebuggerAgent::pauseOnNativeEventIfNeeded(PassRefPtr<JSONObject> eventData, bool synchronous)
+{
+    if (!eventData)
+        return;
+    if (synchronous)
+        m_debuggerAgent->breakProgram(InspectorFrontend::Debugger::Reason::EventListener, eventData);
+    else
+        m_debuggerAgent->schedulePauseOnNextStatement(InspectorFrontend::Debugger::Reason::EventListener, eventData);
+}
+
+PassRefPtr<JSONObject> InspectorDOMDebuggerAgent::preparePauseOnNativeEventData(bool isDOMEvent, const String& eventName)
 {
     String fullEventName = (isDOMEvent ? listenerEventCategoryType : instrumentationEventCategoryType) + eventName;
     if (m_pauseInNextEventListener)
         m_pauseInNextEventListener = false;
     else {
-        RefPtr<InspectorObject> eventListenerBreakpoints = m_state->getObject(DOMDebuggerAgentState::eventListenerBreakpoints);
+        RefPtr<JSONObject> eventListenerBreakpoints = m_state->getObject(DOMDebuggerAgentState::eventListenerBreakpoints);
         if (eventListenerBreakpoints->find(fullEventName) == eventListenerBreakpoints->end())
-            return;
+            return 0;
     }
 
-    RefPtr<InspectorObject> eventData = InspectorObject::create();
+    RefPtr<JSONObject> eventData = JSONObject::create();
     eventData->setString("eventName", fullEventName);
-    if (synchronous)
-        m_debuggerAgent->breakProgram(InspectorFrontend::Debugger::Reason::EventListener, eventData.release());
-    else
-        m_debuggerAgent->schedulePauseOnNextStatement(InspectorFrontend::Debugger::Reason::EventListener, eventData.release());
+    return eventData.release();
+}
+
+void InspectorDOMDebuggerAgent::didInstallTimer(ScriptExecutionContext* context, int timerId, int timeout, bool singleShot)
+{
+    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, setTimerEventName), true);
+}
+
+void InspectorDOMDebuggerAgent::didRemoveTimer(ScriptExecutionContext* context, int timerId)
+{
+    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, clearTimerEventName), true);
+}
+
+void InspectorDOMDebuggerAgent::willFireTimer(ScriptExecutionContext* context, int timerId)
+{
+    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, timerFiredEventName), false);
+}
+
+void InspectorDOMDebuggerAgent::didRequestAnimationFrame(Document* document, int callbackId)
+{
+    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, requestAnimationFrameEventName), true);
+}
+
+void InspectorDOMDebuggerAgent::didCancelAnimationFrame(Document* document, int callbackId)
+{
+    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, cancelAnimationFrameEventName), true);
+}
+
+void InspectorDOMDebuggerAgent::willFireAnimationFrame(Document* document, int callbackId)
+{
+    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(false, animationFrameFiredEventName), false);
+}
+
+void InspectorDOMDebuggerAgent::willHandleEvent(Event* event)
+{
+    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(true, event->type()), false);
+}
+
+void InspectorDOMDebuggerAgent::didFireWebGLError(const String& errorName)
+{
+    RefPtr<JSONObject> eventData = preparePauseOnNativeEventData(false, webglErrorFiredEventName);
+    if (!eventData)
+        return;
+    eventData->setString("webglErrorName", errorName);
+    pauseOnNativeEventIfNeeded(eventData.release(), m_debuggerAgent->canBreakProgram());
 }
 
 void InspectorDOMDebuggerAgent::setXHRBreakpoint(ErrorString*, const String& url)
@@ -398,7 +456,7 @@ void InspectorDOMDebuggerAgent::setXHRBreakpoint(ErrorString*, const String& url
         return;
     }
 
-    RefPtr<InspectorObject> xhrBreakpoints = m_state->getObject(DOMDebuggerAgentState::xhrBreakpoints);
+    RefPtr<JSONObject> xhrBreakpoints = m_state->getObject(DOMDebuggerAgentState::xhrBreakpoints);
     xhrBreakpoints->setBoolean(url, true);
     m_state->setObject(DOMDebuggerAgentState::xhrBreakpoints, xhrBreakpoints);
 }
@@ -410,7 +468,7 @@ void InspectorDOMDebuggerAgent::removeXHRBreakpoint(ErrorString*, const String& 
         return;
     }
 
-    RefPtr<InspectorObject> xhrBreakpoints = m_state->getObject(DOMDebuggerAgentState::xhrBreakpoints);
+    RefPtr<JSONObject> xhrBreakpoints = m_state->getObject(DOMDebuggerAgentState::xhrBreakpoints);
     xhrBreakpoints->remove(url);
     m_state->setObject(DOMDebuggerAgentState::xhrBreakpoints, xhrBreakpoints);
 }
@@ -421,8 +479,8 @@ void InspectorDOMDebuggerAgent::willSendXMLHttpRequest(const String& url)
     if (m_state->getBoolean(DOMDebuggerAgentState::pauseOnAllXHRs))
         breakpointURL = "";
     else {
-        RefPtr<InspectorObject> xhrBreakpoints = m_state->getObject(DOMDebuggerAgentState::xhrBreakpoints);
-        for (InspectorObject::iterator it = xhrBreakpoints->begin(); it != xhrBreakpoints->end(); ++it) {
+        RefPtr<JSONObject> xhrBreakpoints = m_state->getObject(DOMDebuggerAgentState::xhrBreakpoints);
+        for (JSONObject::iterator it = xhrBreakpoints->begin(); it != xhrBreakpoints->end(); ++it) {
             if (url.contains(it->key)) {
                 breakpointURL = it->key;
                 break;
@@ -433,7 +491,7 @@ void InspectorDOMDebuggerAgent::willSendXMLHttpRequest(const String& url)
     if (breakpointURL.isNull())
         return;
 
-    RefPtr<InspectorObject> eventData = InspectorObject::create();
+    RefPtr<JSONObject> eventData = JSONObject::create();
     eventData->setString("breakpointURL", breakpointURL);
     eventData->setString("url", url);
     m_debuggerAgent->breakProgram(InspectorFrontend::Debugger::Reason::XHR, eventData.release());

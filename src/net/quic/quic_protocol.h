@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/logging.h"
 #include "base/strings/string_piece.h"
 #include "net/base/int128.h"
@@ -28,6 +28,7 @@ namespace net {
 using ::operator<<;
 
 class QuicPacket;
+struct QuicPacketHeader;
 
 typedef uint64 QuicGuid;
 typedef uint32 QuicStreamId;
@@ -36,8 +37,10 @@ typedef uint64 QuicPacketSequenceNumber;
 typedef QuicPacketSequenceNumber QuicFecGroupNumber;
 typedef uint64 QuicPublicResetNonceProof;
 typedef uint8 QuicPacketEntropyHash;
-typedef uint32 QuicVersionTag;
-typedef std::vector<QuicVersionTag> QuicVersionTagList;
+typedef uint32 QuicHeaderId;
+// QuicTag is the type of a tag in the wire protocol.
+typedef uint32 QuicTag;
+typedef std::vector<QuicTag> QuicTagVector;
 
 // TODO(rch): Consider Quic specific names for these constants.
 // Maximum size in bytes of a QUIC packet.
@@ -46,14 +49,10 @@ const QuicByteCount kMaxPacketSize = 1200;
 // Maximum number of open streams per connection.
 const size_t kDefaultMaxStreamsPerConnection = 100;
 
-// Number of bytes reserved for guid in the packet header.
-const size_t kQuicGuidSize = 8;
 // Number of bytes reserved for public flags in the packet header.
 const size_t kPublicFlagsSize = 1;
 // Number of bytes reserved for version number in the packet header.
 const size_t kQuicVersionSize = 4;
-// Number of bytes reserved for sequence number in the packet header.
-const size_t kSequenceNumberSize = 6;
 // Number of bytes reserved for private flags in the packet header.
 const size_t kPrivateFlagsSize = 1;
 // Number of bytes reserved for FEC group in the packet header.
@@ -64,41 +63,35 @@ const size_t kPublicResetNonceSize = 8;
 // Signifies that the QuicPacket will contain version of the protocol.
 const bool kIncludeVersion = true;
 
-// Size in bytes of the data or fec packet header.
-NET_EXPORT_PRIVATE size_t GetPacketHeaderSize(bool include_version);
-// Size in bytes of the public reset packet.
-NET_EXPORT_PRIVATE size_t GetPublicResetPacketSize();
-
-// Index of the first byte in a QUIC packet of FEC protected data.
-NET_EXPORT_PRIVATE size_t GetStartOfFecProtectedData(bool include_version);
-// Index of the first byte in a QUIC packet of encrypted data.
-NET_EXPORT_PRIVATE size_t GetStartOfEncryptedData(bool include_version);
 // Returns true if |version| is a supported protocol version.
-NET_EXPORT_PRIVATE bool IsSupportedVersion(QuicVersionTag version);
+NET_EXPORT_PRIVATE bool IsSupportedVersion(QuicTag version);
 
 // Index of the first byte in a QUIC packet which is used in hash calculation.
 const size_t kStartOfHashData = 0;
 
 // Limit on the delta between stream IDs.
 const QuicStreamId kMaxStreamIdDelta = 100;
+// Limit on the delta between header IDs.
+const QuicHeaderId kMaxHeaderIdDelta = 100;
 
 // Reserved ID for the crypto stream.
 // TODO(rch): ensure that this is not usable by any other streams.
 const QuicStreamId kCryptoStreamId = 1;
 
-// Value which indicates this packet is not FEC protected.
-const uint8 kNoFecOffset = 0xFF;
-
-const int64 kDefaultTimeoutUs = 600000000;  // 10 minutes.
+// This is the default network timeout a for connection till the crypto
+// handshake succeeds and the negotiated timeout from the handshake is received.
+const int64 kDefaultInitialTimeoutSecs = 120;  // 2 mins.
+const int64 kDefaultTimeoutSecs = 60 * 10;  // 10 minutes.
+const int64 kDefaultMaxTimeForCryptoHandshakeSecs = 5;  // 5 secs.
 
 enum Retransmission {
-  NOT_RETRANSMISSION = 0,
-  IS_RETRANSMISSION = 1,
+  NOT_RETRANSMISSION,
+  IS_RETRANSMISSION,
 };
 
 enum HasRetransmittableData {
-  HAS_RETRANSMITTABLE_DATA = 0,
-  NO_RETRANSMITTABLE_DATA = 1,
+  NO_RETRANSMITTABLE_DATA,
+  HAS_RETRANSMITTABLE_DATA,
 };
 
 enum QuicFrameType {
@@ -112,20 +105,72 @@ enum QuicFrameType {
   NUM_FRAME_TYPES
 };
 
+enum QuicGuidLength {
+  PACKET_0BYTE_GUID = 0,
+  PACKET_1BYTE_GUID = 1,
+  PACKET_4BYTE_GUID = 4,
+  PACKET_8BYTE_GUID = 8
+};
+
+enum InFecGroup {
+  NOT_IN_FEC_GROUP,
+  IN_FEC_GROUP,
+};
+
+enum QuicSequenceNumberLength {
+  PACKET_1BYTE_SEQUENCE_NUMBER = 1,
+  PACKET_2BYTE_SEQUENCE_NUMBER = 2,
+  PACKET_4BYTE_SEQUENCE_NUMBER = 4,
+  PACKET_6BYTE_SEQUENCE_NUMBER = 6
+};
+
 enum QuicPacketPublicFlags {
   PACKET_PUBLIC_FLAGS_NONE = 0,
   PACKET_PUBLIC_FLAGS_VERSION = 1 << 0,  // Packet header contains version info.
   PACKET_PUBLIC_FLAGS_RST = 1 << 1,  // Packet is a public reset packet.
-  PACKET_PUBLIC_FLAGS_MAX = (1 << 2) - 1  // All bits set.
+  // Packet header guid length in bytes.
+  PACKET_PUBLIC_FLAGS_0BYTE_GUID = 0,
+  PACKET_PUBLIC_FLAGS_1BYTE_GUID = 1 << 2,
+  PACKET_PUBLIC_FLAGS_4BYTE_GUID = 1 << 3,
+  PACKET_PUBLIC_FLAGS_8BYTE_GUID = 1 << 3 | 1 << 2,
+  // Packet sequence number length in bytes.
+  PACKET_PUBLIC_FLAGS_1BYTE_SEQUENCE = 0,
+  PACKET_PUBLIC_FLAGS_2BYTE_SEQUENCE = 1 << 4,
+  PACKET_PUBLIC_FLAGS_4BYTE_SEQUENCE = 1 << 5,
+  PACKET_PUBLIC_FLAGS_6BYTE_SEQUENCE = 1 << 5 | 1 << 4,
+  PACKET_PUBLIC_FLAGS_MAX = (1 << 6) - 1  // All bits set.
 };
 
 enum QuicPacketPrivateFlags {
   PACKET_PRIVATE_FLAGS_NONE = 0,
-  PACKET_PRIVATE_FLAGS_FEC = 1 << 0,  // Payload is FEC as opposed to frames.
-  PACKET_PRIVATE_FLAGS_ENTROPY = 1 << 1,
-  PACKET_PRIVATE_FLAGS_FEC_ENTROPY = 1 << 2,
+  PACKET_PRIVATE_FLAGS_ENTROPY = 1 << 0,
+  PACKET_PRIVATE_FLAGS_FEC_GROUP = 1 << 1,  // Payload is part of an FEC group.
+  PACKET_PRIVATE_FLAGS_FEC = 1 << 2,  // Payload is FEC as opposed to frames.
   PACKET_PRIVATE_FLAGS_MAX = (1 << 3) - 1  // All bits set.
 };
+
+// Size in bytes of the data or fec packet header.
+NET_EXPORT_PRIVATE size_t GetPacketHeaderSize(QuicPacketHeader header);
+
+NET_EXPORT_PRIVATE size_t GetPacketHeaderSize(
+    QuicGuidLength guid_length,
+    bool include_version,
+    QuicSequenceNumberLength sequence_number_length,
+    InFecGroup is_in_fec_group);
+
+// Size in bytes of the public reset packet.
+NET_EXPORT_PRIVATE size_t GetPublicResetPacketSize();
+
+// Index of the first byte in a QUIC packet of FEC protected data.
+NET_EXPORT_PRIVATE size_t GetStartOfFecProtectedData(
+    QuicGuidLength guid_length,
+    bool include_version,
+    QuicSequenceNumberLength sequence_number_length);
+// Index of the first byte in a QUIC packet of encrypted data.
+NET_EXPORT_PRIVATE size_t GetStartOfEncryptedData(
+    QuicGuidLength guid_length,
+    bool include_version,
+    QuicSequenceNumberLength sequence_number_length);
 
 enum QuicRstStreamErrorCode {
   QUIC_STREAM_NO_ERROR = 0,
@@ -169,6 +214,8 @@ enum QuicErrorCode {
   QUIC_INVALID_ACK_DATA,
   // Version negotiation packet is malformed.
   QUIC_INVALID_VERSION_NEGOTIATION_PACKET,
+  // Public RST packet is malformed.
+  QUIC_INVALID_PUBLIC_RST_PACKET,
   // There was an error decrypting.
   QUIC_DECRYPTION_FAILURE,
   // There was an error encrypting.
@@ -185,14 +232,28 @@ enum QuicErrorCode {
   QUIC_TOO_MANY_OPEN_STREAMS,
   // Received public reset for this connection.
   QUIC_PUBLIC_RESET,
-  // Invalid protocol version
+  // Invalid protocol version.
   QUIC_INVALID_VERSION,
-
+  // Stream reset before headers decompressed.
+  QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED,
+  // The Header ID for a stream was too far from the previous.
+  QUIC_INVALID_HEADER_ID,
+  // Negotiable parameter received during handshake had invalid value.
+  QUIC_INVALID_NEGOTIATED_VALUE,
+  // There was an error decompressing data.
+  QUIC_DECOMPRESSION_FAILURE,
   // We hit our prenegotiated (or default) timeout
   QUIC_CONNECTION_TIMED_OUT,
+  // There was an error encountered migrating addresses
+  QUIC_ERROR_MIGRATING_ADDRESS,
+  // There was an error while writing the packet.
+  QUIC_PACKET_WRITE_ERROR,
+
 
   // Crypto errors.
 
+  // Hanshake failed.
+  QUIC_HANDSHAKE_FAILED,
   // Handshake message contained out of order tags.
   QUIC_CRYPTO_TAGS_OUT_OF_ORDER,
   // Handshake message contained too many entries.
@@ -226,6 +287,11 @@ enum QuicErrorCode {
   QUIC_PROOF_INVALID,
   // A crypto message was received with a duplicate tag.
   QUIC_CRYPTO_DUPLICATE_TAG,
+  // A crypto message was received with the wrong encryption level (i.e. it
+  // should have been encrypted but was not.)
+  QUIC_CRYPTO_ENCRYPTION_LEVEL_INCORRECT,
+  // The server config for a server has expired.
+  QUIC_CRYPTO_SERVER_CONFIG_EXPIRED,
 
   // No error. Used as bound while iterating.
   QUIC_LAST_ERROR,
@@ -241,8 +307,11 @@ enum QuicErrorCode {
 // The TAG macro is used in header files to ensure that we don't create static
 // initialisers. In normal code, the MakeQuicTag function should be used.
 #define TAG(a, b, c, d) ((d << 24) + (c << 16) + (b << 8) + a)
-const QuicVersionTag kUnsupportedVersion = -1;
-const QuicVersionTag kQuicVersion1 = TAG('Q', '1', '.', '0');
+const QuicTag kUnsupportedVersion = -1;
+// Each time the wire format changes, this need needs to be incremented.
+// At some point, we will actually freeze the wire format and make an official
+// version number, but this works for now.
+const QuicTag kQuicVersion1 = TAG('Q', '0', '0', '6');
 #undef TAG
 
 // MakeQuicTag returns a value given the four bytes. For example:
@@ -258,9 +327,11 @@ struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
 
   // Universal header. All QuicPacket headers will have a guid and public flags.
   QuicGuid guid;
+  QuicGuidLength guid_length;
   bool reset_flag;
   bool version_flag;
-  QuicVersionTagList versions;
+  QuicSequenceNumberLength sequence_number_length;
+  QuicTagVector versions;
 };
 
 // Header for Data or FEC packets.
@@ -273,10 +344,10 @@ struct NET_EXPORT_PRIVATE QuicPacketHeader {
 
   QuicPacketPublicHeader public_header;
   bool fec_flag;
-  bool fec_entropy_flag;
   bool entropy_flag;
   QuicPacketEntropyHash entropy_hash;
   QuicPacketSequenceNumber packet_sequence_number;
+  InFecGroup is_in_fec_group;
   QuicFecGroupNumber fec_group;
 };
 
@@ -523,8 +594,6 @@ typedef std::vector<QuicFrame> QuicFrames;
 struct NET_EXPORT_PRIVATE QuicFecData {
   QuicFecData();
 
-  bool operator==(const QuicFecData& other) const;
-
   // The FEC group number is also the sequence number of the first
   // FEC protected packet.  The last protected packet's sequence number will
   // be one less than the sequence number of the FEC packet.
@@ -567,18 +636,26 @@ class NET_EXPORT_PRIVATE QuicData {
 
 class NET_EXPORT_PRIVATE QuicPacket : public QuicData {
  public:
-  static QuicPacket* NewDataPacket(char* buffer,
-                                   size_t length,
-                                   bool owns_buffer,
-                                   bool includes_version) {
-    return new QuicPacket(buffer, length, owns_buffer, includes_version, false);
+  static QuicPacket* NewDataPacket(
+      char* buffer,
+      size_t length,
+      bool owns_buffer,
+      QuicGuidLength guid_length,
+      bool includes_version,
+      QuicSequenceNumberLength sequence_number_length) {
+    return new QuicPacket(buffer, length, owns_buffer, guid_length,
+                          includes_version, sequence_number_length, false);
   }
 
-  static QuicPacket* NewFecPacket(char* buffer,
-                                  size_t length,
-                                  bool owns_buffer,
-                                  bool includes_version) {
-    return new QuicPacket(buffer, length, owns_buffer, includes_version, true);
+  static QuicPacket* NewFecPacket(
+      char* buffer,
+      size_t length,
+      bool owns_buffer,
+      QuicGuidLength guid_length,
+      bool includes_version,
+      QuicSequenceNumberLength sequence_number_length) {
+    return new QuicPacket(buffer, length, owns_buffer, guid_length,
+                          includes_version, sequence_number_length, true);
   }
 
   base::StringPiece FecProtectedData() const;
@@ -596,16 +673,22 @@ class NET_EXPORT_PRIVATE QuicPacket : public QuicData {
   QuicPacket(char* buffer,
              size_t length,
              bool owns_buffer,
+             QuicGuidLength guid_length,
              bool includes_version,
+             QuicSequenceNumberLength sequence_number_length,
              bool is_fec_packet)
       : QuicData(buffer, length, owns_buffer),
         buffer_(buffer),
         is_fec_packet_(is_fec_packet),
-        includes_version_(includes_version) {}
+        guid_length_(guid_length),
+        includes_version_(includes_version),
+        sequence_number_length_(sequence_number_length) {}
 
   char* buffer_;
   const bool is_fec_packet_;
+  const QuicGuidLength guid_length_;
   const bool includes_version_;
+  const QuicSequenceNumberLength sequence_number_length_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicPacket);
 };

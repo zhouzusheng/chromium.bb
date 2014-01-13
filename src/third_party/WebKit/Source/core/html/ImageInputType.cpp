@@ -92,7 +92,7 @@ void ImageInputType::handleDOMActivateEvent(Event* event)
         return;
     element->setActivatedSubmit(true);
     if (event->underlyingEvent() && event->underlyingEvent()->isMouseEvent()) {
-        MouseEvent* mouseEvent = static_cast<MouseEvent*>(event->underlyingEvent());
+        MouseEvent* mouseEvent = toMouseEvent(event->underlyingEvent());
         m_clickLocation = IntPoint(mouseEvent->offsetX(), mouseEvent->offsetY());
     } else
         m_clickLocation = IntPoint();
@@ -101,9 +101,9 @@ void ImageInputType::handleDOMActivateEvent(Event* event)
     event->setDefaultHandled();
 }
 
-RenderObject* ImageInputType::createRenderer(RenderArena* arena, RenderStyle*) const
+RenderObject* ImageInputType::createRenderer(RenderStyle*) const
 {
-    RenderImage* image = new (arena) RenderImage(element());
+    RenderImage* image = new (element()->document()->renderArena()) RenderImage(element());
     image->setImageResource(RenderImageResource::create());
     return image;
 }

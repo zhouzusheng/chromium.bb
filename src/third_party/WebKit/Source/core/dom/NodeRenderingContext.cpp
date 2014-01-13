@@ -26,17 +26,12 @@
 #include "config.h"
 #include "core/dom/NodeRenderingContext.h"
 
-#include "HTMLNames.h"
-#include "core/css/StyleResolver.h"
+#include "SVGNames.h"
+#include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ContainerNode.h"
-#include "core/dom/ElementShadow.h"
+#include "core/dom/FullscreenController.h"
 #include "core/dom/Node.h"
-#include "core/dom/PseudoElement.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/dom/Text.h"
-#include "core/html/HTMLInputElement.h"
-#include "core/html/shadow/ContentDistributor.h"
-#include "core/html/shadow/HTMLContentElement.h"
 #include "core/html/shadow/HTMLShadowElement.h"
 #include "core/rendering/FlowThreadController.h"
 #include "core/rendering/RenderFullScreen.h"
@@ -44,15 +39,8 @@
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/style/StyleInheritedData.h"
-
-#if ENABLE(SVG)
-#include "SVGNames.h"
-#endif
 
 namespace WebCore {
-
-using namespace HTMLNames;
 
 NodeRenderingContext::NodeRenderingContext(Node* node)
     : m_node(node)
@@ -69,6 +57,14 @@ NodeRenderingContext::NodeRenderingContext(Node* node, RenderStyle* style)
 {
 }
 
+NodeRenderingContext::NodeRenderingContext(Node* node, const Node::AttachContext& context)
+: m_node(node)
+, m_style(context.resolvedStyle)
+, m_parentFlowRenderer(0)
+{
+    m_renderingParent = NodeRenderingTraversal::parent(node, &m_parentDetails);
+}
+
 NodeRenderingContext::~NodeRenderingContext()
 {
 }
@@ -79,7 +75,7 @@ static bool isRendererReparented(const RenderObject* renderer)
         return false;
     if (renderer->style() && !renderer->style()->flowThread().isEmpty())
         return true;
-    if (toElement(renderer->node())->isInTopLayer())
+    if (toElement(renderer->node())->shouldBeReparentedUnderRenderView(renderer->style()))
         return true;
     return false;
 }
@@ -90,7 +86,16 @@ RenderObject* NodeRenderingContext::nextRenderer() const
         return renderer->nextSibling();
 
     Element* element = m_node->isElementNode() ? toElement(m_node) : 0;
-    if (element && element->isInTopLayer()) {
+    if (element && element->shouldBeReparentedUnderRenderView(m_style.get())) {
+        // FIXME: Reparented renderers not in the top layer should probably be
+        // ordered in DOM tree order. We don't have a good way to do that yet,
+        // since NodeRenderingTraversal isn't aware of reparenting. It's safe to
+        // just append for now; it doesn't disrupt the top layer rendering as
+        // the layer collection in RenderLayer only requires that top layer
+        // renderers are orderered correctly relative to each other.
+        if (!element->isInTopLayer())
+            return 0;
+
         const Vector<RefPtr<Element> >& topLayerElements = element->document()->topLayerElements();
         size_t position = topLayerElements.find(element);
         ASSERT(position != notFound);
@@ -123,10 +128,10 @@ RenderObject* NodeRenderingContext::previousRenderer() const
     if (RenderObject* renderer = m_node->renderer())
         return renderer->previousSibling();
 
-    // FIXME: This doesn't work correctly for things in the top layer that are
+    // FIXME: This doesn't work correctly for reparented elements that are
     // display: none. We'd need to duplicate the logic in nextRenderer, but since
     // nothing needs that yet just assert.
-    ASSERT(!m_node->isElementNode() || !toElement(m_node)->isInTopLayer());
+    ASSERT(!m_node->isElementNode() || !toElement(m_node)->shouldBeReparentedUnderRenderView(m_style.get()));
 
     if (m_parentFlowRenderer)
         return m_parentFlowRenderer->previousRendererForNode(m_node);
@@ -147,8 +152,8 @@ RenderObject* NodeRenderingContext::parentRenderer() const
     if (RenderObject* renderer = m_node->renderer())
         return renderer->parent();
 
-    if (m_node->isElementNode() && toElement(m_node)->isInTopLayer()) {
-        // The parent renderer of top layer elements is the RenderView, but only
+    if (m_node->isElementNode() && toElement(m_node)->shouldBeReparentedUnderRenderView(m_style.get())) {
+        // The parent renderer of reparented elements is the RenderView, but only
         // if the normal parent would have had a renderer.
         // FIXME: This behavior isn't quite right as the spec for top layer
         // only talks about display: none ancestors so putting a <dialog> inside
@@ -167,8 +172,6 @@ RenderObject* NodeRenderingContext::parentRenderer() const
 
 bool NodeRenderingContext::shouldCreateRenderer() const
 {
-    if (!m_node->document()->shouldCreateRenderers())
-        return false;
     if (!m_renderingParent)
         return false;
     RenderObject* parentRenderer = this->parentRenderer();
@@ -200,16 +203,13 @@ void NodeRenderingContext::moveToFlowThreadIfNeeded()
     if (m_node->isInShadowTree())
         return;
 
-    Document* document = m_node->document();
-    if (document->webkitIsFullScreen() && document->webkitCurrentFullScreenElement() == m_node)
+    if (m_node->isElementNode() && FullscreenController::isActiveFullScreenElement(toElement(m_node)))
         return;
 
-#if ENABLE(SVG)
     // Allow only svg root elements to be directly collected by a render flow thread.
     if (m_node->isSVGElement()
         && (!(m_node->hasTagName(SVGNames::svgTag) && m_node->parentNode() && !m_node->parentNode()->isSVGElement())))
         return;
-#endif
 
     m_flowThread = m_style->flowThread();
     ASSERT(m_node->document()->renderView());
@@ -236,7 +236,8 @@ void NodeRenderingContext::createRendererForElementIfNeeded()
 
     if (!shouldCreateRenderer())
         return;
-    m_style = element->styleForRenderer();
+    if (!m_style)
+        m_style = element->styleForRenderer();
     ASSERT(m_style);
 
     moveToFlowThreadIfNeeded();
@@ -248,9 +249,10 @@ void NodeRenderingContext::createRendererForElementIfNeeded()
     RenderObject* nextRenderer = this->nextRenderer();
 
     Document* document = element->document();
-    RenderObject* newRenderer = element->createRenderer(document->renderArena(), m_style.get());
+    RenderObject* newRenderer = element->createRenderer(m_style.get());
     if (!newRenderer)
         return;
+
     if (!parentRenderer->isChildAllowed(newRenderer, m_style.get())) {
         newRenderer->destroy();
         return;
@@ -263,7 +265,7 @@ void NodeRenderingContext::createRendererForElementIfNeeded()
     element->setRenderer(newRenderer);
     newRenderer->setAnimatableStyle(m_style.release()); // setAnimatableStyle() can depend on renderer() already being set.
 
-    if (document->webkitIsFullScreen() && document->webkitCurrentFullScreenElement() == element) {
+    if (FullscreenController::isActiveFullScreenElement(element)) {
         newRenderer = RenderFullScreen::wrapRenderer(newRenderer, parentRenderer, document);
         if (!newRenderer)
             return;
@@ -293,7 +295,7 @@ void NodeRenderingContext::createRendererForTextIfNeeded()
 
     if (!textNode->textRendererIsNeeded(*this))
         return;
-    RenderText* newRenderer = textNode->createTextRenderer(document->renderArena(), m_style.get());
+    RenderText* newRenderer = textNode->createTextRenderer(m_style.get());
     if (!newRenderer)
         return;
     if (!parentRenderer->isChildAllowed(newRenderer, m_style.get())) {

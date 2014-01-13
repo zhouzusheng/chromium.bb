@@ -15,7 +15,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
@@ -413,7 +413,8 @@ ServerBoundCertService::~ServerBoundCertService() {
 //static
 std::string ServerBoundCertService::GetDomainForHost(const std::string& host) {
   std::string domain =
-      RegistryControlledDomainService::GetDomainAndRegistry(host);
+      registry_controlled_domains::GetDomainAndRegistry(
+          host, registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
   if (domain.empty())
     return host;
   return domain;

@@ -13,10 +13,10 @@
 
 // These includes are just for the *Hack functions, and should be removed
 // when those functions are removed.
-#include "base/string_util.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_cftyperef.h"
@@ -30,17 +30,6 @@
 #endif
 
 namespace base {
-
-#if defined(FILE_PATH_USES_WIN_SEPARATORS)
-const FilePath::CharType FilePath::kSeparators[] = FILE_PATH_LITERAL("\\/");
-#else  // FILE_PATH_USES_WIN_SEPARATORS
-const FilePath::CharType FilePath::kSeparators[] = FILE_PATH_LITERAL("/");
-#endif  // FILE_PATH_USES_WIN_SEPARATORS
-
-const FilePath::CharType FilePath::kCurrentDirectory[] = FILE_PATH_LITERAL(".");
-const FilePath::CharType FilePath::kParentDirectory[] = FILE_PATH_LITERAL("..");
-
-const FilePath::CharType FilePath::kExtensionSeparator = FILE_PATH_LITERAL('.');
 
 typedef FilePath::StringType StringType;
 
@@ -139,7 +128,7 @@ StringType::size_type ExtensionSeparatorPosition(const StringType& path) {
       path.rfind(FilePath::kExtensionSeparator, last_dot - 1);
   const StringType::size_type last_separator =
       path.find_last_of(FilePath::kSeparators, last_dot - 1,
-                        arraysize(FilePath::kSeparators) - 1);
+                        FilePath::kSeparatorsLength - 1);
 
   if (penultimate_dot == StringType::npos ||
       (last_separator != StringType::npos &&
@@ -217,7 +206,7 @@ bool FilePath::operator!=(const FilePath& that) const {
 
 // static
 bool FilePath::IsSeparator(CharType character) {
-  for (size_t i = 0; i < arraysize(kSeparators) - 1; ++i) {
+  for (size_t i = 0; i < kSeparatorsLength - 1; ++i) {
     if (character == kSeparators[i]) {
       return true;
     }
@@ -325,7 +314,7 @@ FilePath FilePath::DirName() const {
 
   StringType::size_type last_separator =
       new_path.path_.find_last_of(kSeparators, StringType::npos,
-                                  arraysize(kSeparators) - 1);
+                                  kSeparatorsLength - 1);
   if (last_separator == StringType::npos) {
     // path_ is in the current directory.
     new_path.path_.resize(letter + 1);
@@ -363,7 +352,7 @@ FilePath FilePath::BaseName() const {
   // one character and it's a separator, leave it alone.
   StringType::size_type last_separator =
       new_path.path_.find_last_of(kSeparators, StringType::npos,
-                                  arraysize(kSeparators) - 1);
+                                  kSeparatorsLength - 1);
   if (last_separator != StringType::npos &&
       last_separator < new_path.path_.length() - 1) {
     new_path.path_.erase(0, last_separator + 1);
@@ -553,8 +542,15 @@ bool FilePath::ReferencesParent() const {
   std::vector<StringType>::const_iterator it = components.begin();
   for (; it != components.end(); ++it) {
     const StringType& component = *it;
-    if (component == kParentDirectory)
+    // Windows has odd, undocumented behavior with path components containing
+    // only whitespace and . characters. So, if all we see is . and
+    // whitespace, then we treat any .. sequence as referencing parent.
+    // For simplicity we enforce this on all platforms.
+    if (component.find_first_not_of(FILE_PATH_LITERAL(". \n\r\t")) ==
+            std::string::npos &&
+        component.find(kParentDirectory) != std::string::npos) {
       return true;
+    }
   }
   return false;
 }
@@ -581,6 +577,14 @@ std::string FilePath::AsUTF8Unsafe() const {
 #endif
 }
 
+string16 FilePath::AsUTF16Unsafe() const {
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
+  return UTF8ToUTF16(value());
+#else
+  return WideToUTF16(SysNativeMBToWide(value()));
+#endif
+}
+
 // The *Hack functions are temporary while we fix the remainder of the code.
 // Remember to remove the #includes at the top when you remove these.
 
@@ -595,6 +599,15 @@ FilePath FilePath::FromUTF8Unsafe(const std::string& utf8) {
   return FilePath(utf8);
 #else
   return FilePath(SysWideToNativeMB(UTF8ToWide(utf8)));
+#endif
+}
+
+// static
+FilePath FilePath::FromUTF16Unsafe(const string16& utf16) {
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
+  return FilePath(UTF16ToUTF8(utf16));
+#else
+  return FilePath(SysWideToNativeMB(UTF16ToWide(utf16)));
 #endif
 }
 
@@ -613,6 +626,10 @@ std::string FilePath::AsUTF8Unsafe() const {
   return WideToUTF8(value());
 }
 
+string16 FilePath::AsUTF16Unsafe() const {
+  return value();
+}
+
 // static
 FilePath FilePath::FromWStringHack(const std::wstring& wstring) {
   return FilePath(wstring);
@@ -621,6 +638,11 @@ FilePath FilePath::FromWStringHack(const std::wstring& wstring) {
 // static
 FilePath FilePath::FromUTF8Unsafe(const std::string& utf8) {
   return FilePath(UTF8ToWide(utf8));
+}
+
+// static
+FilePath FilePath::FromUTF16Unsafe(const string16& utf16) {
+  return FilePath(utf16);
 }
 #endif
 
@@ -1149,7 +1171,7 @@ int FilePath::HFSFastUnicodeCompare(const StringType& string1,
 }
 
 StringType FilePath::GetHFSDecomposedForm(const StringType& string) {
-  mac::ScopedCFTypeRef<CFStringRef> cfstring(
+  ScopedCFTypeRef<CFStringRef> cfstring(
       CFStringCreateWithBytesNoCopy(
           NULL,
           reinterpret_cast<const UInt8*>(string.c_str()),
@@ -1196,7 +1218,7 @@ int FilePath::CompareIgnoreCase(const StringType& string1,
   // GetHFSDecomposedForm() returns an empty string in an error case.
   if (hfs1.empty() || hfs2.empty()) {
     NOTREACHED();
-    mac::ScopedCFTypeRef<CFStringRef> cfstring1(
+    ScopedCFTypeRef<CFStringRef> cfstring1(
         CFStringCreateWithBytesNoCopy(
             NULL,
             reinterpret_cast<const UInt8*>(string1.c_str()),
@@ -1204,7 +1226,7 @@ int FilePath::CompareIgnoreCase(const StringType& string1,
             kCFStringEncodingUTF8,
             false,
             kCFAllocatorNull));
-    mac::ScopedCFTypeRef<CFStringRef> cfstring2(
+    ScopedCFTypeRef<CFStringRef> cfstring2(
         CFStringCreateWithBytesNoCopy(
             NULL,
             reinterpret_cast<const UInt8*>(string2.c_str()),
@@ -1262,7 +1284,7 @@ void FilePath::StripTrailingSeparatorsInternal() {
 FilePath FilePath::NormalizePathSeparators() const {
 #if defined(FILE_PATH_USES_WIN_SEPARATORS)
   StringType copy = path_;
-  for (size_t i = 1; i < arraysize(kSeparators); ++i) {
+  for (size_t i = 1; i < kSeparatorsLength; ++i) {
     std::replace(copy.begin(), copy.end(), kSeparators[i], kSeparators[0]);
   }
   return FilePath(copy);

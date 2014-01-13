@@ -31,9 +31,10 @@
 #ifndef FileReaderSync_h
 #define FileReaderSync_h
 
-#include <wtf/Forward.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "bindings/v8/ScriptWrappable.h"
+#include "wtf/Forward.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -43,7 +44,7 @@ class ScriptExecutionContext;
 
 typedef int ExceptionCode;
 
-class FileReaderSync : public RefCounted<FileReaderSync> {
+class FileReaderSync : public RefCounted<FileReaderSync>, public ScriptWrappable {
 public:
     static PassRefPtr<FileReaderSync> create()
     {

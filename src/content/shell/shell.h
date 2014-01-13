@@ -51,6 +51,9 @@ class WebContents;
 class Shell : public WebContentsDelegate,
               public NotificationObserver {
  public:
+  static const int kDefaultTestWindowWidthDip;
+  static const int kDefaultTestWindowHeightDip;
+
   virtual ~Shell();
 
   void LoadURL(const GURL& url);
@@ -150,10 +153,13 @@ class Shell : public WebContentsDelegate,
     STOP_BUTTON
   };
 
+  class DevToolsWebContentsObserver;
+
   explicit Shell(WebContents* web_contents);
 
   // Helper to create a new Shell given a newly created WebContents.
-  static Shell* CreateShell(WebContents* web_contents);
+  static Shell* CreateShell(WebContents* web_contents,
+                            const gfx::Size& initial_size);
 
   // Helper for one time initialization of application
   static void PlatformInitialize(const gfx::Size& default_window_size);
@@ -190,6 +196,8 @@ class Shell : public WebContentsDelegate,
                        const NotificationSource& source,
                        const NotificationDetails& details) OVERRIDE;
 
+  void OnDevToolsWebContentsDestroyed();
+
 #if defined(OS_WIN) && !defined(USE_AURA)
   static ATOM RegisterWindowClass();
   static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -208,12 +216,15 @@ class Shell : public WebContentsDelegate,
                      GObject*, guint, GdkModifierType);
   CHROMEG_CALLBACK_3(Shell, gboolean, OnHighlightURLView, GtkAccelGroup*,
                      GObject*, guint, GdkModifierType);
+  CHROMEG_CALLBACK_3(Shell, gboolean, OnReloadKeyPressed, GtkAccelGroup*,
+                     GObject*, guint, GdkModifierType);
 #endif
 
   scoped_ptr<ShellJavaScriptDialogManager> dialog_manager_;
 
   scoped_ptr<WebContents> web_contents_;
 
+  scoped_ptr<DevToolsWebContentsObserver> devtools_observer_;
   ShellDevToolsFrontend* devtools_frontend_;
 
   bool is_fullscreen_;
@@ -240,6 +251,7 @@ class Shell : public WebContentsDelegate,
 
   int content_width_;
   int content_height_;
+  int ui_elements_height_; // height of menubar, toolbar, etc.
 #elif defined(OS_ANDROID)
   base::android::ScopedJavaGlobalRef<jobject> java_object_;
 #elif defined(USE_AURA)

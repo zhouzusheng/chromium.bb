@@ -7,10 +7,8 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "third_party/npapi/bindings/npapi.h"
-#include "third_party/npapi/bindings/npruntime.h"
+#include "base/strings/string_util.h"
 #include "ppapi/c/dev/ppb_var_deprecated.h"
 #include "ppapi/c/dev/ppp_class_deprecated.h"
 #include "ppapi/c/pp_resource.h"
@@ -19,7 +17,9 @@
 #include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/shared_impl/var_tracker.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
+#include "third_party/npapi/bindings/npapi.h"
+#include "third_party/npapi/bindings/npruntime.h"
 #include "webkit/plugins/ppapi/npapi_glue.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
@@ -298,7 +298,8 @@ PP_Var PluginObject::Create(PluginInstance* instance,
   // WrapperClass_Allocated function which will have created an object wrapper
   // appropriate for this class (derived from NPObject).
   NPObjectWrapper* wrapper = static_cast<NPObjectWrapper*>(
-      WebBindings::createObject(NULL, const_cast<NPClass*>(&wrapper_class)));
+      WebBindings::createObject(instance->instanceNPP(),
+      const_cast<NPClass*>(&wrapper_class)));
 
   // This object will register itself both with the NPObject and with the
   // PluginModule. The NPObject will normally handle its lifetime, and it

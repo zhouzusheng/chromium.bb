@@ -164,9 +164,6 @@ public:
 
     bool containsCaretOffset(int offset) const; // false for offset after line break
 
-    // Needs to be public, so the static paintTextWithShadows() function can use it.
-    static FloatSize applyShadowToGraphicsContext(GraphicsContext*, const ShadowData*, const FloatRect& textRect, bool stroked, bool opaque, bool horizontal);
-
 private:
     InlineTextBox* m_prevTextBox; // The previous box that also uses our RenderObject
     InlineTextBox* m_nextTextBox; // The next box that also uses our RenderObject
@@ -183,11 +180,10 @@ protected:
     void paintCompositionUnderline(GraphicsContext*, const FloatPoint& boxOrigin, const CompositionUnderline&);
 
 private:
-    void paintDecoration(GraphicsContext*, const FloatPoint& boxOrigin, ETextDecoration, TextDecorationStyle, const ShadowData*);
+    void paintDecoration(GraphicsContext*, const FloatPoint& boxOrigin, TextDecoration, TextDecorationStyle, const ShadowData*);
     void paintSelection(GraphicsContext*, const FloatPoint& boxOrigin, RenderStyle*, const Font&, Color textColor);
     void paintDocumentMarker(GraphicsContext*, const FloatPoint& boxOrigin, DocumentMarker*, RenderStyle*, const Font&, bool grammar);
     void paintTextMatchMarker(GraphicsContext*, const FloatPoint& boxOrigin, DocumentMarker*, RenderStyle*, const Font&);
-    void computeRectForReplacementMarker(DocumentMarker*, RenderStyle*, const Font&);
 
     TextRun::ExpansionBehavior expansionBehavior() const
     {

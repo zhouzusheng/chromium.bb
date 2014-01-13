@@ -34,7 +34,6 @@
 
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/Text.h"
-#include "core/html/HTMLElement.h"
 #include "core/html/track/WebVTTElement.h"
 #include "core/platform/text/SegmentedString.h"
 #include <wtf/text/WTFString.h>
@@ -278,9 +277,7 @@ WebVTTParser::ParseState WebVTTParser::collectTimingsAndSettings(const String& l
         return BadCue;
     if (position >= line.length())
         return BadCue;
-    char nextChar = line[position++];
-    if (nextChar != ' ' && nextChar != '\t')
-        return BadCue;
+
     skipWhiteSpace(line, &position);
 
     // 6-9 - If the next three characters are not "-->", abort and return failure.
@@ -289,9 +286,7 @@ WebVTTParser::ParseState WebVTTParser::collectTimingsAndSettings(const String& l
     position += 3;
     if (position >= line.length())
         return BadCue;
-    nextChar = line[position++];
-    if (nextChar != ' ' && nextChar != '\t')
-        return BadCue;
+
     skipWhiteSpace(line, &position);
 
     // 10-11 - Collect a WebVTT timestamp. If that fails, then abort and return failure. Otherwise, let cue's text track cue end time be the collected time.
@@ -382,7 +377,7 @@ void WebVTTParser::createNewRegion()
     if (!m_currentHeaderValue.length())
         return;
 
-    RefPtr<TextTrackRegion> region = TextTrackRegion::create();
+    RefPtr<TextTrackRegion> region = TextTrackRegion::create(m_scriptExecutionContext);
     region->setRegionSettings(m_currentHeaderValue);
 
     // 15.5.10 If the text track list of regions regions contains a region

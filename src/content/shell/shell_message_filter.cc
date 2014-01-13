@@ -7,12 +7,12 @@
 #include "base/file_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/public/browser/child_process_security_policy.h"
-#include "content/shell/shell_messages.h"
+#include "content/shell/common/shell_messages.h"
 #include "content/shell/shell_network_delegate.h"
 #include "net/base/net_errors.h"
-#include "webkit/database/database_tracker.h"
-#include "webkit/fileapi/isolated_context.h"
-#include "webkit/quota/quota_manager.h"
+#include "webkit/browser/database/database_tracker.h"
+#include "webkit/browser/fileapi/isolated_context.h"
+#include "webkit/browser/quota/quota_manager.h"
 
 namespace content {
 

@@ -9,9 +9,9 @@
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/message_loop.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "cc/layers/io_surface_layer.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_util.h"
@@ -19,35 +19,35 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCookieJar.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPBody.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPHeaderVisitor.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoader.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoaderClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderOptions.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
+#include "third_party/WebKit/public/web/WebCursorInfo.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebPluginParams.h"
+#include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
+#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/WebKit/public/platform/WebCString.h"
+#include "third_party/WebKit/public/platform/WebCookieJar.h"
+#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/platform/WebHTTPBody.h"
+#include "third_party/WebKit/public/platform/WebHTTPHeaderVisitor.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLLoader.h"
+#include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "ui/gfx/rect.h"
-#include "webkit/appcache/web_application_cache_host_impl.h"
-#include "webkit/compositor_bindings/web_layer_impl.h"
 #include "webkit/glue/multipart_response_delegate.h"
 #include "webkit/plugins/npapi/plugin_host.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/webplugin_delegate.h"
 #include "webkit/plugins/npapi/webplugin_page_delegate.h"
 #include "webkit/plugins/plugin_constants.h"
+#include "webkit/renderer/appcache/web_application_cache_host_impl.h"
+#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 using appcache::WebApplicationCacheHostImpl;
 using WebKit::WebCanvas;
@@ -233,7 +233,7 @@ struct WebPluginImpl::ClientInfo {
 };
 
 bool WebPluginImpl::initialize(WebPluginContainer* container) {
-  if (!page_delegate_) {
+  if (!page_delegate_.get()) {
     LOG(ERROR) << "No page delegate";
     return false;
   }
@@ -243,10 +243,15 @@ bool WebPluginImpl::initialize(WebPluginContainer* container) {
   if (!plugin_delegate)
     return false;
 
+  // Store the plugin's unique identifier, used by the container to track its
+  // script objects.
+  npp_ = plugin_delegate->GetPluginNPP();
+
   // Set the container before Initialize because the plugin may
-  // synchronously call NPN_GetValue to get its container during its
-  // initialization.
+  // synchronously call NPN_GetValue to get its container, or make calls
+  // passing script objects that need to be tracked, during initialization.
   SetContainer(container);
+
   bool ok = plugin_delegate->Initialize(
       plugin_url_, arg_names_, arg_values_, this, load_manually_);
   if (!ok) {
@@ -255,12 +260,17 @@ bool WebPluginImpl::initialize(WebPluginContainer* container) {
 
     WebKit::WebPlugin* replacement_plugin =
         page_delegate_->CreatePluginReplacement(file_path_);
-    if (!replacement_plugin || !replacement_plugin->initialize(container))
+    if (!replacement_plugin)
       return false;
 
-    container->setPlugin(replacement_plugin);
+    // Disable scripting by this plugin before replacing it with the new
+    // one. This plugin also needs destroying, so use destroy(), which will
+    // implicitly disable scripting while un-setting the container.
     destroy();
-    return true;
+
+    // Inform the container of the replacement plugin, then initialize it.
+    container->setPlugin(replacement_plugin);
+    return replacement_plugin->initialize(container);
   }
 
   delegate_ = plugin_delegate;
@@ -270,7 +280,7 @@ bool WebPluginImpl::initialize(WebPluginContainer* container) {
 
 void WebPluginImpl::destroy() {
   SetContainer(NULL);
-  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
 NPObject* WebPluginImpl::scriptableObject() {
@@ -278,6 +288,10 @@ NPObject* WebPluginImpl::scriptableObject() {
     return NULL;
 
   return delegate_->GetPluginScriptableObject();
+}
+
+NPP WebPluginImpl::pluginNPP() {
+  return npp_;
 }
 
 bool WebPluginImpl::getFormValue(WebKit::WebString& value) {
@@ -317,8 +331,7 @@ void WebPluginImpl::updateGeometry(
     new_geometry.cutout_rects.push_back(cutout_rects[i]);
 
   // Only send DidMovePlugin if the geometry changed in some way.
-  if (window_ &&
-      page_delegate_ &&
+  if (window_ && page_delegate_.get() &&
       (first_geometry_update_ || !new_geometry.Equals(geometry_))) {
     page_delegate_->DidMovePlugin(new_geometry);
     // We invalidate windowed plugins during the first geometry update to
@@ -349,9 +362,10 @@ void WebPluginImpl::updateGeometry(
       // geometry received by a call to setFrameRect in the Webkit
       // layout code path. To workaround this issue we download the
       // plugin source url on a timer.
-      MessageLoop::current()->PostTask(
-          FROM_HERE, base::Bind(&WebPluginImpl::OnDownloadPluginSrcUrl,
-                                weak_factory_.GetWeakPtr()));
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&WebPluginImpl::OnDownloadPluginSrcUrl,
+                     weak_factory_.GetWeakPtr()));
     }
   }
 
@@ -378,7 +392,7 @@ void WebPluginImpl::updateFocus(bool focused) {
 }
 
 void WebPluginImpl::updateVisibility(bool visible) {
-  if (!window_ || !page_delegate_)
+  if (!window_ || !page_delegate_.get())
     return;
 
   WebPluginGeometry move;
@@ -401,7 +415,16 @@ bool WebPluginImpl::handleInputEvent(
   if (event.type == WebInputEvent::ContextMenu)
     return true;
 
-  return delegate_->HandleInputEvent(event, &cursor_info);
+  WebCursor::CursorInfo web_cursor_info;
+  bool ret = delegate_->HandleInputEvent(event, &web_cursor_info);
+  cursor_info.type = web_cursor_info.type;
+  cursor_info.hotSpot = web_cursor_info.hotspot;
+  cursor_info.customImage = web_cursor_info.custom_image;
+  cursor_info.imageScaleFactor = web_cursor_info.image_scale_factor;
+#if defined(OS_WIN)
+  cursor_info.externalHandle = web_cursor_info.external_handle;
+#endif
+  return ret;
 }
 
 void WebPluginImpl::didReceiveResponse(const WebURLResponse& response) {
@@ -474,6 +497,7 @@ WebPluginImpl::WebPluginImpl(
       webframe_(webframe),
       delegate_(NULL),
       container_(NULL),
+      npp_(NULL),
       plugin_url_(params.url),
       load_manually_(params.loadManually),
       first_geometry_update_(true),
@@ -511,7 +535,7 @@ void WebPluginImpl::SetWindow(gfx::PluginWindowHandle window) {
     // window was created -- so don't.
 #else
     accepts_input_events_ = false;
-    if (page_delegate_) {
+    if (page_delegate_.get()) {
       // Tell the view delegate that the plugin window was created, so that it
       // can create necessary container widgets.
       page_delegate_->CreatedPluginWindow(window);
@@ -531,7 +555,7 @@ void WebPluginImpl::SetAcceptsInputEvents(bool accepts) {
 void WebPluginImpl::WillDestroyWindow(gfx::PluginWindowHandle window) {
   DCHECK_EQ(window, window_);
   window_ = gfx::kNullPluginWindow;
-  if (page_delegate_)
+  if (page_delegate_.get())
     page_delegate_->WillDestroyPluginWindow(window);
 }
 
@@ -711,7 +735,7 @@ bool WebPluginImpl::FindProxyForUrl(const GURL& url, std::string* proxy_list) {
 void WebPluginImpl::SetCookie(const GURL& url,
                               const GURL& first_party_for_cookies,
                               const std::string& cookie) {
-  if (!page_delegate_)
+  if (!page_delegate_.get())
     return;
 
   WebCookieJar* cookie_jar = page_delegate_->GetCookieJar();
@@ -726,7 +750,7 @@ void WebPluginImpl::SetCookie(const GURL& url,
 
 std::string WebPluginImpl::GetCookies(const GURL& url,
                                       const GURL& first_party_for_cookies) {
-  if (!page_delegate_)
+  if (!page_delegate_.get())
     return std::string();
 
   WebCookieJar* cookie_jar = page_delegate_->GetCookieJar();
@@ -800,7 +824,7 @@ void WebPluginImpl::AcceleratedPluginSwappedIOSurface() {
     }
     next_io_surface_allocated_ = false;
   } else {
-    if (io_surface_layer_)
+    if (io_surface_layer_.get())
       io_surface_layer_->SetNeedsDisplay();
   }
 }
@@ -1003,7 +1027,7 @@ void WebPluginImpl::didFinishLoading(WebURLLoader* loader, double finishTime) {
     if (index != multi_part_response_map_.end()) {
       delete (*index).second;
       multi_part_response_map_.erase(index);
-      if (page_delegate_)
+      if (page_delegate_.get())
         page_delegate_->DidStopLoadingForPlugin();
     }
     loader->setDefersLoading(true);
@@ -1045,6 +1069,8 @@ void WebPluginImpl::SetContainer(WebPluginContainer* container) {
   if (!container)
     TearDownPluginInstance(NULL);
   container_ = container;
+  if (container_)
+    container_->allowScriptObjects();
 }
 
 void WebPluginImpl::HandleURLRequest(const char* url,
@@ -1265,7 +1291,7 @@ void WebPluginImpl::HandleHttpMultipartResponse(
     return;
   }
 
-  if (page_delegate_)
+  if (page_delegate_.get())
     page_delegate_->DidStartLoadingForPlugin();
 
   MultiPartResponseClient* multi_part_response_client =
@@ -1299,10 +1325,17 @@ bool WebPluginImpl::ReinitializePluginForResponse(
   WebPluginDelegate* plugin_delegate = page_delegate_->CreatePluginDelegate(
       file_path_, mime_type_);
 
+  // Store the plugin's unique identifier, used by the container to track its
+  // script objects, and enable script objects (since Initialize may use them
+  // even if it fails).
+  npp_ = plugin_delegate->GetPluginNPP();
+  container_->allowScriptObjects();
+
   bool ok = plugin_delegate && plugin_delegate->Initialize(
       plugin_url_, arg_names_, arg_values_, this, load_manually_);
 
   if (!ok) {
+    container_->clearScriptObjects();
     container_ = NULL;
     // TODO(iyengar) Should we delete the current plugin instance here?
     return false;
@@ -1323,19 +1356,32 @@ bool WebPluginImpl::ReinitializePluginForResponse(
 
 void WebPluginImpl::TearDownPluginInstance(
     WebURLLoader* loader_to_ignore) {
-  // The container maintains a list of JSObjects which are related to this
-  // plugin.  Tell the frame we're gone so that it can invalidate all of
-  // those sub JSObjects.
+  // JavaScript garbage collection may cause plugin script object references to
+  // be retained long after the plugin is destroyed. Some plugins won't cope
+  // with their objects being released after they've been destroyed, and once
+  // we've actually unloaded the plugin the object's releaseobject() code may
+  // no longer be in memory. The container tracks the plugin's objects and lets
+  // us invalidate them, releasing the references to them held by the JavaScript
+  // runtime.
   if (container_) {
     container_->clearScriptObjects();
     container_->setWebLayer(NULL);
   }
 
+  // Call PluginDestroyed() first to prevent the plugin from calling us back
+  // in the middle of tearing down the render tree.
   if (delegate_) {
-    // Call PluginDestroyed() first to prevent the plugin from calling us back
-    // in the middle of tearing down the render tree.
+    // The plugin may call into the browser and pass script objects even during
+    // teardown, so temporarily re-enable plugin script objects.
+    DCHECK(container_);
+    container_->allowScriptObjects();
+
     delegate_->PluginDestroyed();
     delegate_ = NULL;
+
+    // Invalidate any script objects created during teardown here, before the
+    // plugin might actually be unloaded.
+    container_->clearScriptObjects();
   }
 
   // Cancel any pending requests because otherwise this deleted object will

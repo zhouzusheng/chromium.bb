@@ -52,6 +52,10 @@ static const int TURN_PERMISSION_TIMEOUT = 5 * 60 * 1000;  // 5 minutes
 
 static const size_t TURN_CHANNEL_HEADER_SIZE = 4U;
 
+enum {
+  MSG_PORT_ERROR = 1
+};
+
 inline bool IsTurnChannelData(uint16 msg_type) {
   return ((msg_type & 0xC000) == 0x4000);  // MSB are 0b01
 }
@@ -176,8 +180,7 @@ TurnPort::TurnPort(talk_base::Thread* thread,
                    const std::string& password,
                    const ProtocolAddress& server_address,
                    const RelayCredentials& credentials)
-    : Port(thread, RELAY_PORT_TYPE, GetRelayPreference(server_address.proto),
-           factory, network, ip, min_port, max_port,
+    : Port(thread, RELAY_PORT_TYPE, factory, network, ip, min_port, max_port,
            username, password),
       server_address_(server_address),
       credentials_(credentials),
@@ -201,7 +204,7 @@ void TurnPort::PrepareAddress() {
       credentials_.password.empty()) {
     LOG(LS_ERROR) << "Allocation can't be started without setting the"
                   << " TURN server credentials for the user.";
-    SignalAddressError(this);
+    OnAllocateError();
     return;
   }
 
@@ -214,8 +217,8 @@ void TurnPort::PrepareAddress() {
     ResolveTurnAddress(server_address_.address);
   } else {
     LOG_J(LS_INFO, this) << "Trying to connect to TURN server via "
-                         << ProtoToString(server_address_.proto)
-                         << " @ " << server_address_.address.ToString();
+                         << ProtoToString(server_address_.proto) << " @ "
+                         << server_address_.address.ToSensitiveString();
     if (server_address_.proto == PROTO_UDP) {
       socket_.reset(socket_factory()->CreateUdpSocket(
           talk_base::SocketAddress(ip(), 0), min_port(), max_port()));
@@ -226,8 +229,14 @@ void TurnPort::PrepareAddress() {
     }
 
     if (!socket_) {
-      SignalAddressError(this);
+      OnAllocateError();
       return;
+    }
+
+    // Apply options if any.
+    for (SocketOptionsMap::iterator iter = socket_options_.begin();
+         iter != socket_options_.end(); ++iter) {
+      socket_->SetOption(iter->first, iter->second);
     }
 
     socket_->SignalReadPacket.connect(this, &TurnPort::OnReadPacket);
@@ -252,12 +261,15 @@ void TurnPort::OnSocketConnect(talk_base::AsyncPacketSocket* socket) {
 
 void TurnPort::OnSocketClose(talk_base::AsyncPacketSocket* socket, int error) {
   LOG_J(LS_WARNING, this) << "Connection with server failed, error=" << error;
+  if (!connected_) {
+    OnAllocateError();
+  }
 }
 
 Connection* TurnPort::CreateConnection(const Candidate& address,
                                        CandidateOrigin origin) {
   // TURN-UDP can only connect to UDP candidates.
-  if (address.protocol() != "udp") {
+  if (address.protocol() != UDP_PROTOCOL_NAME) {
     return NULL;
   }
 
@@ -277,10 +289,19 @@ Connection* TurnPort::CreateConnection(const Candidate& address,
 }
 
 int TurnPort::SetOption(talk_base::Socket::Option opt, int value) {
+  if (!socket_) {
+    // If socket is not created yet, these options will be applied during socket
+    // creation.
+    socket_options_[opt] = value;
+    return 0;
+  }
   return socket_->SetOption(opt, value);
 }
 
 int TurnPort::GetOption(talk_base::Socket::Option opt, int* value) {
+  if (!socket_)
+    return -1;
+
   return socket_->GetOption(opt, value);
 }
 
@@ -368,7 +389,7 @@ void TurnPort::OnResolveResult(talk_base::SignalThread* signal_thread) {
   if (resolver_->error() != 0) {
     LOG_J(LS_WARNING, this) << "TURN host lookup received error "
                             << resolver_->error();
-    SignalAddressError(this);
+    OnAllocateError();
     return;
   }
 
@@ -392,15 +413,26 @@ void TurnPort::OnStunAddress(const talk_base::SocketAddress& address) {
 void TurnPort::OnAllocateSuccess(const talk_base::SocketAddress& address) {
   connected_ = true;
   AddAddress(address, socket_->GetLocalAddress(), "udp",
-             RELAY_PORT_TYPE, ICE_TYPE_PREFERENCE_RELAY, true);
+             RELAY_PORT_TYPE, GetRelayPreference(server_address_.proto), true);
 }
 
 void TurnPort::OnAllocateError() {
-  SignalAddressError(this);
+  // We will send SignalPortError asynchronously as this can be sent during
+  // port initialization. This way it will not be blocking other port
+  // creation.
+  thread()->Post(this, MSG_PORT_ERROR);
+}
+
+void TurnPort::OnMessage(talk_base::Message* message) {
+  if (message->message_id == MSG_PORT_ERROR) {
+    SignalPortError(this);
+  } else {
+    Port::OnMessage(message);
+  }
 }
 
 void TurnPort::OnAllocateRequestTimeout() {
-  SignalAddressError(this);
+  OnAllocateError();
 }
 
 void TurnPort::HandleDataIndication(const char* data, size_t size) {
@@ -433,7 +465,8 @@ void TurnPort::HandleDataIndication(const char* data, size_t size) {
   talk_base::SocketAddress ext_addr(addr_attr->GetAddress());
   if (!HasPermission(ext_addr.ipaddr())) {
     LOG_J(LS_WARNING, this) << "Received TURN data indication with invalid "
-                            << "peer address, addr=" << ext_addr.ToString();
+                            << "peer address, addr="
+                            << ext_addr.ToSensitiveString();
     return;
   }
 
@@ -875,14 +908,16 @@ int TurnEntry::Send(const void* data, size_t size, bool payload) {
 }
 
 void TurnEntry::OnCreatePermissionSuccess() {
-  LOG_J(LS_INFO, port_) << "Create permission for " << ext_addr_.ToString()
+  LOG_J(LS_INFO, port_) << "Create permission for "
+                        << ext_addr_.ToSensitiveString()
                         << " succeeded";
   // For success result code will be 0.
   port_->SignalCreatePermissionResult(port_, ext_addr_, 0);
 }
 
 void TurnEntry::OnCreatePermissionError(StunMessage* response, int code) {
-  LOG_J(LS_WARNING, port_) << "Create permission for " << ext_addr_.ToString()
+  LOG_J(LS_WARNING, port_) << "Create permission for "
+                           << ext_addr_.ToSensitiveString()
                            << " failed, code=" << code;
   if (code == STUN_ERROR_STALE_NONCE) {
     if (port_->UpdateNonce(response)) {
@@ -895,16 +930,17 @@ void TurnEntry::OnCreatePermissionError(StunMessage* response, int code) {
 }
 
 void TurnEntry::OnChannelBindSuccess() {
-  LOG_J(LS_INFO, port_) << "Channel bind for " << ext_addr_.ToString()
+  LOG_J(LS_INFO, port_) << "Channel bind for " << ext_addr_.ToSensitiveString()
                         << " succeeded";
-  ASSERT(state_ == STATE_BINDING);
+  ASSERT(state_ == STATE_BINDING || state_ == STATE_BOUND);
   state_ = STATE_BOUND;
 }
 
 void TurnEntry::OnChannelBindError(StunMessage* response, int code) {
   // TODO(mallinath) - Implement handling of error response for channel
   // bind request as per http://tools.ietf.org/html/rfc5766#section-11.3
-  LOG_J(LS_WARNING, port_) << "Channel bind for " << ext_addr_.ToString()
+  LOG_J(LS_WARNING, port_) << "Channel bind for "
+                           << ext_addr_.ToSensitiveString()
                            << " failed, code=" << code;
   if (code == STUN_ERROR_STALE_NONCE) {
     if (port_->UpdateNonce(response)) {

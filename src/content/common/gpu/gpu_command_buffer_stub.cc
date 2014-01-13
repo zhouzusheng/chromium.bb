@@ -24,7 +24,9 @@
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
+#include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
+#include "gpu/command_buffer/service/gl_state_restorer_impl.h"
 #include "gpu/command_buffer/service/logger.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "ui/gl/gl_bindings.h"
@@ -127,8 +129,6 @@ GpuCommandBufferStub::GpuCommandBufferStub(
       software_(software),
       last_flush_count_(0),
       last_memory_allocation_valid_(false),
-      parent_stub_for_initialization_(),
-      parent_texture_for_initialization_(0),
       watchdog_(watchdog),
       sync_point_wait_count_(0),
       delayed_work_scheduled_(false),
@@ -168,6 +168,7 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
   // Echo, RetireSyncPoint, or WaitSyncPoint).
   if (decoder_.get() &&
       message.type() != GpuCommandBufferMsg_Echo::ID &&
+      message.type() != GpuCommandBufferMsg_GetStateFast::ID &&
       message.type() != GpuCommandBufferMsg_RetireSyncPoint::ID &&
       message.type() != GpuCommandBufferMsg_SetLatencyInfo::ID) {
     if (!MakeCurrent())
@@ -182,8 +183,8 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
                                     OnInitialize);
     IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuCommandBufferMsg_SetGetBuffer,
                                     OnSetGetBuffer);
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuCommandBufferMsg_SetParent,
-                                    OnSetParent);
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_ProduceFrontBuffer,
+                        OnProduceFrontBuffer);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_Echo, OnEcho);
     IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuCommandBufferMsg_GetState, OnGetState);
     IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuCommandBufferMsg_GetStateFast,
@@ -359,23 +360,15 @@ void GpuCommandBufferStub::Destroy() {
                     destruction_observers_,
                     OnWillDestroyStub());
 
-  scoped_refptr<gfx::GLContext> context;
   if (decoder_) {
-    context = decoder_->GetGLContext();
     decoder_->Destroy(have_context);
     decoder_.reset();
   }
 
   command_buffer_.reset();
 
-  // Make sure that context_ is current while we destroy surface_, because
-  // surface_ may have GL resources that it needs to destroy, and will need
-  // context_ to be current in order to not leak these resources.
-  if (context)
-    context->MakeCurrent(surface_.get());
+  // Remove this after crbug.com/248395 is sorted out.
   surface_ = NULL;
-  if (context)
-    context->ReleaseCurrent(NULL);
 }
 
 void GpuCommandBufferStub::OnInitializeFailed(IPC::Message* reply_message) {
@@ -407,7 +400,7 @@ void GpuCommandBufferStub::OnInitialize(
   scheduler_.reset(new gpu::GpuScheduler(command_buffer_.get(),
                                          decoder_.get(),
                                          decoder_.get()));
-  if (preemption_flag_)
+  if (preemption_flag_.get())
     scheduler_->SetPreemptByFlag(preemption_flag_);
 
   decoder_->set_engine(scheduler_.get());
@@ -430,7 +423,7 @@ void GpuCommandBufferStub::OnInitialize(
     surface_ = manager->GetDefaultOffscreenSurface();
   }
 
-  if (!surface_) {
+  if (!surface_.get()) {
     DLOG(ERROR) << "Failed to create surface.\n";
     OnInitializeFailed(reply_message);
     return;
@@ -441,19 +434,18 @@ void GpuCommandBufferStub::OnInitialize(
           switches::kEnableVirtualGLContexts) || use_virtualized_gl_context_) &&
       channel_->share_group()) {
     context = channel_->share_group()->GetSharedContext();
-    if (!context) {
+    if (!context.get()) {
       context = gfx::GLContext::CreateGLContext(
           channel_->share_group(),
           channel_->gpu_channel_manager()->GetDefaultOffscreenSurface(),
           gpu_preference_);
-      channel_->share_group()->SetSharedContext(context);
+      channel_->share_group()->SetSharedContext(context.get());
     }
     // This should be a non-virtual GL context.
     DCHECK(context->GetHandle());
-    context = new gpu::GLContextVirtual(channel_->share_group(),
-                                        context,
-                                        decoder_->AsWeakPtr());
-    if (!context->Initialize(surface_, gpu_preference_)) {
+    context = new gpu::GLContextVirtual(
+        channel_->share_group(), context.get(), decoder_->AsWeakPtr());
+    if (!context->Initialize(surface_.get(), gpu_preference_)) {
       // TODO(sievers): The real context created above for the default
       // offscreen surface might not be compatible with this surface.
       // Need to adjust at least GLX to be able to create the initial context
@@ -467,22 +459,25 @@ void GpuCommandBufferStub::OnInitialize(
       LOG(INFO) << "Created virtual GL context.";
     }
   }
-  if (!context) {
+  if (!context.get()) {
     context = gfx::GLContext::CreateGLContext(
-        channel_->share_group(),
-        surface_.get(),
-        gpu_preference_);
+        channel_->share_group(), surface_.get(), gpu_preference_);
   }
-  if (!context) {
+  if (!context.get()) {
     DLOG(ERROR) << "Failed to create context.\n";
     OnInitializeFailed(reply_message);
     return;
   }
 
-  if (!context->MakeCurrent(surface_)) {
+  if (!context->MakeCurrent(surface_.get())) {
     LOG(ERROR) << "Failed to make context current.";
     OnInitializeFailed(reply_message);
     return;
+  }
+
+  if (!context->GetGLStateRestorer()) {
+    context->SetGLStateRestorer(
+        new gpu::GLStateRestorerImpl(decoder_->AsWeakPtr()));
   }
 
   if (!context->GetTotalGpuMemory(&total_gpu_memory_))
@@ -542,13 +537,6 @@ void GpuCommandBufferStub::OnInitialize(
   decoder_->SetStreamTextureManager(channel_->stream_texture_manager());
 #endif
 
-  if (parent_stub_for_initialization_) {
-    decoder_->SetParent(parent_stub_for_initialization_->decoder_.get(),
-                        parent_texture_for_initialization_);
-    parent_stub_for_initialization_.reset();
-    parent_texture_for_initialization_ = 0;
-  }
-
   if (!command_buffer_->SetSharedStateBuffer(shared_state_shm.Pass())) {
     DLOG(ERROR) << "Failed to map shared stae buffer.";
     OnInitializeFailed(reply_message);
@@ -566,7 +554,7 @@ void GpuCommandBufferStub::OnInitialize(
 }
 
 void GpuCommandBufferStub::OnSetLatencyInfo(
-    const cc::LatencyInfo& latency_info) {
+    const ui::LatencyInfo& latency_info) {
   if (!latency_info_callback_.is_null())
     latency_info_callback_.Run(latency_info);
 }
@@ -584,30 +572,13 @@ void GpuCommandBufferStub::OnSetGetBuffer(int32 shm_id,
   Send(reply_message);
 }
 
-void GpuCommandBufferStub::OnSetParent(int32 parent_route_id,
-                                       uint32 parent_texture_id,
-                                       IPC::Message* reply_message) {
-  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnSetParent");
-  GpuCommandBufferStub* parent_stub = NULL;
-  if (parent_route_id != MSG_ROUTING_NONE) {
-    parent_stub = channel_->LookupCommandBuffer(parent_route_id);
-  }
+void GpuCommandBufferStub::OnProduceFrontBuffer(const gpu::Mailbox& mailbox) {
+  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnProduceFrontBuffer");
+  if (!decoder_)
+    LOG(ERROR) << "Can't produce front buffer before initialization.";
 
-  bool result = true;
-  if (scheduler_) {
-    gpu::gles2::GLES2Decoder* parent_decoder =
-        parent_stub ? parent_stub->decoder_.get() : NULL;
-    result = decoder_->SetParent(parent_decoder, parent_texture_id);
-  } else {
-    // If we don't have a scheduler, it means that Initialize hasn't been called
-    // yet. Keep around the requested parent stub and texture so that we can set
-    // it in Initialize().
-    parent_stub_for_initialization_ = parent_stub ?
-        parent_stub->AsWeakPtr() : base::WeakPtr<GpuCommandBufferStub>();
-    parent_texture_for_initialization_ = parent_texture_id;
-  }
-  GpuCommandBufferMsg_SetParent::WriteReplyParams(reply_message, result);
-  Send(reply_message);
+  if (!decoder_->ProduceFrontBuffer(mailbox))
+    LOG(ERROR) << "Failed to produce front buffer.";
 }
 
 void GpuCommandBufferStub::OnGetState(IPC::Message* reply_message) {
@@ -771,7 +742,7 @@ void GpuCommandBufferStub::OnSetSurfaceVisible(bool visible) {
 
 void GpuCommandBufferStub::OnDiscardBackbuffer() {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnDiscardBackbuffer");
-  if (!surface_)
+  if (!surface_.get())
     return;
   if (surface_->DeferDraws()) {
     DCHECK(!IsScheduled());
@@ -784,7 +755,7 @@ void GpuCommandBufferStub::OnDiscardBackbuffer() {
 
 void GpuCommandBufferStub::OnEnsureBackbuffer() {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnEnsureBackbuffer");
-  if (!surface_)
+  if (!surface_.get())
     return;
   if (surface_->DeferDraws()) {
     DCHECK(!IsScheduled());
@@ -907,7 +878,7 @@ bool GpuCommandBufferStub::GetTotalGpuMemory(uint64* bytes) {
 }
 
 gfx::Size GpuCommandBufferStub::GetSurfaceSize() const {
-  if (!surface_)
+  if (!surface_.get())
     return gfx::Size();
   return surface_->GetSize();
 }
@@ -930,7 +901,7 @@ void GpuCommandBufferStub::SetMemoryAllocation(
           last_memory_allocation_.browser_allocation)) {
     // This can be called outside of OnMessageReceived, so the context needs
     // to be made current before calling methods on the surface.
-    if (surface_ && MakeCurrent())
+    if (surface_.get() && MakeCurrent())
       surface_->SetFrontbufferAllocation(
           allocation.browser_allocation.suggest_have_frontbuffer);
   }

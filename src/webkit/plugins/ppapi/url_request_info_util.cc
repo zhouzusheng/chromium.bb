@@ -5,19 +5,19 @@
 #include "webkit/plugins/ppapi/url_request_info_util.h"
 
 #include "base/logging.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_util.h"
 #include "net/http/http_util.h"
 #include "ppapi/shared_impl/url_request_info_data.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPBody.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/platform/WebHTTPBody.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/glue/weburlrequest_extradata_impl.h"
 #include "webkit/plugins/ppapi/common.h"
@@ -106,7 +106,7 @@ bool EnsureFileRefObjectsPopulated(::ppapi::URLRequestInfoData* data) {
   // is the state of the request as it comes off IPC).
   for (size_t i = 0; i < data->body.size(); ++i) {
     URLRequestInfoData::BodyItem& item = data->body[i];
-    if (item.is_file && !item.file_ref) {
+    if (item.is_file && !item.file_ref.get()) {
       EnterResourceNoLock<PPB_FileRef_API> enter(
           item.file_ref_host_resource.host_resource(), false);
       if (!enter.succeeded())
@@ -157,7 +157,7 @@ bool CreateWebURLRequest(::ppapi::URLRequestInfoData* data,
     for (size_t i = 0; i < data->body.size(); ++i) {
       const URLRequestInfoData::BodyItem& item = data->body[i];
       if (item.is_file) {
-        if (!AppendFileRefToBody(item.file_ref,
+        if (!AppendFileRefToBody(item.file_ref.get(),
                                  item.start_offset,
                                  item.number_of_bytes,
                                  item.expected_last_modified_time,

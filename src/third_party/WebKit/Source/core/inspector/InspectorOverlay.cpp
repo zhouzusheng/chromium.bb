@@ -30,22 +30,27 @@
 #include "core/inspector/InspectorOverlay.h"
 
 #include "InspectorOverlayPage.h"
+#include "V8InspectorOverlayHost.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
-#include "bindings/v8/ScriptValue.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/dom/StyledElement.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/inspector/InspectorClient.h"
-#include "core/inspector/InspectorValues.h"
+#include "core/inspector/InspectorOverlayHost.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/EmptyClients.h"
+#include "core/page/Chrome.h"
+#include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/JSONValues.h"
+#include "core/platform/PlatformMouseEvent.h"
+#include "core/platform/PlatformTouchEvent.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderObject.h"
@@ -54,6 +59,42 @@
 namespace WebCore {
 
 namespace {
+
+class InspectorOverlayChromeClient: public EmptyChromeClient {
+public:
+    InspectorOverlayChromeClient(ChromeClient* client, InspectorOverlay* overlay)
+        : m_client(client)
+        , m_overlay(overlay)
+    { }
+
+    virtual void setCursor(const Cursor& cursor)
+    {
+        m_client->setCursor(cursor);
+    }
+
+    virtual void setToolTip(const String& tooltip, TextDirection direction)
+    {
+        m_client->setToolTip(tooltip, direction);
+    }
+
+    virtual void invalidateRootView(const IntRect& rect)
+    {
+        m_overlay->invalidate();
+    }
+
+    virtual void invalidateContentsAndRootView(const IntRect& rect)
+    {
+        m_overlay->invalidate();
+    }
+
+    virtual void invalidateContentsForSlowScroll(const IntRect& rect)
+    {
+        m_overlay->invalidate();
+    }
+private:
+    ChromeClient* m_client;
+    InspectorOverlay* m_overlay;
+};
 
 Path quadToPath(const FloatQuad& quad)
 {
@@ -79,14 +120,14 @@ void drawOutlinedQuad(GraphicsContext* context, const FloatQuad& quad, const Col
         context->clipOut(quadPath);
 
         context->setStrokeThickness(outlineThickness);
-        context->setStrokeColor(outlineColor, ColorSpaceDeviceRGB);
+        context->setStrokeColor(outlineColor);
         context->strokePath(quadPath);
 
         context->restore();
     }
 
     // Now do the fill
-    context->setFillColor(fillColor, ColorSpaceDeviceRGB);
+    context->setFillColor(fillColor);
     context->fillPath(quadPath);
 }
 
@@ -115,13 +156,7 @@ static void buildNodeHighlight(Node* node, const HighlightConfig& highlightConfi
     IntRect titleAnchorBox = boundingBox;
 
     // RenderSVGRoot should be highlighted through the isBox() code path, all other SVG elements should just dump their absoluteQuads().
-#if ENABLE(SVG)
-    bool isSVGRenderer = renderer->node() && renderer->node()->isSVGElement() && !renderer->isSVGRoot();
-#else
-    bool isSVGRenderer = false;
-#endif
-
-    if (isSVGRenderer) {
+    if (renderer->node() && renderer->node()->isSVGElement() && !renderer->isSVGRoot()) {
         highlight->type = HighlightTypeRects;
         renderer->absoluteQuads(highlight->quads);
         for (size_t i = 0; i < highlight->quads.size(); ++i)
@@ -194,8 +229,11 @@ static void buildQuadHighlight(Page* page, const FloatQuad& quad, const Highligh
 InspectorOverlay::InspectorOverlay(Page* page, InspectorClient* client)
     : m_page(page)
     , m_client(client)
+    , m_inspectModeEnabled(false)
     , m_drawViewSize(false)
+    , m_drawViewSizeWithGrid(false)
     , m_timer(this, &InspectorOverlay::onTimer)
+    , m_overlayHost(InspectorOverlayHost::create())
 {
 }
 
@@ -205,12 +243,39 @@ InspectorOverlay::~InspectorOverlay()
 
 void InspectorOverlay::paint(GraphicsContext& context)
 {
-    if (m_pausedInDebuggerMessage.isNull() && !m_highlightNode && !m_highlightQuad && m_size.isEmpty() && !m_drawViewSize)
+    if (isEmpty())
         return;
     GraphicsContextStateSaver stateSaver(context);
     FrameView* view = overlayPage()->mainFrame()->view();
     ASSERT(!view->needsLayout());
     view->paint(&context, IntRect(0, 0, view->width(), view->height()));
+}
+
+void InspectorOverlay::invalidate()
+{
+    m_client->highlight();
+}
+
+bool InspectorOverlay::handleMouseEvent(const PlatformMouseEvent& event)
+{
+    if (isEmpty())
+        return false;
+
+    EventHandler* eventHandler = overlayPage()->mainFrame()->eventHandler();
+    switch (event.type()) {
+    case PlatformEvent::MouseMoved: return eventHandler->mouseMoved(event);
+    case PlatformEvent::MousePressed: return eventHandler->handleMousePressEvent(event);
+    case PlatformEvent::MouseReleased: return eventHandler->handleMouseReleaseEvent(event);
+    default: return false;
+    }
+}
+
+bool InspectorOverlay::handleTouchEvent(const PlatformTouchEvent& event)
+{
+    if (isEmpty())
+        return false;
+
+    return overlayPage()->mainFrame()->eventHandler()->handleTouchEvent(event);
 }
 
 void InspectorOverlay::drawOutline(GraphicsContext* context, const LayoutRect& rect, const Color& color)
@@ -243,6 +308,12 @@ void InspectorOverlay::setPausedInDebuggerMessage(const String* message)
     update();
 }
 
+void InspectorOverlay::setInspectModeEnabled(bool enabled)
+{
+    m_inspectModeEnabled = enabled;
+    update();
+}
+
 void InspectorOverlay::hideHighlight()
 {
     m_highlightNode.clear();
@@ -266,9 +337,10 @@ void InspectorOverlay::highlightQuad(PassOwnPtr<FloatQuad> quad, const Highlight
     update();
 }
 
-void InspectorOverlay::showAndHideViewSize()
+void InspectorOverlay::showAndHideViewSize(bool showGrid)
 {
     m_drawViewSize = true;
+    m_drawViewSizeWithGrid = showGrid;
     update();
     m_timer.startOneShot(1);
 }
@@ -278,9 +350,16 @@ Node* InspectorOverlay::highlightedNode() const
     return m_highlightNode.get();
 }
 
+bool InspectorOverlay::isEmpty()
+{
+    bool hasAlwaysVisibleElements = m_highlightNode || m_eventTargetNode || m_highlightQuad || !m_size.isEmpty() || m_drawViewSize;
+    bool hasInvisibleInInspectModeElements = !m_pausedInDebuggerMessage.isNull();
+    return !(hasAlwaysVisibleElements || (hasInvisibleInInspectModeElements && !m_inspectModeEnabled));
+}
+
 void InspectorOverlay::update()
 {
-    if (!m_highlightNode && !m_eventTargetNode && !m_highlightQuad && m_pausedInDebuggerMessage.isNull() && m_size.isEmpty() && !m_drawViewSize) {
+    if (isEmpty()) {
         m_client->hideHighlight();
         return;
     }
@@ -288,10 +367,9 @@ void InspectorOverlay::update()
     FrameView* view = m_page->mainFrame()->view();
     if (!view)
         return;
-    FloatRect viewRect = view->visibleContentRect();
+    IntRect viewRect = view->visibleContentRect();
     FrameView* overlayView = overlayPage()->mainFrame()->view();
-    IntSize viewportSize = enclosingIntRect(viewRect).size();
-    IntSize frameViewFullSize = enclosingIntRect(view->visibleContentRect(ScrollableArea::IncludeScrollbars)).size();
+    IntSize frameViewFullSize = view->visibleContentRect(ScrollableArea::IncludeScrollbars).size();
     IntSize size = m_size.isEmpty() ? frameViewFullSize : m_size;
     size.scale(m_page->pageScaleFactor());
     overlayView->resize(size);
@@ -303,7 +381,8 @@ void InspectorOverlay::update()
     drawGutter();
     drawNodeHighlight();
     drawQuadHighlight();
-    drawPausedInDebuggerMessage();
+    if (!m_inspectModeEnabled)
+        drawPausedInDebuggerMessage();
     drawViewSize();
 
     // Position DOM elements.
@@ -324,20 +403,21 @@ void InspectorOverlay::hide()
     m_pausedInDebuggerMessage = String();
     m_size = IntSize();
     m_drawViewSize = false;
+    m_drawViewSizeWithGrid = false;
     update();
 }
 
-static PassRefPtr<InspectorObject> buildObjectForPoint(const FloatPoint& point)
+static PassRefPtr<JSONObject> buildObjectForPoint(const FloatPoint& point)
 {
-    RefPtr<InspectorObject> object = InspectorObject::create();
+    RefPtr<JSONObject> object = JSONObject::create();
     object->setNumber("x", point.x());
     object->setNumber("y", point.y());
     return object.release();
 }
 
-static PassRefPtr<InspectorArray> buildArrayForQuad(const FloatQuad& quad)
+static PassRefPtr<JSONArray> buildArrayForQuad(const FloatQuad& quad)
 {
-    RefPtr<InspectorArray> array = InspectorArray::create();
+    RefPtr<JSONArray> array = JSONArray::create();
     array->pushObject(buildObjectForPoint(quad.p1()));
     array->pushObject(buildObjectForPoint(quad.p2()));
     array->pushObject(buildObjectForPoint(quad.p3()));
@@ -345,10 +425,10 @@ static PassRefPtr<InspectorArray> buildArrayForQuad(const FloatQuad& quad)
     return array.release();
 }
 
-static PassRefPtr<InspectorObject> buildObjectForHighlight(const Highlight& highlight)
+static PassRefPtr<JSONObject> buildObjectForHighlight(const Highlight& highlight)
 {
-    RefPtr<InspectorObject> object = InspectorObject::create();
-    RefPtr<InspectorArray> array = InspectorArray::create();
+    RefPtr<JSONObject> object = JSONObject::create();
+    RefPtr<JSONArray> array = JSONArray::create();
     for (size_t i = 0; i < highlight.quads.size(); ++i)
         array->pushArray(buildArrayForQuad(highlight.quads[i]));
     object->setArray("quads", array.release());
@@ -362,9 +442,9 @@ static PassRefPtr<InspectorObject> buildObjectForHighlight(const Highlight& high
     return object.release();
 }
 
-static PassRefPtr<InspectorObject> buildObjectForSize(const IntSize& size)
+static PassRefPtr<JSONObject> buildObjectForSize(const IntSize& size)
 {
-    RefPtr<InspectorObject> result = InspectorObject::create();
+    RefPtr<JSONObject> result = JSONObject::create();
     result->setNumber("width", size.width());
     result->setNumber("height", size.height());
     return result.release();
@@ -387,11 +467,11 @@ void InspectorOverlay::drawNodeHighlight()
         buildNodeHighlight(m_eventTargetNode.get(), m_nodeHighlightConfig, &eventTargetHighlight);
         highlight.quads.append(eventTargetHighlight.quads[1]); // Add border from eventTargetNode to highlight.
     }
-    RefPtr<InspectorObject> highlightObject = buildObjectForHighlight(highlight);
+    RefPtr<JSONObject> highlightObject = buildObjectForHighlight(highlight);
 
     Node* node = m_highlightNode.get();
     if (node->isElementNode() && m_nodeHighlightConfig.showInfo && node->renderer() && node->document()->frame()) {
-        RefPtr<InspectorObject> elementInfo = InspectorObject::create();
+        RefPtr<JSONObject> elementInfo = JSONObject::create();
         Element* element = toElement(node);
         bool isXHTML = element->document()->isXHTMLDocument();
         elementInfo->setString("tagName", isXHTML ? element->nodeName() : element->nodeName().lower());
@@ -403,9 +483,8 @@ void InspectorOverlay::drawNodeHighlight()
             size_t classNameCount = classNamesString.size();
             for (size_t i = 0; i < classNameCount; ++i) {
                 const AtomicString& className = classNamesString[i];
-                if (usedClassNames.contains(className))
+                if (!usedClassNames.add(className).isNewEntry)
                     continue;
-                usedClassNames.add(className);
                 classNames.append('.');
                 classNames.append(className);
             }
@@ -443,7 +522,7 @@ void InspectorOverlay::drawPausedInDebuggerMessage()
 void InspectorOverlay::drawViewSize()
 {
     if (m_drawViewSize)
-        evaluateInOverlay("drawViewSize", m_pausedInDebuggerMessage);
+        evaluateInOverlay("drawViewSize", m_drawViewSizeWithGrid ? "true" : "false");
 }
 
 Page* InspectorOverlay::overlayPage()
@@ -454,7 +533,11 @@ Page* InspectorOverlay::overlayPage()
     static FrameLoaderClient* dummyFrameLoaderClient =  new EmptyFrameLoaderClient;
     Page::PageClients pageClients;
     fillWithEmptyClients(pageClients);
+    ASSERT(!m_overlayChromeClient);
+    m_overlayChromeClient = adoptPtr(new InspectorOverlayChromeClient(m_page->chrome().client(), this));
+    pageClients.chromeClient = m_overlayChromeClient.get();
     m_overlayPage = adoptPtr(new Page(pageClients));
+    m_overlayPage->setGroupType(Page::InspectorPageGroup);
 
     Settings* settings = m_page->settings();
     Settings* overlaySettings = m_overlayPage->settings();
@@ -470,6 +553,7 @@ Page* InspectorOverlay::overlayPage()
     overlaySettings->setMediaEnabled(false);
     overlaySettings->setScriptEnabled(true);
     overlaySettings->setPluginsEnabled(false);
+    overlaySettings->setLoadsImagesAutomatically(true);
 
     RefPtr<Frame> frame = Frame::create(m_overlayPage.get(), 0, dummyFrameLoaderClient);
     frame->setView(FrameView::create(frame.get()));
@@ -478,10 +562,15 @@ Page* InspectorOverlay::overlayPage()
     frame->view()->setCanHaveScrollbars(false);
     frame->view()->setTransparent(true);
     ASSERT(loader->activeDocumentLoader());
-    loader->activeDocumentLoader()->writer()->setMIMEType("text/html");
-    loader->activeDocumentLoader()->writer()->begin();
-    loader->activeDocumentLoader()->writer()->addData(reinterpret_cast<const char*>(InspectorOverlayPage_html), sizeof(InspectorOverlayPage_html));
-    loader->activeDocumentLoader()->writer()->end();
+    DocumentWriter* writer = loader->activeDocumentLoader()->beginWriting("text/html", "UTF-8");
+    writer->addData(reinterpret_cast<const char*>(InspectorOverlayPage_html), sizeof(InspectorOverlayPage_html));
+    writer->end();
+    v8::HandleScope handleScope;
+    v8::Handle<v8::Context> frameContext = frame->script()->currentWorldContext();
+    v8::Context::Scope contextScope(frameContext);
+    v8::Handle<v8::Value> overlayHostObj = toV8(m_overlayHost.get(), v8::Handle<v8::Object>(), frameContext->GetIsolate());
+    v8::Handle<v8::Object> global = frameContext->Global();
+    global->Set(v8::String::New("InspectorOverlayHost"), overlayHostObj);
 
 #if OS(WINDOWS)
     evaluateInOverlay("setPlatform", "windows");
@@ -496,7 +585,7 @@ Page* InspectorOverlay::overlayPage()
 
 void InspectorOverlay::reset(const IntSize& viewportSize, const IntSize& frameViewFullSize, int scrollX, int scrollY)
 {
-    RefPtr<InspectorObject> resetData = InspectorObject::create();
+    RefPtr<JSONObject> resetData = JSONObject::create();
     resetData->setNumber("pageScaleFactor", m_page->pageScaleFactor());
     resetData->setNumber("deviceScaleFactor", m_page->deviceScaleFactor());
     resetData->setObject("viewportSize", buildObjectForSize(viewportSize));
@@ -509,18 +598,18 @@ void InspectorOverlay::reset(const IntSize& viewportSize, const IntSize& frameVi
 
 void InspectorOverlay::evaluateInOverlay(const String& method, const String& argument)
 {
-    RefPtr<InspectorArray> command = InspectorArray::create();
+    RefPtr<JSONArray> command = JSONArray::create();
     command->pushString(method);
     command->pushString(argument);
-    overlayPage()->mainFrame()->script()->evaluate(ScriptSourceCode(makeString("dispatch(", command->toJSONString(), ")")));
+    overlayPage()->mainFrame()->script()->executeScriptInMainWorld(ScriptSourceCode("dispatch(" + command->toJSONString() + ")"));
 }
 
-void InspectorOverlay::evaluateInOverlay(const String& method, PassRefPtr<InspectorValue> argument)
+void InspectorOverlay::evaluateInOverlay(const String& method, PassRefPtr<JSONValue> argument)
 {
-    RefPtr<InspectorArray> command = InspectorArray::create();
+    RefPtr<JSONArray> command = JSONArray::create();
     command->pushString(method);
     command->pushValue(argument);
-    overlayPage()->mainFrame()->script()->evaluate(ScriptSourceCode(makeString("dispatch(", command->toJSONString(), ")")));
+    overlayPage()->mainFrame()->script()->executeScriptInMainWorld(ScriptSourceCode("dispatch(" + command->toJSONString() + ")"));
 }
 
 void InspectorOverlay::onTimer(Timer<InspectorOverlay>*)
@@ -546,6 +635,7 @@ void InspectorOverlay::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) con
 void InspectorOverlay::freePage()
 {
     m_overlayPage.clear();
+    m_overlayChromeClient.clear();
     m_timer.stop();
 }
 

@@ -112,7 +112,8 @@ class StubCache {
   Handle<Code> ComputeLoadField(Handle<Name> name,
                                 Handle<JSObject> object,
                                 Handle<JSObject> holder,
-                                PropertyIndex field_index);
+                                PropertyIndex field_index,
+                                Representation representation);
 
   Handle<Code> ComputeLoadCallback(Handle<Name> name,
                                    Handle<JSObject> object,
@@ -139,7 +140,7 @@ class StubCache {
   Handle<Code> ComputeLoadGlobal(Handle<Name> name,
                                  Handle<JSObject> object,
                                  Handle<GlobalObject> holder,
-                                 Handle<JSGlobalPropertyCell> cell,
+                                 Handle<PropertyCell> cell,
                                  bool is_dont_delete);
 
   // ---
@@ -147,7 +148,8 @@ class StubCache {
   Handle<Code> ComputeKeyedLoadField(Handle<Name> name,
                                      Handle<JSObject> object,
                                      Handle<JSObject> holder,
-                                     PropertyIndex field_index);
+                                     PropertyIndex field_index,
+                                     Representation representation);
 
   Handle<Code> ComputeKeyedLoadCallback(
       Handle<Name> name,
@@ -181,7 +183,7 @@ class StubCache {
 
   Handle<Code> ComputeStoreGlobal(Handle<Name> name,
                                   Handle<GlobalObject> object,
-                                  Handle<JSGlobalPropertyCell> cell,
+                                  Handle<PropertyCell> cell,
                                   StrictModeFlag strict_mode);
 
   Handle<Code> ComputeStoreCallback(Handle<Name> name,
@@ -249,7 +251,7 @@ class StubCache {
                                  Handle<Name> name,
                                  Handle<JSObject> object,
                                  Handle<GlobalObject> holder,
-                                 Handle<JSGlobalPropertyCell> cell,
+                                 Handle<PropertyCell> cell,
                                  Handle<JSFunction> function);
 
   // ---
@@ -279,8 +281,7 @@ class StubCache {
   // ---
 
   Handle<Code> ComputeCompareNil(Handle<Map> receiver_map,
-                                 NilValue nil,
-                                 CompareNilICStub::Types types);
+                                 CompareNilICStub& stub);
 
   // ---
 
@@ -311,7 +312,7 @@ class StubCache {
 
   // Collect all maps that match the name and flags.
   void CollectMatchingMaps(SmallMapList* types,
-                           Name* name,
+                           Handle<Name> name,
                            Code::Flags flags,
                            Handle<Context> native_context,
                            Zone* zone);
@@ -506,13 +507,9 @@ class StubCompiler BASE_EMBEDDED {
   static void GenerateFastPropertyLoad(MacroAssembler* masm,
                                        Register dst,
                                        Register src,
-                                       Handle<JSObject> holder,
-                                       PropertyIndex index);
-  static void DoGenerateFastPropertyLoad(MacroAssembler* masm,
-                                         Register dst,
-                                         Register src,
-                                         bool inobject,
-                                         int index);
+                                       bool inobject,
+                                       int index,
+                                       Representation representation);
 
   static void GenerateLoadArrayLength(MacroAssembler* masm,
                                       Register receiver,
@@ -542,8 +539,10 @@ class StubCompiler BASE_EMBEDDED {
                                Register value_reg,
                                Register scratch1,
                                Register scratch2,
+                               Register scratch3,
                                Label* miss_label,
-                               Label* miss_restore_name);
+                               Label* miss_restore_name,
+                               Label* slow);
 
   void GenerateStoreField(MacroAssembler* masm,
                           Handle<JSObject> object,
@@ -564,6 +563,14 @@ class StubCompiler BASE_EMBEDDED {
       default: UNREACHABLE();
     }
     return Builtins::kLoadIC_Miss;
+  }
+  static Builtins::Name SlowBuiltin(Code::Kind kind) {
+    switch (kind) {
+      case Code::STORE_IC: return Builtins::kStoreIC_Slow;
+      case Code::KEYED_STORE_IC: return Builtins::kKeyedStoreIC_Slow;
+      default: UNREACHABLE();
+    }
+    return Builtins::kStoreIC_Slow;
   }
   static void TailCallBuiltin(MacroAssembler* masm, Builtins::Name name);
 
@@ -643,7 +650,8 @@ class BaseLoadStubCompiler: public StubCompiler {
   Handle<Code> CompileLoadField(Handle<JSObject> object,
                                 Handle<JSObject> holder,
                                 Handle<Name> name,
-                                PropertyIndex index);
+                                PropertyIndex index,
+                                Representation representation);
 
   Handle<Code> CompileLoadCallback(Handle<JSObject> object,
                                    Handle<JSObject> holder,
@@ -695,7 +703,8 @@ class BaseLoadStubCompiler: public StubCompiler {
 
   void GenerateLoadField(Register reg,
                          Handle<JSObject> holder,
-                         PropertyIndex index);
+                         PropertyIndex field,
+                         Representation representation);
   void GenerateLoadConstant(Handle<JSFunction> value);
   void GenerateLoadCallback(Register reg,
                             Handle<ExecutableAccessorInfo> callback);
@@ -756,7 +765,7 @@ class LoadStubCompiler: public BaseLoadStubCompiler {
 
   Handle<Code> CompileLoadGlobal(Handle<JSObject> object,
                                  Handle<GlobalObject> holder,
-                                 Handle<JSGlobalPropertyCell> cell,
+                                 Handle<PropertyCell> cell,
                                  Handle<Name> name,
                                  bool is_dont_delete);
 
@@ -881,7 +890,7 @@ class StoreStubCompiler: public BaseStoreStubCompiler {
                                        Handle<Name> name);
 
   Handle<Code> CompileStoreGlobal(Handle<GlobalObject> object,
-                                  Handle<JSGlobalPropertyCell> holder,
+                                  Handle<PropertyCell> holder,
                                   Handle<Name> name);
 
  private:
@@ -998,7 +1007,7 @@ class CallStubCompiler: public StubCompiler {
 
   Handle<Code> CompileCallGlobal(Handle<JSObject> object,
                                  Handle<GlobalObject> holder,
-                                 Handle<JSGlobalPropertyCell> cell,
+                                 Handle<PropertyCell> cell,
                                  Handle<JSFunction> function,
                                  Handle<Name> name);
 
@@ -1010,14 +1019,14 @@ class CallStubCompiler: public StubCompiler {
   // given function.
   Handle<Code> CompileCustomCall(Handle<Object> object,
                                  Handle<JSObject> holder,
-                                 Handle<JSGlobalPropertyCell> cell,
+                                 Handle<Cell> cell,
                                  Handle<JSFunction> function,
                                  Handle<String> name);
 
 #define DECLARE_CALL_GENERATOR(name)                                    \
   Handle<Code> Compile##name##Call(Handle<Object> object,               \
                                    Handle<JSObject> holder,             \
-                                   Handle<JSGlobalPropertyCell> cell,   \
+                                   Handle<Cell> cell,                   \
                                    Handle<JSFunction> function,         \
                                    Handle<String> fname);
   CUSTOM_CALL_IC_GENERATORS(DECLARE_CALL_GENERATOR)
@@ -1026,7 +1035,7 @@ class CallStubCompiler: public StubCompiler {
   Handle<Code> CompileFastApiCall(const CallOptimization& optimization,
                                   Handle<Object> object,
                                   Handle<JSObject> holder,
-                                  Handle<JSGlobalPropertyCell> cell,
+                                  Handle<Cell> cell,
                                   Handle<JSFunction> function,
                                   Handle<String> name);
 
@@ -1044,7 +1053,7 @@ class CallStubCompiler: public StubCompiler {
 
   // Generates code to load the function from the cell checking that
   // it still contains the same function.
-  void GenerateLoadFunctionFromCell(Handle<JSGlobalPropertyCell> cell,
+  void GenerateLoadFunctionFromCell(Handle<Cell> cell,
                                     Handle<JSFunction> function,
                                     Label* miss);
 
@@ -1055,17 +1064,6 @@ class CallStubCompiler: public StubCompiler {
   const Code::Kind kind_;
   const Code::ExtraICState extra_state_;
   const InlineCacheHolderFlag cache_holder_;
-};
-
-
-class ConstructStubCompiler: public StubCompiler {
- public:
-  explicit ConstructStubCompiler(Isolate* isolate) : StubCompiler(isolate) { }
-
-  Handle<Code> CompileConstructStub(Handle<JSFunction> function);
-
- private:
-  Handle<Code> GetCode();
 };
 
 

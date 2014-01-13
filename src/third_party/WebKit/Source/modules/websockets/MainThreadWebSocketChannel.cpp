@@ -32,7 +32,6 @@
 
 #include "modules/websockets/MainThreadWebSocketChannel.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ScriptCallStackFactory.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
@@ -72,16 +71,15 @@ namespace WebCore {
 
 const double TCPMaximumSegmentLifetime = 2 * 60.0;
 
-MainThreadWebSocketChannel::MainThreadWebSocketChannel(Document* document, WebSocketChannelClient* client)
+MainThreadWebSocketChannel::MainThreadWebSocketChannel(Document* document, WebSocketChannelClient* client, const String& sourceURL, unsigned lineNumber)
     : m_document(document)
     , m_client(client)
     , m_resumeTimer(this, &MainThreadWebSocketChannel::resumeTimerFired)
     , m_suspended(false)
-    , m_closing(false)
     , m_didFailOfClientAlreadyRun(false)
     , m_receivedClosingHandshake(false)
     , m_closingTimer(this, &MainThreadWebSocketChannel::closingTimerFired)
-    , m_closed(false)
+    , m_state(ChannelIdle)
     , m_shouldDiscardReceivedData(false)
     , m_unhandledBufferedAmount(0)
     , m_identifier(0)
@@ -89,9 +87,10 @@ MainThreadWebSocketChannel::MainThreadWebSocketChannel(Document* document, WebSo
     , m_closeEventCode(CloseEventCodeAbnormalClosure)
     , m_outgoingFrameQueueStatus(OutgoingFrameQueueOpen)
     , m_blobLoaderStatus(BlobLoaderNotStarted)
-    , m_callFrameAtConnection("", "", 0)
+    , m_sourceURLAtConnection(sourceURL)
+    , m_lineNumberAtConnection(lineNumber)
 {
-    if (Page* page = m_document->page())
+    if (m_document->page())
         m_identifier = createUniqueIdentifier();
 }
 
@@ -106,15 +105,19 @@ void MainThreadWebSocketChannel::connect(const KURL& url, const String& protocol
     ASSERT(!m_suspended);
     m_handshake = adoptPtr(new WebSocketHandshake(url, protocol, m_document));
     m_handshake->reset();
-    m_handshake->addExtensionProcessor(m_deflateFramer.createExtensionProcessor());
-    if (RuntimeEnabledFeatures::experimentalWebSocketEnabled())
+    Settings* settings = m_document->settings();
+    if (settings && settings->experimentalWebSocketEnabled())
         m_handshake->addExtensionProcessor(m_perMessageDeflate.createExtensionProcessor());
+    m_handshake->addExtensionProcessor(m_deflateFramer.createExtensionProcessor());
     if (m_identifier)
-        InspectorInstrumentation::didCreateWebSocket(m_document, m_identifier, url, m_document->url(), protocol);
+        InspectorInstrumentation::didCreateWebSocket(m_document, m_identifier, url, protocol);
     ref();
     m_handle = SocketStreamHandle::create(m_handshake->url(), this);
-    RefPtr<ScriptCallStack> callstack = createScriptCallStack(1, true);
-    m_callFrameAtConnection = callstack && callstack->size() > 0 ? callstack->at(0) : ScriptCallFrame("", "", 0);
+    RefPtr<ScriptCallStack> callStack = createScriptCallStack(1, true);
+    if (callStack && callStack->size()) {
+        m_sourceURLAtConnection = callStack->at(0).sourceURL();
+        m_lineNumberAtConnection = callStack->at(0).lineNumber();
+    }
 }
 
 String MainThreadWebSocketChannel::subprotocol()
@@ -145,12 +148,9 @@ WebSocketChannel::SendResult MainThreadWebSocketChannel::send(const String& mess
     CString utf8 = message.utf8(String::StrictConversionReplacingUnpairedSurrogatesWithFFFD);
     enqueueTextFrame(utf8);
     processOutgoingFrameQueue();
-    // According to WebSocket API specification, WebSocket.send() should return void instead
-    // of boolean. However, our implementation still returns boolean due to compatibility
-    // concern (see bug 65850).
     // m_channel->send() may happen later, thus it's not always possible to know whether
     // the message has been sent to the socket successfully. In this case, we have no choice
-    // but to return true.
+    // but to return SendSuccess.
     return WebSocketChannel::SendSuccess;
 }
 
@@ -193,31 +193,19 @@ void MainThreadWebSocketChannel::close(int code, const String& reason)
     if (!m_handle)
         return;
     startClosingHandshake(code, reason);
-    if (m_closing && !m_closingTimer.isActive())
+    if (!m_closingTimer.isActive())
         m_closingTimer.startOneShot(2 * TCPMaximumSegmentLifetime);
 }
 
-void MainThreadWebSocketChannel::fail(const String& reason)
+void MainThreadWebSocketChannel::fail(const String& reason, MessageLevel level, const String& sourceURL, unsigned lineNumber)
 {
     LOG(Network, "MainThreadWebSocketChannel %p fail() reason='%s'", this, reason.utf8().data());
     ASSERT(!m_suspended);
     if (m_document) {
         InspectorInstrumentation::didReceiveWebSocketFrameError(m_document, m_identifier, reason);
         const String message = "WebSocket connection to '" + m_handshake->url().elidedString() + "' failed: " + reason;
-        RefPtr<ScriptCallStack> callstack = createScriptCallStack(1, true);
-        if (callstack && callstack->size() > 0) {
-            // We are in a JS callstack.
-            // So, the addConsoleMessage method will show the stack appropriately.
-            m_document->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message);
-        } else {
-            // We are not in a JS callstack.
-            // Then show the source file and the line number at the connection initiation.
-            const String& url = m_callFrameAtConnection.sourceURL();
-            unsigned lineNumber = m_callFrameAtConnection.lineNumber();
-            static_cast<ScriptExecutionContext*>(m_document)->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message, url, lineNumber, 0, 0);
-        }
+        static_cast<ScriptExecutionContext*>(m_document)->addConsoleMessage(JSMessageSource, level, message, sourceURL, lineNumber);
     }
-
     // Hybi-10 specification explicitly states we must not continue to handle incoming data
     // once the WebSocket connection is failed (section 7.1.7).
     RefPtr<MainThreadWebSocketChannel> protect(this); // The client can close the channel, potentially removing the last reference.
@@ -233,7 +221,7 @@ void MainThreadWebSocketChannel::fail(const String& reason)
         if (m_client)
             m_client->didReceiveMessageError();
     }
-    if (m_handle && !m_closed)
+    if (m_handle && (m_state != ChannelClosed))
         m_handle->disconnect(); // Will call didCloseSocketStream().
 }
 
@@ -258,7 +246,7 @@ void MainThreadWebSocketChannel::suspend()
 void MainThreadWebSocketChannel::resume()
 {
     m_suspended = false;
-    if ((!m_buffer.isEmpty() || m_closed) && m_client && !m_resumeTimer.isActive())
+    if ((!m_buffer.isEmpty() || (m_state == ChannelClosed)) && m_client && !m_resumeTimer.isActive())
         m_resumeTimer.startOneShot(0);
 }
 
@@ -280,7 +268,7 @@ void MainThreadWebSocketChannel::didOpenSocketStream(SocketStreamHandle* handle)
         InspectorInstrumentation::willSendWebSocketHandshakeRequest(m_document, m_identifier, *m_handshake->clientHandshakeRequest());
     CString handshakeMessage = m_handshake->clientHandshakeMessage();
     if (!handle->send(handshakeMessage.data(), handshakeMessage.length()))
-        fail("Failed to send WebSocket handshake.");
+        failAsError("Failed to send WebSocket handshake.");
 }
 
 void MainThreadWebSocketChannel::didCloseSocketStream(SocketStreamHandle* handle)
@@ -289,7 +277,7 @@ void MainThreadWebSocketChannel::didCloseSocketStream(SocketStreamHandle* handle
     if (m_identifier && m_document)
         InspectorInstrumentation::didCloseWebSocket(m_document, m_identifier);
     ASSERT_UNUSED(handle, handle == m_handle || !m_handle);
-    m_closed = true;
+    m_state = ChannelClosed;
     if (m_closingTimer.isActive())
         m_closingTimer.stop();
     if (m_outgoingFrameQueueStatus != OutgoingFrameQueueClosed)
@@ -328,7 +316,7 @@ void MainThreadWebSocketChannel::didReceiveSocketStreamData(SocketStreamHandle* 
         return;
     if (!appendToBuffer(data, len)) {
         m_shouldDiscardReceivedData = true;
-        fail("Ran out of memory while receiving WebSocket data.");
+        failAsError("Ran out of memory while receiving WebSocket data.");
         return;
     }
     while (!m_suspended && m_client && !m_buffer.isEmpty())
@@ -360,11 +348,11 @@ void MainThreadWebSocketChannel::didFailSocketStream(SocketStreamHandle* handle,
         failingURL = m_handshake->url().string();
     LOG(Network, "Error Message: '%s', FailURL: '%s'", message.utf8().data(), failingURL.utf8().data());
     RefPtr<WebSocketChannel> protect(this);
-    if (m_client && !m_closing && !m_didFailOfClientAlreadyRun) {
+    if (m_client && (m_state != ChannelClosing && m_state != ChannelClosed) && !m_didFailOfClientAlreadyRun) {
         m_didFailOfClientAlreadyRun = true;
         m_client->didReceiveMessageError();
     }
-    if (m_handle && !m_closed)
+    if (m_handle && (m_state != ChannelClosed))
         m_handle->disconnect();
 }
 
@@ -399,7 +387,7 @@ void MainThreadWebSocketChannel::didFail(int errorCode)
     ASSERT(m_blobLoaderStatus == BlobLoaderStarted);
     m_blobLoader.clear();
     m_blobLoaderStatus = BlobLoaderFailed;
-    fail("Failed to load Blob: error code = " + String::number(errorCode)); // FIXME: Generate human-friendly reason message.
+    failAsError("Failed to load Blob: error code = " + String::number(errorCode)); // FIXME: Generate human-friendly reason message.
     deref();
 }
 
@@ -462,7 +450,7 @@ bool MainThreadWebSocketChannel::processBuffer()
         LOG(Network, "MainThreadWebSocketChannel %p Connection failed", this);
         skipBuffer(headerLength);
         m_shouldDiscardReceivedData = true;
-        fail(m_handshake->failureReason());
+        failAsError(m_handshake->failureReason());
         return false;
     }
     if (m_handshake->mode() != WebSocketHandshake::Connected)
@@ -479,14 +467,14 @@ void MainThreadWebSocketChannel::resumeTimerFired(Timer<MainThreadWebSocketChann
     while (!m_suspended && m_client && !m_buffer.isEmpty())
         if (!processBuffer())
             break;
-    if (!m_suspended && m_client && m_closed && m_handle)
+    if (!m_suspended && m_client && (m_state == ChannelClosed) && m_handle)
         didCloseSocketStream(m_handle.get());
 }
 
 void MainThreadWebSocketChannel::startClosingHandshake(int code, const String& reason)
 {
-    LOG(Network, "MainThreadWebSocketChannel %p startClosingHandshake() code=%d m_receivedClosingHandshake=%d", this, m_closing, m_receivedClosingHandshake);
-    if (m_closing)
+    LOG(Network, "MainThreadWebSocketChannel %p startClosingHandshake() code=%d m_state=%d m_receivedClosingHandshake=%d", this, code, m_state, m_receivedClosingHandshake);
+    if (m_state == ChannelClosing || m_state == ChannelClosed)
         return;
     ASSERT(m_handle);
 
@@ -501,7 +489,7 @@ void MainThreadWebSocketChannel::startClosingHandshake(int code, const String& r
     enqueueRawFrame(WebSocketFrame::OpCodeClose, buf.data(), buf.size());
     processOutgoingFrameQueue();
 
-    m_closing = true;
+    m_state = ChannelClosing;
     if (m_client)
         m_client->didStartClosingHandshake();
 }
@@ -526,7 +514,7 @@ bool MainThreadWebSocketChannel::processFrame()
     if (result == WebSocketFrame::FrameIncomplete)
         return false;
     if (result == WebSocketFrame::FrameError) {
-        fail(errorString);
+        failAsError(errorString);
         return false;
     }
 
@@ -535,47 +523,47 @@ bool MainThreadWebSocketChannel::processFrame()
 
     OwnPtr<InflateResultHolder> inflateResult = m_deflateFramer.inflate(frame);
     if (!inflateResult->succeeded()) {
-        fail(inflateResult->failureReason());
+        failAsError(inflateResult->failureReason());
         return false;
     }
     if (!m_perMessageDeflate.inflate(frame)) {
-        fail(m_perMessageDeflate.failureReason());
+        failAsError(m_perMessageDeflate.failureReason());
         return false;
     }
 
     // Validate the frame data.
     if (WebSocketFrame::isReservedOpCode(frame.opCode)) {
-        fail("Unrecognized frame opcode: " + String::number(frame.opCode));
+        failAsError("Unrecognized frame opcode: " + String::number(frame.opCode));
         return false;
     }
 
     if (frame.compress || frame.reserved2 || frame.reserved3) {
-        fail("One or more reserved bits are on: reserved1 = " + String::number(frame.compress) + ", reserved2 = " + String::number(frame.reserved2) + ", reserved3 = " + String::number(frame.reserved3));
+        failAsError("One or more reserved bits are on: reserved1 = " + String::number(frame.compress) + ", reserved2 = " + String::number(frame.reserved2) + ", reserved3 = " + String::number(frame.reserved3));
         return false;
     }
 
     if (frame.masked) {
-        fail("A server must not mask any frames that it sends to the client.");
+        failAsError("A server must not mask any frames that it sends to the client.");
         return false;
     }
 
     // All control frames must not be fragmented.
     if (WebSocketFrame::isControlOpCode(frame.opCode) && !frame.final) {
-        fail("Received fragmented control frame: opcode = " + String::number(frame.opCode));
+        failAsError("Received fragmented control frame: opcode = " + String::number(frame.opCode));
         return false;
     }
 
     // All control frames must have a payload of 125 bytes or less, which means the frame must not contain
     // the "extended payload length" field.
     if (WebSocketFrame::isControlOpCode(frame.opCode) && WebSocketFrame::needsExtendedLengthField(frame.payloadLength)) {
-        fail("Received control frame having too long payload: " + String::number(frame.payloadLength) + " bytes");
+        failAsError("Received control frame having too long payload: " + String::number(frame.payloadLength) + " bytes");
         return false;
     }
 
     // A new data frame is received before the previous continuous frame finishes.
     // Note that control frames are allowed to come in the middle of continuous frames.
     if (m_hasContinuousFrame && frame.opCode != WebSocketFrame::OpCodeContinuation && !WebSocketFrame::isControlOpCode(frame.opCode)) {
-        fail("Received new data frame but previous continuous frame is unfinished.");
+        failAsError("Received new data frame but previous continuous frame is unfinished.");
         return false;
     }
 
@@ -585,7 +573,7 @@ bool MainThreadWebSocketChannel::processFrame()
     case WebSocketFrame::OpCodeContinuation:
         // An unexpected continuation frame is received without any leading frame.
         if (!m_hasContinuousFrame) {
-            fail("Received unexpected continuation frame.");
+            failAsError("Received unexpected continuation frame.");
             return false;
         }
         m_continuousFrameData.append(frame.payload, frame.payloadLength);
@@ -606,7 +594,7 @@ bool MainThreadWebSocketChannel::processFrame()
                 else
                     message = "";
                 if (message.isNull())
-                    fail("Could not decode a text frame as UTF-8.");
+                    failAsError("Could not decode a text frame as UTF-8.");
                 else
                     m_client->didReceiveMessage(message);
             } else if (m_continuousFrameOpCode == WebSocketFrame::OpCodeBinary)
@@ -623,7 +611,7 @@ bool MainThreadWebSocketChannel::processFrame()
                 message = "";
             skipBuffer(frameEnd - m_buffer.data());
             if (message.isNull())
-                fail("Could not decode a text frame as UTF-8.");
+                failAsError("Could not decode a text frame as UTF-8.");
             else
                 m_client->didReceiveMessage(message);
         } else {
@@ -655,7 +643,7 @@ bool MainThreadWebSocketChannel::processFrame()
             m_closeEventCode = CloseEventCodeNoStatusRcvd;
         else if (frame.payloadLength == 1) {
             m_closeEventCode = CloseEventCodeAbnormalClosure;
-            fail("Received a broken close frame containing an invalid size body.");
+            failAsError("Received a broken close frame containing an invalid size body.");
             return false;
         } else {
             unsigned char highByte = static_cast<unsigned char>(frame.payload[0]);
@@ -663,7 +651,7 @@ bool MainThreadWebSocketChannel::processFrame()
             m_closeEventCode = highByte << 8 | lowByte;
             if (m_closeEventCode == CloseEventCodeNoStatusRcvd || m_closeEventCode == CloseEventCodeAbnormalClosure || m_closeEventCode == CloseEventCodeTLSHandshake) {
                 m_closeEventCode = CloseEventCodeAbnormalClosure;
-                fail("Received a broken close frame containing a reserved status code.");
+                failAsError("Received a broken close frame containing a reserved status code.");
                 return false;
             }
         }
@@ -674,10 +662,8 @@ bool MainThreadWebSocketChannel::processFrame()
         skipBuffer(frameEnd - m_buffer.data());
         m_receivedClosingHandshake = true;
         startClosingHandshake(m_closeEventCode, m_closeEventReason);
-        if (m_closing) {
-            m_outgoingFrameQueueStatus = OutgoingFrameQueueClosing;
-            processOutgoingFrameQueue();
-        }
+        m_outgoingFrameQueueStatus = OutgoingFrameQueueClosing;
+        processOutgoingFrameQueue();
         break;
 
     case WebSocketFrame::OpCodePing:
@@ -744,13 +730,13 @@ void MainThreadWebSocketChannel::processOutgoingFrameQueue()
         switch (frame->frameType) {
         case QueuedFrameTypeString: {
             if (!sendFrame(frame->opCode, frame->stringData.data(), frame->stringData.length()))
-                fail("Failed to send WebSocket frame.");
+                failAsError("Failed to send WebSocket frame.");
             break;
         }
 
         case QueuedFrameTypeVector:
             if (!sendFrame(frame->opCode, frame->vectorData.data(), frame->vectorData.size()))
-                fail("Failed to send WebSocket frame.");
+                failAsError("Failed to send WebSocket frame.");
             break;
 
         case QueuedFrameTypeBlob: {
@@ -774,7 +760,7 @@ void MainThreadWebSocketChannel::processOutgoingFrameQueue()
                 m_blobLoader.clear();
                 m_blobLoaderStatus = BlobLoaderNotStarted;
                 if (!sendFrame(frame->opCode, static_cast<const char*>(result->data()), result->byteLength()))
-                    fail("Failed to send WebSocket frame.");
+                    failAsError("Failed to send WebSocket frame.");
                 break;
             }
             }
@@ -814,12 +800,12 @@ bool MainThreadWebSocketChannel::sendFrame(WebSocketFrame::OpCode opCode, const 
 
     OwnPtr<DeflateResultHolder> deflateResult = m_deflateFramer.deflate(frame);
     if (!deflateResult->succeeded()) {
-        fail(deflateResult->failureReason());
+        failAsError(deflateResult->failureReason());
         return false;
     }
 
     if (!m_perMessageDeflate.deflate(frame)) {
-        fail(m_perMessageDeflate.failureReason());
+        failAsError(m_perMessageDeflate.failureReason());
         return false;
     }
 

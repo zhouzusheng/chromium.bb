@@ -46,8 +46,6 @@ class StringWithDirection;
 class HistoryController {
     WTF_MAKE_NONCOPYABLE(HistoryController);
 public:
-    enum HistoryUpdateType { UpdateAll, UpdateAllExceptBackForwardList };
-
     explicit HistoryController(Frame*);
     ~HistoryController();
 
@@ -61,11 +59,6 @@ public:
     void saveDocumentAndScrollState();
     void restoreDocumentState();
 
-    void updateForBackForwardNavigation();
-    void updateForReload();
-    void updateForStandardLoad(HistoryUpdateType updateType = UpdateAll);
-    void updateForRedirectWithLockedBackForwardList();
-    void updateForClientRedirect();
     void updateForCommit();
     void updateForSameDocumentNavigation();
     void updateForFrameLoadCompleted();
@@ -88,14 +81,20 @@ public:
 private:
     friend class Page;
     bool shouldStopLoadingForHistoryItem(HistoryItem*) const;
-    void goToItem(HistoryItem*, FrameLoadType);
+    void goToItem(HistoryItem*);
 
     void initializeItem(HistoryItem*);
     PassRefPtr<HistoryItem> createItem();
     PassRefPtr<HistoryItem> createItemTree(Frame* targetFrame, bool clipAtTarget);
 
-    void recursiveSetProvisionalItem(HistoryItem*, HistoryItem*, FrameLoadType);
-    void recursiveGoToItem(HistoryItem*, HistoryItem*, FrameLoadType);
+    void updateForBackForwardNavigation();
+    void updateForReload();
+    void updateForStandardLoad();
+    void updateForRedirectWithLockedBackForwardList();
+    void updateForInitialLoadInChildFrame();
+
+    void recursiveSetProvisionalItem(HistoryItem*, HistoryItem*);
+    void recursiveGoToItem(HistoryItem*, HistoryItem*);
     bool isReplaceLoadTypeWithProvisionalItem(FrameLoadType);
     bool isReloadTypeWithProvisionalItem(FrameLoadType);
     void recursiveUpdateForCommit();
@@ -115,7 +114,6 @@ private:
 
     bool m_defersLoading;
     RefPtr<HistoryItem> m_deferredItem;
-    FrameLoadType m_deferredFrameLoadType;
 };
 
 } // namespace WebCore

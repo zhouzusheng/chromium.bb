@@ -24,7 +24,6 @@
 #ifndef SVGRenderSupport_h
 #define SVGRenderSupport_h
 
-#if ENABLE(SVG)
 #include "core/rendering/PaintInfo.h"
 
 namespace WebCore {
@@ -74,6 +73,7 @@ public:
 
     // Shared between SVG renderers and resources.
     static void applyStrokeStyleToContext(GraphicsContext*, const RenderStyle*, const RenderObject*);
+    static void applyStrokeStyleToStrokeData(StrokeData*, const RenderStyle*, const RenderObject*);
 
     // Determines if any ancestor's transform has changed.
     static bool transformToRootChanged(RenderObject*);
@@ -96,5 +96,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif // SVGRenderSupport_h

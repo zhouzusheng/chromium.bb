@@ -26,9 +26,7 @@
 #include "core/rendering/RenderText.h"
 
 #include "core/accessibility/AXObjectCache.h"
-#include "core/dom/Range.h"
 #include "core/dom/Text.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/loader/TextResourceDecoder.h"
 #include "core/page/FrameView.h"
@@ -39,7 +37,6 @@
 #include "core/platform/text/transcoder/FontTranscoder.h"
 #include "core/rendering/EllipsisBox.h"
 #include "core/rendering/InlineTextBox.h"
-#include "core/rendering/RenderArena.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderCombineText.h"
 #include "core/rendering/RenderLayer.h"
@@ -101,7 +98,7 @@ static void makeCapitalized(String* string, UChar previous)
         return;
 
     unsigned length = string->length();
-    const UChar* characters = string->characters();
+    const StringImpl& input = *string->impl();
 
     if (length >= numeric_limits<unsigned>::max())
         CRASH();
@@ -110,28 +107,29 @@ static void makeCapitalized(String* string, UChar previous)
     stringWithPrevious[0] = previous == noBreakSpace ? ' ' : previous;
     for (unsigned i = 1; i < length + 1; i++) {
         // Replace &nbsp with a real space since ICU no longer treats &nbsp as a word separator.
-        if (characters[i - 1] == noBreakSpace)
+        if (input[i - 1] == noBreakSpace)
             stringWithPrevious[i] = ' ';
         else
-            stringWithPrevious[i] = characters[i - 1];
+            stringWithPrevious[i] = input[i - 1];
     }
 
     TextBreakIterator* boundary = wordBreakIterator(stringWithPrevious.characters(), length + 1);
     if (!boundary)
         return;
 
-    StringBuffer<UChar> data(length);
+    StringBuilder result;
+    result.reserveCapacity(length);
 
     int32_t endOfWord;
     int32_t startOfWord = textBreakFirst(boundary);
     for (endOfWord = textBreakNext(boundary); endOfWord != TextBreakDone; startOfWord = endOfWord, endOfWord = textBreakNext(boundary)) {
         if (startOfWord) // Ignore first char of previous string
-            data[startOfWord - 1] = characters[startOfWord - 1] == noBreakSpace ? noBreakSpace : toTitleCase(stringWithPrevious[startOfWord]);
+            result.append(input[startOfWord - 1] == noBreakSpace ? noBreakSpace : toTitleCase(stringWithPrevious[startOfWord]));
         for (int i = startOfWord + 1; i < endOfWord; i++)
-            data[i - 1] = characters[i - 1];
+            result.append(input[i - 1]);
     }
 
-    *string = String::adopt(data);
+    *string = result.toString();
 }
 
 RenderText::RenderText(Node* node, PassRefPtr<StringImpl> str)
@@ -143,8 +141,8 @@ RenderText::RenderText(Node* node, PassRefPtr<StringImpl> str)
     , m_needsTranscoding(false)
     , m_minWidth(-1)
     , m_maxWidth(-1)
-    , m_beginMinWidth(0)
-    , m_endMinWidth(0)
+    , m_firstLineMinWidth(0)
+    , m_lastLineLineMinWidth(0)
     , m_text(str)
     , m_firstTextBox(0)
     , m_lastTextBox(0)
@@ -189,7 +187,7 @@ bool RenderText::isWordBreak() const
 
 void RenderText::updateNeedsTranscoding()
 {
-    const TextEncoding* encoding = document()->decoder() ? &document()->decoder()->encoding() : 0;
+    const WTF::TextEncoding* encoding = document()->decoder() ? &document()->decoder()->encoding() : 0;
     m_needsTranscoding = fontTranscoder().needsTranscoding(style()->font().fontDescription(), encoding);
 }
 
@@ -770,11 +768,11 @@ ALWAYS_INLINE float RenderText::widthFromCache(const Font& f, int start, int len
 }
 
 void RenderText::trimmedPrefWidths(float leadWidth,
-                                   float& beginMinW, bool& beginWS,
-                                   float& endMinW, bool& endWS,
-                                   bool& hasBreakableChar, bool& hasBreak,
-                                   float& beginMaxW, float& endMaxW,
-                                   float& minW, float& maxW, bool& stripFrontSpaces)
+    float& firstLineMinWidth, bool& hasBreakableStart,
+    float& lastLineMinWidth, bool& hasBreakableEnd,
+    bool& hasBreakableChar, bool& hasBreak,
+    float& firstLineMaxWidth, float& lastLineMaxWidth,
+    float& minWidth, float& maxWidth, bool& stripFrontSpaces)
 {
     bool collapseWhiteSpace = style()->collapseWhiteSpace();
     if (!collapseWhiteSpace)
@@ -783,27 +781,27 @@ void RenderText::trimmedPrefWidths(float leadWidth,
     if (m_hasTab || preferredLogicalWidthsDirty())
         computePreferredLogicalWidths(leadWidth);
 
-    beginWS = !stripFrontSpaces && m_hasBeginWS;
-    endWS = m_hasEndWS;
+    hasBreakableStart = !stripFrontSpaces && m_hasBreakableStart;
+    hasBreakableEnd = m_hasBreakableEnd;
 
     int len = textLength();
 
     if (!len || (stripFrontSpaces && text()->containsOnlyWhitespace())) {
-        beginMinW = 0;
-        endMinW = 0;
-        beginMaxW = 0;
-        endMaxW = 0;
-        minW = 0;
-        maxW = 0;
+        firstLineMinWidth = 0;
+        lastLineMinWidth = 0;
+        firstLineMaxWidth = 0;
+        lastLineMaxWidth = 0;
+        minWidth = 0;
+        maxWidth = 0;
         hasBreak = false;
         return;
     }
 
-    minW = m_minWidth;
-    maxW = m_maxWidth;
+    minWidth = m_minWidth;
+    maxWidth = m_maxWidth;
 
-    beginMinW = m_beginMinWidth;
-    endMinW = m_endMinWidth;
+    firstLineMinWidth = m_firstLineMinWidth;
+    lastLineMinWidth = m_lastLineLineMinWidth;
 
     hasBreakableChar = m_hasBreakableChar;
     hasBreak = m_hasBreak;
@@ -815,45 +813,47 @@ void RenderText::trimmedPrefWidths(float leadWidth,
         if (stripFrontSpaces) {
             const UChar space = ' ';
             float spaceWidth = font.width(RenderBlock::constructTextRun(this, font, &space, 1, style()));
-            maxW -= spaceWidth;
-        } else
-            maxW += font.wordSpacing();
+            maxWidth -= spaceWidth;
+        } else {
+            maxWidth += font.wordSpacing();
+        }
     }
 
-    stripFrontSpaces = collapseWhiteSpace && m_hasEndWS;
+    stripFrontSpaces = collapseWhiteSpace && m_hasEndWhiteSpace;
 
-    if (!style()->autoWrap() || minW > maxW)
-        minW = maxW;
+    if (!style()->autoWrap() || minWidth > maxWidth)
+        minWidth = maxWidth;
 
     // Compute our max widths by scanning the string for newlines.
     if (hasBreak) {
         const Font& f = style()->font(); // FIXME: This ignores first-line.
         bool firstLine = true;
-        beginMaxW = maxW;
-        endMaxW = maxW;
+        firstLineMaxWidth = maxWidth;
+        lastLineMaxWidth = maxWidth;
         for (int i = 0; i < len; i++) {
             int linelen = 0;
             while (i + linelen < len && text[i + linelen] != '\n')
                 linelen++;
 
             if (linelen) {
-                endMaxW = widthFromCache(f, i, linelen, leadWidth + endMaxW, 0, 0);
+                lastLineMaxWidth = widthFromCache(f, i, linelen, leadWidth + lastLineMaxWidth, 0, 0);
                 if (firstLine) {
                     firstLine = false;
                     leadWidth = 0;
-                    beginMaxW = endMaxW;
+                    firstLineMaxWidth = lastLineMaxWidth;
                 }
                 i += linelen;
             } else if (firstLine) {
-                beginMaxW = 0;
+                firstLineMaxWidth = 0;
                 firstLine = false;
                 leadWidth = 0;
             }
 
-            if (i == len - 1)
+            if (i == len - 1) {
                 // A <pre> run that ends with a newline, as in, e.g.,
                 // <pre>Some text\n\n<span>More text</pre>
-                endMaxW = 0;
+                lastLineMaxWidth = 0;
+            }
         }
     }
 }
@@ -934,9 +934,9 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
     ASSERT(m_hasTab || preferredLogicalWidthsDirty() || !m_knownToHaveNoOverflowAndNoFallbackFonts);
 
     m_minWidth = 0;
-    m_beginMinWidth = 0;
-    m_endMinWidth = 0;
     m_maxWidth = 0;
+    m_firstLineMinWidth = 0;
+    m_lastLineLineMinWidth = 0;
 
     if (isBR())
         return;
@@ -946,8 +946,9 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
     m_hasBreakableChar = false;
     m_hasBreak = false;
     m_hasTab = false;
-    m_hasBeginWS = false;
-    m_hasEndWS = false;
+    m_hasBreakableStart = false;
+    m_hasBreakableEnd = false;
+    m_hasEndWhiteSpace = false;
 
     RenderStyle* styleToUse = style();
     const Font& f = styleToUse->font(); // FIXME: This ignores first-line.
@@ -1010,10 +1011,13 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
         } else
             isSpace = c == ' ';
 
-        if ((isSpace || isNewline) && !i)
-            m_hasBeginWS = true;
-        if ((isSpace || isNewline) && i == len - 1)
-            m_hasEndWS = true;
+        bool isBreakableLocation = isNewline || (isSpace && styleToUse->autoWrap());
+        if (!i)
+            m_hasBreakableStart = isBreakableLocation;
+        if (i == len - 1) {
+            m_hasBreakableEnd = isBreakableLocation;
+            m_hasEndWhiteSpace = isNewline || isSpace;
+        }
 
         if (!ignoringSpaces && styleToUse->collapseWhiteSpace() && previousCharacterIsSpace && isSpace)
             ignoringSpaces = true;
@@ -1108,9 +1112,9 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
                 // being appended to a previous text run when considering the total minimum width of the containing block.
                 if (hasBreak)
                     m_hasBreakableChar = true;
-                m_beginMinWidth = hasBreak ? 0 : currMinWidth;
+                m_firstLineMinWidth = hasBreak ? 0 : currMinWidth;
             }
-            m_endMinWidth = currMinWidth;
+            m_lastLineLineMinWidth = currMinWidth;
 
             if (currMinWidth > m_minWidth)
                 m_minWidth = currMinWidth;
@@ -1132,7 +1136,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
                     firstLine = false;
                     leadWidth = 0;
                     if (!styleToUse->autoWrap())
-                        m_beginMinWidth = currMaxWidth;
+                        m_firstLineMinWidth = currMaxWidth;
                 }
 
                 if (currMaxWidth > m_maxWidth)
@@ -1168,14 +1172,14 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
 
     if (styleToUse->whiteSpace() == PRE) {
         if (firstLine)
-            m_beginMinWidth = m_maxWidth;
-        m_endMinWidth = currMaxWidth;
+            m_firstLineMinWidth = m_maxWidth;
+        m_lastLineLineMinWidth = currMaxWidth;
     }
 
     setPreferredLogicalWidthsDirty(false);
 }
 
-bool RenderText::isAllCollapsibleWhitespace()
+bool RenderText::isAllCollapsibleWhitespace() const
 {
     unsigned length = textLength();
     if (is8Bit()) {
@@ -1392,7 +1396,7 @@ void RenderText::setTextInternal(PassRefPtr<StringImpl> text)
     ASSERT(text);
     m_text = text;
     if (m_needsTranscoding) {
-        const TextEncoding* encoding = document()->decoder() ? &document()->decoder()->encoding() : 0;
+        const WTF::TextEncoding* encoding = document()->decoder() ? &document()->decoder()->encoding() : 0;
         fontTranscoder().convert(m_text, style()->font().fontDescription(), encoding);
     }
     ASSERT(m_text);
@@ -1718,8 +1722,11 @@ unsigned RenderText::renderedTextLength() const
 
 int RenderText::previousOffset(int current) const
 {
-    StringImpl* si = m_text.impl();
-    TextBreakIterator* iterator = cursorMovementIterator(si->characters(), si->length());
+    if (isAllASCII() || m_text.is8Bit())
+        return current - 1;
+
+    StringImpl* textImpl = m_text.impl();
+    TextBreakIterator* iterator = cursorMovementIterator(textImpl->characters16(), textImpl->length());
     if (!iterator)
         return current - 1;
 
@@ -1871,15 +1878,17 @@ int RenderText::previousOffsetForBackwardDeletion(int current) const
 
 int RenderText::nextOffset(int current) const
 {
-    StringImpl* si = m_text.impl();
-    TextBreakIterator* iterator = cursorMovementIterator(si->characters(), si->length());
+    if (isAllASCII() || m_text.is8Bit())
+        return current + 1;
+
+    StringImpl* textImpl = m_text.impl();
+    TextBreakIterator* iterator = cursorMovementIterator(textImpl->characters16(), textImpl->length());
     if (!iterator)
         return current + 1;
 
     long result = textBreakFollowing(iterator, current);
     if (result == TextBreakDone)
         result = current + 1;
-
 
     return result;
 }

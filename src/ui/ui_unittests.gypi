@@ -6,7 +6,6 @@
   'targets': [
     {
       'target_name': 'ui_test_support',
-      'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
         '../skia/skia.gyp:skia',
@@ -17,16 +16,28 @@
         'base/test/cocoa_test_event_utils.mm',
         'base/test/ui_cocoa_test_helper.h',
         'base/test/ui_cocoa_test_helper.mm',
-        'base/test/dummy_input_method.cc',
-        'base/test/dummy_input_method.h',
+        'base/test/ui_controls.h',
+        'base/test/ui_controls_aura.cc',
+        'base/test/ui_controls_gtk.cc',
+        'base/test/ui_controls_internal_win.cc',
+        'base/test/ui_controls_internal_win.h',
+        'base/test/ui_controls_mac.mm',
+        'base/test/ui_controls_win.cc',
       ],
       'include_dirs': [
         '../',
       ],
       'conditions': [
         ['OS!="ios"', {
+          'type': 'static_library',
           'includes': [ 'base/ime/ime_test_support.gypi' ],
         }, {  # OS=="ios"
+          # None of the sources in this target are built on iOS, resulting in
+          # link errors when building targets that depend on this target
+          # because the static library isn't found. If this target is changed
+          # to have sources that are built on iOS, the target should be changed
+          # to be of type static_library on all platforms.
+          'type': 'none',
           # The cocoa files don't apply to iOS.
           'sources/': [['exclude', 'cocoa']],
         }],
@@ -34,6 +45,11 @@
           'dependencies': [
             '../chromeos/chromeos.gyp:chromeos_test_support_without_gmock',
             '../skia/skia.gyp:skia',
+          ],
+        }],
+        ['use_aura==1', {
+          'sources!': [
+            'base/test/ui_controls_win.cc',
           ],
         }],
       ],
@@ -58,13 +74,14 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:test_support_base',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../skia/skia.gyp:skia',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/libpng/libpng.gyp:libpng',
+        '../url/url.gyp:url_lib',
+        'base/strings/ui_strings.gyp:ui_strings',
         'run_ui_unittests',
         'shell_dialogs',
         'ui',
@@ -122,14 +139,17 @@
         'base/clipboard/clipboard_unittest.cc',
         'base/clipboard/custom_data_helper_unittest.cc',
         'base/cocoa/base_view_unittest.mm',
+        'base/cocoa/cocoa_event_utils_unittest.mm',
+        'base/cocoa/controls/hover_image_menu_button_unittest.mm',
         'base/cocoa/events_mac_unittest.mm',
         'base/cocoa/focus_tracker_unittest.mm',
         'base/cocoa/fullscreen_window_manager_unittest.mm',
         'base/cocoa/hover_image_button_unittest.mm',
+        'base/cocoa/menu_controller_unittest.mm',
+        'base/cocoa/nsgraphics_context_additions_unittest.mm',
         'base/cocoa/tracking_area_unittest.mm',
         'base/events/event_dispatcher_unittest.cc',
         'base/events/event_unittest.cc',
-        'base/events/key_identifier_conversion_unittest.cc',
         'base/gtk/gtk_expanded_container_unittest.cc',
         'base/gtk/gtk_im_context_util_unittest.cc',
         'base/gtk/menu_label_accelerator_util_unittest.cc',
@@ -137,6 +157,7 @@
         'base/models/list_model_unittest.cc',
         'base/models/list_selection_model_unittest.cc',
         'base/models/tree_node_model_unittest.cc',
+        'base/ozone/touch_event_converter_ozone_unittest.cc',
         'base/test/data/resource.h',
         'base/text/bytes_formatting_unittest.cc',
         'base/text/utf16_indexing_unittest.cc',
@@ -209,12 +230,6 @@
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
         }],
-        ['OS == "linux"', {
-          'sources': [
-            'base/x/x11_util_unittest.cc',
-            'gfx/platform_font_pango_unittest.cc',
-          ],
-        }],
         ['OS == "linux" and toolkit_views==1', {
           'sources': [
             'base/x/events_x_unittest.cc',
@@ -236,9 +251,12 @@
             'base/strings/ui_strings.gyp:ui_unittest_strings',
           ],
         }],
-        ['use_glib == 1', {
+        ['use_pango == 1', {
           'dependencies': [
             '../build/linux/system.gyp:pangocairo',
+          ],
+          'sources': [
+            'gfx/platform_font_pango_unittest.cc',
           ],
           'conditions': [
             ['linux_use_tcmalloc==1', {
@@ -284,7 +302,6 @@
           'sources!': [
             'base/events/event_dispatcher_unittest.cc',
             'base/events/event_unittest.cc',
-            'base/events/key_identifier_conversion_unittest.cc',
           ],
         }],
         ['use_aura==1', {

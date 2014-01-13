@@ -59,8 +59,9 @@ bool AcquireTokenTask::RunTask() {
   // Otherwise, ignore.
   if (client_->client_token_.empty()) {
     // Allocate a nonce and send a message requesting a new token.
-    client_->set_nonce(SimpleItoa(
-        client_->internal_scheduler_->GetCurrentTime().ToInternalValue()));
+    client_->set_nonce(
+        InvalidationClientCore::GenerateNonce(client_->random_.get()));
+
     client_->protocol_handler_.SendInitializeMessage(
         client_->application_client_id_, client_->nonce_,
         client_->batching_task_.get(),
@@ -277,8 +278,7 @@ void InvalidationClientCore::Start() {
 
   // Initialize the nonce so that we can maintain the invariant that exactly
   // one of "nonce_" and "client_token_" is non-empty.
-  set_nonce(SimpleItoa(
-      internal_scheduler_->GetCurrentTime().ToInternalValue()));
+  set_nonce(InvalidationClientCore::GenerateNonce(random_.get()));
 
   TLOG(logger_, INFO, "Starting with C++ config: %s",
        ProtoHelpers::ToString(config_).c_str());
@@ -895,6 +895,11 @@ void InvalidationClientCore::SendInfoMessageToServer(
   }
   protocol_handler_.SendInfoMessage(performance_counters, config_to_send,
       request_server_summary, batching_task_.get());
+}
+
+string InvalidationClientCore::GenerateNonce(Random* random) {
+  // Return a nonce computed by converting a random 64-bit number to a string.
+  return SimpleItoa(static_cast<int64>(random->RandUint64()));
 }
 
 void InvalidationClientCore::set_nonce(const string& new_nonce) {

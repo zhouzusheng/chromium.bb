@@ -12,8 +12,8 @@
 
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -134,6 +134,12 @@ string16 Accelerator::GetShortcutText() const {
     case ui::VKEY_RIGHT:
       string_id = IDS_APP_RIGHT_ARROW_KEY;
       break;
+    case ui::VKEY_UP:
+      string_id = IDS_APP_UP_ARROW_KEY;
+      break;
+    case ui::VKEY_DOWN:
+      string_id = IDS_APP_DOWN_ARROW_KEY;
+      break;
     case ui::VKEY_BACK:
       string_id = IDS_APP_BACKSPACE_KEY;
       break;
@@ -142,6 +148,12 @@ string16 Accelerator::GetShortcutText() const {
       break;
     case ui::VKEY_F11:
       string_id = IDS_APP_F11_KEY;
+      break;
+    case ui::VKEY_OEM_COMMA:
+      string_id = IDS_APP_COMMA_KEY;
+      break;
+    case ui::VKEY_OEM_PERIOD:
+      string_id = IDS_APP_PERIOD_KEY;
       break;
     default:
       break;

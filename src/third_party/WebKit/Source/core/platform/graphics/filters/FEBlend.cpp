@@ -27,7 +27,6 @@
 #include "core/platform/graphics/cpu/arm/filters/FEBlendNEON.h"
 #include "core/platform/graphics/filters/FEBlend.h"
 
-#include "core/platform/graphics/FloatPoint.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/text/TextStream.h"
@@ -39,7 +38,6 @@
 #include "SkBlendImageFilter.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
 
 typedef unsigned char (*BlendType)(unsigned char colorA, unsigned char colorB, unsigned char alphaA, unsigned char alphaB);
 
@@ -246,8 +244,8 @@ bool FEBlend::applySkia()
 
 SkImageFilter* FEBlend::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    SkAutoTUnref<SkImageFilter> foreground(builder->build(inputEffect(0)));
-    SkAutoTUnref<SkImageFilter> background(builder->build(inputEffect(1)));
+    SkAutoTUnref<SkImageFilter> foreground(builder->build(inputEffect(0), operatingColorSpace()));
+    SkAutoTUnref<SkImageFilter> background(builder->build(inputEffect(1), operatingColorSpace()));
     SkBlendImageFilter::Mode mode = toSkiaMode(m_mode);
     return new SkBlendImageFilter(mode, background, foreground);
 }

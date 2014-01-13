@@ -5,7 +5,6 @@
 #include "content/public/browser/browser_context.h"
 
 #if !defined(OS_IOS)
-#include "base/path_service.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/dom_storage/dom_storage_context_impl.h"
 #include "content/browser/download/download_manager_impl.h"
@@ -23,9 +22,8 @@
 #include "net/ssl/server_bound_cert_store.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ui/base/clipboard/clipboard.h"
-#include "webkit/database/database_tracker.h"
-#include "webkit/fileapi/external_mount_points.h"
+#include "webkit/browser/database/database_tracker.h"
+#include "webkit/browser/fileapi/external_mount_points.h"
 #endif // !OS_IOS
 
 using base::UserDataAdapter;
@@ -37,7 +35,6 @@ namespace content {
 namespace {
 
 // Key names on BrowserContext.
-const char kClipboardDestroyerKey[] = "clipboard_destroyer";
 const char kDownloadManagerKeyName[] = "download_manager";
 const char kMountPointsKey[] = "mount_points";
 const char kStorageParitionMapKeyName[] = "content_storage_partition_map";
@@ -94,42 +91,6 @@ void PurgeMemoryOnIOThread(appcache::AppCacheService* appcache_service) {
   appcache_service->PurgeMemory();
 }
 
-// OffTheRecordClipboardDestroyer is supposed to clear the clipboard in
-// destructor if current clipboard content came from corresponding OffTheRecord
-// browser context.
-class OffTheRecordClipboardDestroyer : public base::SupportsUserData::Data {
- public:
-  virtual ~OffTheRecordClipboardDestroyer() {
-    ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
-    ExamineClipboard(clipboard, ui::Clipboard::BUFFER_STANDARD);
-    if (ui::Clipboard::IsValidBuffer(ui::Clipboard::BUFFER_SELECTION))
-      ExamineClipboard(clipboard, ui::Clipboard::BUFFER_SELECTION);
-  }
-
-  ui::SourceTag GetAsSourceTag() {
-    return ui::SourceTag(this);
-  }
-
- private:
-  void ExamineClipboard(ui::Clipboard* clipboard,
-                        ui::Clipboard::Buffer buffer) {
-    ui::SourceTag source_tag = clipboard->ReadSourceTag(buffer);
-    if (source_tag == ui::SourceTag(this))
-      clipboard->Clear(buffer);
-  }
-};
-
-// Returns existing OffTheRecordClipboardDestroyer or creates one.
-OffTheRecordClipboardDestroyer* GetClipboardDestroyerForBrowserContext(
-    BrowserContext* context) {
-  if (base::SupportsUserData::Data* data = context->GetUserData(
-          kClipboardDestroyerKey))
-    return static_cast<OffTheRecordClipboardDestroyer*>(data);
-  OffTheRecordClipboardDestroyer* data = new OffTheRecordClipboardDestroyer;
-  context->SetUserData(kClipboardDestroyerKey, data);
-  return data;
-}
-
 }  // namespace
 
 // static
@@ -156,18 +117,18 @@ DownloadManager* BrowserContext::GetDownloadManager(
   if (!context->GetUserData(kDownloadManagerKeyName)) {
     ResourceDispatcherHostImpl* rdh = ResourceDispatcherHostImpl::Get();
     DCHECK(rdh);
-    scoped_refptr<DownloadManager> download_manager =
+    DownloadManager* download_manager =
         new DownloadManagerImpl(
             GetContentClient()->browser()->GetNetLog(), context);
 
     context->SetUserData(
         kDownloadManagerKeyName,
-        new UserDataAdapter<DownloadManager>(download_manager));
+        download_manager);
     download_manager->SetDelegate(context->GetDownloadManagerDelegate());
   }
 
-  return UserDataAdapter<DownloadManager>::Get(
-      context, kDownloadManagerKeyName);
+  return static_cast<DownloadManager*>(
+      context->GetUserData(kDownloadManagerKeyName));
 }
 
 // static
@@ -184,17 +145,7 @@ fileapi::ExternalMountPoints* BrowserContext::GetMountPoints(
         fileapi::ExternalMountPoints::CreateRefCounted();
     context->SetUserData(
         kMountPointsKey,
-        new UserDataAdapter<fileapi::ExternalMountPoints>(
-            mount_points));
-
-    // Add Downloads mount point.
-    base::FilePath home_path;
-    if (PathService::Get(base::DIR_HOME, &home_path)) {
-      mount_points->RegisterFileSystem(
-          "Downloads",
-          fileapi::kFileSystemTypeNativeLocal,
-          home_path.AppendASCII("Downloads"));
-    }
+        new UserDataAdapter<fileapi::ExternalMountPoints>(mount_points.get()));
   }
 
   return UserDataAdapter<fileapi::ExternalMountPoints>::Get(
@@ -311,16 +262,6 @@ void BrowserContext::PurgeMemory(BrowserContext* browser_context) {
                           base::Bind(&PurgeDOMStorageContextInPartition));
 }
 
-ui::SourceTag BrowserContext::GetMarkerForOffTheRecordContext(
-    BrowserContext* context) {
-  if (context && context->IsOffTheRecord()) {
-    OffTheRecordClipboardDestroyer* clipboard_destroyer =
-        GetClipboardDestroyerForBrowserContext(context);
-
-    return clipboard_destroyer->GetAsSourceTag();
-  }
-  return ui::SourceTag();
-}
 #endif  // !OS_IOS
 
 BrowserContext::~BrowserContext() {

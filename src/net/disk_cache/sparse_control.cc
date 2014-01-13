@@ -8,8 +8,8 @@
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/time.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -104,7 +104,7 @@ void ChildrenDeleter::Start(char* buffer, int len) {
 
 void ChildrenDeleter::ReadData(disk_cache::Addr address, int len) {
   DCHECK(address.is_block_file());
-  if (!backend_)
+  if (!backend_.get())
     return Release();
 
   disk_cache::File* file(backend_->File(address));
@@ -127,7 +127,7 @@ void ChildrenDeleter::ReadData(disk_cache::Addr address, int len) {
 
 void ChildrenDeleter::DeleteChildren() {
   int child_id = 0;
-  if (!children_map_.FindNextSetBit(&child_id) || !backend_) {
+  if (!children_map_.FindNextSetBit(&child_id) || !backend_.get()) {
     // We are done. Just delete this object.
     return Release();
   }
@@ -136,8 +136,8 @@ void ChildrenDeleter::DeleteChildren() {
   children_map_.Set(child_id, false);
 
   // Post a task to delete the next child.
-  MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-      &ChildrenDeleter::DeleteChildren, this));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&ChildrenDeleter::DeleteChildren, this));
 }
 
 // Returns the NetLog event type corresponding to a SparseOperation.
@@ -255,7 +255,7 @@ int SparseControl::StartIO(SparseOperation op, int64 offset, net::IOBuffer* buf,
   if (offset + buf_len >= 0x1000000000LL || offset + buf_len < 0)
     return net::ERR_CACHE_OPERATION_NOT_SUPPORTED;
 
-  DCHECK(!user_buf_);
+  DCHECK(!user_buf_.get());
   DCHECK(user_callback_.is_null());
 
   if (!buf && (op == kReadOperation || op == kWriteOperation))
@@ -350,18 +350,20 @@ void SparseControl::DeleteChildren(EntryImpl* entry) {
 
   entry->net_log().AddEvent(net::NetLog::TYPE_SPARSE_DELETE_CHILDREN);
 
-  DCHECK(entry->backend_);
-  ChildrenDeleter* deleter = new ChildrenDeleter(entry->backend_,
+  DCHECK(entry->backend_.get());
+  ChildrenDeleter* deleter = new ChildrenDeleter(entry->backend_.get(),
                                                  entry->GetKey());
   // The object will self destruct when finished.
   deleter->AddRef();
 
   if (buffer) {
-    MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-        &ChildrenDeleter::Start, deleter, buffer, data_len));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&ChildrenDeleter::Start, deleter, buffer, data_len));
   } else {
-    MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-        &ChildrenDeleter::ReadData, deleter, address, data_len));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&ChildrenDeleter::ReadData, deleter, address, data_len));
   }
 }
 
@@ -381,9 +383,8 @@ int SparseControl::CreateSparseEntry() {
   scoped_refptr<net::IOBuffer> buf(
       new net::WrappedIOBuffer(reinterpret_cast<char*>(&sparse_header_)));
 
-  int rv = entry_->WriteData(
-      kSparseIndex, 0, buf, sizeof(sparse_header_), CompletionCallback(),
-      false);
+  int rv = entry_->WriteData(kSparseIndex, 0, buf.get(), sizeof(sparse_header_),
+                             CompletionCallback(), false);
   if (rv != sizeof(sparse_header_)) {
     DLOG(ERROR) << "Unable to save sparse_header_";
     return net::ERR_CACHE_OPERATION_NOT_SUPPORTED;
@@ -413,8 +414,8 @@ int SparseControl::OpenSparseEntry(int data_len) {
       new net::WrappedIOBuffer(reinterpret_cast<char*>(&sparse_header_)));
 
   // Read header.
-  int rv = entry_->ReadData(
-      kSparseIndex, 0, buf, sizeof(sparse_header_), CompletionCallback());
+  int rv = entry_->ReadData(kSparseIndex, 0, buf.get(), sizeof(sparse_header_),
+                            CompletionCallback());
   if (rv != static_cast<int>(sizeof(sparse_header_)))
     return net::ERR_CACHE_READ_FAILURE;
 
@@ -427,8 +428,8 @@ int SparseControl::OpenSparseEntry(int data_len) {
 
   // Read the actual bitmap.
   buf = new net::IOBuffer(map_len);
-  rv = entry_->ReadData(kSparseIndex, sizeof(sparse_header_), buf, map_len,
-                        CompletionCallback());
+  rv = entry_->ReadData(kSparseIndex, sizeof(sparse_header_), buf.get(),
+                        map_len, CompletionCallback());
   if (rv != map_len)
     return net::ERR_CACHE_READ_FAILURE;
 
@@ -453,7 +454,7 @@ bool SparseControl::OpenChild() {
   if (!ChildPresent())
     return ContinueWithoutChild(key);
 
-  if (!entry_->backend_)
+  if (!entry_->backend_.get())
     return false;
 
   child_ = entry_->backend_->OpenEntryImpl(key);
@@ -470,7 +471,7 @@ bool SparseControl::OpenChild() {
       new net::WrappedIOBuffer(reinterpret_cast<char*>(&child_data_)));
 
   // Read signature.
-  int rv = child_->ReadData(kSparseIndex, 0, buf, sizeof(child_data_),
+  int rv = child_->ReadData(kSparseIndex, 0, buf.get(), sizeof(child_data_),
                             CompletionCallback());
   if (rv != sizeof(child_data_))
     return KillChildAndContinue(key, true);  // This is a fatal failure.
@@ -494,9 +495,8 @@ void SparseControl::CloseChild() {
       new net::WrappedIOBuffer(reinterpret_cast<char*>(&child_data_)));
 
   // Save the allocation bitmap before closing the child entry.
-  int rv = child_->WriteData(kSparseIndex, 0, buf, sizeof(child_data_),
-                             CompletionCallback(),
-      false);
+  int rv = child_->WriteData(kSparseIndex, 0, buf.get(), sizeof(child_data_),
+                             CompletionCallback(), false);
   if (rv != sizeof(child_data_))
     DLOG(ERROR) << "Failed to save child data";
   child_->Release();
@@ -528,7 +528,7 @@ bool SparseControl::ContinueWithoutChild(const std::string& key) {
   if (kGetRangeOperation == operation_)
     return true;
 
-  if (!entry_->backend_)
+  if (!entry_->backend_.get())
     return false;
 
   child_ = entry_->backend_->CreateEntryImpl(key);
@@ -565,8 +565,8 @@ void SparseControl::WriteSparseData() {
       reinterpret_cast<const char*>(children_map_.GetMap())));
 
   int len = children_map_.ArraySize() * 4;
-  int rv = entry_->WriteData(kSparseIndex, sizeof(sparse_header_), buf, len,
-                             CompletionCallback(), false);
+  int rv = entry_->WriteData(kSparseIndex, sizeof(sparse_header_), buf.get(),
+                             len, CompletionCallback(), false);
   if (rv != len) {
     DLOG(ERROR) << "Unable to save sparse map";
   }
@@ -669,7 +669,7 @@ void SparseControl::InitChildData() {
   scoped_refptr<net::WrappedIOBuffer> buf(
       new net::WrappedIOBuffer(reinterpret_cast<char*>(&child_data_)));
 
-  int rv = child_->WriteData(kSparseIndex, 0, buf, sizeof(child_data_),
+  int rv = child_->WriteData(kSparseIndex, 0, buf.get(), sizeof(child_data_),
                              CompletionCallback(), false);
   if (rv != sizeof(child_data_))
     DLOG(ERROR) << "Failed to save child data";
@@ -725,7 +725,7 @@ bool SparseControl::DoChildIO() {
             CreateNetLogSparseReadWriteCallback(child_->net_log().source(),
                                                 child_len_));
       }
-      rv = child_->ReadDataImpl(kSparseData, child_offset_, user_buf_,
+      rv = child_->ReadDataImpl(kSparseData, child_offset_, user_buf_.get(),
                                 child_len_, callback);
       break;
     case kWriteOperation:
@@ -735,7 +735,7 @@ bool SparseControl::DoChildIO() {
             CreateNetLogSparseReadWriteCallback(child_->net_log().source(),
                                                 child_len_));
       }
-      rv = child_->WriteDataImpl(kSparseData, child_offset_, user_buf_,
+      rv = child_->WriteDataImpl(kSparseData, child_offset_, user_buf_.get(),
                                  child_len_, callback, false);
       break;
     case kGetRangeOperation:
@@ -825,7 +825,7 @@ void SparseControl::DoChildIOCompleted(int result) {
   buf_len_ -= result;
 
   // We'll be reusing the user provided buffer for the next chunk.
-  if (buf_len_ && user_buf_)
+  if (buf_len_ && user_buf_.get())
     user_buf_->DidConsume(result);
 }
 

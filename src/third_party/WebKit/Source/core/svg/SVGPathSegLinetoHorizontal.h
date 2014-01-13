@@ -21,7 +21,6 @@
 #ifndef SVGPathSegLinetoHorizontal_h
 #define SVGPathSegLinetoHorizontal_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGPathSegWithContext.h"
 
 namespace WebCore {
@@ -56,6 +55,7 @@ private:
     SVGPathSegLinetoHorizontalAbs(SVGPathElement* element, SVGPathSegRole role, float x)
         : SVGPathSegLinetoHorizontal(element, role, x)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_LINETO_HORIZONTAL_ABS; }
@@ -73,6 +73,7 @@ private:
     SVGPathSegLinetoHorizontalRel(SVGPathElement* element, SVGPathSegRole role, float x)
         : SVGPathSegLinetoHorizontal(element, role, x)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_LINETO_HORIZONTAL_REL; }
@@ -81,5 +82,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

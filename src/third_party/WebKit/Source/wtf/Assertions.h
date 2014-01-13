@@ -38,11 +38,6 @@
 
    Defining any of the symbols explicitly prevents this from having any effect.
 
-   MSVC7 note: variadic macro support was added in MSVC8, so for now we disable
-   those macros in MSVC7. For more info, see the MSDN document on variadic
-   macros here:
-
-   http://msdn2.microsoft.com/en-us/library/ms177415(VS.80).aspx
 */
 
 #include <wtf/Platform.h>
@@ -53,17 +48,13 @@
 #include <inttypes.h>
 #endif
 
+#include "wtf/WTFExport.h"
+
 #ifdef NDEBUG
 /* Disable ASSERT* macros in release mode. */
 #define ASSERTIONS_DISABLED_DEFAULT 1
 #else
 #define ASSERTIONS_DISABLED_DEFAULT 0
-#endif
-
-#if COMPILER(MSVC7_OR_LOWER)
-#define HAVE_VARIADIC_MACRO 0
-#else
-#define HAVE_VARIADIC_MACRO 1
 #endif
 
 #ifndef BACKTRACE_DISABLED
@@ -75,11 +66,7 @@
 #endif
 
 #ifndef ASSERT_MSG_DISABLED
-#if HAVE(VARIADIC_MACRO)
 #define ASSERT_MSG_DISABLED ASSERTIONS_DISABLED_DEFAULT
-#else
-#define ASSERT_MSG_DISABLED 1
-#endif
 #endif
 
 #ifndef ASSERT_ARG_DISABLED
@@ -87,27 +74,15 @@
 #endif
 
 #ifndef FATAL_DISABLED
-#if HAVE(VARIADIC_MACRO)
 #define FATAL_DISABLED ASSERTIONS_DISABLED_DEFAULT
-#else
-#define FATAL_DISABLED 1
-#endif
 #endif
 
 #ifndef ERROR_DISABLED
-#if HAVE(VARIADIC_MACRO)
 #define ERROR_DISABLED ASSERTIONS_DISABLED_DEFAULT
-#else
-#define ERROR_DISABLED 1
-#endif
 #endif
 
 #ifndef LOG_DISABLED
-#if HAVE(VARIADIC_MACRO)
 #define LOG_DISABLED ASSERTIONS_DISABLED_DEFAULT
-#else
-#define LOG_DISABLED 1
-#endif
 #endif
 
 #if COMPILER(GCC)
@@ -139,23 +114,23 @@ typedef struct {
     WTFLogChannelState state;
 } WTFLogChannel;
 
-void WTFReportAssertionFailure(const char* file, int line, const char* function, const char* assertion);
-void WTFReportAssertionFailureWithMessage(const char* file, int line, const char* function, const char* assertion, const char* format, ...) WTF_ATTRIBUTE_PRINTF(5, 6);
-void WTFReportArgumentAssertionFailure(const char* file, int line, const char* function, const char* argName, const char* assertion);
-void WTFReportFatalError(const char* file, int line, const char* function, const char* format, ...) WTF_ATTRIBUTE_PRINTF(4, 5);
-void WTFReportError(const char* file, int line, const char* function, const char* format, ...) WTF_ATTRIBUTE_PRINTF(4, 5);
-void WTFLog(WTFLogChannel*, const char* format, ...) WTF_ATTRIBUTE_PRINTF(2, 3);
-void WTFLogVerbose(const char* file, int line, const char* function, WTFLogChannel*, const char* format, ...) WTF_ATTRIBUTE_PRINTF(5, 6);
-void WTFLogAlways(const char* format, ...) WTF_ATTRIBUTE_PRINTF(1, 2);
+WTF_EXPORT void WTFReportAssertionFailure(const char* file, int line, const char* function, const char* assertion);
+WTF_EXPORT void WTFReportAssertionFailureWithMessage(const char* file, int line, const char* function, const char* assertion, const char* format, ...) WTF_ATTRIBUTE_PRINTF(5, 6);
+WTF_EXPORT void WTFReportArgumentAssertionFailure(const char* file, int line, const char* function, const char* argName, const char* assertion);
+WTF_EXPORT void WTFReportFatalError(const char* file, int line, const char* function, const char* format, ...) WTF_ATTRIBUTE_PRINTF(4, 5);
+WTF_EXPORT void WTFReportError(const char* file, int line, const char* function, const char* format, ...) WTF_ATTRIBUTE_PRINTF(4, 5);
+WTF_EXPORT void WTFLog(WTFLogChannel*, const char* format, ...) WTF_ATTRIBUTE_PRINTF(2, 3);
+WTF_EXPORT void WTFLogVerbose(const char* file, int line, const char* function, WTFLogChannel*, const char* format, ...) WTF_ATTRIBUTE_PRINTF(5, 6);
+WTF_EXPORT void WTFLogAlways(const char* format, ...) WTF_ATTRIBUTE_PRINTF(1, 2);
 
-void WTFGetBacktrace(void** stack, int* size);
-void WTFReportBacktrace();
-void WTFPrintBacktrace(void** stack, int size);
+WTF_EXPORT void WTFGetBacktrace(void** stack, int* size);
+WTF_EXPORT void WTFReportBacktrace();
+WTF_EXPORT void WTFPrintBacktrace(void** stack, int size);
 
 typedef void (*WTFCrashHookFunction)();
-void WTFSetCrashHook(WTFCrashHookFunction);
-void WTFInvokeCrashHook();
-void WTFInstallReportBacktraceOnCrashHook();
+WTF_EXPORT void WTFSetCrashHook(WTFCrashHookFunction);
+WTF_EXPORT void WTFInvokeCrashHook();
+WTF_EXPORT void WTFInstallReportBacktraceOnCrashHook();
 
 #ifdef __cplusplus
 }
@@ -163,7 +138,7 @@ void WTFInstallReportBacktraceOnCrashHook();
 
 /* IMMEDIATE_CRASH() - Like CRASH() below but crashes in the fastest, simplest possible way with no attempt at logging. */
 #ifndef IMMEDIATE_CRASH
-#if COMPILER(CLANG)
+#if COMPILER(GCC)
 #define IMMEDIATE_CRASH() __builtin_trap()
 #else
 #define IMMEDIATE_CRASH() ((void(*)())0)()
@@ -225,13 +200,7 @@ void WTFInstallReportBacktraceOnCrashHook();
 #define ASSERT_NOT_REACHED() ((void)0)
 #define NO_RETURN_DUE_TO_ASSERT
 
-#if COMPILER(INTEL) && !OS(WINDOWS)
-template<typename T>
-inline void assertUnused(T& x) { (void)x; }
-#define ASSERT_UNUSED(variable, assertion) (assertUnused(variable))
-#else
 #define ASSERT_UNUSED(variable, assertion) ((void)variable)
-#endif
 
 #else
 
@@ -258,7 +227,7 @@ inline void assertUnused(T& x) { (void)x; }
 
 #endif
 
-/* ASSERT_WITH_SECURITY_IMPLICATION
+/* ASSERT_WITH_SECURITY_IMPLICATION / RELEASE_ASSERT_WITH_SECURITY_IMPLICATION
 
    Use in places where failure of the assertion indicates a possible security
    vulnerability. Classes of these vulnerabilities include bad casts, out of
@@ -274,17 +243,18 @@ inline void assertUnused(T& x) { (void)x; }
          CRASH()) : \
         (void)0)
 
+#define RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(assertion) ASSERT_WITH_SECURITY_IMPLICATION(assertion)
+
 #else
 
 #define ASSERT_WITH_SECURITY_IMPLICATION(assertion) ASSERT(assertion)
+#define RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(assertion) RELEASE_ASSERT(assertion)
 
 #endif
 
 /* ASSERT_WITH_MESSAGE */
 
-#if COMPILER(MSVC7_OR_LOWER)
-#define ASSERT_WITH_MESSAGE(assertion) ((void)0)
-#elif ASSERT_MSG_DISABLED
+#if ASSERT_MSG_DISABLED
 #define ASSERT_WITH_MESSAGE(assertion, ...) ((void)0)
 #else
 #define ASSERT_WITH_MESSAGE(assertion, ...) do \
@@ -297,16 +267,8 @@ while (0)
 
 /* ASSERT_WITH_MESSAGE_UNUSED */
 
-#if COMPILER(MSVC7_OR_LOWER)
-#define ASSERT_WITH_MESSAGE_UNUSED(variable, assertion) ((void)0)
-#elif ASSERT_MSG_DISABLED
-#if COMPILER(INTEL) && !OS(WINDOWS)
-template<typename T>
-inline void assertWithMessageUnused(T& x) { (void)x; }
-#define ASSERT_WITH_MESSAGE_UNUSED(variable, assertion, ...) (assertWithMessageUnused(variable))
-#else
+#if ASSERT_MSG_DISABLED
 #define ASSERT_WITH_MESSAGE_UNUSED(variable, assertion, ...) ((void)variable)
-#endif
 #else
 #define ASSERT_WITH_MESSAGE_UNUSED(variable, assertion, ...) do \
     if (!(assertion)) { \
@@ -347,9 +309,7 @@ while (0)
 
 /* FATAL */
 
-#if COMPILER(MSVC7_OR_LOWER)
-#define FATAL() ((void)0)
-#elif FATAL_DISABLED
+#if FATAL_DISABLED
 #define FATAL(...) ((void)0)
 #else
 #define FATAL(...) do { \
@@ -360,9 +320,7 @@ while (0)
 
 /* LOG_ERROR */
 
-#if COMPILER(MSVC7_OR_LOWER)
-#define LOG_ERROR() ((void)0)
-#elif ERROR_DISABLED
+#if ERROR_DISABLED
 #define LOG_ERROR(...) ((void)0)
 #else
 #define LOG_ERROR(...) WTFReportError(__FILE__, __LINE__, WTF_PRETTY_FUNCTION, __VA_ARGS__)
@@ -370,9 +328,7 @@ while (0)
 
 /* LOG */
 
-#if COMPILER(MSVC7_OR_LOWER)
-#define LOG() ((void)0)
-#elif LOG_DISABLED
+#if LOG_DISABLED
 #define LOG(channel, ...) ((void)0)
 #else
 #define LOG(channel, ...) WTFLog(&JOIN_LOG_CHANNEL_WITH_PREFIX(LOG_CHANNEL_PREFIX, channel), __VA_ARGS__)
@@ -382,9 +338,7 @@ while (0)
 
 /* LOG_VERBOSE */
 
-#if COMPILER(MSVC7_OR_LOWER)
-#define LOG_VERBOSE(channel) ((void)0)
-#elif LOG_DISABLED
+#if LOG_DISABLED
 #define LOG_VERBOSE(channel, ...) ((void)0)
 #else
 #define LOG_VERBOSE(channel, ...) WTFLogVerbose(__FILE__, __LINE__, WTF_PRETTY_FUNCTION, &JOIN_LOG_CHANNEL_WITH_PREFIX(LOG_CHANNEL_PREFIX, channel), __VA_ARGS__)

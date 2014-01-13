@@ -22,15 +22,12 @@
 #include "config.h"
 #include "core/css/StyleRuleImport.h"
 
-#include "core/css/CSSStyleSheet.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/loader/cache/CachedCSSStyleSheet.h"
 #include "core/loader/cache/CachedResourceLoader.h"
 #include "core/loader/cache/CachedResourceRequest.h"
 #include "core/loader/cache/CachedResourceRequestInitiators.h"
-#include "core/page/SecurityOrigin.h"
-#include <wtf/StdLibExtras.h>
 
 namespace WebCore {
 
@@ -117,8 +114,7 @@ void StyleRuleImport::requestStyleSheet()
         rootSheet = sheet;
     }
 
-    CachedResourceRequest request(ResourceRequest(absURL), m_parentStyleSheet->charset());
-    request.setInitiator(cachedResourceRequestInitiators().css);
+    CachedResourceRequest request(ResourceRequest(absURL), cachedResourceRequestInitiators().css, m_parentStyleSheet->charset());
     if (m_parentStyleSheet->isUserStyleSheet())
         m_cachedSheet = cachedResourceLoader->requestUserCSSStyleSheet(request);
     else

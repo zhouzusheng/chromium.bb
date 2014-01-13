@@ -32,16 +32,14 @@
 #include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Range.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
-#include "core/page/Frame.h"
 #include "core/platform/graphics/Font.h"
 #include "core/platform/text/TextBoundaries.h"
-#include "core/platform/text/TextBreakIterator.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderTableCell.h"
@@ -739,7 +737,7 @@ static bool shouldEmitNewlineForNode(Node* node, bool emitsOriginalText)
 
     if (renderer ? !renderer->isBR() : !node->hasTagName(brTag))
         return false;
-    return emitsOriginalText || !(node->isInShadowTree() && node->shadowHost()->toInputElement());
+    return emitsOriginalText || !(node->isInShadowTree() && node->shadowHost()->hasTagName(inputTag));
 }
 
 static bool shouldEmitNewlinesBeforeAndAfterNode(Node* node)
@@ -1664,7 +1662,7 @@ static UStringSearch* createSearcher()
     // but it doesn't matter exactly what it is, since we don't perform any searches
     // without setting both the pattern and the text.
     UErrorCode status = U_ZERO_ERROR;
-    String searchCollatorName = makeString(currentSearchLocaleID(), "@collation=search");
+    String searchCollatorName = currentSearchLocaleID() + String(ASCIILiteral("@collation=search"));
     UStringSearch* searcher = usearch_open(&newlineCharacter, 1, &newlineCharacter, 1, searchCollatorName.utf8().data(), 0, &status);
     ASSERT(status == U_ZERO_ERROR || status == U_USING_FALLBACK_WARNING || status == U_USING_DEFAULT_WARNING);
     return searcher;

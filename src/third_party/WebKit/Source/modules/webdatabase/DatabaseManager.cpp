@@ -26,11 +26,9 @@
 #include "config.h"
 #include "modules/webdatabase/DatabaseManager.h"
 
-#include "bindings/v8/ScriptController.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/inspector/InspectorDatabaseInstrumentation.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/platform/Logging.h"
 #include "modules/webdatabase/AbstractDatabaseServer.h"
 #include "modules/webdatabase/Database.h"
@@ -43,6 +41,7 @@
 #include "modules/webdatabase/DatabaseServer.h"
 #include "modules/webdatabase/DatabaseSync.h"
 #include "modules/webdatabase/DatabaseTask.h"
+#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -222,7 +221,6 @@ PassRefPtr<Database> DatabaseManager::openDatabase(ScriptExecutionContext* conte
     unsigned long estimatedSize, PassRefPtr<DatabaseCallback> creationCallback,
     DatabaseError& error)
 {
-    ScriptController::initializeThreading();
     ASSERT(error == DatabaseError::None);
 
     bool setVersionInNewDatabase = !creationCallback;

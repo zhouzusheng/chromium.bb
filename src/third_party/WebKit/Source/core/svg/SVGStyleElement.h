@@ -21,7 +21,6 @@
 #ifndef SVGStyleElement_h
 #define SVGStyleElement_h
 
-#if ENABLE(SVG)
 #include "core/dom/StyleElement.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGLangSpace.h"
@@ -41,13 +40,13 @@ public:
     void setDisabled(bool);
                           
     virtual const AtomicString& type() const;
-    void setType(const AtomicString&, ExceptionCode&);
+    void setType(const AtomicString&);
 
     virtual const AtomicString& media() const;
-    void setMedia(const AtomicString&, ExceptionCode&);
+    void setMedia(const AtomicString&);
 
     virtual String title() const;
-    void setTitle(const AtomicString&, ExceptionCode&);
+    void setTitle(const AtomicString&);
 
 private:
     SVGStyleElement(const QualifiedName&, Document*, bool createdByParser);
@@ -55,6 +54,7 @@ private:
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void didNotifySubtreeInsertions(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
@@ -70,5 +70,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif // SVGStyleElement_h

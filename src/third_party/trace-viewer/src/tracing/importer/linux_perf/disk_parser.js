@@ -34,7 +34,7 @@ base.exportTo('tracing.importer.linux_perf', function() {
     openAsyncSlice: function(ts, category, threadName, pid, key, name) {
       var kthread = this.importer.getOrCreateKernelThread(
           category + ':' + threadName, pid);
-      var slice = new tracing.model.AsyncSlice(
+      var slice = new tracing.trace_model.AsyncSlice(
           category, name, tracing.getStringColorId(name), ts);
       slice.startThread = kthread.thread;
 
@@ -53,8 +53,10 @@ base.exportTo('tracing.importer.linux_perf', function() {
           slice.duration = ts - slice.start;
           slice.args = args;
           slice.endThread = kthread.thread;
-          slice.subSlices = [new tracing.model.Slice(category, slice.title,
-              slice.colorId, slice.start, slice.args, slice.duration)];
+          slice.subSlices = [
+            new tracing.trace_model.Slice(category, slice.title,
+                slice.colorId, slice.start, slice.args, slice.duration)
+          ];
           kthread.thread.asyncSlices.push(slice);
           delete kthread.openAsyncSlices[key];
         }
@@ -91,10 +93,10 @@ base.exportTo('tracing.importer.linux_perf', function() {
       var key = device + '-' + inode;
       this.closeAsyncSlice(ts, 'ext4', eventBase.threadName, eventBase.pid,
           key, {
-          device: device,
-          inode: inode,
-          error: error
-      });
+            device: device,
+            inode: inode,
+            error: error
+          });
       return true;
     },
 
@@ -160,13 +162,13 @@ base.exportTo('tracing.importer.linux_perf', function() {
       var key = device + '-' + sector + '-' + numSectors;
       this.closeAsyncSlice(ts, 'block', eventBase.threadName, eventBase.pid,
           key, {
-          device: device,
-          sector: sector,
-          numSectors: numSectors,
-          error: error
-      });
+            device: device,
+            sector: sector,
+            numSectors: numSectors,
+            error: error
+          });
       return true;
-    },
+    }
   };
 
   Parser.registerSubtype(DiskParser);

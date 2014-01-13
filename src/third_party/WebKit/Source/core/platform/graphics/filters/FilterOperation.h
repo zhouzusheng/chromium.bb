@@ -26,18 +26,16 @@
 #ifndef FilterOperation_h
 #define FilterOperation_h
 
+#include "core/loader/cache/CachedSVGDocumentReference.h"
 #include "core/platform/Length.h"
 #include "core/platform/graphics/Color.h"
 #include "core/platform/graphics/LayoutSize.h"
+#include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
-
-#if ENABLE(SVG)
-#include "core/loader/cache/CachedSVGDocumentReference.h"
-#endif
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 // Annoyingly, wingdi.h #defines this.
 #ifdef PASSTHROUGH
@@ -161,13 +159,11 @@ public:
     const String& url() const { return m_url; }
     const String& fragment() const { return m_fragment; }
 
-#if ENABLE(SVG)
     CachedSVGDocumentReference* cachedSVGDocumentReference() const { return m_cachedSVGDocumentReference.get(); }
     void setCachedSVGDocumentReference(PassOwnPtr<CachedSVGDocumentReference> cachedSVGDocumentReference) { m_cachedSVGDocumentReference = cachedSVGDocumentReference; }
-#endif
 
     FilterEffect* filterEffect() const { return m_filterEffect.get(); }
-    void setFilterEffect(PassRefPtr<FilterEffect> filterEffect) { m_filterEffect = filterEffect; }
+    void setFilterEffect(PassRefPtr<FilterEffect> filterEffect, PassRefPtr<Filter> filter) { m_filterEffect = filterEffect; m_filter = filter; }
 
 private:
 
@@ -188,10 +184,9 @@ private:
 
     String m_url;
     String m_fragment;
-#if ENABLE(SVG)
     OwnPtr<CachedSVGDocumentReference> m_cachedSVGDocumentReference;
-#endif
     RefPtr<FilterEffect> m_filterEffect;
+    RefPtr<Filter> m_filter;
 };
 
 // GRAYSCALE, SEPIA, SATURATE and HUE_ROTATE are variations on a basic color matrix effect.

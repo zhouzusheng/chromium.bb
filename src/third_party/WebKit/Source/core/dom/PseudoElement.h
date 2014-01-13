@@ -28,9 +28,8 @@
 #define PseudoElement_h
 
 #include "core/dom/Element.h"
-#include "core/dom/Event.h"
 #include "core/rendering/style/RenderStyle.h"
-#include <wtf/Forward.h>
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -43,7 +42,7 @@ public:
     ~PseudoElement();
 
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
-    virtual void attach() OVERRIDE;
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
 
     virtual bool canStartSelection() const OVERRIDE { return false; }

@@ -21,10 +21,10 @@
 #include "net/base/net_log.h"
 #include "net/base/request_priority.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/spdy/spdy_buffer.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_header_block.h"
 #include "net/spdy/spdy_protocol.h"
-#include "net/spdy/spdy_session.h"
 #include "net/ssl/server_bound_cert_service.h"
 #include "net/ssl/ssl_client_cert_type.h"
 
@@ -32,14 +32,35 @@ namespace net {
 
 class AddressList;
 class IPEndPoint;
+struct LoadTimingInfo;
 class SSLCertRequestInfo;
 class SSLInfo;
+class SpdySession;
 
-// Returned by some SpdyStream::Delegate functions to indicate whether
-// there's more data to send.
+enum SpdyStreamType {
+  // The most general type of stream; there are no restrictions on
+  // when data can be sent and received.
+  SPDY_BIDIRECTIONAL_STREAM,
+  // A stream where the client sends a request with possibly a body,
+  // and the server then sends a response with a body.
+  SPDY_REQUEST_RESPONSE_STREAM,
+  // A server-initiated stream where the server just sends a response
+  // with a body and the client does not send anything.
+  SPDY_PUSH_STREAM
+};
+
+// Passed to some SpdyStream functions to indicate whether there's
+// more data to send.
 enum SpdySendStatus {
   MORE_DATA_TO_SEND,
   NO_MORE_DATA_TO_SEND
+};
+
+// Returned by SpdyStream::OnResponseHeadersUpdated() to indicate
+// whether the current response headers are complete or not.
+enum SpdyResponseHeadersStatus {
+  RESPONSE_HEADERS_ARE_INCOMPLETE,
+  RESPONSE_HEADERS_ARE_COMPLETE
 };
 
 // The SpdyStream is used by the SpdySession to represent each stream known
@@ -49,52 +70,82 @@ enum SpdySendStatus {
 // a SpdyNetworkTransaction) will maintain a reference to the stream.  When
 // initiated by the server, only the SpdySession will maintain any reference,
 // until such a time as a client object requests a stream for the path.
-class NET_EXPORT_PRIVATE SpdyStream
-    : public base::RefCounted<SpdyStream> {
+class NET_EXPORT_PRIVATE SpdyStream {
  public:
   // Delegate handles protocol specific behavior of spdy stream.
   class NET_EXPORT_PRIVATE Delegate {
    public:
     Delegate() {}
 
-    // Called when SYN frame has been sent.
-    // Returns true if no more data to be sent after SYN frame.
-    virtual SpdySendStatus OnSendHeadersComplete() = 0;
+    // Called when the request headers have been sent. Never called
+    // for push streams. Must not cause the stream to be closed.
+    virtual void OnRequestHeadersSent() = 0;
 
-    // Called when stream is ready to send data.
-    // Returns network error code. OK when it successfully sent data.
-    // ERR_IO_PENDING when performing operation asynchronously.
-    virtual int OnSendBody() = 0;
+    // WARNING: This function is complicated! Be sure to read the
+    // whole comment below if you're working with code that implements
+    // or calls this function.
+    //
+    // Called when the response headers are updated from the
+    // server. |response_headers| contains the set of all headers
+    // received up to this point; delegates can assume that any
+    // headers previously received remain unchanged.
+    //
+    // This is called at least once before any data is received. If
+    // RESPONSE_HEADERS_ARE_INCOMPLETE is returned, this will be
+    // called again when more headers are received until
+    // RESPONSE_HEADERS_ARE_COMPLETE is returned, and any data
+    // received before then will be treated as a protocol error.
+    //
+    // If RESPONSE_HEADERS_ARE_INCOMPLETE is returned, the delegate
+    // must not have closed the stream. Otherwise, if
+    // RESPONSE_HEADERS_ARE_COMPLETE is returned, the delegate has
+    // processed the headers successfully. However, it still may have
+    // closed the stream, e.g. if the headers indicated an error
+    // condition.
+    //
+    // Some type-specific behavior:
+    //
+    //   - For bidirectional streams, this may be called even after
+    //     data is received, but it is expected that
+    //     RESPONSE_HEADERS_ARE_COMPLETE is always returned. If
+    //     RESPONSE_HEADERS_ARE_INCOMPLETE is returned, this is
+    //     treated as a protocol error.
+    //
+    //   - For request/response streams, this function is called
+    //     exactly once before data is received, and it is expected
+    //     that RESPONSE_HEADERS_ARE_COMPLETE is returned. If
+    //     RESPONSE_HEADERS_ARE_INCOMPLETE is returned, this is
+    //     treated as a protocol error.
+    //
+    //   - For push streams, it is expected that this function will be
+    //     called until RESPONSE_HEADERS_ARE_COMPLETE is returned
+    //     before any data is received; any deviation from this is
+    //     treated as a protocol error.
+    //
+    // TODO(akalin): Treat headers received after data has been
+    // received as a protocol error for non-bidirectional streams.
+    virtual SpdyResponseHeadersStatus OnResponseHeadersUpdated(
+        const SpdyHeaderBlock& response_headers) = 0;
 
-    // Called when body data has been sent. |bytes_sent| is the number
-    // of bytes that has been sent (may be zero). Must return whether
-    // there's more body data to send.
-    virtual SpdySendStatus OnSendBodyComplete(size_t bytes_sent) = 0;
+    // Called when data is received after all required response
+    // headers have been received. |buffer| may be NULL, which signals
+    // EOF.  Must return OK if the data was received successfully, or
+    // a network error code otherwise.
+    //
+    // May cause the stream to be closed.
+    virtual void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) = 0;
 
-    // Called when the SYN_STREAM, SYN_REPLY, or HEADERS frames are received.
-    // Normal streams will receive a SYN_REPLY and optional HEADERS frames.
-    // Pushed streams will receive a SYN_STREAM and optional HEADERS frames.
-    // Because a stream may have a SYN_* frame and multiple HEADERS frames,
-    // this callback may be called multiple times.
-    // |status| indicates network error. Returns network error code.
-    virtual int OnResponseReceived(const SpdyHeaderBlock& response,
-                                   base::Time response_time,
-                                   int status) = 0;
-
-    // Called when a HEADERS frame is sent.
-    virtual void OnHeadersSent() = 0;
-
-    // Called when data is received. |buffer| may be NULL, which
-    // signals EOF.  Must return OK if the data was received
-    // successfully, or a network error code otherwise.
-    virtual int OnDataReceived(scoped_ptr<SpdyBuffer> buffer) = 0;
-
-    // Called when data is sent.
-    virtual void OnDataSent(size_t bytes_sent) = 0;
+    // Called when data is sent. Must not cause the stream to be
+    // closed.
+    virtual void OnDataSent() = 0;
 
     // Called when SpdyStream is closed. No other delegate functions
     // will be called after this is called, and the delegate must not
-    // access the stream after this is called.
+    // access the stream after this is called. Must not cause the
+    // stream to be be (re-)closed.
+    //
+    // TODO(akalin): Allow this function to re-close the stream and
+    // handle it gracefully.
     virtual void OnClose(int status) = 0;
 
    protected:
@@ -105,34 +156,36 @@ class NET_EXPORT_PRIVATE SpdyStream
   };
 
   // SpdyStream constructor
-  SpdyStream(SpdySession* session,
+  SpdyStream(SpdyStreamType type,
+             SpdySession* session,
              const std::string& path,
              RequestPriority priority,
              int32 initial_send_window_size,
              int32 initial_recv_window_size,
-             bool pushed,
              const BoundNetLog& net_log);
 
-  // Set new |delegate|. |delegate| must not be NULL.
-  // If it already received SYN_REPLY or data, OnResponseReceived() or
-  // OnDataReceived() will be called.
-  void SetDelegate(Delegate* delegate);
-  Delegate* GetDelegate() { return delegate_; }
+  ~SpdyStream();
 
-  // Detach delegate from the stream. It will cancel the stream if it was not
-  // cancelled yet.  It is safe to call multiple times.
+  // Set the delegate, which must not be NULL. Must not be called more
+  // than once. For push streams, calling this may cause buffered data
+  // to be sent to the delegate (from a posted task).
+  void SetDelegate(Delegate* delegate);
+  Delegate* GetDelegate();
+
+  // Detach the delegate from the stream, which must not yet be
+  // closed, and cancel it.
   void DetachDelegate();
 
-  // Is this stream a pushed stream from the server.
-  bool pushed() const { return pushed_; }
+  // The time at which the first bytes of the response were received
+  // from the server, or null if the response hasn't been received
+  // yet.
+  base::Time response_time() const { return response_time_; }
+
+  SpdyStreamType type() const { return type_; }
 
   SpdyStreamId stream_id() const { return stream_id_; }
   void set_stream_id(SpdyStreamId stream_id) { stream_id_ = stream_id; }
 
-  bool response_received() const { return response_received_; }
-  void set_response_received() { response_received_ = true; }
-
-  // For pushed streams, we track a path to identify them.
   const std::string& path() const { return path_; }
 
   RequestPriority priority() const { return priority_; }
@@ -141,7 +194,9 @@ class NET_EXPORT_PRIVATE SpdyStream
 
   int32 recv_window_size() const { return recv_window_size_; }
 
-  bool send_stalled_by_flow_control() { return send_stalled_by_flow_control_; }
+  bool send_stalled_by_flow_control() const {
+    return send_stalled_by_flow_control_;
+  }
 
   void set_send_stalled_by_flow_control(bool stalled) {
     send_stalled_by_flow_control_ = stalled;
@@ -224,22 +279,29 @@ class NET_EXPORT_PRIVATE SpdyStream
 
   const BoundNetLog& net_log() const { return net_log_; }
 
-  const SpdyHeaderBlock& spdy_headers() const;
-  void set_spdy_headers(scoped_ptr<SpdyHeaderBlock> headers);
   base::Time GetRequestTime() const;
   void SetRequestTime(base::Time t);
 
-  // Called by the SpdySession when a response (e.g. a SYN_STREAM or SYN_REPLY)
-  // has been received for this stream. Returns a status code.
-  int OnResponseReceived(const SpdyHeaderBlock& response);
+  // Called at most once by the SpdySession when the initial response
+  // headers have been received for this stream, i.e., a SYN_REPLY (or
+  // SYN_STREAM for push streams) frame has been received. This is the
+  // entry point for a push stream. Returns a status code; if it is
+  // an error, the stream was closed by this function.
+  int OnInitialResponseHeadersReceived(const SpdyHeaderBlock& response_headers,
+                                       base::Time response_time,
+                                       base::TimeTicks recv_first_byte_time);
 
-  // Called by the SpdySession when late-bound headers are received for a
-  // stream. Returns a status code.
-  int OnHeaders(const SpdyHeaderBlock& headers);
+  // Called by the SpdySession (only after
+  // OnInitialResponseHeadersReceived() has been called) when
+  // late-bound headers are received for a stream. Returns a status
+  // code; if it is an error, the stream was closed by this function.
+  int OnAdditionalResponseHeadersReceived(
+      const SpdyHeaderBlock& additional_response_headers);
 
-  // Called by the SpdySession when response data has been received for this
-  // stream.  This callback may be called multiple times as data arrives
-  // from the network, and will never be called prior to OnResponseReceived.
+  // Called by the SpdySession when response data has been received
+  // for this stream.  This callback may be called multiple times as
+  // data arrives from the network, and will never be called prior to
+  // OnResponseHeadersReceived.
   //
   // |buffer| contains the data received, or NULL if the stream is
   //          being closed.  The stream must copy any data from this
@@ -264,27 +326,37 @@ class NET_EXPORT_PRIVATE SpdyStream
   // Called by the SpdySession to log stream related errors.
   void LogStreamError(int status, const std::string& description);
 
+  // If this stream is active, reset it, and close it otherwise. In
+  // either case the stream is deleted.
   void Cancel();
+
+  // Close this stream without sending a RST_STREAM and delete
+  // it.
   void Close();
-  bool cancelled() const { return cancelled_; }
-  bool closed() const { return io_state_ == STATE_DONE; }
-  // TODO(satorux): This is only for testing. We should be able to remove
-  // this once crbug.com/113107 is addressed.
-  bool body_sent() const { return io_state_ > STATE_SEND_BODY_COMPLETE; }
 
-  // Interface for Spdy[Http|WebSocket]Stream to use.
+  // Must be used only by the SpdySession.
+  base::WeakPtr<SpdyStream> GetWeakPtr();
 
-  // Sends the request.
-  // For non push stream, it will send SYN_STREAM frame.
-  int SendRequest(bool has_upload_data);
+  // Interface for the delegate to use.
 
-  // Queues a HEADERS frame to be sent.
-  void QueueHeaders(scoped_ptr<SpdyHeaderBlock> headers);
+  // Only one send can be in flight at a time, except for push
+  // streams, which must not send anything.
 
-  // Queues a DATA frame to be sent. May not queue all the data that
-  // is given (or even any of it) depending on flow control.
-  void QueueStreamData(IOBuffer* data, int length,
-                       SpdyDataFlags flags);
+  // Sends the request headers. The delegate is called back via
+  // OnRequestHeadersSent() when the request headers have completed
+  // sending. |send_status| must be MORE_DATA_TO_SEND for
+  // bidirectional streams; for request/response streams, it must be
+  // MORE_DATA_TO_SEND if the request has data to upload, or
+  // NO_MORE_DATA_TO_SEND if not.
+  int SendRequestHeaders(scoped_ptr<SpdyHeaderBlock> request_headers,
+                         SpdySendStatus send_status);
+
+  // Sends a DATA frame. The delegate will be notified via
+  // OnDataSent() when the send is complete. |send_status| must be
+  // MORE_DATA_TO_SEND for bidirectional streams; for request/response
+  // streams, it must be MORE_DATA_TO_SEND if there is more data to
+  // upload, or NO_MORE_DATA_TO_SEND if not.
+  void SendData(IOBuffer* data, int length, SpdySendStatus send_status);
 
   // Fills SSL info in |ssl_info| and returns true when SSL is in use.
   bool GetSSLInfo(SSLInfo* ssl_info,
@@ -302,18 +374,27 @@ class NET_EXPORT_PRIVATE SpdyStream
   // called only when the stream is still open.
   void PossiblyResumeIfSendStalled();
 
-  bool is_idle() const {
-    return io_state_ == STATE_OPEN || io_state_ == STATE_DONE;
-  }
+  // Returns whether or not this stream is closed. Note that the only
+  // time a stream is closed and not deleted is in its delegate's
+  // OnClose() method.
+  bool IsClosed() const;
+
+  // Returns whether or not this stream has finished sending its
+  // request headers and is ready to send/receive more data.
+  bool IsIdle() const;
 
   int response_status() const { return response_status_; }
 
-  // Returns true if the URL for this stream is known.
-  bool HasUrl() const;
+  bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const;
 
-  // Get the URL associated with this stream.  Only valid when has_url() is
-  // true.
+  // Get the URL associated with this stream, or the empty GURL() if
+  // it is unknown.
   GURL GetUrl() const;
+
+  // Returns whether the URL for this stream is known.
+  //
+  // TODO(akalin): Remove this, as it's only used in tests.
+  bool HasUrl() const;
 
   int GetProtocolVersion() const;
 
@@ -327,18 +408,11 @@ class NET_EXPORT_PRIVATE SpdyStream
     STATE_GET_DOMAIN_BOUND_CERT_COMPLETE,
     STATE_SEND_DOMAIN_BOUND_CERT,
     STATE_SEND_DOMAIN_BOUND_CERT_COMPLETE,
-    STATE_SEND_HEADERS,
-    STATE_SEND_HEADERS_COMPLETE,
-    STATE_SEND_BODY,
-    STATE_SEND_BODY_COMPLETE,
-    STATE_WAITING_FOR_RESPONSE,
-    STATE_OPEN,
-    STATE_DONE
+    STATE_SEND_REQUEST_HEADERS,
+    STATE_SEND_REQUEST_HEADERS_COMPLETE,
+    STATE_IDLE,
+    STATE_CLOSED
   };
-
-  friend class base::RefCounted<SpdyStream>;
-
-  virtual ~SpdyStream();
 
   void OnGetDomainBoundCertComplete(int result);
 
@@ -350,10 +424,8 @@ class NET_EXPORT_PRIVATE SpdyStream
   int DoGetDomainBoundCertComplete(int result);
   int DoSendDomainBoundCert();
   int DoSendDomainBoundCertComplete(int result);
-  int DoSendHeaders();
-  int DoSendHeadersComplete();
-  int DoSendBody();
-  int DoSendBodyComplete(int result);
+  int DoSendRequestHeaders();
+  int DoSendRequestHeadersComplete();
   int DoReadHeaders();
   int DoReadHeadersComplete(int result);
   int DoOpen();
@@ -362,8 +434,9 @@ class NET_EXPORT_PRIVATE SpdyStream
   // be called after the stream has completed.
   void UpdateHistograms();
 
-  // When a server pushed stream is first created, this function is posted on
-  // the MessageLoop to replay all the data that the server has already sent.
+  // When a server-pushed stream is first created, this function is
+  // posted on the current MessageLoop to replay the data that the
+  // server has already sent.
   void PushedStreamReplayData();
 
   // Produces the SYN_STREAM frame for the stream. The stream must
@@ -375,7 +448,24 @@ class NET_EXPORT_PRIVATE SpdyStream
   scoped_ptr<SpdyFrame> ProduceHeaderFrame(
       scoped_ptr<SpdyHeaderBlock> header_block);
 
+  // Queues the send for next frame of the remaining data in
+  // |pending_send_data_|. Must be called only when
+  // |pending_send_data_| is set.
+  void QueueNextDataFrame();
+
+  // Merge the given headers into |response_headers_| and calls
+  // OnResponseHeadersUpdated() on the delegate (if attached).
+  // Returns a status code; if it is an error, the stream was closed
+  // by this function.
+  int MergeWithResponseHeaders(const SpdyHeaderBlock& new_response_headers);
+
+  const SpdyStreamType type_;
+
   base::WeakPtrFactory<SpdyStream> weak_ptr_factory_;
+
+  // Sentinel variable used to make sure we don't get destroyed by a
+  // function called from DoLoop().
+  bool in_do_loop_;
 
   // There is a small period of time between when a server pushed stream is
   // first created, and the pushed data is replayed. Any data received during
@@ -393,23 +483,31 @@ class NET_EXPORT_PRIVATE SpdyStream
   int32 recv_window_size_;
   int32 unacked_recv_window_bytes_;
 
-  const bool pushed_;
   ScopedBandwidthMetrics metrics_;
-  bool response_received_;
 
   scoped_refptr<SpdySession> session_;
 
   // The transaction should own the delegate.
   SpdyStream::Delegate* delegate_;
 
-  // The request to send.
-  scoped_ptr<SpdyHeaderBlock> request_;
+  // Whether or not we have more data to send on this stream.
+  SpdySendStatus send_status_;
+
+  // The headers for the request to send.
+  //
+  // TODO(akalin): Hang onto this only until we send it. This
+  // necessitates stashing the URL separately.
+  scoped_ptr<SpdyHeaderBlock> request_headers_;
+
+  // The data waiting to be sent.
+  scoped_refptr<DrainableIOBuffer> pending_send_data_;
 
   // The time at which the request was made that resulted in this response.
   // For cached responses, this time could be "far" in the past.
   base::Time request_time_;
 
-  scoped_ptr<SpdyHeaderBlock> response_;
+  SpdyHeaderBlock response_headers_;
+  SpdyResponseHeadersStatus response_headers_status_;
   base::Time response_time_;
 
   State io_state_;
@@ -417,9 +515,6 @@ class NET_EXPORT_PRIVATE SpdyStream
   // Since we buffer the response, we also buffer the response status.
   // Not valid until the stream is closed.
   int response_status_;
-
-  bool cancelled_;
-  bool has_upload_data_;
 
   BoundNetLog net_log_;
 

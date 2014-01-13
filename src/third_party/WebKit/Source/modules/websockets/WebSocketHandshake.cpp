@@ -38,12 +38,13 @@
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/loader/CookieJar.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/platform/Cookie.h"
-#include "core/platform/KURL.h"
+#include "core/platform/HistogramSupport.h"
 #include "core/platform/Logging.h"
 #include "core/platform/network/HTTPHeaderMap.h"
 #include "core/platform/network/HTTPParsers.h"
+#include "weborigin/KURL.h"
+#include "weborigin/SecurityOrigin.h"
 #include "wtf/CryptographicallyRandomNumber.h"
 #include "wtf/MD5.h"
 #include "wtf/SHA1.h"
@@ -131,6 +132,7 @@ WebSocketHandshake::WebSocketHandshake(const KURL& url, const String& protocol, 
 
 WebSocketHandshake::~WebSocketHandshake()
 {
+    HistogramSupport::histogramEnumeration("WebCore.WebSocket.HandshakeResult", m_mode, WebSocketHandshake::ModeMax);
 }
 
 const KURL& WebSocketHandshake::url() const

@@ -11,7 +11,6 @@
 #include "base/files/file_util_proxy.h"
 #include "content/public/common/content_client.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/renderer/pepper/null_file_system_callback_dispatcher.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/ppapi_host.h"
@@ -19,7 +18,7 @@
 #include "ppapi/shared_impl/file_type_conversion.h"
 #include "ppapi/shared_impl/time_conversion.h"
 #include "ppapi/thunk/enter.h"
-#include "webkit/plugins/ppapi/file_callbacks.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "webkit/plugins/ppapi/host_globals.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/plugins/ppapi/ppb_file_ref_impl.h"
@@ -29,7 +28,6 @@ namespace content {
 
 using ppapi::FileIOStateManager;
 using ppapi::PPTimeToTime;
-using ppapi::TimeToPPTime;
 using ppapi::host::ReplyMessageContext;
 using ppapi::thunk::EnterResourceNoLock;
 using ppapi::thunk::PPB_FileRef_API;
@@ -46,27 +44,6 @@ namespace {
 static const int32_t kMaxReadSize = 32 * 1024 * 1024;  // 32MB
 
 typedef base::Callback<void (base::PlatformFileError)> PlatformGeneralCallback;
-
-class PlatformGeneralCallbackTranslator
-    : public NullFileSystemCallbackDispatcher {
- public:
-  explicit PlatformGeneralCallbackTranslator(
-      const PlatformGeneralCallback& callback)
-    : callback_(callback) {}
-
-  virtual ~PlatformGeneralCallbackTranslator() {}
-
-  virtual void DidSucceed() OVERRIDE {
-    callback_.Run(base::PLATFORM_FILE_OK);
-  }
-
-  virtual void DidFail(base::PlatformFileError platform_error) OVERRIDE {
-    callback_.Run(platform_error);
-  }
-
- private:
-  PlatformGeneralCallback callback_;
-};
 
 int32_t ErrorOrByteNumber(int32_t pp_error, int32_t byte_number) {
   // On the plugin side, some callbacks expect a parameter that means different
@@ -85,6 +62,7 @@ PepperFileIOHost::PepperFileIOHost(RendererPpapiHost* host,
       file_system_type_(PP_FILESYSTEMTYPE_INVALID),
       quota_policy_(quota::kQuotaLimitTypeUnknown),
       is_running_in_process_(host->IsRunningInProcess()),
+      open_flags_(0),
       weak_factory_(this) {
   // TODO(victorhsieh): eliminate plugin_delegate_ as it's no longer needed.
   webkit::ppapi::PluginInstance* plugin_instance =
@@ -138,6 +116,7 @@ int32_t PepperFileIOHost::OnHostMsgOpen(
     return rv;
 
   int flags = 0;
+  open_flags_ = open_flags;
   if (!::ppapi::PepperFileOpenFlagsToPlatformFileFlags(open_flags, &flags))
     return PP_ERROR_BADARGUMENT;
 
@@ -149,7 +128,8 @@ int32_t PepperFileIOHost::OnHostMsgOpen(
   PP_FileSystemType type = file_ref_api->GetFileSystemType();
   if (type != PP_FILESYSTEMTYPE_LOCALPERSISTENT &&
       type != PP_FILESYSTEMTYPE_LOCALTEMPORARY &&
-      type != PP_FILESYSTEMTYPE_EXTERNAL)
+      type != PP_FILESYSTEMTYPE_EXTERNAL &&
+      type != PP_FILESYSTEMTYPE_ISOLATED)
     return PP_ERROR_FAILED;
   file_system_type_ = type;
 
@@ -192,7 +172,8 @@ int32_t PepperFileIOHost::OnHostMsgQuery(
     return PP_ERROR_FAILED;
 
   if (!base::FileUtilProxy::GetFileInfoFromPlatformFile(
-          plugin_delegate_->GetFileThreadMessageLoopProxy(), file_,
+          plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
+          file_,
           base::Bind(&PepperFileIOHost::ExecutePlatformQueryCallback,
                      weak_factory_.GetWeakPtr(),
                      context->MakeReplyMessageContext())))
@@ -219,10 +200,9 @@ int32_t PepperFileIOHost::OnHostMsgTouch(
             file_system_url_,
             PPTimeToTime(last_access_time),
             PPTimeToTime(last_modified_time),
-            new PlatformGeneralCallbackTranslator(
-                base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
-                           weak_factory_.GetWeakPtr(),
-                           context->MakeReplyMessageContext()))))
+            base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
+                        weak_factory_.GetWeakPtr(),
+                        context->MakeReplyMessageContext())))
       return PP_ERROR_FAILED;
     state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_EXCLUSIVE);
     return PP_OK_COMPLETIONPENDING;
@@ -231,8 +211,9 @@ int32_t PepperFileIOHost::OnHostMsgTouch(
   // TODO(nhiroki): fix a failure of FileIO.Touch for an external filesystem on
   // Mac and Linux due to sandbox restrictions (http://crbug.com/101128).
   if (!base::FileUtilProxy::Touch(
-          plugin_delegate_->GetFileThreadMessageLoopProxy(),
-          file_, PPTimeToTime(last_access_time),
+          plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
+          file_,
+          PPTimeToTime(last_access_time),
           PPTimeToTime(last_modified_time),
           base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
                      weak_factory_.GetWeakPtr(),
@@ -266,7 +247,9 @@ int32_t PepperFileIOHost::OnHostMsgRead(
     return PP_ERROR_FAILED;
 
   if (!base::FileUtilProxy::Read(
-          plugin_delegate_->GetFileThreadMessageLoopProxy(), file_, offset,
+          plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
+          file_,
+          offset,
           max_read_length,
           base::Bind(&PepperFileIOHost::ExecutePlatformReadCallback,
                      weak_factory_.GetWeakPtr(),
@@ -298,8 +281,11 @@ int32_t PepperFileIOHost::OnHostMsgWrite(
       return PP_ERROR_FAILED;
 
     if (!base::FileUtilProxy::Write(
-            plugin_delegate_->GetFileThreadMessageLoopProxy(), file_, offset,
-            buffer.c_str(), buffer.size(),
+            plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
+            file_,
+            offset,
+            buffer.c_str(),
+            buffer.size(),
             base::Bind(&PepperFileIOHost::ExecutePlatformWriteCallback,
                        weak_factory_.GetWeakPtr(),
                        context->MakeReplyMessageContext())))
@@ -324,16 +310,17 @@ int32_t PepperFileIOHost::OnHostMsgSetLength(
   if (file_system_type_ != PP_FILESYSTEMTYPE_EXTERNAL) {
     if (!plugin_delegate_->SetLength(
             file_system_url_, length,
-            new PlatformGeneralCallbackTranslator(
-                base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
-                           weak_factory_.GetWeakPtr(),
-                           context->MakeReplyMessageContext()))))
+            base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
+                       weak_factory_.GetWeakPtr(),
+                       context->MakeReplyMessageContext())))
       return PP_ERROR_FAILED;
   } else {
     // TODO(nhiroki): fix a failure of FileIO.SetLength for an external
     // filesystem on Mac due to sandbox restrictions (http://crbug.com/156077).
     if (!base::FileUtilProxy::Truncate(
-            plugin_delegate_->GetFileThreadMessageLoopProxy(), file_, length,
+            plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
+            file_,
+            length,
             base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
                        weak_factory_.GetWeakPtr(),
                        context->MakeReplyMessageContext())))
@@ -355,7 +342,8 @@ int32_t PepperFileIOHost::OnHostMsgFlush(
     return PP_ERROR_FAILED;
 
   if (!base::FileUtilProxy::Flush(
-          plugin_delegate_->GetFileThreadMessageLoopProxy(), file_,
+          plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
+          file_,
           base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
                      weak_factory_.GetWeakPtr(),
                      context->MakeReplyMessageContext())))
@@ -369,7 +357,7 @@ int32_t PepperFileIOHost::OnHostMsgClose(
     ppapi::host::HostMessageContext* context) {
   if (file_ != base::kInvalidPlatformFileValue && plugin_delegate_) {
     base::FileUtilProxy::Close(
-        plugin_delegate_->GetFileThreadMessageLoopProxy(),
+        plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
         file_,
         base::ResetAndReturn(&notify_close_file_callback_));
     file_ = base::kInvalidPlatformFileValue;
@@ -425,8 +413,30 @@ int32_t PepperFileIOHost::OnHostMsgWillSetLength(
 
 int32_t PepperFileIOHost::OnHostMsgRequestOSFileHandle(
     ppapi::host::HostMessageContext* context) {
-  NOTIMPLEMENTED();
-  return PP_ERROR_FAILED;
+  if (!is_running_in_process_ &&
+      quota_policy_ != quota::kQuotaLimitTypeUnlimited)
+    return PP_ERROR_FAILED;
+
+  RendererPpapiHost* renderer_ppapi_host =
+      RendererPpapiHost::GetForPPInstance(pp_instance());
+
+  // Whitelist to make it privately accessible.
+  if (!GetContentClient()->renderer()->IsPluginAllowedToCallRequestOSFileHandle(
+          renderer_ppapi_host->GetContainerForInstance(pp_instance())))
+    return PP_ERROR_NOACCESS;
+
+  IPC::PlatformFileForTransit file =
+      renderer_ppapi_host->ShareHandleWithRemote(file_, false);
+  if (file == IPC::InvalidPlatformFileForTransit())
+    return PP_ERROR_FAILED;
+  ppapi::host::ReplyMessageContext reply_context =
+      context->MakeReplyMessageContext();
+  ppapi::proxy::SerializedHandle file_handle;
+  file_handle.set_file_handle(file, open_flags_);
+  reply_context.params.AppendHandle(file_handle);
+  host()->SendReply(reply_context,
+                    PpapiPluginMsg_FileIO_RequestOSFileHandleReply());
+  return PP_OK_COMPLETIONPENDING;
 }
 
 int32_t PepperFileIOHost::OnHostMsgGetOSFileDescriptor(
@@ -498,15 +508,8 @@ void PepperFileIOHost::ExecutePlatformQueryCallback(
     base::PlatformFileError error_code,
     const base::PlatformFileInfo& file_info) {
   PP_FileInfo pp_info;
-  pp_info.size = file_info.size;
-  pp_info.creation_time = TimeToPPTime(file_info.creation_time);
-  pp_info.last_access_time = TimeToPPTime(file_info.last_accessed);
-  pp_info.last_modified_time = TimeToPPTime(file_info.last_modified);
-  pp_info.system_type = file_system_type_;
-  if (file_info.is_directory)
-    pp_info.type = PP_FILETYPE_DIRECTORY;
-  else
-    pp_info.type = PP_FILETYPE_REGULAR;
+  ppapi::PlatformFileInfoToPepperFileInfo(file_info, file_system_type_,
+                                          &pp_info);
 
   int32_t pp_error = ::ppapi::PlatformFileErrorToPepperError(error_code);
   reply_context.params.set_result(pp_error);

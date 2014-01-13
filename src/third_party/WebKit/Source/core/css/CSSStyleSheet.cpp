@@ -21,14 +21,14 @@
 #include "config.h"
 #include "core/css/CSSStyleSheet.h"
 
+#include <wtf/MemoryInstrumentationVector.h>
+#include <wtf/text/StringBuilder.h>
 #include "HTMLNames.h"
 #include "SVGNames.h"
 #include "core/css/CSSCharsetRule.h"
-#include "core/css/CSSFontFaceRule.h"
 #include "core/css/CSSImportRule.h"
 #include "core/css/CSSParser.h"
 #include "core/css/CSSRuleList.h"
-#include "core/css/CSSStyleRule.h"
 #include "core/css/MediaList.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleSheetContents.h"
@@ -36,10 +36,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Node.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/loader/cache/CachedCSSStyleSheet.h"
-#include "core/page/SecurityOrigin.h"
-#include <wtf/MemoryInstrumentationVector.h>
-#include <wtf/text/StringBuilder.h>
+#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -73,9 +70,7 @@ static bool isAcceptableCSSStyleSheetParent(Node* parentNode)
         || parentNode->isDocumentNode()
         || parentNode->hasTagName(HTMLNames::linkTag)
         || parentNode->hasTagName(HTMLNames::styleTag)
-#if ENABLE(SVG)
         || parentNode->hasTagName(SVGNames::styleTag)
-#endif
         || parentNode->nodeType() == Node::PROCESSING_INSTRUCTION_NODE;
 }
 #endif
@@ -87,14 +82,14 @@ PassRefPtr<CSSStyleSheet> CSSStyleSheet::create(PassRefPtr<StyleSheetContents> s
 
 PassRefPtr<CSSStyleSheet> CSSStyleSheet::create(PassRefPtr<StyleSheetContents> sheet, Node* ownerNode)
 { 
-    return adoptRef(new CSSStyleSheet(sheet, ownerNode, false));
+    return adoptRef(new CSSStyleSheet(sheet, ownerNode, false, TextPosition::minimumPosition()));
 }
 
-PassRefPtr<CSSStyleSheet> CSSStyleSheet::createInline(Node* ownerNode, const KURL& baseURL, const String& encoding)
+PassRefPtr<CSSStyleSheet> CSSStyleSheet::createInline(Node* ownerNode, const KURL& baseURL, const TextPosition& startPosition, const String& encoding)
 {
     CSSParserContext parserContext(ownerNode->document(), baseURL, encoding);
     RefPtr<StyleSheetContents> sheet = StyleSheetContents::create(baseURL.string(), parserContext);
-    return adoptRef(new CSSStyleSheet(sheet.release(), ownerNode, true));
+    return adoptRef(new CSSStyleSheet(sheet.release(), ownerNode, true, startPosition));
 }
 
 CSSStyleSheet::CSSStyleSheet(PassRefPtr<StyleSheetContents> contents, CSSImportRule* ownerRule)
@@ -103,16 +98,18 @@ CSSStyleSheet::CSSStyleSheet(PassRefPtr<StyleSheetContents> contents, CSSImportR
     , m_isDisabled(false)
     , m_ownerNode(0)
     , m_ownerRule(ownerRule)
+    , m_startPosition(TextPosition::minimumPosition())
 {
     m_contents->registerClient(this);
 }
 
-CSSStyleSheet::CSSStyleSheet(PassRefPtr<StyleSheetContents> contents, Node* ownerNode, bool isInlineStylesheet)
+CSSStyleSheet::CSSStyleSheet(PassRefPtr<StyleSheetContents> contents, Node* ownerNode, bool isInlineStylesheet, const TextPosition& startPosition)
     : m_contents(contents)
     , m_isInlineStylesheet(isInlineStylesheet)
     , m_isDisabled(false)
     , m_ownerNode(ownerNode)
     , m_ownerRule(0)
+    , m_startPosition(startPosition)
 {
     ASSERT(isAcceptableCSSStyleSheetParent(ownerNode));
     m_contents->registerClient(this);
@@ -207,10 +204,8 @@ void CSSStyleSheet::setMediaQueries(PassRefPtr<MediaQuerySet> mediaQueries)
     if (m_mediaCSSOMWrapper && m_mediaQueries)
         m_mediaCSSOMWrapper->reattach(m_mediaQueries.get());
 
-#if ENABLE(RESOLUTION_MEDIA_QUERY)
     // Add warning message to inspector whenever dpi/dpcm values are used for "screen" media.
     reportMediaQueryWarningIfNeeded(ownerDocument(), m_mediaQueries.get());
-#endif
 }
 
 unsigned CSSStyleSheet::length() const
@@ -227,7 +222,7 @@ CSSRule* CSSStyleSheet::item(unsigned index)
     if (m_childRuleCSSOMWrappers.isEmpty())
         m_childRuleCSSOMWrappers.grow(ruleCount);
     ASSERT(m_childRuleCSSOMWrappers.size() == ruleCount);
-    
+
     RefPtr<CSSRule>& cssRule = m_childRuleCSSOMWrappers[index];
     if (!cssRule) {
         if (index == 0 && m_contents->hasCharsetRule()) {
@@ -279,7 +274,7 @@ unsigned CSSStyleSheet::insertRule(const String& ruleString, unsigned index, Exc
         ec = INDEX_SIZE_ERR;
         return 0;
     }
-    CSSParser p(m_contents->parserContext());
+    CSSParser p(m_contents->parserContext(), UseCounter::getFrom(this));
     RefPtr<StyleRuleBase> rule = p.parseRule(m_contents.get(), ruleString);
 
     if (!rule) {

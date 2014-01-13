@@ -5,8 +5,8 @@
 /**
  * @fileoverview V8LogImporter imports v8.log files into the provided model.
  */
-base.require('tracing.model');
-base.require('tracing.model.slice');
+base.require('tracing.trace_model');
+base.require('tracing.trace_model.slice');
 base.require('tracing.color_scheme');
 base.require('tracing.importer.v8.log_reader');
 base.require('tracing.importer.v8.codemap');
@@ -41,7 +41,7 @@ base.exportTo('tracing.importer', function() {
     'V8.ParseLazy': { pause: true, no_execution: true},
     'V8.GCScavenger': { pause: true, no_execution: true},
     'V8.GCCompactor': { pause: true, no_execution: true},
-    'V8.GCContext': { pause: true, no_execution: true},
+    'V8.GCContext': { pause: true, no_execution: true}
   };
 
   /**
@@ -61,19 +61,22 @@ base.exportTo('tracing.importer', function() {
 
     __proto__: Object.prototype,
 
+    extractSubtrace: function() {
+      return undefined;
+    },
+
     processTimerEvent_: function(name, start, length) {
       var args = TimerEventDefaultArgs[name];
       if (args === undefined) return;
       start /= 1000;  // Convert to milliseconds.
       length /= 1000;
       var colorId = tracing.getStringColorId(name);
-      var slice = new tracing.model.Slice('v8', name, colorId, start,
-                                          args, length);
+      var slice = new tracing.trace_model.Slice('v8', name, colorId, start,
+          args, length);
       this.v8_timer_thread_.pushSlice(slice);
     },
 
     processTimerEventStart_: function(name, start) {
-      debugger;
       var args = TimerEventDefaultArgs[name];
       if (args === undefined) return;
       start /= 1000;  // Convert to milliseconds.
@@ -81,7 +84,6 @@ base.exportTo('tracing.importer', function() {
     },
 
     processTimerEventEnd_: function(name, end) {
-      debugger;
       end /= 1000;  // Convert to milliseconds.
       this.v8_timer_thread_.endSlice(end);
     },
@@ -140,8 +142,8 @@ base.exportTo('tracing.importer', function() {
           entry = this.code_map_.findEntry(stack[i]);
           name = this.nameForCodeEntry_(entry);
           var colorId = tracing.getStringColorId(name);
-          var slice = new tracing.model.Slice('v8', name, colorId, start,
-                                              {}, 0);
+          var slice = new tracing.trace_model.Slice(
+              'v8', name, colorId, start, {}, 0);
           this.v8_stack_thread_.pushSlice(slice);
         }
       }
@@ -162,7 +164,7 @@ base.exportTo('tracing.importer', function() {
      */
     importEvents: function() {
       var logreader = new tracing.importer.v8.LogReader(
-        { 'timer-event' : {
+          { 'timer-event' : {
             parsers: [null, parseInt, parseInt],
             processor: this.processTimerEvent_.bind(this)
           },
@@ -202,17 +204,17 @@ base.exportTo('tracing.importer', function() {
           'plot-range': {
             parsers: [parseInt, parseInt],
             processor: this.processPlotRange_.bind(this)
-          },
-        });
+          }
+          });
 
       this.v8_timer_thread_ =
-        this.model_.getOrCreateProcess(-32).getOrCreateThread(1);
+          this.model_.getOrCreateProcess(-32).getOrCreateThread(1);
       this.v8_timer_thread_.name = 'V8 Timers';
       this.v8_stack_thread_ =
-        this.model_.getOrCreateProcess(-32).getOrCreateThread(2);
+          this.model_.getOrCreateProcess(-32).getOrCreateThread(2);
       this.v8_stack_thread_.name = 'V8 JavaScript';
       this.v8_samples_thread_ =
-        this.model_.getOrCreateProcess(-32).getOrCreateThread(3);
+          this.model_.getOrCreateProcess(-32).getOrCreateThread(3);
       this.v8_samples_thread_.name = 'V8 PC';
 
       var lines = this.logData_.split('\n');
@@ -227,9 +229,16 @@ base.exportTo('tracing.importer', function() {
      */
     finalizeImport: function() {
     },
+
+    /**
+     * Called by the model to join references between objects, after final model
+     * bounds have been computed.
+     */
+    joinRefs: function() {
+    }
   };
 
-  tracing.Model.registerImporter(V8LogImporter);
+  tracing.TraceModel.registerImporter(V8LogImporter);
 
   return {
     V8LogImporter: V8LogImporter

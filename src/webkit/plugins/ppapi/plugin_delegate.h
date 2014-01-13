@@ -10,7 +10,7 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/process.h"
 #include "base/shared_memory.h"
@@ -28,15 +28,15 @@
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_stdint.h"
+#include "ppapi/c/ppb_tcp_socket.h"
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/shared_impl/dir_contents.h"
 #include "ui/gfx/size.h"
-#include "webkit/fileapi/file_system_types.h"
-#include "webkit/glue/clipboard_client.h"
+#include "webkit/common/fileapi/file_system_types.h"
+#include "webkit/common/quota/quota_types.h"
 #include "webkit/plugins/webkit_plugins_export.h"
-#include "webkit/quota/quota_types.h"
 
 class GURL;
 class SkBitmap;
@@ -54,7 +54,7 @@ class Time;
 }
 
 namespace fileapi {
-class FileSystemCallbackDispatcher;
+struct DirectoryEntry;
 }
 
 namespace gfx {
@@ -63,11 +63,13 @@ class Point;
 
 namespace gpu {
 class CommandBuffer;
+struct Mailbox;
 }
 
 namespace ppapi {
 class PepperFilePath;
 class PPB_X509Certificate_Fields;
+class SocketOptionData;
 struct DeviceRefData;
 struct HostPortPair;
 struct Preferences;
@@ -87,12 +89,12 @@ struct WebCursorInfo;
 }
 
 namespace webkit_glue {
-class ClipboardClient;
 class P2PTransport;
 class NetworkListObserver;
 }  // namespace webkit_glue
 
 namespace webkit {
+
 namespace ppapi {
 
 class FileIO;
@@ -158,6 +160,7 @@ class PluginDelegate {
     virtual void RemoveInstance(PP_Instance instance) = 0;
 
     virtual base::ProcessId GetPeerProcessId() = 0;
+    virtual int GetPluginChildId() = 0;
   };
 
   // Represents an image. This is to allow the browser layer to supply a correct
@@ -215,12 +218,8 @@ class PluginDelegate {
     virtual bool Init(const int32* attrib_list,
                       PlatformContext3D* share_context) = 0;
 
-    // If the plugin instance is backed by an OpenGL, return its ID in the
-    // compositors namespace. Otherwise return 0. Returns 0 by default.
-    virtual unsigned GetBackingTextureId() = 0;
-
-    // Returns the parent context that allocated the backing texture ID.
-    virtual WebKit::WebGraphicsContext3D* GetParentContext() = 0;
+    // Retrieves the mailbox name for the front buffer backing the context.
+    virtual void GetBackingMailbox(::gpu::Mailbox* mailbox) = 0;
 
     // Returns true if the backing texture is always opaque.
     virtual bool IsOpaque() = 0;
@@ -408,9 +407,6 @@ class PluginDelegate {
   // The caller will own the pointer returned from this.
   virtual PlatformContext3D* CreateContext3D() = 0;
 
-  // Set that the context will now present to the delegate.
-  virtual void ReparentContext(PlatformContext3D*) = 0;
-
   // If |device_id| is empty, the default video capture device will be used. The
   // user can start using the returned object to capture video right away.
   // Otherwise, the specified device will be used. The user needs to wait till
@@ -500,30 +496,41 @@ class PluginDelegate {
       int flags,
       const AsyncOpenFileSystemURLCallback& callback) = 0;
 
+  // Callback typedefs for FileSystem related methods.
+  typedef base::Callback<void (base::PlatformFileError)> StatusCallback;
+  typedef base::Callback<void(
+      const std::vector<fileapi::DirectoryEntry>& entries,
+      bool has_more)> ReadDirectoryCallback;
+  typedef base::Callback<void(
+      const base::PlatformFileInfo& file_info)> MetadataCallback;
+
   virtual bool MakeDirectory(
       const GURL& path,
       bool recursive,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+      const StatusCallback& callback) = 0;
   virtual bool Query(const GURL& path,
-                     fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+                     const MetadataCallback& success_callback,
+                     const StatusCallback& error_callback) = 0;
   virtual bool ReadDirectoryEntries(
       const GURL& path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+      const ReadDirectoryCallback& success_callback,
+      const StatusCallback& error_callback) = 0;
   virtual bool Touch(const GURL& path,
                      const base::Time& last_access_time,
                      const base::Time& last_modified_time,
-                     fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+                     const StatusCallback& callback) = 0;
   virtual bool SetLength(const GURL& path,
                          int64_t length,
-                         fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+                         const StatusCallback& callback) = 0;
   virtual bool Delete(const GURL& path,
-                      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+                      const StatusCallback& callback) = 0;
   virtual bool Rename(const GURL& file_path,
                       const GURL& new_file_path,
-                      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+                      const StatusCallback& callback) = 0;
   virtual bool ReadDirectory(
       const GURL& directory_path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+      const ReadDirectoryCallback& success_callback,
+      const StatusCallback& error_callback) = 0;
 
   // For quota handlings for FileIO API.
   typedef base::Callback<void (int64)> AvailableSpaceCallback;
@@ -561,9 +568,9 @@ class PluginDelegate {
   virtual void TCPSocketRead(uint32 socket_id, int32_t bytes_to_read) = 0;
   virtual void TCPSocketWrite(uint32 socket_id, const std::string& buffer) = 0;
   virtual void TCPSocketDisconnect(uint32 socket_id) = 0;
-  virtual void TCPSocketSetBoolOption(uint32 socket_id,
-                                      PP_TCPSocketOption_Private name,
-                                      bool value) = 0;
+  virtual void TCPSocketSetOption(uint32 socket_id,
+                                  PP_TCPSocket_Option name,
+                                  const ::ppapi::SocketOptionData& value) = 0;
   virtual void RegisterTCPSocket(PPB_TCPSocket_Private_Impl* socket,
                                  uint32 socket_id) = 0;
 

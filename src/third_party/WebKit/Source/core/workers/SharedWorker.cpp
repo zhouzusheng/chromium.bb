@@ -38,16 +38,17 @@
 #include "core/dom/MessagePort.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/page/UseCounter.h"
-#include "core/platform/KURL.h"
 #include "core/workers/SharedWorkerRepository.h"
+#include "weborigin/KURL.h"
+#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
 inline SharedWorker::SharedWorker(ScriptExecutionContext* context)
     : AbstractWorker(context)
 {
+    ScriptWrappable::init(this);
 }
 
 PassRefPtr<SharedWorker> SharedWorker::create(ScriptExecutionContext* context, const String& url, const String& name, ExceptionCode& ec)

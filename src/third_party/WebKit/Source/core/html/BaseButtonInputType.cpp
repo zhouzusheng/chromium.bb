@@ -33,7 +33,6 @@
 #include "core/html/BaseButtonInputType.h"
 
 #include "HTMLNames.h"
-#include "core/dom/KeyboardEvent.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/rendering/RenderButton.h"
 
@@ -52,9 +51,9 @@ bool BaseButtonInputType::appendFormData(FormDataList&, bool) const
     return false;
 }
 
-RenderObject* BaseButtonInputType::createRenderer(RenderArena* arena, RenderStyle*) const
+RenderObject* BaseButtonInputType::createRenderer(RenderStyle*) const
 {
-    return new (arena) RenderButton(element());
+    return new (element()->document()->renderArena()) RenderButton(element());
 }
 
 bool BaseButtonInputType::storesValueSeparateFromAttribute()

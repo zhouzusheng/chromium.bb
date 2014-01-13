@@ -32,14 +32,10 @@
 #include "core/dom/Document.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Console.h"
-#include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/page/Settings.h"
-#include "core/platform/SchemeRegistry.h"
-#include <wtf/text/CString.h>
-#include <wtf/text/WTFString.h>
+#include "weborigin/SecurityOrigin.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -95,7 +91,7 @@ bool MixedContentChecker::canRunInsecureContent(SecurityOrigin* securityOrigin, 
 
 void MixedContentChecker::logWarning(bool allowed, const String& action, const KURL& target) const
 {
-    String message = makeString((allowed ? "" : "[blocked] "), "The page at ", m_frame->document()->url().elidedString(), " ", action, " insecure content from ", target.elidedString(), ".\n");
+    String message = String(allowed ? "" : "[blocked] ") + "The page at " + m_frame->document()->url().elidedString() + " " + action + " insecure content from " + target.elidedString() + ".\n";
     m_frame->document()->addConsoleMessage(SecurityMessageSource, WarningMessageLevel, message);
 }
 

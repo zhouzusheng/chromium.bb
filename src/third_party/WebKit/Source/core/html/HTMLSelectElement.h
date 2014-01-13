@@ -49,6 +49,8 @@ public:
     virtual String validationMessage() const OVERRIDE;
     virtual bool valueMissing() const OVERRIDE;
 
+    virtual void reset() OVERRIDE;
+
     unsigned length() const;
 
     int size() const { return m_size; }
@@ -105,6 +107,8 @@ public:
     // For use in the implementation of HTMLOptionElement.
     void optionSelectionStateChanged(HTMLOptionElement*, bool optionIsSelected);
     bool isParsingInProgress() const { return m_isParsingInProgress; }
+    bool anonymousIndexedSetter(unsigned, PassRefPtr<HTMLOptionElement>, ExceptionCode&);
+    bool anonymousIndexedSetterRemove(unsigned, ExceptionCode&);
 
 protected:
     HTMLSelectElement(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
@@ -130,10 +134,8 @@ private:
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
 
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle *);
+    virtual RenderObject* createRenderer(RenderStyle *);
     virtual bool appendFormData(FormDataList&, bool);
-
-    virtual void reset();
 
     virtual void defaultEventHandler(Event*);
 

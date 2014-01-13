@@ -10,7 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/win/scoped_comptr.h"
 #include "ui/base/ime/composition_underline.h"
 #include "ui/base/range/range.h"
@@ -201,6 +201,12 @@ class UI_EXPORT TSFTextStore : public ITextStoreACP,
                                  TextInputClient* text_input_client);
   // Removes currently focused TextInputClient.
   void RemoveFocusedTextInputClient(TextInputClient* text_input_client);
+
+  // Cancels the ongoing composition if exists.
+  bool CancelComposition();
+
+  // Confirms the ongoing composition if exists.
+  bool ConfirmComposition();
 
   // Sends OnLayoutChange() via |text_store_acp_sink_|.
   void SendOnLayoutChange();

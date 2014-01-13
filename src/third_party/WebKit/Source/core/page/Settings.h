@@ -29,14 +29,14 @@
 
 #include "SettingsMacros.h"
 #include "core/editing/EditingBehaviorTypes.h"
-#include "core/platform/KURL.h"
 #include "core/platform/Timer.h"
 #include "core/platform/graphics/FontRenderingMode.h"
 #include "core/platform/graphics/IntSize.h"
-#include <wtf/HashMap.h>
-#include <wtf/text/AtomicString.h>
-#include <wtf/text/AtomicStringHash.h>
-#include <wtf/unicode/Unicode.h>
+#include "weborigin/KURL.h"
+#include "wtf/HashMap.h"
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/AtomicStringHash.h"
+#include "wtf/unicode/Unicode.h"
 
 namespace WebCore {
 
@@ -48,12 +48,6 @@ enum EditableLinkBehavior {
     EditableLinkOnlyLiveWithShiftKey,
     EditableLinkLiveWhenNotFocused,
     EditableLinkNeverLive
-};
-
-enum TextDirectionSubmenuInclusionBehavior {
-    TextDirectionSubmenuNeverIncluded,
-    TextDirectionSubmenuAutomaticallyIncluded,
-    TextDirectionSubmenuAlwaysIncluded
 };
 
 // UScriptCode uses -1 and 0 for UScriptInvalidCode and UScriptCommon.
@@ -103,9 +97,11 @@ public:
     void setTextAutosizingWindowSizeOverride(const IntSize&);
     const IntSize& textAutosizingWindowSizeOverride() const { return m_textAutosizingWindowSizeOverride; }
 
-    // Only set by Layout Tests.
-    void setResolutionOverride(const IntSize&);
-    const IntSize& resolutionOverride() const { return m_resolutionDensityPerInchOverride; }
+    void setUseWideViewport(bool);
+    bool useWideViewport() const { return m_useWideViewport; }
+
+    void setLoadWithOverviewMode(bool);
+    bool loadWithOverviewMode() const { return m_loadWithOverviewMode; }
 
     // Only set by Layout Tests.
     void setMediaTypeOverride(const String&);
@@ -148,9 +144,6 @@ public:
     void setCSSStickyPositionEnabled(bool enabled) { m_cssStickyPositionEnabled = enabled; }
     bool cssStickyPositionEnabled() const { return m_cssStickyPositionEnabled; }
 
-    void setCSSVariablesEnabled(bool enabled) { m_cssVariablesEnabled = enabled; }
-    bool cssVariablesEnabled() const { return m_cssVariablesEnabled; }
-
     static void setMockScrollbarsEnabled(bool flag);
     static bool mockScrollbarsEnabled();
 
@@ -160,10 +153,11 @@ public:
     void setTouchEventEmulationEnabled(bool enabled) { m_touchEventEmulationEnabled = enabled; }
     bool isTouchEventEmulationEnabled() const { return m_touchEventEmulationEnabled; }
 
+    void setOpenGLMultisamplingEnabled(bool flag);
+    bool openGLMultisamplingEnabled();
+
 private:
     explicit Settings(Page*);
-
-    void initializeDefaultFontFamilies();
 
     Page* m_page;
 
@@ -179,7 +173,8 @@ private:
     float m_textAutosizingFontScaleFactor;
     IntSize m_textAutosizingWindowSizeOverride;
     bool m_textAutosizingEnabled : 1;
-    IntSize m_resolutionDensityPerInchOverride;
+    bool m_useWideViewport : 1;
+    bool m_loadWithOverviewMode : 1;
 
     SETTINGS_MEMBER_VARIABLES
 
@@ -191,10 +186,10 @@ private:
     unsigned m_fontRenderingMode : 1;
     bool m_isCSSCustomFilterEnabled : 1;
     bool m_cssStickyPositionEnabled : 1;
-    bool m_cssVariablesEnabled : 1;
     bool m_dnsPrefetchingEnabled : 1;
 
     bool m_touchEventEmulationEnabled : 1;
+    bool m_openGLMultisamplingEnabled : 1;
 
     Timer<Settings> m_setImageLoadingSettingsTimer;
     void imageLoadingSettingsTimerFired(Timer<Settings>*);

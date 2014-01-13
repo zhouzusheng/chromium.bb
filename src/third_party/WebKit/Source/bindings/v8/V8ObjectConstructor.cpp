@@ -26,7 +26,8 @@
 #include "bindings/v8/V8ObjectConstructor.h"
 
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8RecursionScope.h"
+#include "bindings/v8/V8ScriptRunner.h"
+#include "core/dom/Document.h"
 #include "core/page/Frame.h"
 #include "core/platform/chromium/TraceEvent.h"
 
@@ -38,10 +39,7 @@ v8::Local<v8::Object> V8ObjectConstructor::newInstance(v8::Handle<v8::Function> 
     if (function.IsEmpty())
         return v8::Local<v8::Object>();
     ConstructorMode constructorMode;
-    V8RecursionScope::MicrotaskSuppression scope;
-    v8::Local<v8::Object> result = function->NewInstance();
-    crashIfV8IsDead();
-    return result;
+    return V8ScriptRunner::instantiateObject(function);
 }
 
 v8::Local<v8::Object> V8ObjectConstructor::newInstance(v8::Handle<v8::ObjectTemplate> objectTemplate)
@@ -49,10 +47,7 @@ v8::Local<v8::Object> V8ObjectConstructor::newInstance(v8::Handle<v8::ObjectTemp
     if (objectTemplate.IsEmpty())
         return v8::Local<v8::Object>();
     ConstructorMode constructorMode;
-    V8RecursionScope::MicrotaskSuppression scope;
-    v8::Local<v8::Object> result = objectTemplate->NewInstance();
-    crashIfV8IsDead();
-    return result;
+    return V8ScriptRunner::instantiateObject(objectTemplate);
 }
 
 v8::Local<v8::Object> V8ObjectConstructor::newInstance(v8::Handle<v8::Function> function, int argc, v8::Handle<v8::Value> argv[])
@@ -60,28 +55,23 @@ v8::Local<v8::Object> V8ObjectConstructor::newInstance(v8::Handle<v8::Function> 
     if (function.IsEmpty())
         return v8::Local<v8::Object>();
     ConstructorMode constructorMode;
-    V8RecursionScope::MicrotaskSuppression scope;
-    v8::Local<v8::Object> result = function->NewInstance(argc, argv);
-    crashIfV8IsDead();
-    return result;
+    return V8ScriptRunner::instantiateObject(function, argc, argv);
 }
 
 v8::Local<v8::Object> V8ObjectConstructor::newInstanceInDocument(v8::Handle<v8::Function> function, int argc, v8::Handle<v8::Value> argv[], Document* document)
 {
-    TRACE_EVENT0("v8", "v8.newInstance");
-
-    // No artificial limitations on the depth of recursion.
-    V8RecursionScope recursionScope(document);
-    v8::Local<v8::Object> result = function->NewInstance(argc, argv);
-    crashIfV8IsDead();
-    return result;
+    if (function.IsEmpty())
+        return v8::Local<v8::Object>();
+    return V8ScriptRunner::instantiateObjectInDocument(function, document, argc, argv);
 }
 
-v8::Handle<v8::Value> V8ObjectConstructor::isValidConstructorMode(const v8::Arguments& args)
+void V8ObjectConstructor::isValidConstructorMode(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
-    if (ConstructorMode::current() == ConstructorMode::CreateNewObject)
-        return throwTypeError("Illegal constructor", args.GetIsolate());
-    return args.This();
+    if (ConstructorMode::current() == ConstructorMode::CreateNewObject) {
+        throwTypeError("Illegal constructor", args.GetIsolate());
+        return;
+    }
+    v8SetReturnValue(args, args.This());
 }
 
 } // namespace WebCore

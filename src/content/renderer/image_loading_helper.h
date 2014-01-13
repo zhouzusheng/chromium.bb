@@ -14,11 +14,9 @@
 
 class SkBitmap;
 
-namespace webkit_glue {
-class MultiResolutionImageResourceFetcher;
-}
-
 namespace content {
+
+class MultiResolutionImageResourceFetcher;
 
 // This class deals with image downloading.
 // One instance of ImageLoadingHelper is owned by RenderView.
@@ -33,7 +31,8 @@ class ImageLoadingHelper : public RenderViewObserver {
   void OnDownloadImage(int id,
                        const GURL& image_url,
                        bool is_favicon,
-                       int image_size);
+                       uint32_t preferred_image_size,
+                       uint32_t max_image_size);
 
   // Requests to download an image. When done, the ImageLoadingHelper
   // is notified by way of DidDownloadImage. Returns true if the
@@ -46,14 +45,16 @@ class ImageLoadingHelper : public RenderViewObserver {
   bool DownloadImage(int id,
                      const GURL& image_url,
                      bool is_favicon,
-                     int image_size);
+                     uint32_t preferred_image_size,
+                     uint32_t max_image_size);
 
   // This callback is triggered when DownloadImage completes, either
   // succesfully or with a failure. See DownloadImage for more
   // details.
   void DidDownloadImage(
-      int requested_size,
-      webkit_glue::MultiResolutionImageResourceFetcher* fetcher,
+      uint32_t preferred_image_size,
+      uint32_t max_image_size,
+      MultiResolutionImageResourceFetcher* fetcher,
       const std::vector<SkBitmap>& images);
 
   // Decodes a data: URL image or returns an empty image in case of failure.
@@ -62,7 +63,7 @@ class ImageLoadingHelper : public RenderViewObserver {
   // RenderViewObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
-  typedef ScopedVector<webkit_glue::MultiResolutionImageResourceFetcher>
+  typedef ScopedVector<MultiResolutionImageResourceFetcher>
       ImageResourceFetcherList;
 
   // ImageResourceFetchers schedule via DownloadImage.

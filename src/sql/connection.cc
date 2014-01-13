@@ -7,11 +7,14 @@
 #include <string.h>
 
 #include "base/files/file_path.h"
+#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/metrics/sparse_histogram.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "sql/statement.h"
 #include "third_party/sqlite/sqlite3.h"
 
@@ -65,13 +68,32 @@ class ScopedWritableSchema {
 
 namespace sql {
 
+// static
+Connection::ErrorIgnorerCallback* Connection::current_ignorer_cb_ = NULL;
+
+// static
+bool Connection::ShouldIgnore(int error) {
+  if (!current_ignorer_cb_)
+    return false;
+  return current_ignorer_cb_->Run(error);
+}
+
+// static
+void Connection::SetErrorIgnorer(Connection::ErrorIgnorerCallback* cb) {
+  CHECK(current_ignorer_cb_ == NULL);
+  current_ignorer_cb_ = cb;
+}
+
+// static
+void Connection::ResetErrorIgnorer() {
+  CHECK(current_ignorer_cb_);
+  current_ignorer_cb_ = NULL;
+}
+
 bool StatementID::operator<(const StatementID& other) const {
   if (number_ != other.number_)
     return number_ < other.number_;
   return strcmp(str_, other.str_) < 0;
-}
-
-ErrorDelegate::~ErrorDelegate() {
 }
 
 Connection::StatementRef::StatementRef(Connection* connection,
@@ -119,8 +141,7 @@ Connection::Connection()
       transaction_nesting_(0),
       needs_rollback_(false),
       in_memory_(false),
-      poisoned_(false),
-      error_delegate_(NULL) {
+      poisoned_(false) {
 }
 
 Connection::~Connection() {
@@ -128,6 +149,20 @@ Connection::~Connection() {
 }
 
 bool Connection::Open(const base::FilePath& path) {
+  if (!histogram_tag_.empty()) {
+    int64 size_64 = 0;
+    if (file_util::GetFileSize(path, &size_64)) {
+      size_t sample = static_cast<size_t>(size_64 / 1024);
+      std::string full_histogram_name = "Sqlite.SizeKB." + histogram_tag_;
+      base::HistogramBase* histogram =
+          base::Histogram::FactoryGet(
+              full_histogram_name, 1, 1000000, 50,
+              base::HistogramBase::kUmaTargetedHistogramFlag);
+      if (histogram)
+        histogram->Add(sample);
+    }
+  }
+
 #if defined(OS_WIN)
   return OpenInternal(WideToUTF8(path.value()));
 #elif defined(OS_POSIX)
@@ -342,6 +377,32 @@ bool Connection::RazeAndClose() {
   return result;
 }
 
+// TODO(shess): To the extent possible, figure out the optimal
+// ordering for these deletes which will prevent other connections
+// from seeing odd behavior.  For instance, it may be necessary to
+// manually lock the main database file in a SQLite-compatible fashion
+// (to prevent other processes from opening it), then delete the
+// journal files, then delete the main database file.  Another option
+// might be to lock the main database file and poison the header with
+// junk to prevent other processes from opening it successfully (like
+// Gears "SQLite poison 3" trick).
+//
+// static
+bool Connection::Delete(const base::FilePath& path) {
+  base::ThreadRestrictions::AssertIOAllowed();
+
+  base::FilePath journal_path(path.value() + FILE_PATH_LITERAL("-journal"));
+  base::FilePath wal_path(path.value() + FILE_PATH_LITERAL("-wal"));
+
+  file_util::Delete(journal_path, false);
+  file_util::Delete(wal_path, false);
+  file_util::Delete(path, false);
+
+  return !file_util::PathExists(journal_path) &&
+      !file_util::PathExists(wal_path) &&
+      !file_util::PathExists(path);
+}
+
 bool Connection::BeginTransaction() {
   if (needs_rollback_) {
     DCHECK_GT(transaction_nesting_, 0);
@@ -422,7 +483,8 @@ bool Connection::Execute(const char* sql) {
 
   // This needs to be a FATAL log because the error case of arriving here is
   // that there's a malformed SQL statement. This can arise in development if
-  // a change alters the schema but not all queries adjust.
+  // a change alters the schema but not all queries adjust.  This can happen
+  // in production if the schema is corrupted.
   if (error == SQLITE_ERROR)
     DLOG(FATAL) << "SQL Error in " << sql << ", " << GetErrorMessage();
   return error == SQLITE_OK;
@@ -614,6 +676,13 @@ bool Connection::OpenInternal(const std::string& file_name) {
     return false;
   }
 
+  // SQLite uses a lookaside buffer to improve performance of small mallocs.
+  // Chromium already depends on small mallocs being efficient, so we disable
+  // this to avoid the extra memory overhead.
+  // This must be called immediatly after opening the database before any SQL
+  // statements are run.
+  sqlite3_db_config(db_, SQLITE_DBCONFIG_LOOKASIDE, NULL, 0, 0);
+
   // sqlite3_open() does not actually read the database file (unless a
   // hot journal is found).  Successfully executing this pragma on an
   // existing database requires a valid header on page 1.
@@ -640,11 +709,10 @@ bool Connection::OpenInternal(const std::string& file_name) {
   // assumptions about who might change things in the database.
   // http://crbug.com/56559
   if (exclusive_locking_) {
-    // TODO(shess): This should probably be a full CHECK().  Code
-    // which requests exclusive locking but doesn't get it is almost
-    // certain to be ill-tested.
-    if (!Execute("PRAGMA locking_mode=EXCLUSIVE"))
-      DLOG(FATAL) << "Could not set locking mode: " << GetErrorMessage();
+    // TODO(shess): This should probably be a failure.  Code which
+    // requests exclusive locking but doesn't get it is almost certain
+    // to be ill-tested.
+    ignore_result(Execute("PRAGMA locking_mode=EXCLUSIVE"));
   }
 
   // http://www.sqlite.org/pragma.html#pragma_journal_mode
@@ -669,19 +737,16 @@ bool Connection::OpenInternal(const std::string& file_name) {
     DCHECK_LE(page_size_, kSqliteMaxPageSize);
     const std::string sql =
         base::StringPrintf("PRAGMA page_size=%d", page_size_);
-    if (!ExecuteWithTimeout(sql.c_str(), kBusyTimeout))
-      DLOG(FATAL) << "Could not set page size: " << GetErrorMessage();
+    ignore_result(ExecuteWithTimeout(sql.c_str(), kBusyTimeout));
   }
 
   if (cache_size_ != 0) {
     const std::string sql =
         base::StringPrintf("PRAGMA cache_size=%d", cache_size_);
-    if (!ExecuteWithTimeout(sql.c_str(), kBusyTimeout))
-      DLOG(FATAL) << "Could not set cache size: " << GetErrorMessage();
+    ignore_result(ExecuteWithTimeout(sql.c_str(), kBusyTimeout));
   }
 
   if (!ExecuteWithTimeout("PRAGMA secure_delete=ON", kBusyTimeout)) {
-    DLOG(FATAL) << "Could not enable secure_delete: " << GetErrorMessage();
     Close();
     return false;
   }
@@ -708,47 +773,77 @@ void Connection::StatementRefDeleted(StatementRef* ref) {
     open_statements_.erase(i);
 }
 
+void Connection::AddTaggedHistogram(const std::string& name,
+                                    size_t sample) const {
+  if (histogram_tag_.empty())
+    return;
+
+  // TODO(shess): The histogram macros create a bit of static storage
+  // for caching the histogram object.  This code shouldn't execute
+  // often enough for such caching to be crucial.  If it becomes an
+  // issue, the object could be cached alongside histogram_prefix_.
+  std::string full_histogram_name = name + "." + histogram_tag_;
+  base::HistogramBase* histogram =
+      base::SparseHistogram::FactoryGet(
+          full_histogram_name,
+          base::HistogramBase::kUmaTargetedHistogramFlag);
+  if (histogram)
+    histogram->Add(sample);
+}
+
 int Connection::OnSqliteError(int err, sql::Statement *stmt) {
-  // Strip extended error codes.
-  int base_err = err&0xff;
-
-  static size_t kSqliteErrorMax = 50;
-  UMA_HISTOGRAM_ENUMERATION("Sqlite.Error", base_err, kSqliteErrorMax);
-  if (base_err == SQLITE_IOERR) {
-    // TODO(shess): Consider folding the IOERR range into the main
-    // histogram directly.  Perhaps 30..49?  The downside risk would
-    // be that SQLite core adds a bunch of codes and this becomes a
-    // complicated mapping.
-    static size_t kSqliteIOErrorMax = 20;
-    UMA_HISTOGRAM_ENUMERATION("Sqlite.Error.IOERR", err>>8, kSqliteIOErrorMax);
-  }
-
-  if (!error_histogram_name_.empty()) {
-    // TODO(shess): The histogram macros create a bit of static
-    // storage for caching the histogram object.  Since SQLite is
-    // being used for I/O, generally without error, this code
-    // shouldn't execute often enough for such caching to be crucial.
-    // If it becomes an issue, the object could be cached alongside
-    // error_histogram_name_.
-    base::HistogramBase* histogram =
-        base::LinearHistogram::FactoryGet(
-            error_histogram_name_, 1, kSqliteErrorMax, kSqliteErrorMax + 1,
-            base::HistogramBase::kUmaTargetedHistogramFlag);
-    if (histogram)
-      histogram->Add(base_err);
-  }
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Sqlite.Error", err);
+  AddTaggedHistogram("Sqlite.Error", err);
 
   // Always log the error.
   LOG(ERROR) << "sqlite error " << err
              << ", errno " << GetLastErrno()
              << ": " << GetErrorMessage();
 
-  if (error_delegate_.get())
-    return error_delegate_->OnError(err, this, stmt);
+  if (!error_callback_.is_null()) {
+    error_callback_.Run(err, stmt);
+    return err;
+  }
 
   // The default handling is to assert on debug and to ignore on release.
-  DLOG(FATAL) << GetErrorMessage();
+  if (!ShouldIgnore(err))
+    DLOG(FATAL) << GetErrorMessage();
   return err;
+}
+
+// TODO(shess): Allow specifying integrity_check versus quick_check.
+// TODO(shess): Allow specifying maximum results (default 100 lines).
+bool Connection::IntegrityCheck(std::vector<std::string>* messages) {
+  messages->clear();
+
+  // This has the side effect of setting SQLITE_RecoveryMode, which
+  // allows SQLite to process through certain cases of corruption.
+  // Failing to set this pragma probably means that the database is
+  // beyond recovery.
+  const char kWritableSchema[] = "PRAGMA writable_schema = ON";
+  if (!Execute(kWritableSchema))
+    return false;
+
+  bool ret = false;
+  {
+    const char kSql[] = "PRAGMA integrity_check";
+    sql::Statement stmt(GetUniqueStatement(kSql));
+
+    // The pragma appears to return all results (up to 100 by default)
+    // as a single string.  This doesn't appear to be an API contract,
+    // it could return separate lines, so loop _and_ split.
+    while (stmt.Step()) {
+      std::string result(stmt.ColumnString(0));
+      base::SplitString(result, '\n', messages);
+    }
+    ret = stmt.Succeeded();
+  }
+
+  // Best effort to put things back as they were before.
+  const char kNoWritableSchema[] = "PRAGMA writable_schema = OFF";
+  ignore_result(Execute(kNoWritableSchema));
+
+  return ret;
 }
 
 }  // namespace sql

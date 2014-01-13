@@ -72,7 +72,9 @@ public:
     void updateGraphicsLayerGeometry(); // make private
     // Update contents and clipping structure.
     void updateDrawsContent();
-    
+    // Update whether layer needs blending.
+    void updateContentsOpaque();
+
     GraphicsLayer* graphicsLayer() const { return m_graphicsLayer.get(); }
 
     // Layer to clip children
@@ -100,14 +102,6 @@ public:
     GraphicsLayer* parentForSublayers() const;
     GraphicsLayer* childForSuperlayers() const;
 
-    // RenderLayers with backing normally short-circuit paintLayer() because
-    // their content is rendered via callbacks from GraphicsLayer. However, the document
-    // layer is special, because it has a GraphicsLayer to act as a container for the GraphicsLayers
-    // for descendants, but its contents usually render into the window (in which case this returns true).
-    // This returns false for other layers, and when the document layer actually needs to paint into its backing store
-    // for some reason.
-    bool paintsIntoWindow() const;
-    
     // Returns true for a composited layer that has no backing store of its own, so
     // paints into some ancestor layer.
     bool paintsIntoCompositedAncestor() const { return !m_requiresOwnBackingStore; }
@@ -148,8 +142,6 @@ public:
 
     virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& clip) OVERRIDE;
 
-    virtual float deviceScaleFactor() const OVERRIDE;
-    virtual float pageScaleFactor() const OVERRIDE;
     virtual void didCommitChangesForLayer(const GraphicsLayer*) const OVERRIDE;
     virtual bool getCurrentTransform(const GraphicsLayer*, TransformationMatrix&) const OVERRIDE;
 
@@ -175,16 +167,14 @@ public:
     // Return an estimate of the backing store area (in pixels) allocated by this object's GraphicsLayers.
     double backingStoreMemoryEstimate() const;
 
-#if ENABLE(CSS_COMPOSITING)
     void setBlendMode(BlendMode);
-#endif
     void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     void createPrimaryGraphicsLayer();
     void destroyGraphicsLayers();
     
-    PassOwnPtr<GraphicsLayer> createGraphicsLayer(const String&);
+    PassOwnPtr<GraphicsLayer> createGraphicsLayer(const String& name, CompositingReasons);
 
     RenderLayerModelObject* renderer() const { return m_owningLayer->renderer(); }
     RenderLayerCompositor* compositor() const { return m_owningLayer->compositor(); }
@@ -216,9 +206,7 @@ private:
 
     void updateOpacity(const RenderStyle*);
     void updateTransform(const RenderStyle*);
-#if ENABLE(CSS_COMPOSITING)
     void updateLayerBlendMode(const RenderStyle*);
-#endif
     // Return the opacity value that this layer should use for compositing.
     float compositingOpacity(float rendererOpacity) const;
     
@@ -238,6 +226,8 @@ private:
     Color rendererBackgroundColor() const;
     void updateBackgroundColor(bool isSimpleContainer);
     void updateContentsRect(bool isSimpleContainer);
+
+    void updateCompositingReasons();
 
     bool hasVisibleNonCompositingDescendantLayers() const;
 

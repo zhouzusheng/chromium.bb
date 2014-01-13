@@ -9,11 +9,11 @@
  */
 
 #if defined(WEBRTC_ANDROID) && !defined(WEBRTC_ANDROID_OPENSLES)
-#include "modules/audio_device/android/audio_device_jni_android.h"
+#include "webrtc/modules/audio_device/android/audio_device_jni_android.h"
 #endif
 
-#include "voice_engine_impl.h"
-#include "trace.h"
+#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/voice_engine/voice_engine_impl.h"
 
 namespace webrtc
 {
@@ -80,7 +80,7 @@ VoiceEngine* VoiceEngine::Create()
     return GetVoiceEngine();
 }
 
-int VoiceEngine::SetTraceFilter(const unsigned int filter)
+int VoiceEngine::SetTraceFilter(unsigned int filter)
 {
     WEBRTC_TRACE(kTraceApiCall, kTraceVoice,
                  VoEId(gVoiceEngineInstanceCounter, -1),
@@ -104,7 +104,7 @@ int VoiceEngine::SetTraceFilter(const unsigned int filter)
 }
 
 int VoiceEngine::SetTraceFile(const char* fileNameUTF8,
-                              const bool addFileCounter)
+                              bool addFileCounter)
 {
     int ret = Trace::SetTraceFile(fileNameUTF8, addFileCounter);
     WEBRTC_TRACE(kTraceApiCall, kTraceVoice,

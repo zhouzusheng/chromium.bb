@@ -25,21 +25,14 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/animation/SVGSMILElement.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
 #include "SVGNames.h"
 #include "XLinkNames.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
 #include "core/dom/EventListener.h"
-#include "core/page/FrameView.h"
 #include "core/platform/FloatConversion.h"
 #include "core/svg/SVGDocumentExtensions.h"
-#include "core/svg/SVGParserUtilities.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/animation/SMILTimeContainer.h"
@@ -457,7 +450,7 @@ bool SVGSMILElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::attributeNameAttr);
         supportedAttributes.add(XLinkNames::hrefAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGSMILElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -1131,9 +1124,8 @@ void SVGSMILElement::notifyDependentsIntervalChanged(NewOrExistingInterval newOr
 {
     ASSERT(m_intervalBegin.isFinite());
     DEFINE_STATIC_LOCAL(HashSet<SVGSMILElement*>, loopBreaker, ());
-    if (loopBreaker.contains(this))
+    if (!loopBreaker.add(this).isNewEntry)
         return;
-    loopBreaker.add(this);
     
     TimeDependentSet::iterator end = m_timeDependents.end();
     for (TimeDependentSet::iterator it = m_timeDependents.begin(); it != end; ++it) {
@@ -1201,5 +1193,3 @@ void SVGSMILElement::endedActiveInterval()
 }
 
 }
-
-#endif

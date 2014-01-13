@@ -26,7 +26,6 @@
 #include "core/dom/Range.h"
 
 #include <stdio.h>
-#include "HTMLNames.h"
 #include "core/dom/ClientRect.h"
 #include "core/dom/ClientRectList.h"
 #include "core/dom/DocumentFragment.h"
@@ -35,16 +34,13 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/NodeWithIndex.h"
 #include "core/dom/ProcessingInstruction.h"
+#include "core/dom/ScopedEventQueue.h"
 #include "core/dom/Text.h"
 #include "core/editing/TextIterator.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
-#include "core/editing/htmlediting.h"
 #include "core/editing/markup.h"
 #include "core/html/HTMLElement.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/page/Page.h"
 #include "core/platform/graphics/FloatQuad.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderText.h"
@@ -69,6 +65,7 @@ inline Range::Range(PassRefPtr<Document> ownerDocument)
     rangeCounter.increment();
 #endif
 
+    ScriptWrappable::init(this);
     m_ownerDocument->attachRange(this);
 }
 
@@ -86,6 +83,7 @@ inline Range::Range(PassRefPtr<Document> ownerDocument, PassRefPtr<Node> startCo
     rangeCounter.increment();
 #endif
 
+    ScriptWrappable::init(this);
     m_ownerDocument->attachRange(this);
 
     // Simply setting the containers and offsets directly would not do any of the checking
@@ -102,6 +100,11 @@ PassRefPtr<Range> Range::create(PassRefPtr<Document> ownerDocument, PassRefPtr<N
 PassRefPtr<Range> Range::create(PassRefPtr<Document> ownerDocument, const Position& start, const Position& end)
 {
     return adoptRef(new Range(ownerDocument, start.containerNode(), start.computeOffsetInContainerNode(), end.containerNode(), end.computeOffsetInContainerNode()));
+}
+
+PassRefPtr<Range> Range::create(ScriptExecutionContext* context)
+{
+    return adoptRef(new Range(toDocument(context)));
 }
 
 Range::~Range()
@@ -654,7 +657,6 @@ static inline unsigned lengthOfContentsInNode(Node* node)
         return static_cast<ProcessingInstruction*>(node)->data().length();
     case Node::ELEMENT_NODE:
     case Node::ATTRIBUTE_NODE:
-    case Node::ENTITY_REFERENCE_NODE:
     case Node::ENTITY_NODE:
     case Node::DOCUMENT_NODE:
     case Node::DOCUMENT_TYPE_NODE:
@@ -800,7 +802,7 @@ PassRefPtr<Node> Range::processContentsBetweenOffsets(ActionType action, PassRef
         ASSERT(endOffset <= static_cast<ProcessingInstruction*>(container)->data().length());
         if (action == EXTRACT_CONTENTS || action == CLONE_CONTENTS) {
             RefPtr<ProcessingInstruction> c = static_pointer_cast<ProcessingInstruction>(container->cloneNode(true));
-            c->setData(c->data().substring(startOffset, endOffset - startOffset), ec);
+            c->setData(c->data().substring(startOffset, endOffset - startOffset));
             if (fragment) {
                 result = fragment;
                 result->appendChild(c.release(), ec);
@@ -811,12 +813,11 @@ PassRefPtr<Node> Range::processContentsBetweenOffsets(ActionType action, PassRef
             ProcessingInstruction* pi = static_cast<ProcessingInstruction*>(container);
             String data(pi->data());
             data.remove(startOffset, endOffset - startOffset);
-            pi->setData(data, ec);
+            pi->setData(data);
         }
         break;
     case Node::ELEMENT_NODE:
     case Node::ATTRIBUTE_NODE:
-    case Node::ENTITY_REFERENCE_NODE:
     case Node::ENTITY_NODE:
     case Node::DOCUMENT_NODE:
     case Node::DOCUMENT_TYPE_NODE:
@@ -952,13 +953,6 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionCode& ec)
         return;
     }
 
-    // NO_MODIFICATION_ALLOWED_ERR: Raised if an ancestor container of either boundary-point of
-    // the Range is read-only.
-    if (containedByReadOnly()) {
-        ec = NO_MODIFICATION_ALLOWED_ERR;
-        return;
-    }
-
     // HIERARCHY_REQUEST_ERR: Raised if the container of the start of the Range is of a type that
     // does not allow children of the type of newNode or if newNode is an ancestor of the container.
 
@@ -1020,6 +1014,7 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionCode& ec)
         break;
     }
 
+    EventQueueScope scope;
     bool collapsed = m_start == m_end;
     RefPtr<Node> container;
     if (startIsText) {
@@ -1033,8 +1028,6 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionCode& ec)
         if (ec)
             return;
 
-        // This special case doesn't seem to match the DOM specification, but it's currently required
-        // to pass Acid3. We might later decide to remove this.
         if (collapsed)
             m_end.setToBeforeChild(newText.get());
     } else {
@@ -1048,8 +1041,6 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionCode& ec)
         if (ec)
             return;
 
-        // This special case doesn't seem to match the DOM specification, but it's currently required
-        // to pass Acid3. We might later decide to remove this.
         if (collapsed && numNewChildren)
             m_end.set(m_start.container(), startOffset + numNewChildren, lastChild.get());
     }
@@ -1152,7 +1143,6 @@ Node* Range::checkNodeWOffset(Node* n, int offset, ExceptionCode& ec) const
         case Node::DOCUMENT_FRAGMENT_NODE:
         case Node::DOCUMENT_NODE:
         case Node::ELEMENT_NODE:
-        case Node::ENTITY_REFERENCE_NODE:
         case Node::XPATH_NAMESPACE_NODE: {
             if (!offset)
                 return 0;
@@ -1184,7 +1174,6 @@ void Range::checkNodeBA(Node* n, ExceptionCode& ec) const
         case Node::COMMENT_NODE:
         case Node::DOCUMENT_TYPE_NODE:
         case Node::ELEMENT_NODE:
-        case Node::ENTITY_REFERENCE_NODE:
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
         case Node::XPATH_NAMESPACE_NODE:
@@ -1205,7 +1194,6 @@ void Range::checkNodeBA(Node* n, ExceptionCode& ec) const
         case Node::DOCUMENT_TYPE_NODE:
         case Node::ELEMENT_NODE:
         case Node::ENTITY_NODE:
-        case Node::ENTITY_REFERENCE_NODE:
         case Node::NOTATION_NODE:
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
@@ -1308,7 +1296,6 @@ void Range::selectNode(Node* refNode, ExceptionCode& ec)
             case Node::DOCUMENT_FRAGMENT_NODE:
             case Node::DOCUMENT_NODE:
             case Node::ELEMENT_NODE:
-            case Node::ENTITY_REFERENCE_NODE:
             case Node::PROCESSING_INSTRUCTION_NODE:
             case Node::TEXT_NODE:
             case Node::XPATH_NAMESPACE_NODE:
@@ -1326,7 +1313,6 @@ void Range::selectNode(Node* refNode, ExceptionCode& ec)
         case Node::COMMENT_NODE:
         case Node::DOCUMENT_TYPE_NODE:
         case Node::ELEMENT_NODE:
-        case Node::ENTITY_REFERENCE_NODE:
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
         case Node::XPATH_NAMESPACE_NODE:
@@ -1372,7 +1358,6 @@ void Range::selectNodeContents(Node* refNode, ExceptionCode& ec)
             case Node::DOCUMENT_FRAGMENT_NODE:
             case Node::DOCUMENT_NODE:
             case Node::ELEMENT_NODE:
-            case Node::ENTITY_REFERENCE_NODE:
             case Node::PROCESSING_INSTRUCTION_NODE:
             case Node::TEXT_NODE:
             case Node::XPATH_NAMESPACE_NODE:
@@ -1420,18 +1405,10 @@ void Range::surroundContents(PassRefPtr<Node> passNewParent, ExceptionCode& ec)
         case Node::CDATA_SECTION_NODE:
         case Node::COMMENT_NODE:
         case Node::ELEMENT_NODE:
-        case Node::ENTITY_REFERENCE_NODE:
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
         case Node::XPATH_NAMESPACE_NODE:
             break;
-    }
-
-    // NO_MODIFICATION_ALLOWED_ERR: Raised if an ancestor container of either boundary-point of
-    // the Range is read-only.
-    if (containedByReadOnly()) {
-        ec = NO_MODIFICATION_ALLOWED_ERR;
-        return;
     }
 
     // Raise a HIERARCHY_REQUEST_ERR if m_start.container() doesn't accept children like newParent.
@@ -1518,33 +1495,11 @@ void Range::checkDeleteExtract(ExceptionCode& ec)
         
     Node* pastLast = pastLastNode();
     for (Node* n = firstNode(); n != pastLast; n = NodeTraversal::next(n)) {
-        if (n->isReadOnlyNode()) {
-            ec = NO_MODIFICATION_ALLOWED_ERR;
-            return;
-        }
         if (n->nodeType() == Node::DOCUMENT_TYPE_NODE) {
             ec = HIERARCHY_REQUEST_ERR;
             return;
         }
     }
-
-    if (containedByReadOnly()) {
-        ec = NO_MODIFICATION_ALLOWED_ERR;
-        return;
-    }
-}
-
-bool Range::containedByReadOnly() const
-{
-    for (Node* n = m_start.container(); n; n = n->parentNode()) {
-        if (n->isReadOnlyNode())
-            return true;
-    }
-    for (Node* n = m_end.container(); n; n = n->parentNode()) {
-        if (n->isReadOnlyNode())
-            return true;
-    }
-    return false;
 }
 
 Node* Range::firstNode() const

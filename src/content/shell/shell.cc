@@ -8,39 +8,57 @@
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/devtools_manager.h"
-#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/renderer_preferences.h"
+#include "content/shell/common/shell_messages.h"
+#include "content/shell/common/shell_switches.h"
 #include "content/shell/notify_done_forwarder.h"
 #include "content/shell/shell_browser_main_parts.h"
 #include "content/shell/shell_content_browser_client.h"
 #include "content/shell/shell_devtools_frontend.h"
 #include "content/shell/shell_javascript_dialog_manager.h"
-#include "content/shell/shell_messages.h"
-#include "content/shell/shell_switches.h"
 #include "content/shell/webkit_test_controller.h"
 
-// Content area size for newly created windows.
-static const int kTestWindowWidth = 800;
-static const int kTestWindowHeight = 600;
-
 namespace content {
+
+const int Shell::kDefaultTestWindowWidthDip = 800;
+const int Shell::kDefaultTestWindowHeightDip = 600;
 
 std::vector<Shell*> Shell::windows_;
 base::Callback<void(Shell*)> Shell::shell_created_callback_;
 
 bool Shell::quit_message_loop_ = true;
+
+class Shell::DevToolsWebContentsObserver : public WebContentsObserver {
+ public:
+  DevToolsWebContentsObserver(Shell* shell, WebContents* web_contents)
+      : WebContentsObserver(web_contents),
+        shell_(shell) {
+  }
+
+  // WebContentsObserver
+  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE {
+    shell_->OnDevToolsWebContentsDestroyed();
+  }
+
+ private:
+  Shell* shell_;
+
+  DISALLOW_COPY_AND_ASSIGN(DevToolsWebContentsObserver);
+};
 
 Shell::Shell(WebContents* web_contents)
     : devtools_frontend_(NULL),
@@ -52,10 +70,8 @@ Shell::Shell(WebContents* web_contents)
 #endif
       headless_(false) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kDumpRenderTree) &&
-      !command_line.HasSwitch(switches::kDisableHeadlessForLayoutTests)) {
+  if (command_line.HasSwitch(switches::kDumpRenderTree))
     headless_ = true;
-  }
   registrar_.Add(this, NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED,
       Source<WebContents>(web_contents));
   windows_.push_back(this);
@@ -81,9 +97,10 @@ Shell::~Shell() {
                                            base::MessageLoop::QuitClosure());
 }
 
-Shell* Shell::CreateShell(WebContents* web_contents) {
+Shell* Shell::CreateShell(WebContents* web_contents,
+                          const gfx::Size& initial_size) {
   Shell* shell = new Shell(web_contents);
-  shell->PlatformCreateWindow(kTestWindowWidth, kTestWindowHeight);
+  shell->PlatformCreateWindow(initial_size.width(), initial_size.height());
 
   shell->web_contents_.reset(web_contents);
   web_contents->SetDelegate(shell);
@@ -127,7 +144,8 @@ Shell* Shell::FromRenderViewHost(RenderViewHost* rvh) {
 
 // static
 void Shell::Initialize() {
-  PlatformInitialize(gfx::Size(kTestWindowWidth, kTestWindowHeight));
+  PlatformInitialize(
+      gfx::Size(kDefaultTestWindowWidthDip, kDefaultTestWindowHeightDip));
 }
 
 Shell* Shell::CreateNewWindow(BrowserContext* browser_context,
@@ -140,9 +158,10 @@ Shell* Shell::CreateNewWindow(BrowserContext* browser_context,
   if (!initial_size.IsEmpty())
     create_params.initial_size = initial_size;
   else
-    create_params.initial_size = gfx::Size(kTestWindowWidth, kTestWindowHeight);
+    create_params.initial_size =
+        gfx::Size(kDefaultTestWindowWidthDip, kDefaultTestWindowHeightDip);
   WebContents* web_contents = WebContents::Create(create_params);
-  Shell* shell = CreateShell(web_contents);
+  Shell* shell = CreateShell(web_contents, create_params.initial_size);
   if (!url.is_empty())
     shell->LoadURL(url);
   return shell;
@@ -191,19 +210,14 @@ void Shell::ShowDevTools() {
     return;
   }
   devtools_frontend_ = ShellDevToolsFrontend::Show(web_contents());
-  registrar_.Add(this,
-                 NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                 Source<WebContents>(
-                     devtools_frontend_->frontend_shell()->web_contents()));
+  devtools_observer_.reset(new DevToolsWebContentsObserver(
+      this, devtools_frontend_->frontend_shell()->web_contents()));
 }
 
 void Shell::CloseDevTools() {
   if (!devtools_frontend_)
     return;
-  registrar_.Remove(this,
-                    NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                    Source<WebContents>(
-                        devtools_frontend_->frontend_shell()->web_contents()));
+  devtools_observer_.reset();
   devtools_frontend_->Close();
   devtools_frontend_ = NULL;
 }
@@ -272,7 +286,7 @@ void Shell::WebContentsCreated(WebContents* source_contents,
                                const string16& frame_name,
                                const GURL& target_url,
                                WebContents* new_contents) {
-  CreateShell(new_contents);
+  CreateShell(new_contents, source_contents->GetView()->GetContainerSize());
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     NotifyDoneForwarder::CreateForWebContents(new_contents);
 }
@@ -320,12 +334,14 @@ void Shell::Observe(int type,
       string16 text = title->first->GetTitle();
       PlatformSetTitle(text);
     }
-  } else if (type == NOTIFICATION_WEB_CONTENTS_DESTROYED) {
-    devtools_frontend_ = NULL;
-    registrar_.Remove(this, NOTIFICATION_WEB_CONTENTS_DESTROYED, source);
   } else {
     NOTREACHED();
   }
+}
+
+void Shell::OnDevToolsWebContentsDestroyed() {
+  devtools_observer_.reset();
+  devtools_frontend_ = NULL;
 }
 
 }  // namespace content

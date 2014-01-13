@@ -7,14 +7,16 @@
 #include <cmath>
 #include <stdlib.h>
 
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time.h"
 #include "ui/base/events/event.h"
 #include "ui/base/events/event_constants.h"
 #include "ui/base/gestures/gesture_configuration.h"
 #include "ui/base/gestures/gesture_util.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/gfx/rect.h"
 
 namespace ui {
@@ -147,10 +149,16 @@ enum EdgeStateSignatureType {
       G(GS_PENDING_TWO_FINGER_TAP, 2, TS_PRESSED, TSI_NOT_PROCESSED),
 
   GST_PINCH_FIRST_MOVED =
-      G(GS_PINCH, 0, TS_MOVED, TSI_ALWAYS),
+      G(GS_PINCH, 0, TS_MOVED, TSI_NOT_PROCESSED),
+
+  GST_PINCH_FIRST_MOVED_HANDLED =
+      G(GS_PINCH, 0, TS_MOVED, TSI_PROCESSED),
 
   GST_PINCH_SECOND_MOVED =
-      G(GS_PINCH, 1, TS_MOVED, TSI_ALWAYS),
+      G(GS_PINCH, 1, TS_MOVED, TSI_NOT_PROCESSED),
+
+  GST_PINCH_SECOND_MOVED_HANDLED =
+      G(GS_PINCH, 1, TS_MOVED, TSI_PROCESSED),
 
   GST_PINCH_FIRST_RELEASED =
       G(GS_PINCH, 0, TS_RELEASED, TSI_ALWAYS),
@@ -168,7 +176,10 @@ enum EdgeStateSignatureType {
       G(GS_PINCH, 2, TS_PRESSED, TSI_NOT_PROCESSED),
 
   GST_PINCH_THIRD_MOVED =
-      G(GS_PINCH, 2, TS_MOVED, TSI_ALWAYS),
+      G(GS_PINCH, 2, TS_MOVED, TSI_NOT_PROCESSED),
+
+  GST_PINCH_THIRD_MOVED_HANDLED =
+      G(GS_PINCH, 2, TS_MOVED, TSI_PROCESSED),
 
   GST_PINCH_THIRD_RELEASED =
       G(GS_PINCH, 2, TS_RELEASED, TSI_ALWAYS),
@@ -180,7 +191,10 @@ enum EdgeStateSignatureType {
       G(GS_PINCH, 3, TS_PRESSED, TSI_NOT_PROCESSED),
 
   GST_PINCH_FOURTH_MOVED =
-      G(GS_PINCH, 3, TS_MOVED, TSI_ALWAYS),
+      G(GS_PINCH, 3, TS_MOVED, TSI_NOT_PROCESSED),
+
+  GST_PINCH_FOURTH_MOVED_HANDLED =
+      G(GS_PINCH, 3, TS_MOVED, TSI_PROCESSED),
 
   GST_PINCH_FOURTH_RELEASED =
       G(GS_PINCH, 3, TS_RELEASED, TSI_ALWAYS),
@@ -192,7 +206,10 @@ enum EdgeStateSignatureType {
       G(GS_PINCH, 4, TS_PRESSED, TSI_NOT_PROCESSED),
 
   GST_PINCH_FIFTH_MOVED =
-      G(GS_PINCH, 4, TS_MOVED, TSI_ALWAYS),
+      G(GS_PINCH, 4, TS_MOVED, TSI_NOT_PROCESSED),
+
+  GST_PINCH_FIFTH_MOVED_HANDLED =
+      G(GS_PINCH, 4, TS_MOVED, TSI_PROCESSED),
 
   GST_PINCH_FIFTH_RELEASED =
       G(GS_PINCH, 4, TS_RELEASED, TSI_ALWAYS),
@@ -240,21 +257,26 @@ EdgeStateSignatureType Signature(GestureState gesture_state,
     case GST_PENDING_TWO_FINGER_TAP_SECOND_CANCELLED:
     case GST_PENDING_TWO_FINGER_TAP_THIRD_PRESSED:
     case GST_PINCH_FIRST_MOVED:
+    case GST_PINCH_FIRST_MOVED_HANDLED:
     case GST_PINCH_SECOND_MOVED:
+    case GST_PINCH_SECOND_MOVED_HANDLED:
     case GST_PINCH_FIRST_RELEASED:
     case GST_PINCH_SECOND_RELEASED:
     case GST_PINCH_FIRST_CANCELLED:
     case GST_PINCH_SECOND_CANCELLED:
     case GST_PINCH_THIRD_PRESSED:
     case GST_PINCH_THIRD_MOVED:
+    case GST_PINCH_THIRD_MOVED_HANDLED:
     case GST_PINCH_THIRD_RELEASED:
     case GST_PINCH_THIRD_CANCELLED:
     case GST_PINCH_FOURTH_PRESSED:
     case GST_PINCH_FOURTH_MOVED:
+    case GST_PINCH_FOURTH_MOVED_HANDLED:
     case GST_PINCH_FOURTH_RELEASED:
     case GST_PINCH_FOURTH_CANCELLED:
     case GST_PINCH_FIFTH_PRESSED:
     case GST_PINCH_FIFTH_MOVED:
+    case GST_PINCH_FIFTH_MOVED_HANDLED:
     case GST_PINCH_FIFTH_RELEASED:
     case GST_PINCH_FIFTH_CANCELLED:
       break;
@@ -451,6 +473,12 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
       PinchStart(event, point, gestures.get());
       set_state(GS_PINCH);
       break;
+    case GST_PINCH_FIRST_MOVED_HANDLED:
+    case GST_PINCH_SECOND_MOVED_HANDLED:
+    case GST_PINCH_THIRD_MOVED_HANDLED:
+    case GST_PINCH_FOURTH_MOVED_HANDLED:
+    case GST_PINCH_FIFTH_MOVED_HANDLED:
+      break;
     case GST_PINCH_FIRST_MOVED:
     case GST_PINCH_SECOND_MOVED:
     case GST_PINCH_THIRD_MOVED:
@@ -620,9 +648,11 @@ GestureEvent* GestureSequence::CreateGestureEvent(
   GestureEventDetails gesture_details(details);
   gesture_details.set_touch_points(point_count_);
   gesture_details.set_bounding_box(bounding_box_);
+  base::TimeDelta time_stamp =
+      base::TimeDelta::FromMicroseconds(timestamp.ToDoubleT() * 1000000);
   return new GestureEvent(gesture_details.type(), location.x(), location.y(),
-      flags, base::TimeDelta::FromMilliseconds(timestamp.ToDoubleT() * 1000),
-      gesture_details, touch_id_bitmask);
+                          flags, time_stamp, gesture_details,
+                          touch_id_bitmask);
 }
 
 void GestureSequence::AppendTapDownGestureEvent(const GesturePoint& point,
@@ -696,6 +726,8 @@ void GestureSequence::AppendScrollGestureEnd(const GesturePoint& point,
                                              float y_velocity) {
   float railed_x_velocity = x_velocity;
   float railed_y_velocity = y_velocity;
+  last_scroll_prediction_offset_.set_x(0);
+  last_scroll_prediction_offset_.set_y(0);
 
   if (scroll_type_ == ST_HORIZONTAL)
     railed_y_velocity = 0;
@@ -724,7 +756,9 @@ void GestureSequence::AppendScrollGestureEnd(const GesturePoint& point,
 
 void GestureSequence::AppendScrollGestureUpdate(GesturePoint& point,
                                                 Gestures* gestures) {
-  gfx::Vector2d d;
+  static bool use_scroll_prediction = CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kEnableScrollPrediction);
+  gfx::Vector2dF d;
   gfx::Point location;
   if (point_count_ == 1) {
     d = point.ScrollDelta();
@@ -734,6 +768,20 @@ void GestureSequence::AppendScrollGestureUpdate(GesturePoint& point,
     d = location - latest_multi_scroll_update_location_;
     latest_multi_scroll_update_location_ = location;
   }
+
+  if (use_scroll_prediction) {
+    // Remove the extra distance added by the last scroll prediction and add
+    // the new prediction offset.
+    d -= last_scroll_prediction_offset_;
+    last_scroll_prediction_offset_.set_x(
+        GestureConfiguration::scroll_prediction_seconds() * point.XVelocity());
+    last_scroll_prediction_offset_.set_y(
+        GestureConfiguration::scroll_prediction_seconds() * point.YVelocity());
+    d += last_scroll_prediction_offset_;
+    location += gfx::Vector2d(last_scroll_prediction_offset_.x(),
+                              last_scroll_prediction_offset_.y());
+  }
+
   if (scroll_type_ == ST_HORIZONTAL)
     d.set_y(0);
   else if (scroll_type_ == ST_VERTICAL)
@@ -821,8 +869,12 @@ bool GestureSequence::Click(const TouchEvent& event,
                             Gestures* gestures) {
   DCHECK(state_ == GS_PENDING_SYNTHETIC_CLICK);
   if (point.IsInClickWindow(event)) {
-    bool double_tap = point.IsInDoubleClickWindow(event);
-    AppendClickGestureEvent(point, double_tap ? 2 : 1, gestures);
+    int tap_count = 1;
+    if (point.IsInTripleClickWindow(event))
+      tap_count = 3;
+    else if (point.IsInDoubleClickWindow(event))
+      tap_count = 2;
+    AppendClickGestureEvent(point, tap_count, gestures);
     return true;
   } else if (point.IsInsideManhattanSquare(event) &&
       !GetLongPressTimer()->IsRunning()) {

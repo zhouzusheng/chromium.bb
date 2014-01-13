@@ -20,10 +20,8 @@
 #include "config.h"
 #include "core/css/MediaQueryListListener.h"
 
-#include "bindings/v8/ScriptFunctionCall.h"
-#include "core/css/MediaQueryList.h"
-
 #include "V8MediaQueryList.h"
+#include "bindings/v8/ScriptFunctionCall.h"
 
 namespace WebCore {
 
@@ -31,9 +29,11 @@ void MediaQueryListListener::queryChanged(ScriptState* state, MediaQueryList* qu
 {
     ScriptCallback callback(state, m_value);
     v8::HandleScope handleScope;
+
     v8::Handle<v8::Context> context = state->context();
     if (context.IsEmpty())
-       return; // JS may not be enabled.
+        return; // JS may not be enabled.
+
     v8::Context::Scope scope(context);
     callback.appendArgument(toV8(query, v8::Handle<v8::Object>(), context->GetIsolate()));
     callback.call();

@@ -26,12 +26,9 @@
 #include "core/html/HTMLOptGroupElement.h"
 
 #include "HTMLNames.h"
-#include "core/css/StyleResolver.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/dom/NodeRenderingContext.h"
 #include "core/html/HTMLSelectElement.h"
-#include "core/rendering/RenderMenuList.h"
 #include <wtf/StdLibExtras.h>
 
 namespace WebCore {
@@ -56,15 +53,10 @@ bool HTMLOptGroupElement::isDisabledFormControl() const
     return fastHasAttribute(disabledAttr);
 }
 
-bool HTMLOptGroupElement::supportsFocus() const
-{
-    return HTMLElement::supportsFocus();
-}
-
-bool HTMLOptGroupElement::isFocusable() const
+bool HTMLOptGroupElement::rendererIsFocusable() const
 {
     // Optgroup elements do not have a renderer so we check the renderStyle instead.
-    return supportsFocus() && renderStyle() && renderStyle()->display() != NONE;
+    return renderStyle() && renderStyle()->display() != NONE;
 }
 
 const AtomicString& HTMLOptGroupElement::formControlType() const
@@ -97,9 +89,9 @@ void HTMLOptGroupElement::recalcSelectOptions()
         toHTMLSelectElement(select)->setRecalcListItems();
 }
 
-void HTMLOptGroupElement::attach()
+void HTMLOptGroupElement::attach(const AttachContext& context)
 {
-    HTMLElement::attach();
+    HTMLElement::attach(context);
     // If after attaching nothing called styleForRenderer() on this node we
     // manually cache the value. This happens if our parent doesn't have a
     // renderer like <optgroup> or if it doesn't allow children like <select>.
@@ -107,15 +99,15 @@ void HTMLOptGroupElement::attach()
         updateNonRenderStyle();
 }
 
-void HTMLOptGroupElement::detach()
+void HTMLOptGroupElement::detach(const AttachContext& context)
 {
     m_style.clear();
-    HTMLElement::detach();
+    HTMLElement::detach(context);
 }
 
 void HTMLOptGroupElement::updateNonRenderStyle()
 {
-    m_style = document()->styleResolver()->styleForElement(this);
+    m_style = originalStyleForRenderer();
 }
 
 RenderStyle* HTMLOptGroupElement::nonRendererStyle() const

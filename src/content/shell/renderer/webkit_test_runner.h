@@ -9,11 +9,12 @@
 
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
+#include "content/public/common/page_state.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/public/renderer/render_view_observer_tracker.h"
-#include "content/shell/shell_test_configuration.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebPreferences.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestDelegate.h"
+#include "content/shell/common/shell_test_configuration.h"
+#include "third_party/WebKit/public/testing/WebPreferences.h"
+#include "third_party/WebKit/public/testing/WebTestDelegate.h"
 #include "v8/include/v8.h"
 
 class SkCanvas;
@@ -28,11 +29,8 @@ namespace WebTestRunner {
 class WebTestProxyBase;
 }
 
-namespace webkit_glue {
-class TestMediaStreamClient;
-}
-
 namespace content {
+class ShellMediaStreamClient;
 
 // This is the renderer side of the webkit test runner.
 class WebKitTestRunner : public RenderViewObserver,
@@ -71,6 +69,9 @@ class WebKitTestRunner : public RenderViewObserver,
   virtual void applyPreferences();
   virtual std::string makeURLErrorDescription(const WebKit::WebURLError& error);
   virtual void setClientWindowRect(const WebKit::WebRect& rect);
+  virtual void enableAutoResizeMode(const WebKit::WebSize& min_size,
+                                    const WebKit::WebSize& max_size);
+  virtual void disableAutoResizeMode(const WebKit::WebSize& new_size);
   virtual void showDevTools();
   virtual void closeDevTools();
   virtual void evaluateInWebInspector(long call_id, const std::string& script);
@@ -82,9 +83,6 @@ class WebKitTestRunner : public RenderViewObserver,
   virtual std::string pathToLocalResource(const std::string& resource);
   virtual void setLocale(const std::string& locale);
   virtual void testFinished();
-  virtual void testTimedOut();
-  virtual bool isBeingDebugged();
-  virtual int layoutTestTimeout();
   virtual void closeRemainingWindows();
   virtual int navigationEntryCount();
   virtual void goToOffset(int offset);
@@ -111,7 +109,7 @@ class WebKitTestRunner : public RenderViewObserver,
   void OnSetTestConfiguration(const ShellTestConfiguration& params);
   void OnSessionHistory(
       const std::vector<int>& routing_ids,
-      const std::vector<std::vector<std::string> >& session_histories,
+      const std::vector<std::vector<PageState> >& session_histories,
       const std::vector<unsigned>& current_entry_indexes);
   void OnReset();
   void OnNotifyDone();
@@ -129,14 +127,14 @@ class WebKitTestRunner : public RenderViewObserver,
   ShellTestConfiguration test_config_;
 
   std::vector<int> routing_ids_;
-  std::vector<std::vector<std::string> > session_histories_;
+  std::vector<std::vector<PageState> > session_histories_;
   std::vector<unsigned> current_entry_indexes_;
 
   bool is_main_window_;
 
   bool focus_on_next_commit_;
 
-  scoped_ptr<webkit_glue::TestMediaStreamClient> test_media_stream_client_;
+  scoped_ptr<ShellMediaStreamClient> shell_media_stream_client_;
 
   DISALLOW_COPY_AND_ASSIGN(WebKitTestRunner);
 };

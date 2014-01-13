@@ -100,7 +100,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual bool appendFormData(FormDataList&, bool);
     virtual void reset();
     virtual bool hasCustomFocusLogic() const OVERRIDE;
@@ -111,7 +111,7 @@ private:
     virtual void accessKeyAction(bool sendMouseEvents);
 
     virtual bool shouldUseInputMethod();
-    virtual void attach() OVERRIDE;
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual bool matchesReadOnlyPseudoClass() const OVERRIDE;
     virtual bool matchesReadWritePseudoClass() const OVERRIDE;
 

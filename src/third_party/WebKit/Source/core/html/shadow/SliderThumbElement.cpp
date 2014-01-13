@@ -33,11 +33,9 @@
 #include "config.h"
 #include "core/html/shadow/SliderThumbElement.h"
 
-#include "CSSValueKeywords.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/Event.h"
 #include "core/dom/MouseEvent.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/StepRange.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -46,7 +44,6 @@
 #include "core/rendering/RenderFlexibleBox.h"
 #include "core/rendering/RenderSlider.h"
 #include "core/rendering/RenderTheme.h"
-#include <wtf/MathExtras.h>
 
 using namespace std;
 
@@ -74,8 +71,8 @@ inline static bool hasVerticalAppearance(HTMLInputElement* input)
 
 SliderThumbElement* sliderThumbElementOf(Node* node)
 {
-    ASSERT(node);
-    ShadowRoot* shadow = node->toInputElement()->userAgentShadowRoot();
+    RELEASE_ASSERT(node->hasTagName(inputTag));
+    ShadowRoot* shadow = toHTMLInputElement(node)->userAgentShadowRoot();
     ASSERT(shadow);
     Node* thumb = shadow->firstChild()->firstChild()->firstChild();
     ASSERT(thumb);
@@ -84,8 +81,8 @@ SliderThumbElement* sliderThumbElementOf(Node* node)
 
 HTMLElement* sliderTrackElementOf(Node* node)
 {
-    ASSERT(node);
-    ShadowRoot* shadow = node->toInputElement()->userAgentShadowRoot();
+    RELEASE_ASSERT(node->hasTagName(inputTag));
+    ShadowRoot* shadow = toHTMLInputElement(node)->userAgentShadowRoot();
     ASSERT(shadow);
     Node* track = shadow->firstChild()->firstChild();
     ASSERT(track);
@@ -137,10 +134,9 @@ private:
 
 void RenderSliderContainer::computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues& computedValues) const
 {
-    HTMLInputElement* input = node()->shadowHost()->toInputElement();
+    HTMLInputElement* input = toHTMLInputElement(node()->shadowHost());
     bool isVertical = hasVerticalAppearance(input);
 
-#if ENABLE(DATALIST_ELEMENT)
     if (input->renderer()->isSlider() && !isVertical && input->list()) {
         int offsetFromCenter = theme()->sliderTickOffsetFromTrackCenter();
         LayoutUnit trackHeight = 0;
@@ -157,7 +153,6 @@ void RenderSliderContainer::computeLogicalHeight(LayoutUnit logicalHeight, Layou
         RenderBox::computeLogicalHeight(trackHeight, logicalTop, computedValues);
         return;
     }
-#endif
     if (isVertical)
         logicalHeight = RenderSlider::defaultTrackLength;
     RenderBox::computeLogicalHeight(logicalHeight, logicalTop, computedValues);
@@ -165,7 +160,7 @@ void RenderSliderContainer::computeLogicalHeight(LayoutUnit logicalHeight, Layou
 
 void RenderSliderContainer::layout()
 {
-    HTMLInputElement* input = node()->shadowHost()->toInputElement();
+    HTMLInputElement* input = toHTMLInputElement(node()->shadowHost());
     bool isVertical = hasVerticalAppearance(input);
     style()->setFlexDirection(isVertical ? FlowColumn : FlowRow);
     TextDirection oldTextDirection = style()->direction();
@@ -224,14 +219,14 @@ void SliderThumbElement::setPositionFromValue()
         renderer()->setNeedsLayout(true);
 }
 
-RenderObject* SliderThumbElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SliderThumbElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSliderThumb(this);
+    return new (document()->renderArena()) RenderSliderThumb(this);
 }
 
 bool SliderThumbElement::isDisabledFormControl() const
 {
-    return hostInput()->isDisabledFormControl();
+    return hostInput() && hostInput()->isDisabledFormControl();
 }
 
 bool SliderThumbElement::matchesReadOnlyPseudoClass() const
@@ -294,7 +289,6 @@ void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
     StepRange stepRange(input->createStepRange(RejectAny));
     Decimal value = stepRange.clampValue(stepRange.valueFromProportion(fraction));
 
-#if ENABLE(DATALIST_ELEMENT)
     const LayoutUnit snappingThreshold = renderer()->theme()->sliderTickSnappingThreshold();
     if (snappingThreshold > 0) {
         Decimal closest = input->findClosestTickMarkValue(value);
@@ -306,7 +300,6 @@ void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
                 value = closest;
         }
     }
-#endif
 
     String valueString = serializeForNumberType(value);
     if (valueString == input->value())
@@ -354,7 +347,7 @@ void SliderThumbElement::defaultEventHandler(Event* event)
         return;
     }
 
-    MouseEvent* mouseEvent = static_cast<MouseEvent*>(event);
+    MouseEvent* mouseEvent = toMouseEvent(event);
     bool isLeftButton = mouseEvent->button() == LeftButton;
     const AtomicString& eventType = event->type();
 
@@ -394,20 +387,20 @@ bool SliderThumbElement::willRespondToMouseClickEvents()
     return HTMLDivElement::willRespondToMouseClickEvents();
 }
 
-void SliderThumbElement::detach()
+void SliderThumbElement::detach(const AttachContext& context)
 {
     if (m_inDragMode) {
         if (Frame* frame = document()->frame())
             frame->eventHandler()->setCapturingMouseEventsNode(0);
     }
-    HTMLDivElement::detach();
+    HTMLDivElement::detach(context);
 }
 
 HTMLInputElement* SliderThumbElement::hostInput() const
 {
     // Only HTMLInputElement creates SliderThumbElement instances as its shadow nodes.
     // So, shadowHost() must be an HTMLInputElement.
-    return shadowHost()->toInputElement();
+    return toHTMLInputElement(shadowHost());
 }
 
 static const AtomicString& sliderThumbShadowPseudoId()
@@ -454,9 +447,9 @@ PassRefPtr<SliderContainerElement> SliderContainerElement::create(Document* docu
     return adoptRef(new SliderContainerElement(document));
 }
 
-RenderObject* SliderContainerElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SliderContainerElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSliderContainer(this);
+    return new (document()->renderArena()) RenderSliderContainer(this);
 }
 
 const AtomicString& SliderContainerElement::shadowPseudoId() const
@@ -464,11 +457,10 @@ const AtomicString& SliderContainerElement::shadowPseudoId() const
     DEFINE_STATIC_LOCAL(const AtomicString, mediaSliderContainer, ("-webkit-media-slider-container", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, sliderContainer, ("-webkit-slider-container", AtomicString::ConstructFromLiteral));
 
-    HTMLInputElement* input = shadowHost()->toInputElement();
-    if (!input)
+    if (!shadowHost()->hasTagName(inputTag))
         return sliderContainer;
 
-    RenderStyle* sliderStyle = input->renderer()->style();
+    RenderStyle* sliderStyle = toHTMLInputElement(shadowHost())->renderer()->style();
     switch (sliderStyle->appearance()) {
     case MediaSliderPart:
     case MediaSliderThumbPart:

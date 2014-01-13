@@ -109,43 +109,52 @@ function initializeCollator(collator, locales, options) {
  *
  * @constructor
  */
-Intl.Collator = function() {
-  var locales = arguments[0];
-  var options = arguments[1];
+%SetProperty(Intl, 'Collator', function() {
+    var locales = arguments[0];
+    var options = arguments[1];
 
-  if (!this || this === Intl) {
-    // Constructor is called as a function.
-    return new Intl.Collator(locales, options);
-  }
+    if (!this || this === Intl) {
+      // Constructor is called as a function.
+      return new Intl.Collator(locales, options);
+    }
 
-  return initializeCollator(toObject(this), locales, options);
-};
+    return initializeCollator(toObject(this), locales, options);
+  },
+  ATTRIBUTES.DONT_ENUM
+);
 
 
 /**
  * Collator resolvedOptions method.
  */
-Intl.Collator.prototype.resolvedOptions = function() {
-  if (!this || typeof this !== 'object' ||
-      this.__initializedIntlObject !== 'collator') {
-    throw new TypeError('resolvedOptions method called on a non-object ' +
-        'or on a object that is not Intl.Collator.');
-  }
+%SetProperty(Intl.Collator.prototype, 'resolvedOptions', function() {
+    if (%_IsConstructCall()) {
+      throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+    }
 
-  var coll = this;
-  var locale = getOptimalLanguageTag(coll.resolved.requestedLocale,
-                                     coll.resolved.locale);
+    if (!this || typeof this !== 'object' ||
+        this.__initializedIntlObject !== 'collator') {
+      throw new TypeError('resolvedOptions method called on a non-object ' +
+                          'or on a object that is not Intl.Collator.');
+    }
 
-  return {
-    locale: locale,
-    usage: coll.resolved.usage,
-    sensitivity: coll.resolved.sensitivity,
-    ignorePunctuation: coll.resolved.ignorePunctuation,
-    numeric: coll.resolved.numeric,
-    caseFirst: coll.resolved.caseFirst,
-    collation: coll.resolved.collation
-  };
-};
+    var coll = this;
+    var locale = getOptimalLanguageTag(coll.resolved.requestedLocale,
+                                       coll.resolved.locale);
+
+    return {
+      locale: locale,
+      usage: coll.resolved.usage,
+      sensitivity: coll.resolved.sensitivity,
+      ignorePunctuation: coll.resolved.ignorePunctuation,
+      numeric: coll.resolved.numeric,
+      caseFirst: coll.resolved.caseFirst,
+      collation: coll.resolved.collation
+    };
+  },
+  ATTRIBUTES.DONT_ENUM
+);
+%FunctionRemovePrototype(Intl.Collator.prototype.resolvedOptions);
 
 
 /**
@@ -154,9 +163,16 @@ Intl.Collator.prototype.resolvedOptions = function() {
  * order in the returned list as in the input list.
  * Options are optional parameter.
  */
-Intl.Collator.supportedLocalesOf = function(locales) {
-  return supportedLocalesOf('collator', locales, arguments[1]);
-};
+%SetProperty(Intl.Collator, 'supportedLocalesOf', function(locales) {
+    if (%_IsConstructCall()) {
+      throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+    }
+
+    return supportedLocalesOf('collator', locales, arguments[1]);
+  },
+  ATTRIBUTES.DONT_ENUM
+);
+%FunctionRemovePrototype(Intl.Collator.supportedLocalesOf);
 
 
 /**

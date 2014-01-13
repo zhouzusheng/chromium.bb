@@ -26,7 +26,7 @@
 #define Cache_h
 
 #include "core/loader/cache/CachedResource.h"
-#include "core/page/SecurityOriginHash.h"
+#include "weborigin/SecurityOriginHash.h"
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/Noncopyable.h>
@@ -57,26 +57,14 @@ struct SecurityOriginHash;
 // -------|-----+++++++++++++++|
 // -------|-----+++++++++++++++|+++++
 
-// The behavior of the cache changes in the following way if shouldMakeResourcePurgeableOnEviction
-// returns true.
-//
-// 1. Dead resources in the cache are kept in non-purgeable memory.
-// 2. When we prune dead resources, instead of freeing them, we mark their memory as purgeable and
-//    keep the resources until the kernel reclaims the purgeable memory.
-//
-// By leaving the in-cache dead resources in dirty resident memory, we decrease the likelihood of
-// the kernel claiming that memory and forcing us to refetch the resource (for example when a user
-// presses back).
-//
-// And by having an unbounded number of resource objects using purgeable memory, we can use as much
-// memory as is available on the machine. The trade-off here is that the CachedResource object (and
-// its member variables) are allocated in non-purgeable TC-malloc'd memory so we would see slightly
-// more memory use due to this.
+// Enable this macro to periodically log information about the memory cache.
+#undef MEMORY_CACHE_STATS
 
 class MemoryCache {
     WTF_MAKE_NONCOPYABLE(MemoryCache); WTF_MAKE_FAST_ALLOCATED;
 public:
-    friend MemoryCache* memoryCache();
+    MemoryCache();
+    ~MemoryCache() { }
 
     typedef HashMap<String, CachedResource*> CachedResourceMap;
 
@@ -91,29 +79,42 @@ public:
         int size;
         int liveSize;
         int decodedSize;
+        int encodedSize;
+        int encodedSizeDuplicatedInDataURLs;
         int purgeableSize;
         int purgedSize;
-        TypeStatistic() : count(0), size(0), liveSize(0), decodedSize(0), purgeableSize(0), purgedSize(0) { }
+
+        TypeStatistic()
+            : count(0)
+            , size(0)
+            , liveSize(0)
+            , decodedSize(0)
+            , encodedSize(0)
+            , encodedSizeDuplicatedInDataURLs(0)
+            , purgeableSize(0)
+            , purgedSize(0)
+        {
+        }
+
         void addResource(CachedResource*);
     };
-    
+
     struct Statistics {
         TypeStatistic images;
         TypeStatistic cssStyleSheets;
         TypeStatistic scripts;
         TypeStatistic xslStyleSheets;
         TypeStatistic fonts;
+        TypeStatistic other;
     };
-    
+
     CachedResource* resourceForURL(const KURL&);
     
-    bool add(CachedResource* resource);
+    void add(CachedResource*);
+    void replace(CachedResource* newResource, CachedResource* oldResource);
     void remove(CachedResource* resource) { evict(resource); }
 
     static KURL removeFragmentIdentifierIfNeeded(const KURL& originalURL);
-    
-    void revalidationSucceeded(CachedResource* revalidatingResource, const ResourceResponse&);
-    void revalidationFailed(CachedResource* revalidatingResource);
     
     // Sets the cache's memory capacities, in bytes. These will hold only approximately, 
     // since the decoded cost of resources like scripts and stylesheets is not known.
@@ -122,14 +123,8 @@ public:
     //  - totalBytes: The maximum number of bytes that the cache should consume overall.
     void setCapacities(unsigned minDeadBytes, unsigned maxDeadBytes, unsigned totalBytes);
 
-    // Turn the cache on and off.  Disabling the cache will remove all resources from the cache.  They may
-    // still live on if they are referenced by some Web page though.
-    void setDisabled(bool);
-    bool disabled() const { return m_disabled; }
-
     void evictResources();
-    
-    void setPruneEnabled(bool enabled) { m_pruneEnabled = enabled; }
+
     void prune();
     void pruneToPercentage(float targetPercentLive);
 
@@ -150,18 +145,9 @@ public:
     void addToLiveResourcesSize(CachedResource*);
     void removeFromLiveResourcesSize(CachedResource*);
 
-    static bool shouldMakeResourcePurgeableOnEviction();
+    static void removeURLFromCache(ScriptExecutionContext*, const KURL&);
 
-    static void removeUrlFromCache(ScriptExecutionContext*, const String& urlString);
-
-    // Function to collect cache statistics for the caches window in the Safari Debug menu.
     Statistics getStatistics();
-    
-    void resourceAccessed(CachedResource*);
-
-    typedef HashSet<RefPtr<SecurityOrigin> > SecurityOriginSet;
-    void removeResourcesWithOrigin(SecurityOrigin*);
-    void getOriginsWithCache(SecurityOriginSet& origins);
 
     unsigned minDeadCapacity() const { return m_minDeadCapacity; }
     unsigned maxDeadCapacity() const { return m_maxDeadCapacity; }
@@ -172,12 +158,10 @@ public:
     void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
-    MemoryCache();
-    ~MemoryCache(); // Not implemented to make sure nobody accidentally calls delete -- WebCore does not delete singletons.
-       
     LRUList* lruListFor(CachedResource*);
-#ifndef NDEBUG
-    void dumpStats();
+
+#ifdef MEMORY_CACHE_STATS
+    void dumpStats(Timer<MemoryCache>*);
     void dumpLRULists(bool includeLive) const;
 #endif
 
@@ -193,13 +177,10 @@ private:
     void pruneDeadResourcesToSize(unsigned targetSize);
     void pruneLiveResourcesToSize(unsigned targetSize);
 
-    bool makeResourcePurgeable(CachedResource*);
     void evict(CachedResource*);
 
-    static void removeUrlFromCacheImpl(ScriptExecutionContext*, const String& urlString);
+    static void removeURLFromCacheInternal(ScriptExecutionContext*, const KURL&);
 
-    bool m_disabled;  // Whether or not the cache is enabled.
-    bool m_pruneEnabled;
     bool m_inPruneResources;
 
     unsigned m_capacity;
@@ -221,15 +202,17 @@ private:
     // A URL-based map of all resources that are in the cache (including the freshest version of objects that are currently being 
     // referenced by a Web page).
     HashMap<String, CachedResource*> m_resources;
+
+#ifdef MEMORY_CACHE_STATS
+    Timer<MemoryCache> m_statsTimer;
+#endif
 };
 
-inline bool MemoryCache::shouldMakeResourcePurgeableOnEviction()
-{
-    return false;
-}
-
-// Function to obtain the global cache.
+// Returns the global cache.
 MemoryCache* memoryCache();
+
+// Sets the global cache, used to swap in a test instance.
+void setMemoryCacheForTesting(MemoryCache*);
 
 }
 

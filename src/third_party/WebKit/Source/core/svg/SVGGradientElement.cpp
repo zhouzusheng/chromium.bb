@@ -21,11 +21,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGGradientElement.h"
 
 #include "SVGNames.h"
-#include "core/css/StyleResolver.h"
 #include "core/dom/Attribute.h"
 #include "core/rendering/svg/RenderSVGHiddenContainer.h"
 #include "core/rendering/svg/RenderSVGPath.h"
@@ -73,7 +71,7 @@ bool SVGGradientElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::gradientTransformAttr);
         supportedAttributes.add(SVGNames::spreadMethodAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGGradientElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -167,5 +165,3 @@ Vector<Gradient::ColorStop> SVGGradientElement::buildStops()
 }
 
 }
-
-#endif // ENABLE(SVG)

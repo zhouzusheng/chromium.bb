@@ -80,8 +80,8 @@ this.base = (function() {
     for (var i = 0; i < dependentModules.length; i++)
       if (dependentModules[i] == dependentModuleName)
         found = true;
-    if (!found)
-      dependentModules.push(dependentModuleName);
+      if (!found)
+        dependentModules.push(dependentModuleName);
   }
 
   function addModuleRawScriptDependency(moduleName, rawScriptName) {
@@ -93,8 +93,8 @@ this.base = (function() {
     for (var i = 0; i < moduleRawScripts.length; i++)
       if (dependentRawScripts[i] == rawScriptName)
         found = true;
-    if (!found)
-      dependentRawScripts.push(rawScriptName);
+      if (!found)
+        dependentRawScripts.push(rawScriptName);
   }
 
   function addModuleStylesheet(moduleName, stylesheetName) {
@@ -111,55 +111,107 @@ this.base = (function() {
   }
 
   function ensureDepsLoaded() {
+    if (window.FLATTENED)
+      return;
+
     if (didLoadModules)
       return;
     didLoadModules = true;
 
     var req = new XMLHttpRequest();
-    var src = moduleBasePath + '/' + 'deps.js';
+    var src = '/deps.js';
     req.open('GET', src, false);
     req.send(null);
-    if (req.status != 200)
-      throw new Error('Could not find ' + src +
-                      '. Run calcdeps.py and try again.');
+    if (req.status != 200) {
+      var serverSideException = JSON.parse(req.responseText);
+      var msg = 'You have a module problem: ' +
+          serverSideException.message;
+      var baseWarningEl = document.createElement('div');
+      baseWarningEl.style.position = 'fixed';
+      baseWarningEl.style.border = '3px solid red';
+      baseWarningEl.style.color = 'black';
+      baseWarningEl.style.padding = '8px';
+      baseWarningEl.innerHTML =
+          '<h2>Module parsing problem</h2>' +
+          '<div id="message"></div>' +
+          '<pre id="details"></pre>';
+      baseWarningEl.querySelector('#message').textContent =
+          serverSideException.message;
+      var detailsEl = baseWarningEl.querySelector('#details');
+      detailsEl.textContent = serverSideException.details;
+      detailsEl.style.maxWidth = '800px';
+      detailsEl.style.overflow = 'auto';
+
+      if (!document.body) {
+        setTimeout(function() {
+          document.body.appendChild(baseWarningEl);
+        }, 150);
+      } else {
+        document.body.appendChild(baseWarningEl);
+      }
+      throw new Error(msg);
+    }
 
     base.addModuleDependency = addModuleDependency;
     base.addModuleRawScriptDependency = addModuleRawScriptDependency;
     base.addModuleStylesheet = addModuleStylesheet;
     try {
-      // By construction, the deps file should call addModuleDependency.
+      // By construction, the deps should call addModuleDependency.
       eval(req.responseText);
     } catch (e) {
-      throw new Error('When loading deps, got ' + e.stack ? e.stack : e);
+      throw new Error('When loading deps, got ' +
+                      e.stack ? e.stack : e.message);
     }
     delete base.addModuleStylesheet;
     delete base.addModuleRawScriptDependency;
     delete base.addModuleDependency;
-
   }
 
   var moduleLoadStatus = {};
   var rawScriptLoadStatus = {};
-  function require(dependentModuleName, opt_indentLevel) {
+  function require(modules, opt_indentLevel) {
     var indentLevel = opt_indentLevel || 0;
+    var dependentModules = modules;
+    if (!(modules instanceof Array))
+      dependentModules = [modules];
 
+    ensureDepsLoaded();
+
+    dependentModules.forEach(function(module) {
+      requireModule(module, indentLevel);
+    });
+  }
+
+  var modulesWaiting = [];
+  function requireModule(dependentModuleName, indentLevel) {
     if (window.FLATTENED) {
       if (!window.FLATTENED[dependentModuleName]) {
         throw new Error('Somehow, module ' + dependentModuleName +
                         ' didn\'t get stored in the flattened js file! ' +
-                        'You may need to rerun build/calcdeps.py');
+                        'You may need to rerun ' +
+                        'build/generate_about_tracing_contents.py');
       }
       return;
     }
-    ensureDepsLoaded();
-
-    mLog('require(' + dependentModuleName + ')', indentLevel);
 
     if (moduleLoadStatus[dependentModuleName] == 'APPENDED')
       return;
+
     if (moduleLoadStatus[dependentModuleName] == 'RESOLVING')
-      throw new Error('Circular dependency betwen modules. Cannot continue!');
+      return;
+
+    mLog('require(' + dependentModuleName + ')', indentLevel);
     moduleLoadStatus[dependentModuleName] = 'RESOLVING';
+    requireDependencies(dependentModuleName, indentLevel);
+
+    loadScript(dependentModuleName.replace(/\./g, '/') + '.js');
+    moduleLoadStatus[name] = 'APPENDED';
+  }
+
+  function requireDependencies(dependentModuleName, indentLevel) {
+    // Load the module's dependent scripts after.
+    var dependentModules = moduleDependencies[dependentModuleName] || [];
+    require(dependentModules, indentLevel + 1);
 
     // Load the module stylesheet first.
     var stylesheets = moduleStylesheets[dependentModuleName] || [];
@@ -173,28 +225,19 @@ this.base = (function() {
       if (rawScriptLoadStatus[rawScriptName])
         continue;
 
+      loadScript(rawScriptName);
       mLog('load(' + rawScriptName + ')', indentLevel);
-      var src = moduleBasePath + '/' + rawScriptName;
-      var text = '<script type="text/javascript" src="' + src +
-        '"></' + 'script>';
-      base.doc.write(text);
       rawScriptLoadStatus[rawScriptName] = 'APPENDED';
     }
+  }
 
-    // Load the module's dependent scripts after.
-    var dependentModules =
-        moduleDependencies[dependentModuleName] || [];
-    for (var i = 0; i < dependentModules.length; i++)
-      require(dependentModules[i], indentLevel + 1);
-
-    mLog('load(' + dependentModuleName + ')', indentLevel);
-    // Load the module itself.
-    var localPath = dependentModuleName.replace(/\./g, '/') + '.js';
-    var src = moduleBasePath + '/' + localPath;
-    var text = '<script type="text/javascript" src="' + src +
-        '"></' + 'script>';
-    base.doc.write(text);
-    moduleLoadStatus[dependentModuleName] = 'APPENDED';
+  function loadScript(path) {
+    var scriptEl = document.createElement('script');
+    scriptEl.src = moduleBasePath + '/' + path; // + '?' + new Date().getTime();
+    scriptEl.type = 'text/javascript';
+    scriptEl.defer = true;
+    scriptEl.async = false;
+    base.doc.head.appendChild(scriptEl);
   }
 
   /**
@@ -207,8 +250,8 @@ this.base = (function() {
     if (window.FLATTENED_RAW_SCRIPTS) {
       if (!window.FLATTENED_RAW_SCRIPTS[rawScriptPath]) {
         throw new Error('Somehow, ' + rawScriptPath +
-                        ' didn\'t get stored in the flattened js file! ' +
-                        'You may need to rerun build/calcdeps.py');
+            ' didn\'t get stored in the flattened js file! ' +
+            'You may need to rerun build/generate_about_tracing_contents.py');
       }
       return;
     }
@@ -216,7 +259,7 @@ this.base = (function() {
     if (rawScriptLoadStatus[rawScriptPath])
       return;
     throw new Error(rawScriptPath + ' should already have been loaded.' +
-                    ' Did you forget to run calcdeps.py?');
+        ' Did you forget to run build/generate_about_tracing_contents.py?');
   }
 
   var stylesheetLoadStatus = {};
@@ -228,7 +271,8 @@ this.base = (function() {
       return;
     stylesheetLoadStatus[dependentStylesheetName] = true;
     var localPath = dependentStylesheetName.replace(/\./g, '/') + '.css';
-    var stylesheetPath = moduleBasePath + '/' + localPath;
+    var stylesheetPath = moduleBasePath + '/' + localPath + '?' +
+        (new Date().getTime());
 
     var linkEl = document.createElement('link');
     linkEl.setAttribute('rel', 'stylesheet');
@@ -241,7 +285,7 @@ this.base = (function() {
     try {
       var exports = fn();
     } catch (e) {
-      console.log('While running exports for ', name, ':');
+      console.log('While running exports for ', namespace, ':');
       console.log(e.stack || e);
       return;
     }
@@ -266,12 +310,22 @@ this.base = (function() {
    * @param {*} newValue The new value for the property.
    * @param {*} oldValue The old value for the property.
    */
-  function dispatchPropertyChange(target, propertyName, newValue, oldValue) {
-    var e = new base.Event(propertyName + 'Change');
+  function dispatchPropertyChange(target, propertyName, newValue, oldValue,
+                                  opt_bubbles, opt_cancelable) {
+    var e = new base.Event(propertyName + 'Change',
+        opt_bubbles, opt_cancelable);
     e.propertyName = propertyName;
     e.newValue = newValue;
     e.oldValue = oldValue;
+
+    var error;
+    e.throwError = function(err) {  // workaround CR 239648
+      error = err;
+    }
+
     target.dispatchEvent(e);
+    if (error)
+      throw error;
   }
 
   /**
@@ -282,6 +336,14 @@ this.base = (function() {
    */
   function getAttributeName(jsName) {
     return jsName.replace(/([A-Z])/g, '-$1').toLowerCase();
+  }
+
+  /* Creates a private name unlikely to collide with object properties names
+   * @param {string} name The defineProperty name
+   * @return {string} an obfuscated name
+   */
+  function getPrivateName(name) {
+    return name + '_base_';
   }
 
   /**
@@ -318,7 +380,7 @@ this.base = (function() {
   function getGetter(name, kind) {
     switch (kind) {
       case PropertyKind.JS:
-        var privateName = name + '_';
+        var privateName = getPrivateName(name);
         return function() {
           return this[privateName];
         };
@@ -342,28 +404,32 @@ this.base = (function() {
    *     for.
    * @param {base.PropertyKind} kind The kind of property we are getting the
    *     setter for.
-   * @param {function(*):void} opt_setHook A function to run after the property
+   * @param {function(*):void=} opt_setHook A function to run after the property
    *     is set, but before the propertyChange event is fired.
+   * @param {boolean=} opt_bubbles Whether the event bubbles or not.
+   * @param {boolean=} opt_cancelable Whether the default action of the event
+   *     can be prevented.
    * @return {function(*):void} The function to use as a setter.
    */
-  function getSetter(name, kind, opt_setHook) {
+  function getSetter(name, kind, opt_setHook, opt_bubbles, opt_cancelable) {
     switch (kind) {
       case PropertyKind.JS:
-        var privateName = name + '_';
+        var privateName = getPrivateName(name);
         return function(value) {
           var oldValue = this[privateName];
           if (value !== oldValue) {
             this[privateName] = value;
             if (opt_setHook)
               opt_setHook.call(this, value, oldValue);
-            dispatchPropertyChange(this, name, value, oldValue);
+            dispatchPropertyChange(this, name, value, oldValue,
+                opt_bubbles, opt_cancelable);
           }
         };
 
       case PropertyKind.ATTR:
         var attributeName = getAttributeName(name);
         return function(value) {
-          var oldValue = this[attributeName];
+          var oldValue = this.getAttribute(attributeName);
           if (value !== oldValue) {
             if (value == undefined)
               this.removeAttribute(attributeName);
@@ -371,14 +437,15 @@ this.base = (function() {
               this.setAttribute(attributeName, value);
             if (opt_setHook)
               opt_setHook.call(this, value, oldValue);
-            dispatchPropertyChange(this, name, value, oldValue);
+            dispatchPropertyChange(this, name, value, oldValue,
+                opt_bubbles, opt_cancelable);
           }
         };
 
       case PropertyKind.BOOL_ATTR:
         var attributeName = getAttributeName(name);
         return function(value) {
-          var oldValue = this[attributeName];
+          var oldValue = (this.getAttribute(attributeName) === name);
           if (value !== oldValue) {
             if (value)
               this.setAttribute(attributeName, name);
@@ -386,7 +453,8 @@ this.base = (function() {
               this.removeAttribute(attributeName);
             if (opt_setHook)
               opt_setHook.call(this, value, oldValue);
-            dispatchPropertyChange(this, name, value, oldValue);
+            dispatchPropertyChange(this, name, value, oldValue,
+                opt_bubbles, opt_cancelable);
           }
         };
     }
@@ -399,10 +467,14 @@ this.base = (function() {
    * @param {string} name The name of the property.
    * @param {base.PropertyKind=} opt_kind What kind of underlying storage to
    * use.
-   * @param {function(*):void} opt_setHook A function to run after the
+   * @param {function(*):void=} opt_setHook A function to run after the
    *     property is set, but before the propertyChange event is fired.
+   * @param {boolean=} opt_bubbles Whether the event bubbles or not.
+   * @param {boolean=} opt_cancelable Whether the default action of the event
+   *     can be prevented.
    */
-  function defineProperty(obj, name, opt_kind, opt_setHook) {
+  function defineProperty(obj, name, opt_kind, opt_setHook,
+                          opt_bubbles, opt_cancelable) {
     if (typeof obj == 'function')
       obj = obj.prototype;
 
@@ -412,37 +484,17 @@ this.base = (function() {
       obj.__defineGetter__(name, getGetter(name, kind));
 
     if (!obj.__lookupSetter__(name))
-      obj.__defineSetter__(name, getSetter(name, kind, opt_setHook));
-  }
-
-  /**
-   * Counter for use with createUid
-   */
-  var uidCounter = 1;
-
-  /**
-   * @return {number} A new unique ID.
-   */
-  function createUid() {
-    return uidCounter++;
-  }
-
-  /**
-   * Returns a unique ID for the item. This mutates the item so it needs to be
-   * an object
-   * @param {!Object} item The item to get the unique ID for.
-   * @return {number} The unique ID for the item.
-   */
-  function getUid(item) {
-    if (item.hasOwnProperty('uid'))
-      return item.uid;
-    return item.uid = createUid();
+      obj.__defineSetter__(name, getSetter(name, kind, opt_setHook,
+          opt_bubbles, opt_cancelable));
   }
 
   /**
    * Dispatches a simple event on an event target.
    * @param {!EventTarget} target The event target to dispatch the event on.
    * @param {string} type The type of the event.
+   * @param {boolean=} opt_bubbles Whether the event bubbles or not.
+   * @param {boolean=} opt_cancelable Whether the default action of the event
+   *     can be prevented.
    * @param {boolean=} opt_bubbles Whether the event bubbles or not.
    * @param {boolean=} opt_cancelable Whether the default action of the event
    *     can be prevented.
@@ -491,13 +543,13 @@ this.base = (function() {
     // If 'document' isn't defined, then we must be being pre-compiled,
     // so set a trap so that we're initialized on first access at run-time.
     if (!global.document) {
-      var originalCr = cr;
+      var originalBase = base;
 
-      Object.defineProperty(global, 'cr', {
+      Object.defineProperty(global, 'base', {
         get: function() {
-          Object.defineProperty(global, 'cr', {value: originalCr});
+          Object.defineProperty(global, 'base', {value: originalBase});
           originalBase.initialize();
-          return originalCr;
+          return originalBase;
         },
         configurable: true
       });
@@ -550,10 +602,43 @@ this.base = (function() {
     return values;
   }
 
-
-  function iterItems(dict, fn) {
+  function iterItems(dict, fn, opt_this) {
+    opt_this = opt_this || this;
     for (var key in dict)
-      fn(key, dict[key]);
+      fn.call(opt_this, key, dict[key]);
+  }
+
+  function iterObjectFieldsRecursively(object, func) {
+    if (!(object instanceof Object))
+      return;
+
+    if (object instanceof Array) {
+      for (var i = 0; i < object.length; i++) {
+        func(object, i, object[i]);
+        iterObjectFieldsRecursively(object[i], func);
+      }
+      return;
+    }
+
+    for (var key in object) {
+      var value = object[key];
+
+      func(object, key, value);
+
+      iterObjectFieldsRecursively(value, func);
+    }
+  }
+
+  function tracedFunction(fn, name, opt_this) {
+    function F() {
+      console.time(name);
+      try {
+        fn.apply(opt_this, arguments);
+      } finally {
+        console.timeEnd(name);
+      }
+    }
+    return F;
   }
 
   /**
@@ -581,6 +666,20 @@ this.base = (function() {
     }
   };
 
+  function normalizeException(e) {
+    if (typeof(e) == 'string') {
+      return {
+        message: e,
+        stack: ['<unknown>']
+      };
+    }
+
+    return {
+      message: e.message,
+      stack: e.stack ? e.stack : ['<unknown>']
+    };
+  }
+
   return {
     set moduleBasePath(path) {
       setModuleBasePath(path);
@@ -596,12 +695,10 @@ this.base = (function() {
     exportTo: exportTo,
 
     addSingletonGetter: addSingletonGetter,
-    createUid: createUid,
     defineProperty: defineProperty,
     dispatchPropertyChange: dispatchPropertyChange,
     dispatchSimpleEvent: dispatchSimpleEvent,
     Event: Event,
-    getUid: getUid,
     initialize: initialize,
     PropertyKind: PropertyKind,
     asArray: asArray,
@@ -609,13 +706,11 @@ this.base = (function() {
     dictionaryKeys: dictionaryKeys,
     dictionaryValues: dictionaryValues,
     iterItems: iterItems,
+    iterObjectFieldsRecursively: iterObjectFieldsRecursively,
     TypeMap: TypeMap,
+    tracedFunction: tracedFunction,
+    normalizeException: normalizeException
   };
 })();
 
-
-/**
- * TODO(kgr): Move this to another file which is to be loaded last.
- * This will be done as part of future work to make this code pre-compilable.
- */
 base.initialize();

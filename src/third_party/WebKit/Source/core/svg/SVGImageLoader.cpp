@@ -20,14 +20,12 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGImageLoader.h"
 
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/cache/CachedImage.h"
-#include "core/rendering/RenderImage.h"
 #include "core/svg/SVGImageElement.h"
 
 namespace WebCore {
@@ -57,5 +55,3 @@ String SVGImageLoader::sourceURI(const AtomicString& attribute) const
 }
 
 }
-
-#endif // ENABLE(SVG)

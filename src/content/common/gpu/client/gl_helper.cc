@@ -5,15 +5,20 @@
 #include "content/common/gpu/client/gl_helper.h"
 
 #include <queue>
+#include <string>
 
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
 #include "base/time.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "cc/resources/sync_point_helper.h"
+#include "content/common/gpu/client/gl_helper_scaling.h"
+#include "media/base/video_frame.h"
+#include "media/base/video_util.h"
+#include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
@@ -24,186 +29,100 @@ using WebKit::WebGraphicsContext3D;
 
 namespace {
 
-class ScopedWebGLId {
+// Helper class for allocating and holding an RGBA texture of a given
+// size and an associated framebuffer.
+class TextureFrameBufferPair {
  public:
-  typedef void (WebGraphicsContext3D::*DeleteFunc)(WebGLId);
-  ScopedWebGLId(WebGraphicsContext3D* context,
-                WebGLId id,
-                DeleteFunc delete_func)
-      : context_(context),
-        id_(id),
-        delete_func_(delete_func) {
+  TextureFrameBufferPair(WebGraphicsContext3D* context,
+                         gfx::Size size)
+      : texture_(context, context->createTexture()),
+        framebuffer_(context, context->createFramebuffer()),
+        size_(size) {
+    content::ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context,
+                                                               texture_);
+    context->texImage2D(GL_TEXTURE_2D,
+                        0,
+                        GL_RGBA,
+                        size.width(),
+                        size.height(),
+                        0,
+                        GL_RGBA,
+                        GL_UNSIGNED_BYTE,
+                        NULL);
+    content::ScopedFramebufferBinder<GL_FRAMEBUFFER> framebuffer_binder(
+        context,
+        framebuffer_);
+    context->framebufferTexture2D(GL_FRAMEBUFFER,
+                                  GL_COLOR_ATTACHMENT0,
+                                  GL_TEXTURE_2D,
+                                  texture_,
+                                  0);
   }
 
-  operator WebGLId() const {
-    return id_;
-  }
-
-  WebGLId id() const { return id_; }
-
-  WebGLId Detach() {
-    WebGLId id = id_;
-    id_ = 0;
-    return id;
-  }
-
-  virtual ~ScopedWebGLId() {
-    if (id_ != 0)
-      (context_->*delete_func_)(id_);
-  }
+  WebGLId texture() const { return texture_.id(); }
+  WebGLId framebuffer() const { return framebuffer_.id(); }
+  gfx::Size size() const { return size_; }
 
  private:
-  WebGraphicsContext3D* context_;
-  WebGLId id_;
-  DeleteFunc delete_func_;
+  content::ScopedTexture texture_;
+  content::ScopedFramebuffer framebuffer_;
+  gfx::Size size_;
 
-  DISALLOW_COPY_AND_ASSIGN(ScopedWebGLId);
+  DISALLOW_COPY_AND_ASSIGN(TextureFrameBufferPair);
 };
 
-class ScopedBuffer : public ScopedWebGLId {
+// Helper class for holding a scaler, a texture for the output of that
+// scaler and an associated frame buffer. This is inteded to be used
+// when the output of a scaler is to be sent to a readback.
+class ScalerHolder {
  public:
-  ScopedBuffer(WebGraphicsContext3D* context,
-               WebGLId id)
-      : ScopedWebGLId(context,
-                      id,
-                      &WebGraphicsContext3D::deleteBuffer) {}
-};
-
-class ScopedFramebuffer : public ScopedWebGLId {
- public:
-  ScopedFramebuffer(WebGraphicsContext3D* context,
-                    WebGLId id)
-      : ScopedWebGLId(context,
-                      id,
-                      &WebGraphicsContext3D::deleteFramebuffer) {}
-};
-
-class ScopedProgram : public ScopedWebGLId {
- public:
-  ScopedProgram(WebGraphicsContext3D* context,
-                WebGLId id)
-      : ScopedWebGLId(context,
-                      id,
-                      &WebGraphicsContext3D::deleteProgram) {}
-};
-
-class ScopedShader : public ScopedWebGLId {
- public:
-  ScopedShader(WebGraphicsContext3D* context,
-               WebGLId id)
-      : ScopedWebGLId(context,
-                      id,
-                      &WebGraphicsContext3D::deleteShader) {}
-};
-
-class ScopedTexture : public ScopedWebGLId {
- public:
-  ScopedTexture(WebGraphicsContext3D* context,
-                WebGLId id)
-      : ScopedWebGLId(context,
-                      id,
-                      &WebGraphicsContext3D::deleteTexture) {}
-};
-
-template <WebKit::WGC3Denum target>
-class ScopedBinder {
- public:
-  typedef void (WebGraphicsContext3D::*BindFunc)(WebKit::WGC3Denum,
-                                                         WebGLId);
-  ScopedBinder(WebGraphicsContext3D* context,
-               WebGLId id,
-               BindFunc bind_func)
-      : context_(context),
-        bind_func_(bind_func) {
-    (context_->*bind_func_)(target, id);
+  ScalerHolder(WebGraphicsContext3D* context,
+               content::GLHelper::ScalerInterface *scaler)
+      : texture_and_framebuffer_(context, scaler->DstSize()),
+        scaler_(scaler) {
   }
 
-  virtual ~ScopedBinder() {
-    (context_->*bind_func_)(target, 0);
+  void Scale(WebKit::WebGLId src_texture) {
+    scaler_->Scale(src_texture, texture_and_framebuffer_.texture());
   }
+
+  content::GLHelper::ScalerInterface* scaler() const { return scaler_.get(); }
+  TextureFrameBufferPair *texture_and_framebuffer() {
+    return &texture_and_framebuffer_;
+  }
+  WebGLId texture() const { return texture_and_framebuffer_.texture(); }
 
  private:
-  WebGraphicsContext3D* context_;
-  BindFunc bind_func_;
+  TextureFrameBufferPair texture_and_framebuffer_;
+  scoped_ptr<content::GLHelper::ScalerInterface> scaler_;
 
-  DISALLOW_COPY_AND_ASSIGN(ScopedBinder);
-};
-
-template <WebKit::WGC3Denum target>
-class ScopedBufferBinder : ScopedBinder<target> {
- public:
-  ScopedBufferBinder(WebGraphicsContext3D* context,
-                     WebGLId id)
-      : ScopedBinder<target>(
-          context,
-          id,
-          &WebGraphicsContext3D::bindBuffer) {}
-};
-
-template <WebKit::WGC3Denum target>
-class ScopedFramebufferBinder : ScopedBinder<target> {
- public:
-  ScopedFramebufferBinder(WebGraphicsContext3D* context,
-                          WebGLId id)
-      : ScopedBinder<target>(
-          context,
-          id,
-          &WebGraphicsContext3D::bindFramebuffer) {}
-};
-
-template <WebKit::WGC3Denum target>
-class ScopedTextureBinder : ScopedBinder<target> {
- public:
-  ScopedTextureBinder(WebGraphicsContext3D* context,
-                      WebGLId id)
-      : ScopedBinder<target>(
-          context,
-          id,
-          &WebGraphicsContext3D::bindTexture) {}
-};
-
-class ScopedFlush {
- public:
-  explicit ScopedFlush(WebGraphicsContext3D* context)
-      : context_(context) {
-  }
-
-  virtual ~ScopedFlush() {
-    context_->flush();
-  }
-
- private:
-  WebGraphicsContext3D* context_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedFlush);
+  DISALLOW_COPY_AND_ASSIGN(ScalerHolder);
 };
 
 }  // namespace
 
 namespace content {
 
-// Implements GLHelper::CropScaleReadbackAndCleanTexture and encapsulates the
-// data needed for it.
+// Implements GLHelper::CropScaleReadbackAndCleanTexture and encapsulates
+// the data needed for it.
 class GLHelper::CopyTextureToImpl :
       public base::SupportsWeakPtr<GLHelper::CopyTextureToImpl> {
  public:
-  CopyTextureToImpl(WebGraphicsContext3DCommandBufferImpl* context,
+  CopyTextureToImpl(WebGraphicsContext3D* context,
                     GLHelper* helper)
       : context_(context),
         helper_(helper),
         flush_(context),
-        program_(context, context->createProgram()),
-        vertex_attributes_buffer_(context_, context_->createBuffer()),
-        flipped_vertex_attributes_buffer_(context_, context_->createBuffer()) {
-    InitBuffer();
-    InitProgram();
+        max_draw_buffers_(0) {
+    std::string extensions_string = " " +
+        UTF16ToASCII(context_->getString(GL_EXTENSIONS)) + " ";
+    if (extensions_string.find(" GL_EXT_draw_buffers ") != std::string::npos) {
+      context_->getIntegerv(GL_MAX_DRAW_BUFFERS, &max_draw_buffers_);
+    }
   }
   ~CopyTextureToImpl() {
     CancelRequests();
   }
-
-  void InitBuffer();
-  void InitProgram();
 
   void CropScaleReadbackAndCleanTexture(
       WebGLId src_texture,
@@ -211,16 +130,49 @@ class GLHelper::CopyTextureToImpl :
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       unsigned char* out,
-      const base::Callback<void(bool)>& callback);
+      const base::Callback<void(bool)>& callback,
+      GLHelper::ScalerQuality quality);
 
   void ReadbackTextureSync(WebGLId texture,
                            const gfx::Rect& src_rect,
                            unsigned char* out);
 
+  // Reads back bytes from the currently bound frame buffer.
+  // Note that dst_size is specified in bytes, not pixels.
+  void ReadbackAsync(
+      const gfx::Size& dst_size,
+      int32 bytes_per_row,     // generally dst_size.width() * 4
+      int32 row_stride_bytes,  // generally dst_size.width() * 4
+      unsigned char* out,
+      const base::Callback<void(bool)>& callback);
+
+  void ReadbackPlane(TextureFrameBufferPair* source,
+                     media::VideoFrame* target,
+                     int plane,
+                     int size_shift,
+                     const gfx::Rect& dst_subrect,
+                     const base::Callback<void(bool)>& callback);
+
   WebKit::WebGLId CopyAndScaleTexture(WebGLId texture,
                                       const gfx::Size& src_size,
                                       const gfx::Size& dst_size,
-                                      bool vertically_flip_texture);
+                                      bool vertically_flip_texture,
+                                      GLHelper::ScalerQuality quality);
+
+  ReadbackYUVInterface* CreateReadbackPipelineYUV(
+      GLHelper::ScalerQuality quality,
+      const gfx::Size& src_size,
+      const gfx::Rect& src_subrect,
+      const gfx::Size& dst_size,
+      const gfx::Rect& dst_subrect,
+      bool flip_vertically,
+      bool use_mrt);
+
+  // Returns the maximum number of draw buffers available,
+  // 0 if GL_EXT_draw_buffers is not available.
+  WebKit::WGC3Dint MaxDrawBuffers() const {
+    return max_draw_buffers_;
+  }
 
  private:
   // A single request to CropScaleReadbackAndCleanTexture.
@@ -231,59 +183,101 @@ class GLHelper::CopyTextureToImpl :
   // In either case, the callback must be called exactly once, and the texture
   // must be deleted by the main thread context.
   struct Request {
-    Request(WebGLId texture_,
-            const gfx::Size& size_,
+    Request(const gfx::Size& size_,
+            int32 bytes_per_row_,
+            int32 row_stride_bytes_,
             unsigned char* pixels_,
             const base::Callback<void(bool)>& callback_)
         : size(size_),
-          callback(callback_),
-          texture(texture_),
+          bytes_per_row(bytes_per_row_),
+          row_stride_bytes(row_stride_bytes_),
           pixels(pixels_),
+          callback(callback_),
           buffer(0) {
     }
 
     gfx::Size size;
-    base::Callback<void(bool)> callback;
-
-    WebGLId texture;
+    int bytes_per_row;
+    int row_stride_bytes;
     unsigned char* pixels;
+    base::Callback<void(bool)> callback;
     GLuint buffer;
   };
 
-  class ShaderProgram {
+  // A readback pipeline that also converts the data to YUV before
+  // reading it back.
+  class ReadbackYUVImpl : public ReadbackYUVInterface {
    public:
-    ShaderProgram(WebGraphicsContext3D* context,
-                  GLHelper* helper) :
-        context_(context),
-        helper_(helper),
-        program_(context, context->createProgram()) {
-    }
-
-    void Setup(const WebKit::WGC3Dchar* vertex_shader_text,
-               const WebKit::WGC3Dchar* fragment_shader_text);
-    void UseProgram(const gfx::Size& src_size,
+    ReadbackYUVImpl(WebGraphicsContext3D* context,
+                    CopyTextureToImpl* copy_impl,
+                    GLHelperScaling* scaler_impl,
+                    GLHelper::ScalerQuality quality,
+                    const gfx::Size& src_size,
                     const gfx::Rect& src_subrect,
-                    const gfx::Size& dst_size);
+                    const gfx::Size& dst_size,
+                    const gfx::Rect& dst_subrect,
+                    bool flip_vertically);
+
+    virtual void ReadbackYUV(
+        WebKit::WebGLId src_texture,
+        media::VideoFrame* target,
+        const base::Callback<void(bool)>& callback) OVERRIDE;
+
+    virtual ScalerInterface* scaler() OVERRIDE {
+      return scaler_.scaler();
+    }
 
    private:
     WebGraphicsContext3D* context_;
-    GLHelper* helper_;
+    CopyTextureToImpl* copy_impl_;
+    gfx::Size dst_size_;
+    gfx::Rect dst_subrect_;
+    ScalerHolder scaler_;
+    ScalerHolder y_;
+    ScalerHolder u_;
+    ScalerHolder v_;
 
-    // A program for copying a source texture into a destination texture.
-    ScopedProgram program_;
+    DISALLOW_COPY_AND_ASSIGN(ReadbackYUVImpl);
+  };
 
-    // The location of the position in the program.
-    WebKit::WGC3Dint position_location_;
-    // The location of the texture coordinate in the program.
-    WebKit::WGC3Dint texcoord_location_;
-    // The location of the source texture in the program.
-    WebKit::WGC3Dint texture_location_;
-    // The location of the texture coordinate of
-    // the sub-rectangle in the program.
-    WebKit::WGC3Dint src_subrect_location_;
+  // A readback pipeline that also converts the data to YUV before
+  // reading it back. This one uses Multiple Render Targets, which
+  // may not be supported on all platforms.
+  class ReadbackYUV_MRT : public ReadbackYUVInterface {
+   public:
+    ReadbackYUV_MRT(WebGraphicsContext3D* context,
+                    CopyTextureToImpl* copy_impl,
+                    GLHelperScaling* scaler_impl,
+                    GLHelper::ScalerQuality quality,
+                    const gfx::Size& src_size,
+                    const gfx::Rect& src_subrect,
+                    const gfx::Size& dst_size,
+                    const gfx::Rect& dst_subrect,
+                    bool flip_vertically);
+
+    virtual void ReadbackYUV(
+        WebKit::WebGLId src_texture,
+        media::VideoFrame* target,
+        const base::Callback<void(bool)>& callback) OVERRIDE;
+
+    virtual ScalerInterface* scaler() OVERRIDE {
+      return scaler_.scaler();
+    }
 
    private:
-    DISALLOW_COPY_AND_ASSIGN(ShaderProgram);
+    WebGraphicsContext3D* context_;
+    CopyTextureToImpl* copy_impl_;
+    gfx::Size dst_size_;
+    gfx::Rect dst_subrect_;
+    ScalerHolder scaler_;
+    scoped_ptr<content::GLHelperScaling::ShaderInterface> pass1_shader_;
+    scoped_ptr<content::GLHelperScaling::ShaderInterface> pass2_shader_;
+    TextureFrameBufferPair y_;
+    ScopedTexture uv_;
+    TextureFrameBufferPair u_;
+    TextureFrameBufferPair v_;
+
+    DISALLOW_COPY_AND_ASSIGN(ReadbackYUV_MRT);
   };
 
   // Copies the block of pixels specified with |src_subrect| from |src_texture|,
@@ -294,170 +288,43 @@ class GLHelper::CopyTextureToImpl :
                        const gfx::Rect& src_subrect,
                        const gfx::Size& dst_size,
                        bool vertically_flip_texture,
-                       bool swizzle);
+                       bool swizzle,
+                       GLHelper::ScalerQuality quality);
 
+  static void nullcallback(bool success) {}
   void ReadbackDone(Request* request);
   void FinishRequest(Request* request, bool result);
   void CancelRequests();
 
-  // Interleaved array of 2-dimentional vertex positions (x, y) and
-  // 2-dimentional texture coordinates (s, t).
-  static const WebKit::WGC3Dfloat kVertexAttributes[];
-  // Interleaved array of 2-dimensional vertex positions (x, y) and
-  // 2 dimensional texture coordinates (s, t).
-  static const WebKit::WGC3Dfloat kFlippedVertexAttributes[];
-  // Shader sources used for GLHelper::CropScaleReadbackAndCleanTexture and
-  // GLHelper::ReadbackTextureSync
-  static const WebKit::WGC3Dchar kCopyVertexShader[];
-  static const WebKit::WGC3Dchar kCopyFragmentShader[];
-  static const WebKit::WGC3Dchar kCopyAndSwizzleShader[];
+  static const float kRGBtoYColorWeights[];
+  static const float kRGBtoUColorWeights[];
+  static const float kRGBtoVColorWeights[];
 
-  WebGraphicsContext3DCommandBufferImpl* context_;
+  WebGraphicsContext3D* context_;
   GLHelper* helper_;
 
   // A scoped flush that will ensure all resource deletions are flushed when
   // this object is destroyed. Must be declared before other Scoped* fields.
   ScopedFlush flush_;
-  // A program for copying a source texture into a destination texture.
-  ScopedProgram program_;
-  // The buffer that holds the vertices and the texture coordinates data for
-  // drawing a quad.
-  ScopedBuffer vertex_attributes_buffer_;
-  ScopedBuffer flipped_vertex_attributes_buffer_;
-
-  scoped_ptr<ShaderProgram> no_swizzle_program_;
-  scoped_ptr<ShaderProgram> swizzle_program_;
 
   std::queue<Request*> request_queue_;
+  WebKit::WGC3Dint max_draw_buffers_;
 };
 
-const WebKit::WGC3Dfloat GLHelper::CopyTextureToImpl::kVertexAttributes[] = {
-  -1.0f, -1.0f, 0.0f, 0.0f,
-  1.0f, -1.0f, 1.0f, 0.0f,
-  -1.0f, 1.0f, 0.0f, 1.0f,
-  1.0f, 1.0f, 1.0f, 1.0f,
-};
-
-const WebKit::WGC3Dfloat
-GLHelper::CopyTextureToImpl::kFlippedVertexAttributes[] = {
-  -1.0f, -1.0f, 0.0f, 1.0f,
-  1.0f, -1.0f, 1.0f, 1.0f,
-  -1.0f, 1.0f, 0.0f, 0.0f,
-  1.0f, 1.0f, 1.0f, 0.0f,
-};
-
-const WebKit::WGC3Dchar GLHelper::CopyTextureToImpl::kCopyVertexShader[] =
-    "attribute vec2 a_position;"
-    "attribute vec2 a_texcoord;"
-    "varying vec2 v_texcoord;"
-    "uniform vec4 src_subrect;"
-    "void main() {"
-    "  gl_Position = vec4(a_position, 0.0, 1.0);"
-    "  v_texcoord = src_subrect.xy + a_texcoord * src_subrect.zw;"
-    "}";
-
-
-const WebKit::WGC3Dchar GLHelper::CopyTextureToImpl::kCopyFragmentShader[] =
-    "precision mediump float;"
-    "varying vec2 v_texcoord;"
-    "uniform sampler2D s_texture;"
-    "void main() {"
-    "  gl_FragColor = texture2D(s_texture, v_texcoord);"
-    "}";
-
-const WebKit::WGC3Dchar GLHelper::CopyTextureToImpl::kCopyAndSwizzleShader[] =
-    "precision mediump float;"
-    "varying vec2 v_texcoord;"
-    "uniform sampler2D s_texture;"
-    "void main() {"
-    "  gl_FragColor = texture2D(s_texture, v_texcoord).bgra;"
-    "}";
-
-
-void GLHelper::CopyTextureToImpl::InitBuffer() {
-  ScopedBufferBinder<GL_ARRAY_BUFFER> buffer_binder(
-      context_, vertex_attributes_buffer_);
-  context_->bufferData(GL_ARRAY_BUFFER,
-                       sizeof(kVertexAttributes),
-                       kVertexAttributes,
-                       GL_STATIC_DRAW);
-  ScopedBufferBinder<GL_ARRAY_BUFFER> flipped_buffer_binder(
-      context_, flipped_vertex_attributes_buffer_);
-  context_->bufferData(GL_ARRAY_BUFFER,
-                       sizeof(kFlippedVertexAttributes),
-                       kFlippedVertexAttributes,
-                       GL_STATIC_DRAW);
-}
-
-void GLHelper::CopyTextureToImpl::InitProgram() {
-  no_swizzle_program_.reset(new ShaderProgram(context_, helper_));
-  no_swizzle_program_->Setup(kCopyVertexShader, kCopyFragmentShader);
-  swizzle_program_.reset(new ShaderProgram(context_, helper_));
-  swizzle_program_->Setup(kCopyVertexShader, kCopyAndSwizzleShader);
-}
-
-void GLHelper::CopyTextureToImpl::ShaderProgram::Setup(
-    const WebKit::WGC3Dchar* vertex_shader_text,
-    const WebKit::WGC3Dchar* fragment_shader_text) {
-  // Shaders to map the source texture to |dst_texture_|.
-  ScopedShader vertex_shader(context_, helper_->CompileShaderFromSource(
-      vertex_shader_text, GL_VERTEX_SHADER));
-  DCHECK(vertex_shader.id());
-  context_->attachShader(program_, vertex_shader);
-  ScopedShader fragment_shader(context_, helper_->CompileShaderFromSource(
-      fragment_shader_text, GL_FRAGMENT_SHADER));
-  DCHECK(fragment_shader.id());
-  context_->attachShader(program_, fragment_shader);
-  context_->linkProgram(program_);
-
-  WebKit::WGC3Dint link_status = 0;
-  context_->getProgramiv(program_, GL_LINK_STATUS, &link_status);
-  if (!link_status) {
-    LOG(ERROR) << std::string(context_->getProgramInfoLog(program_).utf8());
-    return;
-  }
-
-  position_location_ = context_->getAttribLocation(program_, "a_position");
-  texcoord_location_ = context_->getAttribLocation(program_, "a_texcoord");
-  texture_location_ = context_->getUniformLocation(program_, "s_texture");
-  src_subrect_location_ = context_->getUniformLocation(program_, "src_subrect");
-}
-
-
-void GLHelper::CopyTextureToImpl::ShaderProgram::UseProgram(
+GLHelper::ScalerInterface* GLHelper::CreateScaler(
+    ScalerQuality quality,
     const gfx::Size& src_size,
     const gfx::Rect& src_subrect,
-    const gfx::Size& dst_size) {
-  context_->useProgram(program_);
-
-  WebKit::WGC3Dintptr offset = 0;
-  context_->vertexAttribPointer(position_location_,
-                                2,
-                                GL_FLOAT,
-                                GL_FALSE,
-                                4 * sizeof(WebKit::WGC3Dfloat),
-                                offset);
-  context_->enableVertexAttribArray(position_location_);
-
-  offset += 2 * sizeof(WebKit::WGC3Dfloat);
-  context_->vertexAttribPointer(texcoord_location_,
-                                2,
-                                GL_FLOAT,
-                                GL_FALSE,
-                                4 * sizeof(WebKit::WGC3Dfloat),
-                                offset);
-  context_->enableVertexAttribArray(texcoord_location_);
-
-  context_->uniform1i(texture_location_, 0);
-
-  // Convert |src_subrect| to texture coordinates.
-  GLfloat src_subrect_texcoord[] = {
-    static_cast<float>(src_subrect.x()) / src_size.width(),
-    static_cast<float>(src_subrect.y()) / src_size.height(),
-    static_cast<float>(src_subrect.width()) / src_size.width(),
-    static_cast<float>(src_subrect.height()) / src_size.height(),
-  };
-  context_->uniform4fv(src_subrect_location_, 1, src_subrect_texcoord);
+    const gfx::Size& dst_size,
+    bool vertically_flip_texture,
+    bool swizzle) {
+  InitScalerImpl();
+  return scaler_impl_->CreateScaler(quality,
+                                    src_size,
+                                    src_subrect,
+                                    dst_size,
+                                    vertically_flip_texture,
+                                    swizzle);
 }
 
 WebGLId GLHelper::CopyTextureToImpl::ScaleTexture(
@@ -466,50 +333,62 @@ WebGLId GLHelper::CopyTextureToImpl::ScaleTexture(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
     bool vertically_flip_texture,
-    bool swizzle) {
+    bool swizzle,
+    GLHelper::ScalerQuality quality) {
+  scoped_ptr<ScalerInterface> scaler(
+      helper_->CreateScaler(quality,
+                            src_size,
+                            src_subrect,
+                            dst_size,
+                            vertically_flip_texture,
+                            swizzle));
+
   WebGLId dst_texture = context_->createTexture();
   {
-    ScopedFramebuffer dst_framebuffer(context_, context_->createFramebuffer());
-    ScopedFramebufferBinder<GL_FRAMEBUFFER> framebuffer_binder(context_,
-                                                               dst_framebuffer);
-    {
-      ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_, dst_texture);
-      context_->texImage2D(GL_TEXTURE_2D,
-                           0,
-                           GL_RGBA,
-                           dst_size.width(),
-                           dst_size.height(),
-                           0,
-                           GL_RGBA,
-                           GL_UNSIGNED_BYTE,
-                           NULL);
-      context_->framebufferTexture2D(GL_FRAMEBUFFER,
-                                     GL_COLOR_ATTACHMENT0,
-                                     GL_TEXTURE_2D,
-                                     dst_texture,
-                                     0);
-    }
-
-    ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_, src_texture);
-    WebKit::WebGLId vertex_attributes_buffer = vertically_flip_texture ?
-        flipped_vertex_attributes_buffer_ : vertex_attributes_buffer_;
-    ScopedBufferBinder<GL_ARRAY_BUFFER> buffer_binder(context_,
-                                                      vertex_attributes_buffer);
-
-    context_->viewport(0, 0, dst_size.width(), dst_size.height());
-    ShaderProgram* program;
-    if (swizzle) {
-      program = swizzle_program_.get();
-    } else {
-      program = no_swizzle_program_.get();
-    }
-    program->UseProgram(src_size, src_subrect, dst_size);
-
-    // Conduct texture mapping by drawing a quad composed of two triangles.
-    context_->drawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_, dst_texture);
+    context_->texImage2D(GL_TEXTURE_2D,
+                         0,
+                         GL_RGBA,
+                         dst_size.width(),
+                         dst_size.height(),
+                         0,
+                         GL_RGBA,
+                         GL_UNSIGNED_BYTE,
+                         NULL);
   }
+  scaler->Scale(src_texture, dst_texture);
   return dst_texture;
 }
+
+void GLHelper::CopyTextureToImpl::ReadbackAsync(
+    const gfx::Size& dst_size,
+    int32 bytes_per_row,
+    int32 row_stride_bytes,
+    unsigned char* out,
+    const base::Callback<void(bool)>& callback) {
+  Request* request = new Request(dst_size,
+                                 bytes_per_row,
+                                 row_stride_bytes,
+                                 out,
+                                 callback);
+  request_queue_.push(request);
+  request->buffer = context_->createBuffer();
+  context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
+                       request->buffer);
+  context_->bufferData(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
+                       4 * dst_size.GetArea(),
+                       NULL,
+                       GL_STREAM_READ);
+
+  context_->readPixels(0, 0, dst_size.width(), dst_size.height(),
+                       GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+  context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, 0);
+  cc::SyncPointHelper::SignalSyncPoint(
+      context_,
+      context_->insertSyncPoint(),
+      base::Bind(&CopyTextureToImpl::ReadbackDone, AsWeakPtr(), request));
+}
+
 
 void GLHelper::CopyTextureToImpl::CropScaleReadbackAndCleanTexture(
     WebGLId src_texture,
@@ -517,54 +396,40 @@ void GLHelper::CopyTextureToImpl::CropScaleReadbackAndCleanTexture(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
     unsigned char* out,
-    const base::Callback<void(bool)>& callback) {
+    const base::Callback<void(bool)>& callback,
+    GLHelper::ScalerQuality quality) {
   WebGLId texture = ScaleTexture(src_texture,
                                  src_size,
                                  src_subrect,
                                  dst_size,
                                  true,
 #if (SK_R32_SHIFT == 16) && !SK_B32_SHIFT
-                                 true
+                                 true,
 #else
-                                 false
+                                 false,
 #endif
-                                 );
-  context_->flush();
-  Request* request = new Request(texture, dst_size, out, callback);
-  request_queue_.push(request);
-
-  ScopedFlush flush(context_);
+                                 quality);
   ScopedFramebuffer dst_framebuffer(context_, context_->createFramebuffer());
-  gfx::Size size;
-  size = request->size;
-
   ScopedFramebufferBinder<GL_FRAMEBUFFER> framebuffer_binder(context_,
                                                              dst_framebuffer);
-  ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_, request->texture);
+  ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_, texture);
   context_->framebufferTexture2D(GL_FRAMEBUFFER,
                                  GL_COLOR_ATTACHMENT0,
                                  GL_TEXTURE_2D,
-                                 request->texture,
+                                 texture,
                                  0);
-  request->buffer = context_->createBuffer();
-  context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
-                       request->buffer);
-  context_->bufferData(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
-                       4 * size.GetArea(),
-                       NULL,
-                       GL_STREAM_READ);
-
-  context_->readPixels(0, 0, size.width(), size.height(),
-                       GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-  context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, 0);
-  context_->GetCommandBufferProxy()->SignalSyncPoint(
-      context_->insertSyncPoint(),
-      base::Bind(&CopyTextureToImpl::ReadbackDone, AsWeakPtr(), request));
+  ReadbackAsync(dst_size,
+                dst_size.width() * 4,
+                dst_size.width() * 4,
+                out,
+                callback);
+  context_->deleteTexture(texture);
 }
 
-void GLHelper::CopyTextureToImpl::ReadbackTextureSync(WebGLId texture,
-                                                      const gfx::Rect& src_rect,
-                                                      unsigned char* out) {
+void GLHelper::CopyTextureToImpl::ReadbackTextureSync(
+    WebGLId texture,
+    const gfx::Rect& src_rect,
+    unsigned char* out) {
   ScopedFramebuffer dst_framebuffer(context_, context_->createFramebuffer());
   ScopedFramebufferBinder<GL_FRAMEBUFFER> framebuffer_binder(context_,
                                                              dst_framebuffer);
@@ -587,30 +452,42 @@ WebKit::WebGLId GLHelper::CopyTextureToImpl::CopyAndScaleTexture(
     WebGLId src_texture,
     const gfx::Size& src_size,
     const gfx::Size& dst_size,
-    bool vertically_flip_texture) {
+    bool vertically_flip_texture,
+    GLHelper::ScalerQuality quality) {
   return ScaleTexture(src_texture,
                       src_size,
                       gfx::Rect(src_size),
                       dst_size,
                       vertically_flip_texture,
-                      false);
+                      false,
+                      quality);
 }
 
 void GLHelper::CopyTextureToImpl::ReadbackDone(Request* request) {
   TRACE_EVENT0("mirror",
-               "GLHelper::CopyTextureToImpl::CheckReadBackFramebufferComplete");
+               "GLHelper::CopyTextureToImpl::CheckReadbackFramebufferComplete");
   DCHECK(request == request_queue_.front());
 
   bool result = false;
   if (request->buffer != 0) {
     context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
                          request->buffer);
-    void* data = context_->mapBufferCHROMIUM(
-        GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, GL_READ_ONLY);
-
+    unsigned char* data = static_cast<unsigned char *>(
+        context_->mapBufferCHROMIUM(
+            GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, GL_READ_ONLY));
     if (data) {
       result = true;
-      memcpy(request->pixels, data, request->size.GetArea() * 4);
+      if (request->bytes_per_row == request->size.width() * 4 &&
+          request->bytes_per_row == request->row_stride_bytes) {
+        memcpy(request->pixels, data, request->size.GetArea() * 4);
+      } else {
+        unsigned char* out = request->pixels;
+        for (int y = 0; y < request->size.height(); y++) {
+          memcpy(out, data, request->bytes_per_row);
+          out += request->row_stride_bytes;
+          data += request->size.width() * 4;
+        }
+      }
       context_->unmapBufferCHROMIUM(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM);
     }
     context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, 0);
@@ -619,15 +496,12 @@ void GLHelper::CopyTextureToImpl::ReadbackDone(Request* request) {
   FinishRequest(request, result);
 }
 
-void GLHelper::CopyTextureToImpl::FinishRequest(Request* request, bool result) {
+void GLHelper::CopyTextureToImpl::FinishRequest(Request* request,
+                                                bool result) {
   DCHECK(request_queue_.front() == request);
   request_queue_.pop();
   request->callback.Run(result);
   ScopedFlush flush(context_);
-  if (request->texture != 0) {
-    context_->deleteTexture(request->texture);
-    request->texture = 0;
-  }
   if (request->buffer != 0) {
     context_->deleteBuffer(request->buffer);
     request->buffer = 0;
@@ -642,15 +516,11 @@ void GLHelper::CopyTextureToImpl::CancelRequests() {
   }
 }
 
-GLHelper::GLHelper(WebGraphicsContext3DCommandBufferImpl* context)
+GLHelper::GLHelper(WebKit::WebGraphicsContext3D* context)
     : context_(context) {
 }
 
 GLHelper::~GLHelper() {
-}
-
-WebGraphicsContext3DCommandBufferImpl* GLHelper::context() const {
-  return context_;
 }
 
 void GLHelper::CropScaleReadbackAndCleanTexture(
@@ -661,12 +531,14 @@ void GLHelper::CropScaleReadbackAndCleanTexture(
     unsigned char* out,
     const base::Callback<void(bool)>& callback) {
   InitCopyTextToImpl();
-  copy_texture_to_impl_->CropScaleReadbackAndCleanTexture(src_texture,
-                                                          src_size,
-                                                          src_subrect,
-                                                          dst_size,
-                                                          out,
-                                                          callback);
+  copy_texture_to_impl_->CropScaleReadbackAndCleanTexture(
+      src_texture,
+      src_size,
+      src_subrect,
+      dst_size,
+      out,
+      callback,
+      GLHelper::SCALER_QUALITY_FAST);
 }
 
 void GLHelper::ReadbackTextureSync(WebKit::WebGLId texture,
@@ -681,21 +553,26 @@ void GLHelper::ReadbackTextureSync(WebKit::WebGLId texture,
 WebKit::WebGLId GLHelper::CopyTexture(WebKit::WebGLId texture,
                                       const gfx::Size& size) {
   InitCopyTextToImpl();
-  return copy_texture_to_impl_->CopyAndScaleTexture(texture,
-                                                    size,
-                                                    size,
-                                                    false);
+  return copy_texture_to_impl_->CopyAndScaleTexture(
+      texture,
+      size,
+      size,
+      false,
+      GLHelper::SCALER_QUALITY_FAST);
 }
 
-WebKit::WebGLId GLHelper::CopyAndScaleTexture(WebKit::WebGLId texture,
-                                              const gfx::Size& src_size,
-                                              const gfx::Size& dst_size,
-                                              bool vertically_flip_texture) {
+WebKit::WebGLId GLHelper::CopyAndScaleTexture(
+    WebKit::WebGLId texture,
+    const gfx::Size& src_size,
+    const gfx::Size& dst_size,
+    bool vertically_flip_texture,
+    ScalerQuality quality) {
   InitCopyTextToImpl();
   return copy_texture_to_impl_->CopyAndScaleTexture(texture,
                                                     src_size,
                                                     dst_size,
-                                                    vertically_flip_texture);
+                                                    vertically_flip_texture,
+                                                    quality);
 }
 
 WebGLId GLHelper::CompileShaderFromSource(
@@ -719,13 +596,25 @@ void GLHelper::InitCopyTextToImpl() {
     copy_texture_to_impl_.reset(new CopyTextureToImpl(context_, this));
 }
 
+void GLHelper::InitScalerImpl() {
+  // Lazily initialize |scaler_impl_|
+  if (!scaler_impl_)
+    scaler_impl_.reset(new GLHelperScaling(context_, this));
+}
+
+WebKit::WGC3Dint GLHelper::MaxDrawBuffers() {
+  InitCopyTextToImpl();
+  return copy_texture_to_impl_->MaxDrawBuffers();
+}
+
 void GLHelper::CopySubBufferDamage(WebKit::WebGLId texture,
                                    WebKit::WebGLId previous_texture,
                                    const SkRegion& new_damage,
                                    const SkRegion& old_damage) {
   SkRegion region(old_damage);
   if (region.op(new_damage, SkRegion::kDifference_Op)) {
-    ScopedFramebuffer dst_framebuffer(context_, context_->createFramebuffer());
+    ScopedFramebuffer dst_framebuffer(context_,
+                                      context_->createFramebuffer());
     ScopedFramebufferBinder<GL_FRAMEBUFFER> framebuffer_binder(context_,
                                                                dst_framebuffer);
     ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_, texture);
@@ -743,6 +632,338 @@ void GLHelper::CopySubBufferDamage(WebKit::WebGLId texture,
     }
     context_->flush();
   }
+}
+
+WebKit::WebGLId GLHelper::CreateTexture() {
+  WebKit::WebGLId texture = context_->createTexture();
+  content::ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_,
+                                                             texture);
+  context_->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  context_->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  context_->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  context_->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  return texture;
+}
+
+void GLHelper::ResizeTexture(WebKit::WebGLId texture, const gfx::Size& size) {
+  content::ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_, texture);
+  context_->texImage2D(GL_TEXTURE_2D, 0, GL_RGB,
+                       size.width(), size.height(), 0,
+                       GL_RGB, GL_UNSIGNED_BYTE, NULL);
+}
+
+void GLHelper::CopyTextureSubImage(WebKit::WebGLId texture,
+                                   const gfx::Rect& rect) {
+  content::ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_, texture);
+  context_->copyTexSubImage2D(GL_TEXTURE_2D, 0,
+                              rect.x(), rect.y(),
+                              rect.x(), rect.y(), rect.width(), rect.height());
+}
+
+void GLHelper::CopyTextureFullImage(WebKit::WebGLId texture,
+                                    const gfx::Size& size) {
+  content::ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_, texture);
+  context_->copyTexImage2D(GL_TEXTURE_2D, 0,
+                           GL_RGB,
+                           0, 0,
+                           size.width(), size.height(), 0);
+}
+
+void GLHelper::CopyTextureToImpl::ReadbackPlane(
+    TextureFrameBufferPair* source,
+    media::VideoFrame* target,
+    int plane,
+    int size_shift,
+    const gfx::Rect& dst_subrect,
+    const base::Callback<void(bool)>& callback) {
+  context_->bindFramebuffer(GL_FRAMEBUFFER, source->framebuffer());
+  size_t offset = target->stride(plane) * (dst_subrect.y() >> size_shift) +
+      (dst_subrect.x() >> size_shift);
+  ReadbackAsync(
+      source->size(),
+      dst_subrect.width() >> size_shift,
+      target->stride(plane),
+      target->data(plane) + offset,
+      callback);
+}
+
+const float GLHelper::CopyTextureToImpl::kRGBtoYColorWeights[] = {
+  0.257f, 0.504f, 0.098f, 0.0625f
+};
+const float GLHelper::CopyTextureToImpl::kRGBtoUColorWeights[] = {
+  -0.148f, -0.291f, 0.439f, 0.5f
+};
+const float GLHelper::CopyTextureToImpl::kRGBtoVColorWeights[] = {
+  0.439f, -0.368f, -0.071f, 0.5f
+};
+
+// YUV readback constructors. Initiates the main scaler pipeline and
+// one planar scaler for each of the Y, U and V planes.
+GLHelper::CopyTextureToImpl::ReadbackYUVImpl::ReadbackYUVImpl(
+    WebGraphicsContext3D* context,
+    CopyTextureToImpl* copy_impl,
+    GLHelperScaling* scaler_impl,
+    GLHelper::ScalerQuality quality,
+    const gfx::Size& src_size,
+    const gfx::Rect& src_subrect,
+    const gfx::Size& dst_size,
+    const gfx::Rect& dst_subrect,
+    bool flip_vertically)
+    : context_(context),
+      copy_impl_(copy_impl),
+      dst_size_(dst_size),
+      dst_subrect_(dst_subrect),
+      scaler_(context, scaler_impl->CreateScaler(
+          quality,
+          src_size,
+          src_subrect,
+          dst_subrect.size(),
+          flip_vertically,
+          false)),
+      y_(context, scaler_impl->CreatePlanarScaler(
+          dst_subrect.size(),
+          gfx::Rect(0, 0,
+                    (dst_subrect.width() + 3) & ~3,
+                    dst_subrect.height()),
+          gfx::Size((dst_subrect.width() + 3) / 4,
+                    dst_subrect.height()),
+          false,
+          kRGBtoYColorWeights)),
+      u_(context, scaler_impl->CreatePlanarScaler(
+          dst_subrect.size(),
+          gfx::Rect(0, 0,
+                    (dst_subrect.width() + 7) & ~7,
+                    (dst_subrect.height() + 1) & ~1),
+          gfx::Size((dst_subrect.width() + 7) / 8,
+                    (dst_subrect.height() + 1) / 2),
+          false,
+          kRGBtoUColorWeights)),
+      v_(context, scaler_impl->CreatePlanarScaler(
+          dst_subrect.size(),
+          gfx::Rect(0, 0,
+                    (dst_subrect.width() + 7) & ~7,
+                    (dst_subrect.height() + 1) & ~1),
+          gfx::Size((dst_subrect.width() + 7) / 8,
+                    (dst_subrect.height() + 1) / 2),
+          false,
+          kRGBtoVColorWeights)) {
+  DCHECK(!(dst_size.width() & 1));
+  DCHECK(!(dst_size.height() & 1));
+  DCHECK(!(dst_subrect.width() & 1));
+  DCHECK(!(dst_subrect.height() & 1));
+  DCHECK(!(dst_subrect.x() & 1));
+  DCHECK(!(dst_subrect.y() & 1));
+}
+
+
+void GLHelper::CopyTextureToImpl::ReadbackYUVImpl::ReadbackYUV(
+    WebKit::WebGLId src_texture,
+    media::VideoFrame *target,
+    const base::Callback<void(bool)>& callback) {
+  // Scale texture to right size.
+  scaler_.Scale(src_texture);
+
+  // Convert the scaled texture in to Y, U and V planes.
+  y_.Scale(scaler_.texture());
+  u_.Scale(scaler_.texture());
+  v_.Scale(scaler_.texture());
+
+  if (target->coded_size() != dst_size_) {
+    DCHECK(target->coded_size() == dst_size_);
+    LOG(ERROR) << "ReadbackYUV size error!";
+    callback.Run(false);
+    return;
+  }
+
+  // Read back planes, one at a time.
+  copy_impl_->ReadbackPlane(y_.texture_and_framebuffer(),
+                            target,
+                            media::VideoFrame::kYPlane,
+                            0,
+                            dst_subrect_,
+                            base::Bind(&nullcallback));
+  copy_impl_->ReadbackPlane(u_.texture_and_framebuffer(),
+                            target,
+                            media::VideoFrame::kUPlane,
+                            1,
+                            dst_subrect_,
+                            base::Bind(&nullcallback));
+  copy_impl_->ReadbackPlane(v_.texture_and_framebuffer(),
+                            target,
+                            media::VideoFrame::kVPlane,
+                            1,
+                            dst_subrect_,
+                            callback);
+  context_->bindFramebuffer(GL_FRAMEBUFFER, 0);
+  media::LetterboxYUV(target, dst_subrect_);
+}
+
+// YUV readback constructors. Initiates the main scaler pipeline and
+// one planar scaler for each of the Y, U and V planes.
+GLHelper::CopyTextureToImpl::ReadbackYUV_MRT::ReadbackYUV_MRT(
+    WebGraphicsContext3D* context,
+    CopyTextureToImpl* copy_impl,
+    GLHelperScaling* scaler_impl,
+    GLHelper::ScalerQuality quality,
+    const gfx::Size& src_size,
+    const gfx::Rect& src_subrect,
+    const gfx::Size& dst_size,
+    const gfx::Rect& dst_subrect,
+    bool flip_vertically)
+    : context_(context),
+      copy_impl_(copy_impl),
+      dst_size_(dst_size),
+      dst_subrect_(dst_subrect),
+      scaler_(context, scaler_impl->CreateScaler(
+          quality,
+          src_size,
+          src_subrect,
+          dst_subrect.size(),
+          flip_vertically,
+          false)),
+      pass1_shader_(scaler_impl->CreateYuvMrtShader(
+          dst_subrect.size(),
+          gfx::Rect(0, 0,
+                    (dst_subrect.width() + 3) & ~3,
+                    dst_subrect.height()),
+          gfx::Size((dst_subrect.width() + 3) / 4,
+                    dst_subrect.height()),
+          false,
+          GLHelperScaling::SHADER_YUV_MRT_PASS1)),
+      pass2_shader_(scaler_impl->CreateYuvMrtShader(
+          gfx::Size((dst_subrect.width() + 3) / 4,
+                    dst_subrect.height()),
+          gfx::Rect(0, 0,
+                    (dst_subrect.width() + 7) / 8 * 2,
+                    dst_subrect.height()),
+          gfx::Size((dst_subrect.width() + 7) / 8,
+                    (dst_subrect.height() + 1) / 2),
+          false,
+          GLHelperScaling::SHADER_YUV_MRT_PASS2)),
+      y_(context, gfx::Size((dst_subrect.width() + 3) / 4,
+                            dst_subrect.height())),
+      uv_(context, context->createTexture()),
+      u_(context, gfx::Size((dst_subrect.width() + 7) / 8,
+                            (dst_subrect.height() + 1) / 2)),
+      v_(context, gfx::Size((dst_subrect.width() + 7) / 8,
+                            (dst_subrect.height() + 1) / 2)) {
+
+  content::ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context, uv_);
+  context->texImage2D(GL_TEXTURE_2D,
+                      0,
+                      GL_RGBA,
+                      (dst_subrect.width() + 3) / 4,
+                      dst_subrect.height(),
+                      0,
+                      GL_RGBA,
+                      GL_UNSIGNED_BYTE,
+                      NULL);
+
+  DCHECK(!(dst_size.width() & 1));
+  DCHECK(!(dst_size.height() & 1));
+  DCHECK(!(dst_subrect.width() & 1));
+  DCHECK(!(dst_subrect.height() & 1));
+  DCHECK(!(dst_subrect.x() & 1));
+  DCHECK(!(dst_subrect.y() & 1));
+}
+
+void GLHelper::CopyTextureToImpl::ReadbackYUV_MRT::ReadbackYUV(
+    WebKit::WebGLId src_texture,
+    media::VideoFrame *target,
+    const base::Callback<void(bool)>& callback) {
+  // Scale texture to right size.
+  scaler_.Scale(src_texture);
+  std::vector<WebKit::WebGLId> outputs(2);
+  // Convert the scaled texture in to Y, U and V planes.
+  outputs[0] = y_.texture();
+  outputs[1] = uv_;
+  pass1_shader_->Execute(scaler_.texture(), outputs);
+  outputs[0] = u_.texture();
+  outputs[1] = v_.texture();
+  pass2_shader_->Execute(uv_, outputs);
+
+  if (target->coded_size() != dst_size_) {
+    DCHECK(target->coded_size() == dst_size_);
+    LOG(ERROR) << "ReadbackYUV size error!";
+    callback.Run(false);
+    return;
+  }
+
+  // Read back planes, one at a time.
+  copy_impl_->ReadbackPlane(&y_,
+                            target,
+                            media::VideoFrame::kYPlane,
+                            0,
+                            dst_subrect_,
+                            base::Bind(&nullcallback));
+  copy_impl_->ReadbackPlane(&u_,
+                            target,
+                            media::VideoFrame::kUPlane,
+                            1,
+                            dst_subrect_,
+                            base::Bind(&nullcallback));
+  copy_impl_->ReadbackPlane(&v_,
+                            target,
+                            media::VideoFrame::kVPlane,
+                            1,
+                            dst_subrect_,
+                            callback);
+  context_->bindFramebuffer(GL_FRAMEBUFFER, 0);
+  media::LetterboxYUV(target, dst_subrect_);
+}
+
+ReadbackYUVInterface*
+GLHelper::CopyTextureToImpl::CreateReadbackPipelineYUV(
+    GLHelper::ScalerQuality quality,
+    const gfx::Size& src_size,
+    const gfx::Rect& src_subrect,
+    const gfx::Size& dst_size,
+    const gfx::Rect& dst_subrect,
+    bool flip_vertically,
+    bool use_mrt) {
+  helper_->InitScalerImpl();
+  if (max_draw_buffers_ >= 2 && use_mrt) {
+    return new ReadbackYUV_MRT(
+        context_,
+        this,
+        helper_->scaler_impl_.get(),
+        quality,
+        src_size,
+        src_subrect,
+        dst_size,
+        dst_subrect,
+        flip_vertically);
+  }
+  return new ReadbackYUVImpl(
+      context_,
+      this,
+      helper_->scaler_impl_.get(),
+      quality,
+      src_size,
+      src_subrect,
+      dst_size,
+      dst_subrect,
+      flip_vertically);
+}
+
+ReadbackYUVInterface*
+GLHelper::CreateReadbackPipelineYUV(
+    ScalerQuality quality,
+    const gfx::Size& src_size,
+    const gfx::Rect& src_subrect,
+    const gfx::Size& dst_size,
+    const gfx::Rect& dst_subrect,
+    bool flip_vertically,
+    bool use_mrt) {
+  InitCopyTextToImpl();
+  return copy_texture_to_impl_->CreateReadbackPipelineYUV(
+      quality,
+      src_size,
+      src_subrect,
+      dst_size,
+      dst_subrect,
+      flip_vertically,
+      use_mrt);
 }
 
 }  // namespace content

@@ -21,12 +21,11 @@
 #ifndef SVGPathSegMoveto_h
 #define SVGPathSegMoveto_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGPathSegWithContext.h"
 
 namespace WebCore {
 
-class SVGPathSegMovetoAbs : public SVGPathSegSingleCoordinate { 
+class SVGPathSegMovetoAbs : public SVGPathSegSingleCoordinate {
 public:
     static PassRefPtr<SVGPathSegMovetoAbs> create(SVGPathElement* element, SVGPathSegRole role, float x, float y)
     {
@@ -37,13 +36,14 @@ private:
     SVGPathSegMovetoAbs(SVGPathElement* element, SVGPathSegRole role, float x, float y)
         : SVGPathSegSingleCoordinate(element, role, x, y)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_MOVETO_ABS; }
     virtual String pathSegTypeAsLetter() const { return "M"; }
 };
 
-class SVGPathSegMovetoRel : public SVGPathSegSingleCoordinate { 
+class SVGPathSegMovetoRel : public SVGPathSegSingleCoordinate {
 public:
     static PassRefPtr<SVGPathSegMovetoRel> create(SVGPathElement* element, SVGPathSegRole role, float x, float y)
     {
@@ -54,6 +54,7 @@ private:
     SVGPathSegMovetoRel(SVGPathElement* element, SVGPathSegRole role, float x, float y)
         : SVGPathSegSingleCoordinate(element, role, x, y)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_MOVETO_REL; }
@@ -62,5 +63,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

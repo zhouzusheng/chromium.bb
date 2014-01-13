@@ -52,7 +52,7 @@
       <structure type="chrome_scaled_image" name="IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_HOVER" file="mediaplayer_fullscreen_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DOWN" file="mediaplayer_fullscreen_down.png" />
       <structure type="chrome_scaled_image" name="IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DISABLED" file="mediaplayer_fullscreen_disabled.png" />
-      <if expr="pp_ifdef('android')">
+      <if expr="is_android">
         <structure type="chrome_scaled_image" name="IDR_MEDIAPLAYER_OVERLAY_PLAY_BUTTON" file="mediaplayer_overlay_play.png" />
       </if>
       <if expr="is_macosx">
@@ -70,7 +70,6 @@
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_CC_GENERIC" file="cc-generic.png" />
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_CC_JCB" file="jcb.png" />
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_CC_MASTERCARD" file="mastercard.png" />
-      <structure type="chrome_scaled_image" name="IDR_AUTOFILL_CC_SOLO" file="solo.png" />
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_CC_VISA" file="visa.png" />
       <structure type="chrome_scaled_image" name="IDR_PDF_BUTTON_FTP" file="pdf_button_ftp.png" />
       <structure type="chrome_scaled_image" name="IDR_PDF_BUTTON_FTP_HOVER" file="pdf_button_ftp_hover.png" />

@@ -145,8 +145,7 @@ WebInspector.GlassPane.prototype = {
     {
         delete WebInspector._glassPane;
         WebInspector.inspectorView.focus();
-        if (this.element.parentElement)
-            this.element.parentElement.removeChild(this.element);
+        this.element.remove();
     }
 }
 
@@ -462,7 +461,7 @@ WebInspector.startEditing = function(element, config)
         cssLoadView = new WebInspector.CodeMirrorCSSLoadView();
         cssLoadView.show(element);
         WebInspector.setCurrentFocusElement(element);
-        element.addEventListener("copy", consumeCopy, true);
+        element.addEventListener("copy", consumeCopy, false);
         codeMirror = window.CodeMirror(element, {
             mode: config.mode,
             lineWrapping: config.lineWrapping,
@@ -512,7 +511,7 @@ WebInspector.startEditing = function(element, config)
         WebInspector.restoreFocusFromElement(element);
 
         if (isMultiline) {
-            element.removeEventListener("copy", consumeCopy, true);
+            element.removeEventListener("copy", consumeCopy, false);
             cssLoadView.detach();
             return;
         }
@@ -1003,8 +1002,7 @@ WebInspector.revertDomChanges = function(domChanges)
         var entry = domChanges[i];
         switch (entry.type) {
         case "added":
-            if (entry.node.parentElement)
-                entry.node.parentElement.removeChild(entry.node);
+            entry.node.remove();
             break;
         case "changed":
             entry.node.textContent = entry.oldText;

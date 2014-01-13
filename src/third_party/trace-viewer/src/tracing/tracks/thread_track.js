@@ -19,7 +19,7 @@ base.exportTo('tracing.tracks', function() {
    * Visualizes a Thread using a series of of SliceTracks.
    * @constructor
    */
-  var ThreadTrack = ui.define(tracing.tracks.ContainerTrack);
+  var ThreadTrack = ui.define('thread-track', tracing.tracks.ContainerTrack);
   ThreadTrack.prototype = {
     __proto__: tracing.tracks.ContainerTrack.prototype,
 
@@ -101,7 +101,7 @@ base.exportTo('tracing.tracks', function() {
 
         this.updateVisibility_();
       }
-      this.addControlButtonElements_(this.tracks_.length >= 4);
+      this.addControlButtonElements_();
     },
 
     updateVisibility_: function() {

@@ -42,7 +42,6 @@
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/platform/LocalizedStrings.h"
-#include "core/platform/NotImplemented.h"
 
 using std::min;
 
@@ -92,7 +91,7 @@ private:
     {
     }
 
-    virtual void appendBytes(DocumentWriter*, const char*, size_t);
+    virtual size_t appendBytes(const char*, size_t) OVERRIDE;
     virtual void finish();
 };
 
@@ -126,15 +125,19 @@ static float pageZoomFactor(const Document* document)
     return frame ? frame->pageZoomFactor() : 1;
 }
 
-void ImageDocumentParser::appendBytes(DocumentWriter*, const char* data, size_t length)
+size_t ImageDocumentParser::appendBytes(const char* data, size_t length)
 {
+    if (!length)
+        return 0;
+
     Frame* frame = document()->frame();
     Settings* settings = frame->settings();
     if (!frame->loader()->client()->allowImage(!settings || settings->areImagesEnabled(), document()->url()))
-        return;
+        return 0;
 
     document()->cachedImage()->appendData(data, length);
     document()->imageUpdated();
+    return 0;
 }
 
 void ImageDocumentParser::finish()
@@ -165,7 +168,7 @@ void ImageDocumentParser::finish()
 // --------
 
 ImageDocument::ImageDocument(Frame* frame, const KURL& url)
-    : HTMLDocument(frame, url)
+    : HTMLDocument(frame, url, ImageDocumentClass)
     , m_imageElement(0)
     , m_imageSizeIsKnown(false)
     , m_didShrinkImage(false)
@@ -372,7 +375,7 @@ void ImageEventListener::handleEvent(ScriptExecutionContext*, Event* event)
     if (event->type() == eventNames().resizeEvent)
         m_doc->windowSizeChanged();
     else if (event->type() == eventNames().clickEvent && event->isMouseEvent()) {
-        MouseEvent* mouseEvent = static_cast<MouseEvent*>(event);
+        MouseEvent* mouseEvent = toMouseEvent(event);
         m_doc->imageClicked(mouseEvent->x(), mouseEvent->y());
     }
 }

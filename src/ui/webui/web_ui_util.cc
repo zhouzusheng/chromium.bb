@@ -11,16 +11,16 @@
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "googleurl/src/gurl.h"
-#include "net/base/escape.h"
 #include "grit/app_locale_settings.h"
+#include "net/base/escape.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/codec/png_codec.h"
-#include "ui/gfx/image/image_skia.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/image/image_skia.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -58,7 +58,7 @@ std::string GetBitmapDataUrlFromResource(int res) {
   return str_url;
 }
 
-WindowOpenDisposition GetDispositionFromClick(const ListValue* args,
+WindowOpenDisposition GetDispositionFromClick(const base::ListValue* args,
                                               int start_index) {
   double button = 0.0;
   bool alt_key = false;
@@ -127,7 +127,7 @@ void ParsePathAndScale(const GURL& url,
 }
 
 // static
-void SetFontAndTextDirection(DictionaryValue* localized_strings) {
+void SetFontAndTextDirection(base::DictionaryValue* localized_strings) {
   int web_font_family_id = IDS_WEB_FONT_FAMILY;
   int web_font_size_id = IDS_WEB_FONT_SIZE;
 #if defined(OS_WIN)

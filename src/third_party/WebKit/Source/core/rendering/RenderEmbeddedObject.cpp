@@ -26,35 +26,20 @@
 
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
-#include "core/dom/MouseEvent.h"
-#include "core/dom/Text.h"
-#include "core/html/HTMLEmbedElement.h"
 #include "core/html/HTMLIFrameElement.h"
-#include "core/html/HTMLObjectElement.h"
-#include "core/html/HTMLParamElement.h"
-#include "core/html/HTMLPlugInElement.h"
-#include "core/loader/FrameLoaderClient.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
-#include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
-#include "core/platform/Cursor.h"
 #include "core/platform/LocalizedStrings.h"
-#include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/PlatformMouseEvent.h"
 #include "core/platform/graphics/Font.h"
 #include "core/platform/graphics/FontSelector.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/Path.h"
 #include "core/platform/graphics/TextRun.h"
 #include "core/plugins/PluginView.h"
-#include "core/rendering/HitTestResult.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/RenderWidgetProtector.h"
 
 namespace WebCore {
 
@@ -63,10 +48,8 @@ using namespace HTMLNames;
 static const float replacementTextRoundedRectHeight = 18;
 static const float replacementTextRoundedRectLeftRightTextMargin = 6;
 static const float replacementTextRoundedRectOpacity = 0.20f;
-static const float replacementTextPressedRoundedRectOpacity = 0.65f;
 static const float replacementTextRoundedRectRadius = 5;
 static const float replacementTextTextOpacity = 0.55f;
-static const float replacementTextPressedTextOpacity = 0.65f;
 
 static const Color& replacementTextRoundedRectPressedColor()
 {
@@ -78,8 +61,6 @@ RenderEmbeddedObject::RenderEmbeddedObject(Element* element)
     : RenderPart(element)
     , m_hasFallbackContent(false)
     , m_showsUnavailablePluginIndicator(false)
-    , m_unavailablePluginIndicatorIsPressed(false)
-    , m_mouseDownWasInUnavailablePluginIndicator(false)
 {
     view()->frameView()->setIsVisuallyNonEmpty();
 }
@@ -108,14 +89,8 @@ static String unavailablePluginReplacementText(RenderEmbeddedObject::PluginUnava
     switch (pluginUnavailabilityReason) {
     case RenderEmbeddedObject::PluginMissing:
         return missingPluginText();
-    case RenderEmbeddedObject::PluginCrashed:
-        return crashedPluginText();
     case RenderEmbeddedObject::PluginBlockedByContentSecurityPolicy:
         return blockedPluginByContentSecurityPolicyText();
-    case RenderEmbeddedObject::InsecurePluginVersion:
-        return insecurePluginVersionText();
-    case RenderEmbeddedObject::PluginInactive:
-        return inactivePluginText();
     }
 
     ASSERT_NOT_REACHED();
@@ -134,15 +109,6 @@ void RenderEmbeddedObject::setPluginUnavailabilityReason(PluginUnavailabilityRea
 bool RenderEmbeddedObject::showsUnavailablePluginIndicator() const
 {
     return m_showsUnavailablePluginIndicator;
-}
-
-void RenderEmbeddedObject::setUnavailablePluginIndicatorIsPressed(bool pressed)
-{
-    if (m_unavailablePluginIndicatorIsPressed == pressed)
-        return;
-    
-    m_unavailablePluginIndicatorIsPressed = pressed;
-    repaint();
 }
 
 void RenderEmbeddedObject::paintContents(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -196,16 +162,18 @@ void RenderEmbeddedObject::paintReplaced(PaintInfo& paintInfo, const LayoutPoint
     
     GraphicsContextStateSaver stateSaver(*context);
     context->clip(contentRect);
-    context->setAlpha(m_unavailablePluginIndicatorIsPressed ? replacementTextPressedRoundedRectOpacity : replacementTextRoundedRectOpacity);
-    context->setFillColor(m_unavailablePluginIndicatorIsPressed ? replacementTextRoundedRectPressedColor() : Color::white, style()->colorSpace());
+    context->setAlpha(replacementTextRoundedRectOpacity);
+    context->setFillColor(Color::white);
     context->fillPath(path);
 
     const FontMetrics& fontMetrics = font.fontMetrics();
     float labelX = roundf(replacementTextRect.location().x() + (replacementTextRect.size().width() - textWidth) / 2);
     float labelY = roundf(replacementTextRect.location().y() + (replacementTextRect.size().height() - fontMetrics.height()) / 2 + fontMetrics.ascent());
-    context->setAlpha(m_unavailablePluginIndicatorIsPressed ? replacementTextPressedTextOpacity : replacementTextTextOpacity);
-    context->setFillColor(Color::black, style()->colorSpace());
-    context->drawBidiText(font, run, FloatPoint(labelX, labelY));
+    TextRunPaintInfo runInfo(run);
+    runInfo.bounds = replacementTextRect;
+    context->setAlpha(replacementTextTextOpacity);
+    context->setFillColor(Color::black);
+    context->drawBidiText(font, runInfo, FloatPoint(labelX, labelY));
 }
 
 bool RenderEmbeddedObject::getReplacementTextGeometry(const LayoutPoint& accumulatedOffset, FloatRect& contentRect, Path& path, FloatRect& replacementTextRect, Font& font, TextRun& run, float& textWidth) const
@@ -320,80 +288,6 @@ bool RenderEmbeddedObject::scroll(ScrollDirection direction, ScrollGranularity g
 bool RenderEmbeddedObject::logicalScroll(ScrollLogicalDirection direction, ScrollGranularity granularity, float multiplier, Node** stopNode)
 {
     return false;
-}
-
-bool RenderEmbeddedObject::isInUnavailablePluginIndicator(const LayoutPoint& point) const
-{
-    FloatRect contentRect;
-    Path path;
-    FloatRect replacementTextRect;
-    Font font;
-    TextRun run("");
-    float textWidth;
-    return getReplacementTextGeometry(IntPoint(), contentRect, path, replacementTextRect, font, run, textWidth)
-        && path.contains(point);
-}
-
-bool RenderEmbeddedObject::isInUnavailablePluginIndicator(MouseEvent* event) const
-{
-    return isInUnavailablePluginIndicator(roundedLayoutPoint(absoluteToLocal(event->absoluteLocation(), UseTransforms)));
-}
-
-static bool shouldUnavailablePluginMessageBeButton(Document* document, RenderEmbeddedObject::PluginUnavailabilityReason pluginUnavailabilityReason)
-{
-    Page* page = document->page();
-    return page && page->chrome()->client()->shouldUnavailablePluginMessageBeButton(pluginUnavailabilityReason);
-}
-
-void RenderEmbeddedObject::handleUnavailablePluginIndicatorEvent(Event* event)
-{
-    if (!shouldUnavailablePluginMessageBeButton(document(), m_pluginUnavailabilityReason))
-        return;
-    
-    if (!event->isMouseEvent())
-        return;
-    
-    MouseEvent* mouseEvent = static_cast<MouseEvent*>(event);
-    HTMLPlugInElement* element = toHTMLPlugInElement(node());
-    if (event->type() == eventNames().mousedownEvent && static_cast<MouseEvent*>(event)->button() == LeftButton) {
-        m_mouseDownWasInUnavailablePluginIndicator = isInUnavailablePluginIndicator(mouseEvent);
-        if (m_mouseDownWasInUnavailablePluginIndicator) {
-            if (Frame* frame = document()->frame()) {
-                frame->eventHandler()->setCapturingMouseEventsNode(element);
-                element->setIsCapturingMouseEvents(true);
-            }
-            setUnavailablePluginIndicatorIsPressed(true);
-        }
-        event->setDefaultHandled();
-    }        
-    if (event->type() == eventNames().mouseupEvent && static_cast<MouseEvent*>(event)->button() == LeftButton) {
-        if (m_unavailablePluginIndicatorIsPressed) {
-            if (Frame* frame = document()->frame()) {
-                frame->eventHandler()->setCapturingMouseEventsNode(0);
-                element->setIsCapturingMouseEvents(false);
-            }
-            setUnavailablePluginIndicatorIsPressed(false);
-        }
-        if (m_mouseDownWasInUnavailablePluginIndicator && isInUnavailablePluginIndicator(mouseEvent)) {
-            if (Page* page = document()->page())
-                page->chrome()->client()->unavailablePluginButtonClicked(element, m_pluginUnavailabilityReason);
-        }
-        m_mouseDownWasInUnavailablePluginIndicator = false;
-        event->setDefaultHandled();
-    }
-    if (event->type() == eventNames().mousemoveEvent) {
-        setUnavailablePluginIndicatorIsPressed(m_mouseDownWasInUnavailablePluginIndicator && isInUnavailablePluginIndicator(mouseEvent));
-        event->setDefaultHandled();
-    }
-}
-
-CursorDirective RenderEmbeddedObject::getCursor(const LayoutPoint& point, Cursor& cursor) const
-{
-    if (showsUnavailablePluginIndicator() && shouldUnavailablePluginMessageBeButton(document(), m_pluginUnavailabilityReason) && isInUnavailablePluginIndicator(point)) {
-        cursor = handCursor();
-        return SetCursor;
-    }
-    return RenderPart::getCursor(point, cursor);
 }
 
 bool RenderEmbeddedObject::canHaveChildren() const

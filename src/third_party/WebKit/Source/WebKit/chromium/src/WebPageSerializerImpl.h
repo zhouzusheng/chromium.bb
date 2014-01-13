@@ -41,14 +41,17 @@
 #include "WebEntities.h"
 #include "WebPageSerializer.h"
 #include "WebPageSerializerClient.h"
-#include <public/WebString.h>
-#include <public/WebURL.h>
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
+
+namespace WTF{
+class TextEncoding;
+}
 
 namespace WebCore {
 class Document;
 class Element;
 class Node;
-class TextEncoding;
 }
 
 namespace WebKit {
@@ -117,7 +120,7 @@ private:
 
     struct SerializeDomParam {
         const WebCore::KURL& url;
-        const WebCore::TextEncoding& textEncoding;
+        const WTF::TextEncoding& textEncoding;
         WebCore::Document* document;
         const WTF::String& directoryName;
         bool isHTMLDocument; // document.isHTMLDocument()
@@ -135,7 +138,7 @@ private:
         // serialization stream.
         bool haveAddedContentsBeforeEnd;
 
-        SerializeDomParam(const WebCore::KURL&, const WebCore::TextEncoding&, WebCore::Document*, const WTF::String& directoryName);
+        SerializeDomParam(const WebCore::KURL&, const WTF::TextEncoding&, WebCore::Document*, const WTF::String& directoryName);
     };
 
     // Collect all target frames which need to be serialized.

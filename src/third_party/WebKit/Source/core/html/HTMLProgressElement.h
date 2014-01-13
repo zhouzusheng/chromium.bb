@@ -53,13 +53,13 @@ private:
     virtual bool shouldAppearIndeterminate() const OVERRIDE;
     virtual bool supportLabels() const OVERRIDE { return true; }
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
     RenderProgress* renderProgress() const;
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
-    virtual void attach();
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
 
     void didElementStateChange();
     virtual void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;

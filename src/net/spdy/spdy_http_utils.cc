@@ -6,8 +6,8 @@
 
 #include <string>
 
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/time.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
@@ -39,8 +39,6 @@ bool SpdyHeadersToHttpResponse(const SpdyHeaderBlock& headers,
   if (it == headers.end())
     return false;
   version = it->second;
-
-  response->response_time = base::Time::Now();
 
   std::string raw_headers(version);
   raw_headers.push_back(' ');

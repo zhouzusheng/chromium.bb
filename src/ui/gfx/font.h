@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/base/ui_export.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -74,7 +74,7 @@ class UI_EXPORT Font {
 
   // Returns the number of horizontal pixels needed to display the specified
   // string.
-  int GetStringWidth(const string16& text) const;
+  int GetStringWidth(const base::string16& text) const;
 
   // Returns the expected number of horizontal pixels needed to display the
   // specified length of characters. Call GetStringWidth() to retrieve the

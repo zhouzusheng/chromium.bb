@@ -31,7 +31,7 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/surface/accelerated_surface_win.h"
-#include "webkit/glue/webcursor.h"
+#include "webkit/common/cursors/webcursor.h"
 
 class SkRegion;
 
@@ -180,8 +180,8 @@ class RenderWidgetHostViewWin
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
+  virtual void TextInputTypeChanged(ui::TextInputType type,
+                                    bool can_compose_inline) OVERRIDE;
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
@@ -192,7 +192,8 @@ class RenderWidgetHostViewWin
   virtual void DidUpdateBackingStore(
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& copy_rects) OVERRIDE;
+      const std::vector<gfx::Rect>& copy_rects,
+      const ui::LatencyInfo& latency_info) OVERRIDE;
   virtual void RenderViewGone(base::TerminationStatus status,
                               int error_code) OVERRIDE;
   virtual bool CanSubscribeFrame() const OVERRIDE;
@@ -212,7 +213,7 @@ class RenderWidgetHostViewWin
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool CanCopyToVideoFrame() const OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
-  virtual void ProcessAckedTouchEvent(const WebKit::WebTouchEvent& touch,
+  virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) OVERRIDE;
   virtual void SetHasHorizontalScrollbar(
       bool has_horizontal_scrollbar) OVERRIDE;
@@ -266,6 +267,7 @@ class RenderWidgetHostViewWin
   virtual void ClearCompositionText() OVERRIDE;
   virtual void InsertText(const string16& text) OVERRIDE;
   virtual void InsertChar(char16 ch, int flags) OVERRIDE;
+  virtual gfx::NativeWindow GetAttachedWindow() const OVERRIDE;
   virtual ui::TextInputType GetTextInputType() const OVERRIDE;
   virtual bool CanComposeInline() const OVERRIDE;
   virtual gfx::Rect GetCaretBounds() OVERRIDE;
@@ -594,6 +596,8 @@ class RenderWidgetHostViewWin
 
   // The OS-provided default IAccessible instance for our hwnd.
   base::win::ScopedComPtr<IAccessible> window_iaccessible_;
+
+  ui::LatencyInfo software_latency_info_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewWin);
 };

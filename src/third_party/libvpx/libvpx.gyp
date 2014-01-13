@@ -34,10 +34,6 @@
 
     # Location of the intermediate output.
     'shared_generated_dir': '<(SHARED_INTERMEDIATE_DIR)/third_party/libvpx',
-
-    # Override temporarily until we get a warning-free libvpx on Windows.
-    # See http://crbug.com/140121
-    'win_third_party_warn_as_error': 'false',
   },
   'target_defaults': {
     'target_conditions': [
@@ -208,6 +204,7 @@
             'destination': '<(shared_generated_dir)',
             'files': [
               '<(ads2gas_script_path)',
+              '<(ads2gas_script_include)',
             ],
           }],
 
@@ -216,7 +213,10 @@
             {
               'rule_name': 'convert_asm',
               'extension': 'asm',
-              'inputs': [ '<(shared_generated_dir)/<(ads2gas_script)', ],
+              'inputs': [
+                '<(shared_generated_dir)/<(ads2gas_script)',
+                '<(shared_generated_dir)/thumb.pm',
+              ],
               'outputs': [
                 '<(shared_generated_dir)/<(RULE_INPUT_ROOT).S',
               ],
@@ -234,6 +234,7 @@
             # Location of the assembly conversion script.
             'ads2gas_script': 'ads2gas.pl',
             'ads2gas_script_path': '<(libvpx_source)/build/make/<(ads2gas_script)',
+            'ads2gas_script_include': '<(libvpx_source)/build/make/thumb.pm',
           },
           'cflags': [
             # We need to explicitly tell the GCC assembler to look for

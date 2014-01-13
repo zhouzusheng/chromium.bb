@@ -6,9 +6,10 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/logging.h"
-#include "base/string16.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
 #include "net/base/file_stream.h"
 #include "third_party/zlib/google/zip_internal.h"
 #include "third_party/zlib/google/zip_reader.h"
@@ -51,7 +52,7 @@ bool AddFileToZip(zipFile zip_file, const base::FilePath& src_dir) {
 bool AddEntryToZip(zipFile zip_file, const base::FilePath& path,
                    const base::FilePath& root_path) {
   std::string str_path =
-      path.AsUTF8Unsafe().substr(root_path.value().length() + 1);
+      path.AsUTF8Unsafe().substr(root_path.AsUTF8Unsafe().length() + 1);
 #if defined(OS_WIN)
   ReplaceSubstringsAfterOffset(&str_path, 0u, "\\", "/");
 #endif
@@ -137,9 +138,8 @@ bool ZipWithFilterCallback(const base::FilePath& src_dir,
   }
 
   bool success = true;
-  file_util::FileEnumerator file_enumerator(src_dir, true /* recursive */,
-      file_util::FileEnumerator::FILES |
-      file_util::FileEnumerator::DIRECTORIES);
+  base::FileEnumerator file_enumerator(src_dir, true /* recursive */,
+      base::FileEnumerator::FILES | base::FileEnumerator::DIRECTORIES);
   for (base::FilePath path = file_enumerator.Next(); !path.value().empty();
        path = file_enumerator.Next()) {
     if (!filter_cb.Run(path)) {

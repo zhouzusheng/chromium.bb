@@ -59,6 +59,7 @@ MediaController::MediaController(ScriptExecutionContext* context)
     , m_timeupdateTimer(this, &MediaController::timeupdateTimerFired)
     , m_previousTimeupdateTime(0)
 {
+    ScriptWrappable::init(this);
 }
 
 MediaController::~MediaController()
@@ -588,15 +589,6 @@ void MediaController::setClosedCaptionsVisible(bool visible)
         m_mediaElements[index]->setClosedCaptionsVisible(visible);
 }
 
-bool MediaController::supportsScanning() const
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        if (!m_mediaElements[index]->supportsScanning())
-            return false;
-    }
-    return true;
-}
-
 void MediaController::beginScrubbing()
 {
     for (size_t index = 0; index < m_mediaElements.size(); ++index)
@@ -625,15 +617,6 @@ bool MediaController::canPlay() const
     return true;
 }
 
-bool MediaController::isLiveStream() const
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        if (!m_mediaElements[index]->isLiveStream())
-            return false;
-    }
-    return true;
-}
-
 bool MediaController::hasCurrentSrc() const
 {
     for (size_t index = 0; index < m_mediaElements.size(); ++index) {
@@ -641,12 +624,6 @@ bool MediaController::hasCurrentSrc() const
             return false;
     }
     return true;
-}
-
-void MediaController::returnToRealtime()
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->returnToRealtime();
 }
 
 const AtomicString& MediaController::interfaceName() const

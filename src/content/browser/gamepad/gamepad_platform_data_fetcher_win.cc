@@ -8,10 +8,10 @@
 #include <dinputd.h>
 
 #include "base/debug/trace_event.h"
-#include "base/stringprintf.h"
-#include "content/common/gamepad_messages.h"
+#include "base/strings/stringprintf.h"
 #include "base/win/windows_version.h"
 #include "content/common/gamepad_hardware_buffer.h"
+#include "content/common/gamepad_messages.h"
 
 // This was removed from the Windows 8 SDK for some reason.
 // We need it so we can get state for axes without worrying if they
@@ -479,15 +479,15 @@ void GamepadPlatformDataFetcherWin::GetDirectInputPadData(
 bool GamepadPlatformDataFetcherWin::GetXInputDllFunctions() {
   xinput_get_capabilities_ = NULL;
   xinput_get_state_ = NULL;
-  xinput_enable_ = static_cast<XInputEnableFunc>(
+  xinput_enable_ = reinterpret_cast<XInputEnableFunc>(
       xinput_dll_.GetFunctionPointer("XInputEnable"));
   if (!xinput_enable_)
     return false;
-  xinput_get_capabilities_ = static_cast<XInputGetCapabilitiesFunc>(
+  xinput_get_capabilities_ = reinterpret_cast<XInputGetCapabilitiesFunc>(
       xinput_dll_.GetFunctionPointer("XInputGetCapabilities"));
   if (!xinput_get_capabilities_)
     return false;
-  xinput_get_state_ = static_cast<XInputGetStateFunc>(
+  xinput_get_state_ = reinterpret_cast<XInputGetStateFunc>(
       xinput_dll_.GetFunctionPointer("XInputGetState"));
   if (!xinput_get_state_)
     return false;

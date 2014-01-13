@@ -11,15 +11,16 @@
 
 #include "base/callback.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_reader.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/cross_site_request_manager.h"
@@ -56,9 +57,9 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/context_menu_params.h"
-#include "content/public/common/context_menu_source_type.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/url_utils.h"
 #include "net/base/net_util.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -66,18 +67,13 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "ui/snapshot/snapshot.h"
-#include "webkit/fileapi/isolated_context.h"
-#include "webkit/glue/glue_serialize.h"
-#include "webkit/glue/webdropdata.h"
-#include "webkit/glue/webkit_glue.h"
+#include "webkit/browser/fileapi/isolated_context.h"
+#include "webkit/common/webdropdata.h"
 
-#if defined(OS_WIN)
-#include "base/win/windows_version.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/win/WebScreenInfoFactory.h"
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
 #elif defined(OS_ANDROID)
-#include "content/browser/android/media_player_manager_impl.h"
+#include "media/base/android/media_player_manager.h"
 #endif
 
 using base::TimeDelta;
@@ -121,10 +117,8 @@ g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
 // static
 RenderViewHost* RenderViewHost::FromID(int render_process_id,
                                        int render_view_id) {
-  RenderProcessHost* process = RenderProcessHost::FromID(render_process_id);
-  if (!process)
-    return NULL;
-  RenderWidgetHost* widget = process->GetRenderWidgetHostByID(render_view_id);
+  RenderWidgetHost* widget =
+      RenderWidgetHost::FromID(render_process_id, render_view_id);
   if (!widget || !widget->IsRenderView())
     return NULL;
   return static_cast<RenderViewHostImpl*>(RenderWidgetHostImpl::From(widget));
@@ -159,6 +153,7 @@ RenderViewHostImpl::RenderViewHostImpl(
     RenderViewHostDelegate* delegate,
     RenderWidgetHostDelegate* widget_delegate,
     int routing_id,
+    int main_frame_routing_id,
     bool swapped_out,
     SessionStorageNamespace* session_storage)
     : RenderWidgetHostImpl(widget_delegate, instance->GetProcess(), routing_id),
@@ -166,11 +161,11 @@ RenderViewHostImpl::RenderViewHostImpl(
       instance_(static_cast<SiteInstanceImpl*>(instance)),
       waiting_for_drag_context_response_(false),
       enabled_bindings_(0),
-      pending_request_id_(-1),
       navigations_suspended_(false),
-      suspended_nav_params_(NULL),
+      has_accessed_initial_document_(false),
       is_swapped_out_(swapped_out),
       is_subframe_(false),
+      main_frame_id_(-1),
       run_modal_reply_msg_(NULL),
       run_modal_opener_id_(MSG_ROUTING_NONE),
       is_waiting_for_beforeunload_ack_(false),
@@ -178,25 +173,30 @@ RenderViewHostImpl::RenderViewHostImpl(
       has_timed_out_on_unload_(false),
       unload_ack_is_for_cross_site_transition_(false),
       are_javascript_messages_suppressed_(false),
-      accessibility_layout_callback_(base::Bind(&base::DoNothing)),
-      accessibility_load_callback_(base::Bind(&base::DoNothing)),
-      accessibility_other_callback_(base::Bind(&base::DoNothing)),
       sudden_termination_allowed_(false),
       session_storage_namespace_(
           static_cast<SessionStorageNamespaceImpl*>(session_storage)),
-      save_accessibility_tree_for_testing_(false),
       render_view_termination_status_(base::TERMINATION_STATUS_STILL_RUNNING) {
-  DCHECK(session_storage_namespace_);
-  DCHECK(instance_);
+  DCHECK(session_storage_namespace_.get());
+  DCHECK(instance_.get());
   CHECK(delegate_);  // http://crbug.com/82827
+
+  if (main_frame_routing_id == MSG_ROUTING_NONE)
+    main_frame_routing_id = GetProcess()->GetNextRoutingID();
+
+  main_render_frame_host_.reset(
+      new RenderFrameHostImpl(this, main_frame_routing_id, is_swapped_out_));
 
   GetProcess()->EnableSendQueue();
 
   for (size_t i = 0; i < g_created_callbacks.Get().size(); i++)
     g_created_callbacks.Get().at(i).Run(this);
 
+  if (!swapped_out)
+    instance_->increment_active_view_count();
+
 #if defined(OS_ANDROID)
-  media_player_manager_ = new MediaPlayerManagerImpl(this);
+  media_player_manager_ = media::MediaPlayerManager::Create(this);
 #endif
 }
 
@@ -211,6 +211,11 @@ RenderViewHostImpl::~RenderViewHostImpl() {
   // Be sure to clean up any leftover state from cross-site requests.
   CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
       GetProcess()->GetID(), GetRoutingID(), false);
+
+  // If this was swapped out, it already decremented the active view
+  // count of the SiteInstance it belongs to.
+  if (!is_swapped_out_)
+    instance_->decrement_active_view_count();
 }
 
 RenderViewHostDelegate* RenderViewHostImpl::GetDelegate() const {
@@ -218,13 +223,14 @@ RenderViewHostDelegate* RenderViewHostImpl::GetDelegate() const {
 }
 
 SiteInstance* RenderViewHostImpl::GetSiteInstance() const {
-  return instance_;
+  return instance_.get();
 }
 
 bool RenderViewHostImpl::CreateRenderView(
     const string16& frame_name,
     int opener_route_id,
     int32 max_page_id) {
+  TRACE_EVENT0("renderer_host", "RenderViewHostImpl::CreateRenderView");
   DCHECK(!IsRenderViewLive()) << "Creating view twice";
 
   // The process may (if we're sharing a process with another host that already
@@ -252,6 +258,7 @@ bool RenderViewHostImpl::CreateRenderView(
       delegate_->GetRendererPrefs(GetProcess()->GetBrowserContext());
   params.web_preferences = delegate_->GetWebkitPrefs();
   params.view_id = GetRoutingID();
+  params.main_frame_routing_id = main_render_frame_host_->routing_id();
   params.surface_id = surface_id();
   params.session_storage_namespace_id = session_storage_namespace_->id();
   params.frame_name = frame_name;
@@ -294,6 +301,7 @@ void RenderViewHostImpl::SyncRendererPrefs() {
 }
 
 void RenderViewHostImpl::Navigate(const ViewMsg_Navigate_Params& params) {
+  TRACE_EVENT0("renderer_host", "RenderViewHostImpl::Navigate");
   // Browser plugin guests are not allowed to navigate outside web-safe schemes,
   // so do not grant them the ability to request additional URLs.
   if (!GetProcess()->IsGuest()) {
@@ -418,8 +426,7 @@ void RenderViewHostImpl::FirePageBeforeUnload(bool for_cross_site_transition) {
   }
 }
 
-void RenderViewHostImpl::SwapOut(int new_render_process_host_id,
-                                 int new_request_id) {
+void RenderViewHostImpl::SwapOut() {
   // This will be set back to false in OnSwapOutACK, just before we replace
   // this RVH with the pending RVH.
   is_waiting_for_unload_ack_ = true;
@@ -429,22 +436,20 @@ void RenderViewHostImpl::SwapOut(int new_render_process_host_id,
   increment_in_flight_event_count();
   StartHangMonitorTimeout(TimeDelta::FromMilliseconds(kUnloadTimeoutMS));
 
-  ViewMsg_SwapOut_Params params;
-  params.closing_process_id = GetProcess()->GetID();
-  params.closing_route_id = GetRoutingID();
-  params.new_render_process_host_id = new_render_process_host_id;
-  params.new_request_id = new_request_id;
   if (IsRenderViewLive()) {
-    Send(new ViewMsg_SwapOut(GetRoutingID(), params));
+    Send(new ViewMsg_SwapOut(GetRoutingID()));
   } else {
     // This RenderViewHost doesn't have a live renderer, so just skip the unload
-    // event.  We must notify the ResourceDispatcherHost on the IO thread,
-    // which we will do through the RenderProcessHost's widget helper.
-    GetProcess()->SimulateSwapOutACK(params);
+    // event.
+    OnSwappedOut(true);
   }
 }
 
-void RenderViewHostImpl::OnSwapOutACK(bool timed_out) {
+void RenderViewHostImpl::OnSwapOutACK() {
+  OnSwappedOut(false);
+}
+
+void RenderViewHostImpl::OnSwappedOut(bool timed_out) {
   // Stop the hang monitor now that the unload handler has finished.
   decrement_in_flight_event_count();
   StopHangMonitorTimeout();
@@ -480,10 +485,11 @@ void RenderViewHostImpl::WasSwappedOut() {
 
     // Count the number of widget hosts for the process, which is equivalent to
     // views using the process as of this writing.
-    RenderProcessHost::RenderWidgetHostsIterator iter(
-        GetProcess()->GetRenderWidgetHostsIterator());
-    for (; !iter.IsAtEnd(); iter.Advance())
-      ++views;
+    RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
+    for (size_t i = 0; i < widgets.size(); ++i) {
+      if (widgets[i]->GetProcess()->GetID() == GetProcess()->GetID())
+        ++views;
+    }
 
     if (!RenderProcessHost::run_renderer_in_process() &&
         process_handle && views <= 1) {
@@ -548,15 +554,15 @@ void RenderViewHostImpl::ClosePageIgnoringUnloadEvents() {
   delegate_->Close(this);
 }
 
-void RenderViewHostImpl::SetHasPendingCrossSiteRequest(bool has_pending_request,
-                                                       int request_id) {
-  CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
-      GetProcess()->GetID(), GetRoutingID(), has_pending_request);
-  pending_request_id_ = request_id;
+bool RenderViewHostImpl::HasPendingCrossSiteRequest() {
+  return CrossSiteRequestManager::GetInstance()->HasPendingCrossSiteRequest(
+      GetProcess()->GetID(), GetRoutingID());
 }
 
-int RenderViewHostImpl::GetPendingRequestId() {
-  return pending_request_id_;
+void RenderViewHostImpl::SetHasPendingCrossSiteRequest(
+    bool has_pending_request) {
+  CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
+      GetProcess()->GetID(), GetRoutingID(), has_pending_request);
 }
 
 #if defined(OS_ANDROID)
@@ -973,6 +979,7 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_AddMessageToConsole, OnAddMessageToConsole)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShouldClose_ACK, OnShouldCloseACK)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ClosePage_ACK, OnClosePageACK)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SwapOut_ACK, OnSwapOutACK)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionChanged, OnSelectionChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionBoundsChanged,
                         OnSelectionBoundsChanged)
@@ -990,6 +997,8 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowPopup, OnShowPopup)
 #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunFileChooser, OnRunFileChooser)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_DidAccessInitialDocument,
+                        OnDidAccessInitialDocument)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DomOperationResponse,
                         OnDomOperationResponse)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Notifications,
@@ -1034,6 +1043,7 @@ bool RenderViewHostImpl::IsRenderView() const {
 
 void RenderViewHostImpl::CreateNewWindow(
     int route_id,
+    int main_frame_route_id,
     const ViewHostMsg_CreateWindow_Params& params,
     SessionStorageNamespace* session_storage_namespace) {
   ViewHostMsg_CreateWindow_Params validated_params(params);
@@ -1044,8 +1054,8 @@ void RenderViewHostImpl::CreateNewWindow(
   FilterURL(policy, GetProcess(), true,
             &validated_params.opener_security_origin);
 
-  delegate_->CreateNewWindow(route_id, validated_params,
-                             session_storage_namespace);
+  delegate_->CreateNewWindow(route_id, main_frame_route_id,
+                             validated_params, session_storage_namespace);
 }
 
 void RenderViewHostImpl::CreateNewWidget(int route_id,
@@ -1116,6 +1126,7 @@ void RenderViewHostImpl::OnRenderViewGone(int status, int exit_code) {
 
   // Reset state.
   ClearPowerSaveBlockers();
+  main_frame_id_ = -1;
 
   // Our base class RenderWidgetHost needs to reset some stuff.
   RendererExited(render_view_termination_status_, exit_code);
@@ -1186,25 +1197,34 @@ void RenderViewHostImpl::OnNavigate(const IPC::Message& msg) {
   if (is_waiting_for_unload_ack_)
     return;
 
-  RenderProcessHost* process = GetProcess();
-
-  // If the --site-per-process flag is passed, then the renderer process is
-  // not allowed to request web pages from other sites than the one it is
-  // dedicated to.
-  // Kill the renderer process if it violates this policy.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kSitePerProcess) &&
-      static_cast<SiteInstanceImpl*>(GetSiteInstance())->HasSite() &&
-      validated_params.url != GURL(chrome::kAboutBlankURL)) {
-    if (!SiteInstance::IsSameWebSite(GetSiteInstance()->GetBrowserContext(),
-                                     GetSiteInstance()->GetSiteURL(),
-                                     validated_params.url) ||
-        static_cast<SiteInstanceImpl*>(GetSiteInstance())->
-            HasWrongProcessForURL(validated_params.url)) {
-      // TODO(nasko): Removed the actual kill process call until out-of-process
-      // iframes is ready to go.
+  // Cache the main frame id, so we can use it for creating the frame tree
+  // root node when needed.
+  if (PageTransitionIsMainFrame(validated_params.transition)) {
+    if (main_frame_id_ == -1) {
+      main_frame_id_ = validated_params.frame_id;
+    } else {
+      // TODO(nasko): We plan to remove the usage of frame_id in navigation
+      // and move to routing ids. This is in place to ensure that a
+      // renderer is not misbehaving and sending us incorrect data.
+      DCHECK_EQ(main_frame_id_, validated_params.frame_id);
     }
   }
+  RenderProcessHost* process = GetProcess();
+
+  // Attempts to commit certain off-limits URL should be caught more strictly
+  // than our FilterURL checks below.  If a renderer violates this policy, it
+  // should be killed.
+  if (!CanCommitURL(validated_params.url)) {
+    VLOG(1) << "Blocked URL " << validated_params.url.spec();
+    validated_params.url = GURL(kAboutBlankURL);
+    RecordAction(UserMetricsAction("CanCommitURL_BlockedAndKilled"));
+    // Kills the process.
+    process->ReceivedBadMessage();
+  }
+
+  // Now that something has committed, we don't need to track whether the
+  // initial page has been accessed.
+  has_accessed_initial_document_ = false;
 
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
@@ -1227,7 +1247,7 @@ void RenderViewHostImpl::OnNavigate(const IPC::Message& msg) {
 
   // Without this check, the renderer can trick the browser into using
   // filenames it can't access in a future session restore.
-  if (!CanAccessFilesOfSerializedState(validated_params.content_state)) {
+  if (!CanAccessFilesOfPageState(validated_params.page_state)) {
     GetProcess()->ReceivedBadMessage();
     return;
   }
@@ -1235,11 +1255,10 @@ void RenderViewHostImpl::OnNavigate(const IPC::Message& msg) {
   delegate_->DidNavigate(this, validated_params);
 }
 
-void RenderViewHostImpl::OnUpdateState(int32 page_id,
-                                       const std::string& state) {
+void RenderViewHostImpl::OnUpdateState(int32 page_id, const PageState& state) {
   // Without this check, the renderer can trick the browser into using
   // filenames it can't access in a future session restore.
-  if (!CanAccessFilesOfSerializedState(state)) {
+  if (!CanAccessFilesOfPageState(state)) {
     GetProcess()->ReceivedBadMessage();
     return;
   }
@@ -1332,15 +1351,7 @@ void RenderViewHostImpl::OnContextMenu(const ContextMenuParams& params) {
   FilterURL(policy, process, false, &validated_params.page_url);
   FilterURL(policy, process, true, &validated_params.frame_url);
 
-  ContextMenuSourceType type = CONTEXT_MENU_SOURCE_MOUSE;
-  if (!in_process_event_types_.empty()) {
-    WebKit::WebInputEvent::Type event_type = in_process_event_types_.front();
-    if (WebKit::WebInputEvent::isGestureEventType(event_type))
-      type = CONTEXT_MENU_SOURCE_TOUCH;
-    else if (WebKit::WebInputEvent::isKeyboardEventType(event_type))
-      type = CONTEXT_MENU_SOURCE_KEYBOARD;
-  }
-  delegate_->ShowContextMenu(validated_params, type);
+  delegate_->ShowContextMenu(validated_params);
 }
 
 void RenderViewHostImpl::OnToggleFullscreen(bool enter_fullscreen) {
@@ -1692,6 +1703,15 @@ void RenderViewHostImpl::ToggleSpeechInput() {
   Send(new InputTagSpeechMsg_ToggleSpeechInput(GetRoutingID()));
 }
 
+bool RenderViewHostImpl::CanCommitURL(const GURL& url) {
+  // TODO(creis): We should also check for WebUI pages here.  Also, when the
+  // out-of-process iframes implementation is ready, we should check for
+  // cross-site URLs that are not allowed to commit in this process.
+
+  // Give the client a chance to disallow URLs from committing.
+  return GetContentClient()->browser()->CanCommitURL(GetProcess(), url);
+}
+
 void RenderViewHostImpl::FilterURL(ChildProcessSecurityPolicyImpl* policy,
                                    const RenderProcessHost* process,
                                    bool empty_allowed,
@@ -1709,7 +1729,7 @@ void RenderViewHostImpl::FilterURL(ChildProcessSecurityPolicyImpl* policy,
     // This is because the browser treats navigation to an empty GURL as a
     // navigation to the home page. This is often a privileged page
     // (chrome://newtab/) which is exactly what we don't want.
-    *url = GURL(chrome::kAboutBlankURL);
+    *url = GURL(kAboutBlankURL);
     RecordAction(UserMetricsAction("FilterURLTermiate_Invalid"));
     return;
   }
@@ -1717,7 +1737,7 @@ void RenderViewHostImpl::FilterURL(ChildProcessSecurityPolicyImpl* policy,
   if (url->SchemeIs(chrome::kAboutScheme)) {
     // The renderer treats all URLs in the about: scheme as being about:blank.
     // Canonicalize about: URLs to about:blank.
-    *url = GURL(chrome::kAboutBlankURL);
+    *url = GURL(kAboutBlankURL);
     RecordAction(UserMetricsAction("FilterURLTermiate_About"));
   }
 
@@ -1731,7 +1751,7 @@ void RenderViewHostImpl::FilterURL(ChildProcessSecurityPolicyImpl* policy,
     // URL.  This prevents us from storing the blocked URL and becoming confused
     // later.
     VLOG(1) << "Blocked URL " << url->spec();
-    *url = GURL(chrome::kAboutBlankURL);
+    *url = GURL(kAboutBlankURL);
     RecordAction(UserMetricsAction("FilterURLTermiate_Blocked"));
   }
 }
@@ -1771,19 +1791,9 @@ void RenderViewHostImpl::DisownOpener() {
   Send(new ViewMsg_DisownOpener(GetRoutingID()));
 }
 
-void RenderViewHostImpl::SetAccessibilityLayoutCompleteCallbackForTesting(
-    const base::Closure& callback) {
-  accessibility_layout_callback_ = callback;
-}
-
-void RenderViewHostImpl::SetAccessibilityLoadCompleteCallbackForTesting(
-    const base::Closure& callback) {
-  accessibility_load_callback_ = callback;
-}
-
-void RenderViewHostImpl::SetAccessibilityOtherCallbackForTesting(
-    const base::Closure& callback) {
-  accessibility_other_callback_ = callback;
+void RenderViewHostImpl::SetAccessibilityCallbackForTesting(
+    const base::Callback<void(AccessibilityNotification)>& callback) {
+  accessibility_testing_callback_ = callback;
 }
 
 void RenderViewHostImpl::UpdateWebkitPreferences(const WebPreferences& prefs) {
@@ -1881,26 +1891,23 @@ void RenderViewHostImpl::OnAccessibilityNotifications(
   if (view_ && !is_swapped_out_)
     view_->OnAccessibilityNotifications(params);
 
+  // Always send an ACK or the renderer can be in a bad state.
+  Send(new AccessibilityMsg_Notifications_ACK(GetRoutingID()));
+
+  // The rest of this code is just for testing; bail out if we're not
+  // in that mode.
+  if (accessibility_testing_callback_.is_null())
+    return;
+
   for (unsigned i = 0; i < params.size(); i++) {
     const AccessibilityHostMsg_NotificationParams& param = params[i];
     AccessibilityNotification src_type = param.notification_type;
-
-    if ((src_type == AccessibilityNotificationLayoutComplete ||
-         src_type == AccessibilityNotificationLoadComplete) &&
-        save_accessibility_tree_for_testing_) {
+    if (src_type == AccessibilityNotificationLayoutComplete ||
+        src_type == AccessibilityNotificationLoadComplete) {
       MakeAccessibilityNodeDataTree(param.nodes, &accessibility_tree_);
     }
-
-    if (src_type == AccessibilityNotificationLayoutComplete) {
-      accessibility_layout_callback_.Run();
-    } else if (src_type == AccessibilityNotificationLoadComplete) {
-      accessibility_load_callback_.Run();
-    } else {
-      accessibility_other_callback_.Run();
-    }
+    accessibility_testing_callback_.Run(src_type);
   }
-
-  Send(new AccessibilityMsg_Notifications_ACK(GetRoutingID()));
 }
 
 void RenderViewHostImpl::OnScriptEvalResponse(int id,
@@ -1994,6 +2001,11 @@ void RenderViewHostImpl::OnRunFileChooser(const FileChooserParams& params) {
   delegate_->RunFileChooser(this, params);
 }
 
+void RenderViewHostImpl::OnDidAccessInitialDocument() {
+  has_accessed_initial_document_ = true;
+  delegate_->DidAccessInitialDocument();
+}
+
 void RenderViewHostImpl::OnDomOperationResponse(
     const std::string& json_string, int automation_id) {
   DomOperationNotificationDetails details(json_string, automation_id);
@@ -2043,6 +2055,13 @@ void RenderViewHostImpl::OnShowPopup(
 #endif
 
 void RenderViewHostImpl::SetSwappedOut(bool is_swapped_out) {
+  // We update the number of RenderViews in a SiteInstance when the
+  // swapped out status of this RenderView gets flipped.
+  if (is_swapped_out_ && !is_swapped_out)
+    instance_->increment_active_view_count();
+  else if (!is_swapped_out_ && is_swapped_out)
+    instance_->decrement_active_view_count();
+
   is_swapped_out_ = is_swapped_out;
 
   // Whenever we change swap out state, we should not be waiting for
@@ -2057,12 +2076,12 @@ void RenderViewHostImpl::ClearPowerSaveBlockers() {
   STLDeleteValues(&power_save_blockers_);
 }
 
-bool RenderViewHostImpl::CanAccessFilesOfSerializedState(
-    const std::string& state) const {
+bool RenderViewHostImpl::CanAccessFilesOfPageState(
+    const PageState& state) const {
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
-  const std::vector<base::FilePath>& file_paths =
-      webkit_glue::FilePathsFromHistoryState(state);
+
+  const std::vector<base::FilePath>& file_paths = state.GetReferencedFiles();
   for (std::vector<base::FilePath>::const_iterator file = file_paths.begin();
        file != file_paths.end(); ++file) {
     if (!policy->CanReadFile(GetProcess()->GetID(), *file))

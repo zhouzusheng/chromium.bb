@@ -28,6 +28,7 @@
 
 #include "core/dom/ExceptionCode.h"
 #include "core/html/canvas/CheckedInt.h"
+#include "wtf/CPU.h"
 
 namespace {
 
@@ -65,6 +66,7 @@ DataView::DataView(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned
     : ArrayBufferView(buffer, byteOffset)
     , m_byteLength(byteLength)
 {
+    ScriptWrappable::init(this);
 }
 
 static bool needToFlipBytes(bool littleEndian)

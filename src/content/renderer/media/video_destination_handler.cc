@@ -6,12 +6,14 @@
 
 #include <string>
 
+#include "base/base64.h"
 #include "base/logging.h"
+#include "base/rand_util.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_registry_interface.h"
 #include "content/renderer/render_thread_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamTrack.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaStreamRegistry.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/WebKit/public/web/WebMediaStreamRegistry.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
 
 using cricket::CaptureState;
@@ -94,7 +96,10 @@ void PpFrameWriter::PutFrame(PPB_ImageData_Impl* image_data,
                << "Called when capturer is not started.";
     return;
   }
-  ASSERT(image_data != NULL);
+  if (!image_data) {
+    LOG(ERROR) << "PpFrameWriter::PutFrame - Called with NULL image_data.";
+    return;
+  }
   webkit::ppapi::ImageDataAutoMapper mapper(image_data);
   if (!mapper.is_valid()) {
     LOG(ERROR) << "PpFrameWriter::PutFrame - "
@@ -102,7 +107,11 @@ void PpFrameWriter::PutFrame(PPB_ImageData_Impl* image_data,
     return;
   }
   const SkBitmap* bitmap = image_data->GetMappedBitmap();
-  ASSERT(bitmap != NULL);
+  if (!bitmap) {
+    LOG(ERROR) << "PpFrameWriter::PutFrame - "
+               << "The image_data's mapped bitmap is NULL.";
+    return;
+  }
 
   cricket::CapturedFrame frame;
   frame.elapsed_time = 0;
@@ -115,7 +124,6 @@ void PpFrameWriter::PutFrame(PPB_ImageData_Impl* image_data,
     frame.fourcc = cricket::FOURCC_BGRA;
   } else {
     LOG(ERROR) << "PpFrameWriter::PutFrame - Got RGBA which is not supported.";
-    ASSERT(false);
     return;
   }
   frame.data_size = bitmap->getSize();
@@ -135,7 +143,7 @@ class PpFrameWriterProxy : public FrameWriterInterface {
                      PpFrameWriter* writer)
       : track_(track),
         writer_(writer) {
-    ASSERT(writer_ != NULL);
+    DCHECK(writer_ != NULL);
   }
 
   virtual ~PpFrameWriterProxy() {}
@@ -159,7 +167,7 @@ bool VideoDestinationHandler::Open(
     FrameWriterInterface** frame_writer) {
   if (!factory) {
     factory = RenderThreadImpl::current()->GetMediaStreamDependencyFactory();
-    ASSERT(factory != NULL);
+    DCHECK(factory != NULL);
   }
   WebKit::WebMediaStream stream;
   if (registry) {
@@ -174,7 +182,12 @@ bool VideoDestinationHandler::Open(
   }
 
   // Create a new native video track and add it to |stream|.
-  std::string track_id = talk_base::ToString(talk_base::CreateRandomId64());
+  std::string track_id;
+  // According to spec, a media stream track's id should be globally unique.
+  // There's no easy way to strictly achieve that. The id generated with this
+  // method should be unique for most of the cases but theoretically it's
+  // possible we can get an id that's duplicated with the existing tracks.
+  base::Base64Encode(base::RandBytesAsString(64), &track_id);
   PpFrameWriter* writer = new PpFrameWriter();
   if (!factory->AddNativeVideoMediaTrack(track_id, &stream, writer)) {
     delete writer;
@@ -184,12 +197,11 @@ bool VideoDestinationHandler::Open(
   // Gets a handler to the native video track, which owns the |writer|.
   MediaStreamExtraData* extra_data =
       static_cast<MediaStreamExtraData*>(stream.extraData());
-  DCHECK(extra_data);
-  webrtc::MediaStreamInterface* native_stream = extra_data->stream();
+  webrtc::MediaStreamInterface* native_stream = extra_data->stream().get();
   DCHECK(native_stream);
   VideoTrackVector video_tracks = native_stream->GetVideoTracks();
   // Currently one supports one video track per media stream.
-  ASSERT(video_tracks.size() == 1);
+  DCHECK(video_tracks.size() == 1);
 
   *frame_writer = new PpFrameWriterProxy(video_tracks[0].get(), writer);
   return true;

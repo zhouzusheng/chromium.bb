@@ -31,16 +31,17 @@
 #include "config.h"
 #include "core/inspector/PageRuntimeAgent.h"
 
+#include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptController.h"
-#include "core/dom/Document.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
+#include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/PageConsole.h"
-#include "core/page/SecurityOrigin.h"
+#include "weborigin/SecurityOrigin.h"
 
 using WebCore::TypeBuilder::Runtime::ExecutionContextDescription;
 
@@ -50,8 +51,8 @@ namespace PageRuntimeAgentState {
 static const char runtimeEnabled[] = "runtimeEnabled";
 };
 
-PageRuntimeAgent::PageRuntimeAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, Page* page, InspectorPageAgent* pageAgent)
-    : InspectorRuntimeAgent(instrumentingAgents, state, injectedScriptManager)
+PageRuntimeAgent::PageRuntimeAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, Page* page, InspectorPageAgent* pageAgent)
+    : InspectorRuntimeAgent(instrumentingAgents, state, injectedScriptManager, scriptDebugServer)
     , m_inspectedPage(page)
     , m_pageAgent(pageAgent)
     , m_frontend(0)
@@ -108,8 +109,11 @@ void PageRuntimeAgent::disable(ErrorString* errorString)
     m_state->setBoolean(PageRuntimeAgentState::runtimeEnabled, false);
 }
 
-void PageRuntimeAgent::didCreateMainWorldContext(Frame* frame)
+void PageRuntimeAgent::didClearWindowObjectInWorld(Frame* frame, DOMWrapperWorld* world)
 {
+    if (world != mainThreadNormalWorld())
+        return;
+
     m_mainWorldContextCreated = true;
 
     if (!m_enabled)

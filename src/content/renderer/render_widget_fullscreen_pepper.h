@@ -8,7 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/render_widget_fullscreen.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
+#include "third_party/WebKit/public/web/WebWidget.h"
 #include "webkit/plugins/ppapi/fullscreen_container.h"
 
 namespace webkit {
@@ -44,10 +44,6 @@ class RenderWidgetFullscreenPepper :
   virtual void ScrollRect(int dx, int dy, const WebKit::WebRect& rect) OVERRIDE;
   virtual void Destroy() OVERRIDE;
   virtual void DidChangeCursor(const WebKit::WebCursorInfo& cursor) OVERRIDE;
-  virtual webkit::ppapi::PluginDelegate::PlatformContext3D*
-      CreateContext3D() OVERRIDE;
-  virtual void ReparentContext(
-      webkit::ppapi::PluginDelegate::PlatformContext3D*) OVERRIDE;
   virtual void SetLayer(WebKit::WebLayer* layer) OVERRIDE;
 
   // IPC::Listener implementation. This overrides the implementation
@@ -80,11 +76,7 @@ class RenderWidgetFullscreenPepper :
       gfx::Rect* location,
       gfx::Rect* clip,
       float* scale_factor) OVERRIDE;
-  virtual void OnResize(const gfx::Size& new_size,
-                        const gfx::Size& physical_backing_size,
-                        float overdraw_bottom_height,
-                        const gfx::Rect& resizer_rect,
-                        bool is_fullscreen) OVERRIDE;
+  virtual void OnResize(const ViewMsg_Resize_Params& params) OVERRIDE;
 
   // RenderWidgetFullscreen API.
   virtual WebKit::WebWidget* CreateWebWidget() OVERRIDE;

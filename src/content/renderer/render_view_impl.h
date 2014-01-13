@@ -20,6 +20,7 @@
 #include "base/process.h"
 #include "base/timer.h"
 #include "build/build_config.h"
+#include "cc/input/top_controls_state.h"
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/common/edit_command.h"
@@ -31,34 +32,38 @@
 #include "content/public/common/referrer.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/stop_find_action.h"
+#include "content/public/common/top_controls_state.h"
 #include "content/public/renderer/render_view.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
+#include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_view_pepper_helper.h"
 #include "content/renderer/render_widget.h"
 #include "content/renderer/renderer_webcookiejar_impl.h"
+#include "content/renderer/stats_collection_observer.h"
 #include "ipc/ipc_platform_file.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIconURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationType.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPageSerializerClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPageVisibilityState.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebViewClient.h"
+#include "third_party/WebKit/public/platform/WebFileSystem.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
+#include "third_party/WebKit/public/web/WebDataSource.h"
+#include "third_party/WebKit/public/web/WebFrameClient.h"
+#include "third_party/WebKit/public/web/WebHistoryItem.h"
+#include "third_party/WebKit/public/web/WebIconURL.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebNavigationType.h"
+#include "third_party/WebKit/public/web/WebNode.h"
+#include "third_party/WebKit/public/web/WebPageSerializerClient.h"
+#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebViewClient.h"
+#include "ui/base/ui_base_types.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/glue/webpreferences.h"
-#include "webkit/media/webmediaplayer_delegate.h"
+#include "webkit/common/webpreferences.h"
 #include "webkit/plugins/npapi/webplugin_page_delegate.h"
+#include "webkit/renderer/media/webmediaplayer_delegate.h"
 
 #if defined(OS_ANDROID)
 #include "content/renderer/android/content_detector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebContentDetectionResult.h"
+#include "third_party/WebKit/public/web/WebContentDetectionResult.h"
 #endif
 
 #if defined(COMPILER_MSVC)
@@ -75,7 +80,6 @@ struct PP_NetAddress_Private;
 struct ViewMsg_Navigate_Params;
 struct ViewMsg_PostMessage_Params;
 struct ViewMsg_StopFinding_Params;
-struct ViewMsg_SwapOut_Params;
 struct WebDropData;
 
 namespace ui {
@@ -89,17 +93,6 @@ class PluginInstance;
 }  // namespace ppapi
 
 }  // namespace webkit
-
-namespace webkit_glue {
-class ImageResourceFetcher;
-class ResourceFetcher;
-}
-
-#if defined(OS_ANDROID)
-namespace webkit_media {
-class WebMediaPlayerManagerAndroid;
-}
-#endif
 
 namespace WebKit {
 class WebApplicationCacheHost;
@@ -150,6 +143,7 @@ class DomAutomationController;
 class ExternalPopupMenu;
 class FaviconHelper;
 class GeolocationDispatcher;
+class ImageResourceFetcher;
 class InputTagSpeechDispatcher;
 class JavaBridgeDispatcher;
 class LoadProgressTracker;
@@ -166,6 +160,7 @@ class RendererPpapiHost;
 class RendererWebColorChooserImpl;
 class RenderWidgetFullscreenPepper;
 class SpeechRecognitionDispatcher;
+class StatsCollectionController;
 class WebPluginDelegateProxy;
 struct CustomContextMenuContext;
 struct FaviconURL;
@@ -173,7 +168,8 @@ struct FileChooserParams;
 struct RenderViewImplParams;
 
 #if defined(OS_ANDROID)
-class WebMediaPlayerProxyImplAndroid;
+class WebMediaPlayerManagerAndroid;
+class WebMediaPlayerProxyAndroid;
 #endif
 
 // We need to prevent a page from trying to create infinite popups. It is not
@@ -214,6 +210,7 @@ class CONTENT_EXPORT RenderViewImpl
       const WebPreferences& webkit_prefs,
       SharedRenderViewCounter* counter,
       int32 routing_id,
+      int32 main_frame_routing_id,
       int32 surface_id,
       int64 session_storage_namespace_id,
       const string16& frame_name,
@@ -257,7 +254,7 @@ class CONTENT_EXPORT RenderViewImpl
   }
 
 #if defined(OS_ANDROID)
-  webkit_media::WebMediaPlayerManagerAndroid* media_player_manager() {
+  WebMediaPlayerManagerAndroid* media_player_manager() {
     return media_player_manager_.get();
   }
 #endif
@@ -268,6 +265,12 @@ class CONTENT_EXPORT RenderViewImpl
   // Functions to add and remove observers for this object.
   void AddObserver(RenderViewObserver* observer);
   void RemoveObserver(RenderViewObserver* observer);
+
+  // Returns the StatsCollectionObserver associated with this view, or NULL
+  // if one wasn't created;
+  StatsCollectionObserver* GetStatsCollectionObserver() {
+    return stats_collection_observer_.get();
+  }
 
   // Adds the given file chooser request to the file_chooser_completion_ queue
   // (see that var for more) and requests the chooser be displayed if there are
@@ -380,6 +383,11 @@ class CONTENT_EXPORT RenderViewImpl
   // Change the device scale factor and force the compositor to resize.
   void SetDeviceScaleFactorForTesting(float factor);
 
+  // Control autoresize mode.
+  void EnableAutoResizeForTesting(const gfx::Size& min_size,
+                                  const gfx::Size& max_size);
+  void DisableAutoResizeForTesting(const gfx::Size& new_size);
+
   // IPC::Listener implementation ----------------------------------------------
 
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
@@ -446,6 +454,10 @@ class CONTENT_EXPORT RenderViewImpl
                                     const WebKit::WebString& default_value,
                                     WebKit::WebString* actual_value);
   virtual bool runModalBeforeUnloadDialog(WebKit::WebFrame* frame,
+                                          bool is_reload,
+                                          const WebKit::WebString& message);
+  // DEPRECATED
+  virtual bool runModalBeforeUnloadDialog(WebKit::WebFrame* frame,
                                           const WebKit::WebString& message);
   virtual void showContextMenu(WebKit::WebFrame* frame,
                                const WebKit::WebContextMenuData& data);
@@ -501,6 +513,7 @@ class CONTENT_EXPORT RenderViewImpl
   // date and time input fields using MULTIPLE_FIELDS_UI
   virtual bool openDateTimeChooser(const WebKit::WebDateTimeChooserParams&,
                                    WebKit::WebDateTimeChooserCompletion*);
+  virtual void didScrollWithKeyboard(const WebKit::WebSize& delta);
 #endif
 
   // WebKit::WebFrameClient implementation -------------------------------------
@@ -519,6 +532,7 @@ class CONTENT_EXPORT RenderViewImpl
       WebKit::WebFrame* frame,
       WebKit::WebApplicationCacheHostClient* client);
   virtual WebKit::WebCookieJar* cookieJar(WebKit::WebFrame* frame);
+  virtual void didAccessInitialDocument(WebKit::WebFrame* frame);
   virtual void didCreateFrame(WebKit::WebFrame* parent,
                               WebKit::WebFrame* child);
   virtual void didDisownOpener(WebKit::WebFrame* frame);
@@ -668,6 +682,7 @@ class CONTENT_EXPORT RenderViewImpl
       WebKit::WebFrame* targetFrame,
       WebKit::WebSecurityOrigin targetOrigin,
       WebKit::WebDOMMessageEvent event) OVERRIDE;
+  virtual WebKit::WebString acceptLanguages() OVERRIDE;
   virtual WebKit::WebString userAgentOverride(
       WebKit::WebFrame* frame,
       const WebKit::WebURL& url) OVERRIDE;
@@ -725,6 +740,9 @@ class CONTENT_EXPORT RenderViewImpl
   virtual SSLStatus GetSSLStatusOfFrame(WebKit::WebFrame* frame) const OVERRIDE;
 #if defined(OS_ANDROID)
   virtual skia::RefPtr<SkPicture> CapturePicture() OVERRIDE;
+  virtual void UpdateTopControlsState(TopControlsState constraints,
+                                      TopControlsState current,
+                                      bool animate) OVERRIDE;
 #endif
 
   // webkit_glue::WebPluginPageDelegate implementation -------------------------
@@ -754,17 +772,13 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Cannot use std::set unfortunately since linked_ptr<> does not support
   // operator<.
-  typedef std::vector<linked_ptr<webkit_glue::ImageResourceFetcher> >
+  typedef std::vector<linked_ptr<ImageResourceFetcher> >
       ImageResourceFetcherList;
 
  protected:
   // RenderWidget overrides:
   virtual void Close() OVERRIDE;
-  virtual void OnResize(const gfx::Size& new_size,
-                        const gfx::Size& physical_backing_size,
-                        float overdraw_bottom_height,
-                        const gfx::Rect& resizer_rect,
-                        bool is_fullscreen) OVERRIDE;
+  virtual void OnResize(const ViewMsg_Resize_Params& params) OVERRIDE;
   virtual void WillInitiatePaint() OVERRIDE;
   virtual void DidInitiatePaint() OVERRIDE;
   virtual void DidFlushPaint() OVERRIDE;
@@ -778,6 +792,8 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void DidHandleKeyEvent() OVERRIDE;
   virtual bool WillHandleMouseEvent(
       const WebKit::WebMouseEvent& event) OVERRIDE;
+  virtual bool WillHandleKeyEvent(
+      const WebKit::WebKeyboardEvent& event) OVERRIDE;
   virtual bool WillHandleGestureEvent(
       const WebKit::WebGestureEvent& event) OVERRIDE;
   virtual void DidHandleMouseEvent(const WebKit::WebMouseEvent& event) OVERRIDE;
@@ -800,6 +816,7 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) OVERRIDE;
   virtual void GetCompositionCharacterBounds(
       std::vector<gfx::Rect>* character_bounds) OVERRIDE;
+  virtual void GetCompositionRange(ui::Range* range) OVERRIDE;
   virtual bool CanComposeInline() OVERRIDE;
   virtual void DidCommitCompositorFrame() OVERRIDE;
   virtual void InstrumentWillBeginFrame() OVERRIDE;
@@ -826,6 +843,8 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuRemoveTest, RemoveOnChange);
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, NormalCase);
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, ShowPopupThenNavigate);
+  FRIEND_TEST_ALL_PREFIXES(RendererAccessibilityTest,
+                           AccessibilityMessagesQueueWhileSwappedOut);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, DecideNavigationPolicyForWebUI);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            DidFailProvisionalLoadWithErrorForError);
@@ -839,10 +858,12 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, LastCommittedUpdateState);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnExtendSelectionAndDelete);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnHandleKeyboardEvent);
-  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnImeStateChanged);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnImeTypeChanged);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnNavStateChanged);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnSetTextDirection);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnUpdateWebPreferences);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
+                           ChromeNativeSchemeCommitsSynchronously);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, SendSwapOutACK);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, ReloadWhileSwappedOut);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
@@ -860,6 +881,7 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, NavigateFrame);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            ShouldUpdateSelectionTextFromContextMenuParams);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, BasicRenderFrame);
 
   typedef std::map<GURL, double> HostZoomLevels;
 
@@ -943,7 +965,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnClearFocusedNode();
   void OnClosePage();
   void OnContextMenuClosed(const CustomContextMenuContext& custom_context);
-  void OnShowContextMenu();
+  void OnShowContextMenu(const gfx::Point& location);
   void OnCopyImageAt(int x, int y);
   void OnCSSInsertRequest(const string16& frame_xpath,
                           const std::string& css);
@@ -1023,7 +1045,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnShouldClose();
   void OnStop();
   void OnStopFinding(StopFindAction action);
-  void OnSwapOut(const ViewMsg_SwapOut_Params& params);
+  void OnSwapOut();
   void OnThemeChanged();
   void OnUpdateTargetURLAck();
   void OnUpdateTimezone();
@@ -1081,7 +1103,7 @@ class CONTENT_EXPORT RenderViewImpl
   // This callback is triggered when DownloadFavicon completes, either
   // succesfully or with a failure. See DownloadFavicon for more
   // details.
-  void DidDownloadFavicon(webkit_glue::ImageResourceFetcher* fetcher,
+  void DidDownloadFavicon(ImageResourceFetcher* fetcher,
                           const SkBitmap& image);
 
   // Requests to download a favicon image. When done, the RenderView is notified
@@ -1340,6 +1362,12 @@ class CONTENT_EXPORT RenderViewImpl
   // much about leaks.
   IDMap<ContextMenuClient, IDMapExternalPointer> pending_context_menus_;
 
+#if defined(OS_ANDROID)
+  // Cache the old top controls state constraints. Used when updating
+  // current value only without altering the constraints.
+  cc::TopControlsState top_controls_constraints_;
+#endif
+
   // View ----------------------------------------------------------------------
 
   // Cache the preferred size of the page in order to prevent sending the IPC
@@ -1360,6 +1388,8 @@ class CONTENT_EXPORT RenderViewImpl
   bool cached_has_main_frame_vertical_scrollbar_;
 
   // Helper objects ------------------------------------------------------------
+
+  scoped_ptr<RenderFrameImpl> main_render_frame_;
 
   RendererWebCookieJarImpl cookie_jar_;
 
@@ -1425,10 +1455,10 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Proxy class for WebMediaPlayer to communicate with the real media player
   // objects in browser process.
-  WebMediaPlayerProxyImplAndroid* media_player_proxy_;
+  WebMediaPlayerProxyAndroid* media_player_proxy_;
 
   // The media player manager for managing all the media players on this view.
-  scoped_ptr<webkit_media::WebMediaPlayerManagerAndroid> media_player_manager_;
+  scoped_ptr<WebMediaPlayerManagerAndroid> media_player_manager_;
 
   // A date/time picker object for date and time related input elements.
   scoped_ptr<RendererDateTimePicker> date_time_picker_client_;
@@ -1512,14 +1542,23 @@ class CONTENT_EXPORT RenderViewImpl
   // DOM automation bindings are enabled.
   scoped_ptr<DomAutomationController> dom_automation_controller_;
 
+   // Allows JS to read out a variety of internal various metrics. The JS object
+   // is only exposed when the stats collection bindings are enabled.
+   scoped_ptr<StatsCollectionController> stats_collection_controller_;
+
   // This field stores drag/drop related info for the event that is currently
   // being handled. If the current event results in starting a drag/drop
   // session, this info is sent to the browser along with other drag/drop info.
   DragEventSourceInfo possible_drag_event_info_;
 
-  // NOTE: pepper_helper_ should be last member because its constructor calls
-  // AddObservers method of RenderViewImpl from c-tor.
+  // NOTE: pepper_helper_ and stats_collection_observer_ should be the last
+  // members because their constructors call the AddObservers method of
+  // RenderViewImpl.
   scoped_ptr<RenderViewPepperHelper> pepper_helper_;
+  scoped_ptr<StatsCollectionObserver> stats_collection_observer_;
+
+  ui::MenuSourceType context_menu_source_type_;
+  gfx::Point touch_editing_context_menu_location_;
 
   // ---------------------------------------------------------------------------
   // ADDING NEW DATA? Please see if it fits appropriately in one of the above

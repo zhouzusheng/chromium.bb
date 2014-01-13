@@ -32,10 +32,11 @@
 #include "bindings/v8/PageScriptDebugServer.h"
 
 
-#include "V8DOMWindow.h"
+#include "V8Window.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8RecursionScope.h"
+#include "bindings/v8/V8ScriptRunner.h"
+#include "bindings/v8/V8WindowShell.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/ScriptDebugListener.h"
 #include "core/page/Frame.h"
@@ -56,7 +57,7 @@ static Frame* retrieveFrameWithGlobalObjectCheck(v8::Handle<v8::Context> context
     if (global.IsEmpty())
         return 0;
 
-    global = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), worldTypeInMainThread(context->GetIsolate())));
+    global = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), worldTypeInMainThread(context->GetIsolate())));
     if (global.IsEmpty())
         return 0;
 
@@ -85,30 +86,27 @@ void PageScriptDebugServer::addListener(ScriptDebugListener* listener, Page* pag
     v8::Local<v8::Context> debuggerContext = v8::Debug::GetDebugContext();
     v8::Context::Scope contextScope(debuggerContext);
 
+    v8::Local<v8::Object> debuggerScript = m_debuggerScript.newLocal(m_isolate);
     if (!m_listenersMap.size()) {
         ensureDebuggerScriptCompiled();
-        ASSERT(!m_debuggerScript.get()->IsUndefined());
+        ASSERT(!debuggerScript->IsUndefined());
         v8::Debug::SetDebugEventListener2(&PageScriptDebugServer::v8DebugEventCallback, v8::External::New(this));
     }
     m_listenersMap.set(page, listener);
 
-    V8DOMWindowShell* shell = scriptController->existingWindowShell(mainThreadNormalWorld());
+    V8WindowShell* shell = scriptController->existingWindowShell(mainThreadNormalWorld());
     if (!shell || !shell->isContextInitialized())
         return;
     v8::Local<v8::Context> context = shell->context();
-    v8::Handle<v8::Function> getScriptsFunction = v8::Local<v8::Function>::Cast(m_debuggerScript.get()->Get(v8::String::NewSymbol("getScripts")));
+    v8::Handle<v8::Function> getScriptsFunction = v8::Local<v8::Function>::Cast(debuggerScript->Get(v8::String::NewSymbol("getScripts")));
     v8::Handle<v8::Value> argv[] = { context->GetEmbedderData(0) };
-    v8::Handle<v8::Value> value;
-    {
-        V8RecursionScope::MicrotaskSuppression scope;
-        value = getScriptsFunction->Call(m_debuggerScript.get(), 1, argv);
-    }
+    v8::Handle<v8::Value> value = V8ScriptRunner::callInternalFunction(getScriptsFunction, debuggerScript, WTF_ARRAY_LENGTH(argv), argv, m_isolate);
     if (value.IsEmpty())
         return;
     ASSERT(!value->IsUndefined() && value->IsArray());
     v8::Handle<v8::Array> scriptsArray = v8::Handle<v8::Array>::Cast(value);
     for (unsigned i = 0; i < scriptsArray->Length(); ++i)
-        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(v8Integer(i, context->GetIsolate()))));
+        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(v8::Integer::New(i, m_isolate))));
 }
 
 void PageScriptDebugServer::removeListener(ScriptDebugListener* listener, Page* page)

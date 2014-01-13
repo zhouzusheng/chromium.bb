@@ -13,19 +13,20 @@
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/shared_impl/var_tracker.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDOMMessageEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSerializedScriptValue.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebDOMMessageEvent.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebNode.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebSerializedScriptValue.h"
 #include "v8/include/v8.h"
 #include "webkit/plugins/ppapi/host_array_buffer_var.h"
 #include "webkit/plugins/ppapi/npapi_glue.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
+#include "webkit/plugins/ppapi/v8_var_converter.h"
 
 using ppapi::ArrayBufferVar;
 using ppapi::PpapiGlobals;
@@ -44,12 +45,18 @@ namespace ppapi {
 namespace {
 
 const char kPostMessage[] = "postMessage";
+const char kV8ToVarConversionError[] = "Failed to convert a PostMessage "
+    "argument from a JavaScript value to a PP_Var. It may have cycles or be of "
+    "an unsupported type.";
+const char kVarToV8ConversionError[] = "Failed to convert a PostMessage "
+    "argument from a PP_Var to a Javascript value. It may have cycles or be of "
+    "an unsupported type.";
 
 // Helper function to get the MessageChannel that is associated with an
 // NPObject*.
 MessageChannel* ToMessageChannel(NPObject* object) {
   return static_cast<MessageChannel::MessageChannelNPObject*>(object)->
-      message_channel;
+      message_channel.get();
 }
 
 NPObject* ToPassThroughObject(NPObject* object) {
@@ -62,96 +69,84 @@ bool IdentifierIsPostMessage(NPIdentifier identifier) {
   return WebBindings::getStringIdentifier(kPostMessage) == identifier;
 }
 
-// Converts the given PP_Var to a v8::Value, returning true on success.
-// False means that the given variant is invalid. In this case, |result| will
-// be set to an empty handle.
-bool PPVarToV8Value(PP_Var var, v8::Handle<v8::Value>* result) {
-  switch (var.type) {
-    case PP_VARTYPE_UNDEFINED:
-      *result = v8::Undefined();
-      break;
-    case PP_VARTYPE_NULL:
-      *result = v8::Null();
-      break;
-    case PP_VARTYPE_BOOL:
-      *result = (var.value.as_bool == PP_TRUE) ? v8::True() : v8::False();
-      break;
-    case PP_VARTYPE_INT32:
-      *result = v8::Integer::New(var.value.as_int);
-      break;
-    case PP_VARTYPE_DOUBLE:
-      *result = v8::Number::New(var.value.as_double);
-      break;
-    case PP_VARTYPE_STRING: {
-      StringVar* string = StringVar::FromPPVar(var);
-      if (!string) {
-        result->Clear();
+bool NPVariantToPPVar(const NPVariant* variant, PP_Var* result) {
+  switch (variant->type) {
+    case NPVariantType_Void:
+      *result = PP_MakeUndefined();
+      return true;
+    case NPVariantType_Null:
+      *result = PP_MakeNull();
+      return true;
+    case NPVariantType_Bool:
+      *result = PP_MakeBool(PP_FromBool(NPVARIANT_TO_BOOLEAN(*variant)));
+      return true;
+    case NPVariantType_Int32:
+      *result = PP_MakeInt32(NPVARIANT_TO_INT32(*variant));
+      return true;
+    case NPVariantType_Double:
+      *result = PP_MakeDouble(NPVARIANT_TO_DOUBLE(*variant));
+      return true;
+    case NPVariantType_String:
+      *result = StringVar::StringToPPVar(
+          NPVARIANT_TO_STRING(*variant).UTF8Characters,
+          NPVARIANT_TO_STRING(*variant).UTF8Length);
+      return true;
+    case NPVariantType_Object: {
+      // Calling WebBindings::toV8Value creates a wrapper around NPVariant so it
+      // shouldn't result in a deep copy.
+      v8::Handle<v8::Value> v8_value = WebBindings::toV8Value(variant);
+      if (!V8VarConverter::FromV8Value(v8_value, v8::Context::GetCurrent(),
+                                       result)) {
         return false;
       }
-      const std::string& value = string->value();
-      // TODO(dmichael): We should consider caching the V8 string in the host-
-      // side StringVar, so that we only have to convert/copy once if a
-      // string is sent more than once.
-      *result = v8::String::New(value.c_str(), value.size());
-      break;
+      return true;
     }
-    case PP_VARTYPE_ARRAY_BUFFER: {
-      ArrayBufferVar* buffer = ArrayBufferVar::FromPPVar(var);
-      if (!buffer) {
-        result->Clear();
-        return false;
-      }
-      HostArrayBufferVar* host_buffer =
-          static_cast<HostArrayBufferVar*>(buffer);
-      *result =
-          v8::Local<v8::Value>::New(host_buffer->webkit_buffer().toV8Value());
-      break;
-    }
-    case PP_VARTYPE_OBJECT:
-    case PP_VARTYPE_ARRAY:
-    case PP_VARTYPE_DICTIONARY:
-      // These are not currently supported.
-      NOTIMPLEMENTED();
-      result->Clear();
-      return false;
   }
-  return true;
+  return false;
 }
 
 // Copy a PP_Var in to a PP_Var that is appropriate for sending via postMessage.
 // This currently just copies the value.  For a string Var, the result is a
 // PP_Var with the a copy of |var|'s string contents and a reference count of 1.
-//
-// TODO(dmichael): Bypass this step for out-of-process plugins, since a copy
-// happens already when the Var is serialized.
 PP_Var CopyPPVar(const PP_Var& var) {
-  if (var.type == PP_VARTYPE_OBJECT) {
-    // Objects are not currently supported.
-    NOTIMPLEMENTED();
-    return PP_MakeUndefined();
-  } else if (var.type == PP_VARTYPE_STRING) {
-    StringVar* string = StringVar::FromPPVar(var);
-    if (!string)
+  switch (var.type) {
+    case PP_VARTYPE_UNDEFINED:
+    case PP_VARTYPE_NULL:
+    case PP_VARTYPE_BOOL:
+    case PP_VARTYPE_INT32:
+    case PP_VARTYPE_DOUBLE:
+      return var;
+    case PP_VARTYPE_STRING: {
+      StringVar* string = StringVar::FromPPVar(var);
+      if (!string)
+        return PP_MakeUndefined();
+      return StringVar::StringToPPVar(string->value());
+    }
+    case PP_VARTYPE_ARRAY_BUFFER: {
+      ArrayBufferVar* buffer = ArrayBufferVar::FromPPVar(var);
+      if (!buffer)
+        return PP_MakeUndefined();
+      PP_Var new_buffer_var = PpapiGlobals::Get()->GetVarTracker()->
+          MakeArrayBufferPPVar(buffer->ByteLength());
+      DCHECK(new_buffer_var.type == PP_VARTYPE_ARRAY_BUFFER);
+      if (new_buffer_var.type != PP_VARTYPE_ARRAY_BUFFER)
+        return PP_MakeUndefined();
+      ArrayBufferVar* new_buffer = ArrayBufferVar::FromPPVar(new_buffer_var);
+      DCHECK(new_buffer);
+      if (!new_buffer)
+        return PP_MakeUndefined();
+      memcpy(new_buffer->Map(), buffer->Map(), buffer->ByteLength());
+      return new_buffer_var;
+    }
+    case PP_VARTYPE_OBJECT:
+    case PP_VARTYPE_ARRAY:
+    case PP_VARTYPE_DICTIONARY:
+      // Objects/Arrays/Dictionaries not supported by PostMessage in-process.
+      NOTREACHED();
       return PP_MakeUndefined();
-    return StringVar::StringToPPVar(string->value());
-  } else if (var.type == PP_VARTYPE_ARRAY_BUFFER) {
-    ArrayBufferVar* buffer = ArrayBufferVar::FromPPVar(var);
-    if (!buffer)
-      return PP_MakeUndefined();
-    PP_Var new_buffer_var = PpapiGlobals::Get()->GetVarTracker()->
-        MakeArrayBufferPPVar(buffer->ByteLength());
-    DCHECK(new_buffer_var.type == PP_VARTYPE_ARRAY_BUFFER);
-    if (new_buffer_var.type != PP_VARTYPE_ARRAY_BUFFER)
-      return PP_MakeUndefined();
-    ArrayBufferVar* new_buffer = ArrayBufferVar::FromPPVar(new_buffer_var);
-    DCHECK(new_buffer);
-    if (!new_buffer)
-      return PP_MakeUndefined();
-    memcpy(new_buffer->Map(), buffer->Map(), buffer->ByteLength());
-    return new_buffer_var;
-  } else {
-    return var;
   }
+  NOTREACHED();
+  return PP_MakeUndefined();
 }
 
 //------------------------------------------------------------------------------
@@ -195,7 +190,13 @@ bool MessageChannelInvoke(NPObject* np_obj, NPIdentifier name,
   if (IdentifierIsPostMessage(name) && (arg_count == 1)) {
     MessageChannel* message_channel = ToMessageChannel(np_obj);
     if (message_channel) {
-      PP_Var argument(NPVariantToPPVar(message_channel->instance(), &args[0]));
+      PP_Var argument = PP_MakeUndefined();
+      if (!NPVariantToPPVar(&args[0], &argument)) {
+        PpapiGlobals::Get()->LogWithSource(
+            message_channel->instance()->pp_instance(),
+            PP_LOGLEVEL_ERROR, std::string(), kV8ToVarConversionError);
+        return false;
+      }
       message_channel->PostMessageToNative(argument);
       PpapiGlobals::Get()->GetVarTracker()->ReleaseVar(argument);
       return true;
@@ -335,7 +336,8 @@ MessageChannel::MessageChannel(PluginInstance* instance)
       early_message_queue_state_(QUEUE_MESSAGES) {
   // Now create an NPObject for receiving calls to postMessage. This sets the
   // reference count to 1.  We release it in the destructor.
-  NPObject* obj = WebBindings::createObject(NULL, &message_channel_class);
+  NPObject* obj = WebBindings::createObject(instance_->instanceNPP(),
+                                            &message_channel_class);
   DCHECK(obj);
   np_object_ = static_cast<MessageChannel::MessageChannelNPObject*>(obj);
   np_object_->message_channel = weak_ptr_factory_.GetWeakPtr();
@@ -354,13 +356,28 @@ void MessageChannel::PostMessageToJavaScript(PP_Var message_data) {
 
   v8::Local<v8::Context> context =
       container->element().document().frame()->mainWorldScriptContext();
+  // If the page is being destroyed, the context may be empty.
+  if (context.IsEmpty())
+    return;
   v8::Context::Scope context_scope(context);
 
-  v8::Local<v8::Value> v8_val;
-  if (!PPVarToV8Value(message_data, &v8_val)) {
-    NOTREACHED();
+  v8::Handle<v8::Value> v8_val;
+  if (!V8VarConverter::ToV8Value(message_data, context, &v8_val)) {
+    PpapiGlobals::Get()->LogWithSource(instance_->pp_instance(),
+        PP_LOGLEVEL_ERROR, std::string(), kVarToV8ConversionError);
     return;
   }
+
+  // This is for backward compatibility. It usually makes sense for us to return
+  // a string object rather than a string primitive because it allows multiple
+  // references to the same string (as with PP_Var strings). However, prior to
+  // implementing dictionary and array, vars we would return a string primitive
+  // here. Changing it to an object now will break existing code that uses
+  // strict comparisons for strings returned from PostMessage. e.g. x === "123"
+  // will no longer return true. So if the only value to return is a string
+  // object, just return the string primitive.
+  if (v8_val->IsStringObject())
+    v8_val = v8_val->ToString();
 
   WebSerializedScriptValue serialized_val =
       WebSerializedScriptValue::serialize(v8_val);
@@ -378,7 +395,7 @@ void MessageChannel::PostMessageToJavaScript(PP_Var message_data) {
       PostMessageToJavaScriptImpl(serialized_val);
     }
   } else {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&MessageChannel::PostMessageToJavaScriptImpl,
                    weak_ptr_factory_.GetWeakPtr(),
@@ -391,7 +408,7 @@ void MessageChannel::StopQueueingJavaScriptMessages() {
   // since we haven't finished initializing the WebPluginImpl yet, so
   // the plugin isn't available in the DOM.
   early_message_queue_state_ = DRAIN_PENDING;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&MessageChannel::DrainEarlyMessageQueue,
                  weak_ptr_factory_.GetWeakPtr()));
@@ -465,7 +482,8 @@ void MessageChannel::PostMessageToNative(PP_Var message_data) {
     // Make a copy of the message data for the Task we will run.
     PP_Var var_copy(CopyPPVar(message_data));
 
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
         base::Bind(&MessageChannel::PostMessageToNativeImpl,
                    weak_ptr_factory_.GetWeakPtr(),
                    var_copy));

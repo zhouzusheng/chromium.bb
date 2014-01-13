@@ -24,19 +24,14 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimationElement.h"
 
 #include "CSSPropertyNames.h"
 #include "SVGNames.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/CSSParser.h"
-#include "core/dom/Attribute.h"
-#include "core/dom/Document.h"
 #include "core/platform/FloatConversion.h"
-#include "core/rendering/RenderObject.h"
 #include "core/svg/SVGAnimateElement.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/SVGStyledElement.h"
 #include <wtf/MathExtras.h>
@@ -157,7 +152,7 @@ bool SVGAnimationElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::toAttr);
         supportedAttributes.add(SVGNames::byAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGAnimationElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -248,7 +243,7 @@ float SVGAnimationElement::getCurrentTime() const
     return narrowPrecisionToFloat(elapsed().value());
 }
 
-float SVGAnimationElement::getSimpleDuration(ExceptionCode&) const
+float SVGAnimationElement::getSimpleDuration() const
 {
     return narrowPrecisionToFloat(simpleDuration().value());
 }    
@@ -700,5 +695,3 @@ void SVGAnimationElement::checkInvalidCSSAttributeType(SVGElement* target)
 }
 
 }
-
-#endif // ENABLE(SVG)

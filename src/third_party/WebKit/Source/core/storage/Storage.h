@@ -53,6 +53,15 @@ namespace WebCore {
 
         StorageArea* area() const { return m_storageArea.get(); }
 
+        String anonymousIndexedGetter(unsigned, ExceptionCode&);
+        String anonymousNamedGetter(const AtomicString&, ExceptionCode&);
+        bool anonymousNamedSetter(const AtomicString& name, const AtomicString& value, ExceptionCode&);
+        bool anonymousIndexedSetter(unsigned, const AtomicString&, ExceptionCode&);
+        bool anonymousNamedDeleter(const AtomicString&, ExceptionCode&);
+        bool anonymousIndexedDeleter(unsigned, ExceptionCode&);
+        void namedPropertyEnumerator(Vector<String>&, ExceptionCode&);
+        bool namedPropertyQuery(const AtomicString&, ExceptionCode&);
+
     private:
         Storage(Frame*, PassRefPtr<StorageArea>);
 

@@ -100,7 +100,7 @@ PrefMemberBase::Internal::~Internal() { }
 
 bool PrefMemberBase::Internal::IsOnCorrectThread() const {
   // In unit tests, there may not be a message loop.
-  return thread_loop_ == NULL || thread_loop_->BelongsToCurrentThread();
+  return thread_loop_.get() == NULL || thread_loop_->BelongsToCurrentThread();
 }
 
 void PrefMemberBase::Internal::UpdateValue(
@@ -135,10 +135,11 @@ bool PrefMemberVectorStringUpdate(const base::Value& value,
                                   std::vector<std::string>* string_vector) {
   if (!value.IsType(base::Value::TYPE_LIST))
     return false;
-  const ListValue* list = static_cast<const ListValue*>(&value);
+  const base::ListValue* list = static_cast<const base::ListValue*>(&value);
 
   std::vector<std::string> local_vector;
-  for (ListValue::const_iterator it = list->begin(); it != list->end(); ++it) {
+  for (base::ListValue::const_iterator it = list->begin();
+       it != list->end(); ++it) {
     std::string string_value;
     if (!(*it)->GetAsString(&string_value))
       return false;
@@ -212,7 +213,7 @@ bool PrefMember<base::FilePath>::Internal::UpdateValueInternal(
 template <>
 void PrefMember<std::vector<std::string> >::UpdatePref(
     const std::vector<std::string>& value) {
-  ListValue list_value;
+  base::ListValue list_value;
   list_value.AppendStrings(value);
   prefs()->Set(pref_name().c_str(), list_value);
 }

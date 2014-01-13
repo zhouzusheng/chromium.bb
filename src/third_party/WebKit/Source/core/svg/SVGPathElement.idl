@@ -24,13 +24,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-[
-    Conditional=SVG
-] interface SVGPathElement : SVGStyledElement,
-                                             SVGTests,
-                                             SVGLangSpace,
-                                             SVGExternalResourcesRequired,
-                                             SVGTransformable {
+interface SVGPathElement : SVGStyledElement,
+                           SVGLangSpace,
+                           SVGTransformable {
     readonly attribute SVGAnimatedNumber pathLength;
 
     float getTotalLength();
@@ -111,4 +107,7 @@
     readonly attribute SVGPathSegList animatedPathSegList;
     readonly attribute SVGPathSegList animatedNormalizedPathSegList;
 };
+
+SVGPathElement implements SVGExternalResourcesRequired;
+SVGPathElement implements SVGTests;
 

@@ -30,10 +30,8 @@
  */
 
 #include "config.h"
-#if ENABLE(DATALIST_ELEMENT)
 #include "core/html/HTMLDataListElement.h"
 
-#include "HTMLNames.h"
 #include "core/dom/IdTargetObserverRegistry.h"
 #include "core/page/UseCounter.h"
 
@@ -62,4 +60,3 @@ void HTMLDataListElement::optionElementChildrenChanged()
 }
 
 } // namespace WebCore
-#endif // ENABLE(DATALIST_ELEMENT)

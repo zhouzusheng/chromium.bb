@@ -5,7 +5,7 @@
 #include "base/memory/shared_memory.h"
 
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 
 namespace {
 
@@ -85,6 +85,13 @@ SharedMemoryHandle SharedMemory::NULLHandle() {
 void SharedMemory::CloseHandle(const SharedMemoryHandle& handle) {
   DCHECK(handle != NULL);
   ::CloseHandle(handle);
+}
+
+// static
+size_t SharedMemory::GetHandleLimit() {
+  // Rounded down from value reported here:
+  // http://blogs.technet.com/b/markrussinovich/archive/2009/09/29/3283844.aspx
+  return static_cast<size_t>(1 << 23);
 }
 
 bool SharedMemory::CreateAndMapAnonymous(size_t size) {

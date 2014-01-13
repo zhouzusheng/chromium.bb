@@ -20,9 +20,6 @@ static const GrGLint  GR_INVAL_GLINT = ~0;
 #define GL_CALL(X) GR_GL_CALL(this->glInterface(), X)
 #define GL_CALL_RET(RET, X) GR_GL_CALL_RET(this->glInterface(), RET, X)
 
-// we use a spare texture unit to avoid
-// mucking with the state of any of the stages.
-static const int SPARE_TEX_UNIT = GrDrawState::kNumStages;
 
 #define SKIP_CACHE_CHECK    true
 
@@ -118,35 +115,6 @@ bool GrGpuGL::BlendCoeffReferencesConstant(GrBlendCoeff coeff) {
 
 static bool gPrintStartupSpew;
 
-static bool fbo_test(const GrGLInterface* gl, int w, int h) {
-
-    GR_GL_CALL(gl, ActiveTexture(GR_GL_TEXTURE0 + SPARE_TEX_UNIT));
-
-    GrGLuint testFBO;
-    GR_GL_CALL(gl, GenFramebuffers(1, &testFBO));
-    GR_GL_CALL(gl, BindFramebuffer(GR_GL_FRAMEBUFFER, testFBO));
-    GrGLuint testRTTex;
-    GR_GL_CALL(gl, GenTextures(1, &testRTTex));
-    GR_GL_CALL(gl, BindTexture(GR_GL_TEXTURE_2D, testRTTex));
-    // some implementations require texture to be mip-map complete before
-    // FBO with level 0 bound as color attachment will be framebuffer complete.
-    GR_GL_CALL(gl, TexParameteri(GR_GL_TEXTURE_2D,
-                                 GR_GL_TEXTURE_MIN_FILTER,
-                                 GR_GL_NEAREST));
-    GR_GL_CALL(gl, TexImage2D(GR_GL_TEXTURE_2D, 0, GR_GL_RGBA, w, h,
-                              0, GR_GL_RGBA, GR_GL_UNSIGNED_BYTE, NULL));
-    GR_GL_CALL(gl, BindTexture(GR_GL_TEXTURE_2D, 0));
-    GR_GL_CALL(gl, FramebufferTexture2D(GR_GL_FRAMEBUFFER,
-                                        GR_GL_COLOR_ATTACHMENT0,
-                                        GR_GL_TEXTURE_2D, testRTTex, 0));
-    GrGLenum status;
-    GR_GL_CALL_RET(gl, status, CheckFramebufferStatus(GR_GL_FRAMEBUFFER));
-    GR_GL_CALL(gl, DeleteFramebuffers(1, &testFBO));
-    GR_GL_CALL(gl, DeleteTextures(1, &testRTTex));
-
-    return status == GR_GL_FRAMEBUFFER_COMPLETE;
-}
-
 GrGpuGL::GrGpuGL(const GrGLContext& ctx, GrContext* context)
     : GrGpu(context)
     , fGLContext(ctx) {
@@ -154,6 +122,8 @@ GrGpuGL::GrGpuGL(const GrGLContext& ctx, GrContext* context)
     GrAssert(ctx.isInitialized());
 
     fCaps.reset(SkRef(ctx.info().caps()));
+
+    fHWBoundTextures.reset(ctx.info().caps()->maxFragmentTextureUnits());
 
     fillInConfigRenderableTable();
 
@@ -183,9 +153,6 @@ GrGpuGL::GrGpuGL(const GrGLContext& ctx, GrContext* context)
     GrAssert(this->glCaps().maxVertexAttributes() >= GrDrawState::kMaxVertexAttribCnt);
 
     fLastSuccessfulStencilFmtIdx = 0;
-    if (false) { // avoid bit rot, suppress warning
-        fbo_test(this->glInterface(), 0, 0);
-    }
 }
 
 GrGpuGL::~GrGpuGL() {
@@ -266,21 +233,28 @@ void GrGpuGL::fillInConfigRenderableTable() {
 }
 
 namespace {
-GrPixelConfig preferred_pixel_ops_config(GrPixelConfig config) {
-    if (GR_GL_RGBA_8888_PIXEL_OPS_SLOW && kRGBA_8888_GrPixelConfig == config) {
+GrPixelConfig preferred_pixel_ops_config(GrPixelConfig cpuConfig, GrPixelConfig surfaceConfig) {
+    if (GR_GL_RGBA_8888_PIXEL_OPS_SLOW && kRGBA_8888_GrPixelConfig == cpuConfig) {
         return kBGRA_8888_GrPixelConfig;
+    } else if (GrBytesPerPixel(cpuConfig) == 4 &&
+                GrPixelConfigSwapRAndB(cpuConfig) == surfaceConfig) {
+        // Mesa 3D takes a slow path on when reading back  BGRA from an RGBA surface and vice-versa.
+        // Perhaps this should be guarded by some compiletime or runtime check.
+        return surfaceConfig;
     } else {
-        return config;
+        return cpuConfig;
     }
 }
 }
 
-GrPixelConfig GrGpuGL::preferredReadPixelsConfig(GrPixelConfig config) const {
-    return preferred_pixel_ops_config(config);
+GrPixelConfig GrGpuGL::preferredReadPixelsConfig(GrPixelConfig readConfig,
+                                                 GrPixelConfig surfaceConfig) const {
+    return preferred_pixel_ops_config(readConfig, surfaceConfig);
 }
 
-GrPixelConfig GrGpuGL::preferredWritePixelsConfig(GrPixelConfig config) const {
-    return preferred_pixel_ops_config(config);
+GrPixelConfig GrGpuGL::preferredWritePixelsConfig(GrPixelConfig writeConfig,
+                                                  GrPixelConfig surfaceConfig) const {
+    return preferred_pixel_ops_config(writeConfig, surfaceConfig);
 }
 
 bool GrGpuGL::canWriteTexturePixels(const GrTexture* texture, GrPixelConfig srcConfig) const {
@@ -354,7 +328,7 @@ void GrGpuGL::onResetContext() {
 
     fHWBlendState.invalidate();
 
-    for (int s = 0; s < GrDrawState::kNumStages; ++s) {
+    for (int s = 0; s < fHWBoundTextures.count(); ++s) {
         fHWBoundTextures[s] = NULL;
     }
 
@@ -432,7 +406,7 @@ GrTexture* GrGpuGL::onWrapBackendTexture(const GrBackendTextureDesc& desc) {
     glTexDesc.fSampleCnt = desc.fSampleCnt;
     glTexDesc.fTextureID = static_cast<GrGLuint>(desc.fTextureHandle);
     glTexDesc.fIsWrapped = true;
-    bool renderTarget = 0 != (desc.fFlags & kRenderTarget_GrBackendTextureFlag);
+    bool renderTarget = SkToBool(desc.fFlags & kRenderTarget_GrBackendTextureFlag);
     // FIXME:  this should be calling resolve_origin(), but Chrome code is currently
     // assuming the old behaviour, which is that backend textures are always
     // BottomLeft, even for non-RT's.  Once Chrome is fixed, change this to:
@@ -452,6 +426,7 @@ GrTexture* GrGpuGL::onWrapBackendTexture(const GrBackendTextureDesc& desc) {
         glRTDesc.fConfig = desc.fConfig;
         glRTDesc.fSampleCnt = desc.fSampleCnt;
         glRTDesc.fOrigin = glTexDesc.fOrigin;
+        glRTDesc.fCheckAllocation = false;
         if (!this->createRenderTargetObjects(glTexDesc.fWidth,
                                              glTexDesc.fHeight,
                                              glTexDesc.fTextureID,
@@ -466,7 +441,6 @@ GrTexture* GrGpuGL::onWrapBackendTexture(const GrBackendTextureDesc& desc) {
         return NULL;
     }
 
-    this->setSpareTextureUnit();
     return texture;
 }
 
@@ -478,10 +452,7 @@ GrRenderTarget* GrGpuGL::onWrapBackendRenderTarget(const GrBackendRenderTargetDe
     glDesc.fTexFBOID = GrGLRenderTarget::kUnresolvableFBOID;
     glDesc.fSampleCnt = desc.fSampleCnt;
     glDesc.fIsWrapped = true;
-    glDesc.fOrigin = desc.fOrigin;
-    if (glDesc.fRTFBOID == 0) {
-        GrAssert(desc.fOrigin == kBottomLeft_GrSurfaceOrigin);
-    }
+    glDesc.fCheckAllocation = false;
 
     glDesc.fOrigin = resolve_origin(desc.fOrigin, true);
     GrGLIRect viewport;
@@ -524,7 +495,7 @@ bool GrGpuGL::onWriteTexturePixels(GrTexture* texture,
     }
     GrGLTexture* glTex = static_cast<GrGLTexture*>(texture);
 
-    this->setSpareTextureUnit();
+    this->setScratchTextureUnit();
     GL_CALL(BindTexture(GR_GL_TEXTURE_2D, glTex->textureID()));
     GrGLTexture::Desc desc;
     desc.fFlags = glTex->desc().fFlags;
@@ -566,6 +537,15 @@ bool adjust_pixel_ops_params(int surfaceWidth,
     *height = subRect.height();
     return true;
 }
+
+GrGLenum check_alloc_error(const GrTextureDesc& desc, const GrGLInterface* interface) {
+    if (SkToBool(desc.fFlags & kCheckAllocation_GrTextureFlagBit)) {
+        return GR_GL_GET_ERROR(interface);
+    } else {
+        return CHECK_ALLOC_ERROR(interface);
+    }
+}
+
 }
 
 bool GrGpuGL::uploadTexData(const GrGLTexture::Desc& desc,
@@ -701,7 +681,7 @@ bool GrGpuGL::uploadTexData(const GrGLTexture::Desc& desc,
                                          data));
             }
         }
-        GrGLenum error = CHECK_ALLOC_ERROR(this->glInterface());
+        GrGLenum error = check_alloc_error(desc, this->glInterface());
         if (error != GR_GL_NO_ERROR) {
             succeeded = false;
         } else {
@@ -829,7 +809,8 @@ bool GrGpuGL::createRenderTargetObjects(int width, int height,
                                       GR_GL_COLOR_ATTACHMENT0,
                                       GR_GL_RENDERBUFFER,
                                       desc->fMSColorRenderbufferID));
-        if (!this->glCaps().isConfigVerifiedColorAttachment(desc->fConfig)) {
+        if (desc->fCheckAllocation ||
+            !this->glCaps().isConfigVerifiedColorAttachment(desc->fConfig)) {
             GL_CALL_RET(status, CheckFramebufferStatus(GR_GL_FRAMEBUFFER));
             if (status != GR_GL_FRAMEBUFFER_COMPLETE) {
                 goto FAILED;
@@ -850,7 +831,8 @@ bool GrGpuGL::createRenderTargetObjects(int width, int height,
                                      GR_GL_TEXTURE_2D,
                                      texID, 0));
     }
-    if (!this->glCaps().isConfigVerifiedColorAttachment(desc->fConfig)) {
+    if (desc->fCheckAllocation ||
+        !this->glCaps().isConfigVerifiedColorAttachment(desc->fConfig)) {
         GL_CALL_RET(status, CheckFramebufferStatus(GR_GL_FRAMEBUFFER));
         if (status != GR_GL_FRAMEBUFFER_COMPLETE) {
             goto FAILED;
@@ -913,8 +895,9 @@ GrTexture* GrGpuGL::onCreateTexture(const GrTextureDesc& desc,
     glRTDesc.fTexFBOID = 0;
     glRTDesc.fIsWrapped = false;
     glRTDesc.fConfig = glTexDesc.fConfig;
+    glRTDesc.fCheckAllocation = SkToBool(desc.fFlags & kCheckAllocation_GrTextureFlagBit);
 
-    bool renderTarget = 0 != (desc.fFlags & kRenderTarget_GrTextureFlagBit);
+    bool renderTarget = SkToBool(desc.fFlags & kRenderTarget_GrTextureFlagBit);
 
     glTexDesc.fOrigin = resolve_origin(desc.fOrigin, renderTarget);
     glRTDesc.fOrigin = glTexDesc.fOrigin;
@@ -939,18 +922,20 @@ GrTexture* GrGpuGL::onCreateTexture(const GrTextureDesc& desc,
     }
 
     GL_CALL(GenTextures(1, &glTexDesc.fTextureID));
+
+    if (!glTexDesc.fTextureID) {
+        return return_null_texture();
+    }
+
+    this->setScratchTextureUnit();
+    GL_CALL(BindTexture(GR_GL_TEXTURE_2D, glTexDesc.fTextureID));
+
     if (renderTarget && this->glCaps().textureUsageSupport()) {
         // provides a hint about how this texture will be used
         GL_CALL(TexParameteri(GR_GL_TEXTURE_2D,
                               GR_GL_TEXTURE_USAGE,
                               GR_GL_FRAMEBUFFER_ATTACHMENT));
     }
-    if (!glTexDesc.fTextureID) {
-        return return_null_texture();
-    }
-
-    this->setSpareTextureUnit();
-    GL_CALL(BindTexture(GR_GL_TEXTURE_2D, glTexDesc.fTextureID));
 
     // Some drivers like to know filter/wrap before seeing glTexImage2D. Some
     // drivers have a bug where an FBO won't be complete if it includes a
@@ -1070,7 +1055,7 @@ bool GrGpuGL::createStencilBufferForRenderTarget(GrRenderTarget* rt,
                                               sFmt.fInternalFormat,
                                               width, height));
             created =
-                (GR_GL_NO_ERROR == CHECK_ALLOC_ERROR(this->glInterface()));
+                (GR_GL_NO_ERROR == check_alloc_error(rt->desc(), this->glInterface()));
         }
         if (created) {
             // After sized formats we attempt an unsized format and take
@@ -2099,7 +2084,7 @@ void GrGpuGL::notifyRenderTargetDelete(GrRenderTarget* renderTarget) {
 }
 
 void GrGpuGL::notifyTextureDelete(GrGLTexture* texture) {
-    for (int s = 0; s < GrDrawState::kNumStages; ++s) {
+    for (int s = 0; s < fHWBoundTextures.count(); ++s) {
         if (fHWBoundTextures[s] == texture) {
             // deleting bound texture does implied bind to 0
             fHWBoundTextures[s] = NULL;
@@ -2219,18 +2204,23 @@ bool GrGpuGL::configToGLFormats(GrPixelConfig config,
 }
 
 void GrGpuGL::setTextureUnit(int unit) {
-    GrAssert(unit >= 0 && unit < GrDrawState::kNumStages);
-    if (fHWActiveTextureUnitIdx != unit) {
+    GrAssert(unit >= 0 && unit < fHWBoundTextures.count());
+    if (unit != fHWActiveTextureUnitIdx) {
         GL_CALL(ActiveTexture(GR_GL_TEXTURE0 + unit));
         fHWActiveTextureUnitIdx = unit;
     }
 }
 
-void GrGpuGL::setSpareTextureUnit() {
-    if (fHWActiveTextureUnitIdx != (GR_GL_TEXTURE0 + SPARE_TEX_UNIT)) {
-        GL_CALL(ActiveTexture(GR_GL_TEXTURE0 + SPARE_TEX_UNIT));
-        fHWActiveTextureUnitIdx = SPARE_TEX_UNIT;
+void GrGpuGL::setScratchTextureUnit() {
+    // Bind the last texture unit since it is the least likely to be used by GrGLProgram.
+    int lastUnitIdx = fHWBoundTextures.count() - 1;
+    if (lastUnitIdx != fHWActiveTextureUnitIdx) {
+        GL_CALL(ActiveTexture(GR_GL_TEXTURE0 + lastUnitIdx));
+        fHWActiveTextureUnitIdx = lastUnitIdx;
     }
+    // clear out the this field so that if a program does use this unit it will rebind the correct
+    // texture.
+    fHWBoundTextures[lastUnitIdx] = NULL;
 }
 
 namespace {
@@ -2367,7 +2357,7 @@ bool GrGpuGL::onCopySurface(GrSurface* dst,
                                 srcRect.height(),
                                 src->origin());
 
-        this->setSpareTextureUnit();
+        this->setScratchTextureUnit();
         GL_CALL(BindTexture(GR_GL_TEXTURE_2D, dstTex->textureID()));
         GrGLint dstY;
         if (kBottomLeft_GrSurfaceOrigin == dst->origin()) {

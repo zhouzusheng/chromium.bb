@@ -22,7 +22,6 @@
 #define Page_h
 
 #include "core/dom/ViewportArguments.h"
-#include "core/loader/FrameLoaderTypes.h"
 #include "core/page/LayoutMilestones.h"
 #include "core/page/PageVisibilityState.h"
 #include "core/page/UseCounter.h"
@@ -43,7 +42,7 @@
 
 namespace WebCore {
 
-class AlternativeTextClient;
+class AutoscrollController;
 class BackForwardClient;
 class BackForwardController;
 class Chrome;
@@ -66,11 +65,12 @@ class InspectorController;
 class Node;
 class PageConsole;
 class PageGroup;
-class PlugInClient;
+class PlatformMouseEvent;
 class PluginData;
 class PointerLockController;
 class ProgressTracker;
 class Range;
+class RenderBox;
 class RenderObject;
 class RenderTheme;
 class VisibleSelection;
@@ -107,13 +107,11 @@ public:
         PageClients();
         ~PageClients();
 
-        AlternativeTextClient* alternativeTextClient;
         ChromeClient* chromeClient;
         ContextMenuClient* contextMenuClient;
         EditorClient* editorClient;
         DragClient* dragClient;
         InspectorClient* inspectorClient;
-        PlugInClient* plugInClient;
         BackForwardClient* backForwardClient;
     };
 
@@ -132,7 +130,6 @@ public:
     PluginData* pluginData() const;
 
     EditorClient* editorClient() const { return m_editorClient; }
-    PlugInClient* plugInClient() const { return m_plugInClient; }
 
     void setMainFrame(PassRefPtr<Frame>);
     Frame* mainFrame() const { return m_mainFrame.get(); }
@@ -143,13 +140,13 @@ public:
     // DEPRECATED. Use backForward() instead of the following 5 functions.
     bool goBack();
     bool goForward();
-    bool canGoBackOrForward(int distance) const;
     void goBackOrForward(int distance);
     int getHistoryLength();
 
-    void goToItem(HistoryItem*, FrameLoadType);
+    void goToItem(HistoryItem*);
 
-    enum PageGroupType { PrivatePageGroup, SharedPageGroup };
+    // FIXME: InspectorPageGroup is only needed to support single process debugger layout tests, it should be removed when DumpRenderTree is gone.
+    enum PageGroupType { InspectorPageGroup, PrivatePageGroup, SharedPageGroup };
     void setGroupType(PageGroupType);
     void clearPageGroup();
     PageGroup& group()
@@ -163,7 +160,7 @@ public:
     void decrementSubframeCount() { ASSERT(m_subframeCount); --m_subframeCount; }
     int subframeCount() const { checkSubframeCountConsistency(); return m_subframeCount; }
 
-    Chrome* chrome() const { return m_chrome.get(); }
+    Chrome& chrome() const { return *m_chrome; }
     DragCaretController* dragCaretController() const { return m_dragCaretController.get(); }
     DragController* dragController() const { return m_dragController.get(); }
     FocusController* focusController() const { return m_focusController.get(); }
@@ -172,6 +169,19 @@ public:
     PointerLockController* pointerLockController() const { return m_pointerLockController.get(); }
     ValidationMessageClient* validationMessageClient() const { return m_validationMessageClient; }
     void setValidationMessageClient(ValidationMessageClient* client) { m_validationMessageClient = client; }
+
+    bool autoscrollInProgress() const;
+    bool autoscrollInProgress(const RenderBox*) const;
+    bool panScrollInProgress() const;
+    void startAutoscrollForSelection(RenderObject*);
+    void stopAutoscrollIfNeeded(RenderObject*);
+    void stopAutoscrollTimer();
+    void updateAutoscrollRenderer();
+    void updateDragAndDrop(Node* targetNode, const IntPoint& eventPosition, double eventTime);
+#if ENABLE(PAN_SCROLLING)
+    void handleMouseReleaseForPanScrolling(Frame*, const PlatformMouseEvent&);
+    void startPanScrolling(RenderBox*, const IntPoint&);
+#endif
 
     ScrollingCoordinator* scrollingCoordinator();
 
@@ -220,9 +230,6 @@ public:
     StorageNamespace* sessionStorage(bool optionalCreate = true);
     void setSessionStorage(PassRefPtr<StorageNamespace>);
 
-    void setMemoryCacheClientCallsEnabled(bool);
-    bool areMemoryCacheClientCallsEnabled() const { return m_areMemoryCacheClientCallsEnabled; }
-
     // Don't allow more than a certain number of frames in a page.
     // This seems like a reasonable upper bound, and otherwise mutually
     // recursive frameset pages can quickly bring the program to its knees
@@ -249,15 +256,20 @@ public:
     bool isPainting() const { return m_isPainting; }
 #endif
 
-    AlternativeTextClient* alternativeTextClient() const { return m_alternativeTextClient; }
-
     PageConsole* console() { return m_console.get(); }
 
     void reportMemoryUsage(MemoryObjectInfo*) const;
 
-    void captionPreferencesChanged();
-
     double timerAlignmentInterval() const;
+
+    class MultisamplingChangedObserver {
+    public:
+        virtual void multisamplingChanged(bool) = 0;
+    };
+
+    void addMultisamplingChangedObserver(MultisamplingChangedObserver*);
+    void removeMultisamplingChangedObserver(MultisamplingChangedObserver*);
+    void multisamplingChanged();
 
 private:
     void initGroup();
@@ -270,6 +282,7 @@ private:
 
     void setTimerAlignmentInterval(double);
 
+    OwnPtr<AutoscrollController> m_autoscrollController;
     OwnPtr<Chrome> m_chrome;
     OwnPtr<DragCaretController> m_dragCaretController;
 
@@ -291,7 +304,6 @@ private:
     RefPtr<RenderTheme> m_theme;
 
     EditorClient* m_editorClient;
-    PlugInClient* m_plugInClient;
     ValidationMessageClient* m_validationMessageClient;
 
     UseCounter m_UseCounter;
@@ -302,8 +314,6 @@ private:
     bool m_tabKeyCyclesThroughElements;
     bool m_defersLoading;
     unsigned m_defersLoadingCallCount;
-
-    bool m_areMemoryCacheClientCallsEnabled;
 
     float m_pageScaleFactor;
     float m_deviceScaleFactor;
@@ -336,9 +346,10 @@ private:
 #ifndef NDEBUG
     bool m_isPainting;
 #endif
-    AlternativeTextClient* m_alternativeTextClient;
 
-    OwnPtr<PageConsole> m_console;
+    const OwnPtr<PageConsole> m_console;
+
+    HashSet<MultisamplingChangedObserver*> m_multisamplingChangedObservers;
 };
 
 } // namespace WebCore

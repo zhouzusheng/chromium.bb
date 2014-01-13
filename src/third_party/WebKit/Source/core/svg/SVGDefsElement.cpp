@@ -20,7 +20,6 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGDefsElement.h"
 
 #include "SVGNames.h"
@@ -55,11 +54,9 @@ bool SVGDefsElement::isValid() const
     return SVGTests::isValid();
 }
 
-RenderObject* SVGDefsElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGDefsElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGHiddenContainer(this);
+    return new (document()->renderArena()) RenderSVGHiddenContainer(this);
 }
 
 }
-
-#endif // ENABLE(SVG)

@@ -14,6 +14,7 @@
 #include "base/timer.h"
 #include "content/browser/byte_stream.h"
 #include "content/browser/download/base_file.h"
+#include "content/browser/download/rate_estimator.h"
 #include "content/public/browser/download_save_info.h"
 #include "net/base/net_log.h"
 
@@ -59,7 +60,6 @@ class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
   virtual void Cancel() OVERRIDE;
   virtual base::FilePath FullPath() const OVERRIDE;
   virtual bool InProgress() const OVERRIDE;
-  virtual int64 BytesSoFar() const OVERRIDE;
   virtual int64 CurrentSpeed() const OVERRIDE;
   virtual bool GetHash(std::string* hash) OVERRIDE;
   virtual std::string GetHashState() OVERRIDE;
@@ -96,6 +96,7 @@ class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
   size_t bytes_seen_;
   base::TimeDelta disk_writes_time_;
   base::TimeTicks download_start_;
+  RateEstimator rate_estimator_;
 
   net::BoundNetLog bound_net_log_;
 

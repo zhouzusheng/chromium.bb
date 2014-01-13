@@ -27,39 +27,56 @@
 #define WebGLExtension_h
 
 #include "core/html/canvas/WebGLRenderingContext.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class WebGLExtension {
+class WebGLExtension : public RefCounted<WebGLExtension> {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     // Extension names are needed to properly wrap instances in JavaScript objects.
     enum ExtensionName {
-        WebGLLoseContextName,
-        EXTDrawBuffersName,
+        ANGLEInstancedArraysName,
+        EXTFragDepthName,
         EXTTextureFilterAnisotropicName,
-        OESTextureFloatName,
-        OESTextureHalfFloatName,
-        OESStandardDerivativesName,
-        OESVertexArrayObjectName,
-        WebGLDebugRendererInfoName,
-        WebGLDebugShadersName,
-        WebGLCompressedTextureS3TCName,
-        WebGLDepthTextureName,
         OESElementIndexUintName,
+        OESStandardDerivativesName,
+        OESTextureFloatLinearName,
+        OESTextureFloatName,
+        OESTextureHalfFloatLinearName,
+        OESTextureHalfFloatName,
+        OESVertexArrayObjectName,
         WebGLCompressedTextureATCName,
         WebGLCompressedTexturePVRTCName,
+        WebGLCompressedTextureS3TCName,
+        WebGLDebugRendererInfoName,
+        WebGLDebugShadersName,
+        WebGLDepthTextureName,
+        WebGLDrawBuffersName,
+        WebGLLoseContextName,
     };
 
-    void ref() { m_context->ref(); }
-    void deref() { m_context->deref(); }
     WebGLRenderingContext* context() { return m_context; }
 
     virtual ~WebGLExtension();
     virtual ExtensionName getName() const = 0;
 
+    // Lose this extension. Passing true = force loss. Some extensions
+    // like WEBGL_lose_context are not normally lost when the context
+    // is lost but must be lost when destroying their WebGLRenderingContext.
+    virtual void lose(bool)
+    {
+        m_context = 0;
+    }
+
+    bool isLost()
+    {
+        return !m_context;
+    }
+
 protected:
     WebGLExtension(WebGLRenderingContext*);
+
     WebGLRenderingContext* m_context;
 };
 

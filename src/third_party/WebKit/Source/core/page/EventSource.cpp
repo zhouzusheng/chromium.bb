@@ -33,27 +33,24 @@
 #include "config.h"
 #include "core/page/EventSource.h"
 
+#include <wtf/text/StringBuilder.h>
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "core/dom/Document.h"
 #include "core/dom/Event.h"
-#include "core/dom/EventException.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/MessageEvent.h"
 #include "core/dom/ScriptExecutionContext.h"
-#include "core/inspector/ScriptCallStack.h"
 #include "core/loader/TextResourceDecoder.h"
 #include "core/loader/ThreadableLoader.h"
-#include "core/loader/cache/MemoryCache.h"
 #include "core/page/ContentSecurityPolicy.h"
 #include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/platform/network/ResourceError.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
-#include <wtf/text/StringBuilder.h>
+#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -70,6 +67,7 @@ inline EventSource::EventSource(ScriptExecutionContext* context, const KURL& url
     , m_requestInFlight(false)
     , m_reconnectDelay(defaultReconnectDelay)
 {
+    ScriptWrappable::init(this);
     eventSourceInit.get("withCredentials", m_withCredentials);
 }
 
@@ -131,10 +129,12 @@ void EventSource::connect()
     options.sendLoadCallbacks = SendCallbacks;
     options.sniffContent = DoNotSniffContent;
     options.allowCredentials = (origin->canRequest(m_url) || m_withCredentials) ? AllowStoredCredentials : DoNotAllowStoredCredentials;
+    options.credentialsRequested = m_withCredentials ? ClientRequestedCredentials : ClientDidNotRequestCredentials;
     options.preflightPolicy = PreventPreflight;
     options.crossOriginRequestPolicy = UseAccessControl;
     options.dataBufferingPolicy = DoNotBufferData;
     options.securityOrigin = origin;
+    options.contentSecurityPolicyEnforcement = ContentSecurityPolicy::shouldBypassMainWorld(scriptExecutionContext()) ? DoNotEnforceContentSecurityPolicy : EnforceConnectSrcDirective;
 
     m_loader = ThreadableLoader::create(scriptExecutionContext(), this, request, options);
 
@@ -291,7 +291,7 @@ void EventSource::didFail(const ResourceError& error)
 
 void EventSource::didFailAccessControlCheck(const ResourceError& error)
 {
-    String message = makeString("EventSource cannot load ", error.failingURL(), ". ", error.localizedDescription());
+    String message = "EventSource cannot load " + error.failingURL() + ". " + error.localizedDescription();
     scriptExecutionContext()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message);
 
     abortConnectionAttempt();

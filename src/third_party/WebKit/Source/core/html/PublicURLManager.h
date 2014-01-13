@@ -26,46 +26,38 @@
 #ifndef PublicURLManager_h
 #define PublicURLManager_h
 
-#include "core/dom/ScriptExecutionContext.h"
-#include "core/fileapi/ThreadableBlobRegistry.h"
-#include <wtf/HashSet.h>
-#include <wtf/text/WTFString.h>
-
-#include "modules/mediastream/MediaStream.h"
-#include "modules/mediastream/MediaStreamRegistry.h"
-#include "modules/mediasource/MediaSource.h"
-#include "modules/mediasource/MediaSourceRegistry.h"
+#include "core/dom/ActiveDOMObject.h"
+#include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
+class KURL;
 class ScriptExecutionContext;
+class SecurityOrigin;
+class URLRegistry;
+class URLRegistrable;
 
-class PublicURLManager {
+class PublicURLManager : public ActiveDOMObject {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<PublicURLManager> create() { return adoptPtr(new PublicURLManager); }
-    void contextDestroyed()
-    {
-        HashSet<String>::iterator blobURLsEnd = m_blobURLs.end();
-        for (HashSet<String>::iterator iter = m_blobURLs.begin(); iter != blobURLsEnd; ++iter)
-            ThreadableBlobRegistry::unregisterBlobURL(KURL(ParsedURLString, *iter));
+    static PassOwnPtr<PublicURLManager> create(ScriptExecutionContext*);
 
-        HashSet<String>::iterator streamURLsEnd = m_streamURLs.end();
-        for (HashSet<String>::iterator iter = m_streamURLs.begin(); iter != streamURLsEnd; ++iter)
-            MediaStreamRegistry::registry().unregisterMediaStreamURL(KURL(ParsedURLString, *iter));
-        HashSet<String>::iterator sourceURLsEnd = m_sourceURLs.end();
-        for (HashSet<String>::iterator iter = m_sourceURLs.begin(); iter != sourceURLsEnd; ++iter)
-            MediaSourceRegistry::registry().unregisterMediaSourceURL(KURL(ParsedURLString, *iter));
-    }
+    void registerURL(SecurityOrigin*, const KURL&, URLRegistrable*);
+    void revoke(const KURL&);
 
-    HashSet<String>& blobURLs() { return m_blobURLs; }
-    HashSet<String>& streamURLs() { return m_streamURLs; }
-    HashSet<String>& sourceURLs() { return m_sourceURLs; }
+    // ActiveDOMObject interface.
+    virtual void stop() OVERRIDE;
 
 private:
-    HashSet<String> m_blobURLs;
-    HashSet<String> m_streamURLs;
-    HashSet<String> m_sourceURLs;
+    PublicURLManager(ScriptExecutionContext*);
+
+    typedef HashSet<String> URLSet;
+    typedef HashMap<URLRegistry*, URLSet > RegistryURLMap;
+    RegistryURLMap m_registryToURL;
+    bool m_isStopped;
 };
 
 } // namespace WebCore

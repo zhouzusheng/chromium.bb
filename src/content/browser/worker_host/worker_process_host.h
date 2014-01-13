@@ -33,6 +33,7 @@ namespace content {
 class BrowserChildProcessHostImpl;
 class IndexedDBContextImpl;
 class ResourceContext;
+class SocketStreamDispatcherHost;
 class WorkerServiceImpl;
 
 // The WorkerProcessHost is the interface that represents the browser side of
@@ -106,7 +107,7 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
       return main_resource_appcache_id_;
     }
     WorkerDocumentSet* worker_document_set() const {
-      return worker_document_set_;
+      return worker_document_set_.get();
     }
     ResourceContext* resource_context() const {
       return resource_context_;
@@ -158,6 +159,9 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
   // Terminates the given worker, i.e. based on a UI action.
   CONTENT_EXPORT void TerminateWorker(int worker_route_id);
 
+  // Callers can reduce the WorkerProcess' priority.
+  void SetBackgrounded(bool backgrounded);
+
   CONTENT_EXPORT const ChildProcessData& GetData();
 
   typedef std::list<WorkerInstance> Instances;
@@ -166,6 +170,8 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
   ResourceContext* resource_context() const {
     return resource_context_;
   }
+
+  bool process_launched() const { return process_launched_; }
 
  protected:
   friend class WorkerServiceImpl;
@@ -201,6 +207,8 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
                     WorkerMessageFilter* filter,
                     int route_id);
 
+  void ShutdownSocketStreamDispatcherHostIfNecessary();
+
   virtual bool CanShutdown() OVERRIDE;
 
   // Updates the title shown in the task manager.
@@ -221,6 +229,9 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
   scoped_refptr<WorkerMessageFilter> worker_message_filter_;
 
   scoped_ptr<BrowserChildProcessHostImpl> process_;
+  bool process_launched_;
+
+  scoped_refptr<SocketStreamDispatcherHost> socket_stream_dispatcher_host_;
 
   DISALLOW_COPY_AND_ASSIGN(WorkerProcessHost);
 };

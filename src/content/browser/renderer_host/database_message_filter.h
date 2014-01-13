@@ -5,12 +5,12 @@
 #ifndef CONTENT_BROWSER_RENDERER_HOST_DATABASE_MESSAGE_FILTER_H_
 #define CONTENT_BROWSER_RENDERER_HOST_DATABASE_MESSAGE_FILTER_H_
 
-#include "base/hash_tables.h"
-#include "base/string16.h"
+#include "base/containers/hash_tables.h"
+#include "base/strings/string16.h"
 #include "content/public/browser/browser_message_filter.h"
-#include "webkit/database/database_connections.h"
-#include "webkit/database/database_tracker.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/browser/database/database_tracker.h"
+#include "webkit/common/database/database_connections.h"
+#include "webkit/common/quota/quota_types.h"
 
 namespace content {
 
@@ -53,7 +53,7 @@ class DatabaseMessageFilter
                              IPC::Message* reply_msg);
 
   // Quota message handler (io thread)
-  void OnDatabaseGetSpaceAvailable(const string16& origin_identifier,
+  void OnDatabaseGetSpaceAvailable(const std::string& origin_identifier,
                                    IPC::Message* reply_msg);
   void OnDatabaseGetUsageAndQuota(IPC::Message* reply_msg,
                                   quota::QuotaStatusCode status,
@@ -61,24 +61,24 @@ class DatabaseMessageFilter
                                   int64 quota);
 
   // Database tracker message handlers (file thread)
-  void OnDatabaseOpened(const string16& origin_identifier,
+  void OnDatabaseOpened(const std::string& origin_identifier,
                         const string16& database_name,
                         const string16& description,
                         int64 estimated_size);
-  void OnDatabaseModified(const string16& origin_identifier,
+  void OnDatabaseModified(const std::string& origin_identifier,
                           const string16& database_name);
-  void OnDatabaseClosed(const string16& origin_identifier,
+  void OnDatabaseClosed(const std::string& origin_identifier,
                         const string16& database_name);
-  void OnHandleSqliteError(const string16& origin_identifier,
+  void OnHandleSqliteError(const std::string& origin_identifier,
                            const string16& database_name,
                            int error);
 
   // DatabaseTracker::Observer callbacks (file thread)
-  virtual void OnDatabaseSizeChanged(const string16& origin_identifier,
+  virtual void OnDatabaseSizeChanged(const std::string& origin_identifier,
                                      const string16& database_name,
                                      int64 database_size) OVERRIDE;
   virtual void OnDatabaseScheduledForDeletion(
-      const string16& origin_identifier,
+      const std::string& origin_identifier,
       const string16& database_name) OVERRIDE;
 
   void DatabaseDeleteFile(const string16& vfs_file_name,

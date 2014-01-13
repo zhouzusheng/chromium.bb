@@ -30,12 +30,10 @@
 #include "core/dom/Document.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
-#include "core/dom/ScriptExecutionContext.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/page/DOMWindow.h"
 #include "core/page/SuspendableTimer.h"
-#include <wtf/MemoryInstrumentationHashSet.h>
-#include <wtf/MemoryInstrumentationListHashSet.h>
+#include "wtf/MemoryInstrumentationListHashSet.h"
 
 namespace WebCore {
     
@@ -115,8 +113,10 @@ void DocumentEventQueue::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) c
 
 bool DocumentEventQueue::cancelEvent(Event* event)
 {
-    bool found = m_queuedEvents.contains(event);
-    m_queuedEvents.remove(event);
+    ListHashSet<RefPtr<Event>, 16>::iterator it = m_queuedEvents.find(event);
+    bool found = it != m_queuedEvents.end();
+    if (found)
+        m_queuedEvents.remove(it);
     if (m_queuedEvents.isEmpty())
         m_pendingEventTimer->stop();
     return found;

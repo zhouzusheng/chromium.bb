@@ -9,6 +9,9 @@
 #include "base/path_service.h"
 #include "base/synchronization/lock.h"
 #include "build/build_config.h"
+#include "media/base/sinc_resampler.h"
+#include "media/base/vector_math.h"
+#include "media/base/yuv_convert.h"
 
 namespace media {
 
@@ -40,7 +43,13 @@ class MediaInitializer {
   MediaInitializer()
       : initialized_(false),
         tried_initialize_(false) {
-    // TODO(dalecurtis): Add initialization of YUV and VectorMath libraries.
+    // Perform initialization of libraries which require runtime CPU detection.
+    // TODO(dalecurtis): Add initialization of YUV, SincResampler.
+    vector_math::Initialize();
+#if !defined(OS_IOS)
+    SincResampler::InitializeCPUSpecificFeatures();
+    InitializeCPUSpecificYUVConversions();
+#endif
   }
 
   ~MediaInitializer() {
@@ -69,6 +78,11 @@ void InitializeMediaLibraryForTesting() {
 
 bool IsMediaLibraryInitialized() {
   return g_media_library.Get().IsInitialized();
+}
+
+void InitializeCPUSpecificMediaFeatures() {
+  // Force initialization of the media initializer, but don't call Initialize().
+  g_media_library.Get();
 }
 
 }  // namespace media

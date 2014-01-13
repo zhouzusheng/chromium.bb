@@ -22,32 +22,16 @@
 #include "core/html/HTMLPlugInImageElement.h"
 
 #include "bindings/v8/ScriptController.h"
-#include "core/css/StyleResolver.h"
-#include "core/dom/MouseEvent.h"
-#include "core/dom/NodeList.h"
-#include "core/dom/NodeRenderStyle.h"
-#include "core/dom/NodeRenderingContext.h"
-#include "core/dom/ShadowRoot.h"
-#include "core/dom/Text.h"
-#include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
 #include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/page/Page.h"
-#include "core/page/PlugInClient.h"
-#include "core/page/SecurityOrigin.h"
-#include "core/page/Settings.h"
-#include "core/platform/LocalizedStrings.h"
 #include "core/platform/Logging.h"
-#include "core/platform/SchemeRegistry.h"
+#include "core/platform/MIMETypeFromURL.h"
 #include "core/platform/graphics/Image.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 #include "core/rendering/RenderImage.h"
-#include <wtf/CurrentTime.h>
+#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -136,7 +120,7 @@ bool HTMLPlugInImageElement::wouldLoadAsNetscapePlugin(const String& url, const 
     return false;
 }
 
-RenderObject* HTMLPlugInImageElement::createRenderer(RenderArena* arena, RenderStyle* style)
+RenderObject* HTMLPlugInImageElement::createRenderer(RenderStyle* style)
 {
     // Fallback content breaks the DOM->Renderer class relationship of this
     // class and all superclasses because createObject won't necessarily
@@ -145,12 +129,12 @@ RenderObject* HTMLPlugInImageElement::createRenderer(RenderArena* arena, RenderS
         return RenderObject::createObject(this, style);
 
     if (isImageType()) {
-        RenderImage* image = new (arena) RenderImage(this);
+        RenderImage* image = new (document()->renderArena()) RenderImage(this);
         image->setImageResource(RenderImageResource::create());
         return image;
     }
 
-    return new (arena) RenderEmbeddedObject(this);
+    return new (document()->renderArena()) RenderEmbeddedObject(this);
 }
 
 void HTMLPlugInImageElement::willRecalcStyle(StyleChange)
@@ -160,7 +144,7 @@ void HTMLPlugInImageElement::willRecalcStyle(StyleChange)
         reattach();
 }
 
-void HTMLPlugInImageElement::attach()
+void HTMLPlugInImageElement::attach(const AttachContext& context)
 {
     PostAttachCallbackDisabler disabler(this);
 
@@ -169,7 +153,7 @@ void HTMLPlugInImageElement::attach()
     if (!isImage)
         queuePostAttachCallback(&HTMLPlugInImageElement::updateWidgetCallback, this);
 
-    HTMLPlugInElement::attach();
+    HTMLPlugInElement::attach(context);
 
     if (isImage && renderer() && !useFallbackContent()) {
         if (!m_imageLoader)
@@ -178,7 +162,7 @@ void HTMLPlugInImageElement::attach()
     }
 }
 
-void HTMLPlugInImageElement::detach()
+void HTMLPlugInImageElement::detach(const AttachContext& context)
 {
     // FIXME: Because of the insanity that is HTMLPlugInImageElement::recalcStyle,
     // we can end up detaching during an attach() call, before we even have a
@@ -186,7 +170,7 @@ void HTMLPlugInImageElement::detach()
     if (attached() && renderer() && !useFallbackContent())
         // Update the widget the next time we attach (detaching destroys the plugin).
         setNeedsWidgetUpdate(true);
-    HTMLPlugInElement::detach();
+    HTMLPlugInElement::detach(context);
 }
 
 void HTMLPlugInImageElement::updateWidgetIfNecessary()
@@ -220,9 +204,9 @@ void HTMLPlugInImageElement::didMoveToNewDocument(Document* oldDocument)
     HTMLPlugInElement::didMoveToNewDocument(oldDocument);
 }
 
-void HTMLPlugInImageElement::updateWidgetCallback(Node* n, unsigned)
+void HTMLPlugInImageElement::updateWidgetCallback(Node* n)
 {
-    static_cast<HTMLPlugInImageElement*>(n)->updateWidgetIfNecessary();
+    toHTMLPlugInImageElement(n)->updateWidgetIfNecessary();
 }
 
 void HTMLPlugInImageElement::subframeLoaderWillCreatePlugIn(const KURL& url)

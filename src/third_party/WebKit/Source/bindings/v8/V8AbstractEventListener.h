@@ -52,7 +52,6 @@ namespace WebCore {
     // WebKit does not allow duplicated HTML event handlers of the same type,
     // but ALLOWs duplicated non-HTML event handlers.
     class V8AbstractEventListener : public EventListener {
-        friend class WeakHandleListener<V8AbstractEventListener>;
     public:
         virtual ~V8AbstractEventListener();
 
@@ -85,19 +84,19 @@ namespace WebCore {
             // Protect this event listener to keep it alive.
             RefPtr<V8AbstractEventListener> guard(this);
             prepareListenerObject(context);
-            return v8::Local<v8::Object>::New(m_listener.get());
+            return m_listener.newLocal(m_isolate);
         }
 
         v8::Local<v8::Object> getExistingListenerObject()
         {
-            return v8::Local<v8::Object>::New(m_listener.get());
+            return m_listener.newLocal(m_isolate);
         }
 
         // Provides access to the underlying handle for GC. Returned
         // value is a weak handle and so not guaranteed to stay alive.
-        v8::Persistent<v8::Object> existingListenerObjectPersistentHandle()
+        v8::Persistent<v8::Object>& existingListenerObjectPersistentHandle()
         {
-            return m_listener.get();
+            return m_listener.getUnsafe();
         }
 
         bool hasExistingListenerObject()
@@ -105,7 +104,12 @@ namespace WebCore {
             return !m_listener.isEmpty();
         }
 
-        DOMWrapperWorld* world() const { return m_world.get(); }
+        void clearListenerObject()
+        {
+            m_listener.clear();
+        }
+
+        virtual DOMWrapperWorld* world() const OVERRIDE FINAL { return m_world.get(); }
 
     protected:
         V8AbstractEventListener(bool isAttribute, PassRefPtr<DOMWrapperWorld>, v8::Isolate*);
@@ -120,14 +124,14 @@ namespace WebCore {
         v8::Local<v8::Object> getReceiverObject(ScriptExecutionContext*, Event*);
 
     private:
-        static void weakEventListenerCallback(v8::Isolate*, v8::Persistent<v8::Value>, void* parameter);
-
         // Implementation of EventListener function.
         virtual bool virtualisAttribute() const { return m_isAttribute; }
 
         virtual v8::Local<v8::Value> callListenerFunction(ScriptExecutionContext*, v8::Handle<v8::Value> jsevent, Event*) = 0;
 
         virtual bool shouldPreventDefault(v8::Local<v8::Value> returnValue);
+
+        static void makeWeakCallback(v8::Isolate*, v8::Persistent<v8::Object>*, V8AbstractEventListener*);
 
         ScopedPersistent<v8::Object> m_listener;
 

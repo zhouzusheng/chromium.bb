@@ -7,8 +7,9 @@
 /**
  * @fileoverview Code for the viewport.
  */
-base.require('base.range');
 base.require('base.event_target');
+base.require('base.guid');
+base.require('base.range');
 base.exportTo('tracing', function() {
 
   function SelectionSliceHit(track, slice) {
@@ -16,6 +17,10 @@ base.exportTo('tracing', function() {
     this.slice = slice;
   }
   SelectionSliceHit.prototype = {
+    get modelObject() {
+      return this.slice;
+    },
+
     get selected() {
       return this.slice.selected;
     },
@@ -33,10 +38,16 @@ base.exportTo('tracing', function() {
     this.counter = counter;
     this.sampleIndex = sampleIndex;
   }
+
   SelectionCounterSampleHit.prototype = {
+    get modelObject() {
+      return this.sampleIndex;
+    },
+
     get selected() {
       return this.track.selectedSamples[this.sampleIndex] == true;
     },
+
     set selected(v) {
       if (v)
         this.track.selectedSamples[this.sampleIndex] = true;
@@ -44,7 +55,10 @@ base.exportTo('tracing', function() {
         this.track.selectedSamples[this.sampleIndex] = false;
       this.track.invalidate();
     },
+
     addBoundsToRange: function(range) {
+      if (!this.track.timestamps)
+        return;
       range.addValue(this.track.timestamps[this.sampleIndex]);
     }
   };
@@ -54,6 +68,10 @@ base.exportTo('tracing', function() {
     this.objectSnapshot = objectSnapshot;
   }
   SelectionObjectSnapshotHit.prototype = {
+    get modelObject() {
+      return this.objectSnapshot;
+    },
+
     get selected() {
       return this.objectSnapshot.selected;
     },
@@ -70,6 +88,10 @@ base.exportTo('tracing', function() {
     this.objectInstance = objectInstance;
   }
   SelectionObjectInstanceHit.prototype = {
+    get modelObject() {
+      return this.objectInstance;
+    },
+
     get selected() {
       return this.objectInstance.selected;
     },
@@ -112,6 +134,8 @@ base.exportTo('tracing', function() {
     this.bounds_dirty_ = true;
     this.bounds_ = new base.Range();
     this.length_ = 0;
+    this.guid_ = base.GUID.allocate();
+
     if (opt_hits)
       this.pushHits(opt_hits);
   }
@@ -138,6 +162,10 @@ base.exportTo('tracing', function() {
 
     get length() {
       return this.length_;
+    },
+
+    get guid() {
+      return this.guid_;
     },
 
     clear: function() {
@@ -168,18 +196,18 @@ base.exportTo('tracing', function() {
 
     addCounterSample: function(track, counter, sampleIndex) {
       return this.push_(
-        new SelectionCounterSampleHit(
+          new SelectionCounterSampleHit(
           track, counter, sampleIndex));
     },
 
     addObjectSnapshot: function(track, objectSnapshot) {
       return this.push_(
-        new SelectionObjectSnapshotHit(track, objectSnapshot));
+          new SelectionObjectSnapshotHit(track, objectSnapshot));
     },
 
     addObjectInstance: function(track, objectInstance) {
       return this.push_(
-        new SelectionObjectInstanceHit(track, objectInstance));
+          new SelectionObjectInstanceHit(track, objectInstance));
     },
 
     addSelection: function(selection) {
@@ -203,13 +231,15 @@ base.exportTo('tracing', function() {
 
     getCounterSampleHitsAsSelection: function() {
       var selection = new Selection();
-      this.enumHitsOfType(SelectionCounterSampleHit, selection.push_.bind(selection));
+      this.enumHitsOfType(SelectionCounterSampleHit,
+                          selection.push_.bind(selection));
       return selection;
     },
 
     getSliceHitsAsSelection: function() {
       var selection = new Selection();
-      this.enumHitsOfType(SelectionSliceHit, selection.push_.bind(selection));
+      this.enumHitsOfType(SelectionSliceHit,
+                          selection.push_.bind(selection));
       return selection;
     },
 
@@ -242,19 +272,25 @@ base.exportTo('tracing', function() {
 
     getNumCounterHits: function() {
       var numHits = 0;
-      this.enumHitsOfType(SelectionCounterSampleHit, function(hit) { numHits++; });
+      this.enumHitsOfType(SelectionCounterSampleHit, function(hit) {
+        numHits++;
+      });
       return numHits;
     },
 
     getNumObjectSnapshotHits: function() {
       var numHits = 0;
-      this.enumHitsOfType(SelectionObjectSnapshotHit, function(hit) { numHits++; });
+      this.enumHitsOfType(SelectionObjectSnapshotHit, function(hit) {
+        numHits++;
+      });
       return numHits;
     },
 
     getNumObjectInstanceHits: function() {
       var numHits = 0;
-      this.enumHitsOfType(SelectionObjectInstanceHit, function(hit) { numHits++; });
+      this.enumHitsOfType(SelectionObjectInstanceHit, function(hit) {
+        numHits++;
+      });
       return numHits;
     },
 
@@ -283,11 +319,29 @@ base.exportTo('tracing', function() {
     }
   };
 
+  function createSelectionFromObjectAndView(obj, opt_view) {
+    // TODO: fill in the track intelligently by finding the TimelineView, then
+    // finding the right track based on the provided object.
+    var track = undefined;
+
+    var selection = new Selection();
+    if (obj instanceof tracing.trace_model.Slice)
+      selection.addSlice(track, obj);
+    else if (obj instanceof tracing.trace_model.ObjectSnapshot)
+      selection.addObjectSnapshot(track, obj);
+    else if (obj instanceof tracing.trace_model.ObjectInstance)
+      selection.addObjectInstance(track, obj);
+    else
+      throw new Error('Unrecognized selection type');
+    return selection;
+  }
+
   return {
     SelectionSliceHit: SelectionSliceHit,
     SelectionCounterSampleHit: SelectionCounterSampleHit,
     SelectionObjectSnapshotHit: SelectionObjectSnapshotHit,
     SelectionObjectInstanceHit: SelectionObjectInstanceHit,
-    Selection: Selection
+    Selection: Selection,
+    createSelectionFromObjectAndView: createSelectionFromObjectAndView
   };
 });

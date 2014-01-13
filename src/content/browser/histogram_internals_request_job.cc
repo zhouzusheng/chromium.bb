@@ -28,12 +28,6 @@ HistogramInternalsRequestJob::HistogramInternalsRequestJob(
 }
 
 void AboutHistogram(std::string* data, const std::string& path) {
-#ifndef NDEBUG
-  // We only rush the acquisition of Histogram meta-data (meta-histograms) in
-  // Debug mode, so that developers don't damage our data that we upload to UMA
-  // (in official builds).
-  base::StatisticsRecorder::CollectHistogramStats("Browser");
-#endif
   HistogramSynchronizer::FetchHistograms();
 
   std::string unescaped_query;
@@ -47,7 +41,7 @@ void AboutHistogram(std::string* data, const std::string& path) {
   data->append("<!DOCTYPE html>\n<html>\n<head>\n");
   data->append(
       "<meta http-equiv=\"Content-Security-Policy\" "
-      "content=\"object-src 'none'; script-src 'none' 'unsafe-eval'\">");
+      "content=\"object-src 'none'; script-src 'none'\">");
   data->append("<title>");
   data->append(net::EscapeForHTML(unescaped_title));
   data->append("</title>\n");

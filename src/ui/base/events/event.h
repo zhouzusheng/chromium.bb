@@ -14,6 +14,7 @@
 #include "ui/base/events/event_constants.h"
 #include "ui/base/gestures/gesture_types.h"
 #include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/base/latency_info.h"
 #include "ui/base/ui_export.h"
 #include "ui/gfx/point.h"
 
@@ -79,6 +80,9 @@ class UI_EXPORT Event {
   bool dispatch_to_hidden_targets() const {
     return dispatch_to_hidden_targets_;
   }
+
+  LatencyInfo* latency() { return &latency_; }
+  void set_latency(const LatencyInfo& latency) { latency_ = latency; }
 
   // By default, events are "cancelable", this means any default processing that
   // the containing abstraction layer may perform can be prevented by calling
@@ -170,6 +174,10 @@ class UI_EXPORT Event {
            type_ == ET_SCROLL_FLING_START;
   }
 
+  bool IsMouseWheelEvent() const {
+    return type_ == ET_MOUSEWHEEL;
+  }
+
   // Returns true if the event has a valid |native_event_|.
   bool HasNativeEvent() const;
 
@@ -207,6 +215,8 @@ class UI_EXPORT Event {
 
   void set_name(const std::string& name) { name_ = name; }
 
+  void InitLatencyInfo();
+
  private:
   void operator=(const Event&);
 
@@ -217,6 +227,7 @@ class UI_EXPORT Event {
   EventType type_;
   std::string name_;
   base::TimeDelta time_stamp_;
+  LatencyInfo latency_;
   int flags_;
   bool dispatch_to_hidden_targets_;
   base::NativeEvent native_event_;
@@ -389,8 +400,6 @@ class UI_EXPORT MouseEvent : public LocatedEvent {
   // recent enough and within a small enough distance.
   static int GetRepeatCount(const MouseEvent& click_event);
 
-  gfx::Point root_location_;
-
   // See description above getter for details.
   int changed_button_flags_;
 
@@ -407,6 +416,7 @@ class UI_EXPORT MouseWheelEvent : public MouseEvent {
   explicit MouseWheelEvent(const base::NativeEvent& native_event);
   explicit MouseWheelEvent(const ScrollEvent& scroll_event);
   MouseWheelEvent(const MouseEvent& mouse_event, int x_offset, int y_offset);
+  MouseWheelEvent(const MouseWheelEvent& mouse_wheel_event);
 
   template <class T>
   MouseWheelEvent(const MouseWheelEvent& model,
@@ -422,11 +432,14 @@ class UI_EXPORT MouseWheelEvent : public MouseEvent {
   // Note: x_offset() > 0/y_offset() > 0 means scroll left/up.
   int x_offset() const { return offset_.x(); }
   int y_offset() const { return offset_.y(); }
+  const gfx::Vector2d& offset() const { return offset_; }
+
+  // Overridden from LocatedEvent.
+  virtual void UpdateForRootTransform(
+      const gfx::Transform& inverted_root_transform) OVERRIDE;
 
  private:
   gfx::Vector2d offset_;
-
-  DISALLOW_COPY_AND_ASSIGN(MouseWheelEvent);
 };
 
 class UI_EXPORT TouchEvent : public LocatedEvent {

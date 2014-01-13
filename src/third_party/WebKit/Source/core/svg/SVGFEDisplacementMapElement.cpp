@@ -19,11 +19,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFEDisplacementMapElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
@@ -71,7 +69,7 @@ bool SVGFEDisplacementMapElement::isSupportedAttribute(const QualifiedName& attr
         supportedAttributes.add(SVGNames::yChannelSelectorAttr);
         supportedAttributes.add(SVGNames::scaleAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFEDisplacementMapElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -166,5 +164,3 @@ PassRefPtr<FilterEffect> SVGFEDisplacementMapElement::build(SVGFilterBuilder* fi
 }
 
 }
-
-#endif // ENABLE(SVG)

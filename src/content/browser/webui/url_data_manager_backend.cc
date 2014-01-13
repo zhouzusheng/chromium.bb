@@ -11,13 +11,12 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/histogram_internals_request_job.h"
 #include "content/browser/net/view_blob_internals_job_factory.h"
@@ -40,7 +39,7 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_job_factory.h"
-#include "webkit/appcache/view_appcache_internals_job.h"
+#include "webkit/browser/appcache/view_appcache_internals_job.h"
 
 using appcache::AppCacheService;
 
@@ -247,7 +246,7 @@ int URLRequestChromeJob::GetResponseCode() const {
 }
 
 void URLRequestChromeJob::GetResponseInfo(net::HttpResponseInfo* info) {
-  DCHECK(!info->headers);
+  DCHECK(!info->headers.get());
   // Set the headers so that requests serviced by ChromeURLDataManager return a
   // status code of 200. Without this they return a 0, which makes the status
   // indistiguishable from other error types. Instant relies on getting a 200.
@@ -284,9 +283,9 @@ void URLRequestChromeJob::DataAvailable(base::RefCountedMemory* bytes) {
 
     data_ = bytes;
     int bytes_read;
-    if (pending_buf_) {
+    if (pending_buf_.get()) {
       CHECK(pending_buf_->data());
-      CompleteRead(pending_buf_, pending_buf_size_, &bytes_read);
+      CompleteRead(pending_buf_.get(), pending_buf_size_, &bytes_read);
       pending_buf_ = NULL;
       NotifyReadComplete(bytes_read);
     }
@@ -299,7 +298,7 @@ void URLRequestChromeJob::DataAvailable(base::RefCountedMemory* bytes) {
 
 bool URLRequestChromeJob::ReadRawData(net::IOBuffer* buf, int buf_size,
                                       int* bytes_read) {
-  if (!data_) {
+  if (!data_.get()) {
     SetStatus(net::URLRequestStatus(net::URLRequestStatus::IO_PENDING, 0));
     DCHECK(!pending_buf_.get());
     CHECK(buf->data());
@@ -412,6 +411,10 @@ class ChromeProtocolHandler
         GetURLDataManagerForResourceContext(resource_context_), is_incognito_);
   }
 
+  virtual bool IsSafeRedirectTarget(const GURL& location) const OVERRIDE {
+    return false;
+  }
+
  private:
   // These members are owned by ProfileIOData, which owns this ProtocolHandler.
   content::ResourceContext* const resource_context_;
@@ -489,7 +492,7 @@ bool URLDataManagerBackend::StartRequest(const net::URLRequest* request,
   if (i == data_sources_.end())
     return false;
 
-  URLDataSourceImpl* source = i->second;
+  URLDataSourceImpl* source = i->second.get();
 
   if (!source->source()->ShouldServiceRequest(request))
     return false;

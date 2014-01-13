@@ -25,7 +25,6 @@
 #ifndef SVGAnimationElement_h
 #define SVGAnimationElement_h
 
-#if ENABLE(SVG)
 #include "core/platform/graphics/UnitBezier.h"
 #include "core/svg/ElementTimeControl.h"
 #include "core/svg/SVGAnimatedBoolean.h"
@@ -74,7 +73,7 @@ public:
     // SVGAnimationElement
     float getStartTime() const;
     float getCurrentTime() const;
-    float getSimpleDuration(ExceptionCode&) const;
+    float getSimpleDuration() const;
 
     // ElementTimeControl
     virtual void beginElement();
@@ -255,5 +254,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif // SVGAnimationElement_h

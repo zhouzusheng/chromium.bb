@@ -81,6 +81,7 @@ ScriptProcessorNode::ScriptProcessorNode(AudioContext* context, float sampleRate
     , m_numberOfOutputChannels(numberOfOutputChannels)
     , m_internalInputBus(AudioBus::create(numberOfInputChannels, AudioNode::ProcessingSizeInFrames, false))
 {
+    ScriptWrappable::init(this);
     // Regardless of the allowed buffer sizes, we still need to process at the granularity of the AudioNode.
     if (m_bufferSize < AudioNode::ProcessingSizeInFrames)
         m_bufferSize = AudioNode::ProcessingSizeInFrames;
@@ -261,16 +262,6 @@ void ScriptProcessorNode::reset()
         m_inputBuffers[i]->zero();
         m_outputBuffers[i]->zero();
     }
-}
-
-const AtomicString& ScriptProcessorNode::interfaceName() const
-{
-    return eventNames().interfaceForScriptProcessorNode;
-}
-
-ScriptExecutionContext* ScriptProcessorNode::scriptExecutionContext() const
-{
-    return const_cast<ScriptProcessorNode*>(this)->context()->scriptExecutionContext();
 }
 
 double ScriptProcessorNode::tailTime() const

@@ -57,4 +57,9 @@ void QuicCryptoStream::SendHandshakeMessage(
   WriteData(string(data.data(), data.length()), false);
 }
 
+const QuicCryptoNegotiatedParameters&
+QuicCryptoStream::crypto_negotiated_params() const {
+  return crypto_negotiated_params_;
+}
+
 }  // namespace net

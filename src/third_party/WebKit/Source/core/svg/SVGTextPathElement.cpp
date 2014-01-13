@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGTextPathElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGTextPath.h"
@@ -82,7 +80,7 @@ bool SVGTextPathElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::methodAttr);
         supportedAttributes.add(SVGNames::spacingAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGTextPathElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -129,9 +127,9 @@ void SVGTextPathElement::svgAttributeChanged(const QualifiedName& attrName)
         RenderSVGResource::markForLayoutAndParentResourceInvalidation(object);
 }
 
-RenderObject* SVGTextPathElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGTextPathElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGTextPath(this);
+    return new (document()->renderArena()) RenderSVGTextPath(this);
 }
 
 bool SVGTextPathElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
@@ -200,5 +198,3 @@ bool SVGTextPathElement::selfHasRelativeLengths() const
 }
 
 }
-
-#endif // ENABLE(SVG)

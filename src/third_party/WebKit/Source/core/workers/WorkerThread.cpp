@@ -31,18 +31,17 @@
 #include "bindings/v8/ScriptSourceCode.h"
 #include "bindings/v8/ScriptValue.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/platform/KURL.h"
 #include "core/platform/ThreadGlobalData.h"
 #include "core/workers/DedicatedWorkerContext.h"
 #include "modules/webdatabase/DatabaseManager.h"
 #include "modules/webdatabase/DatabaseTask.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebWorkerRunLoop.h"
+#include "weborigin/KURL.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/text/WTFString.h"
 
 #include <utility>
-#include <wtf/Noncopyable.h>
-#include <wtf/text/WTFString.h>
-
-#include <public/Platform.h>
-#include <public/WebWorkerRunLoop.h>
 
 namespace WebCore {
 
@@ -256,6 +255,11 @@ void WorkerThread::stop()
         return;
     }
     m_runLoop.terminate();
+}
+
+bool WorkerThread::isCurrentThread() const
+{
+    return m_threadID == currentThread();
 }
 
 class ReleaseFastMallocFreeMemoryTask : public ScriptExecutionContext::Task {

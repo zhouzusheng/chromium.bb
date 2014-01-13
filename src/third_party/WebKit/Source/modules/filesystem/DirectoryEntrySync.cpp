@@ -42,9 +42,10 @@ namespace WebCore {
 DirectoryEntrySync::DirectoryEntrySync(PassRefPtr<DOMFileSystemBase> fileSystem, const String& fullPath)
     : EntrySync(fileSystem, fullPath)
 {
+    ScriptWrappable::init(this);
 }
 
-PassRefPtr<DirectoryReaderSync> DirectoryEntrySync::createReader(ExceptionCode&)
+PassRefPtr<DirectoryReaderSync> DirectoryEntrySync::createReader()
 {
     return DirectoryReaderSync::create(m_fileSystem, m_fullPath);
 }

@@ -52,31 +52,6 @@
 
 namespace cricket {
 
-// Extend AudioOptions to include various WebRtc-specific options.
-struct WebRtcAudioOptions : AudioOptions {
-  WebRtcAudioOptions()
-      : AudioOptions(),
-        ec_mode(webrtc::kEcDefault),
-        aecm_mode(webrtc::kAecmSpeakerphone),
-        agc_mode(webrtc::kAgcDefault),
-        ns_mode(webrtc::kNsDefault) {
-  }
-
-  explicit WebRtcAudioOptions(const AudioOptions& options)
-      : AudioOptions(options),
-        ec_mode(webrtc::kEcDefault),
-        aecm_mode(webrtc::kAecmSpeakerphone),
-        agc_mode(webrtc::kAgcDefault),
-        ns_mode(webrtc::kNsDefault) {
-  }
-
-  webrtc::EcModes ec_mode;
-  webrtc::AecmModes aecm_mode;
-  webrtc::AgcModes agc_mode;
-  webrtc::NsModes ns_mode;
-};
-
-
 // WebRtcSoundclipStream is an adapter object that allows a memory stream to be
 // passed into WebRtc, and support looping.
 class WebRtcSoundclipStream : public webrtc::InStream {
@@ -171,12 +146,12 @@ class WebRtcVoiceEngine
                            MediaProcessorDirection direction);
 
   // Method from webrtc::VoEMediaProcess
-  virtual void Process(const int channel,
-                       const webrtc::ProcessingTypes type,
+  virtual void Process(int channel,
+                       webrtc::ProcessingTypes type,
                        int16_t audio10ms[],
-                       const int length,
-                       const int sampling_freq,
-                       const bool is_stereo);
+                       int length,
+                       int sampling_freq,
+                       bool is_stereo);
 
   // For tracking WebRtc channels. Needed because we have to pause them
   // all when switching devices.
@@ -191,12 +166,6 @@ class WebRtcVoiceEngine
   // Called by WebRtcVoiceMediaChannel to set a gain offset from
   // the default AGC target level.
   bool AdjustAgcLevel(int delta);
-
-  // Called by WebRtcVoiceMediaChannel to configure echo cancellation
-  // and noise suppression modes.
-  bool SetConferenceMode(bool enable);
-
-  bool SetMobileHeadsetMode(bool enable);
 
   VoEWrapper* voe() { return voe_wrapper_.get(); }
   VoEWrapper* voe_sc() { return voe_wrapper_sc_.get(); }
@@ -226,7 +195,7 @@ class WebRtcVoiceEngine
   // at any time.
   bool ApplyOptions(const AudioOptions& options);
   virtual void Print(webrtc::TraceLevel level, const char* trace, int length);
-  virtual void CallbackOnError(const int channel, const int errCode);
+  virtual void CallbackOnError(int channel, int errCode);
   // Given the device type, name, and id, find device id. Return true and
   // set the output parameter rtc_id if successful.
   bool FindWebRtcAudioDeviceId(
@@ -245,6 +214,9 @@ class WebRtcVoiceEngine
                                   uint32 ssrc,
                                   VoiceProcessor* voice_processor,
                                   MediaProcessorDirection processor_direction);
+
+  void StartAecDump(const std::string& filename);
+  void StopAecDump();
 
   // When a voice processor registers with the engine, it is connected
   // to either the Rx or Tx signals, based on the direction parameter.
@@ -376,6 +348,7 @@ class WebRtcVoiceMediaChannel
   virtual bool RemoveSendStream(uint32 ssrc);
   virtual bool AddRecvStream(const StreamParams& sp);
   virtual bool RemoveRecvStream(uint32 ssrc);
+  virtual bool SetRenderer(uint32 ssrc, AudioRenderer* renderer);
   virtual bool GetActiveStreams(AudioInfo::StreamList* actives);
   virtual int GetOutputLevel();
   virtual int GetTimeSinceLastTyping();
@@ -420,6 +393,7 @@ class WebRtcVoiceMediaChannel
   static Error WebRtcErrorToChannelError(int err_code);
 
  private:
+  void SetNack(uint32 ssrc, int channel, bool nack_enabled);
   bool SetSendCodec(const webrtc::CodecInst& send_codec);
   bool ChangePlayout(bool playout);
   bool ChangeSend(SendFlags send);
@@ -432,6 +406,7 @@ class WebRtcVoiceMediaChannel
   AudioOptions options_;
   bool dtmf_allowed_;
   bool desired_playout_;
+  bool nack_enabled_;
   bool playout_;
   SendFlags desired_send_;
   SendFlags send_;

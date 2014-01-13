@@ -36,6 +36,7 @@
 #include "talk/media/base/videocommon.h"
 #include "talk/media/webrtc/webrtccommon.h"
 #include "talk/media/webrtc/webrtcexport.h"
+#include "talk/media/webrtc/webrtcvideoencoderfactory.h"
 #include "talk/session/media/channel.h"
 #include "webrtc/video_engine/include/vie_base.h"
 
@@ -47,8 +48,10 @@
 namespace webrtc {
 class VideoCaptureModule;
 class VideoDecoder;
+class VideoEncoder;
 class VideoRender;
 class ViEExternalCapture;
+class ViERTP_RTCP;
 }
 
 namespace talk_base {
@@ -71,6 +74,7 @@ class WebRtcRenderAdapter;
 class WebRtcVideoChannelRecvInfo;
 class WebRtcVideoChannelSendInfo;
 class WebRtcVideoDecoderFactory;
+class WebRtcVideoEncoderFactory;
 class WebRtcVideoMediaChannel;
 class WebRtcVoiceEngine;
 
@@ -78,7 +82,8 @@ struct CapturedFrame;
 struct Device;
 
 class WebRtcVideoEngine : public sigslot::has_slots<>,
-                          public webrtc::TraceCallback {
+                          public webrtc::TraceCallback,
+                          public WebRtcVideoEncoderFactory::Observer {
  public:
   // Creates the WebRtcVideoEngine with internal VideoCaptureModule.
   WebRtcVideoEngine();
@@ -125,6 +130,10 @@ class WebRtcVideoEngine : public sigslot::has_slots<>,
   // not take the ownership of |decoder_factory|. The caller needs to make sure
   // that |decoder_factory| outlives the video engine.
   void SetExternalDecoderFactory(WebRtcVideoDecoderFactory* decoder_factory);
+  // Set a WebRtcVideoEncoderFactory for external encoding. Video engine does
+  // not take the ownership of |encoder_factory|. The caller needs to make sure
+  // that |encoder_factory| outlives the video engine.
+  void SetExternalEncoderFactory(WebRtcVideoEncoderFactory* encoder_factory);
   // Enable the render module with timing control.
   bool EnableTimedRender();
 
@@ -137,6 +146,16 @@ class WebRtcVideoEngine : public sigslot::has_slots<>,
   webrtc::VideoDecoder* CreateExternalDecoder(webrtc::VideoCodecType type);
   // Releases the decoder instance created by CreateExternalDecoder().
   void DestroyExternalDecoder(webrtc::VideoDecoder* decoder);
+
+  // Returns an external encoder for the given codec type. The return value
+  // can be NULL if encoder factory is not given or it does not support the
+  // codec type. The caller takes the ownership of the returned object.
+  webrtc::VideoEncoder* CreateExternalEncoder(webrtc::VideoCodecType type);
+  // Releases the encoder instance created by CreateExternalEncoder().
+  void DestroyExternalEncoder(webrtc::VideoEncoder* encoder);
+
+  // Returns true if the codec type is supported by the external encoder.
+  bool IsExternalEncoderCodecType(webrtc::VideoCodecType type) const;
 
   // Functions called by WebRtcVideoMediaChannel.
   talk_base::Thread* worker_thread() { return worker_thread_; }
@@ -196,12 +215,16 @@ class WebRtcVideoEngine : public sigslot::has_slots<>,
   virtual void Print(webrtc::TraceLevel level, const char* trace, int length);
   void ClearCapturer();
 
+  // WebRtcVideoEncoderFactory::Observer implementation.
+  virtual void OnCodecsAvailable();
+
   talk_base::Thread* worker_thread_;
   talk_base::scoped_ptr<ViEWrapper> vie_wrapper_;
   bool vie_wrapper_base_initialized_;
   talk_base::scoped_ptr<ViETraceWrapper> tracing_;
   WebRtcVoiceEngine* voice_engine_;
   talk_base::scoped_ptr<webrtc::VideoRender> render_module_;
+  WebRtcVideoEncoderFactory* encoder_factory_;
   WebRtcVideoDecoderFactory* decoder_factory_;
   std::vector<VideoCodec> video_codecs_;
   std::vector<RtpHeaderExtension> rtp_header_extensions_;
@@ -300,6 +323,7 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
  private:
   typedef std::map<uint32, WebRtcVideoChannelRecvInfo*> RecvChannelMap;
   typedef std::map<uint32, WebRtcVideoChannelSendInfo*> SendChannelMap;
+  typedef int (webrtc::ViERTP_RTCP::* ExtensionSetterFunction)(int, bool, int);
 
   enum MediaDirection { MD_RECV, MD_SEND, MD_SENDRECV };
 
@@ -336,6 +360,9 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   bool MaybeResetVieSendCodec(WebRtcVideoChannelSendInfo* send_channel,
                               int new_width, int new_height, bool is_screencast,
                               bool* reset);
+  // Checks the current bitrate estimate and modifies the start bitrate
+  // accordingly.
+  void MaybeChangeStartBitrate(int channel_id, webrtc::VideoCodec* video_codec);
   // Helper function for starting the sending of media on all channels or
   // |channel_id|. Note that these two function do not change |sending_|.
   bool StartSend();
@@ -380,6 +407,12 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   void FlushBlackFrame(uint32 ssrc, int64 timestamp);
 
   void SetNetworkTransmissionState(bool is_transmitting);
+
+  bool SetHeaderExtension(ExtensionSetterFunction setter, int channel_id,
+                          const RtpHeaderExtension* extension);
+  bool SetHeaderExtension(ExtensionSetterFunction setter, int channel_id,
+                          const std::vector<RtpHeaderExtension>& extensions,
+                          const char header_extension_uri[]);
 
   // Global state.
   WebRtcVideoEngine* engine_;

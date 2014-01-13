@@ -32,7 +32,6 @@
 #include "config.h"
 #include "FrameLoaderClientImpl.h"
 
-#include "FrameNetworkingContextImpl.h"
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/MessageEvent.h"
@@ -51,7 +50,7 @@
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
 #include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/mediastream/chromium/RTCPeerConnectionHandlerChromium.h"
+#include "core/platform/mediastream/RTCPeerConnectionHandler.h"
 #include "core/platform/network/HTTPParsers.h"
 #include "core/platform/network/ResourceHandleInternal.h"
 #include "core/plugins/PluginData.h"
@@ -82,12 +81,12 @@
 #include "core/platform/chromium/support/WrappedResourceRequest.h"
 #include "core/platform/chromium/support/WrappedResourceResponse.h"
 #include "core/platform/network/SocketStreamHandleInternal.h"
-#include <public/Platform.h>
-#include <public/WebMimeRegistry.h>
-#include <public/WebSocketStreamHandle.h>
-#include <public/WebURL.h>
-#include <public/WebURLError.h>
-#include <public/WebVector.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebMimeRegistry.h"
+#include "public/platform/WebSocketStreamHandle.h"
+#include "public/platform/WebURL.h"
+#include "public/platform/WebURLError.h"
+#include "public/platform/WebVector.h"
 #include <wtf/StringExtras.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/WTFString.h>
@@ -288,14 +287,6 @@ void FrameLoaderClientImpl::dispatchWillSendRequest(
     DocumentLoader* loader, unsigned long identifier, ResourceRequest& request,
     const ResourceResponse& redirectResponse)
 {
-    if (loader) {
-        // Avoid repeating a form submission when navigating back or forward.
-        if (loader == loader->frameLoader()->provisionalDocumentLoader()
-            && request.httpMethod() == "POST"
-            && isBackForwardLoadType(loader->frameLoader()->loadType()))
-            request.setCachePolicy(ReturnCacheDataDontLoad);
-    }
-
     // FrameLoader::loadEmptyDocumentSynchronously() creates an empty document
     // with no URL.  We don't like that, so we'll rename it to about:blank.
     if (request.url().isEmpty())
@@ -759,14 +750,14 @@ Frame* FrameLoaderClientImpl::dispatchCreatePage(const NavigationAction& action)
 
     // Store the disposition on the opener ChromeClientImpl so that we can pass
     // it to WebViewClient::createView.
-    ChromeClientImpl* chromeClient = static_cast<ChromeClientImpl*>(m_webFrame->frame()->page()->chrome()->client());
+    ChromeClientImpl* chromeClient = static_cast<ChromeClientImpl*>(m_webFrame->frame()->page()->chrome().client());
     chromeClient->setNewWindowNavigationPolicy(policy);
 
     if (m_webFrame->frame()->settings() && !m_webFrame->frame()->settings()->supportsMultipleWindows())
         return m_webFrame->frame();
 
     struct WindowFeatures features;
-    Page* newPage = m_webFrame->frame()->page()->chrome()->createWindow(
+    Page* newPage = m_webFrame->frame()->page()->chrome().createWindow(
         m_webFrame->frame(), FrameLoadRequest(m_webFrame->frame()->document()->securityOrigin()),
         features, action);
 
@@ -805,7 +796,7 @@ PolicyAction FrameLoaderClientImpl::policyForNewWindowAction(
 
     // Store the disposition on the opener ChromeClientImpl so that we can pass
     // it to WebViewClient::createView.
-    ChromeClientImpl* chromeClient = static_cast<ChromeClientImpl*>(m_webFrame->frame()->page()->chrome()->client());
+    ChromeClientImpl* chromeClient = static_cast<ChromeClientImpl*>(m_webFrame->frame()->page()->chrome().client());
     chromeClient->setNewWindowNavigationPolicy(navigationPolicy);
 
     return PolicyUse;
@@ -1083,12 +1074,6 @@ bool FrameLoaderClientImpl::shouldFallBack(const ResourceError& error)
     return error.errorCode() != c.errorCode() || error.domain() != c.domain();
 }
 
-bool FrameLoaderClientImpl::canHandleRequest(const ResourceRequest& request) const
-{
-    return m_webFrame->client()->canHandleRequest(
-        m_webFrame, WrappedResourceRequest(request));
-}
-
 bool FrameLoaderClientImpl::canShowMIMEType(const String& mimeType) const
 {
     // This method is called to determine if the media type can be shown
@@ -1311,9 +1296,11 @@ PassOwnPtr<WebPluginLoadObserver> FrameLoaderClientImpl::pluginLoadObserver()
     return ds->releasePluginLoadObserver();
 }
 
-PassRefPtr<FrameNetworkingContext> FrameLoaderClientImpl::createNetworkingContext()
+WebCookieJar* FrameLoaderClientImpl::cookieJar() const
 {
-    return FrameNetworkingContextImpl::create(m_webFrame->frame());
+    if (!m_webFrame->client())
+        return 0;
+    return m_webFrame->client()->cookieJar(m_webFrame);
 }
 
 bool FrameLoaderClientImpl::willCheckAndDispatchMessageEvent(
@@ -1343,7 +1330,7 @@ void FrameLoaderClientImpl::dispatchWillOpenSocketStream(SocketStreamHandle* han
 
 void FrameLoaderClientImpl::dispatchWillStartUsingPeerConnectionHandler(RTCPeerConnectionHandler* handler)
 {
-    m_webFrame->client()->willStartUsingPeerConnectionHandler(webFrame(), RTCPeerConnectionHandlerChromium::toWebRTCPeerConnectionHandler(handler));
+    m_webFrame->client()->willStartUsingPeerConnectionHandler(webFrame(), RTCPeerConnectionHandler::toWebRTCPeerConnectionHandler(handler));
 }
 
 void FrameLoaderClientImpl::didRequestAutocomplete(PassRefPtr<FormState> formState)

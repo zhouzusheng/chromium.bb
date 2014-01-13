@@ -21,7 +21,6 @@
 #ifndef SVGMarkerElement_h
 #define SVGMarkerElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedAngle.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
@@ -132,7 +131,7 @@ private:
     virtual void svgAttributeChanged(const QualifiedName&);
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual bool rendererIsNeeded(const NodeRenderingContext&) { return true; }
 
     virtual bool selfHasRelativeLengths() const;
@@ -175,5 +174,4 @@ inline SVGMarkerElement* toSVGMarkerElement(SVGElement* element)
 
 }
 
-#endif
 #endif

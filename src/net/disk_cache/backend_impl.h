@@ -7,8 +7,8 @@
 #ifndef NET_DISK_CACHE_BACKEND_IMPL_H_
 #define NET_DISK_CACHE_BACKEND_IMPL_H_
 
+#include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
-#include "base/hash_tables.h"
 #include "base/timer.h"
 #include "net/disk_cache/block_files.h"
 #include "net/disk_cache/disk_cache.h"
@@ -24,6 +24,8 @@ class NetLog;
 }  // namespace net
 
 namespace disk_cache {
+
+struct Index;
 
 enum BackendFlags {
   kNone = 0,
@@ -279,6 +281,9 @@ class NET_EXPORT_PRIVATE BackendImpl : public Backend {
   bool CreateBackingStore(disk_cache::File* file);
   bool InitBackingStore(bool* file_created);
   void AdjustMaxCacheSize(int table_len);
+
+  bool InitStats();
+  void StoreStats();
 
   // Deletes the cache and starts again.
   void RestartCache(bool failure);

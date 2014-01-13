@@ -28,13 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "WebPermissions.h"
 
 #include "TestCommon.h"
 #include "WebTestDelegate.h"
-#include <public/WebCString.h>
-#include <public/WebURL.h>
+#include "public/platform/WebCString.h"
+#include "public/platform/WebURL.h"
 
 using namespace std;
 

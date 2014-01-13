@@ -22,7 +22,6 @@
 #ifndef SVGElement_h
 #define SVGElement_h
 
-#if ENABLE(SVG)
 #include "core/dom/StyledElement.h"
 #include "core/platform/Timer.h"
 #include "core/svg/SVGLocatable.h"
@@ -50,7 +49,7 @@ public:
     bool isOutermostSVGSVGElement() const;
 
     String xmlbase() const;
-    void setXmlbase(const String&, ExceptionCode&);
+    void setXmlbase(const String&);
 
     SVGSVGElement* ownerSVGElement() const;
     SVGElement* viewportElement() const;
@@ -105,14 +104,14 @@ public:
     virtual void synchronizeRequiredExtensions() { }
     virtual void synchronizeSystemLanguage() { }
 
-    virtual SVGAttributeToPropertyMap& localAttributeToPropertyMap();
+    virtual SVGAttributeToPropertyMap& localAttributeToPropertyMap() const;
 
 #ifndef NDEBUG
     bool isAnimatableAttribute(const QualifiedName&) const;
 #endif
 
-    StylePropertySet* animatedSMILStyleProperties() const;
-    StylePropertySet* ensureAnimatedSMILStyleProperties();
+    MutableStylePropertySet* animatedSMILStyleProperties() const;
+    MutableStylePropertySet* ensureAnimatedSMILStyleProperties();
     void setUseOverrideComputedStyle(bool);
 
     virtual bool haveLoadedRequiredResources();
@@ -182,5 +181,4 @@ inline const SVGElement* toSVGElement(const Node* node)
 
 }
 
-#endif
 #endif

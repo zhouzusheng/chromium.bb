@@ -41,10 +41,6 @@
 #if defined(__clang__)
 #define WTF_COMPILER_CLANG 1
 
-#ifndef __has_extension
-#define __has_extension __has_feature /* Compatibility with older versions of clang */
-#endif
-
 #define CLANG_PRAGMA(PRAGMA) _Pragma(PRAGMA)
 
 /* Specific compiler features */
@@ -72,15 +68,8 @@
 #endif
 
 /* COMPILER(MSVC) - Microsoft Visual C++ */
-/* COMPILER(MSVC7_OR_LOWER) - Microsoft Visual C++ 2003 or lower*/
-/* COMPILER(MSVC9_OR_LOWER) - Microsoft Visual C++ 2008 or lower*/
 #if defined(_MSC_VER)
 #define WTF_COMPILER_MSVC 1
-#if _MSC_VER < 1400
-#define WTF_COMPILER_MSVC7_OR_LOWER 1
-#elif _MSC_VER < 1600
-#define WTF_COMPILER_MSVC9_OR_LOWER 1
-#endif
 
 /* Specific compiler features */
 #if !COMPILER(CLANG) && _MSC_VER >= 1600
@@ -92,13 +81,6 @@
 #define WTF_COMPILER_QUIRK_FINAL_IS_CALLED_SEALED 1
 #endif
 
-#endif
-
-/* COMPILER(GCCE) - GNU Compiler Collection for Embedded */
-#if defined(__GCCE__)
-#define WTF_COMPILER_GCCE 1
-#define GCCE_VERSION (__GCCE__ * 10000 + __GCCE_MINOR__ * 100 + __GCCE_PATCHLEVEL__)
-#define GCCE_VERSION_AT_LEAST(major, minor, patch) (GCCE_VERSION >= (major * 10000 + minor * 100 + patch))
 #endif
 
 /* COMPILER(GCC) - GNU Compiler Collection */
@@ -140,26 +122,6 @@
 #endif
 #endif /* defined(__GXX_EXPERIMENTAL_CXX0X__) || (defined(__cplusplus) && __cplusplus >= 201103L) */
 #endif /* COMPILER(GCC) */
-
-/* COMPILER(MINGW) - MinGW GCC */
-/* COMPILER(MINGW64) - mingw-w64 GCC - only used as additional check to exclude mingw.org specific functions */
-#if defined(__MINGW32__)
-#define WTF_COMPILER_MINGW 1
-#include <_mingw.h> /* private MinGW header */
-    #if defined(__MINGW64_VERSION_MAJOR) /* best way to check for mingw-w64 vs mingw.org */
-        #define WTF_COMPILER_MINGW64 1
-    #endif /* __MINGW64_VERSION_MAJOR */
-#endif /* __MINGW32__ */
-
-/* COMPILER(INTEL) - Intel C++ Compiler */
-#if defined(__INTEL_COMPILER)
-#define WTF_COMPILER_INTEL 1
-#endif
-
-/* COMPILER(SUNCC) */
-#if defined(__SUNPRO_CC) || defined(__SUNPRO_C)
-#define WTF_COMPILER_SUNCC 1
-#endif
 
 /* ==== Compiler features ==== */
 

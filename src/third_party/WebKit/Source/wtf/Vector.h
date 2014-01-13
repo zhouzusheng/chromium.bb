@@ -27,7 +27,6 @@
 #include <wtf/NotFound.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/UnusedParam.h>
-#include <wtf/ValueCheck.h>
 #include <wtf/VectorTraits.h>
 #include <limits>
 #include <utility>
@@ -92,11 +91,7 @@ namespace WTF {
         {
             while (src != srcEnd) {
                 new (NotNull, dst) T(*src);
-#if COMPILER(SUNCC) && __SUNPRO_CC <= 0x590
-                const_cast<T*>(src)->~T(); // Work around obscure SunCC 12 compiler bug.
-#else
                 src->~T();
-#endif
                 ++dst;
                 ++src;
             }
@@ -1163,15 +1158,6 @@ namespace WTF {
     }
 
     template<typename T, size_t inlineCapacity>
-    inline void Vector<T, inlineCapacity>::checkConsistency()
-    {
-#if !ASSERT_DISABLED
-        for (size_t i = 0; i < size(); ++i)
-            ValueCheck<T>::checkConsistency(at(i));
-#endif
-    }
-
-    template<typename T, size_t inlineCapacity>
     void deleteAllValues(const Vector<T, inlineCapacity>& collection)
     {
         typedef typename Vector<T, inlineCapacity>::const_iterator iterator;
@@ -1200,16 +1186,6 @@ namespace WTF {
     {
         return !(a == b);
     }
-
-#if !ASSERT_DISABLED
-    template<typename T> struct ValueCheck<Vector<T> > {
-        typedef Vector<T> TraitType;
-        static void checkConsistency(const Vector<T>& v)
-        {
-            v.checkConsistency();
-        }
-    };
-#endif
 
 } // namespace WTF
 

@@ -20,7 +20,6 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGComponentTransferFunctionElement.h"
 
 #include "SVGNames.h"
@@ -73,7 +72,7 @@ bool SVGComponentTransferFunctionElement::isSupportedAttribute(const QualifiedNa
         supportedAttributes.add(SVGNames::exponentAttr);
         supportedAttributes.add(SVGNames::offsetAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGComponentTransferFunctionElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -152,5 +151,3 @@ ComponentTransferFunction SVGComponentTransferFunctionElement::transferFunction(
 }
 
 }
-
-#endif // ENABLE(SVG)

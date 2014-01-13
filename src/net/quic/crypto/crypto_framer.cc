@@ -17,10 +17,9 @@ namespace net {
 
 namespace {
 
-const size_t kCryptoTagSize = sizeof(uint32);
+const size_t kQuicTagSize = sizeof(uint32);
 const size_t kCryptoEndOffsetSize = sizeof(uint32);
 const size_t kNumEntriesSize = sizeof(uint16);
-const size_t kValueLenSize = sizeof(uint16);
 
 // OneShotVisitor is a framer visitor that records a single handshake message.
 class OneShotVisitor : public CryptoFramerVisitorInterface {
@@ -30,18 +29,14 @@ class OneShotVisitor : public CryptoFramerVisitorInterface {
         error_(false) {
   }
 
-  virtual void OnError(CryptoFramer* framer) OVERRIDE {
-    error_ = true;
-  }
+  virtual void OnError(CryptoFramer* framer) OVERRIDE { error_ = true; }
 
   virtual void OnHandshakeMessage(
       const CryptoHandshakeMessage& message) OVERRIDE {
     *out_ = message;
   }
 
-  bool error() const {
-    return error_;
-  }
+  bool error() const { return error_; }
 
  private:
   CryptoHandshakeMessage* const out_;
@@ -66,8 +61,7 @@ CryptoHandshakeMessage* CryptoFramer::ParseMessage(StringPiece in) {
   CryptoFramer framer;
 
   framer.set_visitor(&visitor);
-  if (!framer.ProcessInput(in) ||
-      visitor.error() ||
+  if (!framer.ProcessInput(in) || visitor.error() ||
       framer.InputBytesRemaining()) {
     return NULL;
   }
@@ -80,16 +74,137 @@ bool CryptoFramer::ProcessInput(StringPiece input) {
   if (error_ != QUIC_NO_ERROR) {
     return false;
   }
+  error_ = Process(input);
+  if (error_ != QUIC_NO_ERROR) {
+    visitor_->OnError(this);
+    return false;
+  }
+
+  return true;
+}
+
+// static
+QuicData* CryptoFramer::ConstructHandshakeMessage(
+    const CryptoHandshakeMessage& message) {
+  size_t num_entries = message.tag_value_map().size();
+  size_t pad_length = 0;
+  bool need_pad_tag = false;
+  bool need_pad_value = false;
+
+  size_t len = message.size();
+  if (len < message.minimum_size()) {
+    need_pad_tag = true;
+    need_pad_value = true;
+    num_entries++;
+
+    size_t delta = message.minimum_size() - len;
+    const size_t overhead = kQuicTagSize + kCryptoEndOffsetSize;
+    if (delta > overhead) {
+      pad_length = delta - overhead;
+    }
+    len += overhead + pad_length;
+  }
+
+  if (num_entries > kMaxEntries) {
+    return NULL;
+  }
+
+
+  QuicDataWriter writer(len);
+  if (!writer.WriteUInt32(message.tag())) {
+    DCHECK(false) << "Failed to write message tag.";
+    return NULL;
+  }
+  if (!writer.WriteUInt16(num_entries)) {
+    DCHECK(false) << "Failed to write size.";
+    return NULL;
+  }
+  if (!writer.WriteUInt16(0)) {
+    DCHECK(false) << "Failed to write padding.";
+    return NULL;
+  }
+
+  uint32 end_offset = 0;
+  // Tags and offsets
+  for (QuicTagValueMap::const_iterator it = message.tag_value_map().begin();
+       it != message.tag_value_map().end(); ++it) {
+    if (it->first == kPAD && need_pad_tag) {
+      // Existing PAD tags are only checked when padding needs to be added
+      // because parts of the code may need to reserialize received messages
+      // and those messages may, legitimately include padding.
+      DCHECK(false) << "Message needed padding but already contained a PAD tag";
+      return NULL;
+    }
+
+    if (it->first > kPAD && need_pad_tag) {
+      need_pad_tag = false;
+      if (!WritePadTag(&writer, pad_length, &end_offset)) {
+        return NULL;
+      }
+    }
+
+    if (!writer.WriteUInt32(it->first)) {
+      DCHECK(false) << "Failed to write tag.";
+      return NULL;
+    }
+    end_offset += it->second.length();
+    if (!writer.WriteUInt32(end_offset)) {
+      DCHECK(false) << "Failed to write end offset.";
+      return NULL;
+    }
+  }
+
+  if (need_pad_tag) {
+    if (!WritePadTag(&writer, pad_length, &end_offset)) {
+      return NULL;
+    }
+  }
+
+  // Values
+  for (QuicTagValueMap::const_iterator it = message.tag_value_map().begin();
+       it != message.tag_value_map().end(); ++it) {
+    if (it->first > kPAD && need_pad_value) {
+      need_pad_value = false;
+      if (!writer.WriteRepeatedByte('-', pad_length)) {
+        DCHECK(false) << "Failed to write padding.";
+        return NULL;
+      }
+    }
+
+    if (!writer.WriteBytes(it->second.data(), it->second.length())) {
+      DCHECK(false) << "Failed to write value.";
+      return NULL;
+    }
+  }
+
+  if (need_pad_value) {
+    if (!writer.WriteRepeatedByte('-', pad_length)) {
+      DCHECK(false) << "Failed to write padding.";
+      return NULL;
+    }
+  }
+
+  return new QuicData(writer.take(), len, true);
+}
+
+void CryptoFramer::Clear() {
+  message_.Clear();
+  tags_and_lengths_.clear();
+  error_ = QUIC_NO_ERROR;
+  state_ = STATE_READING_TAG;
+}
+
+QuicErrorCode CryptoFramer::Process(StringPiece input) {
   // Add this data to the buffer.
   buffer_.append(input.data(), input.length());
   QuicDataReader reader(buffer_.data(), buffer_.length());
 
   switch (state_) {
     case STATE_READING_TAG:
-      if (reader.BytesRemaining() < kCryptoTagSize) {
+      if (reader.BytesRemaining() < kQuicTagSize) {
         break;
       }
-      CryptoTag message_tag;
+      QuicTag message_tag;
       reader.ReadUInt32(&message_tag);
       message_.set_tag(message_tag);
       state_ = STATE_READING_NUM_ENTRIES;
@@ -99,8 +214,7 @@ bool CryptoFramer::ProcessInput(StringPiece input) {
       }
       reader.ReadUInt16(&num_entries_);
       if (num_entries_ > kMaxEntries) {
-        error_ = QUIC_CRYPTO_TOO_MANY_ENTRIES;
-        return false;
+        return QUIC_CRYPTO_TOO_MANY_ENTRIES;
       }
       uint16 padding;
       reader.ReadUInt16(&padding);
@@ -109,30 +223,27 @@ bool CryptoFramer::ProcessInput(StringPiece input) {
       state_ = STATE_READING_TAGS_AND_LENGTHS;
       values_len_ = 0;
     case STATE_READING_TAGS_AND_LENGTHS: {
-      if (reader.BytesRemaining() < num_entries_ * (kCryptoTagSize +
-                                                    kCryptoEndOffsetSize)) {
+      if (reader.BytesRemaining() <
+              num_entries_ * (kQuicTagSize + kCryptoEndOffsetSize)) {
         break;
       }
 
       uint32 last_end_offset = 0;
       for (unsigned i = 0; i < num_entries_; ++i) {
-        CryptoTag tag;
+        QuicTag tag;
         reader.ReadUInt32(&tag);
         if (i > 0 && tag <= tags_and_lengths_[i-1].first) {
           if (tag == tags_and_lengths_[i-1].first) {
-            error_ = QUIC_CRYPTO_DUPLICATE_TAG;
-          } else {
-            error_ = QUIC_CRYPTO_TAGS_OUT_OF_ORDER;
+            return QUIC_CRYPTO_DUPLICATE_TAG;
           }
-          return false;
+          return QUIC_CRYPTO_TAGS_OUT_OF_ORDER;
         }
 
         uint32 end_offset;
         reader.ReadUInt32(&end_offset);
 
         if (end_offset < last_end_offset) {
-          error_ = QUIC_CRYPTO_TAGS_OUT_OF_ORDER;
-          return false;
+          return QUIC_CRYPTO_TAGS_OUT_OF_ORDER;
         }
         tags_and_lengths_.push_back(
             make_pair(tag, static_cast<size_t>(end_offset - last_end_offset)));
@@ -145,7 +256,7 @@ bool CryptoFramer::ProcessInput(StringPiece input) {
       if (reader.BytesRemaining() < values_len_) {
         break;
       }
-      for (vector<pair<CryptoTag, size_t> >::const_iterator
+      for (vector<pair<QuicTag, size_t> >::const_iterator
            it = tags_and_lengths_.begin(); it != tags_and_lengths_.end();
            it++) {
         StringPiece value;
@@ -159,71 +270,23 @@ bool CryptoFramer::ProcessInput(StringPiece input) {
   }
   // Save any remaining data.
   buffer_ = reader.PeekRemainingPayload().as_string();
-  return true;
+  return QUIC_NO_ERROR;
 }
 
 // static
-QuicData* CryptoFramer::ConstructHandshakeMessage(
-    const CryptoHandshakeMessage& message) {
-  if (message.tag_value_map().size() > kMaxEntries) {
-    return NULL;
+bool CryptoFramer::WritePadTag(QuicDataWriter* writer,
+                               size_t pad_length,
+                               uint32* end_offset) {
+  if (!writer->WriteUInt32(kPAD)) {
+    DCHECK(false) << "Failed to write tag.";
+    return false;
   }
-  size_t len = kCryptoTagSize;  // message tag
-  len += sizeof(uint16);  // number of map entries
-  len += sizeof(uint16);  // padding.
-  CryptoTagValueMap::const_iterator it = message.tag_value_map().begin();
-  while (it != message.tag_value_map().end()) {
-    len += kCryptoTagSize;  // tag
-    len += kCryptoEndOffsetSize;  // end offset
-    len += it->second.length(); // value
-    ++it;
+  *end_offset += pad_length;
+  if (!writer->WriteUInt32(*end_offset)) {
+    DCHECK(false) << "Failed to write end offset.";
+    return false;
   }
-
-  QuicDataWriter writer(len);
-  if (!writer.WriteUInt32(message.tag())) {
-    DCHECK(false) << "Failed to write message tag.";
-    return NULL;
-  }
-  if (!writer.WriteUInt16(message.tag_value_map().size())) {
-    DCHECK(false) << "Failed to write size.";
-    return NULL;
-  }
-  if (!writer.WriteUInt16(0)) {
-    DCHECK(false) << "Failed to write padding.";
-    return NULL;
-  }
-
-  uint32 end_offset = 0;
-  // Tags and offsets
-  for (it = message.tag_value_map().begin();
-       it != message.tag_value_map().end(); ++it) {
-    if (!writer.WriteUInt32(it->first)) {
-      DCHECK(false) << "Failed to write tag.";
-      return NULL;
-    }
-    end_offset += it->second.length();
-    if (!writer.WriteUInt32(end_offset)) {
-      DCHECK(false) << "Failed to write end offset.";
-      return NULL;
-    }
-  }
-
-  // Values
-  for (it = message.tag_value_map().begin();
-       it != message.tag_value_map().end(); ++it) {
-    if (!writer.WriteBytes(it->second.data(), it->second.length())) {
-      DCHECK(false) << "Failed to write value.";
-      return NULL;
-    }
-  }
-  return new QuicData(writer.take(), len, true);
-}
-
-void CryptoFramer::Clear() {
-  message_.Clear();
-  tags_and_lengths_.clear();
-  error_ = QUIC_NO_ERROR;
-  state_ = STATE_READING_TAG;
+  return true;
 }
 
 }  // namespace net

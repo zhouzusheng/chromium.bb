@@ -27,7 +27,7 @@
 #define FrameLoadRequest_h
 
 #include "core/loader/SubstituteData.h"
-#include "core/page/SecurityOrigin.h"
+#include "weborigin/SecurityOrigin.h"
 #include "core/platform/network/ResourceRequest.h"
 
 namespace WebCore {

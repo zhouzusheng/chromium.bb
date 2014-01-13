@@ -27,8 +27,12 @@
 
 #include "TestCommon.h"
 #include "WebTask.h"
-#include <public/WebRTCDataChannelHandler.h>
-#include <public/WebString.h>
+#include "public/platform/WebRTCDataChannelHandler.h"
+#include "public/platform/WebString.h"
+
+namespace WebKit {
+struct WebRTCDataChannelInit;
+}
 
 namespace WebTestRunner {
 
@@ -36,7 +40,7 @@ class WebTestDelegate;
 
 class MockWebRTCDataChannelHandler : public WebKit::WebRTCDataChannelHandler {
 public:
-    MockWebRTCDataChannelHandler(WebKit::WebString label, bool reliable, WebTestDelegate*);
+    MockWebRTCDataChannelHandler(WebKit::WebString label, const WebKit::WebRTCDataChannelInit&, WebTestDelegate*);
 
     virtual void setClient(WebKit::WebRTCDataChannelHandlerClient*) OVERRIDE;
     virtual WebKit::WebString label() OVERRIDE { return m_label; }

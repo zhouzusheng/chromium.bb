@@ -38,10 +38,14 @@
 
 namespace WebCore {
 
-class InspectorArray;
 class RegularExpression;
 
 namespace ContentSearchUtils {
+
+enum MagicCommentType {
+    JavaScriptMagicComment,
+    CSSMagicComment
+};
 
 PassOwnPtr<RegularExpression> createSearchRegex(const String& query, bool caseSensitive, bool isRegex);
 int countRegularExpressionMatches(const RegularExpression*, const String&);
@@ -49,8 +53,8 @@ PassRefPtr<TypeBuilder::Array<TypeBuilder::Page::SearchMatch> > searchInTextByLi
 TextPosition textPositionFromOffset(size_t offset, const Vector<size_t>& lineEndings);
 PassOwnPtr<Vector<size_t> > lineEndings(const String&);
 
-String findSourceURL(const String& content);
-String findSourceMapURL(const String& content);
+String findSourceURL(const String& content, MagicCommentType, bool* deprecated);
+String findSourceMapURL(const String& content, MagicCommentType, bool* deprecated);
 
 } // namespace ContentSearchUtils
 } // namespace WebCore

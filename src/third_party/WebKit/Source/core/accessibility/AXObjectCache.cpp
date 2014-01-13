@@ -57,12 +57,10 @@
 #include "core/accessibility/AccessibilityTableHeaderContainer.h"
 #include "core/accessibility/AccessibilityTableRow.h"
 #include "core/dom/Document.h"
-#include "core/editing/Editor.h"
 #include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLLabelElement.h"
-#include "core/html/shadow/MediaControlElements.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/FocusController.h"
@@ -102,7 +100,6 @@ void AXComputedObjectAttributeCache::setIgnored(AXID id, AccessibilityObjectIncl
 }
     
 bool AXObjectCache::gAccessibilityEnabled = false;
-bool AXObjectCache::gAccessibilityEnhancedUserInterfaceEnabled = false;
 
 AXObjectCache::AXObjectCache(const Document* doc)
     : m_notificationPostTimer(this, &AXObjectCache::notificationPostTimerFired)
@@ -192,7 +189,7 @@ AccessibilityObject* AXObjectCache::get(Widget* widget)
     if (!axID)
         return 0;
     
-    return m_objects.get(axID).get();    
+    return m_objects.get(axID);
 }
     
 AccessibilityObject* AXObjectCache::get(RenderObject* renderer)
@@ -205,7 +202,7 @@ AccessibilityObject* AXObjectCache::get(RenderObject* renderer)
     if (!axID)
         return 0;
 
-    return m_objects.get(axID).get();    
+    return m_objects.get(axID);
 }
 
 AccessibilityObject* AXObjectCache::get(Node* node)
@@ -228,12 +225,12 @@ AccessibilityObject* AXObjectCache::get(Node* node)
     }
 
     if (renderID)
-        return m_objects.get(renderID).get();
+        return m_objects.get(renderID);
 
     if (!nodeID)
         return 0;
 
-    return m_objects.get(nodeID).get();
+    return m_objects.get(nodeID);
 }
 
 // FIXME: This probably belongs on Node.
@@ -269,11 +266,9 @@ static PassRefPtr<AccessibilityObject> createFromRenderer(RenderObject* renderer
     if (node && node->isMediaControlElement())
         return AccessibilityMediaControl::create(renderer);
 
-#if ENABLE(SVG)
     if (renderer->isSVGRoot())
         return AccessibilitySVGRoot::create(renderer);
-#endif
-    
+
     if (renderer->isBoxModelObject()) {
         RenderBoxModelObject* cssBox = toRenderBoxModelObject(renderer);
         if (cssBox->isListBox())
@@ -401,16 +396,6 @@ AccessibilityObject* AXObjectCache::rootObject()
     return getOrCreate(m_document->view());
 }
 
-AccessibilityObject* AXObjectCache::rootObjectForFrame(Frame* frame)
-{
-    if (!gAccessibilityEnabled)
-        return 0;
-
-    if (!frame)
-        return 0;
-    return getOrCreate(frame->view());
-}    
-    
 AccessibilityObject* AXObjectCache::getOrCreate(AccessibilityRole role)
 {
     RefPtr<AccessibilityObject> obj = 0;
@@ -465,7 +450,7 @@ void AXObjectCache::remove(AXID axID)
         return;
     
     // first fetch object to operate some cleanup functions on it 
-    AccessibilityObject* obj = m_objects.get(axID).get();
+    AccessibilityObject* obj = m_objects.get(axID);
     if (!obj)
         return;
     
@@ -565,6 +550,19 @@ void AXObjectCache::removeAXID(AccessibilityObject* object)
     m_idsInUse.remove(objID);
 }
 
+void AXObjectCache::selectionChanged(Node* node)
+{
+    // Find the nearest ancestor that already has an accessibility object, since we
+    // might be in the middle of a layout.
+    while (node) {
+        if (AccessibilityObject* obj = get(node)) {
+            obj->selectionChanged();
+            return;
+        }
+        node = node->parentNode();
+    }
+}
+
 void AXObjectCache::textChanged(Node* node)
 {
     textChanged(getOrCreate(node));
@@ -622,6 +620,9 @@ void AXObjectCache::notificationPostTimerFired(Timer<AXObjectCache>*)
     for (i = 0; i < count; ++i) {
         AccessibilityObject* obj = m_notificationsToPost[i].first.get();
         if (!obj->axObjectID())
+            continue;
+
+        if (!obj->axObjectCache())
             continue;
 
 #ifndef NDEBUG
@@ -884,11 +885,8 @@ void AXObjectCache::textMarkerDataForVisiblePosition(TextMarkerData& textMarkerD
     if (!domNode)
         return;
     
-    if (domNode->isHTMLElement()) {
-        HTMLInputElement* inputElement = domNode->toInputElement();
-        if (inputElement && inputElement->isPasswordField())
-            return;
-    }
+    if (domNode->hasTagName(inputTag) && toHTMLInputElement(domNode)->isPasswordField())
+        return;
     
     // find or create an accessibility object for this node
     AXObjectCache* cache = domNode->document()->axObjectCache();
@@ -961,7 +959,7 @@ void AXObjectCache::postPlatformNotification(AccessibilityObject* obj, AXNotific
     if (!obj || !obj->document() || !obj->documentFrameView() || !obj->documentFrameView()->frame() || !obj->documentFrameView()->frame()->page())
         return;
 
-    ChromeClient* client = obj->documentFrameView()->frame()->page()->chrome()->client();
+    ChromeClient* client = obj->documentFrameView()->frame()->page()->chrome().client();
     if (!client)
         return;
 

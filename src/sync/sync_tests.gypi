@@ -31,8 +31,6 @@
         'js/js_test_util.h',
         'sessions/test_util.cc',
         'sessions/test_util.h',
-        'syncable/syncable_mock.cc',
-        'syncable/syncable_mock.h',
         'test/callback_counter.h',
         'test/engine/fake_model_worker.cc',
         'test/engine/fake_model_worker.h',
@@ -251,7 +249,6 @@
           'engine/sync_scheduler_unittest.cc',
           'engine/syncer_proto_util_unittest.cc',
           'engine/syncer_unittest.cc',
-          'engine/throttled_data_type_tracker_unittest.cc',
           'engine/traffic_recorder_unittest.cc',
           'js/js_arg_list_unittest.cc',
           'js/js_event_details_unittest.cc',
@@ -476,6 +473,44 @@
         }],
       ],
     },
+
+    # Test support files for using the Test Accounts service.
+    {
+      'target_name': 'test_support_accounts_client',
+      'type': 'static_library',
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '..',
+        ],
+      },
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../net/net.gyp:net',
+      ],
+      'sources': [
+        'test/accounts_client/test_accounts_client.cc',
+        'test/accounts_client/test_accounts_client.h',
+        'test/accounts_client/url_request_context_getter.cc',
+        'test/accounts_client/url_request_context_getter.h',
+      ],
+    },
+
+    # The Sync end-to-end (and associated infrastructure) tests.
+    {
+      'target_name': 'sync_endtoend_tests',
+      'type': '<(gtest_target_type)',
+      'dependencies': [
+        '../base/base.gyp:run_all_unittests',
+        '../testing/gmock.gyp:gmock',
+        '../testing/gtest.gyp:gtest',
+        '../url/url.gyp:url_lib',
+        'test_support_accounts_client',
+      ],
+      'sources': [
+        'test/accounts_client/test_accounts_client_unittest.cc',
+      ],
+    },
+
   ],
   'conditions': [
     ['OS != "ios"', {

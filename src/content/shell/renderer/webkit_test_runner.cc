@@ -13,56 +13,60 @@
 #include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "content/public/renderer/history_item_serialization.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
 
 // SHEZ: Disable the following (used for test only)
 //#include "content/public/test/layouttest_support.h"
 
+#include "content/shell/common/shell_messages.h"
+#include "content/shell/common/webkit_test_helpers.h"
+#include "content/shell/renderer/shell_media_stream_client.h"
 #include "content/shell/renderer/shell_render_process_observer.h"
-#include "content/shell/shell_messages.h"
-#include "content/shell/webkit_test_helpers.h"
+#include "media/base/media_log.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebPoint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebArrayBufferView.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDeviceOrientation.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTestingSupport.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTask.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestInterfaces.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestProxy.h"
-#include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestRunner.h"
+#include "third_party/WebKit/public/platform/Platform.h"
+#include "third_party/WebKit/public/platform/WebCString.h"
+#include "third_party/WebKit/public/platform/WebPoint.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/public/testing/WebTask.h"
+#include "third_party/WebKit/public/testing/WebTestInterfaces.h"
+#include "third_party/WebKit/public/testing/WebTestProxy.h"
+#include "third_party/WebKit/public/testing/WebTestRunner.h"
+#include "third_party/WebKit/public/web/WebArrayBufferView.h"
+#include "third_party/WebKit/public/web/WebContextMenuData.h"
+#include "third_party/WebKit/public/web/WebDataSource.h"
+#include "third_party/WebKit/public/web/WebDevToolsAgent.h"
+#include "third_party/WebKit/public/web/WebDeviceOrientation.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebHistoryItem.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebScriptSource.h"
+#include "third_party/WebKit/public/web/WebTestingSupport.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/rect.h"
 #include "webkit/base/file_path_string_conversions.h"
-#include "webkit/glue/glue_serialize.h"
+#include "webkit/common/webpreferences.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/glue/webpreferences.h"
-#include "webkit/mocks/test_media_stream_client.h"
+#include "webkit/renderer/media/webmediaplayer_impl.h"
+#include "webkit/renderer/media/webmediaplayer_ms.h"
+#include "webkit/renderer/media/webmediaplayer_params.h"
 
 using WebKit::Platform;
 using WebKit::WebArrayBufferView;
@@ -350,12 +354,28 @@ void WebKitTestRunner::setClientWindowRect(const WebRect& rect) {
   //ForceResizeRenderView(render_view(), WebSize(rect.width, rect.height));
 }
 
+void WebKitTestRunner::enableAutoResizeMode(const WebSize& min_size,
+                                            const WebSize& max_size) {
+  // SHEZ: Disable the following (used for test only)
+  //EnableAutoResizeMode(render_view(), min_size, max_size);
+}
+
+void WebKitTestRunner::disableAutoResizeMode(const WebSize& new_size) {
+  // SHEZ: Disable the following (used for test only)
+  //DisableAutoResizeMode(render_view(), new_size);
+  //if (!new_size.isEmpty())
+  //  ForceResizeRenderView(render_view(), new_size);
+}
+
 void WebKitTestRunner::showDevTools() {
   Send(new ShellViewHostMsg_ShowDevTools(routing_id()));
 }
 
 void WebKitTestRunner::closeDevTools() {
   Send(new ShellViewHostMsg_CloseDevTools(routing_id()));
+  WebDevToolsAgent* agent = render_view()->GetWebView()->devToolsAgent();
+  if (agent)
+    agent->detach();
 }
 
 void WebKitTestRunner::evaluateInWebInspector(long call_id,
@@ -451,23 +471,6 @@ void WebKitTestRunner::testFinished() {
   }
 }
 
-void WebKitTestRunner::testTimedOut() {
-  if (!is_main_window_)
-    return;
-  WebTestInterfaces* interfaces =
-      ShellRenderProcessObserver::GetInstance()->test_interfaces();
-  interfaces->setTestIsRunning(false);
-  Send(new ShellViewHostMsg_TestFinished(routing_id(), true));
-}
-
-bool WebKitTestRunner::isBeingDebugged() {
-  return base::debug::BeingDebugged();
-}
-
-int WebKitTestRunner::layoutTestTimeout() {
-  return test_config_.layout_test_timeout;
-}
-
 void WebKitTestRunner::closeRemainingWindows() {
   NavigateAwayVisitor visitor(render_view());
   RenderView::ForEach(&visitor);
@@ -522,7 +525,7 @@ void WebKitTestRunner::captureHistoryForWindow(
   WebVector<WebHistoryItem> result(num_entries);
   for (size_t entry = 0; entry < num_entries; ++entry) {
     result[entry] =
-        webkit_glue::HistoryItemFromString(session_histories_[pos][entry]);
+        PageStateToHistoryItem(session_histories_[pos][entry]);
   }
   history->swap(result);
 }
@@ -530,12 +533,34 @@ void WebKitTestRunner::captureHistoryForWindow(
 WebMediaPlayer* WebKitTestRunner::createWebMediaPlayer(
     WebFrame* frame, const WebURL& url, WebMediaPlayerClient* client)
 {
-  if (!test_media_stream_client_) {
-    test_media_stream_client_.reset(
-        new webkit_glue::TestMediaStreamClient());
+  if (!shell_media_stream_client_) {
+    shell_media_stream_client_.reset(new ShellMediaStreamClient());
   }
-  return webkit_glue::CreateMediaPlayer(
-      frame, url, client, test_media_stream_client_.get());
+
+  if (shell_media_stream_client_->IsMediaStream(url)) {
+    return new webkit_media::WebMediaPlayerMS(
+        frame,
+        client,
+        base::WeakPtr<webkit_media::WebMediaPlayerDelegate>(),
+        shell_media_stream_client_.get(),
+        new media::MediaLog());
+  }
+
+#if defined(OS_ANDROID)
+  return NULL;
+#else
+  // TODO(scherkus): Use RenderViewImpl::createMediaPlayer() instead of
+  // duplicating code here, see http://crbug.com/239826
+  // SHEZ: disable the following: GetMediaThreadMessageLoopProxy is not defined
+  //webkit_media::WebMediaPlayerParams params(
+  //    GetMediaThreadMessageLoopProxy(), NULL, NULL, new media::MediaLog());
+  //return new webkit_media::WebMediaPlayerImpl(
+  //    frame,
+  //    client,
+  //    base::WeakPtr<webkit_media::WebMediaPlayerDelegate>(),
+  //    params);
+  return NULL;
+#endif
 }
 
 // RenderViewObserver  --------------------------------------------------------
@@ -567,6 +592,8 @@ void WebKitTestRunner::Navigate(const GURL& url) {
         ShellRenderProcessObserver::GetInstance()->test_interfaces();
     interfaces->setTestIsRunning(true);
     interfaces->configureForTestWithURL(GURL(), false);
+    // SHEZ: disable test-only code
+    //ForceResizeRenderView(render_view(), WebSize(800, 600));
   }
 }
 
@@ -587,6 +614,7 @@ void WebKitTestRunner::DidFailProvisionalLoad(WebFrame* frame,
 
 void WebKitTestRunner::Reset() {
   // The proxy_ is always non-NULL, it is set right after construction.
+  proxy_->setWidget(render_view()->GetWebView());
   proxy_->reset();
   prefs_.reset();
   routing_ids_.clear();
@@ -633,23 +661,7 @@ void WebKitTestRunner::CaptureDump() {
 
       SkAutoLockPixels snapshot_lock(snapshot);
       base::MD5Digest digest;
-#if defined(OS_ANDROID)
-      // On Android, pixel layout is RGBA, however, other Chrome platforms use
-      // BGRA.
-      const uint8_t* raw_pixels =
-          reinterpret_cast<const uint8_t*>(snapshot.getPixels());
-      size_t snapshot_size = snapshot.getSize();
-      scoped_ptr<uint8_t[]> reordered_pixels(new uint8_t[snapshot_size]);
-      for (size_t i = 0; i < snapshot_size; i += 4) {
-        reordered_pixels[i] = raw_pixels[i + 2];
-        reordered_pixels[i + 1] = raw_pixels[i + 1];
-        reordered_pixels[i + 2] = raw_pixels[i];
-        reordered_pixels[i + 3] = raw_pixels[i + 3];
-      }
-      base::MD5Sum(reordered_pixels.get(), snapshot_size, &digest);
-#else
       base::MD5Sum(snapshot.getPixels(), snapshot.getSize(), &digest);
-#endif
       std::string actual_pixel_hash = base::MD5DigestToBase16(digest);
 
       if (actual_pixel_hash == test_config_.expected_pixel_hash) {
@@ -663,11 +675,13 @@ void WebKitTestRunner::CaptureDump() {
     }
   }
 
+  render_view()->GetWebView()->mainFrame()->stopLoading();
+
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(base::IgnoreResult(&WebKitTestRunner::Send),
                  base::Unretained(this),
-                 new ShellViewHostMsg_TestFinished(routing_id(), false)));
+                 new ShellViewHostMsg_TestFinished(routing_id())));
 }
 
 void WebKitTestRunner::OnSetTestConfiguration(
@@ -675,6 +689,10 @@ void WebKitTestRunner::OnSetTestConfiguration(
   test_config_ = params;
   is_main_window_ = true;
 
+  // SHEZ: disable test-only code
+  //ForceResizeRenderView(
+  //    render_view(),
+  //    WebSize(params.initial_size.width(), params.initial_size.height()));
   setFocus(proxy_, true);
 
   WebTestInterfaces* interfaces =
@@ -686,7 +704,7 @@ void WebKitTestRunner::OnSetTestConfiguration(
 
 void WebKitTestRunner::OnSessionHistory(
     const std::vector<int>& routing_ids,
-    const std::vector<std::vector<std::string> >& session_histories,
+    const std::vector<std::vector<PageState> >& session_histories,
     const std::vector<unsigned>& current_entry_indexes) {
   routing_ids_ = routing_ids;
   session_histories_ = session_histories;

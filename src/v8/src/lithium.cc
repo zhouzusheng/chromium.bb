@@ -58,24 +58,27 @@ void LOperand::PrintTo(StringStream* stream) {
     case UNALLOCATED:
       unalloc = LUnallocated::cast(this);
       stream->Add("v%d", unalloc->virtual_register());
-      switch (unalloc->policy()) {
+      if (unalloc->basic_policy() == LUnallocated::FIXED_SLOT) {
+        stream->Add("(=%dS)", unalloc->fixed_slot_index());
+        break;
+      }
+      switch (unalloc->extended_policy()) {
         case LUnallocated::NONE:
           break;
         case LUnallocated::FIXED_REGISTER: {
+          int reg_index = unalloc->fixed_register_index();
           const char* register_name =
-              Register::AllocationIndexToString(unalloc->fixed_index());
+              Register::AllocationIndexToString(reg_index);
           stream->Add("(=%s)", register_name);
           break;
         }
         case LUnallocated::FIXED_DOUBLE_REGISTER: {
+          int reg_index = unalloc->fixed_register_index();
           const char* double_register_name =
-              DoubleRegister::AllocationIndexToString(unalloc->fixed_index());
+              DoubleRegister::AllocationIndexToString(reg_index);
           stream->Add("(=%s)", double_register_name);
           break;
         }
-        case LUnallocated::FIXED_SLOT:
-          stream->Add("(=%dS)", unalloc->fixed_index());
-          break;
         case LUnallocated::MUST_HAVE_REGISTER:
           stream->Add("(R)");
           break;
@@ -416,9 +419,8 @@ Representation LChunk::LookupLiteralRepresentation(
 
 
 LChunk* LChunk::NewChunk(HGraph* graph) {
-  NoHandleAllocation no_handles(graph->isolate());
-  AssertNoAllocation no_gc;
-
+  DisallowHandleAllocation no_handles;
+  DisallowHeapAllocation no_gc;
   int values = graph->GetMaximumValueID();
   CompilationInfo* info = graph->info();
   if (values > LUnallocated::kMaxVirtualRegisters) {
@@ -452,10 +454,7 @@ Handle<Code> LChunk::Codegen() {
   MarkEmptyBlocks();
 
   if (generator.GenerateCode()) {
-    if (FLAG_trace_codegen) {
-      PrintF("Crankshaft Compiler - ");
-    }
-    CodeGenerator::MakeCodePrologue(info());
+    CodeGenerator::MakeCodePrologue(info(), "optimized");
     Code::Flags flags = info()->flags();
     Handle<Code> code =
         CodeGenerator::MakeCodeEpilogue(&assembler, flags, info());

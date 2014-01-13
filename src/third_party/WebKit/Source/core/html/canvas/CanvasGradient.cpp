@@ -27,7 +27,6 @@
 #include "config.h"
 #include "core/html/canvas/CanvasGradient.h"
 
-#include "core/css/CSSParser.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/canvas/CanvasPattern.h"
 #include "core/html/canvas/CanvasStyle.h"
@@ -37,11 +36,13 @@ namespace WebCore {
 CanvasGradient::CanvasGradient(const FloatPoint& p0, const FloatPoint& p1)
     : m_gradient(Gradient::create(p0, p1))
 {
+    ScriptWrappable::init(this);
 }
 
 CanvasGradient::CanvasGradient(const FloatPoint& p0, float r0, const FloatPoint& p1, float r1)
     : m_gradient(Gradient::create(p0, r0, p1, r1))
 {
+    ScriptWrappable::init(this);
 }
 
 void CanvasGradient::addColorStop(float value, const String& color, ExceptionCode& ec)

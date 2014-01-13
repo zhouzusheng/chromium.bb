@@ -5,8 +5,7 @@
 #include "content/browser/webui/web_ui_impl.h"
 
 #include "base/json/json_writer.h"
-#include "base/stl_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/dip_util.h"
@@ -55,7 +54,6 @@ WebUIImpl::~WebUIImpl() {
   // Delete the controller first, since it may also be keeping a pointer to some
   // of the handlers and can call them at destruction.
   controller_.reset();
-  STLDeleteContainerPointers(handlers_.begin(), handlers_.end());
 }
 
 // WebUIImpl, public: ----------------------------------------------------------

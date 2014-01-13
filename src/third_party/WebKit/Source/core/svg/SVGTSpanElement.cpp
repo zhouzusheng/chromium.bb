@@ -20,12 +20,10 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGTSpanElement.h"
 
 #include "SVGNames.h"
 #include "core/dom/NodeRenderingContext.h"
-#include "core/rendering/RenderInline.h"
 #include "core/rendering/svg/RenderSVGTSpan.h"
 
 namespace WebCore {
@@ -42,9 +40,9 @@ PassRefPtr<SVGTSpanElement> SVGTSpanElement::create(const QualifiedName& tagName
     return adoptRef(new SVGTSpanElement(tagName, document));
 }
 
-RenderObject* SVGTSpanElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGTSpanElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGTSpan(this);
+    return new (document()->renderArena()) RenderSVGTSpan(this);
 }
 
 bool SVGTSpanElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
@@ -77,5 +75,3 @@ bool SVGTSpanElement::rendererIsNeeded(const NodeRenderingContext& context)
 }
 
 }
-
-#endif // ENABLE(SVG)

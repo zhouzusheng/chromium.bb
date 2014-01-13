@@ -11,12 +11,13 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
-#include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "base/time.h"
 #include "base/timer.h"
@@ -30,20 +31,15 @@
 class Pickle;
 class PickleIterator;
 
-namespace base {
-class SingleThreadTaskRunner;
-}
-
 namespace disk_cache {
+
+class SimpleIndexFile;
 
 class NET_EXPORT_PRIVATE EntryMetadata {
  public:
   EntryMetadata();
-  EntryMetadata(uint64 hash_key,
-                base::Time last_used_time,
-                uint64 entry_size);
+  EntryMetadata(base::Time last_used_time, uint64 entry_size);
 
-  uint64 GetHashKey() const { return hash_key_; }
   base::Time GetLastUsedTime() const;
   void SetLastUsedTime(const base::Time& last_used_time);
 
@@ -54,16 +50,11 @@ class NET_EXPORT_PRIVATE EntryMetadata {
   void Serialize(Pickle* pickle) const;
   bool Deserialize(PickleIterator* it);
 
-  // Merge two EntryMetadata instances.
-  // The existing current valid data in |this| will prevail.
-  void MergeWith(const EntryMetadata& entry_metadata);
-
  private:
   friend class SimpleIndexFileTest;
 
   // When adding new members here, you should update the Serialize() and
   // Deserialize() methods.
-  uint64 hash_key_;
 
   // This is the serialized format from Time::ToInternalValue().
   // If you want to make calculations/comparisons, you should use the
@@ -78,15 +69,16 @@ class NET_EXPORT_PRIVATE EntryMetadata {
 class NET_EXPORT_PRIVATE SimpleIndex
     : public base::SupportsWeakPtr<SimpleIndex> {
  public:
-  SimpleIndex(base::SingleThreadTaskRunner* cache_thread,
-              base::SingleThreadTaskRunner* io_thread,
-              const base::FilePath& path);
+  SimpleIndex(base::SingleThreadTaskRunner* io_thread,
+              const base::FilePath& cache_directory,
+              scoped_ptr<SimpleIndexFile> simple_index_file);
 
   virtual ~SimpleIndex();
 
   void Initialize();
 
   bool SetMaxSize(int max_bytes);
+  int max_size() const { return max_size_; }
 
   void Insert(const std::string& key);
   void Remove(const std::string& key);
@@ -109,7 +101,8 @@ class NET_EXPORT_PRIVATE SimpleIndex
   // use a hash_set.
   typedef base::hash_map<uint64, EntryMetadata> EntrySet;
 
-  static void InsertInEntrySet(const EntryMetadata& entry_metadata,
+  static void InsertInEntrySet(uint64 hash_key,
+                               const EntryMetadata& entry_metadata,
                                EntrySet* entry_set);
 
   // Executes the |callback| when the index is ready. Allows multiple callbacks.
@@ -127,32 +120,18 @@ class NET_EXPORT_PRIVATE SimpleIndex
   int32 GetEntryCount() const;
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(SimpleIndexTest, IsIndexFileStale);
+  friend class SimpleIndexTest;
   FRIEND_TEST_ALL_PREFIXES(SimpleIndexTest, IndexSizeCorrectOnMerge);
-  typedef base::Callback<void(scoped_ptr<EntrySet>, bool force_index_flush)>
-      IndexCompletionCallback;
+  FRIEND_TEST_ALL_PREFIXES(SimpleIndexTest, DiskWriteQueued);
+  FRIEND_TEST_ALL_PREFIXES(SimpleIndexTest, DiskWriteExecuted);
+  FRIEND_TEST_ALL_PREFIXES(SimpleIndexTest, DiskWritePostponed);
 
   void StartEvictionIfNeeded();
-  void EvictionDone(scoped_ptr<int> result);
+  void EvictionDone(int result);
 
   void PostponeWritingToDisk();
 
-  // Using the mtime of the file and its mtime, detects if the index file is
-  // stale.
-  static bool IsIndexFileStale(const base::FilePath& index_filename);
-
-  static void InitializeInternal(
-      const base::FilePath& index_filename,
-      base::SingleThreadTaskRunner* io_thread,
-      const IndexCompletionCallback& completion_callback);
-
-  // Enumerates all entries' files on disk and regenerates the index.
-  static scoped_ptr<SimpleIndex::EntrySet> RestoreFromDisk(
-      const base::FilePath& index_filename);
-
-  static void WriteToDiskInternal(const base::FilePath& index_filename,
-                                  scoped_ptr<Pickle> pickle,
-                                  const base::TimeTicks& start_time);
+  void UpdateEntryIteratorSize(EntrySet::iterator* it, uint64 entry_size);
 
   // Must run on IO Thread.
   void MergeInitializingSet(scoped_ptr<EntrySet> index_file_entries,
@@ -178,9 +157,9 @@ class NET_EXPORT_PRIVATE SimpleIndex
   base::hash_set<uint64> removed_entries_;
   bool initialized_;
 
-  base::FilePath index_filename_;
+  const base::FilePath& cache_directory_;
+  scoped_ptr<SimpleIndexFile> index_file_;
 
-  scoped_refptr<base::SingleThreadTaskRunner> cache_thread_;
   scoped_refptr<base::SingleThreadTaskRunner> io_thread_;
 
   // All nonstatic SimpleEntryImpl methods should always be called on the IO
@@ -190,8 +169,10 @@ class NET_EXPORT_PRIVATE SimpleIndex
   // Timestamp of the last time we wrote the index to disk.
   // PostponeWritingToDisk() may give up postponing and allow the write if it
   // has been a while since last time we wrote.
-  base::Time last_write_to_disk_;
+  base::TimeTicks last_write_to_disk_;
+
   base::OneShotTimer<SimpleIndex> write_to_disk_timer_;
+  base::Closure write_to_disk_cb_;
 
   typedef std::list<net::CompletionCallback> CallbackList;
   CallbackList to_run_when_initialized_;
@@ -200,6 +181,12 @@ class NET_EXPORT_PRIVATE SimpleIndex
   // background we can write the index much more frequently, to insure fresh
   // index on next startup.
   bool app_on_background_;
+
+  // The time in milliseconds for the index to be idle before it gets flushed to
+  // the disk. When the app is on foreground the delay is different from the
+  // background state.
+  int foreground_flush_delay_;
+  int background_flush_delay_;
 };
 
 }  // namespace disk_cache

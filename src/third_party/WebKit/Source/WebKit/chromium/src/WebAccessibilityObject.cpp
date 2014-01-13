@@ -47,10 +47,10 @@
 #include "core/page/FrameView.h"
 #include "core/platform/PlatformKeyboardEvent.h"
 #include "core/rendering/style/RenderStyle.h"
-#include <public/WebPoint.h>
-#include <public/WebRect.h>
-#include <public/WebString.h>
-#include <public/WebURL.h>
+#include "public/platform/WebPoint.h"
+#include "public/platform/WebRect.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
 #include <wtf/text/StringBuilder.h>
 
 using namespace WebCore;
@@ -192,58 +192,12 @@ WebAccessibilityObject WebAccessibilityObject::childAt(unsigned index) const
     return WebAccessibilityObject(m_private->children()[index]);
 }
 
-WebAccessibilityObject WebAccessibilityObject::firstChild() const
-{
-    if (isDetached())
-        return WebAccessibilityObject();
-
-    return WebAccessibilityObject(m_private->firstChild());
-}
-
-WebAccessibilityObject WebAccessibilityObject::focusedChild() const
-{
-    if (isDetached())
-        return WebAccessibilityObject();
-
-    RefPtr<AccessibilityObject> focused = m_private->focusedUIElement();
-    if (m_private.get() == focused.get() || m_private.get() == focused->parentObject())
-        return WebAccessibilityObject(focused);
-
-    return WebAccessibilityObject();
-}
-
-WebAccessibilityObject WebAccessibilityObject::lastChild() const
-{
-    if (isDetached())
-        return WebAccessibilityObject();
-
-    return WebAccessibilityObject(m_private->lastChild());
-}
-
-
-WebAccessibilityObject WebAccessibilityObject::nextSibling() const
-{
-    if (isDetached())
-        return WebAccessibilityObject();
-
-    return WebAccessibilityObject(m_private->nextSibling());
-}
-
 WebAccessibilityObject WebAccessibilityObject::parentObject() const
 {
     if (isDetached())
         return WebAccessibilityObject();
 
     return WebAccessibilityObject(m_private->parentObject());
-}
-
-
-WebAccessibilityObject WebAccessibilityObject::previousSibling() const
-{
-    if (isDetached())
-        return WebAccessibilityObject();
-
-    return WebAccessibilityObject(m_private->previousSibling());
 }
 
 bool WebAccessibilityObject::canSetSelectedAttribute() const
@@ -961,7 +915,7 @@ unsigned WebAccessibilityObject::columnIndex() const
     if (isDetached())
         return 0;
 
-    if (!m_private->isTableColumn())
+    if (m_private->roleValue() != ColumnRole)
         return 0;
 
     return static_cast<WebCore::AccessibilityTableColumn*>(m_private.get())->columnIndex();
@@ -972,7 +926,7 @@ WebAccessibilityObject WebAccessibilityObject::columnHeader() const
     if (isDetached())
         return WebAccessibilityObject();
 
-    if (!m_private->isTableColumn())
+    if (m_private->roleValue() != ColumnRole)
         return WebAccessibilityObject();
 
     return WebAccessibilityObject(static_cast<WebCore::AccessibilityTableColumn*>(m_private.get())->headerObject());

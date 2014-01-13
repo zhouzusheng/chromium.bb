@@ -21,12 +21,11 @@
 #ifndef SVGPathSegCurvetoCubic_h
 #define SVGPathSegCurvetoCubic_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGPathSegWithContext.h"
 
 namespace WebCore {
 
-class SVGPathSegCurvetoCubic : public SVGPathSegWithContext { 
+class SVGPathSegCurvetoCubic : public SVGPathSegWithContext {
 public:
     SVGPathSegCurvetoCubic(SVGPathElement* element, SVGPathSegRole role, float x, float y, float x1, float y1, float x2, float y2)
         : SVGPathSegWithContext(element, role)
@@ -101,6 +100,7 @@ private:
     SVGPathSegCurvetoCubicAbs(SVGPathElement* element, SVGPathSegRole role, float x, float y, float x1, float y1, float x2, float y2)
         : SVGPathSegCurvetoCubic(element, role, x, y, x1, y1, x2, y2)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_CURVETO_CUBIC_ABS; }
@@ -118,6 +118,7 @@ private:
     SVGPathSegCurvetoCubicRel(SVGPathElement* element, SVGPathSegRole role, float x, float y, float x1, float y1, float x2, float y2)
         : SVGPathSegCurvetoCubic(element, role, x, y, x1, y1, x2, y2)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_CURVETO_CUBIC_REL; }
@@ -126,5 +127,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

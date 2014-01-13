@@ -21,20 +21,16 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGForeignObject.h"
 
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/transforms/TransformState.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/LayoutRepainter.h"
-#include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/svg/RenderSVGResource.h"
+#include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGForeignObjectElement.h"
-#include "core/svg/SVGSVGElement.h"
 
 namespace WebCore {
 
@@ -204,5 +200,3 @@ const RenderObject* RenderSVGForeignObject::pushMappingToContainer(const RenderL
 }
 
 }
-
-#endif

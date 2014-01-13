@@ -25,9 +25,7 @@
 #include "core/html/HTMLFrameElement.h"
 
 #include "HTMLNames.h"
-#include "core/dom/Attribute.h"
 #include "core/html/HTMLFrameSetElement.h"
-#include "core/page/Frame.h"
 #include "core/rendering/RenderFrame.h"
 
 namespace WebCore {
@@ -54,9 +52,9 @@ bool HTMLFrameElement::rendererIsNeeded(const NodeRenderingContext&)
     return isURLAllowed();
 }
 
-RenderObject* HTMLFrameElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* HTMLFrameElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderFrame(this);
+    return new (document()->renderArena()) RenderFrame(this);
 }
 
 static inline HTMLFrameSetElement* containingFrameSetElement(Node* node)
@@ -73,9 +71,9 @@ bool HTMLFrameElement::noResize() const
     return hasAttribute(noresizeAttr);
 }
 
-void HTMLFrameElement::attach()
+void HTMLFrameElement::attach(const AttachContext& context)
 {
-    HTMLFrameElementBase::attach();
+    HTMLFrameElementBase::attach(context);
     
     if (HTMLFrameSetElement* frameSetElement = containingFrameSetElement(this)) {
         if (!m_frameBorderSet)

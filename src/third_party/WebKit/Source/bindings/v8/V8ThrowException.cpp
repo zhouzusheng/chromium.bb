@@ -25,19 +25,19 @@
 #include "config.h"
 #include "bindings/v8/V8ThrowException.h"
 
-#include "ExceptionHeaders.h"
-#include "ExceptionInterfaces.h"
+#include "DOMExceptionHeaders.h"
+#include "DOMExceptionInterfaces.h"
 #include "bindings/v8/V8Binding.h"
 
 namespace WebCore {
 
-static v8::Handle<v8::Value> domExceptionStackGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
+static void domExceptionStackGetter(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     ASSERT(info.Data()->IsObject());
-    return info.Data()->ToObject()->Get(v8::String::NewSymbol("stack"));
+    v8SetReturnValue(info, info.Data()->ToObject()->Get(v8::String::NewSymbol("stack")));
 }
 
-static void domExceptionStackSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
+static void domExceptionStackSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
     ASSERT(info.Data()->IsObject());
     info.Data()->ToObject()->Set(v8::String::NewSymbol("stack"), value);
@@ -107,7 +107,7 @@ v8::Handle<v8::Value> V8ThrowException::throwNotEnoughArgumentsError(v8::Isolate
     return V8ThrowException::throwError(v8TypeError, "Not enough arguments", isolate);
 }
 
-v8::Handle<v8::Value> V8ThrowException::throwError(v8::Local<v8::Value> exception, v8::Isolate* isolate)
+v8::Handle<v8::Value> V8ThrowException::throwError(v8::Handle<v8::Value> exception, v8::Isolate* isolate)
 {
     if (!v8::V8::IsExecutionTerminating())
         v8::ThrowException(exception);

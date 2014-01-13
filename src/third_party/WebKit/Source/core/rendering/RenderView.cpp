@@ -23,7 +23,6 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/page/Frame.h"
@@ -41,11 +40,8 @@
 #include "core/rendering/RenderLayerBacking.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderLazyBlock.h"
-#include "core/rendering/RenderNamedFlowThread.h"
 #include "core/rendering/RenderSelectionInfo.h"
 #include "core/rendering/RenderWidget.h"
-#include "core/rendering/RenderWidgetProtector.h"
-#include "core/rendering/style/StyleInheritedData.h"
 
 namespace WebCore {
 
@@ -266,7 +262,7 @@ void RenderView::layout()
     if (relayoutChildren) {
         setChildNeedsLayout(true, MarkOnlyThis);
         for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-            if ((child->isBox() && (toRenderBox(child)->hasRelativeLogicalHeight() || toRenderBox(child)->hasViewportPercentageLogicalHeight()))
+            if ((child->isBox() && toRenderBox(child)->hasRelativeLogicalHeight())
                     || child->style()->logicalHeight().isPercent()
                     || child->style()->logicalMinHeight().isPercent()
                     || child->style()->logicalMaxHeight().isPercent()
@@ -385,9 +381,11 @@ void RenderView::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
     // RenderViews should never be called to paint with an offset not on device pixels.
     ASSERT(LayoutPoint(IntPoint(paintOffset.x(), paintOffset.y())) == paintOffset);
 
+    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
+
     // This avoids painting garbage between columns if there is a column gap.
     if (m_frameView && m_frameView->pagination().mode != Pagination::Unpaginated)
-        paintInfo.context->fillRect(paintInfo.rect, m_frameView->baseBackgroundColor(), ColorSpaceDeviceRGB);
+        paintInfo.context->fillRect(paintInfo.rect, m_frameView->baseBackgroundColor());
 
     paintObject(paintInfo, paintOffset);
 }
@@ -434,10 +432,8 @@ void RenderView::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint&)
         }
 
         if (RenderLayer* compositingLayer = layer->enclosingCompositingLayerForRepaint()) {
-            if (!compositingLayer->backing()->paintsIntoWindow()) {
-                frameView()->setCannotBlitToWindow();
-                break;
-            }
+            frameView()->setCannotBlitToWindow();
+            break;
         }
     }
 
@@ -475,7 +471,7 @@ void RenderView::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint&)
         if (baseColor.alpha()) {
             CompositeOperator previousOperator = paintInfo.context->compositeOperation();
             paintInfo.context->setCompositeOperation(CompositeCopy);
-            paintInfo.context->fillRect(paintInfo.rect, baseColor, style()->colorSpace());
+            paintInfo.context->fillRect(paintInfo.rect, baseColor);
             paintInfo.context->setCompositeOperation(previousOperator);
         } else
             paintInfo.context->clearRect(paintInfo.rect);
@@ -647,9 +643,8 @@ void RenderView::repaintSelection() const
 
         // Blocks are responsible for painting line gaps and margin gaps. They must be examined as well.
         for (RenderBlock* block = o->containingBlock(); block && !block->isRenderView(); block = block->containingBlock()) {
-            if (processedBlocks.contains(block))
+            if (!processedBlocks.add(block).isNewEntry)
                 break;
-            processedBlocks.add(block);
             RenderSelectionInfo(block, true).repaint();
         }
     }
@@ -1029,31 +1024,6 @@ void RenderView::updateHitTestResult(HitTestResult& result, const LayoutPoint& p
     }
 }
 
-// FIXME: This function is obsolete and only used by embedded WebViews inside AppKit NSViews.
-// Do not add callers of this function!
-// The idea here is to take into account what object is moving the pagination point, and
-// thus choose the best place to chop it.
-void RenderView::setBestTruncatedAt(int y, RenderBoxModelObject* forRenderer, bool forcedBreak)
-{
-    // Nobody else can set a page break once we have a forced break.
-    if (m_legacyPrinting.m_forcedPageBreak)
-        return;
-
-    // Forced breaks always win over unforced breaks.
-    if (forcedBreak) {
-        m_legacyPrinting.m_forcedPageBreak = true;
-        m_legacyPrinting.m_bestTruncatedAt = y;
-        return;
-    }
-
-    // Prefer the widest object that tries to move the pagination point
-    IntRect boundingBox = forRenderer->borderBoundingBox();
-    if (boundingBox.width() > m_legacyPrinting.m_truncatorWidth) {
-        m_legacyPrinting.m_truncatorWidth = boundingBox.width();
-        m_legacyPrinting.m_bestTruncatedAt = y;
-    }
-}
-
 bool RenderView::usesCompositing() const
 {
     return m_compositor && m_compositor->inCompositingMode();
@@ -1112,6 +1082,17 @@ RenderBlock::IntervalArena* RenderView::intervalArena()
     return m_intervalArena.get();
 }
 
+bool RenderView::backgroundIsKnownToBeOpaqueInRect(const LayoutRect&) const
+{
+    // FIXME: Remove this main frame check. Same concept applies to subframes too.
+    Page* page = document()->page();
+    Frame* mainFrame = page ? page->mainFrame() : 0;
+    if (!m_frameView || m_frameView->frame() != mainFrame)
+        return false;
+
+    return m_frameView->hasOpaqueBackground();
+}
+
 void RenderView::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
@@ -1126,7 +1107,6 @@ void RenderView::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     info.addMember(m_flowThreadController, "flowThreadController");
     info.addMember(m_intervalArena, "intervalArena");
     info.addWeakPointer(m_renderQuoteHead);
-    info.addMember(m_legacyPrinting, "legacyPrinting");
 }
 
 FragmentationDisabler::FragmentationDisabler(RenderObject* root)

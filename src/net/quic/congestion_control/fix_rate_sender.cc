@@ -31,7 +31,6 @@ FixRateSender::~FixRateSender() {
 void FixRateSender::OnIncomingQuicCongestionFeedbackFrame(
     const QuicCongestionFeedbackFrame& feedback,
     QuicTime feedback_receive_time,
-    QuicBandwidth /*sent_bandwidth*/,
     const SentPacketsMap& /*sent_packets*/) {
   DCHECK(feedback.type == kFixRate) <<
       "Invalid incoming CongestionFeedbackType:" << feedback.type;
@@ -61,7 +60,7 @@ void FixRateSender::SentPacket(QuicTime sent_time,
                                Retransmission is_retransmission) {
   fix_rate_leaky_bucket_.Add(sent_time, bytes);
   paced_sender_.SentPacket(sent_time, bytes);
-  if (!is_retransmission) {
+  if (is_retransmission == NOT_RETRANSMISSION) {
     data_in_flight_ += bytes;
   }
 }

@@ -4,7 +4,7 @@
 
 #include "net/socket/ssl_client_socket.h"
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 
 namespace net {
 
@@ -28,8 +28,8 @@ NextProto SSLClientSocket::NextProtoFromString(
     return kProtoSPDY3;
   } else if (proto_string == "spdy/3.1") {
     return kProtoSPDY31;
-  } else if (proto_string == "spdy/4a1") {
-    return kProtoSPDY4a1;
+  } else if (proto_string == "spdy/4a2") {
+    return kProtoSPDY4a2;
   } else {
     return kProtoUnknown;
   }
@@ -48,8 +48,8 @@ const char* SSLClientSocket::NextProtoToString(NextProto next_proto) {
       return "spdy/3";
     case kProtoSPDY31:
       return "spdy/3.1";
-    case kProtoSPDY4a1:
-      return "spdy/4a1";
+    case kProtoSPDY4a2:
+      return "spdy/4a2";
     default:
       break;
   }

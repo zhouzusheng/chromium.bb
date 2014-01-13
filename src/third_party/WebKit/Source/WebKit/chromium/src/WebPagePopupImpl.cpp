@@ -56,8 +56,6 @@ using namespace std;
 
 namespace WebKit {
 
-#if ENABLE(PAGE_POPUP)
-
 class PagePopupChromeClient : public EmptyChromeClient {
     WTF_MAKE_NONCOPYABLE(PagePopupChromeClient);
     WTF_MAKE_FAST_ALLOCATED;
@@ -216,10 +214,7 @@ bool WebPagePopupImpl::initializePage()
 
     DOMWindowPagePopup::install(frame->document()->domWindow(), m_popupClient);
 
-    DocumentWriter* writer = frame->loader()->activeDocumentLoader()->writer();
-    writer->setMIMEType("text/html");
-    writer->setEncoding("UTF-8", false);
-    writer->begin();
+    DocumentWriter* writer = frame->loader()->activeDocumentLoader()->beginWriting("text/html", "UTF-8");
     m_popupClient->writeDocument(*writer);
     writer->end();
     return true;
@@ -341,13 +336,10 @@ void WebPagePopupImpl::closePopup()
     m_popupClient->didClosePopup();
 }
 
-#endif // ENABLE(PAGE_POPUP)
-
 // WebPagePopup ----------------------------------------------------------------
 
 WebPagePopup* WebPagePopup::create(WebWidgetClient* client)
 {
-#if ENABLE(PAGE_POPUP)
     if (!client)
         CRASH();
     // A WebPagePopupImpl instance usually has two references.
@@ -357,10 +349,6 @@ WebPagePopup* WebPagePopup::create(WebWidgetClient* client)
     // We need them because the closing operation is asynchronous and the widget
     // can be closed while the WebViewImpl is unaware of it.
     return adoptRef(new WebPagePopupImpl(client)).leakRef();
-#else
-    UNUSED_PARAM(client);
-    return 0;
-#endif
 }
 
 } // namespace WebKit

@@ -52,6 +52,8 @@ private:
     MIDIInput(ScriptExecutionContext*, const String& id, const String& manufacturer, const String& name, const String& version);
 };
 
+typedef Vector<RefPtr<MIDIInput> > MIDIInputVector;
+
 } // namespace WebCore
 
 #endif // MIDIInput_h

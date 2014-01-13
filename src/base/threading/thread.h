@@ -9,7 +9,7 @@
 
 #include "base/base_export.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/platform_thread.h"
 
 namespace base {
@@ -141,6 +141,9 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
 
   // Returns true if the thread has been started, and not yet stopped.
   bool IsRunning() const;
+
+  // Sets the thread priority. The thread must already be started.
+  void SetPriority(ThreadPriority priority);
 
  protected:
   // Called just prior to starting the message loop

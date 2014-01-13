@@ -29,12 +29,11 @@
  */
 
 #include "config.h"
-#include <public/WebHTTPLoadInfo.h>
+#include "public/platform/WebHTTPLoadInfo.h"
 
 #include "core/platform/network/ResourceLoadInfo.h"
-#include "core/platform/network/ResourceResponse.h"
-#include <public/WebHTTPHeaderVisitor.h>
-#include <public/WebString.h>
+#include "public/platform/WebHTTPHeaderVisitor.h"
+#include "public/platform/WebString.h"
 
 using namespace WebCore;
 
@@ -106,7 +105,7 @@ static void addHeader(HTTPHeaderMap* map, const WebString& name, const WebString
     HTTPHeaderMap::AddResult result = map->add(name, value);
     // It is important that values are separated by '\n', not comma, otherwise Set-Cookie header is not parseable.
     if (!result.isNewEntry)
-        result.iterator->value.append("\n" + String(value));
+        result.iterator->value = result.iterator->value + "\n" + String(value);
 }
 
 void WebHTTPLoadInfo::addRequestHeader(const WebString& name, const WebString& value)

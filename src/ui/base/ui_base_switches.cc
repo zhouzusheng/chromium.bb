@@ -9,6 +9,9 @@ namespace switches {
 // Disables use of DWM composition for top level windows.
 const char kDisableDwmComposition[] = "disable-dwm-composition";
 
+// Disables the new visual style for application dialogs and controls.
+const char kDisableNewDialogStyle[] = "disable-new-dialog-style";
+
 // Disables touch adjustment.
 const char kDisableTouchAdjustment[] = "disable-touch-adjustment";
 
@@ -21,11 +24,11 @@ const char kDisableTouchEditing[] = "disable-touch-editing";
 // Disables the Views textfield on Windows.
 const char kDisableViewsTextfield[] = "disable-views-textfield";
 
-// Enables support for bezel touch.
-const char kEnableBezelTouch[] = "enable-bezel-touch";
-
-// Enables the new dialog style wherever it is available.
+// Enables the new visual style for application dialogs and controls.
 const char kEnableNewDialogStyle[] = "enable-new-dialog-style";
+
+// Enable scroll prediction for scroll update events.
+const char kEnableScrollPrediction[] = "enable-scroll-prediction";
 
 // Enables touch event based drag and drop.
 const char kEnableTouchDragDrop[] = "enable-touch-drag-drop";
@@ -35,6 +38,9 @@ const char kEnableTouchEditing[] = "enable-touch-editing";
 
 // Enables the Views textfield on Windows.
 const char kEnableViewsTextfield[] = "enable-views-textfield";
+
+// Enables/Disables High DPI support (windows)
+const char kHighDPISupport[] = "high-dpi-support";
 
 // Overrides the device scale factor for the browser UI and the contents.
 const char kForceDeviceScaleFactor[] = "force-device-scale-factor";

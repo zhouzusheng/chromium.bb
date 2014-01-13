@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/threading/thread_restrictions.h"
 #include "media/base/limits.h"
+#include "media/base/scoped_histogram_timer.h"
 
 namespace {
 const int kMaxInputChannels = 2;
@@ -43,7 +44,7 @@ AudioInputController::AudioInputController(EventHandler* handler,
       state_(kEmpty),
       sync_writer_(sync_writer),
       max_volume_(0.0) {
-  DCHECK(creator_loop_);
+  DCHECK(creator_loop_.get());
 }
 
 AudioInputController::~AudioInputController() {
@@ -54,7 +55,8 @@ AudioInputController::~AudioInputController() {
 scoped_refptr<AudioInputController> AudioInputController::Create(
     AudioManager* audio_manager,
     EventHandler* event_handler,
-    const AudioParameters& params) {
+    const AudioParameters& params,
+    const std::string& device_id) {
   DCHECK(audio_manager);
 
   if (!params.IsValid() || (params.channels() > kMaxInputChannels))
@@ -69,8 +71,7 @@ scoped_refptr<AudioInputController> AudioInputController::Create(
   controller->message_loop_ = audio_manager->GetMessageLoop();
 
   // Create and open a new audio input stream from the existing
-  // audio-device thread. Use the default audio-input device.
-  std::string device_id = AudioManagerBase::kDefaultDeviceId;
+  // audio-device thread.
   if (!controller->message_loop_->PostTask(FROM_HERE,
           base::Bind(&AudioInputController::DoCreate, controller,
                      base::Unretained(audio_manager), params, device_id))) {
@@ -112,11 +113,10 @@ scoped_refptr<AudioInputController> AudioInputController::CreateLowLatency(
 
 // static
 scoped_refptr<AudioInputController> AudioInputController::CreateForStream(
-    AudioManager* audio_manager,
+    const scoped_refptr<base::MessageLoopProxy>& message_loop,
     EventHandler* event_handler,
     AudioInputStream* stream,
     SyncWriter* sync_writer) {
-  DCHECK(audio_manager);
   DCHECK(sync_writer);
   DCHECK(stream);
 
@@ -124,7 +124,7 @@ scoped_refptr<AudioInputController> AudioInputController::CreateForStream(
   // the audio-manager thread.
   scoped_refptr<AudioInputController> controller(new AudioInputController(
       event_handler, sync_writer));
-  controller->message_loop_ = audio_manager->GetMessageLoop();
+  controller->message_loop_ = message_loop;
 
   // TODO(miu): See TODO at top of file.  Until that's resolved, we need to
   // disable the error auto-detection here (since the audio mirroring
@@ -168,6 +168,7 @@ void AudioInputController::DoCreate(AudioManager* audio_manager,
                                     const AudioParameters& params,
                                     const std::string& device_id) {
   DCHECK(message_loop_->BelongsToCurrentThread());
+  SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioInputController.CreateTime");
   // TODO(miu): See TODO at top of file.  Until that's resolved, assume all
   // platform audio input requires the |no_data_timer_| be used to auto-detect
   // errors.  In reality, probably only Windows and IOS need to be treated as
@@ -214,6 +215,7 @@ void AudioInputController::DoCreateForStream(
 
 void AudioInputController::DoRecord() {
   DCHECK(message_loop_->BelongsToCurrentThread());
+  SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioInputController.RecordTime");
 
   if (state_ != kCreated)
     return;
@@ -235,6 +237,7 @@ void AudioInputController::DoRecord() {
 
 void AudioInputController::DoClose() {
   DCHECK(message_loop_->BelongsToCurrentThread());
+  SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioInputController.CloseTime");
 
   // Delete the timer on the same thread that created it.
   no_data_timer_.reset();

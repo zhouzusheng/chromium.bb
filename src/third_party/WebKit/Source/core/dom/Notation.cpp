@@ -21,12 +21,10 @@
 #include "config.h"
 #include "core/dom/Notation.h"
 
-#include "core/dom/Document.h"
-
 namespace WebCore {
 
-Notation::Notation(Document* document, const String& name, const String& publicId, const String& systemId)
-    : ContainerNode(document)
+Notation::Notation(TreeScope* treeScope, const String& name, const String& publicId, const String& systemId)
+    : ContainerNode(treeScope)
     , m_name(name)
     , m_publicId(publicId)
     , m_systemId(systemId)

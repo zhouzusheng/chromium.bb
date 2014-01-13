@@ -29,7 +29,7 @@
 #include "core/css/StylePropertySet.h"
 #include "core/html/HTMLTableCellElement.h"
 #include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/transforms/TransformState.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCol.h"
@@ -386,6 +386,11 @@ void RenderTableCell::styleDidChange(StyleDifference diff, const RenderStyle* ol
 
     if (parent() && section() && oldStyle && style()->height() != oldStyle->height())
         section()->rowLogicalHeightChanged(rowIndex());
+
+    // Our intrinsic padding pushes us down to align with the baseline of other cells on the row. If our vertical-align
+    // has changed then so will the padding needed to align with other cells - clear it so we can recalculate it from scratch.
+    if (oldStyle && style()->verticalAlign() != oldStyle->verticalAlign())
+        clearIntrinsicPadding();
 
     // If border was changed, notify table.
     if (parent()) {

@@ -54,7 +54,7 @@ enum ControlPart {
     MenulistPart, MenulistButtonPart, MenulistTextPart, MenulistTextFieldPart, MeterPart, ProgressBarPart, ProgressBarValuePart,
     SliderHorizontalPart, SliderVerticalPart, SliderThumbHorizontalPart,
     SliderThumbVerticalPart, CaretPart, SearchFieldPart, SearchFieldDecorationPart,
-    SearchFieldResultsDecorationPart, SearchFieldResultsButtonPart,
+    SearchFieldResultsDecorationPart,
     SearchFieldCancelButtonPart, TextFieldPart,
     RelevancyLevelIndicatorPart, ContinuousCapacityLevelIndicatorPart, DiscreteCapacityLevelIndicatorPart, RatingLevelIndicatorPart,
     TextAreaPart, CapsLockIndicatorPart
@@ -73,7 +73,7 @@ enum ThemeColor {
     ButtonTextColor, CaptionTextColor, GrayTextColor, HighlightColor, HighlightTextColor, InactiveBorderColor, InactiveCaptionColor,
     InactiveCaptionTextColor, InfoBackgroundColor, InfoTextColor, MatchColor, MenuTextColor, ScrollbarColor, ThreeDDarkDhasowColor,
     ThreeDFaceColor, ThreeDHighlightColor, ThreeDLightShadowColor, ThreeDShadowCLor, WindowColor, WindowFrameColor, WindowTextColor,
-    FocusRingColor
+    FocusRingColor, ActiveListBoxSelection, ActiveListBoxSelectionText, InactiveListBoxSelection, InactiveListBoxSelectionText
 };
 
 }

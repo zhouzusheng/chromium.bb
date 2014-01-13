@@ -10,11 +10,11 @@
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/compiler_specific.h"
-#include "base/metrics/histogram.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/condition_variable.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/audio_renderer.h"
@@ -39,7 +39,7 @@ Pipeline::Pipeline(const scoped_refptr<base::MessageLoopProxy>& message_loop,
       natural_size_(0, 0),
       volume_(1.0f),
       playback_rate_(0.0f),
-      clock_(new Clock(&default_clock_)),
+      clock_(new Clock(&default_tick_clock_)),
       waiting_for_clock_update_(false),
       status_(PIPELINE_OK),
       has_audio_(false),
@@ -49,19 +49,15 @@ Pipeline::Pipeline(const scoped_refptr<base::MessageLoopProxy>& message_loop,
       video_ended_(false),
       audio_disabled_(false),
       demuxer_(NULL),
-      creation_time_(base::Time::Now()) {
+      creation_time_(default_tick_clock_.NowTicks()) {
   media_log_->AddEvent(media_log_->CreatePipelineStateChangedEvent(kCreated));
   media_log_->AddEvent(
       media_log_->CreateEvent(MediaLogEvent::PIPELINE_CREATED));
 }
 
 Pipeline::~Pipeline() {
-  // TODO(scherkus): Reenable after figuring out why this is firing, see
-  // http://crbug.com/148405
-#if 0
   DCHECK(thread_checker_.CalledOnValidThread())
       << "Pipeline must be destroyed on same thread that created it";
-#endif
   DCHECK(!running_) << "Stop() must complete before destroying object";
   DCHECK(stop_cb_.is_null());
   DCHECK(seek_cb_.is_null());
@@ -82,14 +78,14 @@ void Pipeline::Start(scoped_ptr<FilterCollection> collection,
 
   running_ = true;
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::StartTask, this, base::Passed(&collection),
+      &Pipeline::StartTask, base::Unretained(this), base::Passed(&collection),
       ended_cb, error_cb, seek_cb, buffering_state_cb, duration_change_cb));
 }
 
 void Pipeline::Stop(const base::Closure& stop_cb) {
   base::AutoLock auto_lock(lock_);
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::StopTask, this, stop_cb));
+      &Pipeline::StopTask, base::Unretained(this), stop_cb));
 }
 
 void Pipeline::Seek(TimeDelta time, const PipelineStatusCB& seek_cb) {
@@ -100,7 +96,7 @@ void Pipeline::Seek(TimeDelta time, const PipelineStatusCB& seek_cb) {
   }
 
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::SeekTask, this, time, seek_cb));
+      &Pipeline::SeekTask, base::Unretained(this), time, seek_cb));
 }
 
 bool Pipeline::IsRunning() const {
@@ -131,7 +127,8 @@ void Pipeline::SetPlaybackRate(float playback_rate) {
   playback_rate_ = playback_rate;
   if (running_) {
     message_loop_->PostTask(FROM_HERE, base::Bind(
-        &Pipeline::PlaybackRateChangedTask, this, playback_rate));
+        &Pipeline::PlaybackRateChangedTask, base::Unretained(this),
+        playback_rate));
   }
 }
 
@@ -148,7 +145,7 @@ void Pipeline::SetVolume(float volume) {
   volume_ = volume;
   if (running_) {
     message_loop_->PostTask(FROM_HERE, base::Bind(
-        &Pipeline::VolumeChangedTask, this, volume));
+        &Pipeline::VolumeChangedTask, base::Unretained(this), volume));
   }
 }
 
@@ -216,9 +213,9 @@ void Pipeline::SetErrorForTesting(PipelineStatus status) {
 void Pipeline::SetState(State next_state) {
   if (state_ != kStarted && next_state == kStarted &&
       !creation_time_.is_null()) {
-    UMA_HISTOGRAM_TIMES(
-        "Media.TimeToPipelineStarted", base::Time::Now() - creation_time_);
-    creation_time_ = base::Time();
+    UMA_HISTOGRAM_TIMES("Media.TimeToPipelineStarted",
+                        default_tick_clock_.NowTicks() - creation_time_);
+    creation_time_ = base::TimeTicks();
   }
 
   DVLOG(2) << GetStateString(state_) << " -> " << GetStateString(next_state);
@@ -302,7 +299,7 @@ void Pipeline::SetError(PipelineStatus error) {
   VLOG(1) << "Media pipeline error: " << error;
 
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::ErrorChangedTask, this, error));
+      &Pipeline::ErrorChangedTask, base::Unretained(this), error));
 
   media_log_->AddEvent(media_log_->CreatePipelineErrorEvent(error));
 }
@@ -310,7 +307,7 @@ void Pipeline::SetError(PipelineStatus error) {
 void Pipeline::OnAudioDisabled() {
   DCHECK(IsRunning());
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::AudioDisabledTask, this));
+      &Pipeline::AudioDisabledTask, base::Unretained(this)));
   media_log_->AddEvent(
       media_log_->CreateEvent(MediaLogEvent::AUDIO_RENDERER_DISABLED));
 }
@@ -395,7 +392,7 @@ TimeDelta Pipeline::TimeForByteOffset_Locked(int64 byte_offset) const {
 void Pipeline::OnStateTransition(PipelineStatus status) {
   // Force post to process state transitions after current execution frame.
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::StateTransitionTask, this, status));
+      &Pipeline::StateTransitionTask, base::Unretained(this), status));
 }
 
 void Pipeline::StateTransitionTask(PipelineStatus status) {
@@ -423,7 +420,8 @@ void Pipeline::StateTransitionTask(PipelineStatus status) {
              state_ == kSeeking));
   pending_callbacks_.reset();
 
-  PipelineStatusCB done_cb = base::Bind(&Pipeline::OnStateTransition, this);
+  PipelineStatusCB done_cb = base::Bind(
+      &Pipeline::OnStateTransition, base::Unretained(this));
 
   // Switch states, performing any entrance actions for the new state as well.
   SetState(GetNextState());
@@ -636,8 +634,12 @@ void Pipeline::OnStopCompleted(PipelineStatus status) {
     error_cb_.Reset();
   }
   if (!stop_cb_.is_null()) {
-    base::ResetAndReturn(&stop_cb_).Run();
     error_cb_.Reset();
+    base::ResetAndReturn(&stop_cb_).Run();
+
+    // NOTE: pipeline may be deleted at this point in time as a result of
+    // executing |stop_cb_|.
+    return;
   }
   if (!error_cb_.is_null()) {
     DCHECK_NE(status_, PIPELINE_OK);
@@ -672,14 +674,14 @@ void Pipeline::OnNaturalVideoSizeChanged(const gfx::Size& size) {
 void Pipeline::OnAudioRendererEnded() {
   // Force post to process ended messages after current execution frame.
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::DoAudioRendererEnded, this));
+      &Pipeline::DoAudioRendererEnded, base::Unretained(this)));
   media_log_->AddEvent(media_log_->CreateEvent(MediaLogEvent::AUDIO_ENDED));
 }
 
 void Pipeline::OnVideoRendererEnded() {
   // Force post to process ended messages after current execution frame.
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::DoVideoRendererEnded, this));
+      &Pipeline::DoVideoRendererEnded, base::Unretained(this)));
   media_log_->AddEvent(media_log_->CreateEvent(MediaLogEvent::VIDEO_ENDED));
 }
 
@@ -725,7 +727,7 @@ void Pipeline::StopTask(const base::Closure& stop_cb) {
   pending_callbacks_.reset();
   stop_cb_ = stop_cb;
 
-  DoStop(base::Bind(&Pipeline::OnStopCompleted, this));
+  DoStop(base::Bind(&Pipeline::OnStopCompleted, base::Unretained(this)));
 }
 
 void Pipeline::ErrorChangedTask(PipelineStatus error) {
@@ -739,7 +741,7 @@ void Pipeline::ErrorChangedTask(PipelineStatus error) {
   pending_callbacks_.reset();
   status_ = error;
 
-  DoStop(base::Bind(&Pipeline::OnStopCompleted, this));
+  DoStop(base::Bind(&Pipeline::OnStopCompleted, base::Unretained(this)));
 }
 
 void Pipeline::PlaybackRateChangedTask(float playback_rate) {
@@ -804,7 +806,8 @@ void Pipeline::SeekTask(TimeDelta time, const PipelineStatusCB& seek_cb) {
       clock_->Pause();
     clock_->SetTime(seek_timestamp, seek_timestamp);
   }
-  DoSeek(seek_timestamp, base::Bind(&Pipeline::OnStateTransition, this));
+  DoSeek(seek_timestamp, base::Bind(
+      &Pipeline::OnStateTransition, base::Unretained(this)));
 }
 
 void Pipeline::DoAudioRendererEnded() {
@@ -885,12 +888,12 @@ void Pipeline::InitializeAudioRenderer(const PipelineStatusCB& done_cb) {
   audio_renderer_->Initialize(
       demuxer_->GetStream(DemuxerStream::AUDIO),
       done_cb,
-      base::Bind(&Pipeline::OnUpdateStatistics, this),
-      base::Bind(&Pipeline::OnAudioUnderflow, this),
-      base::Bind(&Pipeline::OnAudioTimeUpdate, this),
-      base::Bind(&Pipeline::OnAudioRendererEnded, this),
-      base::Bind(&Pipeline::OnAudioDisabled, this),
-      base::Bind(&Pipeline::SetError, this));
+      base::Bind(&Pipeline::OnUpdateStatistics, base::Unretained(this)),
+      base::Bind(&Pipeline::OnAudioUnderflow, base::Unretained(this)),
+      base::Bind(&Pipeline::OnAudioTimeUpdate, base::Unretained(this)),
+      base::Bind(&Pipeline::OnAudioRendererEnded, base::Unretained(this)),
+      base::Bind(&Pipeline::OnAudioDisabled, base::Unretained(this)),
+      base::Bind(&Pipeline::SetError, base::Unretained(this)));
 }
 
 void Pipeline::InitializeVideoRenderer(const PipelineStatusCB& done_cb) {
@@ -909,19 +912,19 @@ void Pipeline::InitializeVideoRenderer(const PipelineStatusCB& done_cb) {
   video_renderer_->Initialize(
       stream,
       done_cb,
-      base::Bind(&Pipeline::OnUpdateStatistics, this),
-      base::Bind(&Pipeline::OnVideoTimeUpdate, this),
-      base::Bind(&Pipeline::OnNaturalVideoSizeChanged, this),
-      base::Bind(&Pipeline::OnVideoRendererEnded, this),
-      base::Bind(&Pipeline::SetError, this),
-      base::Bind(&Pipeline::GetMediaTime, this),
-      base::Bind(&Pipeline::GetMediaDuration, this));
+      base::Bind(&Pipeline::OnUpdateStatistics, base::Unretained(this)),
+      base::Bind(&Pipeline::OnVideoTimeUpdate, base::Unretained(this)),
+      base::Bind(&Pipeline::OnNaturalVideoSizeChanged, base::Unretained(this)),
+      base::Bind(&Pipeline::OnVideoRendererEnded, base::Unretained(this)),
+      base::Bind(&Pipeline::SetError, base::Unretained(this)),
+      base::Bind(&Pipeline::GetMediaTime, base::Unretained(this)),
+      base::Bind(&Pipeline::GetMediaDuration, base::Unretained(this)));
 }
 
 void Pipeline::OnAudioUnderflow() {
   if (!message_loop_->BelongsToCurrentThread()) {
     message_loop_->PostTask(FROM_HERE, base::Bind(
-        &Pipeline::OnAudioUnderflow, this));
+        &Pipeline::OnAudioUnderflow, base::Unretained(this)));
     return;
   }
 
@@ -929,7 +932,7 @@ void Pipeline::OnAudioUnderflow() {
     return;
 
   if (audio_renderer_)
-    audio_renderer_->ResumeAfterUnderflow(true);
+    audio_renderer_->ResumeAfterUnderflow();
 }
 
 void Pipeline::StartClockIfWaitingForTimeUpdate_Locked() {

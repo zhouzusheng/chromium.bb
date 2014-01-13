@@ -10,20 +10,15 @@
  */
 base.requireStylesheet('tracing.timeline_view');
 
+base.require('base.settings');
 base.require('tracing.analysis.analysis_view');
 base.require('tracing.category_filter_dialog');
 base.require('tracing.filter');
 base.require('tracing.find_control');
-base.require('tracing.settings');
+base.require('tracing.tracks.track_selector');
 base.require('tracing.timeline_track_view');
 base.require('ui.overlay');
 base.require('ui.drag_handle');
-
-/*
- * Importers, object handlers
- */
-base.require('tracing.importer.linux_perf_importer');
-base.require('tracing.importer.trace_event_importer');
 
 base.exportTo('tracing', function() {
 
@@ -38,11 +33,11 @@ base.exportTo('tracing', function() {
     __proto__: HTMLDivElement.prototype,
 
     decorate: function() {
-      this.classList.add('view');
+      this.classList.add('timeline-view');
 
       // Create individual elements.
       this.titleEl_ = document.createElement('div');
-      this.titleEl_.textContent = 'Tracing: ';
+      this.titleEl_.textContent = '^_^';
       this.titleEl_.className = 'title';
 
       this.controlDiv_ = document.createElement('div');
@@ -51,56 +46,68 @@ base.exportTo('tracing', function() {
       this.leftControlsEl_ = document.createElement('div');
       this.leftControlsEl_.className = 'controls';
       this.rightControlsEl_ = document.createElement('div');
-      this.rightControlsEl_.className = 'controls';
-
-      var spacingEl = document.createElement('div');
-      spacingEl.className = 'spacer';
+      this.rightControlsEl_.className = 'controls category-filter';
 
       this.timelineContainer_ = document.createElement('div');
       this.timelineContainer_.className = 'container';
 
-      var analysisContainer_ = document.createElement('div');
-      analysisContainer_.className = 'analysis-container';
-
       this.analysisEl_ = new tracing.analysis.AnalysisView();
       this.analysisEl_.addEventListener(
-        'requestSelectionChange',
-        this.onRequestSelectionChange_.bind(this));
+          'requestSelectionChange',
+          this.onRequestSelectionChange_.bind(this));
 
       this.dragEl_ = new ui.DragHandle();
-      this.dragEl_.target = analysisContainer_;
+      this.dragEl_.target = this.analysisEl_;
 
       this.findCtl_ = new tracing.FindControl();
       this.findCtl_.controller = new tracing.FindController();
 
       this.importErrorsButton_ = this.createImportErrorsButton_();
       this.categoryFilterButton_ = this.createCategoryFilterButton_();
-      this.categoryFilterButton_.callback =
-          this.updateCategoryFilterFromSettings_.bind(this);
       this.metadataButton_ = this.createMetadataButton_();
 
       // Connect everything up.
+      this.rightControls.appendChild(this.createTrackSelectorButton_());
       this.rightControls.appendChild(this.importErrorsButton_);
       this.rightControls.appendChild(this.categoryFilterButton_);
       this.rightControls.appendChild(this.metadataButton_);
       this.rightControls.appendChild(this.findCtl_);
-      this.controlDiv_.appendChild(this.titleEl_);
       this.controlDiv_.appendChild(this.leftControlsEl_);
-      this.controlDiv_.appendChild(spacingEl);
+      this.controlDiv_.appendChild(this.titleEl_);
       this.controlDiv_.appendChild(this.rightControlsEl_);
       this.appendChild(this.controlDiv_);
 
       this.appendChild(this.timelineContainer_);
       this.appendChild(this.dragEl_);
 
-      analysisContainer_.appendChild(this.analysisEl_);
-      this.appendChild(analysisContainer_);
+      this.appendChild(this.analysisEl_);
 
       this.rightControls.appendChild(this.createHelpButton_());
 
       // Bookkeeping.
       this.onSelectionChangedBoundToThis_ = this.onSelectionChanged_.bind(this);
       document.addEventListener('keypress', this.onKeypress_.bind(this), true);
+
+      this.trackSelector_.connect();
+    },
+
+    createTrackSelectorButton_: function() {
+      var anchor = document.createElement('div');
+      anchor.className = 'track-selector-anchor';
+
+      var button = document.createElement('button');
+      button.className = 'button track-selector-button track-selector-closed';
+      button.textContent = 'Track Selector';
+      anchor.appendChild(button);
+
+      button.addEventListener('click', function(event) {
+        button.classList.toggle('track-selector-closed');
+      }.bind(this));
+
+      this.trackSelector_ = anchor.appendChild(
+          new tracing.tracks.TrackSelector());
+
+      return anchor;
     },
 
     createImportErrorsButton_: function() {
@@ -143,36 +150,31 @@ base.exportTo('tracing', function() {
       return showEl;
     },
 
-    createCategoryFilterButton_: function() {
-      // Set by the embedder of the help button that we create in this function.
-      var callback;
+    updateCategoryFilter_: function(categories) {
+      if (!this.timeline_)
+        return;
+      this.timeline_.categoryFilter = new tracing.CategoryFilter(categories);
+    },
 
+    createCategoryFilterButton_: function() {
       var showEl = document.createElement('div');
       showEl.className = 'button view-info-button';
       showEl.textContent = 'Categories';
-      showEl.__defineSetter__('callback', function(value) {
-        callback = value;
-      });
 
-
-      var that = this;
       function onClick() {
         var dlg = new tracing.CategoryFilterDialog();
-        dlg.categories = that.model.categories;
-        dlg.settings = that.settings;
+        dlg.categories = this.model.categories;
         dlg.settings_key = 'categories';
-        dlg.settingUpdatedCallback = callback;
+        dlg.settingUpdatedCallback = this.updateCategoryFilter_.bind(this);
         dlg.visible = true;
       }
 
+      var that = this;
       function updateVisibility() {
-        if (that.model)
-          showEl.style.display = '';
-        else
-          showEl.style.display = 'none';
+        showEl.style.display = that.model ? '' : 'none';
       }
       updateVisibility();
-      that.addEventListener('modelChange', updateVisibility);
+      this.addEventListener('modelChange', updateVisibility);
 
       showEl.addEventListener('click', onClick.bind(this));
       return showEl;
@@ -238,8 +240,10 @@ base.exportTo('tracing', function() {
 
         var model = that.model;
         for (var data in model.metadata) {
-          metadataStrings.push(JSON.stringify(model.metadata[data].name) +
-                               ': ' + JSON.stringify(model.metadata[data].value, undefined, ' '));
+          var meta = model.metadata[data];
+          var name = JSON.stringify(meta.name);
+          var value = JSON.stringify(meta.value, undefined, ' ');
+          metadataStrings.push(name + ': ' + value);
         }
         textEl.textContent = metadataStrings.join('\n');
       }
@@ -278,11 +282,11 @@ base.exportTo('tracing', function() {
         return;
       }
       this.titleEl_.hidden = false;
-      this.titleEl_.textContent = text + ':';
+      this.titleEl_.textContent = text;
     },
 
     set traceData(traceData) {
-      this.model = new tracing.Model(traceData);
+      this.model = new tracing.TraceModel(traceData);
     },
 
     get model() {
@@ -316,7 +320,8 @@ base.exportTo('tracing', function() {
         this.findCtl_.controller.timeline = this.timeline_;
         this.timeline_.addEventListener(
             'selectionChange', this.onSelectionChangedBoundToThis_);
-        this.updateCategoryFilterFromSettings_();
+
+        this.analysisEl_.clearSelectionHistory();
       }
 
       // Set the model.
@@ -425,22 +430,6 @@ base.exportTo('tracing', function() {
     onRequestSelectionChange_: function(e) {
       this.timeline_.selection = e.selection;
       e.stopPropagation();
-    },
-
-    updateCategoryFilterFromSettings_: function() {
-      if (!this.timeline_)
-        return;
-
-      // Get the disabled categories from settings.
-      var categories = this.settings.keys('categories');
-      var disabledCategories = [];
-      for (var i = 0; i < categories.length; i++) {
-        if (this.settings.get(categories[i], 'true', 'categories') == 'false')
-          disabledCategories.push(categories[i]);
-      }
-
-      this.timeline_.categoryFilter =
-          new tracing.CategoryFilter(disabledCategories);
     }
   };
 

@@ -27,7 +27,6 @@
 #include "core/html/HTMLButtonElement.h"
 
 #include "HTMLNames.h"
-#include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/KeyboardEvent.h"
@@ -59,9 +58,9 @@ void HTMLButtonElement::setType(const AtomicString& type)
     setAttribute(typeAttr, type);
 }
 
-RenderObject* HTMLButtonElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* HTMLButtonElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderButton(this);
+    return new (document()->renderArena()) RenderButton(this);
 }
 
 const AtomicString& HTMLButtonElement::formControlType() const

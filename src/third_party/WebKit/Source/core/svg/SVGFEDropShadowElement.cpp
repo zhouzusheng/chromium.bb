@@ -19,11 +19,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFEDropShadowElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/SVGRenderStyle.h"
 #include "core/svg/SVGElementInstance.h"
@@ -93,7 +91,7 @@ bool SVGFEDropShadowElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::dyAttr);
         supportedAttributes.add(SVGNames::stdDeviationAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFEDropShadowElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -175,5 +173,3 @@ PassRefPtr<FilterEffect> SVGFEDropShadowElement::build(SVGFilterBuilder* filterB
 }
 
 }
-
-#endif // ENABLE(SVG)

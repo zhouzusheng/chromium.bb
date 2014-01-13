@@ -21,17 +21,19 @@
 #ifndef PopupMenu_h
 #define PopupMenu_h
 
-#include <wtf/RefCounted.h>
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
+class FloatQuad;
 class FrameView;
 class IntRect;
+class IntSize;
 
 class PopupMenu : public RefCounted<PopupMenu> {
 public:
-    virtual ~PopupMenu() {}
-    virtual void show(const IntRect&, FrameView*, int index) = 0;
+    virtual ~PopupMenu() { }
+    virtual void show(const FloatQuad& controlPosition, const IntSize& controlSize, int index) = 0;
     virtual void hide() = 0;
     virtual void updateFromElement() = 0;
     virtual void disconnectClient() = 0;

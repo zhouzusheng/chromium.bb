@@ -33,6 +33,7 @@
 #include "core/html/shadow/PickerIndicatorElement.h"
 
 #include "core/dom/Event.h"
+#include "core/html/shadow/ShadowElementNames.h"
 #include "core/page/Chrome.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderDetailsMarker.h"
@@ -47,12 +48,14 @@ inline PickerIndicatorElement::PickerIndicatorElement(Document* document, Picker
     : HTMLDivElement(divTag, document)
     , m_pickerIndicatorOwner(&pickerIndicatorOwner)
 {
-    setPseudo(AtomicString("-webkit-calendar-picker-indicator", AtomicString::ConstructFromLiteral));
 }
 
 PassRefPtr<PickerIndicatorElement> PickerIndicatorElement::create(Document* document, PickerIndicatorOwner& pickerIndicatorOwner)
 {
-    return adoptRef(new PickerIndicatorElement(document, pickerIndicatorOwner));
+    RefPtr<PickerIndicatorElement> element = adoptRef(new PickerIndicatorElement(document, pickerIndicatorOwner));
+    element->setPseudo(AtomicString("-webkit-calendar-picker-indicator", AtomicString::ConstructFromLiteral));
+    element->setAttribute(idAttr, ShadowElementNames::pickerIndicator());
+    return element.release();
 }
 
 PickerIndicatorElement::~PickerIndicatorElement()
@@ -61,9 +64,9 @@ PickerIndicatorElement::~PickerIndicatorElement()
     ASSERT(!m_chooser);
 }
 
-RenderObject* PickerIndicatorElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* PickerIndicatorElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderDetailsMarker(this);
+    return new (document()->renderArena()) RenderDetailsMarker(this);
 }
 
 void PickerIndicatorElement::defaultEventHandler(Event* event)
@@ -110,13 +113,10 @@ void PickerIndicatorElement::openPopup()
         return;
     if (!m_pickerIndicatorOwner)
         return;
-    Chrome* chrome = document()->page()->chrome();
-    if (!chrome)
-        return;
     DateTimeChooserParameters parameters;
     if (!m_pickerIndicatorOwner->setupDateTimeChooserParameters(parameters))
         return;
-    m_chooser = chrome->openDateTimeChooser(this, parameters);
+    m_chooser = document()->page()->chrome().openDateTimeChooser(this, parameters);
 }
 
 void PickerIndicatorElement::closePopup()
@@ -126,10 +126,15 @@ void PickerIndicatorElement::closePopup()
     m_chooser->endChooser();
 }
 
-void PickerIndicatorElement::detach()
+void PickerIndicatorElement::detach(const AttachContext& context)
 {
     closePopup();
-    HTMLDivElement::detach();
+    HTMLDivElement::detach(context);
+}
+
+bool PickerIndicatorElement::isPickerIndicatorElement() const
+{
+    return true;
 }
 
 }

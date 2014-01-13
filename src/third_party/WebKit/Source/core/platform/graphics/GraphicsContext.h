@@ -28,18 +28,19 @@
 #ifndef GraphicsContext_h
 #define GraphicsContext_h
 
-#include "core/platform/graphics/ColorSpace.h"
+#include "core/platform/chromium/TraceEvent.h"
 #include "core/platform/graphics/DashArray.h"
+#include "core/platform/graphics/DrawLooper.h"
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/Gradient.h"
-#include "core/platform/graphics/Image.h"
+#include "core/platform/graphics/GraphicsContextAnnotation.h"
+#include "core/platform/graphics/GraphicsContextState.h"
+#include "core/platform/graphics/ImageBuffer.h"
 #include "core/platform/graphics/ImageOrientation.h"
-#include "core/platform/graphics/Path.h"
-#include "core/platform/graphics/Pattern.h"
 #include "core/platform/graphics/skia/OpaqueRegionSkia.h"
 
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkRect.h"
@@ -50,445 +51,426 @@
 #include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
-class PlatformContextSkia;
-}
-typedef WebCore::PlatformContextSkia PlatformGraphicsContext;
 
-namespace WebCore {
+class ImageBuffer;
+class KURL;
 
-    const int cMisspellingLineThickness = 3;
-    const int cMisspellingLinePatternWidth = 4;
-    const int cMisspellingLinePatternGapWidth = 1;
-
-    class AffineTransform;
-    class DrawingBuffer;
-    class Generator;
-    class ImageBuffer;
-    class IntRect;
-    class RoundedRect;
-    class KURL;
-    class GraphicsContext3D;
-    class TextRun;
-    class TransformationMatrix;
-
-    enum TextDrawingMode {
-        TextModeFill      = 1 << 0,
-        TextModeStroke    = 1 << 1,
+class GraphicsContext {
+    WTF_MAKE_NONCOPYABLE(GraphicsContext); WTF_MAKE_FAST_ALLOCATED;
+public:
+    enum AntiAliasingMode {
+        NotAntiAliased,
+        AntiAliased
     };
-    typedef unsigned TextDrawingModeFlags;
-
-    enum StrokeStyle {
-        NoStroke,
-        SolidStroke,
-        DottedStroke,
-        DashedStroke,
-#if ENABLE(CSS3_TEXT)
-        DoubleStroke,
-        WavyStroke,
-#endif // CSS3_TEXT
+    enum AccessMode {
+        ReadOnly,
+        ReadWrite
     };
 
-    enum InterpolationQuality {
-        InterpolationDefault,
-        InterpolationNone,
-        InterpolationLow,
-        InterpolationMedium,
-        InterpolationHigh
+    explicit GraphicsContext(SkCanvas*);
+    ~GraphicsContext();
+
+    // Returns the canvas used for painting, NOT guaranteed to be non-null.
+    // Accessing the backing canvas this way flushes all queued save ops,
+    // so it should be avoided. Use the corresponding draw/matrix/clip methods instead.
+    SkCanvas* canvas()
+    {
+        // Flush any pending saves.
+        realizeSave(SkCanvas::kMatrixClip_SaveFlag);
+
+        return m_canvas;
+    }
+    const SkCanvas* canvas() const { return m_canvas; }
+    bool paintingDisabled() const { return !m_canvas; }
+
+    const SkBitmap* bitmap() const
+    {
+        TRACE_EVENT0("skia", "GraphicsContext::bitmap");
+        return &m_canvas->getDevice()->accessBitmap(false);
+    }
+
+    const SkBitmap& layerBitmap(AccessMode access = ReadOnly) const
+    {
+        return m_canvas->getTopDevice()->accessBitmap(access == ReadWrite);
+    }
+
+    SkDevice* createCompatibleDevice(const IntSize&, bool hasAlpha) const;
+
+    // ---------- State management methods -----------------
+    void save();
+    void restore();
+
+    void saveLayer(const SkRect* bounds, const SkPaint*, SkCanvas::SaveFlags = SkCanvas::kARGB_ClipLayer_SaveFlag);
+    void restoreLayer();
+
+    float strokeThickness() const { return m_state->m_strokeData.thickness(); }
+    void setStrokeThickness(float thickness) { m_state->m_strokeData.setThickness(thickness); }
+
+    StrokeStyle strokeStyle() const { return m_state->m_strokeData.style(); }
+    void setStrokeStyle(StrokeStyle style) { m_state->m_strokeData.setStyle(style); }
+
+    Color strokeColor() const { return m_state->m_strokeData.color(); }
+    void setStrokeColor(const Color&);
+
+    Pattern* strokePattern() const { return m_state->m_strokeData.pattern(); }
+    void setStrokePattern(PassRefPtr<Pattern>);
+
+    Gradient* strokeGradient() const { return m_state->m_strokeData.gradient(); }
+    void setStrokeGradient(PassRefPtr<Gradient>);
+
+    void setLineCap(LineCap cap) { m_state->m_strokeData.setLineCap(cap); }
+    void setLineDash(const DashArray& dashes, float dashOffset) { m_state->m_strokeData.setLineDash(dashes, dashOffset); }
+    void setLineJoin(LineJoin join) { m_state->m_strokeData.setLineJoin(join); }
+    void setMiterLimit(float limit) { m_state->m_strokeData.setMiterLimit(limit); }
+
+    WindRule fillRule() const { return m_state->m_fillRule; }
+    void setFillRule(WindRule fillRule) { m_state->m_fillRule = fillRule; }
+
+    Color fillColor() const { return m_state->m_fillColor; }
+    void setFillColor(const Color&);
+    SkColor effectiveFillColor() const { return m_state->applyAlpha(m_state->m_fillColor.rgb()); }
+
+    void setFillPattern(PassRefPtr<Pattern>);
+    Pattern* fillPattern() const { return m_state->m_fillPattern.get(); }
+
+    void setFillGradient(PassRefPtr<Gradient>);
+    Gradient* fillGradient() const { return m_state->m_fillGradient.get(); }
+
+    SkDrawLooper* drawLooper() const { return m_state->m_looper; }
+    SkColor effectiveStrokeColor() const { return m_state->applyAlpha(m_state->m_strokeData.color().rgb()); }
+
+    int getNormalizedAlpha() const;
+
+    bool getClipBounds(SkRect* bounds) const;
+    const SkMatrix& getTotalMatrix() const;
+    bool isPrintingDevice() const;
+
+    void setShouldAntialias(bool antialias) { m_state->m_shouldAntialias = antialias; }
+    bool shouldAntialias() const { return m_state->m_shouldAntialias; }
+
+    void setShouldSmoothFonts(bool smoothFonts) { m_state->m_shouldSmoothFonts = smoothFonts; }
+    bool shouldSmoothFonts() const { return m_state->m_shouldSmoothFonts; }
+
+    // Turn off LCD text for the paint if not supported on this context.
+    void adjustTextRenderMode(SkPaint*);
+    bool couldUseLCDRenderedText();
+
+    TextDrawingModeFlags textDrawingMode() const { return m_state->m_textDrawingMode; }
+    void setTextDrawingMode(TextDrawingModeFlags mode) { m_state->m_textDrawingMode = mode; }
+
+    void setAlpha(float alpha) { m_state->m_alpha = alpha; }
+
+    void setImageInterpolationQuality(InterpolationQuality quality) { m_state->m_interpolationQuality = quality; }
+    InterpolationQuality imageInterpolationQuality() const { return m_state->m_interpolationQuality; }
+
+    void setCompositeOperation(CompositeOperator, BlendMode = BlendModeNormal);
+    CompositeOperator compositeOperation() const { return m_state->m_compositeOperator; }
+    BlendMode blendModeOperation() const { return m_state->m_blendMode; }
+
+    // Change the way document markers are rendered.
+    // Any deviceScaleFactor higher than 1.5 is enough to justify setting this flag.
+    void setUseHighResMarkers(bool isHighRes) { m_useHighResMarker = isHighRes; }
+
+    // If true we are (most likely) rendering to a web page and the
+    // canvas has been prepared with an opaque background. If false,
+    // the canvas may havbe transparency (as is the case when rendering
+    // to a canvas object).
+    void setCertainlyOpaque(bool isOpaque) { m_isCertainlyOpaque = isOpaque; }
+    bool isCertainlyOpaque() const { return m_isCertainlyOpaque; }
+
+    // Returns if the context is a printing context instead of a display
+    // context. Bitmap shouldn't be resampled when printing to keep the best
+    // possible quality.
+    bool printing() const { return m_printing; }
+    void setPrinting(bool printing) { m_printing = printing; }
+
+    bool isAccelerated() const { return m_accelerated; }
+    void setAccelerated(bool accelerated) { m_accelerated = accelerated; }
+
+    // The opaque region is empty until tracking is turned on.
+    // It is never clerared by the context.
+    void setTrackOpaqueRegion(bool track) { m_trackOpaqueRegion = track; }
+    const OpaqueRegionSkia& opaqueRegion() const { return m_opaqueRegion; }
+
+    // The text region is empty until tracking is turned on.
+    // It is never clerared by the context.
+    void setTrackTextRegion(bool track) { m_trackTextRegion = track; }
+    const SkRect& textRegion() const { return m_textRegion; }
+
+    bool updatingControlTints() const { return m_updatingControlTints; }
+    void setUpdatingControlTints(bool updatingTints) { m_updatingControlTints = updatingTints; }
+
+    AnnotationModeFlags annotationMode() const { return m_annotationMode; }
+    void setAnnotationMode(const AnnotationModeFlags mode) { m_annotationMode = mode; }
+    // ---------- End state management methods -----------------
+
+    // Get the contents of the image buffer
+    bool readPixels(SkBitmap*, int, int, SkCanvas::Config8888 = SkCanvas::kNative_Premul_Config8888);
+
+    // Sets up the paint for the current fill style.
+    void setupPaintForFilling(SkPaint*) const;
+
+    // Sets up the paint for stroking. Returns a float representing the
+    // effective width of the pen. If a non-zero length is provided, the
+    // number of dashes/dots on a dashed/dotted line will be adjusted to
+    // start and end that length with a dash/dot.
+    float setupPaintForStroking(SkPaint*, int length = 0) const;
+
+    // These draw methods will do both stroking and filling.
+    // FIXME: ...except drawRect(), which fills properly but always strokes
+    // using a 1-pixel stroke inset from the rect borders (of the correct
+    // stroke color).
+    void drawRect(const IntRect&);
+    void drawLine(const IntPoint&, const IntPoint&);
+    void drawEllipse(const IntRect&);
+    void drawConvexPolygon(size_t numPoints, const FloatPoint*, bool shouldAntialias = false);
+
+    void fillPath(const Path&);
+    void strokePath(const Path&);
+
+    void fillEllipse(const FloatRect&);
+    void strokeEllipse(const FloatRect&);
+
+    void fillRect(const FloatRect&);
+    void fillRect(const FloatRect&, const Color&);
+    void fillRect(const FloatRect&, const Color&, CompositeOperator);
+    void fillRoundedRect(const IntRect&, const IntSize& topLeft, const IntSize& topRight, const IntSize& bottomLeft, const IntSize& bottomRight, const Color&);
+    void fillRoundedRect(const RoundedRect&, const Color&);
+    void fillRectWithRoundedHole(const IntRect&, const RoundedRect& roundedHoleRect, const Color&);
+
+    void clearRect(const FloatRect&);
+
+    void strokeRect(const FloatRect&, float lineWidth);
+
+    void drawImage(Image*, const IntPoint&, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
+    void drawImage(Image*, const IntRect&, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation, bool useLowQualityScale = false);
+    void drawImage(Image*, const IntPoint& destPoint, const IntRect& srcRect, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
+    void drawImage(Image*, const FloatRect& destRect);
+    void drawImage(Image*, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation, bool useLowQualityScale = false);
+    void drawImage(Image*, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator, BlendMode, RespectImageOrientationEnum = DoNotRespectImageOrientation, bool useLowQualityScale = false);
+
+    void drawTiledImage(Image*, const IntRect& destRect, const IntPoint& srcPoint, const IntSize& tileSize,
+        CompositeOperator = CompositeSourceOver, bool useLowQualityScale = false, BlendMode = BlendModeNormal);
+    void drawTiledImage(Image*, const IntRect& destRect, const IntRect& srcRect,
+        const FloatSize& tileScaleFactor, Image::TileRule hRule = Image::StretchTile, Image::TileRule vRule = Image::StretchTile,
+        CompositeOperator = CompositeSourceOver, bool useLowQualityScale = false);
+
+    void drawImageBuffer(ImageBuffer*, const IntPoint&, CompositeOperator = CompositeSourceOver, BlendMode = BlendModeNormal);
+    void drawImageBuffer(ImageBuffer*, const IntRect&, CompositeOperator = CompositeSourceOver, BlendMode = BlendModeNormal, bool useLowQualityScale = false);
+    void drawImageBuffer(ImageBuffer*, const IntPoint& destPoint, const IntRect& srcRect, CompositeOperator = CompositeSourceOver, BlendMode = BlendModeNormal);
+    void drawImageBuffer(ImageBuffer*, const IntRect& destRect, const IntRect& srcRect, CompositeOperator = CompositeSourceOver, BlendMode = BlendModeNormal, bool useLowQualityScale = false);
+    void drawImageBuffer(ImageBuffer*, const FloatRect& destRect);
+    void drawImageBuffer(ImageBuffer*, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator = CompositeSourceOver, BlendMode = BlendModeNormal, bool useLowQualityScale = false);
+
+    // These methods write to the canvas and modify the opaque region, if tracked.
+    // Also drawLine(const IntPoint& point1, const IntPoint& point2) and fillRoundedRect
+    void writePixels(const SkBitmap&, int x, int y, SkCanvas::Config8888 = SkCanvas::kNative_Premul_Config8888);
+    void drawBitmap(const SkBitmap&, SkScalar, SkScalar, const SkPaint* = 0);
+    void drawBitmapRect(const SkBitmap&, const SkRect*, const SkRect&, const SkPaint* = 0);
+    void drawOval(const SkRect&, const SkPaint&);
+    void drawPath(const SkPath&, const SkPaint&);
+    // After drawing directly to the context's canvas, use this function to notify the context so
+    // it can track the opaque region.
+    // FIXME: this is still needed only because ImageSkia::paintSkBitmap() may need to notify for a
+    //        smaller rect than the one drawn to, due to its clipping logic.
+    void didDrawRect(const SkRect&, const SkPaint&, const SkBitmap* = 0);
+    void drawRect(const SkRect&, const SkPaint&);
+    void drawPosText(const void* text, size_t byteLength, const SkPoint pos[], const SkRect& textRect, const SkPaint&);
+    void drawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[], SkScalar constY, const SkRect& textRect, const SkPaint&);
+    void drawTextOnPath(const void* text, size_t byteLength, const SkPath&, const SkRect& textRect, const SkMatrix*, const SkPaint&);
+
+    void clip(const IntRect& rect) { clip(FloatRect(rect)); }
+    void clip(const FloatRect& rect) { clipRect(rect); }
+    void clipRoundedRect(const RoundedRect&);
+    void clipOut(const IntRect& rect) { clipRect(rect, NotAntiAliased, SkRegion::kDifference_Op); }
+    void clipOutRoundedRect(const RoundedRect&);
+    void clipPath(const Path&, WindRule = RULE_EVENODD);
+    void clipConvexPolygon(size_t numPoints, const FloatPoint*, bool antialias = true);
+    void clipToImageBuffer(ImageBuffer*, const FloatRect&);
+    bool clipRect(const SkRect&, AntiAliasingMode = NotAntiAliased, SkRegion::Op = SkRegion::kIntersect_Op);
+
+    void drawText(const Font&, const TextRunPaintInfo&, const FloatPoint&);
+    void drawEmphasisMarks(const Font&, const TextRunPaintInfo&, const AtomicString& mark, const FloatPoint&);
+    void drawBidiText(const Font&, const TextRunPaintInfo&, const FloatPoint&, Font::CustomFontNotReadyAction = Font::DoNotPaintIfFontNotReady);
+    void drawHighlightForText(const Font&, const TextRun&, const FloatPoint&, int h, const Color& backgroundColor, int from = 0, int to = -1);
+
+    void drawLineForText(const FloatPoint&, float width, bool printing);
+    enum DocumentMarkerLineStyle {
+        DocumentMarkerSpellingLineStyle,
+        DocumentMarkerGrammarLineStyle
     };
+    void drawLineForDocumentMarker(const FloatPoint&, float width, DocumentMarkerLineStyle);
 
-    struct GraphicsContextState {
-        GraphicsContextState()
-            : strokeThickness(0)
-            , shadowBlur(0)
-            , textDrawingMode(TextModeFill)
-            , strokeColor(Color::black)
-            , fillColor(Color::black)
-            , strokeStyle(SolidStroke)
-            , fillRule(RULE_NONZERO)
-            , strokeColorSpace(ColorSpaceDeviceRGB)
-            , fillColorSpace(ColorSpaceDeviceRGB)
-            , shadowColorSpace(ColorSpaceDeviceRGB)
-            , compositeOperator(CompositeSourceOver)
-            , blendMode(BlendModeNormal)
-            , shouldAntialias(true)
-            , shouldSmoothFonts(true)
-            , shouldSubpixelQuantizeFonts(true)
-            , paintingDisabled(false)
-            , shadowsIgnoreTransforms(false)
-        {
-        }
+    void beginTransparencyLayer(float opacity);
+    void endTransparencyLayer();
+    // Begins a layer that is clipped to the image |imageBuffer| at the location
+    // |rect|. This layer is implicitly restored when the next restore is invoked.
+    // NOTE: |imageBuffer| may be deleted before the |restore| is invoked.
+    void beginLayerClippedToImage(const FloatRect&, const ImageBuffer*);
 
-        RefPtr<Gradient> strokeGradient;
-        RefPtr<Pattern> strokePattern;
-        
-        RefPtr<Gradient> fillGradient;
-        RefPtr<Pattern> fillPattern;
+    bool hasShadow() const;
+    void setShadow(const FloatSize& offset, float blur, const Color&,
+        DrawLooper::ShadowTransformMode = DrawLooper::ShadowRespectsTransforms,
+        DrawLooper::ShadowAlphaMode = DrawLooper::ShadowRespectsAlpha);
+    void clearShadow() { clearDrawLooper(); }
 
-        FloatSize shadowOffset;
+    // It is assumed that this draw looper is used only for shadows
+    // (i.e. a draw looper is set if and only if there is a shadow).
+    void setDrawLooper(const DrawLooper&);
+    void clearDrawLooper();
 
-        float strokeThickness;
-        float shadowBlur;
+    void drawFocusRing(const Vector<IntRect>&, int width, int offset, const Color&);
+    void drawFocusRing(const Path&, int width, int offset, const Color&);
 
-        TextDrawingModeFlags textDrawingMode;
+    // This clip function is used only by <canvas> code. It allows
+    // implementations to handle clipping on the canvas differently since
+    // the discipline is different.
+    void canvasClip(const Path&, WindRule = RULE_EVENODD);
+    void clipOut(const Path&);
 
-        Color strokeColor;
-        Color fillColor;
-        Color shadowColor;
+    // ---------- Transformation methods -----------------
+    enum IncludeDeviceScale { DefinitelyIncludeDeviceScale, PossiblyIncludeDeviceScale };
+    AffineTransform getCTM(IncludeDeviceScale includeScale = PossiblyIncludeDeviceScale) const;
+    void concatCTM(const AffineTransform& affine) { concat(affine); }
+    void setCTM(const AffineTransform& affine) { setMatrix(affine); }
+    void setMatrix(const SkMatrix&);
 
-        StrokeStyle strokeStyle;
-        WindRule fillRule;
+    void scale(const FloatSize&);
+    void rotate(float angleInRadians);
+    void translate(const FloatSize& size) { translate(size.width(), size.height()); }
+    void translate(float x, float y);
 
-        ColorSpace strokeColorSpace;
-        ColorSpace fillColorSpace;
-        ColorSpace shadowColorSpace;
+    // This function applies the device scale factor to the context, making the context capable of
+    // acting as a base-level context for a HiDPI environment.
+    void applyDeviceScaleFactor(float deviceScaleFactor) { scale(FloatSize(deviceScaleFactor, deviceScaleFactor)); }
+    // ---------- End transformation methods -----------------
 
-        CompositeOperator compositeOperator;
-        BlendMode blendMode;
+    // URL drawing
+    void setURLForRect(const KURL&, const IntRect&);
+    void setURLFragmentForRect(const String& name, const IntRect&);
+    void addURLTargetAtPoint(const String& name, const IntPoint&);
+    bool supportsURLFragments() { return printing(); }
 
-        bool shouldAntialias : 1;
-        bool shouldSmoothFonts : 1;
-        bool shouldSubpixelQuantizeFonts : 1;
-        bool paintingDisabled : 1;
-        bool shadowsIgnoreTransforms : 1;
-    };
+    // Create an image buffer compatible with this context, with suitable resolution
+    // for drawing into the buffer and then into this context.
+    PassOwnPtr<ImageBuffer> createCompatibleBuffer(const IntSize&, bool hasAlpha = true) const;
+    bool isCompatibleWithBuffer(ImageBuffer*) const;
 
-    class GraphicsContext {
-        WTF_MAKE_NONCOPYABLE(GraphicsContext); WTF_MAKE_FAST_ALLOCATED;
-    public:
-        explicit GraphicsContext(SkCanvas*);
-        ~GraphicsContext();
+    static void adjustLineToPixelBoundaries(FloatPoint& p1, FloatPoint& p2, float strokeWidth, StrokeStyle);
 
-        PlatformGraphicsContext* platformContext() const;
+    void beginAnnotation(const GraphicsContextAnnotation&);
+    void endAnnotation();
 
-        float strokeThickness() const;
-        void setStrokeThickness(float);
-        StrokeStyle strokeStyle() const;
-        void setStrokeStyle(StrokeStyle);
-        Color strokeColor() const;
-        ColorSpace strokeColorSpace() const;
-        void setStrokeColor(const Color&, ColorSpace);
-
-        void setStrokePattern(PassRefPtr<Pattern>);
-        Pattern* strokePattern() const;
-
-        void setStrokeGradient(PassRefPtr<Gradient>);
-        Gradient* strokeGradient() const;
-
-        WindRule fillRule() const;
-        void setFillRule(WindRule);
-        Color fillColor() const;
-        ColorSpace fillColorSpace() const;
-        void setFillColor(const Color&, ColorSpace);
-
-        void setFillPattern(PassRefPtr<Pattern>);
-        Pattern* fillPattern() const;
-
-        void setFillGradient(PassRefPtr<Gradient>);
-        Gradient* fillGradient() const;
-
-        void setShadowsIgnoreTransforms(bool);
-        bool shadowsIgnoreTransforms() const;
-
-        void setShouldAntialias(bool);
-        bool shouldAntialias() const;
-
-        void setShouldSmoothFonts(bool);
-        bool shouldSmoothFonts() const;
-
-        // Normally CG enables subpixel-quantization because it improves the performance of aligning glyphs.
-        // In some cases we have to disable to to ensure a high-quality output of the glyphs.
-        void setShouldSubpixelQuantizeFonts(bool);
-        bool shouldSubpixelQuantizeFonts() const;
-
-        // Change the way document markers are rendered.
-        // Any deviceScaleFactor higher than 1.5 is enough to justify setting this flag.
-        void setUseHighResMarkers(bool isHighRes) { m_useHighResMarker = isHighRes; }
-
-        // If true we are (most likely) rendering to a web page and the
-        // canvas has been prepared with an opaque background. If false,
-        // the canvas may havbe transparency (as is the case when rendering
-        // to a canvas object).
-        void setCertainlyOpaque(bool isOpaque) { m_isCertainlyOpaque = isOpaque; }
-        bool isCertainlyOpaque() const { return m_isCertainlyOpaque; }
-
-        // Returns if the context is a printing context instead of a display
-        // context. Bitmap shouldn't be resampled when printing to keep the best
-        // possible quality.
-        bool printing() const { return m_printing; }
-        void setPrinting(bool printing) { m_printing = printing; }
-
-        const GraphicsContextState& state() const;
-
-        bool isAccelerated() const { return m_accelerated; }
-        void setAccelerated(bool accelerated) { m_accelerated = accelerated; }
-
-        // The opaque region is empty until tracking is turned on.
-        // It is never clerared by the context.
-        void setTrackOpaqueRegion(bool track) { m_trackOpaqueRegion = track; }
-        const OpaqueRegionSkia& opaqueRegion() const { return m_opaqueRegion; }
-
-        void setImageInterpolationQuality(InterpolationQuality);
-        InterpolationQuality imageInterpolationQuality() const;
-
-        void save();
-        void restore();
-
-        void saveLayer(const SkRect* bounds, const SkPaint*, SkCanvas::SaveFlags = SkCanvas::kARGB_ClipLayer_SaveFlag);
-        void restoreLayer();
-
-        // These draw methods will do both stroking and filling.
-        // FIXME: ...except drawRect(), which fills properly but always strokes
-        // using a 1-pixel stroke inset from the rect borders (of the correct
-        // stroke color).
-        void drawRect(const IntRect&);
-        void drawLine(const IntPoint&, const IntPoint&);
-        void drawEllipse(const IntRect&);
-        void drawConvexPolygon(size_t numPoints, const FloatPoint*, bool shouldAntialias = false);
-
-        void fillPath(const Path&);
-        void strokePath(const Path&);
-
-        void fillEllipse(const FloatRect&);
-        void strokeEllipse(const FloatRect&);
-
-        void fillRect(const FloatRect&);
-        void fillRect(const FloatRect&, const Color&, ColorSpace);
-        void fillRect(const FloatRect&, Generator&);
-        void fillRect(const FloatRect&, const Color&, ColorSpace, CompositeOperator);
-        void fillRoundedRect(const IntRect&, const IntSize& topLeft, const IntSize& topRight, const IntSize& bottomLeft, const IntSize& bottomRight, const Color&, ColorSpace);
-        void fillRoundedRect(const RoundedRect&, const Color&, ColorSpace);
-        void fillRectWithRoundedHole(const IntRect&, const RoundedRect& roundedHoleRect, const Color&, ColorSpace);
-
-        void clearRect(const FloatRect&);
-
-        void strokeRect(const FloatRect&, float lineWidth);
-
-        void drawImage(Image*, ColorSpace styleColorSpace, const IntPoint&, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
-        void drawImage(Image*, ColorSpace styleColorSpace, const IntRect&, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation, bool useLowQualityScale = false);
-        void drawImage(Image*, ColorSpace styleColorSpace, const IntPoint& destPoint, const IntRect& srcRect, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
-        void drawImage(Image*, ColorSpace styleColorSpace, const FloatRect& destRect);
-        void drawImage(Image*, ColorSpace styleColorSpace, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation, bool useLowQualityScale = false);
-        void drawImage(Image*, ColorSpace styleColorSpace, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator, BlendMode, RespectImageOrientationEnum = DoNotRespectImageOrientation, bool useLowQualityScale = false);
-        
-        void drawTiledImage(Image*, ColorSpace styleColorSpace, const IntRect& destRect, const IntPoint& srcPoint, const IntSize& tileSize,
-            CompositeOperator = CompositeSourceOver, bool useLowQualityScale = false, BlendMode = BlendModeNormal);
-        void drawTiledImage(Image*, ColorSpace styleColorSpace, const IntRect& destRect, const IntRect& srcRect,
-                            const FloatSize& tileScaleFactor, Image::TileRule hRule = Image::StretchTile, Image::TileRule vRule = Image::StretchTile,
-                            CompositeOperator = CompositeSourceOver, bool useLowQualityScale = false);
-
-        void drawImageBuffer(ImageBuffer*, ColorSpace styleColorSpace, const IntPoint&, CompositeOperator = CompositeSourceOver, BlendMode = BlendModeNormal);
-        void drawImageBuffer(ImageBuffer*, ColorSpace styleColorSpace, const IntRect&, CompositeOperator = CompositeSourceOver, BlendMode = BlendModeNormal, bool useLowQualityScale = false);
-        void drawImageBuffer(ImageBuffer*, ColorSpace styleColorSpace, const IntPoint& destPoint, const IntRect& srcRect, CompositeOperator = CompositeSourceOver, BlendMode = BlendModeNormal);
-        void drawImageBuffer(ImageBuffer*, ColorSpace styleColorSpace, const IntRect& destRect, const IntRect& srcRect, CompositeOperator = CompositeSourceOver, BlendMode = BlendModeNormal, bool useLowQualityScale = false);
-        void drawImageBuffer(ImageBuffer*, ColorSpace styleColorSpace, const FloatRect& destRect);
-        void drawImageBuffer(ImageBuffer*, ColorSpace styleColorSpace, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator = CompositeSourceOver, BlendMode = BlendModeNormal, bool useLowQualityScale = false);
-
-        // These methods write to the canvas and modify the opaque region, if tracked.
-        // Also drawLine(const IntPoint& point1, const IntPoint& point2) and fillRoundedRect
-        void writePixels(const SkBitmap&, int x, int y, SkCanvas::Config8888 = SkCanvas::kNative_Premul_Config8888);
-        void drawBitmap(const SkBitmap&, SkScalar, SkScalar, const SkPaint* = 0);
-        void drawBitmapRect(const SkBitmap&, const SkIRect*, const SkRect&, const SkPaint* = 0);
-        void drawOval(const SkRect&, const SkPaint&);
-        void drawPath(const SkPath&, const SkPaint&);
-        // After drawing directly to the context's canvas, use this function to notify the context so
-        // it can track the opaque region.
-        // FIXME: this is still needed only because ImageSkia::paintSkBitmap() may need to notify for a
-        //        smaller rect than the one drawn to, due to its clipping logic.
-        void didDrawRect(const SkRect&, const SkPaint&, const SkBitmap* = 0);
-        void drawRect(const SkRect&, const SkPaint&);
-        void drawPosText(const void* text, size_t byteLength, const SkPoint pos[], const SkPaint&);
-        void drawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[], SkScalar constY, const SkPaint&);
-        void drawTextOnPath(const void* text, size_t byteLength, const SkPath&, const SkMatrix*, const SkPaint&);
-
-        void clip(const IntRect&);
-        void clip(const FloatRect&);
-        void clipRoundedRect(const RoundedRect&);
-        void clipOut(const IntRect&);
-        void clipOutRoundedRect(const RoundedRect&);
-        void clipPath(const Path&, WindRule);
-        void clipConvexPolygon(size_t numPoints, const FloatPoint*, bool antialias = true);
-        void clipToImageBuffer(ImageBuffer*, const FloatRect&);
-        
-        TextDrawingModeFlags textDrawingMode() const;
-        void setTextDrawingMode(TextDrawingModeFlags);
-
-        void drawText(const Font&, const TextRun&, const FloatPoint&, int from = 0, int to = -1);
-        void drawEmphasisMarks(const Font&, const TextRun& , const AtomicString& mark, const FloatPoint&, int from = 0, int to = -1);
-        void drawBidiText(const Font&, const TextRun&, const FloatPoint&, Font::CustomFontNotReadyAction = Font::DoNotPaintIfFontNotReady);
-        void drawHighlightForText(const Font&, const TextRun&, const FloatPoint&, int h, const Color& backgroundColor, ColorSpace, int from = 0, int to = -1);
-
-        void drawLineForText(const FloatPoint&, float width, bool printing);
-        enum DocumentMarkerLineStyle {
-            DocumentMarkerSpellingLineStyle,
-            DocumentMarkerGrammarLineStyle,
-            DocumentMarkerAutocorrectionReplacementLineStyle,
-            DocumentMarkerDictationAlternativesLineStyle
-        };
-        void drawLineForDocumentMarker(const FloatPoint&, float width, DocumentMarkerLineStyle);
-
-        bool paintingDisabled() const;
-        void setPaintingDisabled(bool);
-
-        bool updatingControlTints() const;
-        void setUpdatingControlTints(bool);
-
-        void beginTransparencyLayer(float opacity);
-        void endTransparencyLayer();
-        bool isInTransparencyLayer() const;
-        // Begins a layer that is clipped to the image |imageBuffer| at the location
-        // |rect|. This layer is implicitly restored when the next restore is invoked.
-        // NOTE: |imageBuffer| may be deleted before the |restore| is invoked.
-        void beginLayerClippedToImage(const FloatRect&, const ImageBuffer*);
-
-        bool hasShadow() const;
-        void setShadow(const FloatSize&, float blur, const Color&, ColorSpace);
-        // Legacy shadow blur radius is used for canvas, and -webkit-box-shadow.
-        // It has different treatment of radii > 8px.
-        void setLegacyShadow(const FloatSize&, float blur, const Color&, ColorSpace);
-
-        bool getShadow(FloatSize&, float&, Color&, ColorSpace&) const;
-        void clearShadow();
-
-        void drawFocusRing(const Vector<IntRect>&, int width, int offset, const Color&);
-        void drawFocusRing(const Path&, int width, int offset, const Color&);
-
-        void setLineCap(LineCap);
-        void setLineDash(const DashArray&, float dashOffset);
-        void setLineJoin(LineJoin);
-        void setMiterLimit(float);
-
-        void setAlpha(float);
-
-        void setCompositeOperation(CompositeOperator, BlendMode = BlendModeNormal);
-        CompositeOperator compositeOperation() const;
-        BlendMode blendModeOperation() const;
-
-        void clip(const Path&, WindRule = RULE_EVENODD);
-
-        // This clip function is used only by <canvas> code. It allows
-        // implementations to handle clipping on the canvas differently since
-        // the discipline is different.
-        void canvasClip(const Path&, WindRule = RULE_EVENODD);
-        void clipOut(const Path&);
-
-        void scale(const FloatSize&);
-        void rotate(float angleInRadians);
-        void translate(const FloatSize& size) { translate(size.width(), size.height()); }
-        void translate(float x, float y);
-
-        void setURLForRect(const KURL&, const IntRect&);
-
-        void concatCTM(const AffineTransform&);
-        void setCTM(const AffineTransform&);
-
-        enum IncludeDeviceScale { DefinitelyIncludeDeviceScale, PossiblyIncludeDeviceScale };
-        AffineTransform getCTM(IncludeDeviceScale includeScale = PossiblyIncludeDeviceScale) const;
-
-        // Create an image buffer compatible with this context, with suitable resolution
-        // for drawing into the buffer and then into this context.
-        PassOwnPtr<ImageBuffer> createCompatibleBuffer(const IntSize&, bool hasAlpha = true) const;
-        bool isCompatibleWithBuffer(ImageBuffer*) const;
-
-        // This function applies the device scale factor to the context, making the context capable of
-        // acting as a base-level context for a HiDPI environment.
-        void applyDeviceScaleFactor(float);
-
-        bool shouldIncludeChildWindows() const { return false; }
-
-        static void adjustLineToPixelBoundaries(FloatPoint& p1, FloatPoint& p2, float strokeWidth, StrokeStyle);
-
-    private:
-        static bool supportsTransparencyLayers();
-        static void addCornerArc(SkPath*, const SkRect&, const IntSize&, int);
-        static void setPathFromConvexPoints(SkPath* path, size_t numPoints, const FloatPoint* points);
-        void drawOuterPath(const SkPath&, SkPaint&, int);
-        void drawInnerPath(const SkPath&, SkPaint&, int);
-        static void setRadii(SkVector* radii, IntSize topLeft, IntSize topRight, IntSize bottomRight, IntSize bottomLeft);
+private:
+    static void addCornerArc(SkPath*, const SkRect&, const IntSize&, int);
+    static void setPathFromConvexPoints(SkPath*, size_t, const FloatPoint*);
+    static void setRadii(SkVector*, IntSize, IntSize, IntSize, IntSize);
 
 #if OS(DARWIN)
-        static inline int getFocusRingOutset(int offset) { return offset + 2; }
+    static inline int getFocusRingOutset(int offset) { return offset + 2; }
 #else
-        static inline int getFocusRingOutset(int offset) { return 0; }
-        static const SkPMColor lineColors(int);
-        static const SkPMColor antiColors1(int);
-        static const SkPMColor antiColors2(int);
-        static void draw1xMarker(SkBitmap*, int);
-        static void draw2xMarker(SkBitmap*, int);
+    static inline int getFocusRingOutset(int offset) { return 0; }
+    static const SkPMColor lineColors(int);
+    static const SkPMColor antiColors1(int);
+    static const SkPMColor antiColors2(int);
+    static void draw1xMarker(SkBitmap*, int);
+    static void draw2xMarker(SkBitmap*, int);
 #endif
 
-        // Return value % max, but account for value possibly being negative.
-        static int fastMod(int value, int max)
-        {
-            bool isNeg = false;
-            if (value < 0) {
-                value = -value;
-                isNeg = true;
-            }
-            if (value >= max)
-                value %= max;
-            if (isNeg)
-                value = -value;
-            return value;
+    // Return value % max, but account for value possibly being negative.
+    static int fastMod(int value, int max)
+    {
+        bool isNeg = false;
+        if (value < 0) {
+            value = -value;
+            isNeg = true;
         }
+        if (value >= max)
+            value %= max;
+        if (isNeg)
+            value = -value;
+        return value;
+    }
 
-        OwnPtr<PlatformContextSkia> m_data;
+    void setDrawLooper(SkDrawLooper* looper) { SkRefCnt_SafeAssign(m_state->m_looper, looper); }
 
-        GraphicsContextState m_state;
-        Vector<GraphicsContextState> m_stack;
-        unsigned m_transparencyCount;
+    // Sets up the common flags on a paint for antialiasing, effects, etc.
+    // This is implicitly called by setupPaintFill and setupPaintStroke, but
+    // you may wish to call it directly sometimes if you don't want that other
+    // behavior.
+    void setupPaintCommon(SkPaint*) const;
 
-        // Tracks the region painted opaque via the GraphicsContext.
-        OpaqueRegionSkia m_opaqueRegion;
-        bool m_trackOpaqueRegion;
+    // Helpers for drawing a focus ring (drawFocusRing)
+    void drawOuterPath(const SkPath&, SkPaint&, int);
+    void drawInnerPath(const SkPath&, SkPaint&, int);
 
-        // Are we on a high DPI display? If so, spelling and grammer markers are larger.
-        bool m_useHighResMarker;
-        // FIXME: Make this go away: crbug.com/236892
-        bool m_updatingControlTints;
-        bool m_accelerated;
-        bool m_isCertainlyOpaque;
-        bool m_printing;
-    };
+    // SkCanvas wrappers.
+    bool isDrawingToLayer() const { return m_canvas->isDrawingToLayer(); }
 
-    class GraphicsContextStateSaver {
-        WTF_MAKE_FAST_ALLOCATED;
-    public:
-        GraphicsContextStateSaver(GraphicsContext& context, bool saveAndRestore = true)
-        : m_context(context)
-        , m_saveAndRestore(saveAndRestore)
-        {
-            if (m_saveAndRestore)
-                m_context.save();
+    bool clipPath(const SkPath&, AntiAliasingMode = NotAntiAliased, SkRegion::Op = SkRegion::kIntersect_Op);
+    bool clipRRect(const SkRRect&, AntiAliasingMode = NotAntiAliased, SkRegion::Op = SkRegion::kIntersect_Op);
+
+    bool concat(const SkMatrix&);
+
+    // Used when restoring and the state has an image clip. Only shows the pixels in
+    // m_canvas that are also in imageBuffer.
+    // The clipping rectangle is given in absolute coordinates.
+    void applyClipFromImage(const SkRect&, const SkBitmap&);
+
+    // common code between setupPaintFor[Filling,Stroking]
+    void setupShader(SkPaint*, Gradient*, Pattern*, SkColor) const;
+
+    // Apply deferred saves
+    void realizeSave(SkCanvas::SaveFlags flags)
+    {
+        if (m_deferredSaveFlags & flags) {
+            m_canvas->save((SkCanvas::SaveFlags)m_deferredSaveFlags);
+            m_deferredSaveFlags = 0;
         }
-        
-        ~GraphicsContextStateSaver()
-        {
-            if (m_saveAndRestore)
-                m_context.restore();
-        }
-        
-        void save()
-        {
-            ASSERT(!m_saveAndRestore);
-            m_context.save();
-            m_saveAndRestore = true;
-        }
+    }
 
-        void restore()
-        {
-            ASSERT(m_saveAndRestore);
-            m_context.restore();
-            m_saveAndRestore = false;
-        }
-        
-        GraphicsContext* context() const { return &m_context; }
+    void didDrawTextInRect(const SkRect& textRect);
 
-    private:
-        GraphicsContext& m_context;
-        bool m_saveAndRestore;
-    };
+    // null indicates painting is disabled. Never delete this object.
+    SkCanvas* m_canvas;
+
+    // Pointer to the current drawing state. This is a cached value of m_stateStack.last().
+    GraphicsContextState* m_state;
+    // States stack. Enables local drawing state change with save()/restore() calls.
+    // Use OwnPtr to avoid copying the large state structure.
+    Vector<OwnPtr<GraphicsContextState> > m_stateStack;
+
+    // Currently pending save flags.
+    // FIXME: While defined as a bitmask of SkCanvas::SaveFlags, this is mostly used as a bool.
+    //        It will come in handy when adding granular save() support (clip vs. matrix vs. paint).
+    // crbug.com/233713
+    struct DeferredSaveState;
+    unsigned m_deferredSaveFlags;
+    Vector<DeferredSaveState> m_saveStateStack;
+
+    AnnotationModeFlags m_annotationMode;
+
+#if !ASSERT_DISABLED
+    unsigned m_annotationCount;
+    unsigned m_transparencyCount;
+#endif
+    // Tracks the region painted opaque via the GraphicsContext.
+    OpaqueRegionSkia m_opaqueRegion;
+    bool m_trackOpaqueRegion : 1;
+
+    // Tracks the region where text is painted via the GraphicsContext.
+    bool m_trackTextRegion : 1;
+    SkRect m_textRegion;
+
+    // Are we on a high DPI display? If so, spelling and grammar markers are larger.
+    bool m_useHighResMarker : 1;
+    // FIXME: Make this go away: crbug.com/236892
+    bool m_updatingControlTints : 1;
+    bool m_accelerated : 1;
+    bool m_isCertainlyOpaque : 1;
+    bool m_printing : 1;
+};
 
 } // namespace WebCore
 
 #endif // GraphicsContext_h
-

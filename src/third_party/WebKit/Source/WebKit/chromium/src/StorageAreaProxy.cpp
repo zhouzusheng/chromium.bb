@@ -36,22 +36,21 @@
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/PageGroup.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/storage/Storage.h"
 #include "core/storage/StorageEvent.h"
+#include "weborigin/SecurityOrigin.h"
 
+#include "public/platform/WebStorageArea.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
 #include "WebFrameImpl.h"
 #include "WebPermissionClient.h"
 #include "WebViewImpl.h"
-#include <public/WebStorageArea.h>
-#include <public/WebString.h>
-#include <public/WebURL.h>
 
 namespace WebCore {
 
-// FIXME: storageArea argument should be a PassOwnPtr.
-StorageAreaProxy::StorageAreaProxy(WebKit::WebStorageArea* storageArea, StorageType storageType)
-    : m_storageArea(adoptPtr(storageArea))
+StorageAreaProxy::StorageAreaProxy(PassOwnPtr<WebKit::WebStorageArea> storageArea, StorageType storageType)
+    : m_storageArea(storageArea)
     , m_storageType(storageType)
     , m_canAccessStorageCachedResult(false)
     , m_canAccessStorageCachedFrame(0)
@@ -162,7 +161,7 @@ void StorageAreaProxy::dispatchLocalStorageEvent(const String& key, const String
             if (storage && frame->document()->securityOrigin()->equal(securityOrigin) && !isEventSource(storage, sourceAreaInstance))
                 frame->document()->enqueueWindowEvent(StorageEvent::create(eventNames().storageEvent, key, oldValue, newValue, pageURL, storage));
         }
-        InspectorInstrumentation::didDispatchDOMStorageEvent(key, oldValue, newValue, LocalStorage, securityOrigin, *it);
+        InspectorInstrumentation::didDispatchDOMStorageEvent(*it, key, oldValue, newValue, LocalStorage, securityOrigin);
     }
 }
 
@@ -192,7 +191,7 @@ void StorageAreaProxy::dispatchSessionStorageEvent(const String& key, const Stri
         if (storage && frame->document()->securityOrigin()->equal(securityOrigin) && !isEventSource(storage, sourceAreaInstance))
             frame->document()->enqueueWindowEvent(StorageEvent::create(eventNames().storageEvent, key, oldValue, newValue, pageURL, storage));
     }
-    InspectorInstrumentation::didDispatchDOMStorageEvent(key, oldValue, newValue, SessionStorage, securityOrigin, page);
+    InspectorInstrumentation::didDispatchDOMStorageEvent(page, key, oldValue, newValue, SessionStorage, securityOrigin);
 }
 
 bool StorageAreaProxy::isEventSource(Storage* storage, WebKit::WebStorageArea* sourceAreaInstance)

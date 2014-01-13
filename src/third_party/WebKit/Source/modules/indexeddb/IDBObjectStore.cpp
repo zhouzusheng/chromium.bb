@@ -29,6 +29,7 @@
 #include "bindings/v8/IDBBindingUtilities.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "core/dom/DOMStringList.h"
+#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/platform/SharedBuffer.h"
 #include "modules/indexeddb/IDBAny.h"
@@ -133,7 +134,7 @@ PassRefPtr<IDBRequest> IDBObjectStore::put(ScriptState* state, ScriptValue& valu
 
 PassRefPtr<IDBRequest> IDBObjectStore::put(IDBDatabaseBackendInterface::PutMode putMode, PassRefPtr<IDBAny> source, ScriptState* state, ScriptValue& value, const ScriptValue& keyValue, ExceptionCode& ec)
 {
-    ScriptExecutionContext* context = scriptExecutionContextFromScriptState(state);
+    ScriptExecutionContext* context = state->scriptExecutionContext();
     DOMRequestState requestState(context);
     RefPtr<IDBKey> key = keyValue.isUndefined() ? 0 : scriptValueToIDBKey(&requestState, keyValue);
     return put(putMode, source, state, value, key.release(), ec);
@@ -173,7 +174,7 @@ PassRefPtr<IDBRequest> IDBObjectStore::put(IDBDatabaseBackendInterface::PutMode 
     const bool usesInLineKeys = !keyPath.isNull();
     const bool hasKeyGenerator = autoIncrement();
 
-    ScriptExecutionContext* context = scriptExecutionContextFromScriptState(state);
+    ScriptExecutionContext* context = state->scriptExecutionContext();
     DOMRequestState requestState(context);
 
     if (putMode != IDBDatabaseBackendInterface::CursorUpdate && usesInLineKeys && key) {

@@ -41,11 +41,9 @@ namespace WebCore {
 
 class InjectedScript;
 class InjectedScriptManager;
-class InspectorArray;
 class InspectorFrontend;
-class InspectorObject;
-class InspectorValue;
 class InstrumentingAgents;
+class JSONArray;
 class ScriptDebugServer;
 class WorkerContext;
 
@@ -73,21 +71,19 @@ public:
     virtual void callFunctionOn(ErrorString*,
                         const String& objectId,
                         const String& expression,
-                        const RefPtr<InspectorArray>* optionalArguments,
+                        const RefPtr<JSONArray>* optionalArguments,
                         const bool* doNotPauseOnExceptionsAndMuteConsole,
                         const bool* returnByValue,
                         const bool* generatePreview,
                         RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
                         TypeBuilder::OptOutput<bool>* wasThrown);
     virtual void releaseObject(ErrorString*, const String& objectId);
-    virtual void getProperties(ErrorString*, const String& objectId, const bool* ownProperties, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor> >& internalProperties);
+    virtual void getProperties(ErrorString*, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor> >& internalProperties);
     virtual void releaseObjectGroup(ErrorString*, const String& objectGroup);
     virtual void run(ErrorString*);
 
-    void setScriptDebugServer(ScriptDebugServer*);
-
 protected:
-    InspectorRuntimeAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*);
+    InspectorRuntimeAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*, ScriptDebugServer*);
     virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) = 0;
 
     virtual void muteConsole() = 0;

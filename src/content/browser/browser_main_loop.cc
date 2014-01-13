@@ -14,9 +14,9 @@
 #include "base/metrics/histogram.h"
 #include "base/pending_task.h"
 #include "base/power_monitor/power_monitor.h"
-#include "base/system_monitor/system_monitor.h"
 #include "base/run_loop.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/system_monitor/system_monitor.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/download/save_file_manager.h"
@@ -46,6 +46,8 @@
 #include "content/public/common/result_codes.h"
 #include "crypto/nss_util.h"
 #include "media/audio/audio_manager.h"
+#include "media/base/media.h"
+#include "media/midi/midi_manager.h"
 #include "net/base/network_change_notifier.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/ssl/ssl_config_service.h"
@@ -59,8 +61,6 @@
 #include "base/android/jni_android.h"
 #include "content/browser/android/surface_texture_peer_browser_impl.h"
 #include "content/browser/device_orientation/data_fetcher_impl_android.h"
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-#include <sys/resource.h>
 #endif
 
 #if defined(OS_WIN)
@@ -68,6 +68,7 @@
 #include <commctrl.h>
 #include <shellapi.h>
 
+#include "base/win/text_services_message_filter.h"
 #include "content/browser/system_message_window_win.h"
 #include "content/common/sandbox_win.h"
 #include "net/base/winsock_init.h"
@@ -110,6 +111,7 @@ namespace {
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 void SetupSandbox(const CommandLine& parsed_command_line) {
+  TRACE_EVENT0("startup", "SetupSandbox");
   // TODO(evanm): move this into SandboxWrapper; I'm just trying to move this
   // code en masse out of chrome_main for now.
   const char* sandbox_binary = NULL;
@@ -126,9 +128,30 @@ void SetupSandbox(const CommandLine& parsed_command_line) {
     sandbox_binary = LINUX_SANDBOX_PATH;
 #endif
 
+  const bool want_setuid_sandbox =
+      !parsed_command_line.HasSwitch(switches::kNoSandbox) &&
+      !parsed_command_line.HasSwitch(switches::kDisableSetuidSandbox);
+
+  if (want_setuid_sandbox) {
+    static const char no_suid_error[] = "Running without the SUID sandbox! See "
+        "https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment "
+        "for more information on developing with the sandbox on.";
+    if (!sandbox_binary) {
+      // This needs to be fatal. Talk to security@chromium.org if you feel
+      // otherwise.
+      LOG(FATAL) << no_suid_error;
+    }
+    // TODO(jln): an empty CHROME_DEVEL_SANDBOX environment variable (as
+    // opposed to a non existing one) is not fatal yet. This is needed because
+    // of existing bots and scripts. Fix it (crbug.com/245376).
+    if (sandbox_binary && *sandbox_binary == '\0')
+      LOG(ERROR) << no_suid_error;
+  }
+
   std::string sandbox_cmd;
-  if (sandbox_binary && !parsed_command_line.HasSwitch(switches::kNoSandbox))
+  if (want_setuid_sandbox && sandbox_binary) {
     sandbox_cmd = sandbox_binary;
+  }
 
   // Tickle the sandbox host and zygote host so they fork now.
   RenderSandboxHostLinux::GetInstance()->Init(sandbox_cmd);
@@ -159,6 +182,9 @@ static void GLibLogHandler(const gchar* log_domain,
     }
   } else if (strstr(message, "Unable to retrieve the file info for")) {
     LOG(ERROR) << "GTK File code error: " << message;
+  } else if (strstr(message, "Could not find the icon") &&
+             strstr(log_domain, "Gtk")) {
+    LOG(ERROR) << "GTK icon error: " << message;
   } else if (strstr(message, "Theme file for default has no") ||
              strstr(message, "Theme directory") ||
              strstr(message, "theme pixmap") ||
@@ -260,21 +286,12 @@ class BrowserMainLoop::MemoryObserver : public base::MessageLoop::TaskObserver {
 };
 
 
-// static
-media::AudioManager* BrowserMainLoop::GetAudioManager() {
-  return g_current_browser_main_loop->audio_manager_.get();
-}
-
-// static
-AudioMirroringManager* BrowserMainLoop::GetAudioMirroringManager() {
-  return g_current_browser_main_loop->audio_mirroring_manager_.get();
-}
-
-// static
-MediaStreamManager* BrowserMainLoop::GetMediaStreamManager() {
-  return g_current_browser_main_loop->media_stream_manager_.get();
-}
 // BrowserMainLoop construction / destruction =============================
+
+BrowserMainLoop* BrowserMainLoop::GetInstance() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  return g_current_browser_main_loop;
+}
 
 BrowserMainLoop::BrowserMainLoop(const MainFunctionParams& parameters)
     : parameters_(parameters),
@@ -301,7 +318,7 @@ void BrowserMainLoop::Init() {
 // BrowserMainLoop stages ==================================================
 
 void BrowserMainLoop::EarlyInitialization() {
-  TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization")
+  TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization");
 #if defined(USE_X11)
   if (parsed_command_line_.HasSwitch(switches::kSingleProcess) ||
       parsed_command_line_.HasSwitch(switches::kInProcessGPU)) {
@@ -368,48 +385,92 @@ void BrowserMainLoop::MainMessageLoopStart() {
 
   InitializeMainThread();
 
-  system_monitor_.reset(new base::SystemMonitor);
-  power_monitor_.reset(new base::PowerMonitor);
-  hi_res_timer_manager_.reset(new HighResolutionTimerManager);
-  network_change_notifier_.reset(net::NetworkChangeNotifier::Create());
-  audio_manager_.reset(media::AudioManager::Create());
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:SystemMonitor")
+    system_monitor_.reset(new base::SystemMonitor);
+  }
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:PowerMonitor")
+    power_monitor_.reset(new base::PowerMonitor);
+  }
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:HighResTimerManager")
+    hi_res_timer_manager_.reset(new HighResolutionTimerManager);
+  }
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:NetworkChangeNotifier")
+    network_change_notifier_.reset(net::NetworkChangeNotifier::Create());
+  }
+
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MediaFeatures")
+    media::InitializeCPUSpecificMediaFeatures();
+  }
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:AudioMan")
+    audio_manager_.reset(media::AudioManager::Create());
+  }
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MIDIManager")
+    midi_manager_.reset(media::MIDIManager::Create());
+  }
 
 #if !defined(OS_IOS)
-  WebUIControllerFactory::RegisterFactory(
-      ContentWebUIControllerFactory::GetInstance());
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:ContentWebUIController")
+    WebUIControllerFactory::RegisterFactory(
+        ContentWebUIControllerFactory::GetInstance());
+  }
 
-  audio_mirroring_manager_.reset(new AudioMirroringManager());
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:AudioMirroringManager")
+    audio_mirroring_manager_.reset(new AudioMirroringManager());
+  }
 
   // Start tracing to a file if needed.
   if (base::debug::TraceLog::GetInstance()->IsEnabled()) {
+    TRACE_EVENT0("startup", "BrowserMainLoop::InitStartupTracing")
     TraceControllerImpl::GetInstance()->InitStartupTracing(
         parsed_command_line_);
   }
 
-  online_state_observer_.reset(new BrowserOnlineStateObserver);
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:OnlineStateObserver")
+    online_state_observer_.reset(new BrowserOnlineStateObserver);
+  }
 #endif  // !defined(OS_IOS)
-
-#if defined(ENABLE_PLUGINS)
-  // Prior to any processing happening on the io thread, we create the
-  // plugin service as it is predominantly used from the io thread,
-  // but must be created on the main thread. The service ctor is
-  // inexpensive and does not invoke the io_thread() accessor.
-  PluginService::GetInstance()->Init();
-#endif
 
 #if defined(OS_WIN)
   system_message_window_.reset(new SystemMessageWindowWin);
+
+  if (base::win::IsTSFAwareRequired()) {
+    // Create a TSF message filter for the message loop. MessageLoop takes
+    // ownership of the filter.
+    scoped_ptr<base::win::TextServicesMessageFilter> tsf_message_filter(
+      new base::win::TextServicesMessageFilter);
+    if (tsf_message_filter->Init()) {
+      base::MessageLoopForUI::current()->SetMessageFilter(
+        tsf_message_filter.PassAs<base::MessageLoopForUI::MessageFilter>());
+    }
+  }
 #endif
 
   if (parts_)
     parts_->PostMainMessageLoopStart();
 
 #if defined(OS_ANDROID)
-  SurfaceTexturePeer::InitInstance(new SurfaceTexturePeerBrowserImpl());
-  DataFetcherImplAndroid::Init(base::android::AttachCurrentThread());
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:SurfaceTexturePeer")
+    SurfaceTexturePeer::InitInstance(new SurfaceTexturePeerBrowserImpl());
+  }
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:DataFetcher")
+    DataFetcherImplAndroid::Init(base::android::AttachCurrentThread());
+  }
 #endif
 
   if (parsed_command_line_.HasSwitch(switches::kMemoryMetrics)) {
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MemoryObserver")
     memory_observer_.reset(new MemoryObserver());
     base::MessageLoop::current()->AddTaskObserver(memory_observer_.get());
   }
@@ -420,9 +481,20 @@ void BrowserMainLoop::CreateThreads() {
 
   if (parts_) {
     TRACE_EVENT0("startup",
-        "BrowserMainLoop::MainMessageLoopStart:PreCreateThreads");
+        "BrowserMainLoop::CreateThreads:PreCreateThreads");
     result_code_ = parts_->PreCreateThreads();
   }
+
+#if defined(ENABLE_PLUGINS)
+  // Prior to any processing happening on the io thread, we create the
+  // plugin service as it is predominantly used from the io thread,
+  // but must be created on the main thread. The service ctor is
+  // inexpensive and does not invoke the io_thread() accessor.
+  {
+    TRACE_EVENT0("startup", "BrowserMainLoop::CreateThreads:PluginService")
+    PluginService::GetInstance()->Init();
+  }
+#endif
 
 #if !defined(OS_IOS) && (!defined(GOOGLE_CHROME_BUILD) || defined(OS_ANDROID))
   // Single-process is an unsupported and not fully tested mode, so
@@ -703,6 +775,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
 }
 
 void BrowserMainLoop::InitializeMainThread() {
+  TRACE_EVENT0("startup", "BrowserMainLoop::InitializeMainThread")
   const char* kThreadName = "CrBrowserMain";
   base::PlatformThread::SetName(kThreadName);
   if (main_message_loop_)
@@ -713,26 +786,15 @@ void BrowserMainLoop::InitializeMainThread() {
       new BrowserThreadImpl(BrowserThread::UI, base::MessageLoop::current()));
 }
 
-#if defined(OS_ANDROID)
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-namespace {
-void SetHighThreadPriority() {
-  int nice_value = -6; // High priority.
-  setpriority(PRIO_PROCESS, base::PlatformThread::CurrentId(), nice_value);
-}
-}
-#endif
-
 void BrowserMainLoop::BrowserThreadsStarted() {
   TRACE_EVENT0("startup", "BrowserMainLoop::BrowserThreadsStarted")
 #if defined(OS_ANDROID)
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-  BrowserThread::PostTask(BrowserThread::UI,
-                          FROM_HERE,
-                          base::Bind(&SetHighThreadPriority));
-  BrowserThread::PostTask(BrowserThread::IO,
-                          FROM_HERE,
-                          base::Bind(&SetHighThreadPriority));
+  // Up the priority of anything that touches with display tasks
+  // (this thread is UI thread, and io_thread_ is for IPCs).
+  io_thread_->SetPriority(base::kThreadPriority_Display);
+  base::PlatformThread::SetThreadPriority(
+      base::PlatformThread::CurrentHandle(),
+      base::kThreadPriority_Display);
 #endif
 
 #if !defined(OS_IOS)
@@ -766,17 +828,14 @@ void BrowserMainLoop::BrowserThreadsStarted() {
   // Initialize the GpuDataManager before we set up the MessageLoops because
   // otherwise we'll trigger the assertion about doing IO on the UI thread.
   GpuDataManagerImpl::GetInstance()->Initialize();
-#endif  // !OS_IOS
 
-#if defined(ENABLE_INPUT_SPEECH)
   {
     TRACE_EVENT0("startup",
       "BrowserMainLoop::BrowserThreadsStarted:InitSpeechRecognition");
-    speech_recognition_manager_.reset(new SpeechRecognitionManagerImpl());
+    speech_recognition_manager_.reset(new SpeechRecognitionManagerImpl(
+        audio_manager_.get(), media_stream_manager_.get()));
   }
-#endif
 
-#if !defined(OS_IOS)
   // Alert the clipboard class to which threads are allowed to access the
   // clipboard:
   std::vector<base::PlatformThreadId> allowed_clipboard_threads;

@@ -32,12 +32,12 @@
 #include "core/platform/graphics/chromium/UniscribeHelper.h"
 
 #include <windows.h>
-#include "SkPoint.h"
 #include "core/platform/graphics/Font.h"
+#include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/chromium/FontUtilsChromiumWin.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
 #include "core/platform/graphics/skia/SkiaFontWin.h"
 #include "core/platform/win/HWndDC.h"
+#include "third_party/skia/include/core/SkPoint.h"
 #include <wtf/Assertions.h>
 
 namespace WebCore {
@@ -324,8 +324,10 @@ int UniscribeHelper::xToCharacter(int x) const
     return 0;
 }
 
-void UniscribeHelper::draw(GraphicsContext* graphicsContext,
-                           HDC dc, int x, int y, int from, int to)
+void UniscribeHelper::draw(GraphicsContext* graphicsContext, HDC dc,
+                           int x, int y,
+                           const FloatRect& textRect,
+                           int from, int to)
 {
     HGDIOBJ oldFont = 0;
     int curX = x;
@@ -426,7 +428,8 @@ void UniscribeHelper::draw(GraphicsContext* graphicsContext,
                               &shaping.m_glyphs[fromGlyph],
                               advances,
                               &shaping.m_offsets[fromGlyph],
-                              &origin);
+                              origin,
+                              textRect);
                 textOutOk = true;
 
                 if (!textOutOk && 0 == executions) {
@@ -543,23 +546,25 @@ void UniscribeHelper::fillRuns()
                                             &m_runs[0], &m_scriptTags[0],
                                             &numberOfItems);
 
-            if (SUCCEEDED(hr)) { 
-                // Pack consecutive runs, the script tag of which are 
-                // SCRIPT_TAG_UNKNOWN, to reduce the number of runs. 
-                for (int i = 0; i < numberOfItems; ++i) { 
-                    if (m_scriptTags[i] == SCRIPT_TAG_UNKNOWN) { 
-                        int j = 1; 
-                        while (i + j < numberOfItems && m_scriptTags[i + j] == SCRIPT_TAG_UNKNOWN) 
-                            ++j; 
-                        if (--j) { 
-                            m_runs.remove(i + 1, j); 
-                            m_scriptTags.remove(i + 1, j); 
-                            numberOfItems -= j; 
-                        } 
-                    } 
-                } 
-                m_scriptTags.resize(numberOfItems); 
-            } 
+            if (SUCCEEDED(hr)) {
+                // Pack consecutive runs, the script tag of which are
+                // SCRIPT_TAG_UNKNOWN, to reduce the number of runs.
+                for (int i = 0; i < numberOfItems; ++i) {
+                    // Do not pack with whitespace characters at the head.
+                    // Otherwise whole the run is rendered as a whitespace.
+                    if (m_scriptTags[i] == SCRIPT_TAG_UNKNOWN && !Font::treatAsSpace(m_input[m_runs[i].iCharPos])) {
+                        int j = 1;
+                        while (i + j < numberOfItems && m_scriptTags[i + j] == SCRIPT_TAG_UNKNOWN)
+                            ++j;
+                        if (--j) {
+                            m_runs.remove(i + 1, j);
+                            m_scriptTags.remove(i + 1, j);
+                            numberOfItems -= j;
+                        }
+                    }
+                }
+                m_scriptTags.resize(numberOfItems);
+            }
         } else {
             hr = ScriptItemize(m_input, m_inputLength,
                                static_cast<int>(m_runs.size()) - 1,
@@ -652,6 +657,13 @@ bool UniscribeHelper::shape(const UChar* input,
                                           &shaping.m_logs[0], &charProps[0],
                                           &shaping.m_glyphs[0], &glyphProps[0],
                                           &generatedGlyphs);
+            if (SUCCEEDED(hr)) {
+                // If we use ScriptShapeOpenType(), visual attributes
+                // information for each characters are stored in
+                // |glyphProps[i].sva|.
+                for (int i = 0; i < generatedGlyphs; ++i)
+                    memcpy(&shaping.m_visualAttributes[i], &glyphProps[i].sva, sizeof(SCRIPT_VISATTR));
+            }
         } else {
             hr = ScriptShape(m_cachedDC, scriptCache, input, itemLength,
                              numGlyphs, &run.a,
@@ -749,12 +761,6 @@ bool UniscribeHelper::shape(const UChar* input,
   cleanup:
     shaping.m_glyphs.resize(generatedGlyphs);
     shaping.m_visualAttributes.resize(generatedGlyphs);
-    // If we use ScriptShapeOpenType(), visual attributes information for each
-    // characters are stored in |glyphProps[i].sva|.
-    if (gScriptShapeOpenTypeFunc) {
-        for (int i = 0; i < generatedGlyphs; ++i)
-            memcpy(&shaping.m_visualAttributes[i], &glyphProps[i].sva, sizeof(SCRIPT_VISATTR));
-    }
     shaping.m_advance.resize(generatedGlyphs);
     shaping.m_offsets.resize(generatedGlyphs);
 
@@ -1021,13 +1027,19 @@ bool UniscribeHelper::containsMissingGlyphs(const Shaping& shaping,
 {
     for (int i = 0; i < shaping.charLength(); i++) {
         UChar c = m_input[run.iCharPos + i];
-        // Skip zero-width space characters because they're not considered to be missing in a font.
+        // Skip zero-width space characters because they're not considered to
+        // be missing in a font.
         if (Font::treatAsZeroWidthSpaceInComplexScript(c))
             continue;
         int glyphIndex = shaping.m_logs[i];
         WORD glyph = shaping.m_glyphs[glyphIndex];
+        // Note on the thrid condition: Windows Vista sometimes returns glyphs
+        // equal to wgBlank (instead of wgDefault), with fZeroWidth set. Treat
+        // such cases as having missing glyphs if the corresponding character
+        // is not a zero width whitespace.
         if (glyph == properties->wgDefault
-            || (glyph == properties->wgInvalid && glyph != properties->wgBlank))
+            || (glyph == properties->wgInvalid && glyph != properties->wgBlank)
+            || (glyph == properties->wgBlank && shaping.m_visualAttributes[glyphIndex].fZeroWidth && !Font::treatAsZeroWidthSpace(c)))
             return true;
     }
     return false;

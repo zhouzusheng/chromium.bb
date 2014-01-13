@@ -59,6 +59,7 @@ AudioNode::AudioNode(AudioContext* context, float sampleRate)
     , m_channelCountMode(Max)
     , m_channelInterpretation(AudioBus::Speakers)
 {
+    ScriptWrappable::init(this);
 #if DEBUG_AUDIONODE_REFERENCES
     if (!s_isNodeCountInitialized) {
         s_isNodeCountInitialized = true;
@@ -282,10 +283,20 @@ void AudioNode::updateChannelsForInputs()
         input(i)->changedOutputs();
 }
 
+const AtomicString& AudioNode::interfaceName() const
+{
+    return eventNames().interfaceForAudioNode;
+}
+
+ScriptExecutionContext* AudioNode::scriptExecutionContext() const
+{
+    return const_cast<AudioNode*>(this)->context()->scriptExecutionContext();
+}
+
 void AudioNode::processIfNecessary(size_t framesToProcess)
 {
     ASSERT(context()->isAudioThread());
-    
+
     if (!isInitialized())
         return;
 

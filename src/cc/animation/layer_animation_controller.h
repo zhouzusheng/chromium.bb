@@ -6,7 +6,7 @@
 #define CC_ANIMATION_LAYER_ANIMATION_CONTROLLER_H_
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
@@ -51,14 +51,6 @@ class CC_EXPORT LayerAnimationController
   // thread controller.
   virtual void PushAnimationUpdatesTo(
       LayerAnimationController* controller_impl);
-
-  // Transfers ownership of all animations to other_controller, replacing
-  // any animations currently owned by other_controller. This is intended
-  // to be used for transferring animations between main thread controllers,
-  // so the run state of each transferred animation is preserved (note that
-  // this differs from ReplaceImplThreadAnimations, which is used for copying
-  // animations from a main thread controller to an impl thread controller).
-  void TransferAnimationsTo(LayerAnimationController* other_controller);
 
   void Animate(double monotonic_time);
   void AccumulatePropertyUpdates(double monotonic_time,
@@ -151,6 +143,7 @@ class CC_EXPORT LayerAnimationController
   void NotifyObserversOpacityAnimated(float opacity);
   void NotifyObserversTransformAnimated(const gfx::Transform& transform);
 
+  bool HasValueObserver();
   bool HasActiveValueObserver();
 
   // If this is true, we force a sync to the impl thread.

@@ -61,8 +61,8 @@
 #include "core/html/canvas/DataView.h"
 #include "core/platform/AsyncFileSystem.h"
 #include "core/platform/SharedBuffer.h"
-
 #include "wtf/ArrayBuffer.h"
+#include "wtf/ArrayBufferContents.h"
 #include "wtf/ArrayBufferView.h"
 #include "wtf/Assertions.h"
 #include "wtf/ByteOrder.h"
@@ -77,6 +77,7 @@
 #include "wtf/Uint8Array.h"
 #include "wtf/Uint8ClampedArray.h"
 #include "wtf/Vector.h"
+#include "wtf/text/StringUTF8Adaptor.h"
 
 // FIXME: consider crashing in debug mode on deserialization errors
 // NOTE: be sure to change wireFormatVersion as necessary!
@@ -138,12 +139,11 @@ private:
     struct V8HandlePtrHash {
         static unsigned hash(const G* key)
         {
-            v8::Handle<G> objHandle(const_cast<G*>(key));
-            return static_cast<unsigned>(objHandle->GetIdentityHash());
+            return static_cast<unsigned>(unsafeHandleFromRawValue(key)->GetIdentityHash());
         }
         static bool equal(const G* a, const G* b)
         {
-            return v8::Handle<G>(const_cast<G*>(a)) == v8::Handle<G>(const_cast<G*>(b));
+            return unsafeHandleFromRawValue(a) == unsafeHandleFromRawValue(b);
         }
         // For HashArg.
         static const bool safeToCompareToEmptyOrDeleted = false;
@@ -579,8 +579,8 @@ private:
 
     void doWriteWebCoreString(const String& string)
     {
-        RefPtr<SharedBuffer> buffer = utf8Buffer(string);
-        doWriteString(buffer->data(), buffer->size());
+        StringUTF8Adaptor stringUTF8(string);
+        doWriteString(stringUTF8.data(), stringUTF8.length());
     }
 
     int bytesNeededToWireEncode(uint32_t value)
@@ -1670,7 +1670,7 @@ private:
         uint32_t rawValue;
         if (!doReadUint32(&rawValue))
             return false;
-        *value = v8Integer(static_cast<int32_t>(ZigZag::decode(rawValue)), m_isolate);
+        *value = v8::Integer::New(static_cast<int32_t>(ZigZag::decode(rawValue)), m_isolate);
         return true;
     }
 
@@ -1679,7 +1679,7 @@ private:
         uint32_t rawValue;
         if (!doReadUint32(&rawValue))
             return false;
-        *value = v8UnsignedInteger(rawValue, m_isolate);
+        *value = v8::Integer::NewFromUnsigned(rawValue, m_isolate);
         return true;
     }
 
@@ -2376,6 +2376,8 @@ inline void neuterBinding(T* object)
 
 PassOwnPtr<SerializedScriptValue::ArrayBufferContentsArray> SerializedScriptValue::transferArrayBuffers(ArrayBufferArray& arrayBuffers, bool& didThrow, v8::Isolate* isolate)
 {
+    ASSERT(arrayBuffers.size());
+
     for (size_t i = 0; i < arrayBuffers.size(); i++) {
         if (arrayBuffers[i]->isNeutered()) {
             setDOMException(INVALID_STATE_ERR, isolate);
@@ -2445,7 +2447,7 @@ SerializedScriptValue::SerializedScriptValue(v8::Handle<v8::Value> value, Messag
         return;
     case Serializer::Success:
         m_data = String(StringImpl::adopt(writer.data())).isolatedCopy();
-        if (arrayBuffers)
+        if (arrayBuffers && arrayBuffers->size())
             m_arrayBufferContentsArray = transferArrayBuffers(*arrayBuffers, didThrow, isolate);
         return;
     case Serializer::JSException:

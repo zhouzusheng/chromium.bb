@@ -10,9 +10,9 @@
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 
 #if defined(OS_WIN)
@@ -220,6 +220,7 @@ void CommandLine::InitFromArgv(int argc,
 
 void CommandLine::InitFromArgv(const StringVector& argv) {
   argv_ = StringVector(1);
+  switches_.clear();
   begin_args_ = 1;
   SetProgram(argv.empty() ? FilePath() : FilePath(argv[0]));
   AppendSwitchesAndArguments(*this, argv);

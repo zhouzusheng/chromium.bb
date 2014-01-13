@@ -22,6 +22,7 @@ class CC_EXPORT PicturePile : public PicturePileBase {
   void Update(
       ContentLayerClient* painter,
       SkColor background_color,
+      bool contents_opaque,
       const Region& invalidation,
       gfx::Rect visible_layer_rect,
       RenderingStats* stats);
@@ -38,8 +39,10 @@ class CC_EXPORT PicturePile : public PicturePileBase {
     show_debug_picture_borders_ = show;
   }
 
- private:
+ protected:
   virtual ~PicturePile();
+
+ private:
   friend class PicturePileImpl;
 
   // Add an invalidation to this picture list.  If the list needs to be

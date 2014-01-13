@@ -265,6 +265,7 @@ class ChromeHtmlUnittest(unittest.TestCase):
       'test.css': '''
       .image {
         background: url('chrome://theme/IDR_RESOURCE_NAME');
+        content: url('chrome://theme/IDR_RESOURCE_NAME_WITH_Q?$1');
       }
       ''',
     })
@@ -281,6 +282,7 @@ class ChromeHtmlUnittest(unittest.TestCase):
           <style>
       .image {
         background: -webkit-image-set(url('chrome://theme/IDR_RESOURCE_NAME') 1x, url('chrome://theme/IDR_RESOURCE_NAME@2x') 2x);
+        content: -webkit-image-set(url('chrome://theme/IDR_RESOURCE_NAME_WITH_Q?$1') 1x, url('chrome://theme/IDR_RESOURCE_NAME_WITH_Q@2x?$1') 2x);
       }
       </style>
         </head>
@@ -344,6 +346,63 @@ class ChromeHtmlUnittest(unittest.TestCase):
       </html>
       '''))
     tmp_dir.CleanUp()
+
+  def testExpandVariablesInFilename(self):
+    '''
+    Tests variable substitution in filenames while flattening images
+    with multiple scale factors.
+    '''
+
+    tmp_dir = util.TempDir({
+      'index.html': '''
+      <!DOCTYPE HTML>
+      <html>
+        <head>
+          <link rel="stylesheet" href="test.css">
+        </head>
+        <body>
+          <!-- Don't need a body. -->
+        </body>
+      </html>
+      ''',
+
+      'test.css': '''
+      .image {
+        background: url('test[WHICH].png');
+      }
+      ''',
+
+      'test1.png': 'PNG DATA',
+      '1.4x/test1.png': '1.4x PNG DATA',
+      '1.8x/test1.png': '1.8x PNG DATA',
+    })
+
+    def replacer(var, repl):
+      return lambda filename: filename.replace('[%s]' % var, repl)
+
+    html = chrome_html.ChromeHtml(tmp_dir.GetPath('index.html'))
+    html.SetDefines({'scale_factors': '1.4x,1.8x'})
+    html.SetAttributes({'flattenhtml': 'true'})
+    html.SetFilenameExpansionFunction(replacer('WHICH', '1'));
+    html.Parse()
+    self.failUnlessEqual(StandardizeHtml(html.GetData('en', 'utf-8')),
+                         StandardizeHtml('''
+      <!DOCTYPE HTML>
+      <html>
+        <head>
+          <style>
+      .image {
+        background: -webkit-image-set(url('data:image/png;base64,UE5HIERBVEE=') 1x, url('data:image/png;base64,MS40eCBQTkcgREFUQQ==') 1.4x, url('data:image/png;base64,MS44eCBQTkcgREFUQQ==') 1.8x);
+      }
+      </style>
+        </head>
+        <body>
+          <!-- Don't need a body. -->
+        </body>
+      </html>
+      '''))
+    tmp_dir.CleanUp()
+
 
 if __name__ == '__main__':
   unittest.main()

@@ -211,8 +211,7 @@ MaybeObject* Heap::CopyFixedDoubleArray(FixedDoubleArray* src) {
 MaybeObject* Heap::AllocateRaw(int size_in_bytes,
                                AllocationSpace space,
                                AllocationSpace retry_space) {
-  SLOW_ASSERT(!isolate_->optimizing_compiler_thread()->IsOptimizerThread());
-  ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
+  ASSERT(AllowHandleAllocation::IsAllowed() && gc_state_ == NOT_IN_GC);
   ASSERT(space != NEW_SPACE ||
          retry_space == OLD_POINTER_SPACE ||
          retry_space == OLD_DATA_SPACE ||
@@ -246,6 +245,8 @@ MaybeObject* Heap::AllocateRaw(int size_in_bytes,
     result = lo_space_->AllocateRaw(size_in_bytes, NOT_EXECUTABLE);
   } else if (CELL_SPACE == space) {
     result = cell_space_->AllocateRaw(size_in_bytes);
+  } else if (PROPERTY_CELL_SPACE == space) {
+    result = property_cell_space_->AllocateRaw(size_in_bytes);
   } else {
     ASSERT(MAP_SPACE == space);
     result = map_space_->AllocateRaw(size_in_bytes);
@@ -306,7 +307,19 @@ MaybeObject* Heap::AllocateRawCell() {
   isolate_->counters()->objs_since_last_full()->Increment();
   isolate_->counters()->objs_since_last_young()->Increment();
 #endif
-  MaybeObject* result = cell_space_->AllocateRaw(JSGlobalPropertyCell::kSize);
+  MaybeObject* result = cell_space_->AllocateRaw(Cell::kSize);
+  if (result->IsFailure()) old_gen_exhausted_ = true;
+  return result;
+}
+
+
+MaybeObject* Heap::AllocateRawPropertyCell() {
+#ifdef DEBUG
+  isolate_->counters()->objs_since_last_full()->Increment();
+  isolate_->counters()->objs_since_last_young()->Increment();
+#endif
+  MaybeObject* result =
+      property_cell_space_->AllocateRaw(PropertyCell::kSize);
   if (result->IsFailure()) old_gen_exhausted_ = true;
   return result;
 }
@@ -408,7 +421,8 @@ AllocationSpace Heap::TargetSpaceId(InstanceType type) {
   ASSERT(type != MAP_TYPE);
   ASSERT(type != CODE_TYPE);
   ASSERT(type != ODDBALL_TYPE);
-  ASSERT(type != JS_GLOBAL_PROPERTY_CELL_TYPE);
+  ASSERT(type != CELL_TYPE);
+  ASSERT(type != PROPERTY_CELL_TYPE);
 
   if (type <= LAST_NAME_TYPE) {
     if (type == SYMBOL_TYPE) return OLD_POINTER_SPACE;
@@ -642,17 +656,6 @@ Isolate* Heap::isolate() {
                  return __maybe_object__)
 
 
-#ifdef DEBUG
-
-inline bool Heap::allow_allocation(bool new_state) {
-  bool old = allocation_allowed_;
-  allocation_allowed_ = new_state;
-  return old;
-}
-
-#endif
-
-
 void ExternalStringTable::AddString(String* string) {
   ASSERT(string->IsExternalString());
   if (heap_->InNewSpace(string)) {
@@ -861,44 +864,6 @@ DisallowAllocationFailure::~DisallowAllocationFailure() {
   HEAP->disallow_allocation_failure_ = old_state_;
 #endif
 }
-
-
-#ifdef DEBUG
-AssertNoAllocation::AssertNoAllocation() {
-  Isolate* isolate = ISOLATE;
-  active_ = !isolate->optimizing_compiler_thread()->IsOptimizerThread();
-  if (active_) {
-    old_state_ = isolate->heap()->allow_allocation(false);
-  }
-}
-
-
-AssertNoAllocation::~AssertNoAllocation() {
-  if (active_) HEAP->allow_allocation(old_state_);
-}
-
-
-DisableAssertNoAllocation::DisableAssertNoAllocation() {
-  Isolate* isolate = ISOLATE;
-  active_ = !isolate->optimizing_compiler_thread()->IsOptimizerThread();
-  if (active_) {
-    old_state_ = isolate->heap()->allow_allocation(true);
-  }
-}
-
-
-DisableAssertNoAllocation::~DisableAssertNoAllocation() {
-  if (active_) HEAP->allow_allocation(old_state_);
-}
-
-#else
-
-AssertNoAllocation::AssertNoAllocation() { }
-AssertNoAllocation::~AssertNoAllocation() { }
-DisableAssertNoAllocation::DisableAssertNoAllocation() { }
-DisableAssertNoAllocation::~DisableAssertNoAllocation() { }
-
-#endif
 
 
 } }  // namespace v8::internal

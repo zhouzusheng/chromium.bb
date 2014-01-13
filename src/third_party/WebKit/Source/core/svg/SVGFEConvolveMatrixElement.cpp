@@ -19,11 +19,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFEConvolveMatrixElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attr.h"
 #include "core/platform/graphics/FloatPoint.h"
 #include "core/platform/graphics/IntPoint.h"
 #include "core/platform/graphics/IntSize.h"
@@ -117,7 +115,7 @@ bool SVGFEConvolveMatrixElement::isSupportedAttribute(const QualifiedName& attrN
         supportedAttributes.add(SVGNames::kernelUnitLengthAttr);
         supportedAttributes.add(SVGNames::preserveAlphaAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFEConvolveMatrixElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -346,5 +344,3 @@ PassRefPtr<FilterEffect> SVGFEConvolveMatrixElement::build(SVGFilterBuilder* fil
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(SVG)

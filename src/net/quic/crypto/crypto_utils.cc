@@ -5,6 +5,8 @@
 #include "net/quic/crypto/crypto_utils.h"
 
 #include "crypto/hkdf.h"
+#include "googleurl/src/url_canon.h"
+#include "net/base/net_util.h"
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/quic_decrypter.h"
@@ -18,60 +20,14 @@ using std::string;
 namespace net {
 
 // static
-bool CryptoUtils::FindMutualTag(const CryptoTagVector& our_tags_vector,
-                                const CryptoTag* their_tags,
-                                size_t num_their_tags,
-                                Priority priority,
-                                CryptoTag* out_result,
-                                size_t* out_index) {
-  if (our_tags_vector.empty()) {
-    return false;
-  }
-  const size_t num_our_tags = our_tags_vector.size();
-  const CryptoTag* our_tags = &our_tags_vector[0];
-
-  size_t num_priority_tags, num_inferior_tags;
-  const CryptoTag* priority_tags;
-  const CryptoTag* inferior_tags;
-  if (priority == LOCAL_PRIORITY) {
-    num_priority_tags = num_our_tags;
-    priority_tags = our_tags;
-    num_inferior_tags = num_their_tags;
-    inferior_tags = their_tags;
-  } else {
-    num_priority_tags = num_their_tags;
-    priority_tags = their_tags;
-    num_inferior_tags = num_our_tags;
-    inferior_tags = our_tags;
-  }
-
-  for (size_t i = 0; i < num_priority_tags; i++) {
-    for (size_t j = 0; j < num_inferior_tags; j++) {
-      if (priority_tags[i] == inferior_tags[j]) {
-        *out_result = priority_tags[i];
-        if (out_index) {
-          if (priority == LOCAL_PRIORITY) {
-            *out_index = j;
-          } else {
-            *out_index = i;
-          }
-        }
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-void CryptoUtils::GenerateNonce(QuicTime::Delta now,
+void CryptoUtils::GenerateNonce(QuicWallTime now,
                                 QuicRandom* random_generator,
                                 StringPiece orbit,
                                 string* nonce) {
   // a 4-byte timestamp + 28 random bytes.
   nonce->reserve(kNonceSize);
   nonce->resize(kNonceSize);
-  uint32 gmt_unix_time = now.ToSeconds();
+  uint32 gmt_unix_time = now.ToUNIXSeconds();
   // The time in the nonce must be encoded in big-endian because the
   // strike-register depends on the nonces being ordered by time.
   (*nonce)[0] = static_cast<char>(gmt_unix_time >> 24);
@@ -88,34 +44,70 @@ void CryptoUtils::GenerateNonce(QuicTime::Delta now,
                               kNonceSize - bytes_written);
 }
 
-void CryptoUtils::DeriveKeys(QuicCryptoNegotiatedParameters* params,
+// static
+bool CryptoUtils::IsValidSNI(StringPiece sni) {
+  // TODO(rtenneti): Support RFC2396 hostname.
+  // NOTE: Microsoft does NOT enforce this spec, so if we throw away hostnames
+  // based on the above spec, we may be losing some hostnames that windows
+  // would consider valid. By far the most common hostname character NOT
+  // accepted by the above spec is '_'.
+  url_canon::CanonHostInfo host_info;
+  string canonicalized_host(CanonicalizeHost(sni.as_string(), &host_info));
+  return !host_info.IsIPAddress() &&
+      IsCanonicalizedHostCompliant(canonicalized_host, "") &&
+      sni.find_last_of('.') != string::npos;
+}
+
+// static
+string CryptoUtils::NormalizeHostname(const char* hostname) {
+  url_canon::CanonHostInfo host_info;
+  string host(CanonicalizeHost(hostname, &host_info));
+
+  // Walk backwards over the string, stopping at the first trailing dot.
+  size_t host_end = host.length();
+  while (host_end != 0 && host[host_end - 1] == '.') {
+    host_end--;
+  }
+
+  // Erase the trailing dots.
+  if (host_end != host.length()) {
+    host.erase(host_end, host.length() - host_end);
+  }
+  return host;
+}
+
+// static
+void CryptoUtils::DeriveKeys(StringPiece premaster_secret,
+                             QuicTag aead,
                              StringPiece client_nonce,
+                             StringPiece server_nonce,
                              const string& hkdf_input,
-                             Perspective perspective) {
-  params->encrypter.reset(QuicEncrypter::Create(params->aead));
-  params->decrypter.reset(QuicDecrypter::Create(params->aead));
-  size_t key_bytes = params->encrypter->GetKeySize();
-  size_t nonce_prefix_bytes = params->encrypter->GetNoncePrefixSize();
+                             Perspective perspective,
+                             CrypterPair* out) {
+  out->encrypter.reset(QuicEncrypter::Create(aead));
+  out->decrypter.reset(QuicDecrypter::Create(aead));
+  size_t key_bytes = out->encrypter->GetKeySize();
+  size_t nonce_prefix_bytes = out->encrypter->GetNoncePrefixSize();
 
   StringPiece nonce = client_nonce;
   string nonce_storage;
-  if (!params->server_nonce.empty()) {
-    nonce_storage = client_nonce.as_string() + params->server_nonce;
+  if (!server_nonce.empty()) {
+    nonce_storage = client_nonce.as_string() + server_nonce.as_string();
     nonce = nonce_storage;
   }
 
-  crypto::HKDF hkdf(params->premaster_secret, nonce,
-                    hkdf_input, key_bytes, nonce_prefix_bytes);
+  crypto::HKDF hkdf(premaster_secret, nonce, hkdf_input, key_bytes,
+                    nonce_prefix_bytes);
   if (perspective == SERVER) {
-    params->encrypter->SetKey(hkdf.server_write_key());
-    params->encrypter->SetNoncePrefix(hkdf.server_write_iv());
-    params->decrypter->SetKey(hkdf.client_write_key());
-    params->decrypter->SetNoncePrefix(hkdf.client_write_iv());
+    out->encrypter->SetKey(hkdf.server_write_key());
+    out->encrypter->SetNoncePrefix(hkdf.server_write_iv());
+    out->decrypter->SetKey(hkdf.client_write_key());
+    out->decrypter->SetNoncePrefix(hkdf.client_write_iv());
   } else {
-    params->encrypter->SetKey(hkdf.client_write_key());
-    params->encrypter->SetNoncePrefix(hkdf.client_write_iv());
-    params->decrypter->SetKey(hkdf.server_write_key());
-    params->decrypter->SetNoncePrefix(hkdf.server_write_iv());
+    out->encrypter->SetKey(hkdf.client_write_key());
+    out->encrypter->SetNoncePrefix(hkdf.client_write_iv());
+    out->decrypter->SetKey(hkdf.server_write_key());
+    out->decrypter->SetNoncePrefix(hkdf.server_write_iv());
   }
 }
 

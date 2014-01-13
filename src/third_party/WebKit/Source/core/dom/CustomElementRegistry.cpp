@@ -33,24 +33,20 @@
 #include "core/dom/CustomElementRegistry.h"
 
 #include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
+#include "SVGNames.h"
+#include "bindings/v8/CustomElementConstructorBuilder.h"
 #include "bindings/v8/CustomElementHelpers.h"
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ScriptValue.h"
 #include "core/dom/CustomElementDefinition.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/html/HTMLElement.h"
-
-#if ENABLE(SVG)
-#include "SVGNames.h"
 #include "core/svg/SVGElement.h"
-#endif
 
 namespace WebCore {
 
-CustomElementInvocation::CustomElementInvocation(PassRefPtr<Element> element)
-    : m_element(element)
+CustomElementInvocation::CustomElementInvocation(PassRefPtr<CustomElementCallback> callback, PassRefPtr<Element> element)
+    : m_callback(callback)
+    , m_element(element)
 {
 }
 
@@ -66,7 +62,7 @@ void setTypeExtension(Element* element, const AtomicString& typeExtension)
 }
 
 CustomElementRegistry::CustomElementRegistry(Document* document)
-    : ContextDestructionObserver(document)
+    : ContextLifecycleObserver(document)
 {
 }
 
@@ -88,7 +84,6 @@ bool CustomElementRegistry::isValidName(const AtomicString& name)
 
     DEFINE_STATIC_LOCAL(Vector<AtomicString>, reservedNames, ());
     if (reservedNames.isEmpty()) {
-#if ENABLE(SVG)
         reservedNames.append(SVGNames::color_profileTag.localName());
         reservedNames.append(SVGNames::font_faceTag.localName());
         reservedNames.append(SVGNames::font_face_srcTag.localName());
@@ -96,7 +91,6 @@ bool CustomElementRegistry::isValidName(const AtomicString& name)
         reservedNames.append(SVGNames::font_face_formatTag.localName());
         reservedNames.append(SVGNames::font_face_nameTag.localName());
         reservedNames.append(SVGNames::missing_glyphTag.localName());
-#endif
     }
 
     if (notFound != reservedNames.find(name))
@@ -105,76 +99,63 @@ bool CustomElementRegistry::isValidName(const AtomicString& name)
     return Document::isValidName(name.string());
 }
 
-PassRefPtr<CustomElementConstructor> CustomElementRegistry::registerElement(ScriptState* state, const AtomicString& userSuppliedName, const Dictionary& options, ExceptionCode& ec)
+void CustomElementRegistry::registerElement(CustomElementConstructorBuilder* constructorBuilder, const AtomicString& userSuppliedName, ExceptionCode& ec)
 {
     RefPtr<CustomElementRegistry> protect(this);
 
-    if (!CustomElementHelpers::isFeatureAllowed(state))
-        return 0;
+    if (!constructorBuilder->isFeatureAllowed())
+        return;
 
-    AtomicString name = userSuppliedName.lower();
-    if (!isValidName(name)) {
+    AtomicString type = userSuppliedName.lower();
+    if (!isValidName(type)) {
         ec = INVALID_CHARACTER_ERR;
-        return 0;
+        return;
     }
 
-    ScriptValue prototypeValue;
-    if (!options.get("prototype", prototypeValue)) {
-        // FIXME: Implement the default value handling.
-        // Currently default value of the "prototype" parameter, which
-        // is HTMLSpanElement.prototype, has an ambiguity about its
-        // behavior. The spec should be fixed before WebKit implements
-        // it. https://www.w3.org/Bugs/Public/show_bug.cgi?id=20801
+    if (!constructorBuilder->validateOptions()) {
         ec = INVALID_STATE_ERR;
-        return 0;
+        return;
     }
 
-    AtomicString namespaceURI;
-    if (!CustomElementHelpers::isValidPrototypeParameter(prototypeValue, state, namespaceURI)) {
-        ec = INVALID_STATE_ERR;
-        return 0;
-    }
-
-    if (namespaceURI.isNull()) {
+    QualifiedName tagName = nullQName();
+    if (!constructorBuilder->findTagName(type, tagName)) {
         ec = NAMESPACE_ERR;
-        return 0;
+        return;
     }
+    ASSERT(tagName.namespaceURI() == HTMLNames::xhtmlNamespaceURI || tagName.namespaceURI() == SVGNames::svgNamespaceURI);
 
-    AtomicString type = name;
     if (m_definitions.contains(type)) {
         ec = INVALID_STATE_ERR;
-        return 0;
+        return;
     }
 
-    const QualifiedName* prototypeTagName = CustomElementHelpers::findLocalName(prototypeValue);
-    if (prototypeTagName)
-        name = prototypeTagName->localName();
+    RefPtr<CustomElementCallback> lifecycleCallbacks = constructorBuilder->createCallback(document());
 
-    // A script execution could happen in isValidPrototypeParameter(), which kills the document.
+    // Consulting the constructor builder could execute script and
+    // kill the document.
     if (!document()) {
         ec = INVALID_STATE_ERR;
-        return 0;
+        return;
     }
 
-    RefPtr<CustomElementDefinition> definition = CustomElementDefinition::create(state, type, name, namespaceURI, prototypeValue);
+    RefPtr<CustomElementDefinition> definition = CustomElementDefinition::create(type, tagName.localName(), tagName.namespaceURI(), lifecycleCallbacks);
 
-    RefPtr<CustomElementConstructor> constructor = CustomElementConstructor::create(document(), definition->tagQName(), definition->isTypeExtension() ? definition->type() : nullAtom);
-    if (!CustomElementHelpers::initializeConstructorWrapper(constructor.get(), prototypeValue, state)) {
-        ec = INVALID_STATE_ERR;
-        return 0;
+    if (!constructorBuilder->createConstructor(document(), definition.get())) {
+        ec = NOT_SUPPORTED_ERR;
+        return;
     }
 
     m_definitions.add(definition->type(), definition);
 
     // Upgrade elements that were waiting for this definition.
     CustomElementUpgradeCandidateMap::ElementSet upgradeCandidates = m_candidates.takeUpgradeCandidatesFor(definition.get());
-    CustomElementHelpers::upgradeWrappers(document(), upgradeCandidates, definition->prototype());
+    constructorBuilder->didRegisterDefinition(definition.get(), upgradeCandidates);
+
     for (CustomElementUpgradeCandidateMap::ElementSet::iterator it = upgradeCandidates.begin(); it != upgradeCandidates.end(); ++it) {
         (*it)->setNeedsStyleRecalc(); // :unresolved has changed
-        activate(CustomElementInvocation(*it));
-    }
 
-    return constructor.release();
+        enqueueReadyCallback(lifecycleCallbacks.get(), *it);
+    }
 }
 
 bool CustomElementRegistry::isUnresolved(Element* element) const
@@ -228,10 +209,8 @@ PassRefPtr<Element> CustomElementRegistry::createCustomTagElement(const Qualifie
 
     if (HTMLNames::xhtmlNamespaceURI == tagName.namespaceURI())
         element = HTMLElement::create(tagName, document());
-#if ENABLE(SVG)
     else if (SVGNames::svgNamespaceURI == tagName.namespaceURI())
         element = SVGElement::create(tagName, document());
-#endif
     else
         return Element::create(tagName, document());
 
@@ -243,7 +222,7 @@ PassRefPtr<Element> CustomElementRegistry::createCustomTagElement(const Qualifie
         // custom tag element will be unresolved in perpetuity.
         didCreateUnresolvedElement(CustomElementDefinition::CustomTag, tagName.localName(), element.get());
     } else {
-        didCreateCustomTagElement(element.get());
+        didCreateCustomTagElement(definition.get(), element.get());
     }
 
     return element.release();
@@ -260,13 +239,13 @@ void CustomElementRegistry::didGiveTypeExtension(Element* element, const AtomicS
         // extension element will be unresolved in perpetuity.
         didCreateUnresolvedElement(CustomElementDefinition::TypeExtension, type, element);
     } else {
-        activate(CustomElementInvocation(element));
+        enqueueReadyCallback(definition->callback(), element);
     }
 }
 
-void CustomElementRegistry::didCreateCustomTagElement(Element* element)
+void CustomElementRegistry::didCreateCustomTagElement(CustomElementDefinition* definition, Element* element)
 {
-    activate(CustomElementInvocation(element));
+    enqueueReadyCallback(definition->callback(), element);
 }
 
 void CustomElementRegistry::didCreateUnresolvedElement(CustomElementDefinition::CustomElementKind kind, const AtomicString& type, Element* element)
@@ -280,10 +259,13 @@ void CustomElementRegistry::customElementWasDestroyed(Element* element)
     m_candidates.remove(element);
 }
 
-void CustomElementRegistry::activate(const CustomElementInvocation& invocation)
+void CustomElementRegistry::enqueueReadyCallback(CustomElementCallback* callback, Element* element)
 {
+    if (!callback->hasReady())
+        return;
+
     bool wasInactive = m_invocations.isEmpty();
-    m_invocations.append(invocation);
+    m_invocations.append(CustomElementInvocation(callback, element));
     if (wasInactive)
         activeCustomElementRegistries().add(this);
 }
@@ -307,7 +289,9 @@ void CustomElementRegistry::deliverLifecycleCallbacks()
     if (!m_invocations.isEmpty()) {
         Vector<CustomElementInvocation> invocations;
         m_invocations.swap(invocations);
-        CustomElementHelpers::invokeReadyCallbacksIfNeeded(m_scriptExecutionContext, invocations);
+
+        for (Vector<CustomElementInvocation>::iterator it = invocations.begin(); it != invocations.end(); ++it)
+            it->callback()->ready(it->element());
     }
 
     ASSERT(m_invocations.isEmpty());

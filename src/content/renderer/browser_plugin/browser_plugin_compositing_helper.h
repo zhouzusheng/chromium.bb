@@ -10,7 +10,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
+#include "gpu/command_buffer/common/mailbox.h"
 #include "ui/gfx/size.h"
+
+namespace base {
+class SharedMemory;
+}
 
 namespace cc {
 class CompositorFrame;
@@ -52,15 +57,30 @@ class CONTENT_EXPORT BrowserPluginCompositingHelper :
   // Friend RefCounted so that the dtor can be non-public.
   friend class base::RefCounted<BrowserPluginCompositingHelper>;
  private:
+  enum SwapBuffersType {
+    TEXTURE_IMAGE_TRANSPORT,
+    GL_COMPOSITOR_FRAME,
+    SOFTWARE_COMPOSITOR_FRAME,
+  };
+  struct SwapBuffersInfo {
+    SwapBuffersInfo();
+
+    gpu::Mailbox name;
+    SwapBuffersType type;
+    gfx::Size size;
+    int route_id;
+    int host_id;
+    unsigned software_frame_id;
+    base::SharedMemory* shared_memory;
+  };
   ~BrowserPluginCompositingHelper();
   void CheckSizeAndAdjustLayerBounds(const gfx::Size& new_size,
                                      float device_scale_factor,
                                      cc::Layer* layer);
-  void FreeMailboxMemory(const std::string& mailbox_name,
-                         unsigned sync_point);
-  void MailboxReleased(const std::string& mailbox_name,
-                       int gpu_route_id,
-                       int gpu_host_id,
+  void OnBuffersSwappedPrivate(const SwapBuffersInfo& mailbox,
+                               unsigned sync_point,
+                               float device_scale_factor);
+  void MailboxReleased(SwapBuffersInfo mailbox,
                        unsigned sync_point,
                        bool lost_resource);
   int instance_id_;
@@ -69,7 +89,6 @@ class CONTENT_EXPORT BrowserPluginCompositingHelper :
   int last_host_id_;
   bool last_mailbox_valid_;
   bool ack_pending_;
-  bool ack_pending_for_crashed_guest_;
 
   gfx::Size buffer_size_;
 

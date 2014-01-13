@@ -21,7 +21,6 @@
 #ifndef SVGLinearGradientElement_h
 #define SVGLinearGradientElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGGradientElement.h"
 
@@ -42,7 +41,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
 
     virtual bool selfHasRelativeLengths() const;
 
@@ -56,5 +55,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

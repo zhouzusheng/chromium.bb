@@ -202,6 +202,66 @@ class HtmlInlineUnittest(unittest.TestCase):
     self.failUnlessEqual(expected_inlined,
                          util.FixLineEnd(result.inlined_data, '\n'))
 
+  def testFilenameVariableExpansion(self):
+    '''Tests that variables are expanded in filenames before inlining.'''
+
+    files = {
+      'index.html': '''
+      <html>
+      <head>
+      <link rel="stylesheet" href="style[WHICH].css">
+      <script src="script[WHICH].js"></script>
+      </head>
+      <include src="tmpl[WHICH].html">
+      <img src="img[WHICH].png">
+      </html>
+      ''',
+      'style1.css': '''h1 {}''',
+      'tmpl1.html': '''<h1></h1>''',
+      'script1.js': '''console.log('hello');''',
+      'img1.png': '''abc''',
+    }
+
+    expected_inlined = '''
+      <html>
+      <head>
+      <style>h1 {}</style>
+      <script>console.log('hello');</script>
+      </head>
+      <h1></h1>
+      <img src="data:image/png;base64,YWJj">
+      </html>
+      '''
+
+    source_resources = set()
+    tmp_dir = util.TempDir(files)
+    for filename in files:
+      source_resources.add(tmp_dir.GetPath(filename))
+
+    def replacer(var, repl):
+      return lambda filename: filename.replace('[%s]' % var, repl)
+
+    # Test normal inlining.
+    result = html_inline.DoInline(
+        tmp_dir.GetPath('index.html'),
+        None,
+        filename_expansion_function=replacer('WHICH', '1'))
+    resources = result.inlined_files
+    resources.add(tmp_dir.GetPath('index.html'))
+    self.failUnlessEqual(resources, source_resources)
+    self.failUnlessEqual(expected_inlined,
+                         util.FixLineEnd(result.inlined_data, '\n'))
+
+    # Test names-only inlining.
+    result = html_inline.DoInline(
+        tmp_dir.GetPath('index.html'),
+        None,
+        names_only=True,
+        filename_expansion_function=replacer('WHICH', '1'))
+    resources = result.inlined_files
+    resources.add(tmp_dir.GetPath('index.html'))
+    self.failUnlessEqual(resources, source_resources)
+
 
 if __name__ == '__main__':
   unittest.main()

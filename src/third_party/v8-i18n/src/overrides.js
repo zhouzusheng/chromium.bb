@@ -60,6 +60,10 @@ function cachedOrNewService(service, locales, options, defaults) {
  */
 Object.defineProperty(String.prototype, 'localeCompare', {
   value: function(that) {
+    if (%_IsConstructCall()) {
+      throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+    }
+
     if (this === undefined || this === null) {
       throw new TypeError('Method invoked on undefined or null value.');
     }
@@ -73,6 +77,7 @@ Object.defineProperty(String.prototype, 'localeCompare', {
   configurable: true,
   enumerable: false
 });
+%FunctionRemovePrototype(String.prototype.localeCompare);
 
 
 /**
@@ -81,6 +86,10 @@ Object.defineProperty(String.prototype, 'localeCompare', {
  */
 Object.defineProperty(Number.prototype, 'toLocaleString', {
   value: function() {
+    if (%_IsConstructCall()) {
+      throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+    }
+
     if (!(this instanceof Number) && typeof(this) !== 'number') {
       throw new TypeError('Method invoked on an object that is not Number.');
     }
@@ -94,6 +103,7 @@ Object.defineProperty(Number.prototype, 'toLocaleString', {
   configurable: true,
   enumerable: false
 });
+%FunctionRemovePrototype(Number.prototype.toLocaleString);
 
 
 /**
@@ -124,6 +134,10 @@ function toLocaleDateTime(date, locales, options, required, defaults, service) {
  */
 Object.defineProperty(Date.prototype, 'toLocaleString', {
   value: function() {
+    if (%_IsConstructCall()) {
+      throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+    }
+
     var locales = arguments[0];
     var options = arguments[1];
     return toLocaleDateTime(
@@ -133,6 +147,7 @@ Object.defineProperty(Date.prototype, 'toLocaleString', {
   configurable: true,
   enumerable: false
 });
+%FunctionRemovePrototype(Date.prototype.toLocaleString);
 
 
 /**
@@ -142,6 +157,10 @@ Object.defineProperty(Date.prototype, 'toLocaleString', {
  */
 Object.defineProperty(Date.prototype, 'toLocaleDateString', {
   value: function() {
+    if (%_IsConstructCall()) {
+      throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+    }
+
     var locales = arguments[0];
     var options = arguments[1];
     return toLocaleDateTime(
@@ -151,6 +170,7 @@ Object.defineProperty(Date.prototype, 'toLocaleDateString', {
   configurable: true,
   enumerable: false
 });
+%FunctionRemovePrototype(Date.prototype.toLocaleDateString);
 
 
 /**
@@ -160,6 +180,10 @@ Object.defineProperty(Date.prototype, 'toLocaleDateString', {
  */
 Object.defineProperty(Date.prototype, 'toLocaleTimeString', {
   value: function() {
+    if (%_IsConstructCall()) {
+      throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+    }
+
     var locales = arguments[0];
     var options = arguments[1];
     return toLocaleDateTime(
@@ -169,3 +193,4 @@ Object.defineProperty(Date.prototype, 'toLocaleTimeString', {
   configurable: true,
   enumerable: false
 });
+%FunctionRemovePrototype(Date.prototype.toLocaleTimeString);

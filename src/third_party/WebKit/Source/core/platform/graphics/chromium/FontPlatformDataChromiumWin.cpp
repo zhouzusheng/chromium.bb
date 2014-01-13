@@ -41,11 +41,20 @@
 #include "core/platform/graphics/FontCache.h"
 #include "core/platform/graphics/skia/SkiaFontWin.h"
 #include "core/platform/win/HWndDC.h"
-#include <public/Platform.h>
-#include <public/win/WebSandboxSupport.h>
+#include "public/platform/Platform.h"
+#include "public/platform/win/WebSandboxSupport.h"
 #include <wtf/StdLibExtras.h>
 
 namespace WebCore {
+
+#if !ENABLE(GDI_FONTS_ON_WINDOWS)
+void FontPlatformData::setupPaint(SkPaint* paint) const
+{
+    const float ts = m_size >= 0 ? m_size : 12;
+    paint->setTextSize(SkFloatToScalar(m_size));
+    paint->setTypeface(m_typeface);
+}
+#endif
 
 // Lookup the current system settings for font smoothing.
 // We cache these values for performance, but if the browser has a way to be
@@ -164,6 +173,18 @@ FontPlatformData::FontPlatformData(const FontPlatformData& data)
     SkSafeRef(m_typeface);
 }
 
+FontPlatformData::FontPlatformData(const FontPlatformData& data, float textSize)
+    : m_font(data.m_font)
+    , m_size(textSize)
+    , m_orientation(data.m_orientation)
+    , m_scriptCache(0)
+    , m_scriptFontProperties(0)
+    , m_typeface(data.m_typeface)
+    , m_paintTextFlags(data.m_paintTextFlags)
+{
+    SkSafeRef(m_typeface);
+}
+
 FontPlatformData& FontPlatformData::operator=(const FontPlatformData& data)
 {
     if (this != &data) {
@@ -192,6 +213,36 @@ FontPlatformData::~FontPlatformData()
 
     delete m_scriptFontProperties;
     m_scriptFontProperties = 0;
+}
+
+bool FontPlatformData::isFixedPitch() const
+{
+#if ENABLE(GDI_FONTS_ON_WINDOWS)
+    // TEXTMETRICS have this. Set m_treatAsFixedPitch based off that.
+    HWndDC dc(0);
+    HGDIOBJ oldFont = SelectObject(dc, hfont());
+
+    // Yes, this looks backwards, but the fixed pitch bit is actually set if the font
+    // is *not* fixed pitch. Unbelievable but true.
+    TEXTMETRIC textMetric = { 0 };
+    if (!GetTextMetrics(dc, &textMetric)) {
+        if (ensureFontLoaded(hfont())) {
+            // Retry GetTextMetrics.
+            // FIXME: Handle gracefully the error if this call also fails.
+            // See http://crbug.com/6401.
+            if (!GetTextMetrics(dc, &textMetric))
+                LOG_ERROR("Unable to get the text metrics after second attempt");
+        }
+    }
+
+    bool treatAsFixedPitch = !(textMetric.tmPitchAndFamily & TMPF_FIXED_PITCH);
+
+    SelectObject(dc, oldFont);
+
+    return treatAsFixedPitch;
+#else
+    return typeface()->isFixedPitch();
+#endif
 }
 
 FontPlatformData::RefCountedHFONT::~RefCountedHFONT()

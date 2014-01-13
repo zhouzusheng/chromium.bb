@@ -9,19 +9,19 @@
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/file_version_info.h"
+#include "base/file_version_info_win.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/win/pe_image.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
-#include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
-#include "webkit/plugins/npapi/plugin_lib.h"
 #include "webkit/plugins/plugin_switches.h"
 
 namespace {
@@ -267,7 +267,49 @@ void PluginList::PlatformInit() {
   dont_load_new_wmp_ = command_line.HasSwitch(switches::kUseOldWMPPlugin);
 }
 
-void PluginList::GetPluginDirectories(std::vector<base::FilePath>* plugin_dirs) {
+bool PluginList::ReadWebPluginInfo(const base::FilePath& filename,
+                                   webkit::WebPluginInfo* info) {
+  // On windows, the way we get the mime types for the library is
+  // to check the version information in the DLL itself.  This
+  // will be a string of the format:  <type1>|<type2>|<type3>|...
+  // For example:
+  //     video/quicktime|audio/aiff|image/jpeg
+  scoped_ptr<FileVersionInfo> version_info(
+      FileVersionInfo::CreateFileVersionInfo(filename));
+  if (!version_info) {
+    LOG_IF(ERROR, PluginList::DebugPluginLoading())
+        << "Could not get version info for plugin "
+        << filename.value();
+    return false;
+  }
+
+  FileVersionInfoWin* version_info_win =
+      static_cast<FileVersionInfoWin*>(version_info.get());
+
+  info->name = version_info->product_name();
+  info->desc = version_info->file_description();
+  info->version = version_info->file_version();
+  info->path = filename;
+
+  // TODO(evan): Move the ParseMimeTypes code inline once Pepper is updated.
+  if (!PluginList::ParseMimeTypes(
+          UTF16ToASCII(version_info_win->GetStringValue(L"MIMEType")),
+          UTF16ToASCII(version_info_win->GetStringValue(L"FileExtents")),
+          version_info_win->GetStringValue(L"FileOpenName"),
+          &info->mime_types)) {
+    LOG_IF(ERROR, PluginList::DebugPluginLoading())
+        << "Plugin " << info->name << " has bad MIME types, skipping";
+    return false;
+  }
+
+  return true;
+}
+
+void PluginList::GetPluginDirectories(
+    std::vector<base::FilePath>* plugin_dirs) {
+  if (PluginList::plugins_discovery_disabled_)
+    return;
+
   // We use a set for uniqueness, which we require, over order, which we do not.
   std::set<base::FilePath> dirs;
 
@@ -318,7 +360,11 @@ void PluginList::GetPluginsInDir(
   FindClose(find_handle);
 }
 
-void PluginList::GetPluginPathsFromRegistry(std::vector<base::FilePath>* plugins) {
+void PluginList::GetPluginPathsFromRegistry(
+    std::vector<base::FilePath>* plugins) {
+  if (PluginList::plugins_discovery_disabled_)
+    return;
+
   std::set<base::FilePath> plugin_dirs;
 
   GetPluginsInRegistryDirectory(
@@ -344,7 +390,7 @@ bool PluginList::ShouldLoadPluginUsingPluginList(
     if ((plugin1 == plugin2 && HaveSharedMimeType((*plugins)[j], info)) ||
         (plugin1 == kJavaDeploy1 && plugin2 == kJavaDeploy2) ||
         (plugin1 == kJavaDeploy2 && plugin2 == kJavaDeploy1)) {
-      if (!IsNewerVersion((*plugins)[j].version, info.version))
+      if (IsNewerVersion(info.version, (*plugins)[j].version))
         return false;  // We have loaded a plugin whose version is newer.
       plugins->erase(plugins->begin() + j);
       break;

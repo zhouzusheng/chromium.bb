@@ -25,8 +25,8 @@
 #include "config.h"
 #include "modules/mediastream/MediaStreamRegistry.h"
 
-#include "core/platform/KURL.h"
 #include "modules/mediastream/MediaStream.h"
+#include "weborigin/KURL.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
@@ -39,13 +39,14 @@ MediaStreamRegistry& MediaStreamRegistry::registry()
     return instance;
 }
 
-void MediaStreamRegistry::registerMediaStreamURL(const KURL& url, PassRefPtr<MediaStream> stream)
+void MediaStreamRegistry::registerURL(SecurityOrigin*, const KURL& url, URLRegistrable* stream)
 {
+    ASSERT(&stream->registry() == this);
     ASSERT(isMainThread());
-    m_streamDescriptors.set(url.string(), stream->descriptor());
+    m_streamDescriptors.set(url.string(), static_cast<MediaStream*>(stream)->descriptor());
 }
 
-void MediaStreamRegistry::unregisterMediaStreamURL(const KURL& url)
+void MediaStreamRegistry::unregisterURL(const KURL& url)
 {
     ASSERT(isMainThread());
     m_streamDescriptors.remove(url.string());
@@ -54,7 +55,7 @@ void MediaStreamRegistry::unregisterMediaStreamURL(const KURL& url)
 MediaStreamDescriptor* MediaStreamRegistry::lookupMediaStreamDescriptor(const String& url)
 {
     ASSERT(isMainThread());
-    return m_streamDescriptors.get(url).get();
+    return m_streamDescriptors.get(url);
 }
 
 } // namespace WebCore

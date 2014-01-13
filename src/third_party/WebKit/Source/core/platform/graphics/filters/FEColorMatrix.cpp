@@ -29,7 +29,6 @@
 #include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
 #include "core/platform/text/TextStream.h"
 #include "core/rendering/RenderTreeAsText.h"
 
@@ -156,7 +155,7 @@ void FEColorMatrix::applySoftware()
     if (!resultImage)
         return;
 
-    resultImage->context()->drawImageBuffer(in->asImageBuffer(), ColorSpaceDeviceRGB, drawingRegionOfInputImage(in->absolutePaintRect()));
+    resultImage->context()->drawImageBuffer(in->asImageBuffer(), drawingRegionOfInputImage(in->absolutePaintRect()));
 
     IntRect imageRect(IntPoint(), absolutePaintRect().size());
     RefPtr<Uint8ClampedArray> pixelArray = resultImage->getUnmultipliedImageData(imageRect);
@@ -266,7 +265,7 @@ bool FEColorMatrix::applySkia()
 
     FilterEffect* in = inputEffect(0);
 
-    IntRect imageRect(IntPoint(), absolutePaintRect().size());
+    SkRect drawingRegion = drawingRegionOfInputImage(in->absolutePaintRect());
 
     SkAutoTUnref<SkColorFilter> filter(createColorFilter(m_type, m_values.data()));
 
@@ -278,13 +277,13 @@ bool FEColorMatrix::applySkia()
     SkPaint paint;
     paint.setColorFilter(filter);
     paint.setXfermodeMode(SkXfermode::kSrc_Mode);
-    resultImage->context()->drawBitmap(nativeImage->bitmap(), 0, 0, &paint);
+    resultImage->context()->drawBitmap(nativeImage->bitmap(), drawingRegion.fLeft, drawingRegion.fTop, &paint);
     return true;
 }
 
 SkImageFilter* FEColorMatrix::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    SkAutoTUnref<SkImageFilter> input(builder->build(inputEffect(0)));
+    SkAutoTUnref<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
     SkAutoTUnref<SkColorFilter> filter(createColorFilter(m_type, m_values.data()));
     return SkColorFilterImageFilter::Create(filter, input);
 }

@@ -6,8 +6,8 @@
 
 #include <stack>
 
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "sync/internal_api/public/base_transaction.h"
 #include "sync/internal_api/syncapi_internal.h"
@@ -215,36 +215,20 @@ int64 BaseNode::GetFirstChildId() const {
   return IdToMetahandle(GetTransaction()->GetWrappedTrans(), id_string);
 }
 
-int BaseNode::GetTotalNodeCount() const {
-  syncable::BaseTransaction* trans = GetTransaction()->GetWrappedTrans();
-
-  int count = 1;  // Start with one to include the node itself.
-
-  std::stack<int64> stack;
-  stack.push(GetFirstChildId());
-  while (!stack.empty()) {
-    int64 handle = stack.top();
-    stack.pop();
-    if (handle == kInvalidId)
-      continue;
-    count++;
-    syncable::Entry entry(trans, syncable::GET_BY_HANDLE, handle);
-    if (!entry.good())
-      continue;
-    syncable::Id successor_id = entry.GetSuccessorId();
-    if (!successor_id.IsRoot())
-      stack.push(IdToMetahandle(trans, successor_id));
-    if (!entry.Get(syncable::IS_DIR))
-      continue;
-    syncable::Id child_id = entry.GetFirstChildId();
-    if (!child_id.IsRoot())
-      stack.push(IdToMetahandle(trans, child_id));
-  }
-  return count;
+void BaseNode::GetChildIds(std::vector<int64>* result) const {
+  GetEntry()->GetChildHandles(result);
 }
 
-DictionaryValue* BaseNode::GetSummaryAsValue() const {
-  DictionaryValue* node_info = new DictionaryValue();
+int BaseNode::GetTotalNodeCount() const {
+  return GetEntry()->GetTotalNodeCount();
+}
+
+int BaseNode::GetPositionIndex() const {
+  return GetEntry()->GetPositionIndex();
+}
+
+base::DictionaryValue* BaseNode::GetSummaryAsValue() const {
+  base::DictionaryValue* node_info = new base::DictionaryValue();
   node_info->SetString("id", base::Int64ToString(GetId()));
   node_info->SetBoolean("isFolder", GetIsFolder());
   node_info->SetString("title", GetTitle());
@@ -252,8 +236,8 @@ DictionaryValue* BaseNode::GetSummaryAsValue() const {
   return node_info;
 }
 
-DictionaryValue* BaseNode::GetDetailsAsValue() const {
-  DictionaryValue* node_info = GetSummaryAsValue();
+base::DictionaryValue* BaseNode::GetDetailsAsValue() const {
+  base::DictionaryValue* node_info = GetSummaryAsValue();
   node_info->SetString(
       "modificationTime", GetTimeDebugString(GetModificationTime()));
   node_info->SetString("parentId", base::Int64ToString(GetParentId()));
@@ -333,6 +317,11 @@ const sync_pb::ManagedUserSettingSpecifics&
     BaseNode::GetManagedUserSettingSpecifics() const {
   DCHECK_EQ(GetModelType(), MANAGED_USER_SETTINGS);
   return GetEntitySpecifics().managed_user_setting();
+}
+
+const sync_pb::ManagedUserSpecifics& BaseNode::GetManagedUserSpecifics() const {
+  DCHECK_EQ(GetModelType(), MANAGED_USERS);
+  return GetEntitySpecifics().managed_user();
 }
 
 const sync_pb::DeviceInfoSpecifics& BaseNode::GetDeviceInfoSpecifics() const {

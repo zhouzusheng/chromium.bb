@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFEComponentTransferElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attr.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/svg/SVGFEFuncAElement.h"
 #include "core/svg/SVGFEFuncBElement.h"
@@ -60,7 +58,7 @@ bool SVGFEComponentTransferElement::isSupportedAttribute(const QualifiedName& at
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty())
         supportedAttributes.add(SVGNames::inAttr);
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFEComponentTransferElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -107,5 +105,3 @@ PassRefPtr<FilterEffect> SVGFEComponentTransferElement::build(SVGFilterBuilder* 
 }
 
 }
-
-#endif

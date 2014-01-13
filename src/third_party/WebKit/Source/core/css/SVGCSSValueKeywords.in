@@ -1,6 +1,7 @@
 //
 // SVG CSS value names
 //
+
 // CSS_PROP_*_COLOR
 //
 aliceblue
@@ -175,7 +176,7 @@ new
 // CSS_PROP_STOP_OPACITY
 // CSS_PROP_COLOR_INTERPOLATION
 //auto
-//sRGB
+sRGB
 linearRGB
 
 // CSS_PROP_COLOR_INTERPOLATION_FILTERS

@@ -123,11 +123,10 @@ public:
     virtual bool isInlineFlowBox() const { return false; }
     virtual bool isInlineTextBox() const { return false; }
     virtual bool isRootInlineBox() const { return false; }
-#if ENABLE(SVG)
+
     virtual bool isSVGInlineTextBox() const { return false; }
     virtual bool isSVGInlineFlowBox() const { return false; }
     virtual bool isSVGRootInlineBox() const { return false; }
-#endif
 
     bool hasVirtualLogicalHeight() const { return m_bitfields.hasVirtualLogicalHeight(); }
     void setHasVirtualLogicalHeight() { m_bitfields.setHasVirtualLogicalHeight(true); }
@@ -278,7 +277,7 @@ public:
 
     int expansion() const { return m_bitfields.expansion(); }
 
-    bool visibleToHitTestRequest(const HitTestRequest& request) const { return renderer()->style()->visibility() == VISIBLE && (request.ignorePointerEventsNone() || renderer()->style()->pointerEvents() != PE_NONE); }
+    bool visibleToHitTestRequest(const HitTestRequest& request) const { return renderer()->visibleToHitTestRequest(request); }
     
     EVerticalAlign verticalAlign() const { return renderer()->style(m_bitfields.firstLine())->verticalAlign(); }
 

@@ -12,6 +12,26 @@
 #include "GrGLShaderBuilder.h"
 #include "GrGpuGL.h"
 
+#include "SkChecksum.h"
+
+namespace {
+inline GrGLEffect::EffectKey get_key_and_update_stats(const GrEffectStage& stage,
+                                                      const GrGLCaps& caps,
+                                                      bool useExplicitLocalCoords,
+                                                      bool* setTrueIfReadsDst,
+                                                      bool* setTrueIfReadsPos) {
+    const GrEffectRef& effect = *stage.getEffect();
+    const GrBackendEffectFactory& factory = effect->getFactory();
+    GrDrawEffect drawEffect(stage, useExplicitLocalCoords);
+    if (effect->willReadDstColor()) {
+        *setTrueIfReadsDst = true;
+    }
+    if (effect->willReadFragmentPosition()) {
+        *setTrueIfReadsPos = true;
+    }
+    return factory.glEffectKey(drawEffect, caps);
+}
+}
 void GrGLProgramDesc::Build(const GrDrawState& drawState,
                             bool isPoints,
                             GrDrawState::BlendOptFlags blendOpts,
@@ -19,7 +39,11 @@ void GrGLProgramDesc::Build(const GrDrawState& drawState,
                             GrBlendCoeff dstCoeff,
                             const GrGpuGL* gpu,
                             const GrDeviceCoordTexture* dstCopy,
+                            SkTArray<const GrEffectStage*, true>* colorStages,
+                            SkTArray<const GrEffectStage*, true>* coverageStages,
                             GrGLProgramDesc* desc) {
+    colorStages->reset();
+    coverageStages->reset();
 
     // This should already have been caught
     GrAssert(!(GrDrawState::kSkipDraw_BlendOptFlag & blendOpts));
@@ -34,65 +58,82 @@ void GrGLProgramDesc::Build(const GrDrawState& drawState,
     // bindings in use or other descriptor field settings) it should be set
     // to a canonical value to avoid duplicate programs with different keys.
 
-
-    desc->fEmitsPointSize = isPoints;
-
     bool requiresColorAttrib = !skipColor && drawState.hasColorVertexAttribute();
     bool requiresCoverageAttrib = !skipCoverage && drawState.hasCoverageVertexAttribute();
     // we only need the local coords if we're actually going to generate effect code
     bool requiresLocalCoordAttrib = !(skipCoverage  && skipColor) &&
                                     drawState.hasLocalCoordAttribute();
 
-    // fColorInput/fCoverageInput records how colors are specified for the program so we strip the
-    // bits from the bindings to avoid false negatives when searching for an existing program in the
-    // cache.
-
-    desc->fColorFilterXfermode = skipColor ? SkXfermode::kDst_Mode : drawState.getColorFilterMode();
-
-
     bool colorIsTransBlack = SkToBool(blendOpts & GrDrawState::kEmitTransBlack_BlendOptFlag);
     bool colorIsSolidWhite = (blendOpts & GrDrawState::kEmitCoverage_BlendOptFlag) ||
                              (!requiresColorAttrib && 0xffffffff == drawState.getColor());
+
+    int numEffects = (skipColor ? 0 : drawState.numColorStages()) +
+                     (skipCoverage ? 0 : drawState.numCoverageStages());
+
+    size_t newKeyLength = KeyLength(numEffects);
+    bool allocChanged;
+    desc->fKey.reset(newKeyLength, SkAutoMalloc::kAlloc_OnShrink, &allocChanged);
+    if (allocChanged || !desc->fInitialized) {
+        // make sure any padding in the header is zero if we we haven't used this allocation before.
+        memset(desc->header(), 0, kHeaderSize);
+    }
+    // write the key length
+    *desc->atOffset<uint32_t, kLengthOffset>() = newKeyLength;
+
+    KeyHeader* header = desc->header();
+    EffectKey* effectKeys = desc->effectKeys();
+
+    int currEffectKey = 0;
+    bool readsDst = false;
+    bool readFragPosition = false;
+    if (!skipColor) {
+        for (int s = 0; s < drawState.numColorStages(); ++s) {
+            effectKeys[currEffectKey++] =
+                get_key_and_update_stats(drawState.getColorStage(s), gpu->glCaps(),
+                                         requiresLocalCoordAttrib, &readsDst, &readFragPosition);
+        }
+    }
+    if (!skipCoverage) {
+        for (int s = 0; s < drawState.numCoverageStages(); ++s) {
+            effectKeys[currEffectKey++] =
+                get_key_and_update_stats(drawState.getCoverageStage(s), gpu->glCaps(),
+                                         requiresLocalCoordAttrib, &readsDst, &readFragPosition);
+        }
+    }
+
+    header->fEmitsPointSize = isPoints;
+    header->fColorFilterXfermode = skipColor ? SkXfermode::kDst_Mode : drawState.getColorFilterMode();
+
+    // Currently the experimental GS will only work with triangle prims (and it doesn't do anything
+    // other than pass through values from the VS to the FS anyway).
+#if GR_GL_EXPERIMENTAL_GS
+#if 0
+    header->fExperimentalGS = gpu->caps().geometryShaderSupport();
+#else
+    header->fExperimentalGS = false;
+#endif
+#endif
     if (colorIsTransBlack) {
-        desc->fColorInput = kTransBlack_ColorInput;
+        header->fColorInput = kTransBlack_ColorInput;
     } else if (colorIsSolidWhite) {
-        desc->fColorInput = kSolidWhite_ColorInput;
+        header->fColorInput = kSolidWhite_ColorInput;
     } else if (GR_GL_NO_CONSTANT_ATTRIBUTES && !requiresColorAttrib) {
-        desc->fColorInput = kUniform_ColorInput;
+        header->fColorInput = kUniform_ColorInput;
     } else {
-        desc->fColorInput = kAttribute_ColorInput;
+        header->fColorInput = kAttribute_ColorInput;
     }
 
     bool covIsSolidWhite = !requiresCoverageAttrib && 0xffffffff == drawState.getCoverage();
 
     if (skipCoverage) {
-        desc->fCoverageInput = kTransBlack_ColorInput;
+        header->fCoverageInput = kTransBlack_ColorInput;
     } else if (covIsSolidWhite) {
-        desc->fCoverageInput = kSolidWhite_ColorInput;
+        header->fCoverageInput = kSolidWhite_ColorInput;
     } else if (GR_GL_NO_CONSTANT_ATTRIBUTES && !requiresCoverageAttrib) {
-        desc->fCoverageInput = kUniform_ColorInput;
+        header->fCoverageInput = kUniform_ColorInput;
     } else {
-        desc->fCoverageInput = kAttribute_ColorInput;
-    }
-
-    bool readsDst = false;
-    int lastEnabledStage = -1;
-
-    for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-
-        bool skip = s < drawState.getFirstCoverageStage() ? skipColor : skipCoverage;
-        if (!skip && drawState.isStageEnabled(s)) {
-            lastEnabledStage = s;
-            const GrEffectRef& effect = *drawState.getStage(s).getEffect();
-            const GrBackendEffectFactory& factory = effect->getFactory();
-            GrDrawEffect drawEffect(drawState.getStage(s), requiresLocalCoordAttrib);
-            desc->fEffectKeys[s] = factory.glEffectKey(drawEffect, gpu->glCaps());
-            if (effect->willReadDst()) {
-                readsDst = true;
-            }
-        } else {
-            desc->fEffectKeys[s] = 0;
-        }
+        header->fCoverageInput = kAttribute_ColorInput;
     }
 
     if (readsDst) {
@@ -101,53 +142,63 @@ void GrGLProgramDesc::Build(const GrDrawState& drawState,
         if (NULL != dstCopy) {
             dstCopyTexture = dstCopy->texture();
         }
-        desc->fDstRead = GrGLShaderBuilder::KeyForDstRead(dstCopyTexture, gpu->glCaps());
-        GrAssert(0 != desc->fDstRead);
+        header->fDstReadKey = GrGLShaderBuilder::KeyForDstRead(dstCopyTexture, gpu->glCaps());
+        GrAssert(0 != header->fDstReadKey);
     } else {
-        desc->fDstRead = 0;
+        header->fDstReadKey = 0;
     }
 
-    desc->fCoverageOutput = kModulate_CoverageOutput;
-
-    // Currently the experimental GS will only work with triangle prims (and it doesn't do anything
-    // other than pass through values from the VS to the FS anyway).
-#if GR_GL_EXPERIMENTAL_GS
-#if 0
-    desc->fExperimentalGS = gpu->caps().geometryShaderSupport();
-#else
-    desc->fExperimentalGS = false;
-#endif
-#endif
-
-    // We leave this set to kNumStages until we discover that the coverage/color distinction is
-    // material to the generated program. We do this to avoid distinct keys that generate equivalent
-    // programs.
-    desc->fFirstCoverageStage = GrDrawState::kNumStages;
-    // This tracks the actual first coverage stage.
-    int firstCoverageStage = GrDrawState::kNumStages;
-    desc->fDiscardIfZeroCoverage = false; // Enabled below if stenciling and there is coverage.
-    bool hasCoverage = false;
-    // If we're rendering coverage-as-color then it's as though there are no coverage stages.
-    if (!drawState.isCoverageDrawing()) {
-        // We can have coverage either through a stage or coverage vertex attributes.
-        if (drawState.getFirstCoverageStage() <= lastEnabledStage) {
-            firstCoverageStage = drawState.getFirstCoverageStage();
-            hasCoverage = true;
-        } else {
-            hasCoverage = requiresCoverageAttrib;
-        }
+    if (readFragPosition) {
+        header->fFragPosKey = GrGLShaderBuilder::KeyForFragmentPosition(drawState.getRenderTarget(),
+                                                                      gpu->glCaps());
+    } else {
+        header->fFragPosKey = 0;
     }
 
-    if (hasCoverage) {
+    // Record attribute indices
+    header->fPositionAttributeIndex = drawState.positionAttributeIndex();
+    header->fLocalCoordAttributeIndex = drawState.localCoordAttributeIndex();
+
+    // For constant color and coverage we need an attribute with an index beyond those already set
+    int availableAttributeIndex = drawState.getVertexAttribCount();
+    if (requiresColorAttrib) {
+        header->fColorAttributeIndex = drawState.colorVertexAttributeIndex();
+    } else if (GrGLProgramDesc::kAttribute_ColorInput == header->fColorInput) {
+        GrAssert(availableAttributeIndex < GrDrawState::kMaxVertexAttribCnt);
+        header->fColorAttributeIndex = availableAttributeIndex;
+        availableAttributeIndex++;
+    } else {
+        header->fColorAttributeIndex = -1;
+    }
+
+    if (requiresCoverageAttrib) {
+        header->fCoverageAttributeIndex = drawState.coverageVertexAttributeIndex();
+    } else if (GrGLProgramDesc::kAttribute_ColorInput == header->fCoverageInput) {
+        GrAssert(availableAttributeIndex < GrDrawState::kMaxVertexAttribCnt);
+        header->fCoverageAttributeIndex = availableAttributeIndex;
+    } else {
+        header->fCoverageAttributeIndex = -1;
+    }
+
+    // Here we deal with whether/how we handle color and coverage separately.
+
+    // Set these defaults and then possibly change our mind if there is coverage.
+    header->fDiscardIfZeroCoverage = false;
+    header->fCoverageOutput = kModulate_CoverageOutput;
+
+    // If we do have coverage determine whether it matters.
+    bool separateCoverageFromColor = false;
+    if (!drawState.isCoverageDrawing() && !skipCoverage &&
+        (drawState.numCoverageStages() > 0 || requiresCoverageAttrib)) {
         // color filter is applied between color/coverage computation
-        if (SkXfermode::kDst_Mode != desc->fColorFilterXfermode) {
-            desc->fFirstCoverageStage = firstCoverageStage;
+        if (SkXfermode::kDst_Mode != header->fColorFilterXfermode) {
+            separateCoverageFromColor = true;
         }
 
         // If we're stenciling then we want to discard samples that have zero coverage
         if (drawState.getStencil().doesWrite()) {
-            desc->fDiscardIfZeroCoverage = true;
-            desc->fFirstCoverageStage = firstCoverageStage;
+            header->fDiscardIfZeroCoverage = true;
+            separateCoverageFromColor = true;
         }
 
         if (gpu->caps()->dualSourceBlendingSupport() &&
@@ -155,46 +206,56 @@ void GrGLProgramDesc::Build(const GrDrawState& drawState,
                            GrDrawState::kCoverageAsAlpha_BlendOptFlag))) {
             if (kZero_GrBlendCoeff == dstCoeff) {
                 // write the coverage value to second color
-                desc->fCoverageOutput =  kSecondaryCoverage_CoverageOutput;
-                desc->fFirstCoverageStage = firstCoverageStage;
+                header->fCoverageOutput =  kSecondaryCoverage_CoverageOutput;
+                separateCoverageFromColor = true;
             } else if (kSA_GrBlendCoeff == dstCoeff) {
                 // SA dst coeff becomes 1-(1-SA)*coverage when dst is partially covered.
-                desc->fCoverageOutput = kSecondaryCoverageISA_CoverageOutput;
-                desc->fFirstCoverageStage = firstCoverageStage;
+                header->fCoverageOutput = kSecondaryCoverageISA_CoverageOutput;
+                separateCoverageFromColor = true;
             } else if (kSC_GrBlendCoeff == dstCoeff) {
                 // SA dst coeff becomes 1-(1-SA)*coverage when dst is partially covered.
-                desc->fCoverageOutput = kSecondaryCoverageISC_CoverageOutput;
-                desc->fFirstCoverageStage = firstCoverageStage;
+                header->fCoverageOutput = kSecondaryCoverageISC_CoverageOutput;
+                separateCoverageFromColor = true;
             }
         } else if (readsDst &&
-                   kOne_GrBlendCoeff == drawState.getSrcBlendCoeff() &&
-                   kZero_GrBlendCoeff == drawState.getDstBlendCoeff()) {
-            desc->fCoverageOutput = kCombineWithDst_CoverageOutput;
-            desc->fFirstCoverageStage = firstCoverageStage;
+                   kOne_GrBlendCoeff == srcCoeff &&
+                   kZero_GrBlendCoeff == dstCoeff) {
+            header->fCoverageOutput = kCombineWithDst_CoverageOutput;
+            separateCoverageFromColor = true;
+        }
+    }
+    if (!skipColor) {
+        for (int s = 0; s < drawState.numColorStages(); ++s) {
+            colorStages->push_back(&drawState.getColorStage(s));
+        }
+        header->fColorEffectCnt = drawState.numColorStages();
+    }
+    if (!skipCoverage) {
+        SkTArray<const GrEffectStage*, true>* array;
+        if (separateCoverageFromColor) {
+            array = coverageStages;
+            header->fCoverageEffectCnt = drawState.numCoverageStages();
+        } else {
+            array = colorStages;
+            header->fColorEffectCnt += drawState.numCoverageStages();
+        }
+        for (int s = 0; s < drawState.numCoverageStages(); ++s) {
+            array->push_back(&drawState.getCoverageStage(s));
         }
     }
 
-    desc->fPositionAttributeIndex = drawState.positionAttributeIndex();
-    desc->fLocalCoordAttributeIndex = drawState.localCoordAttributeIndex();
+    *desc->checksum() = 0;
+    *desc->checksum() = SkChecksum::Compute(reinterpret_cast<uint32_t*>(desc->fKey.get()),
+                                            newKeyLength);
+    desc->fInitialized = true;
+}
 
-    // For constant color and coverage we need an attribute with an index beyond those already set
-    int availableAttributeIndex = drawState.getVertexAttribCount();
-    if (requiresColorAttrib) {
-        desc->fColorAttributeIndex = drawState.colorVertexAttributeIndex();
-    } else if (GrGLProgramDesc::kAttribute_ColorInput == desc->fColorInput) {
-        GrAssert(availableAttributeIndex < GrDrawState::kMaxVertexAttribCnt);
-        desc->fColorAttributeIndex = availableAttributeIndex;
-        availableAttributeIndex++;
-    } else {
-        desc->fColorAttributeIndex = -1;
+GrGLProgramDesc& GrGLProgramDesc::operator= (const GrGLProgramDesc& other) {
+    fInitialized = other.fInitialized;
+    if (fInitialized) {
+        size_t keyLength = other.keyLength();
+        fKey.reset(keyLength);
+        memcpy(fKey.get(), other.fKey.get(), keyLength);
     }
-
-    if (requiresCoverageAttrib) {
-        desc->fCoverageAttributeIndex = drawState.coverageVertexAttributeIndex();
-    } else if (GrGLProgramDesc::kAttribute_ColorInput == desc->fCoverageInput) {
-        GrAssert(availableAttributeIndex < GrDrawState::kMaxVertexAttribCnt);
-        desc->fCoverageAttributeIndex = availableAttributeIndex;
-    } else {
-        desc->fCoverageAttributeIndex = -1;
-    }
+    return *this;
 }

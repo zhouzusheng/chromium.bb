@@ -21,7 +21,6 @@
 #ifndef SVGFilter_h
 #define SVGFilter_h
 
-#if ENABLE(SVG)
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/filters/Filter.h"
@@ -38,9 +37,6 @@ class SVGFilter : public Filter {
 public:
     static PassRefPtr<SVGFilter> create(const AffineTransform&, const FloatRect&, const FloatRect&, const FloatRect&, bool);
 
-    FloatRect filterRegionInUserSpace() const { return m_filterRegion; }
-    virtual FloatRect filterRegion() const { return m_absoluteFilterRegion; }
-
     virtual float applyHorizontalScale(float value) const;
     virtual float applyVerticalScale(float value) const;
 
@@ -52,13 +48,9 @@ private:
 
     FloatRect m_absoluteSourceDrawingRegion;
     FloatRect m_targetBoundingBox;
-    FloatRect m_absoluteFilterRegion;
-    FloatRect m_filterRegion;
     bool m_effectBBoxMode;
 };
 
 } // namespace WebCore
-
-#endif // ENABLE(SVG)
 
 #endif // SVGFilter_h

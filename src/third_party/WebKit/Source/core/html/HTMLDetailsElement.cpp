@@ -22,10 +22,9 @@
 #include "core/html/HTMLDetailsElement.h"
 
 #include "HTMLNames.h"
-#include "core/dom/MouseEvent.h"
 #include "core/dom/NodeRenderingContext.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/dom/Text.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLSummaryElement.h"
 #include "core/html/shadow/HTMLContentElement.h"
 #include "core/platform/LocalizedStrings.h"
@@ -56,9 +55,9 @@ HTMLDetailsElement::HTMLDetailsElement(const QualifiedName& tagName, Document* d
     ScriptWrappable::init(this);
 }
 
-RenderObject* HTMLDetailsElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* HTMLDetailsElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderBlock(this);
+    return new (document()->renderArena()) RenderBlock(this);
 }
 
 void HTMLDetailsElement::didAddUserAgentShadowRoot(ShadowRoot* root)
@@ -92,7 +91,7 @@ void HTMLDetailsElement::parseAttribute(const QualifiedName& name, const AtomicS
         bool oldValue = m_isOpen;
         m_isOpen = !value.isNull();
         if (oldValue != m_isOpen)
-            reattachIfAttached();
+            lazyReattachIfAttached();
     } else
         HTMLElement::parseAttribute(name, value);
 }

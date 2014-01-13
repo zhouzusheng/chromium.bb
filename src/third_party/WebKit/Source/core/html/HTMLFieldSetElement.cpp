@@ -54,7 +54,7 @@ void HTMLFieldSetElement::invalidateDisabledStateUnder(Element* base)
 {
     for (Element* element = ElementTraversal::firstWithin(base); element; element = ElementTraversal::next(element, base)) {
         if (element->isFormControlElement())
-            static_cast<HTMLFormControlElement*>(element)->ancestorDisabledStateWasChanged();
+            toHTMLFormControlElement(element)->ancestorDisabledStateWasChanged();
     }
 }
 
@@ -85,9 +85,9 @@ const AtomicString& HTMLFieldSetElement::formControlType() const
     return fieldset;
 }
 
-RenderObject* HTMLFieldSetElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* HTMLFieldSetElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderFieldset(this);
+    return new (document()->renderArena()) RenderFieldset(this);
 }
 
 HTMLLegendElement* HTMLFieldSetElement::legend() const
@@ -123,7 +123,7 @@ void HTMLFieldSetElement::refreshElementsIfNeeded() const
         if (!element->isFormControlElement())
             continue;
 
-        m_associatedElements.append(static_cast<HTMLFormControlElement*>(element));
+        m_associatedElements.append(toHTMLFormControlElement(element));
     }
 }
 

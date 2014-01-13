@@ -19,8 +19,7 @@ QuicStreamSequencer::QuicStreamSequencer(ReliableQuicStream* quic_stream)
     : stream_(quic_stream),
       num_bytes_consumed_(0),
       max_frame_memory_(numeric_limits<size_t>::max()),
-      close_offset_(numeric_limits<QuicStreamOffset>::max()),
-      half_close_(true) {
+      close_offset_(numeric_limits<QuicStreamOffset>::max()) {
 }
 
 QuicStreamSequencer::QuicStreamSequencer(size_t max_frame_memory,
@@ -28,8 +27,7 @@ QuicStreamSequencer::QuicStreamSequencer(size_t max_frame_memory,
     : stream_(quic_stream),
       num_bytes_consumed_(0),
       max_frame_memory_(max_frame_memory),
-      close_offset_(numeric_limits<QuicStreamOffset>::max()),
-      half_close_(true) {
+      close_offset_(numeric_limits<QuicStreamOffset>::max()) {
   if (max_frame_memory < kMaxPacketSize) {
     LOG(DFATAL) << "Setting max frame memory to " << max_frame_memory
                 << ".  Some frames will be impossible to handle.";
@@ -82,7 +80,7 @@ bool QuicStreamSequencer::OnStreamFrame(const QuicStreamFrame& frame) {
 
   if (byte_offset == num_bytes_consumed_) {
     DVLOG(1) << "Processing byte offset " << byte_offset;
-    size_t bytes_consumed = stream_->ProcessData(data, data_len);
+    size_t bytes_consumed = stream_->ProcessRawData(data, data_len);
     num_bytes_consumed_ += bytes_consumed;
 
     if (MaybeCloseStream()) {
@@ -106,22 +104,17 @@ bool QuicStreamSequencer::OnStreamFrame(const QuicStreamFrame& frame) {
   return true;
 }
 
-void QuicStreamSequencer::CloseStreamAtOffset(QuicStreamOffset offset,
-                                              bool half_close) {
+void QuicStreamSequencer::CloseStreamAtOffset(QuicStreamOffset offset) {
   const QuicStreamOffset kMaxOffset = numeric_limits<QuicStreamOffset>::max();
 
   // If we have a scheduled termination or close, any new offset should match
   // it.
   if (close_offset_ != kMaxOffset && offset != close_offset_) {
-      stream_->Close(QUIC_MULTIPLE_TERMINATION_OFFSETS);
-      return;
+    stream_->Close(QUIC_MULTIPLE_TERMINATION_OFFSETS);
+    return;
   }
 
   close_offset_ = offset;
-  // Full close overrides half close.
-  if (half_close == false) {
-    half_close_ = false;
-  }
 
   MaybeCloseStream();
 }
@@ -133,10 +126,91 @@ bool QuicStreamSequencer::MaybeCloseStream() {
              << " bytes.";
     // Technically it's an error if num_bytes_consumed isn't exactly
     // equal, but error handling seems silly at this point.
-    stream_->TerminateFromPeer(half_close_);
+    stream_->TerminateFromPeer(true);
     return true;
   }
   return false;
+}
+
+int QuicStreamSequencer::GetReadableRegions(iovec* iov, size_t iov_len) {
+  FrameMap::iterator it = frames_.begin();
+  size_t index = 0;
+  QuicStreamOffset offset = num_bytes_consumed_;
+  while (it != frames_.end() && index < iov_len) {
+    if (it->first != offset) return index;
+
+    iov[index].iov_base = static_cast<void*>(
+        const_cast<char*>(it->second.data()));
+    iov[index].iov_len = it->second.size();
+    offset += it->second.size();
+
+    ++index;
+    ++it;
+  }
+  return index;
+}
+
+int QuicStreamSequencer::Readv(const struct iovec* iov, size_t iov_len) {
+  FrameMap::iterator it = frames_.begin();
+  size_t iov_index = 0;
+  size_t iov_offset = 0;
+  size_t frame_offset = 0;
+  size_t initial_bytes_consumed = num_bytes_consumed_;
+
+  while (iov_index < iov_len &&
+         it != frames_.end() &&
+         it->first == num_bytes_consumed_) {
+    int bytes_to_read = min(iov[iov_index].iov_len - iov_offset,
+                            it->second.size() - frame_offset);
+
+    char* iov_ptr = static_cast<char*>(iov[iov_index].iov_base) + iov_offset;
+    memcpy(iov_ptr,
+           it->second.data() + frame_offset, bytes_to_read);
+    frame_offset += bytes_to_read;
+    iov_offset += bytes_to_read;
+
+    if (iov[iov_index].iov_len == iov_offset) {
+      // We've filled this buffer.
+      iov_offset = 0;
+      ++iov_index;
+    }
+    if (it->second.size() == frame_offset) {
+      // We've copied this whole frame
+      num_bytes_consumed_ += it->second.size();
+      frames_.erase(it);
+      it = frames_.begin();
+      frame_offset = 0;
+    }
+  }
+  // We've finished copying.  If we have a partial frame, update it.
+  if (frame_offset != 0) {
+    frames_.insert(make_pair(it->first + frame_offset,
+                             it->second.substr(frame_offset)));
+    frames_.erase(frames_.begin());
+    num_bytes_consumed_ += frame_offset;
+  }
+  return num_bytes_consumed_ - initial_bytes_consumed;
+}
+
+void QuicStreamSequencer::MarkConsumed(size_t num_bytes_consumed) {
+  size_t end_offset = num_bytes_consumed_ + num_bytes_consumed;
+  while (!frames_.empty()) {
+    FrameMap::iterator it = frames_.begin();
+    if (it->first + it->second.length() <= end_offset) {
+      // This chunk is entirely consumed.
+      frames_.erase(it);
+      continue;
+    }
+
+    if (it->first != end_offset) {
+      // Partially consume this frame.
+      frames_.insert(make_pair(end_offset,
+                               it->second.substr(end_offset - it->first)));
+      frames_.erase(it);
+    }
+    break;
+  }
+  num_bytes_consumed_ = end_offset;
 }
 
 bool QuicStreamSequencer::HasBytesToRead() const {
@@ -147,10 +221,6 @@ bool QuicStreamSequencer::HasBytesToRead() const {
 
 bool QuicStreamSequencer::IsHalfClosed() const {
   return num_bytes_consumed_ >= close_offset_;
-}
-
-bool QuicStreamSequencer::IsClosed() const {
-  return num_bytes_consumed_ >= close_offset_ && half_close_ == false;
 }
 
 bool QuicStreamSequencer::IsDuplicate(const QuicStreamFrame& frame) const {
@@ -167,7 +237,8 @@ void QuicStreamSequencer::FlushBufferedFrames() {
   while (it != frames_.end()) {
     DVLOG(1) << "Flushing buffered packet at offset " << it->first;
     string* data = &it->second;
-    size_t bytes_consumed = stream_->ProcessData(data->c_str(), data->size());
+    size_t bytes_consumed = stream_->ProcessRawData(data->c_str(),
+                                                    data->size());
     num_bytes_consumed_ += bytes_consumed;
     if (MaybeCloseStream()) {
       return;

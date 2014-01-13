@@ -12,7 +12,7 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
 class GURL;
@@ -90,6 +90,11 @@ class SpellingServiceClient : public net::URLFetcherDelegate {
   // Returns whether the specified service is available for the given context.
   static bool IsAvailable(content::BrowserContext* context, ServiceType type);
 
+ protected:
+  // Parses a JSON-RPC response from the Spelling service.
+  bool ParseResponse(const std::string& data,
+                     std::vector<SpellCheckResult>* results);
+
  private:
   struct TextCheckCallbackData {
     TextCheckCallbackData(TextCheckCompleteCallback callback, string16 text);
@@ -110,10 +115,6 @@ class SpellingServiceClient : public net::URLFetcherDelegate {
   // function is overridden by unit tests to prevent them from actually sending
   // requests to the Spelling service.
   virtual net::URLFetcher* CreateURLFetcher(const GURL& url);
-
-  // Parses a JSON-RPC response from the Spelling service.
-  bool ParseResponse(const std::string& data,
-                     std::vector<SpellCheckResult>* results);
 
   // The URLFetcher object used for sending a JSON-RPC request.
   std::map<const net::URLFetcher*, TextCheckCallbackData*> spellcheck_fetchers_;

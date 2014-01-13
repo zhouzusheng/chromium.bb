@@ -35,7 +35,6 @@
 #include "core/html/HTMLDivElement.h"
 #include "core/platform/DateTimeChooser.h"
 #include "core/platform/DateTimeChooserClient.h"
-#include <wtf/OwnPtr.h>
 
 namespace WebCore {
 
@@ -67,15 +66,22 @@ public:
 
 private:
     PickerIndicatorElement(Document*, PickerIndicatorOwner&);
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE;
-    virtual void detach() OVERRIDE;
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
+    virtual bool isPickerIndicatorElement() const OVERRIDE;
 
     HTMLInputElement* hostInput();
 
     PickerIndicatorOwner* m_pickerIndicatorOwner;
     RefPtr<DateTimeChooser> m_chooser;
 };
+
+inline PickerIndicatorElement* toPickerIndicatorElement(Element* element)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!element || element->isPickerIndicatorElement());
+    return static_cast<PickerIndicatorElement*>(element);
+}
 
 }
 #endif

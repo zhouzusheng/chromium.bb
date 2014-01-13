@@ -34,24 +34,19 @@
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/Text.h"
-#include "core/html/HTMLDocument.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLHtmlElement.h"
-#include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLScriptElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/parser/AtomicHTMLToken.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLStackItem.h"
 #include "core/html/parser/HTMLToken.h"
-#include "core/html/parser/HTMLTokenizer.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Frame.h"
-#include "core/page/Settings.h"
-#include "core/platform/LocalizedStrings.h"
 #include "core/platform/NotImplemented.h"
-#include <wtf/UnusedParam.h>
+#include <limits>
 
 namespace WebCore {
 
@@ -76,6 +71,13 @@ static bool hasImpliedEndTag(const HTMLStackItem* item)
         || item->hasTagName(pTag)
         || item->hasTagName(rpTag)
         || item->hasTagName(rtTag);
+}
+
+static bool shouldUseLengthLimit(const ContainerNode* node)
+{
+    return !node->hasTagName(scriptTag)
+        && !node->hasTagName(styleTag)
+        && !node->hasTagName(SVGNames::scriptTag);
 }
 
 static inline bool isAllWhitespace(const String& string)
@@ -219,7 +221,7 @@ HTMLConstructionSite::HTMLConstructionSite(Document* document, ParserContentPoli
     , m_redirectAttachToFosterParent(false)
     , m_inQuirksMode(document->inQuirksMode())
 {
-    ASSERT(m_document->isHTMLDocument() || m_document->isXHTMLDocument());
+    ASSERT(m_document->isHTMLDocument() || m_document->isSVGDocument() || m_document->isXHTMLDocument());
 }
 
 HTMLConstructionSite::HTMLConstructionSite(DocumentFragment* fragment, ParserContentPolicy parserContentPolicy)
@@ -230,7 +232,7 @@ HTMLConstructionSite::HTMLConstructionSite(DocumentFragment* fragment, ParserCon
     , m_redirectAttachToFosterParent(false)
     , m_inQuirksMode(fragment->document()->inQuirksMode())
 {
-    ASSERT(m_document->isHTMLDocument() || m_document->isXHTMLDocument());
+    ASSERT(m_document->isHTMLDocument() || m_document->isSVGDocument() || m_document->isXHTMLDocument());
 }
 
 HTMLConstructionSite::~HTMLConstructionSite()
@@ -413,8 +415,8 @@ void HTMLConstructionSite::insertDoctype(AtomicHTMLToken* token)
 {
     ASSERT(token->type() == HTMLToken::DOCTYPE);
 
-    const String& publicId = String::adopt(token->publicIdentifier());
-    const String& systemId = String::adopt(token->systemIdentifier());
+    const String& publicId = StringImpl::create8BitIfPossible(token->publicIdentifier());
+    const String& systemId = StringImpl::create8BitIfPossible(token->systemIdentifier());
     RefPtr<DocumentType> doctype = DocumentType::create(m_document, token->name(), publicId, systemId);
     attachLater(m_attachmentRoot, doctype.release());
 
@@ -553,6 +555,7 @@ void HTMLConstructionSite::insertTextNode(const String& characters, WhitespaceMo
         || (whitespaceMode == WhitespaceUnknown && isAllWhitespace(characters));
 
     unsigned currentPosition = 0;
+    unsigned lengthLimit = shouldUseLengthLimit(task.parent.get()) ? Text::defaultLengthLimit : std::numeric_limits<unsigned>::max();
 
     // FIXME: Splitting text nodes into smaller chunks contradicts HTML5 spec, but is currently necessary
     // for performance, see <https://bugs.webkit.org/show_bug.cgi?id=55898>.
@@ -562,11 +565,11 @@ void HTMLConstructionSite::insertTextNode(const String& characters, WhitespaceMo
         // FIXME: We're only supposed to append to this text node if it
         // was the last text node inserted by the parser.
         CharacterData* textNode = static_cast<CharacterData*>(previousChild);
-        currentPosition = textNode->parserAppendData(characters, 0, Text::defaultLengthLimit);
+        currentPosition = textNode->parserAppendData(characters, 0, lengthLimit);
     }
 
     while (currentPosition < characters.length()) {
-        RefPtr<Text> textNode = Text::createWithLengthLimit(task.parent->document(), shouldUseAtomicString ? AtomicString(characters).string() : characters, currentPosition);
+        RefPtr<Text> textNode = Text::createWithLengthLimit(task.parent->document(), shouldUseAtomicString ? AtomicString(characters).string() : characters, currentPosition, lengthLimit);
         // If we have a whole string of unbreakable characters the above could lead to an infinite loop. Exceeding the length limit is the lesser evil.
         if (!textNode->length()) {
             String substring = characters.substring(currentPosition);
@@ -636,10 +639,14 @@ inline Document* HTMLConstructionSite::ownerDocumentForCurrentNode()
 PassRefPtr<Element> HTMLConstructionSite::createHTMLElement(AtomicHTMLToken* token)
 {
     QualifiedName tagName(nullAtom, token->name(), xhtmlNamespaceURI);
+    Document* document = ownerDocumentForCurrentNode();
+    // Only associate the element with the current form if we're creating the new element
+    // in a document with a browsing context (rather than in <template> contents).
+    HTMLFormElement* form = document->frame() ? m_form.get() : 0;
     // FIXME: This can't use HTMLConstructionSite::createElement because we
     // have to pass the current form element.  We should rework form association
     // to occur after construction to allow better code sharing here.
-    RefPtr<Element> element = HTMLElementFactory::createHTMLElement(tagName, ownerDocumentForCurrentNode(), form(), true);
+    RefPtr<Element> element = HTMLElementFactory::createHTMLElement(tagName, document, form, true);
     setAttributes(element.get(), token, m_parserContentPolicy);
     ASSERT(element->isHTMLElement());
     return element.release();

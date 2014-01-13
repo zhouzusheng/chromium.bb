@@ -41,14 +41,15 @@
 
 namespace WebCore {
 
+class Document;
 class Element;
-class InspectorAgent;
+class Event;
 class InspectorDOMAgent;
 class InspectorDebuggerAgent;
 class InspectorFrontend;
-class InspectorObject;
 class InspectorState;
 class InstrumentingAgents;
+class JSONObject;
 class Node;
 
 typedef String ErrorString;
@@ -56,7 +57,7 @@ typedef String ErrorString;
 class InspectorDOMDebuggerAgent : public InspectorBaseAgent<InspectorDOMDebuggerAgent>, public InspectorDebuggerAgent::Listener, public InspectorBackendDispatcher::DOMDebuggerCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorDOMDebuggerAgent);
 public:
-    static PassOwnPtr<InspectorDOMDebuggerAgent> create(InstrumentingAgents*, InspectorCompositeState*, InspectorDOMAgent*, InspectorDebuggerAgent*, InspectorAgent*);
+    static PassOwnPtr<InspectorDOMDebuggerAgent> create(InstrumentingAgents*, InspectorCompositeState*, InspectorDOMAgent*, InspectorDebuggerAgent*);
 
     virtual ~InspectorDOMDebuggerAgent();
 
@@ -78,7 +79,14 @@ public:
     void didRemoveDOMNode(Node*);
     void willModifyDOMAttr(Element*, const AtomicString&, const AtomicString&);
     void willSendXMLHttpRequest(const String& url);
-    void pauseOnNativeEventIfNeeded(bool isDOMEvent, const String& eventName, bool synchronous);
+    void didInstallTimer(ScriptExecutionContext*, int timerId, int timeout, bool singleShot);
+    void didRemoveTimer(ScriptExecutionContext*, int timerId);
+    void willFireTimer(ScriptExecutionContext*, int timerId);
+    void didRequestAnimationFrame(Document*, int callbackId);
+    void didCancelAnimationFrame(Document*, int callbackId);
+    void willFireAnimationFrame(Document*, int callbackId);
+    void willHandleEvent(Event*);
+    void didFireWebGLError(const String& errorName);
 
     void didProcessTask();
 
@@ -86,7 +94,10 @@ public:
     virtual void discardAgent();
 
 private:
-    InspectorDOMDebuggerAgent(InstrumentingAgents*, InspectorCompositeState*, InspectorDOMAgent*, InspectorDebuggerAgent*, InspectorAgent*);
+    InspectorDOMDebuggerAgent(InstrumentingAgents*, InspectorCompositeState*, InspectorDOMAgent*, InspectorDebuggerAgent*);
+
+    void pauseOnNativeEventIfNeeded(PassRefPtr<JSONObject> eventData, bool synchronous);
+    PassRefPtr<JSONObject> preparePauseOnNativeEventData(bool isDOMEvent, const String& eventName);
 
     // InspectorDebuggerAgent::Listener implementation.
     virtual void debuggerWasEnabled();
@@ -95,7 +106,7 @@ private:
     virtual void didPause();
     void disable();
 
-    void descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, InspectorObject* description);
+    void descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, JSONObject* description);
     void updateSubtreeBreakpoints(Node*, uint32_t rootMask, bool set);
     bool hasBreakpoint(Node*, int type);
     void discardBindings();

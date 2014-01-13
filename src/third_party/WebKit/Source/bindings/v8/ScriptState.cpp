@@ -31,30 +31,23 @@
 #include "config.h"
 #include "bindings/v8/ScriptState.h"
 
-#include "V8DOMWindow.h"
+#include "V8Window.h"
 #include "V8WorkerContext.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/WorkerScriptController.h"
-#include "core/dom/Node.h"
 #include "core/page/Frame.h"
-#include "core/page/Page.h"
 #include "core/workers/WorkerContext.h"
 #include <v8.h>
 #include "wtf/Assertions.h"
 
 namespace WebCore {
 
-template<>
-void WeakHandleListener<ScriptState>::callback(v8::Isolate* isolate, v8::Persistent<v8::Value> object, ScriptState* scriptState)
-{
-    delete scriptState;
-}
-
 ScriptState::ScriptState(v8::Handle<v8::Context> context)
     : m_context(context)
+    , m_isolate(context->GetIsolate())
 {
-    WeakHandleListener<ScriptState>::makeWeak(context->GetIsolate(), m_context.get(), this);
+    m_context.makeWeak(this, &makeWeakCallback);
 }
 
 ScriptState::~ScriptState()
@@ -63,17 +56,17 @@ ScriptState::~ScriptState()
 
 DOMWindow* ScriptState::domWindow() const
 {
-    v8::HandleScope handleScope;
-    return toDOMWindow(m_context.get());
+    v8::HandleScope handleScope(m_isolate);
+    return toDOMWindow(m_context.newLocal(m_isolate));
 }
 
 ScriptExecutionContext* ScriptState::scriptExecutionContext() const
 {
-    v8::HandleScope handleScope;
-    return toScriptExecutionContext(m_context.get());
+    v8::HandleScope handleScope(m_isolate);
+    return toScriptExecutionContext(m_context.newLocal(m_isolate));
 }
 
-ScriptState* ScriptState::forContext(v8::Local<v8::Context> context)
+ScriptState* ScriptState::forContext(v8::Handle<v8::Context> context)
 {
     v8::Context::Scope contextScope(context);
 
@@ -96,46 +89,27 @@ ScriptState* ScriptState::current()
     return ScriptState::forContext(context);
 }
 
-DOMWindow* domWindowFromScriptState(ScriptState* scriptState)
+void ScriptState::makeWeakCallback(v8::Isolate* isolate, v8::Persistent<v8::Context>* object, ScriptState* scriptState)
 {
-    return scriptState->domWindow();
+    delete scriptState;
 }
 
-ScriptExecutionContext* scriptExecutionContextFromScriptState(ScriptState* scriptState)
-{
-    return scriptState->scriptExecutionContext();
-}
-
-bool evalEnabled(ScriptState* scriptState)
+bool ScriptState::evalEnabled() const
 {
     v8::HandleScope handleScope;
-    return scriptState->context()->IsCodeGenerationFromStringsAllowed();
+    return context()->IsCodeGenerationFromStringsAllowed();
 }
 
-void setEvalEnabled(ScriptState* scriptState, bool enabled)
+void ScriptState::setEvalEnabled(bool enabled)
 {
     v8::HandleScope handleScope;
-    return scriptState->context()->AllowCodeGenerationFromStrings(enabled);
+    return context()->AllowCodeGenerationFromStrings(enabled);
 }
 
 ScriptState* mainWorldScriptState(Frame* frame)
 {
     v8::HandleScope handleScope;
     return ScriptState::forContext(frame->script()->mainWorldContext());
-}
-
-ScriptState* scriptStateFromNode(DOMWrapperWorld*, Node* node)
-{
-    // This should be never reached with V8 bindings (WebKit only uses it
-    // for non-JS bindings)
-    ASSERT_NOT_REACHED();
-    return 0;
-}
-
-ScriptState* scriptStateFromPage(DOMWrapperWorld*, Page* page)
-{
-    // This should be only reached with V8 bindings from single process layout tests.
-    return mainWorldScriptState(page->mainFrame());
 }
 
 ScriptState* scriptStateFromWorkerContext(WorkerContext* workerContext)

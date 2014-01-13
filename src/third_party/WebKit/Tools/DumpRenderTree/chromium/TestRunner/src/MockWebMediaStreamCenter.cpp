@@ -28,17 +28,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "MockWebMediaStreamCenter.h"
 
-#include <public/WebAudioDestinationConsumer.h>
-#include <public/WebMediaStream.h>
-#include <public/WebMediaStreamCenterClient.h>
-#include <public/WebMediaStreamSource.h>
-#include <public/WebMediaStreamSourcesRequest.h>
-#include <public/WebMediaStreamTrack.h>
-#include <public/WebVector.h>
+#include "public/platform/WebAudioDestinationConsumer.h"
+#include "public/platform/WebMediaStream.h"
+#include "public/platform/WebMediaStreamCenterClient.h"
+#include "public/platform/WebMediaStreamSource.h"
+#include "public/platform/WebMediaStreamTrack.h"
+#include "public/platform/WebMediaStreamTrackSourcesRequest.h"
+#include "public/platform/WebSourceInfo.h"
+#include "public/platform/WebVector.h"
 
 using namespace WebKit;
 
@@ -48,10 +47,14 @@ MockWebMediaStreamCenter::MockWebMediaStreamCenter(WebMediaStreamCenterClient* c
 {
 }
 
-void MockWebMediaStreamCenter::queryMediaStreamSources(const WebMediaStreamSourcesRequest& request)
+bool MockWebMediaStreamCenter::getMediaStreamTrackSources(const WebMediaStreamTrackSourcesRequest& request)
 {
-    WebVector<WebMediaStreamSource> audioSources, videoSources;
-    request.didCompleteQuery(audioSources, videoSources);
+    size_t size = 2;
+    WebVector<WebSourceInfo> results(size);
+    results[0].initialize("MockAudioDevice#1", WebSourceInfo::SourceKindAudio, "Mock audio device", WebSourceInfo::VideoFacingModeNone);
+    results[1].initialize("MockVideoDevice#1", WebSourceInfo::SourceKindVideo, "Mock video device", WebSourceInfo::VideoFacingModeEnvironment);
+    request.requestSucceeded(results);
+    return true;
 }
 
 void MockWebMediaStreamCenter::didEnableMediaStreamTrack(const WebMediaStream&, const WebMediaStreamTrack& component)

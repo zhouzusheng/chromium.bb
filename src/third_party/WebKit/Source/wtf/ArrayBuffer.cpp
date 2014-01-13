@@ -24,12 +24,13 @@
  */
 
 #include "config.h"
-#include "ArrayBuffer.h"
+#include "wtf/ArrayBuffer.h"
 
-#include "ArrayBufferView.h"
-
-#include <wtf/RefPtr.h>
-#include <wtf/Vector.h>
+#include "wtf/ArrayBufferContents.h"
+#include "wtf/ArrayBufferDeallocationObserver.h"
+#include "wtf/ArrayBufferView.h"
+#include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
 
 namespace WTF {
 
@@ -37,8 +38,8 @@ bool ArrayBuffer::transfer(ArrayBufferContents& result, Vector<RefPtr<ArrayBuffe
 {
     RefPtr<ArrayBuffer> keepAlive(this);
 
-    if (!m_contents.m_data) {
-        result.m_data = 0;
+    if (!m_contents.data()) {
+        result.clear();
         return false;
     }
 

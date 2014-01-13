@@ -29,20 +29,20 @@
 #include <gtest/gtest.h>
 #include "FrameTestHelpers.h"
 #include "URLTestHelpers.h"
-#include "WebCompositorInitializer.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
 #include "WebSettings.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
-#include "core/platform/graphics/chromium/GraphicsLayerChromium.h"
+#include "core/platform/graphics/GraphicsLayer.h"
 #include "core/rendering/RenderLayerBacking.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
-#include <public/Platform.h>
-#include <public/WebLayer.h>
-#include <public/WebLayerTreeView.h>
-#include <public/WebUnitTestSupport.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebLayer.h"
+#include "public/platform/WebLayerPositionConstraint.h"
+#include "public/platform/WebLayerTreeView.h"
+#include "public/platform/WebUnitTestSupport.h"
 
 using namespace WebCore;
 using namespace WebKit;
@@ -73,7 +73,6 @@ class ScrollingCoordinatorChromiumTest : public testing::Test {
 public:
     ScrollingCoordinatorChromiumTest()
         : m_baseURL("http://www.test.com/")
-        , m_compositorInitializer(0)
     {
         // We cannot reuse FrameTestHelpers::createWebViewAndLoad here because the compositing
         // settings need to be set before the page is loaded.
@@ -113,7 +112,7 @@ public:
         ASSERT(compositor);
         ASSERT(compositor->scrollLayer());
 
-        WebLayer* webScrollLayer = static_cast<WebLayer*>(compositor->scrollLayer()->platformLayer());
+        WebLayer* webScrollLayer = compositor->scrollLayer()->platformLayer();
         return webScrollLayer;
     }
 
@@ -122,7 +121,6 @@ protected:
     MockWebFrameClient m_mockWebFrameClient;
     FakeWebViewClient m_mockWebViewClient;
     WebViewImpl* m_webViewImpl;
-    WebKitTests::WebCompositorInitializer m_compositorInitializer;
 };
 
 TEST_F(ScrollingCoordinatorChromiumTest, fastScrollingByDefault)
@@ -142,6 +140,25 @@ TEST_F(ScrollingCoordinatorChromiumTest, fastScrollingByDefault)
     ASSERT_FALSE(rootScrollLayer->haveWheelEventHandlers());
 }
 
+static WebLayer* webLayerFromElement(Element* element)
+{
+    if (!element)
+        return 0;
+    RenderObject* renderer = element->renderer();
+    if (!renderer || !renderer->isBoxModelObject())
+        return 0;
+    RenderLayer* layer = toRenderBoxModelObject(renderer)->layer();
+    if (!layer)
+        return 0;
+    RenderLayerBacking* backing = layer->backing();
+    if (!backing)
+        return 0;
+    GraphicsLayer* graphicsLayer = backing->graphicsLayer();
+    if (!graphicsLayer)
+        return 0;
+    return graphicsLayer->platformLayer();
+}
+
 TEST_F(ScrollingCoordinatorChromiumTest, fastScrollingForFixedPosition)
 {
     registerMockedHttpURLLoad("fixed-position.html");
@@ -151,21 +168,79 @@ TEST_F(ScrollingCoordinatorChromiumTest, fastScrollingForFixedPosition)
     WebLayer* rootScrollLayer = getRootScrollLayer();
     ASSERT_FALSE(rootScrollLayer->shouldScrollOnMainThread());
 
-    // Verify the properties of the fixed position element starting from the RenderObject all the
-    // way to the WebLayer.
-    Element* fixedElement = m_webViewImpl->mainFrameImpl()->frame()->document()->getElementById("fixed");
-    ASSERT(fixedElement);
-
-    RenderObject* renderer = fixedElement->renderer();
-    ASSERT_TRUE(renderer->isBoxModelObject());
-    ASSERT_TRUE(renderer->hasLayer());
-
-    RenderLayer* layer = toRenderBoxModelObject(renderer)->layer();
-    ASSERT_TRUE(layer->isComposited());
-
-    RenderLayerBacking* layerBacking = layer->backing();
-    WebLayer* webLayer = static_cast<WebLayer*>(layerBacking->graphicsLayer()->platformLayer());
-    ASSERT_TRUE(webLayer->fixedToContainerLayer());
+    Document* document = m_webViewImpl->mainFrameImpl()->frame()->document();
+    {
+        Element* element = document->getElementById("div-tl");
+        ASSERT_TRUE(element);
+        WebLayer* layer = webLayerFromElement(element);
+        ASSERT_TRUE(layer);
+        WebLayerPositionConstraint constraint = layer->positionConstraint();
+        ASSERT_TRUE(constraint.isFixedPosition);
+        ASSERT_TRUE(!constraint.isFixedToRightEdge && !constraint.isFixedToBottomEdge);
+    }
+    {
+        Element* element = document->getElementById("div-tr");
+        ASSERT_TRUE(element);
+        WebLayer* layer = webLayerFromElement(element);
+        ASSERT_TRUE(layer);
+        WebLayerPositionConstraint constraint = layer->positionConstraint();
+        ASSERT_TRUE(constraint.isFixedPosition);
+        ASSERT_TRUE(constraint.isFixedToRightEdge && !constraint.isFixedToBottomEdge);
+    }
+    {
+        Element* element = document->getElementById("div-bl");
+        ASSERT_TRUE(element);
+        WebLayer* layer = webLayerFromElement(element);
+        ASSERT_TRUE(layer);
+        WebLayerPositionConstraint constraint = layer->positionConstraint();
+        ASSERT_TRUE(constraint.isFixedPosition);
+        ASSERT_TRUE(!constraint.isFixedToRightEdge && constraint.isFixedToBottomEdge);
+    }
+    {
+        Element* element = document->getElementById("div-br");
+        ASSERT_TRUE(element);
+        WebLayer* layer = webLayerFromElement(element);
+        ASSERT_TRUE(layer);
+        WebLayerPositionConstraint constraint = layer->positionConstraint();
+        ASSERT_TRUE(constraint.isFixedPosition);
+        ASSERT_TRUE(constraint.isFixedToRightEdge && constraint.isFixedToBottomEdge);
+    }
+    {
+        Element* element = document->getElementById("span-tl");
+        ASSERT_TRUE(element);
+        WebLayer* layer = webLayerFromElement(element);
+        ASSERT_TRUE(layer);
+        WebLayerPositionConstraint constraint = layer->positionConstraint();
+        ASSERT_TRUE(constraint.isFixedPosition);
+        ASSERT_TRUE(!constraint.isFixedToRightEdge && !constraint.isFixedToBottomEdge);
+    }
+    {
+        Element* element = document->getElementById("span-tr");
+        ASSERT_TRUE(element);
+        WebLayer* layer = webLayerFromElement(element);
+        ASSERT_TRUE(layer);
+        WebLayerPositionConstraint constraint = layer->positionConstraint();
+        ASSERT_TRUE(constraint.isFixedPosition);
+        ASSERT_TRUE(constraint.isFixedToRightEdge && !constraint.isFixedToBottomEdge);
+    }
+    {
+        Element* element = document->getElementById("span-bl");
+        ASSERT_TRUE(element);
+        WebLayer* layer = webLayerFromElement(element);
+        ASSERT_TRUE(layer);
+        WebLayerPositionConstraint constraint = layer->positionConstraint();
+        ASSERT_TRUE(constraint.isFixedPosition);
+        ASSERT_TRUE(!constraint.isFixedToRightEdge && constraint.isFixedToBottomEdge);
+    }
+    {
+        Element* element = document->getElementById("span-br");
+        ASSERT_TRUE(element);
+        WebLayer* layer = webLayerFromElement(element);
+        ASSERT_TRUE(layer);
+        WebLayerPositionConstraint constraint = layer->positionConstraint();
+        ASSERT_TRUE(constraint.isFixedPosition);
+        ASSERT_TRUE(constraint.isFixedToRightEdge && constraint.isFixedToBottomEdge);
+    }
 }
 
 TEST_F(ScrollingCoordinatorChromiumTest, nonFastScrollableRegion)
@@ -220,10 +295,10 @@ TEST_F(ScrollingCoordinatorChromiumTest, overflowScrolling)
     ASSERT_TRUE(layerBacking->hasScrollingLayer());
     ASSERT(layerBacking->scrollingContentsLayer());
 
-    GraphicsLayerChromium* graphicsLayerChromium = static_cast<GraphicsLayerChromium*>(layerBacking->scrollingContentsLayer());
-    ASSERT_EQ(layer, graphicsLayerChromium->scrollableArea());
+    GraphicsLayer* graphicsLayer = layerBacking->scrollingContentsLayer();
+    ASSERT_EQ(layer, graphicsLayer->scrollableArea());
 
-    WebLayer* webScrollLayer = static_cast<WebLayer*>(layerBacking->scrollingContentsLayer()->platformLayer());
+    WebLayer* webScrollLayer = layerBacking->scrollingContentsLayer()->platformLayer();
     ASSERT_TRUE(webScrollLayer->scrollable());
 
 #if OS(ANDROID)
@@ -263,10 +338,10 @@ TEST_F(ScrollingCoordinatorChromiumTest, iframeScrolling)
     ASSERT_TRUE(innerCompositor->inCompositingMode());
     ASSERT_TRUE(innerCompositor->scrollLayer());
 
-    GraphicsLayerChromium* scrollLayer = static_cast<GraphicsLayerChromium*>(innerCompositor->scrollLayer());
+    GraphicsLayer* scrollLayer = innerCompositor->scrollLayer();
     ASSERT_EQ(innerFrameView, scrollLayer->scrollableArea());
 
-    WebLayer* webScrollLayer = static_cast<WebLayer*>(scrollLayer->platformLayer());
+    WebLayer* webScrollLayer = scrollLayer->platformLayer();
     ASSERT_TRUE(webScrollLayer->scrollable());
 
 #if OS(ANDROID)
@@ -306,10 +381,10 @@ TEST_F(ScrollingCoordinatorChromiumTest, rtlIframe)
     ASSERT_TRUE(innerCompositor->inCompositingMode());
     ASSERT_TRUE(innerCompositor->scrollLayer());
 
-    GraphicsLayerChromium* scrollLayer = static_cast<GraphicsLayerChromium*>(innerCompositor->scrollLayer());
+    GraphicsLayer* scrollLayer = innerCompositor->scrollLayer();
     ASSERT_EQ(innerFrameView, scrollLayer->scrollableArea());
 
-    WebLayer* webScrollLayer = static_cast<WebLayer*>(scrollLayer->platformLayer());
+    WebLayer* webScrollLayer = scrollLayer->platformLayer();
     ASSERT_TRUE(webScrollLayer->scrollable());
 
     int expectedScrollPosition = 958 + (innerFrameView->verticalScrollbar()->isOverlayScrollbar() ? 0 : 15);

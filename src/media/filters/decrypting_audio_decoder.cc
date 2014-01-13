@@ -10,7 +10,7 @@
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/buffers.h"
@@ -173,6 +173,14 @@ void DecryptingAudioDecoder::SetDecryptor(Decryptor* decryptor) {
   DCHECK(!set_decryptor_ready_cb_.is_null());
 
   set_decryptor_ready_cb_.Reset();
+
+  if (!decryptor) {
+    base::ResetAndReturn(&init_cb_).Run(DECODER_ERROR_NOT_SUPPORTED);
+    // TODO(xhwang): Add kError state. See http://crbug.com/251503
+    state_ = kDecodeFinished;
+    return;
+  }
+
   decryptor_ = decryptor;
 
   const AudioDecoderConfig& input_config =
@@ -261,7 +269,7 @@ void DecryptingAudioDecoder::DecryptAndDecodeBuffer(
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kPendingDemuxerRead) << state_;
   DCHECK(!read_cb_.is_null());
-  DCHECK_EQ(buffer != NULL, status == DemuxerStream::kOk) << status;
+  DCHECK_EQ(buffer.get() != NULL, status == DemuxerStream::kOk) << status;
 
   if (status == DemuxerStream::kConfigChanged) {
     DVLOG(2) << "DecryptAndDecodeBuffer() - kConfigChanged";
@@ -336,7 +344,7 @@ void DecryptingAudioDecoder::DeliverFrame(
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kPendingDecode) << state_;
   DCHECK(!read_cb_.is_null());
-  DCHECK(pending_buffer_to_decode_);
+  DCHECK(pending_buffer_to_decode_.get());
   DCHECK(queued_audio_frames_.empty());
 
   bool need_to_try_again_if_nokey_is_returned = key_added_while_decode_pending_;

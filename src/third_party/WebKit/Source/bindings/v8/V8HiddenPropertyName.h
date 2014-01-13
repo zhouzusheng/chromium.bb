@@ -36,17 +36,22 @@
 namespace WebCore {
 
 #define V8_HIDDEN_PROPERTIES(V) \
+    V(adaptorFunctionPeer) \
     V(attributeListener) \
     V(callback) \
+    V(customElementReady) \
     V(detail) \
     V(document) \
     V(event) \
+    V(isCustomElementInterfacePrototypeObject) \
     V(listener) \
+    V(name) \
+    V(namespaceURI) \
     V(scriptState) \
     V(sleepFunction) \
     V(state) \
-    V(adaptorFunctionPeer) \
     V(toStringString) \
+    V(type) \
     V(typedArrayHiddenCopyMethod)
 
 class V8HiddenPropertyName {
@@ -59,7 +64,7 @@ public:
     static void setNamedHiddenReference(v8::Handle<v8::Object> parent, const char* name, v8::Handle<v8::Value> child);
 
 private:
-    static v8::Persistent<v8::String> createString(const char* key);
+    static void createString(const char* key, v8::Persistent<v8::String>* handle);
 #define V8_DECLARE_FIELD(name) v8::Persistent<v8::String> m_##name;
     V8_HIDDEN_PROPERTIES(V8_DECLARE_FIELD);
 #undef V8_DECLARE_FIELD

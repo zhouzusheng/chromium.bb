@@ -75,17 +75,17 @@ class HeapNumberMaterializationDescriptor BASE_EMBEDDED {
 };
 
 
-class ArgumentsObjectMaterializationDescriptor BASE_EMBEDDED {
+class ObjectMaterializationDescriptor BASE_EMBEDDED {
  public:
-  ArgumentsObjectMaterializationDescriptor(Address slot_address, int argc)
-      : slot_address_(slot_address), arguments_length_(argc) { }
+  ObjectMaterializationDescriptor(Address slot_address, int length)
+      : slot_address_(slot_address), object_length_(length) { }
 
   Address slot_address() const { return slot_address_; }
-  int arguments_length() const { return arguments_length_; }
+  int object_length() const { return object_length_; }
 
  private:
   Address slot_address_;
-  int arguments_length_;
+  int object_length_;
 };
 
 
@@ -116,51 +116,32 @@ class OptimizedFunctionFilter BASE_EMBEDDED {
 class Deoptimizer;
 
 
-class DeoptimizerData {
- public:
-  explicit DeoptimizerData(MemoryAllocator* allocator);
-  ~DeoptimizerData();
-
-#ifdef ENABLE_DEBUGGER_SUPPORT
-  void Iterate(ObjectVisitor* v);
-#endif
-
-  Code* FindDeoptimizingCode(Address addr);
-  void RemoveDeoptimizingCode(Code* code);
-
- private:
-  MemoryAllocator* allocator_;
-  int eager_deoptimization_entry_code_entries_;
-  int lazy_deoptimization_entry_code_entries_;
-  MemoryChunk* eager_deoptimization_entry_code_;
-  MemoryChunk* lazy_deoptimization_entry_code_;
-  Deoptimizer* current_;
-
-#ifdef ENABLE_DEBUGGER_SUPPORT
-  DeoptimizedFrameInfo* deoptimized_frame_info_;
-#endif
-
-  // List of deoptimized code which still have references from active stack
-  // frames. These code objects are needed by the deoptimizer when deoptimizing
-  // a frame for which the code object for the function function has been
-  // changed from the code present when deoptimizing was done.
-  DeoptimizingCodeListNode* deoptimizing_code_list_;
-
-  friend class Deoptimizer;
-
-  DISALLOW_COPY_AND_ASSIGN(DeoptimizerData);
-};
-
-
 class Deoptimizer : public Malloced {
  public:
   enum BailoutType {
     EAGER,
     LAZY,
+    SOFT,
     OSR,
     // This last bailout type is not really a bailout, but used by the
     // debugger to deoptimize stack frames to allow inspection.
     DEBUGGER
+  };
+
+  static const int kBailoutTypesWithCodeEntry = SOFT + 1;
+
+  struct JumpTableEntry {
+    inline JumpTableEntry(Address entry,
+                          Deoptimizer::BailoutType type,
+                          bool frame)
+        : label(),
+          address(entry),
+          bailout_type(type),
+          needs_frame(frame) { }
+    Label label;
+    Address address;
+    Deoptimizer::BailoutType bailout_type;
+    bool needs_frame;
   };
 
   static bool TraceEnabledFor(BailoutType deopt_type,
@@ -372,7 +353,6 @@ class Deoptimizer : public Malloced {
               int fp_to_sp_delta,
               Code* optimized_code);
   Code* FindOptimizedCode(JSFunction* function, Code* optimized_code);
-  void Trace();
   void PrintFunctionName();
   void DeleteFrameDescriptions();
 
@@ -388,6 +368,10 @@ class Deoptimizer : public Malloced {
                                   bool is_setter_stub_frame);
   void DoComputeCompiledStubFrame(TranslationIterator* iterator,
                                   int frame_index);
+
+  void DoTranslateObject(TranslationIterator* iterator,
+                         int object_opcode,
+                         int field_index);
 
   enum DeoptimizerTranslatedValueType {
     TRANSLATED_VALUE_IS_NATIVE,
@@ -414,8 +398,9 @@ class Deoptimizer : public Malloced {
 
   Object* ComputeLiteral(int index) const;
 
-  void AddArgumentsObject(intptr_t slot_address, int argc);
-  void AddArgumentsObjectValue(intptr_t value);
+  void AddObjectStart(intptr_t slot_address, int argc);
+  void AddObjectTaggedValue(intptr_t value);
+  void AddObjectDoubleValue(double value);
   void AddDoubleValue(intptr_t slot_address, double value);
 
   static void GenerateDeoptimizationEntries(
@@ -423,7 +408,7 @@ class Deoptimizer : public Malloced {
 
   // Weak handle callback for deoptimizing code objects.
   static void HandleWeakDeoptimizedCode(v8::Isolate* isolate,
-                                        v8::Persistent<v8::Value> obj,
+                                        v8::Persistent<v8::Value>* obj,
                                         void* data);
 
   // Deoptimize function assuming that function->next_function_link() points
@@ -444,6 +429,10 @@ class Deoptimizer : public Malloced {
   // from the input frame's double registers.
   void CopyDoubleRegisters(FrameDescription* output_frame);
 
+  // Determines whether the input frame contains alignment padding by looking
+  // at the dynamic alignment state slot inside the frame.
+  bool HasAlignmentPadding(JSFunction* function);
+
   Isolate* isolate_;
   JSFunction* function_;
   Code* compiled_code_;
@@ -462,9 +451,13 @@ class Deoptimizer : public Malloced {
   // Array of output frame descriptions.
   FrameDescription** output_;
 
-  List<Object*> deferred_arguments_objects_values_;
-  List<ArgumentsObjectMaterializationDescriptor> deferred_arguments_objects_;
+  List<Object*> deferred_objects_tagged_values_;
+  List<double> deferred_objects_double_values_;
+  List<ObjectMaterializationDescriptor> deferred_objects_;
   List<HeapNumberMaterializationDescriptor> deferred_heap_numbers_;
+#ifdef DEBUG
+  DisallowHeapAllocation* disallow_heap_allocation_;
+#endif  // DEBUG
 
   bool trace_;
 
@@ -632,6 +625,40 @@ class FrameDescription {
 };
 
 
+class DeoptimizerData {
+ public:
+  explicit DeoptimizerData(MemoryAllocator* allocator);
+  ~DeoptimizerData();
+
+#ifdef ENABLE_DEBUGGER_SUPPORT
+  void Iterate(ObjectVisitor* v);
+#endif
+
+  Code* FindDeoptimizingCode(Address addr);
+  void RemoveDeoptimizingCode(Code* code);
+
+ private:
+  MemoryAllocator* allocator_;
+  int deopt_entry_code_entries_[Deoptimizer::kBailoutTypesWithCodeEntry];
+  MemoryChunk* deopt_entry_code_[Deoptimizer::kBailoutTypesWithCodeEntry];
+  Deoptimizer* current_;
+
+#ifdef ENABLE_DEBUGGER_SUPPORT
+  DeoptimizedFrameInfo* deoptimized_frame_info_;
+#endif
+
+  // List of deoptimized code which still have references from active stack
+  // frames. These code objects are needed by the deoptimizer when deoptimizing
+  // a frame for which the code object for the function function has been
+  // changed from the code present when deoptimizing was done.
+  DeoptimizingCodeListNode* deoptimizing_code_list_;
+
+  friend class Deoptimizer;
+
+  DISALLOW_COPY_AND_ASSIGN(DeoptimizerData);
+};
+
+
 class TranslationBuffer BASE_EMBEDDED {
  public:
   explicit TranslationBuffer(Zone* zone) : contents_(256, zone) { }
@@ -677,6 +704,7 @@ class Translation BASE_EMBEDDED {
     SETTER_STUB_FRAME,
     ARGUMENTS_ADAPTOR_FRAME,
     COMPILED_STUB_FRAME,
+    ARGUMENTS_OBJECT,
     REGISTER,
     INT32_REGISTER,
     UINT32_REGISTER,
@@ -686,7 +714,6 @@ class Translation BASE_EMBEDDED {
     UINT32_STACK_SLOT,
     DOUBLE_STACK_SLOT,
     LITERAL,
-    ARGUMENTS_OBJECT,
 
     // A prefix indicating that the next command is a duplicate of the one
     // that follows it.
@@ -712,6 +739,7 @@ class Translation BASE_EMBEDDED {
   void BeginConstructStubFrame(int literal_id, unsigned height);
   void BeginGetterStubFrame(int literal_id);
   void BeginSetterStubFrame(int literal_id);
+  void BeginArgumentsObject(int args_length);
   void StoreRegister(Register reg);
   void StoreInt32Register(Register reg);
   void StoreUint32Register(Register reg);
@@ -721,7 +749,6 @@ class Translation BASE_EMBEDDED {
   void StoreUint32StackSlot(int index);
   void StoreDoubleStackSlot(int index);
   void StoreLiteral(int literal_id);
-  void StoreArgumentsObject(bool args_known, int args_index, int args_length);
   void MarkDuplicate();
 
   Zone* zone() const { return zone_; }

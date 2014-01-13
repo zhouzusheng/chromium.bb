@@ -50,35 +50,6 @@ enum CompositingUpdateType {
     CompositingUpdateOnCompositedScroll
 };
 
-enum {
-    CompositingReasonNone                                   = 0,
-    CompositingReason3DTransform                            = 1 << 0,
-    CompositingReasonVideo                                  = 1 << 1,
-    CompositingReasonCanvas                                 = 1 << 2,
-    CompositingReasonPlugin                                 = 1 << 3,
-    CompositingReasonIFrame                                 = 1 << 4,
-    CompositingReasonBackfaceVisibilityHidden               = 1 << 5,
-    CompositingReasonClipsCompositingDescendants            = 1 << 6,
-    CompositingReasonAnimation                              = 1 << 7,
-    CompositingReasonFilters                                = 1 << 8,
-    CompositingReasonPositionFixed                          = 1 << 9,
-    CompositingReasonPositionSticky                         = 1 << 10,
-    CompositingReasonOverflowScrollingTouch                 = 1 << 11,
-    CompositingReasonStacking                               = 1 << 12,
-    CompositingReasonOverlap                                = 1 << 13,
-    CompositingReasonNegativeZIndexChildren                 = 1 << 14,
-    CompositingReasonTransformWithCompositedDescendants     = 1 << 15,
-    CompositingReasonOpacityWithCompositedDescendants       = 1 << 16,
-    CompositingReasonMaskWithCompositedDescendants          = 1 << 17,
-    CompositingReasonReflectionWithCompositedDescendants    = 1 << 18,
-    CompositingReasonFilterWithCompositedDescendants        = 1 << 19,
-    CompositingReasonBlendingWithCompositedDescendants      = 1 << 20,
-    CompositingReasonPerspective                            = 1 << 21,
-    CompositingReasonPreserve3D                             = 1 << 22,
-    CompositingReasonRoot                                   = 1 << 23
-};
-typedef unsigned CompositingReasons;
-
 // RenderLayerCompositor manages the hierarchy of
 // composited RenderLayers. It determines which RenderLayers
 // become compositing, and creates and maintains a hierarchy of
@@ -116,7 +87,11 @@ public:
 
     // Called when something outside WebKit affects the visible rect (e.g. delegated scrolling). Might schedule a layer flush.
     void didChangeVisibleRect();
-    
+
+    // Updating properties required for determining if compositing is necessary.
+    void updateCompositingRequirementsState();
+    void setNeedsUpdateCompositingRequirementsState() { m_needsUpdateCompositingRequirementsState = true; }
+
     // Rebuild the tree of compositing layers
     void updateCompositingLayers(CompositingUpdateType, RenderLayer* updateRoot = 0);
     
@@ -204,13 +179,7 @@ public:
 
     String layerTreeAsText(LayerTreeFlags);
 
-    virtual float deviceScaleFactor() const OVERRIDE;
-    virtual float pageScaleFactor() const OVERRIDE;
     virtual void didCommitChangesForLayer(const GraphicsLayer*) const OVERRIDE;
-
-    bool keepLayersPixelAligned() const;
-
-    void deviceOrPageScaleFactorChanged();
 
     GraphicsLayer* layerForHorizontalScrollbar() const { return m_layerForHorizontalScrollbar.get(); }
     GraphicsLayer* layerForVerticalScrollbar() const { return m_layerForVerticalScrollbar.get(); }
@@ -225,6 +194,9 @@ public:
     void updateViewportConstraintStatus(RenderLayer*);
     void removeViewportConstrainedLayer(RenderLayer*);
 
+    void addOutOfFlowPositionedLayer(RenderLayer*);
+    void removeOutOfFlowPositionedLayer(RenderLayer*);
+
     void resetTrackedRepaintRects();
     void setTracksRepaints(bool);
 
@@ -233,6 +205,7 @@ public:
 
     bool viewHasTransparentBackground(Color* backgroundColor = 0) const;
 
+    // Returns all reasons (direct, indirectly due to subtree, and indirectly due to overlap) that a layer should be composited.
     CompositingReasons reasonsForCompositing(const RenderLayer*) const;
     
 private:
@@ -245,11 +218,15 @@ private:
     virtual bool isTrackingRepaints() const OVERRIDE;
     
     // Whether the given RL needs a compositing layer.
-    bool needsToBeComposited(const RenderLayer*, RenderLayer::ViewportConstrainedNotCompositedReason* = 0) const;
-    // Whether the layer has an intrinsic need for compositing layer.
-    bool requiresCompositingLayer(const RenderLayer*, RenderLayer::ViewportConstrainedNotCompositedReason* = 0) const;
+    bool needsToBeComposited(const RenderLayer*) const;
     // Whether the layer could ever be composited.
     bool canBeComposited(const RenderLayer*) const;
+
+    // Returns all direct reasons that a layer should be composited.
+    CompositingReasons directReasonsForCompositing(const RenderLayer*) const;
+
+    // Returns indirect reasons that a layer should be composited because of something in its subtree.
+    CompositingReasons subtreeReasonsForCompositing(RenderObject*, bool hasCompositedDescendants, bool has3DTransformedDescendants) const;
 
     // Make or destroy the backing for this layer; returns true if backing changed.
     bool updateBacking(RenderLayer*, CompositingChangeRepaint shouldRepaint);
@@ -288,8 +265,6 @@ private:
 
     bool isMainFrame() const;
     
-    void rootLayerAttachmentChanged();
-
     void updateOverflowControlsLayers();
 
     void notifyIFramesOfCompositingChange();
@@ -301,17 +276,19 @@ private:
 
     // Whether a running transition or animation enforces the need for a compositing layer.
     bool requiresCompositingForAnimation(RenderObject*) const;
+    // Whether a (not necessarily running) transition enforces the need for a compositing layer.
+    bool requiresCompositingForTransition(RenderObject*) const;
     bool requiresCompositingForTransform(RenderObject*) const;
     bool requiresCompositingForVideo(RenderObject*) const;
     bool requiresCompositingForCanvas(RenderObject*) const;
     bool requiresCompositingForPlugin(RenderObject*) const;
     bool requiresCompositingForFrame(RenderObject*) const;
+    bool requiresCompositingForBackfaceVisibilityHidden(RenderObject*) const;
     bool requiresCompositingForFilters(RenderObject*) const;
     bool requiresCompositingForBlending(RenderObject* renderer) const;
     bool requiresCompositingForScrollableFrame() const;
     bool requiresCompositingForPosition(RenderObject*, const RenderLayer*, RenderLayer::ViewportConstrainedNotCompositedReason* = 0) const;
     bool requiresCompositingForOverflowScrolling(const RenderLayer*) const;
-    bool requiresCompositingForIndirectReason(RenderObject*, bool hasCompositedDescendants, bool has3DTransformedDescendants, RenderLayer::IndirectCompositingReason&) const;
 
     void addViewportConstrainedLayer(RenderLayer*);
 
@@ -350,6 +327,7 @@ private:
     bool m_compositingLayersNeedRebuild;
     bool m_forceCompositingMode;
     bool m_inPostLayoutUpdate; // true when it's OK to trust layout information (e.g. layer sizes and positions)
+    bool m_needsUpdateCompositingRequirementsState;
 
     bool m_isTrackingRepaints; // Used for testing.
     
@@ -361,6 +339,10 @@ private:
 
     HashSet<RenderLayer*> m_viewportConstrainedLayers;
     HashSet<RenderLayer*> m_viewportConstrainedLayersNeedingUpdate;
+
+    // This is used in updateCompositingRequirementsState to avoid full tree
+    // walks while determining if layers have unclipped descendants.
+    HashSet<RenderLayer*> m_outOfFlowPositionedLayers;
 
     // Enclosing layer for overflow controls and the clipping layer
     OwnPtr<GraphicsLayer> m_overflowControlsHostLayer;

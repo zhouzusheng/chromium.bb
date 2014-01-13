@@ -40,19 +40,19 @@ class WorkerContext;
 
 class WorkerRuntimeAgent : public InspectorRuntimeAgent {
 public:
-    static PassOwnPtr<WorkerRuntimeAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, WorkerContext* context)
+    static PassOwnPtr<WorkerRuntimeAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, WorkerContext* context)
     {
-        return adoptPtr(new WorkerRuntimeAgent(instrumentingAgents, state, injectedScriptManager, context));
+        return adoptPtr(new WorkerRuntimeAgent(instrumentingAgents, state, injectedScriptManager, scriptDebugServer, context));
     }
     virtual ~WorkerRuntimeAgent();
 
     // Protocol commands.
     virtual void run(ErrorString*);
 
-    void pauseWorkerContext(WorkerContext*);
+    void willEvaluateWorkerScript(WorkerContext*, int workerThreadStartMode);
 
 private:
-    WorkerRuntimeAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*, WorkerContext*);
+    WorkerRuntimeAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*, ScriptDebugServer*, WorkerContext*);
     virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId);
     virtual void muteConsole();
     virtual void unmuteConsole();

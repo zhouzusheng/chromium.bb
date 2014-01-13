@@ -16,7 +16,7 @@ extern "C" {
 #endif
 
 // This module is for Visual C x86.
-#if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86)
+#if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86) && defined(_MSC_VER)
 
 #ifdef HAS_ARGBTOYROW_SSSE3
 
@@ -5923,17 +5923,16 @@ void ARGBAffineRow_SSE2(const uint8* src_argb, int src_argb_stride,
 }
 #endif  // HAS_ARGBAFFINEROW_SSE2
 
-// Bilinear image filtering.
-// Same as ScaleARGBFilterRows_SSSE3 but without last pixel duplicated.
+// Bilinear filter 16x2 -> 16x1
 __declspec(naked) __declspec(align(16))
-void ARGBInterpolateRow_SSSE3(uint8* dst_argb, const uint8* src_argb,
-                              ptrdiff_t src_stride, int dst_width,
-                              int source_y_fraction) {
+void InterpolateRow_SSSE3(uint8* dst_ptr, const uint8* src_ptr,
+                          ptrdiff_t src_stride, int dst_width,
+                          int source_y_fraction) {
   __asm {
     push       esi
     push       edi
-    mov        edi, [esp + 8 + 4]   // dst_argb
-    mov        esi, [esp + 8 + 8]   // src_argb
+    mov        edi, [esp + 8 + 4]   // dst_ptr
+    mov        esi, [esp + 8 + 8]   // src_ptr
     mov        edx, [esp + 8 + 12]  // src_stride
     mov        ecx, [esp + 8 + 16]  // dst_width
     mov        eax, [esp + 8 + 20]  // source_y_fraction (0..255)
@@ -5969,7 +5968,7 @@ void ARGBInterpolateRow_SSSE3(uint8* dst_argb, const uint8* src_argb,
     psrlw      xmm0, 7
     psrlw      xmm1, 7
     packuswb   xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqa     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop
@@ -5982,7 +5981,7 @@ void ARGBInterpolateRow_SSSE3(uint8* dst_argb, const uint8* src_argb,
     movdqa     xmm1, [esi + edx]
     pavgb      xmm0, xmm1
     pavgb      xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqa     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop25
@@ -5994,7 +5993,7 @@ void ARGBInterpolateRow_SSSE3(uint8* dst_argb, const uint8* src_argb,
     movdqa     xmm0, [esi]
     movdqa     xmm1, [esi + edx]
     pavgb      xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqa     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop50
@@ -6007,7 +6006,7 @@ void ARGBInterpolateRow_SSSE3(uint8* dst_argb, const uint8* src_argb,
     movdqa     xmm0, [esi + edx]
     pavgb      xmm0, xmm1
     pavgb      xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqa     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop75
@@ -6017,7 +6016,7 @@ void ARGBInterpolateRow_SSSE3(uint8* dst_argb, const uint8* src_argb,
     align      16
   xloop100:
     movdqa     xmm0, [esi]
-    sub        ecx, 4
+    sub        ecx, 16
     movdqa     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop100
@@ -6029,17 +6028,17 @@ void ARGBInterpolateRow_SSSE3(uint8* dst_argb, const uint8* src_argb,
   }
 }
 
-// Bilinear image filtering.
-// Same as ScaleARGBFilterRows_SSE2 but without last pixel duplicated.
+#ifdef HAS_INTERPOLATEROW_SSE2
+// Bilinear filter 16x2 -> 16x1
 __declspec(naked) __declspec(align(16))
-void ARGBInterpolateRow_SSE2(uint8* dst_argb, const uint8* src_argb,
-                             ptrdiff_t src_stride, int dst_width,
-                             int source_y_fraction) {
+void InterpolateRow_SSE2(uint8* dst_ptr, const uint8* src_ptr,
+                         ptrdiff_t src_stride, int dst_width,
+                         int source_y_fraction) {
   __asm {
     push       esi
     push       edi
-    mov        edi, [esp + 8 + 4]   // dst_argb
-    mov        esi, [esp + 8 + 8]   // src_argb
+    mov        edi, [esp + 8 + 4]   // dst_ptr
+    mov        esi, [esp + 8 + 8]   // src_ptr
     mov        edx, [esp + 8 + 12]  // src_stride
     mov        ecx, [esp + 8 + 16]  // dst_width
     mov        eax, [esp + 8 + 20]  // source_y_fraction (0..255)
@@ -6081,7 +6080,7 @@ void ARGBInterpolateRow_SSE2(uint8* dst_argb, const uint8* src_argb,
     paddw      xmm0, xmm2  // sum rows
     paddw      xmm1, xmm3
     packuswb   xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqa     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop
@@ -6094,7 +6093,7 @@ void ARGBInterpolateRow_SSE2(uint8* dst_argb, const uint8* src_argb,
     movdqa     xmm1, [esi + edx]
     pavgb      xmm0, xmm1
     pavgb      xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqa     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop25
@@ -6106,7 +6105,7 @@ void ARGBInterpolateRow_SSE2(uint8* dst_argb, const uint8* src_argb,
     movdqa     xmm0, [esi]
     movdqa     xmm1, [esi + edx]
     pavgb      xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqa     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop50
@@ -6119,7 +6118,7 @@ void ARGBInterpolateRow_SSE2(uint8* dst_argb, const uint8* src_argb,
     movdqa     xmm0, [esi + edx]
     pavgb      xmm0, xmm1
     pavgb      xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqa     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop75
@@ -6129,7 +6128,7 @@ void ARGBInterpolateRow_SSE2(uint8* dst_argb, const uint8* src_argb,
     align      16
   xloop100:
     movdqa     xmm0, [esi]
-    sub        ecx, 4
+    sub        ecx, 16
     movdqa     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop100
@@ -6140,18 +6139,18 @@ void ARGBInterpolateRow_SSE2(uint8* dst_argb, const uint8* src_argb,
     ret
   }
 }
+#endif  // HAS_INTERPOLATEROW_SSE2
 
-// Bilinear image filtering.
-// Same as ScaleARGBFilterRows_SSSE3 but without last pixel duplicated.
+// Bilinear filter 16x2 -> 16x1
 __declspec(naked) __declspec(align(16))
-void ARGBInterpolateRow_Unaligned_SSSE3(uint8* dst_argb, const uint8* src_argb,
-                                        ptrdiff_t src_stride, int dst_width,
-                                        int source_y_fraction) {
+void InterpolateRow_Unaligned_SSSE3(uint8* dst_ptr, const uint8* src_ptr,
+                                    ptrdiff_t src_stride, int dst_width,
+                                    int source_y_fraction) {
   __asm {
     push       esi
     push       edi
-    mov        edi, [esp + 8 + 4]   // dst_argb
-    mov        esi, [esp + 8 + 8]   // src_argb
+    mov        edi, [esp + 8 + 4]   // dst_ptr
+    mov        esi, [esp + 8 + 8]   // src_ptr
     mov        edx, [esp + 8 + 12]  // src_stride
     mov        ecx, [esp + 8 + 16]  // dst_width
     mov        eax, [esp + 8 + 20]  // source_y_fraction (0..255)
@@ -6187,7 +6186,7 @@ void ARGBInterpolateRow_Unaligned_SSSE3(uint8* dst_argb, const uint8* src_argb,
     psrlw      xmm0, 7
     psrlw      xmm1, 7
     packuswb   xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqu     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop
@@ -6200,7 +6199,7 @@ void ARGBInterpolateRow_Unaligned_SSSE3(uint8* dst_argb, const uint8* src_argb,
     movdqu     xmm1, [esi + edx]
     pavgb      xmm0, xmm1
     pavgb      xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqu     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop25
@@ -6212,7 +6211,7 @@ void ARGBInterpolateRow_Unaligned_SSSE3(uint8* dst_argb, const uint8* src_argb,
     movdqu     xmm0, [esi]
     movdqu     xmm1, [esi + edx]
     pavgb      xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqu     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop50
@@ -6225,7 +6224,7 @@ void ARGBInterpolateRow_Unaligned_SSSE3(uint8* dst_argb, const uint8* src_argb,
     movdqu     xmm0, [esi + edx]
     pavgb      xmm0, xmm1
     pavgb      xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqu     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop75
@@ -6235,7 +6234,7 @@ void ARGBInterpolateRow_Unaligned_SSSE3(uint8* dst_argb, const uint8* src_argb,
     align      16
   xloop100:
     movdqu     xmm0, [esi]
-    sub        ecx, 4
+    sub        ecx, 16
     movdqu     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop100
@@ -6247,17 +6246,17 @@ void ARGBInterpolateRow_Unaligned_SSSE3(uint8* dst_argb, const uint8* src_argb,
   }
 }
 
-// Bilinear image filtering.
-// Same as ScaleARGBFilterRows_SSE2 but without last pixel duplicated.
+#ifdef HAS_INTERPOLATEROW_SSE2
+// Bilinear filter 16x2 -> 16x1
 __declspec(naked) __declspec(align(16))
-void ARGBInterpolateRow_Unaligned_SSE2(uint8* dst_argb, const uint8* src_argb,
-                                       ptrdiff_t src_stride, int dst_width,
-                                       int source_y_fraction) {
+void InterpolateRow_Unaligned_SSE2(uint8* dst_ptr, const uint8* src_ptr,
+                                   ptrdiff_t src_stride, int dst_width,
+                                   int source_y_fraction) {
   __asm {
     push       esi
     push       edi
-    mov        edi, [esp + 8 + 4]   // dst_argb
-    mov        esi, [esp + 8 + 8]   // src_argb
+    mov        edi, [esp + 8 + 4]   // dst_ptr
+    mov        esi, [esp + 8 + 8]   // src_ptr
     mov        edx, [esp + 8 + 12]  // src_stride
     mov        ecx, [esp + 8 + 16]  // dst_width
     mov        eax, [esp + 8 + 20]  // source_y_fraction (0..255)
@@ -6299,7 +6298,7 @@ void ARGBInterpolateRow_Unaligned_SSE2(uint8* dst_argb, const uint8* src_argb,
     paddw      xmm0, xmm2  // sum rows
     paddw      xmm1, xmm3
     packuswb   xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqu     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop
@@ -6312,7 +6311,7 @@ void ARGBInterpolateRow_Unaligned_SSE2(uint8* dst_argb, const uint8* src_argb,
     movdqu     xmm1, [esi + edx]
     pavgb      xmm0, xmm1
     pavgb      xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqu     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop25
@@ -6324,7 +6323,7 @@ void ARGBInterpolateRow_Unaligned_SSE2(uint8* dst_argb, const uint8* src_argb,
     movdqu     xmm0, [esi]
     movdqu     xmm1, [esi + edx]
     pavgb      xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqu     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop50
@@ -6337,7 +6336,7 @@ void ARGBInterpolateRow_Unaligned_SSE2(uint8* dst_argb, const uint8* src_argb,
     movdqu     xmm0, [esi + edx]
     pavgb      xmm0, xmm1
     pavgb      xmm0, xmm1
-    sub        ecx, 4
+    sub        ecx, 16
     movdqu     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop75
@@ -6347,7 +6346,7 @@ void ARGBInterpolateRow_Unaligned_SSE2(uint8* dst_argb, const uint8* src_argb,
     align      16
   xloop100:
     movdqu     xmm0, [esi]
-    sub        ecx, 4
+    sub        ecx, 16
     movdqu     [esi + edi], xmm0
     lea        esi, [esi + 16]
     jg         xloop100
@@ -6358,6 +6357,7 @@ void ARGBInterpolateRow_Unaligned_SSE2(uint8* dst_argb, const uint8* src_argb,
     ret
   }
 }
+#endif  // HAS_INTERPOLATEROW_SSE2
 
 __declspec(naked) __declspec(align(16))
 void HalfRow_SSE2(const uint8* src_uv, int src_uv_stride,
@@ -6602,8 +6602,7 @@ void I422ToUYVYRow_SSE2(const uint8* src_y,
     ret
   }
 }
-
-#endif  // _M_IX86
+#endif  // !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86) && defined(_MSC_VER)
 
 #ifdef __cplusplus
 }  // extern "C"

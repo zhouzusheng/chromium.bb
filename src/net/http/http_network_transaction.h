@@ -24,11 +24,13 @@
 
 namespace net {
 
+class ClientSocketHandle;
 class HttpAuthController;
 class HttpNetworkSession;
 class HttpStreamBase;
 class HttpStreamRequest;
 class IOBuffer;
+class SpdySession;
 struct HttpRequestInfo;
 
 class NET_EXPORT_PRIVATE HttpNetworkTransaction
@@ -57,6 +59,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
                    int buf_len,
                    const CompletionCallback& callback) OVERRIDE;
   virtual void StopCaching() OVERRIDE {}
+  virtual bool GetFullRequestHeaders(
+      HttpRequestHeaders* headers) const OVERRIDE;
   virtual void DoneReading() OVERRIDE {}
   virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
   virtual LoadState GetLoadState() const OVERRIDE;
@@ -69,6 +73,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   virtual void OnStreamReady(const SSLConfig& used_ssl_config,
                              const ProxyInfo& used_proxy_info,
                              HttpStreamBase* stream) OVERRIDE;
+  virtual void OnWebSocketStreamReady(
+      const SSLConfig& used_ssl_config,
+      const ProxyInfo& used_proxy_info,
+      WebSocketStreamBase* stream) OVERRIDE;
   virtual void OnStreamFailed(int status,
                               const SSLConfig& used_ssl_config) OVERRIDE;
   virtual void OnCertificateError(int status,
@@ -89,29 +97,19 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
  private:
   friend class HttpNetworkTransactionSSLTest;
 
-  FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionSpdy2Test,
+  FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionTest,
                            ResetStateForRestart);
-  FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionSpdy3Test,
-                           ResetStateForRestart);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy2Test,
+  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest,
                            WindowUpdateReceived);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy2Test,
+  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest,
                            WindowUpdateSent);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy2Test,
+  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest,
                            WindowUpdateOverflow);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy2Test,
+  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest,
                            FlowControlStallResume);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy3Test,
-                           WindowUpdateReceived);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy3Test,
-                           WindowUpdateSent);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy3Test,
-                           WindowUpdateOverflow);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy3Test,
-                           FlowControlStallResume);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy3Test,
+  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest,
                            FlowControlStallResumeAfterSettings);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy3Test,
+  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest,
                            FlowControlNegativeSendWindowSize);
 
   enum State {

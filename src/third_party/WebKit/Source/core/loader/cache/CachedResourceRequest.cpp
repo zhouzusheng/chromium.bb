@@ -26,13 +26,13 @@
 #include "config.h"
 #include "core/loader/cache/CachedResourceRequest.h"
 
-#include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "core/loader/cache/CachedResourceInitiatorInfo.h"
 #include "core/loader/cache/CachedResourceLoader.h"
 
 namespace WebCore {
 
-CachedResourceRequest::CachedResourceRequest(const ResourceRequest& resourceRequest, const String& charset, ResourceLoadPriority priority)
+CachedResourceRequest::CachedResourceRequest(const ResourceRequest& resourceRequest, const AtomicString& initiator, const String& charset, ResourceLoadPriority priority)
     : m_resourceRequest(resourceRequest)
     , m_charset(charset)
     , m_options(CachedResourceLoader::defaultCachedResourceOptions())
@@ -40,56 +40,31 @@ CachedResourceRequest::CachedResourceRequest(const ResourceRequest& resourceRequ
     , m_forPreload(false)
     , m_defer(NoDefer)
 {
+    m_options.initiatorInfo.name = initiator;
 }
 
-CachedResourceRequest::CachedResourceRequest(const ResourceRequest& resourceRequest, const ResourceLoaderOptions& options)
+CachedResourceRequest::CachedResourceRequest(const ResourceRequest& resourceRequest, const AtomicString& initiator, const ResourceLoaderOptions& options)
     : m_resourceRequest(resourceRequest)
     , m_options(options)
     , m_priority(ResourceLoadPriorityUnresolved)
     , m_forPreload(false)
     , m_defer(NoDefer)
 {
+    m_options.initiatorInfo.name = initiator;
 }
 
-CachedResourceRequest::CachedResourceRequest(const ResourceRequest& resourceRequest, ResourceLoadPriority priority)
+CachedResourceRequest::CachedResourceRequest(const ResourceRequest& resourceRequest, const CachedResourceInitiatorInfo& initiator)
     : m_resourceRequest(resourceRequest)
     , m_options(CachedResourceLoader::defaultCachedResourceOptions())
-    , m_priority(priority)
+    , m_priority(ResourceLoadPriorityUnresolved)
     , m_forPreload(false)
     , m_defer(NoDefer)
 {
+    m_options.initiatorInfo = initiator;
 }
 
 CachedResourceRequest::~CachedResourceRequest()
 {
-}
-
-void CachedResourceRequest::setInitiator(PassRefPtr<Element> element)
-{
-    ASSERT(!m_initiatorElement && m_initiatorName.isEmpty());
-    m_initiatorElement = element;
-}
-
-void CachedResourceRequest::setInitiator(const AtomicString& name)
-{
-    ASSERT(!m_initiatorElement && m_initiatorName.isEmpty());
-    m_initiatorName = name;
-}
-
-const AtomicString& CachedResourceRequest::initiatorName() const
-{
-    if (m_initiatorElement)
-        return m_initiatorElement->localName();
-    if (!m_initiatorName.isEmpty())
-        return m_initiatorName;
-
-    DEFINE_STATIC_LOCAL(AtomicString, defaultName, ("resource", AtomicString::ConstructFromLiteral));
-    return defaultName;
-}
-
-PassRefPtr<Element> CachedResourceRequest::initiatorElement()
-{
-    return m_initiatorElement;
 }
 
 } // namespace WebCore

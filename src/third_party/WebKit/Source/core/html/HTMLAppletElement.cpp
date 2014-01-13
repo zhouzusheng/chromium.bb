@@ -25,12 +25,9 @@
 #include "core/html/HTMLAppletElement.h"
 
 #include "HTMLNames.h"
-#include "core/dom/Attribute.h"
-#include "core/html/HTMLDocument.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/Frame.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/page/Settings.h"
 #include "core/platform/Widget.h"
 #include "core/rendering/RenderApplet.h"
@@ -75,7 +72,7 @@ bool HTMLAppletElement::rendererIsNeeded(const NodeRenderingContext& context)
     return HTMLPlugInImageElement::rendererIsNeeded(context);
 }
 
-RenderObject* HTMLAppletElement::createRenderer(RenderArena*, RenderStyle* style)
+RenderObject* HTMLAppletElement::createRenderer(RenderStyle* style)
 {
     if (!canEmbedJava())
         return RenderObject::createObject(this, style);

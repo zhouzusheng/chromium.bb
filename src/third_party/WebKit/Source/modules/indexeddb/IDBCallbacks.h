@@ -34,6 +34,7 @@
 #include "modules/indexeddb/IDBDatabaseError.h"
 #include "modules/indexeddb/IDBKey.h"
 #include "modules/indexeddb/IDBKeyPath.h"
+#include "public/platform/WebIDBCallbacks.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
@@ -62,12 +63,10 @@ public:
 
     // From IDBCursor.advance()/continue()
     virtual void onSuccess(PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer>) = 0;
-    // From IDBCursor.advance()/continue()
-    virtual void onSuccessWithPrefetch(const Vector<RefPtr<IDBKey> >& keys, const Vector<RefPtr<IDBKey> >& primaryKeys, const Vector<RefPtr<SharedBuffer> >& values) = 0;
     // From IDBFactory.open()/deleteDatabase()
     virtual void onBlocked(int64_t /* existingVersion */) { ASSERT_NOT_REACHED(); }
     // From IDBFactory.open()
-    virtual void onUpgradeNeeded(int64_t /* oldVersion */, PassRefPtr<IDBDatabaseBackendInterface>, const IDBDatabaseMetadata&) { ASSERT_NOT_REACHED(); }
+    virtual void onUpgradeNeeded(int64_t /* oldVersion */, PassRefPtr<IDBDatabaseBackendInterface>, const IDBDatabaseMetadata&, WebKit::WebIDBCallbacks::DataLoss dataLoss) { ASSERT_NOT_REACHED(); }
     virtual void onSuccess(PassRefPtr<IDBDatabaseBackendInterface>, const IDBDatabaseMetadata&) { ASSERT_NOT_REACHED(); }
 };
 

@@ -19,12 +19,10 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/SVGTextMetricsBuilder.h"
 
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/RenderSVGText.h"
-#include "core/rendering/svg/SVGTextRunRenderingContext.h"
 
 namespace WebCore {
 
@@ -223,5 +221,3 @@ void SVGTextMetricsBuilder::buildMetricsAndLayoutAttributes(RenderSVGText* textR
 }
 
 }
-
-#endif // ENABLE(SVG)

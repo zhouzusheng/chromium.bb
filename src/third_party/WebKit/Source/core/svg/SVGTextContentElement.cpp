@@ -20,7 +20,6 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGTextContentElement.h"
 
 #include "CSSPropertyNames.h"
@@ -31,9 +30,7 @@
 #include "core/page/Frame.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
-#include "core/rendering/svg/RenderSVGText.h"
 #include "core/rendering/svg/SVGTextQuery.h"
-#include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
@@ -224,7 +221,7 @@ bool SVGTextContentElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::lengthAdjustAttr);
         supportedAttributes.add(SVGNames::textLengthAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 bool SVGTextContentElement::isPresentationAttribute(const QualifiedName& name) const
@@ -321,5 +318,3 @@ SVGTextContentElement* SVGTextContentElement::elementFromRenderer(RenderObject* 
 }
 
 }
-
-#endif // ENABLE(SVG)

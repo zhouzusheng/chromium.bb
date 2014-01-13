@@ -5,41 +5,39 @@
 #include "config.h"
 #include "WebMediaPlayerClientImpl.h"
 
+#include "InbandTextTrackPrivateImpl.h"
 #include "WebAudioSourceProvider.h"
 #include "WebDocument.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
 #include "WebHelperPluginImpl.h"
+#include "WebInbandTextTrack.h"
 #include "WebMediaPlayer.h"
 #include "WebMediaSourceImpl.h"
 #include "WebViewImpl.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/TimeRanges.h"
 #include "core/page/Frame.h"
-#include "core/platform/KURL.h"
 #include "core/platform/NotImplemented.h"
 #include "core/platform/audio/AudioBus.h"
 #include "core/platform/audio/AudioSourceProvider.h"
 #include "core/platform/audio/AudioSourceProviderClient.h"
-#include "core/platform/chromium/support/GraphicsContext3DPrivate.h"
 #include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsLayer.h"
 #include "core/platform/graphics/IntSize.h"
 #include "core/platform/graphics/MediaPlayer.h"
-#include "core/platform/graphics/chromium/GraphicsLayerChromium.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
-#include <public/Platform.h>
-#include <public/WebCanvas.h>
-#include <public/WebCompositorSupport.h>
-#include <public/WebCString.h>
-#include <public/WebMimeRegistry.h>
-#include <public/WebRect.h>
-#include <public/WebSize.h>
-#include <public/WebString.h>
-#include <public/WebURL.h>
+#include "modules/mediastream/MediaStreamRegistry.h"
+#include "public/platform/WebCanvas.h"
+#include "public/platform/WebCompositorSupport.h"
+#include "public/platform/WebCString.h"
+#include "public/platform/WebRect.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
+#include "weborigin/KURL.h"
 
-#if defined(OS_ANDROID)
+#if OS(ANDROID)
 #include "GrContext.h"
 #include "GrTypes.h"
 #include "SkCanvas.h"
@@ -64,30 +62,6 @@ static PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(WebMediaPlayerClient* cli
     return adoptPtr(webFrame->client()->createMediaPlayer(webFrame, url, client));
 }
 
-bool WebMediaPlayerClientImpl::m_isEnabled = false;
-
-bool WebMediaPlayerClientImpl::isEnabled()
-{
-    return m_isEnabled;
-}
-
-void WebMediaPlayerClientImpl::setIsEnabled(bool isEnabled)
-{
-    m_isEnabled = isEnabled;
-}
-
-void WebMediaPlayerClientImpl::registerSelf(MediaEngineRegistrar registrar)
-{
-    if (m_isEnabled) {
-        registrar(WebMediaPlayerClientImpl::create,
-                  WebMediaPlayerClientImpl::getSupportedTypes,
-                  WebMediaPlayerClientImpl::supportsType,
-                  0,
-                  0,
-                  0);
-    }
-}
-
 WebMediaPlayer* WebMediaPlayerClientImpl::mediaPlayer() const
 {
     return m_webMediaPlayer.get();
@@ -100,68 +74,40 @@ WebMediaPlayerClientImpl::~WebMediaPlayerClientImpl()
     // Explicitly destroy the WebMediaPlayer to allow verification of tear down.
     m_webMediaPlayer.clear();
 
-    // FIXME(ddorwin): Uncomment the ASSERT and remove the closeHelperPlugin()
-    // call after fixing http://crbug.com/173755.
     // Ensure the m_webMediaPlayer destroyed any WebHelperPlugin used.
-    // ASSERT(!m_helperPlugin);
-    if (m_helperPlugin)
-        closeHelperPlugin();
+    ASSERT(!m_helperPlugin);
 }
 
 void WebMediaPlayerClientImpl::networkStateChanged()
 {
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->networkStateChanged();
+    m_client->mediaPlayerNetworkStateChanged();
 }
 
 void WebMediaPlayerClientImpl::readyStateChanged()
 {
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->readyStateChanged();
-}
-
-void WebMediaPlayerClientImpl::volumeChanged(double newVolume)
-{
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->volumeChanged(newVolume);
-}
-
-void WebMediaPlayerClientImpl::muteChanged(bool newMute)
-{
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->muteChanged(newMute);
+    m_client->mediaPlayerReadyStateChanged();
 }
 
 void WebMediaPlayerClientImpl::timeChanged()
 {
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->timeChanged();
+    m_client->mediaPlayerTimeChanged();
 }
 
 void WebMediaPlayerClientImpl::repaint()
 {
-    ASSERT(m_mediaPlayer);
     if (m_videoLayer)
         m_videoLayer->invalidate();
-    m_mediaPlayer->repaint();
+    m_client->mediaPlayerRepaint();
 }
 
 void WebMediaPlayerClientImpl::durationChanged()
 {
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->durationChanged();
-}
-
-void WebMediaPlayerClientImpl::rateChanged()
-{
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->rateChanged();
+    m_client->mediaPlayerDurationChanged();
 }
 
 void WebMediaPlayerClientImpl::sizeChanged()
 {
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->sizeChanged();
+    m_client->mediaPlayerSizeChanged();
 }
 
 void WebMediaPlayerClientImpl::setOpaque(bool opaque)
@@ -171,81 +117,39 @@ void WebMediaPlayerClientImpl::setOpaque(bool opaque)
         m_videoLayer->setOpaque(m_opaque);
 }
 
-void WebMediaPlayerClientImpl::sawUnsupportedTracks()
-{
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->mediaPlayerClient()->mediaPlayerSawUnsupportedTracks(m_mediaPlayer);
-}
-
 double WebMediaPlayerClientImpl::volume() const
 {
-    if (m_mediaPlayer)
-        return m_mediaPlayer->volume();
-    return 0.0;
+    return m_volume;
 }
 
 void WebMediaPlayerClientImpl::playbackStateChanged()
 {
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->playbackStateChanged();
+    m_client->mediaPlayerPlaybackStateChanged();
 }
 
 WebMediaPlayer::Preload WebMediaPlayerClientImpl::preload() const
 {
-    if (m_mediaPlayer)
-        return static_cast<WebMediaPlayer::Preload>(m_mediaPlayer->preload());
     return static_cast<WebMediaPlayer::Preload>(m_preload);
 }
 
 void WebMediaPlayerClientImpl::keyAdded(const WebString& keySystem, const WebString& sessionId)
 {
-#if ENABLE(ENCRYPTED_MEDIA)
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->keyAdded(keySystem, sessionId);
-#else
-    UNUSED_PARAM(keySystem);
-    UNUSED_PARAM(sessionId);
-#endif
+    m_client->mediaPlayerKeyAdded(keySystem, sessionId);
 }
 
 void WebMediaPlayerClientImpl::keyError(const WebString& keySystem, const WebString& sessionId, MediaKeyErrorCode errorCode, unsigned short systemCode)
 {
-#if ENABLE(ENCRYPTED_MEDIA)
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->keyError(keySystem, sessionId, static_cast<MediaPlayerClient::MediaKeyErrorCode>(errorCode), systemCode);
-#else
-    UNUSED_PARAM(keySystem);
-    UNUSED_PARAM(sessionId);
-    UNUSED_PARAM(errorCode);
-    UNUSED_PARAM(systemCode);
-#endif
+    m_client->mediaPlayerKeyError(keySystem, sessionId, static_cast<MediaPlayerClient::MediaKeyErrorCode>(errorCode), systemCode);
 }
 
 void WebMediaPlayerClientImpl::keyMessage(const WebString& keySystem, const WebString& sessionId, const unsigned char* message, unsigned messageLength, const WebURL& defaultURL)
 {
-#if ENABLE(ENCRYPTED_MEDIA)
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->keyMessage(keySystem, sessionId, message, messageLength, defaultURL);
-#else
-    UNUSED_PARAM(keySystem);
-    UNUSED_PARAM(sessionId);
-    UNUSED_PARAM(message);
-    UNUSED_PARAM(messageLength);
-    UNUSED_PARAM(defaultURL);
-#endif
+    m_client->mediaPlayerKeyMessage(keySystem, sessionId, message, messageLength, defaultURL);
 }
 
 void WebMediaPlayerClientImpl::keyNeeded(const WebString& keySystem, const WebString& sessionId, const unsigned char* initData, unsigned initDataLength)
 {
-#if ENABLE(ENCRYPTED_MEDIA)
-    ASSERT(m_mediaPlayer);
-    m_mediaPlayer->keyNeeded(keySystem, sessionId, initData, initDataLength);
-#else
-    UNUSED_PARAM(keySystem);
-    UNUSED_PARAM(sessionId);
-    UNUSED_PARAM(initData);
-    UNUSED_PARAM(initDataLength);
-#endif
+    m_client->mediaPlayerKeyNeeded(keySystem, sessionId, initData, initDataLength);
 }
 
 WebPlugin* WebMediaPlayerClientImpl::createHelperPlugin(const WebString& pluginType, WebFrame* frame)
@@ -268,11 +172,20 @@ WebPlugin* WebMediaPlayerClientImpl::createHelperPlugin(const WebString& pluginT
     return plugin;
 }
 
+
+// FIXME: Remove this override and cast when Chromium is updated to use closeHelperPluginSoon().
 void WebMediaPlayerClientImpl::closeHelperPlugin()
 {
+    Frame* frame = static_cast<HTMLMediaElement*>(m_client)->document()->frame();
+    WebFrameImpl* webFrame = WebFrameImpl::fromFrame(frame);
+    closeHelperPluginSoon(webFrame);
+}
+
+void WebMediaPlayerClientImpl::closeHelperPluginSoon(WebFrame* frame)
+{
     ASSERT(m_helperPlugin);
-    m_helperPlugin->closeHelperPlugin();
-    m_helperPlugin = 0;
+    WebViewImpl* webView = static_cast<WebViewImpl*>(frame->view());
+    webView->closeHelperPluginSoon(m_helperPlugin.release());
 }
 
 void WebMediaPlayerClientImpl::setWebLayer(WebLayer* layer)
@@ -281,22 +194,32 @@ void WebMediaPlayerClientImpl::setWebLayer(WebLayer* layer)
         return;
 
     // If either of the layers is null we need to enable or disable compositing. This is done by triggering a style recalc.
-    if (!m_videoLayer || !layer) {
-        HTMLMediaElement* element = static_cast<HTMLMediaElement*>(m_mediaPlayer->mediaPlayerClient());
-        if (element)
-            element->setNeedsStyleRecalc(WebCore::SyntheticStyleChange);
-    }
+    if (!m_videoLayer || !layer)
+        m_client->mediaPlayerNeedsStyleRecalc();
 
     if (m_videoLayer)
-        GraphicsLayerChromium::unregisterContentsLayer(m_videoLayer);
+        GraphicsLayer::unregisterContentsLayer(m_videoLayer);
     m_videoLayer = layer;
     if (m_videoLayer) {
         m_videoLayer->setOpaque(m_opaque);
-        GraphicsLayerChromium::registerContentsLayer(m_videoLayer);
+        GraphicsLayer::registerContentsLayer(m_videoLayer);
     }
 }
 
-// MediaPlayerPrivateInterface -------------------------------------------------
+void WebMediaPlayerClientImpl::addTextTrack(WebInbandTextTrack* textTrack)
+{
+    m_client->mediaPlayerDidAddTrack(adoptRef(new InbandTextTrackPrivateImpl(textTrack)));
+}
+
+void WebMediaPlayerClientImpl::removeTextTrack(WebInbandTextTrack* textTrack)
+{
+    // The following static_cast is safe, because we created the object with the textTrack
+    // that was passed to addTextTrack.  (The object from which we are downcasting includes
+    // WebInbandTextTrack as one of the intefaces from which inherits.)
+    m_client->mediaPlayerDidRemoveTrack(static_cast<InbandTextTrackPrivateImpl*>(textTrack->client()));
+}
+
+// MediaPlayer -------------------------------------------------
 
 void WebMediaPlayerClientImpl::load(const String& url)
 {
@@ -305,7 +228,7 @@ void WebMediaPlayerClientImpl::load(const String& url)
     loadRequested();
 }
 
-void WebMediaPlayerClientImpl::load(const String& url, PassRefPtr<WebCore::MediaSource> mediaSource)
+void WebMediaPlayerClientImpl::load(const String& url, PassRefPtr<WebCore::MediaSourceBase> mediaSource)
 {
     m_url = KURL(ParsedURLString, url);
     m_mediaSource = mediaSource;
@@ -326,11 +249,14 @@ void WebMediaPlayerClientImpl::loadRequested()
 
 void WebMediaPlayerClientImpl::loadInternal()
 {
+    m_isMediaStream = WebCore::MediaStreamRegistry::registry().lookupMediaStreamDescriptor(m_url.string());
+
 #if ENABLE(WEB_AUDIO)
     m_audioSourceProvider.wrap(0); // Clear weak reference to m_webMediaPlayer's WebAudioSourceProvider.
 #endif
 
-    Frame* frame = static_cast<HTMLMediaElement*>(m_mediaPlayer->mediaPlayerClient())->document()->frame();
+    // FIXME: Remove this cast
+    Frame* frame = static_cast<HTMLMediaElement*>(m_client)->document()->frame();
 
     // This does not actually check whether the hardware can support accelerated
     // compositing, but only if the flag is set. However, this is checked lazily
@@ -345,7 +271,7 @@ void WebMediaPlayerClientImpl::loadInternal()
         m_audioSourceProvider.wrap(m_webMediaPlayer->audioSourceProvider());
 #endif
 
-        WebMediaPlayer::CORSMode corsMode = static_cast<WebMediaPlayer::CORSMode>(m_mediaPlayer->mediaPlayerClient()->mediaPlayerCORSMode());
+        WebMediaPlayer::CORSMode corsMode = static_cast<WebMediaPlayer::CORSMode>(m_client->mediaPlayerCORSMode());
         if (m_mediaSource) {
             m_webMediaPlayer->load(m_url, new WebMediaSourceImpl(m_mediaSource), corsMode);
             return;
@@ -354,23 +280,9 @@ void WebMediaPlayerClientImpl::loadInternal()
     }
 }
 
-void WebMediaPlayerClientImpl::cancelLoad()
-{
-    if (m_webMediaPlayer)
-        m_webMediaPlayer->cancelLoad();
-}
-
 WebLayer* WebMediaPlayerClientImpl::platformLayer() const
 {
     return m_videoLayer;
-}
-
-PlatformMedia WebMediaPlayerClientImpl::platformMedia() const
-{
-    PlatformMedia pm;
-    pm.type = PlatformMedia::ChromiumMediaPlayerType;
-    pm.media.chromiumMediaPlayer = const_cast<WebMediaPlayerClientImpl*>(this);
-    return pm;
 }
 
 void WebMediaPlayerClientImpl::play()
@@ -404,7 +316,6 @@ bool WebMediaPlayerClientImpl::canEnterFullscreen() const
 }
 #endif
 
-#if ENABLE(ENCRYPTED_MEDIA)
 MediaPlayer::MediaKeyException WebMediaPlayerClientImpl::generateKeyRequest(const String& keySystem, const unsigned char* initData, unsigned initDataLength)
 {
     if (!m_webMediaPlayer)
@@ -431,7 +342,6 @@ MediaPlayer::MediaKeyException WebMediaPlayerClientImpl::cancelKeyRequest(const 
     WebMediaPlayer::MediaKeyException result = m_webMediaPlayer->cancelKeyRequest(keySystem, sessionId);
     return static_cast<MediaPlayer::MediaKeyException>(result);
 }
-#endif
 
 void WebMediaPlayerClientImpl::prepareToPlay()
 {
@@ -458,12 +368,6 @@ bool WebMediaPlayerClientImpl::hasAudio() const
     if (m_webMediaPlayer)
         return m_webMediaPlayer->hasAudio();
     return false;
-}
-
-void WebMediaPlayerClientImpl::setVisible(bool visible)
-{
-    if (m_webMediaPlayer)
-        m_webMediaPlayer->setVisible(visible);
 }
 
 double WebMediaPlayerClientImpl::duration() const
@@ -493,8 +397,14 @@ bool WebMediaPlayerClientImpl::seeking() const
     return false;
 }
 
+double WebMediaPlayerClientImpl::rate() const
+{
+    return m_rate;
+}
+
 void WebMediaPlayerClientImpl::setRate(double rate)
 {
+    m_rate = rate;
     if (m_webMediaPlayer)
         m_webMediaPlayer->setRate(rate);
 }
@@ -522,8 +432,16 @@ bool WebMediaPlayerClientImpl::supportsSave() const
 
 void WebMediaPlayerClientImpl::setVolume(double volume)
 {
-    if (m_webMediaPlayer)
+    m_volume = volume;
+    if (m_webMediaPlayer && !m_muted)
         m_webMediaPlayer->setVolume(volume);
+}
+
+void WebMediaPlayerClientImpl::setMuted(bool muted)
+{
+    m_muted = muted;
+    if (m_webMediaPlayer)
+        m_webMediaPlayer->setVolume(muted ? 0 : m_volume);
 }
 
 MediaPlayer::NetworkState WebMediaPlayerClientImpl::networkState() const
@@ -561,36 +479,9 @@ PassRefPtr<TimeRanges> WebMediaPlayerClientImpl::buffered() const
     return TimeRanges::create();
 }
 
-int WebMediaPlayerClientImpl::dataRate() const
-{
-    if (m_webMediaPlayer)
-        return m_webMediaPlayer->dataRate();
-    return 0;
-}
-
-bool WebMediaPlayerClientImpl::totalBytesKnown() const
-{
-    if (m_webMediaPlayer)
-        return m_webMediaPlayer->totalBytesKnown();
-    return false;
-}
-
-unsigned WebMediaPlayerClientImpl::totalBytes() const
-{
-    if (m_webMediaPlayer)
-        return static_cast<unsigned>(m_webMediaPlayer->totalBytes());
-    return 0;
-}
-
 bool WebMediaPlayerClientImpl::didLoadingProgress() const
 {
     return m_webMediaPlayer && m_webMediaPlayer->didLoadingProgress();
-}
-
-void WebMediaPlayerClientImpl::setSize(const IntSize& size)
-{
-    if (m_webMediaPlayer)
-        m_webMediaPlayer->setSize(WebSize(size.width(), size.height()));
 }
 
 void WebMediaPlayerClientImpl::paint(GraphicsContext* context, const IntRect& rect)
@@ -608,17 +499,17 @@ void WebMediaPlayerClientImpl::paintCurrentFrameInContext(GraphicsContext* conte
     // Since we're accessing platformContext() directly we have to manually
     // check.
     if (m_webMediaPlayer && !context->paintingDisabled()) {
-        PlatformGraphicsContext* platformContext = context->platformContext();
-
         // On Android, video frame is emitted as GL_TEXTURE_EXTERNAL_OES texture. We use a different path to
         // paint the video frame into the context.
-#if defined(OS_ANDROID)
-        RefPtr<GraphicsContext3D> context3D = SharedGraphicsContext3D::get();
-        paintOnAndroid(context, context3D.get(), rect, platformContext->getNormalizedAlpha());
-#else
-        WebCanvas* canvas = platformContext->canvas();
-        m_webMediaPlayer->paint(canvas, rect, platformContext->getNormalizedAlpha());
+#if OS(ANDROID)
+        if (!m_isMediaStream) {
+            RefPtr<GraphicsContext3D> context3D = SharedGraphicsContext3D::get();
+            paintOnAndroid(context, context3D.get(), rect, context->getNormalizedAlpha());
+            return;
+        }
 #endif
+        WebCanvas* canvas = context->canvas();
+        m_webMediaPlayer->paint(canvas, rect, context->getNormalizedAlpha());
     }
 }
 
@@ -627,10 +518,11 @@ bool WebMediaPlayerClientImpl::copyVideoTextureToPlatformTexture(WebCore::Graphi
     if (!context || !m_webMediaPlayer)
         return false;
     Extensions3D* extensions = context->getExtensions();
-    if (!extensions || !extensions->supports("GL_CHROMIUM_copy_texture") || !extensions->supports("GL_CHROMIUM_flipy") || !context->makeContextCurrent())
+    if (!extensions || !extensions->supports("GL_CHROMIUM_copy_texture") || !extensions->supports("GL_CHROMIUM_flipy")
+        || !extensions->canUseCopyTextureCHROMIUM(internalFormat, type, level) || !context->makeContextCurrent())
         return false;
-    WebGraphicsContext3D* webGraphicsContext3D = GraphicsContext3DPrivate::extractWebGraphicsContext3D(context);
-    return m_webMediaPlayer->copyVideoTextureToPlatformTexture(webGraphicsContext3D, texture, level, internalFormat, premultiplyAlpha, flipY);
+    WebGraphicsContext3D* webGraphicsContext3D = context->webContext();
+    return m_webMediaPlayer->copyVideoTextureToPlatformTexture(webGraphicsContext3D, texture, level, internalFormat, type, premultiplyAlpha, flipY);
 }
 
 void WebMediaPlayerClientImpl::setPreload(MediaPlayer::Preload preload)
@@ -656,14 +548,6 @@ bool WebMediaPlayerClientImpl::didPassCORSAccessCheck() const
     if (m_webMediaPlayer)
         return m_webMediaPlayer->didPassCORSAccessCheck();
     return false;
-}
-
-MediaPlayer::MovieLoadType WebMediaPlayerClientImpl::movieLoadType() const
-{
-    if (m_webMediaPlayer)
-        return static_cast<MediaPlayer::MovieLoadType>(
-            m_webMediaPlayer->movieLoadType());
-    return MediaPlayer::Unknown;
 }
 
 double WebMediaPlayerClientImpl::mediaTimeForTimeValue(double timeValue) const
@@ -723,48 +607,12 @@ bool WebMediaPlayerClientImpl::acceleratedRenderingInUse()
     return m_videoLayer && !m_videoLayer->isOrphan();
 }
 
-PassOwnPtr<MediaPlayerPrivateInterface> WebMediaPlayerClientImpl::create(MediaPlayer* player)
+PassOwnPtr<MediaPlayer> WebMediaPlayerClientImpl::create(MediaPlayerClient* client)
 {
-    OwnPtr<WebMediaPlayerClientImpl> client = adoptPtr(new WebMediaPlayerClientImpl());
-    client->m_mediaPlayer = player;
-    return client.release();
+    return adoptPtr(new WebMediaPlayerClientImpl(client));
 }
 
-void WebMediaPlayerClientImpl::getSupportedTypes(HashSet<String>& supportedTypes)
-{
-    // FIXME: integrate this list with WebMediaPlayerClientImpl::supportsType.
-    notImplemented();
-}
-
-#if ENABLE(ENCRYPTED_MEDIA)
-MediaPlayer::SupportsType WebMediaPlayerClientImpl::supportsType(const String& type,
-                                                                 const String& codecs,
-                                                                 const String& keySystem,
-                                                                 const KURL&)
-{
-#else
-MediaPlayer::SupportsType WebMediaPlayerClientImpl::supportsType(const String& type,
-                                                                 const String& codecs,
-                                                                 const KURL&)
-{
-    String keySystem;
-#endif
-    WebMimeRegistry::SupportsType supportsType = WebKit::Platform::current()->mimeRegistry()->supportsMediaMIMEType(type, codecs, keySystem);
-
-    switch (supportsType) {
-    default:
-        ASSERT_NOT_REACHED();
-    case WebMimeRegistry::IsNotSupported:
-        return MediaPlayer::IsNotSupported;
-    case WebMimeRegistry::IsSupported:
-        return MediaPlayer::IsSupported;
-    case WebMimeRegistry::MayBeSupported:
-        return MediaPlayer::MayBeSupported;
-    }
-    return MediaPlayer::IsNotSupported;
-}
-
-#if defined(OS_ANDROID)
+#if OS(ANDROID)
 void WebMediaPlayerClientImpl::paintOnAndroid(WebCore::GraphicsContext* context, WebCore::GraphicsContext3D* context3D, const IntRect& rect, uint8_t alpha)
 {
     if (!context || !context3D || !m_webMediaPlayer || context->paintingDisabled())
@@ -800,11 +648,11 @@ void WebMediaPlayerClientImpl::paintOnAndroid(WebCore::GraphicsContext* context,
     }
 
     // Copy video texture to bitmap texture.
-    WebGraphicsContext3D* webGraphicsContext3D = GraphicsContext3DPrivate::extractWebGraphicsContext3D(context3D);
-    PlatformGraphicsContext* platformContext = context->platformContext();
-    WebCanvas* canvas = platformContext->canvas();
+    WebGraphicsContext3D* webGraphicsContext3D = context3D->webContext();
+    WebCanvas* canvas = context->canvas();
     unsigned int textureId = static_cast<unsigned int>(m_texture->getTextureHandle());
-    if (!m_webMediaPlayer->copyVideoTextureToPlatformTexture(webGraphicsContext3D, textureId, 0, GraphicsContext3D::RGBA, true, false)) { return; }
+    if (!m_webMediaPlayer->copyVideoTextureToPlatformTexture(webGraphicsContext3D, textureId, 0, GraphicsContext3D::RGBA, GraphicsContext3D::UNSIGNED_BYTE, true, false))
+        return;
 
     // Draw the texture based bitmap onto the Canvas. If the canvas is hardware based, this will do a GPU-GPU texture copy. If the canvas is software based,
     // the texture based bitmap will be readbacked to system memory then draw onto the canvas.
@@ -827,14 +675,20 @@ void WebMediaPlayerClientImpl::startDelayedLoad()
     loadInternal();
 }
 
-WebMediaPlayerClientImpl::WebMediaPlayerClientImpl()
-    : m_mediaPlayer(0)
+WebMediaPlayerClientImpl::WebMediaPlayerClientImpl(MediaPlayerClient* client)
+    : m_client(client)
+    , m_isMediaStream(false)
     , m_delayingLoad(false)
-    , m_preload(MediaPlayer::MetaData)
+    , m_preload(MediaPlayer::Auto)
+    , m_helperPlugin(0)
     , m_videoLayer(0)
     , m_opaque(false)
     , m_needsWebLayerForVideo(false)
+    , m_volume(1.0)
+    , m_muted(false)
+    , m_rate(1.0)
 {
+    ASSERT(m_client);
 }
 
 #if ENABLE(WEB_AUDIO)

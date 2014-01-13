@@ -23,19 +23,21 @@
  */
 
 #include "config.h"
-#include "StringImpl.h"
+#include "wtf/text/StringImpl.h"
 
-#include "AtomicString.h"
-#include "StringBuffer.h"
-#include "StringHash.h"
-#include <wtf/ProcessID.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/WTFThreadData.h>
-#include <wtf/unicode/CharacterNames.h>
+#include "wtf/ProcessID.h"
+#include "wtf/StdLibExtras.h"
+#include "wtf/WTFThreadData.h"
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/StringBuffer.h"
+#include "wtf/text/StringHash.h"
+#include "wtf/unicode/CharacterNames.h"
 
 #ifdef STRING_STATS
+#include "wtf/DataLog.h"
+#include "wtf/MainThread.h"
+#include "wtf/RefCounted.h"
 #include <unistd.h>
-#include <wtf/DataLog.h>
 #endif
 
 using namespace std;
@@ -47,6 +49,163 @@ using namespace Unicode;
 COMPILE_ASSERT(sizeof(StringImpl) == 2 * sizeof(int) + 3 * sizeof(void*), StringImpl_should_stay_small);
 
 #ifdef STRING_STATS
+
+static Mutex& statsMutex()
+{
+    DEFINE_STATIC_LOCAL(Mutex, mutex, ());
+    return mutex;
+}
+
+static HashSet<void*>& liveStrings()
+{
+    // Notice that we can't use HashSet<StringImpl*> because then HashSet would dedup identical strings.
+    DEFINE_STATIC_LOCAL(HashSet<void*>, strings, ());
+    return strings;
+}
+
+void addStringForStats(StringImpl* string)
+{
+    MutexLocker locker(statsMutex());
+    liveStrings().add(string);
+}
+
+void removeStringForStats(StringImpl* string)
+{
+    MutexLocker locker(statsMutex());
+    liveStrings().remove(string);
+}
+
+static void fillWithSnippet(const StringImpl* string, Vector<char>& snippet)
+{
+    const unsigned kMaxSnippetLength = 64;
+    snippet.clear();
+
+    size_t expectedLength = std::min(string->length(), kMaxSnippetLength);
+    if (expectedLength == kMaxSnippetLength)
+        expectedLength += 3; // For the "...".
+    ++expectedLength; // For the terminating '\0'.
+    snippet.reserveCapacity(expectedLength);
+
+    size_t i;
+    for (i = 0; i < string->length() && i < kMaxSnippetLength; ++i) {
+        UChar c = (*string)[i];
+        if (isASCIIPrintable(c))
+            snippet.append(c);
+        else
+            snippet.append('?');
+    }
+    if (i < string->length()) {
+        snippet.append('.');
+        snippet.append('.');
+        snippet.append('.');
+    }
+    snippet.append('\0');
+}
+
+static bool isUnnecessarilyWide(const StringImpl* string)
+{
+    if (string->is8Bit())
+        return false;
+    UChar c = 0;
+    for (unsigned i = 0; i < string->length(); ++i)
+        c |= (*string)[i] >> 8;
+    return !c;
+}
+
+class PerStringStats : public RefCounted<PerStringStats> {
+public:
+    static PassRefPtr<PerStringStats> create()
+    {
+        return adoptRef(new PerStringStats);
+    }
+
+    void add(const StringImpl* string)
+    {
+        ++m_numberOfCopies;
+        if (!m_length) {
+            m_length = string->length();
+            fillWithSnippet(string, m_snippet);
+        }
+        if (string->isAtomic())
+            ++m_numberOfAtomicCopies;
+        if (string->has16BitShadow())
+            m_upconverted = true;
+        if (isUnnecessarilyWide(string))
+            m_unnecessarilyWide = true;
+    }
+
+    size_t totalCharacters() const
+    {
+        return m_numberOfCopies * m_length;
+    }
+
+    void print()
+    {
+        const char* status = "ok";
+        if (m_upconverted)
+            status = "up";
+        else if (m_unnecessarilyWide)
+            status = "16";
+        dataLogF("%8u copies (%s) of length %8u %s\n", m_numberOfCopies, status, m_length, m_snippet.data());
+    }
+
+    bool m_upconverted;
+    bool m_unnecessarilyWide;
+    unsigned m_numberOfCopies;
+    unsigned m_length;
+    unsigned m_numberOfAtomicCopies;
+    Vector<char> m_snippet;
+
+private:
+    PerStringStats()
+        : m_upconverted(false)
+        , m_unnecessarilyWide(false)
+        , m_numberOfCopies(0)
+        , m_length(0)
+        , m_numberOfAtomicCopies(0)
+    {
+    }
+};
+
+bool operator<(const RefPtr<PerStringStats>& a, const RefPtr<PerStringStats>& b)
+{
+    if (a->m_upconverted != b->m_upconverted)
+        return !a->m_upconverted && b->m_upconverted;
+    if (a->m_unnecessarilyWide != b->m_unnecessarilyWide)
+        return !a->m_unnecessarilyWide && b->m_unnecessarilyWide;
+    if (a->totalCharacters() != b->totalCharacters())
+        return a->totalCharacters() < b->totalCharacters();
+    if (a->m_numberOfCopies != b->m_numberOfCopies)
+        return a->m_numberOfCopies < b->m_numberOfCopies;
+    if (a->m_length != b->m_length)
+        return a->m_length < b->m_length;
+    return a->m_numberOfAtomicCopies < b->m_numberOfAtomicCopies;
+}
+
+static void printLiveStringStats(void*)
+{
+    MutexLocker locker(statsMutex());
+    HashSet<void*>& strings = liveStrings();
+
+    HashMap<StringImpl*, RefPtr<PerStringStats> > stats;
+    for (HashSet<void*>::iterator iter = strings.begin(); iter != strings.end(); ++iter) {
+        StringImpl* string = static_cast<StringImpl*>(*iter);
+        HashMap<StringImpl*, RefPtr<PerStringStats> >::iterator entry = stats.find(string);
+        RefPtr<PerStringStats> value = entry == stats.end() ? RefPtr<PerStringStats>(PerStringStats::create()) : entry->value;
+        value->add(string);
+        stats.set(string, value.release());
+    }
+
+    Vector<RefPtr<PerStringStats> > all;
+    for (HashMap<StringImpl*, RefPtr<PerStringStats> >::iterator iter = stats.begin(); iter != stats.end(); ++iter)
+        all.append(iter->value);
+
+    std::sort(all.begin(), all.end());
+    std::reverse(all.begin(), all.end());
+    for (size_t i = 0; i < 20 && i < all.size(); ++i)
+        all[i]->print();
+}
+
 StringStats StringImpl::m_stringStats;
 
 unsigned StringStats::s_stringRemovesTillPrintStats = StringStats::s_printStringStatsFrequency;
@@ -103,6 +262,8 @@ void StringStats::printStats()
     unsigned long long totalSavedBytes = m_total8BitData - m_totalUpconvertedData;
     double percentSavings = totalSavedBytes ? ((double)totalSavedBytes * 100) / (double)(totalDataBytes + totalSavedBytes) : 0.0;
     dataLogF("         Total savings %12llu bytes (%5.2f%%)\n", totalSavedBytes, percentSavings);
+
+    callOnMainThread(printLiveStringStats, 0);
 }
 #endif
 

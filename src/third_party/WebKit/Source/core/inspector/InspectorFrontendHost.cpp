@@ -30,15 +30,12 @@
 #include "config.h"
 #include "core/inspector/InspectorFrontendHost.h"
 
-#include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptFunctionCall.h"
-#include "core/dom/Element.h"
 #include "core/dom/UserGestureIndicator.h"
-#include "core/html/HTMLFrameOwnerElement.h"
-#include "core/inspector/InspectorAgent.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorFrontendClient.h"
 #include "core/loader/FrameLoader.h"
+#include "core/loader/TextResourceDecoder.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/ContextMenuProvider.h"
 #include "core/page/Frame.h"
@@ -49,7 +46,6 @@
 #include "core/platform/network/ResourceError.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
-#include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderTheme.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include <wtf/StdLibExtras.h>
@@ -123,6 +119,7 @@ InspectorFrontendHost::InspectorFrontendHost(InspectorFrontendClient* client, Pa
     , m_frontendPage(frontendPage)
     , m_menuProvider(0)
 {
+    ScriptWrappable::init(this);
 }
 
 InspectorFrontendHost::~InspectorFrontendHost()
@@ -147,11 +144,11 @@ void InspectorFrontendHost::requestSetDockSide(const String& side)
     if (!m_client)
         return;
     if (side == "undocked")
-        m_client->requestSetDockSide(InspectorFrontendClient::UNDOCKED);
+        m_client->requestSetDockSide(InspectorFrontendClient::Undocked);
     else if (side == "right")
-        m_client->requestSetDockSide(InspectorFrontendClient::DOCKED_TO_RIGHT);
+        m_client->requestSetDockSide(InspectorFrontendClient::DockedToRight);
     else if (side == "bottom")
-        m_client->requestSetDockSide(InspectorFrontendClient::DOCKED_TO_BOTTOM);
+        m_client->requestSetDockSide(InspectorFrontendClient::DockedToBottom);
 }
 
 void InspectorFrontendHost::closeWindow()
@@ -246,7 +243,7 @@ void InspectorFrontendHost::showContextMenu(Event* event, const Vector<ContextMe
         return;
 
     ASSERT(m_frontendPage);
-    ScriptState* frontendScriptState = scriptStateFromPage(debuggerWorld(), m_frontendPage);
+    ScriptState* frontendScriptState = mainWorldScriptState(m_frontendPage->mainFrame());
     ScriptObject frontendApiObject;
     if (!ScriptGlobalObject::get(frontendScriptState, "InspectorFrontendAPI", frontendApiObject)) {
         ASSERT_NOT_REACHED();
@@ -267,7 +264,14 @@ String InspectorFrontendHost::loadResourceSynchronously(const String& url)
     ResourceError error;
     ResourceResponse response;
     m_frontendPage->mainFrame()->loader()->loadResourceSynchronously(request, DoNotAllowStoredCredentials, error, response, data);
-    return String(data.data(), data.size());
+    WTF::TextEncoding textEncoding(response.textEncodingName());
+    bool useDetector = false;
+    if (!textEncoding.isValid()) {
+        textEncoding = UTF8Encoding();
+        useDetector = true;
+    }
+    RefPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("text/plain", textEncoding, useDetector);
+    return decoder->decode(data.data(), data.size()) + decoder->flush();
 }
 
 String InspectorFrontendHost::getSelectionBackgroundColor()

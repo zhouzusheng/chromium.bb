@@ -32,25 +32,29 @@
 #include "core/loader/NavigationScheduler.h"
 #include "core/page/AdjustViewSizeOrNot.h"
 #include "core/page/FrameTree.h"
-#include "core/platform/DragImage.h"
 #include "core/platform/ScrollTypes.h"
-#include "core/platform/graphics/IntRect.h"
-#include <wtf/RefCounted.h>
+#include "core/platform/graphics/IntSize.h"
+#include "wtf/Forward.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
     class AnimationController;
     class Color;
+    class DOMWindow;
     class Document;
+    class DragImage;
     class Editor;
     class Element;
     class EventHandler;
+    class FloatSize;
     class FrameDestructionObserver;
     class FrameSelection;
     class FrameView;
     class HTMLTableCellElement;
-    class IntRect;
+    class IntPoint;
     class Node;
+    class Range;
     class RenderPart;
     class RenderView;
     class TreeScope;
@@ -58,17 +62,6 @@ namespace WebCore {
     class Settings;
     class TreeScope;
     class VisiblePosition;
-
-    enum {
-        LayerTreeFlagsIncludeDebugInfo = 1 << 0,
-        LayerTreeFlagsIncludeVisibleRects = 1 << 1,
-        LayerTreeFlagsIncludeTileCaches = 1 << 2,
-        LayerTreeFlagsIncludeRepaintRects = 1 << 3,
-        LayerTreeFlagsIncludePaintingPhases = 1 << 4
-    };
-    typedef unsigned LayerTreeFlags;
-
-    void init();
 
     class Frame : public RefCounted<Frame> {
     public:
@@ -92,6 +85,8 @@ namespace WebCore {
         Page* page() const;
         HTMLFrameOwnerElement* ownerElement() const;
 
+        void setDOMWindow(PassRefPtr<DOMWindow>);
+        DOMWindow* domWindow() const;
         Document* document() const;
         FrameView* view() const;
 
@@ -115,7 +110,8 @@ namespace WebCore {
 
         bool inScope(TreeScope*) const;
 
-        String layerTreeAsText(LayerTreeFlags = 0) const;
+        // See GraphicsLayerClient.h for accepted flags.
+        String layerTreeAsText(unsigned flags = 0) const;
         String trackedRepaintRectsAsText() const;
 
         static Frame* frameForWidget(const Widget*);
@@ -128,8 +124,6 @@ namespace WebCore {
 
         bool inViewSourceMode() const;
         void setInViewSourceMode(bool = true);
-
-        void setDocument(PassRefPtr<Document>);
 
         void setPageZoomFactor(float factor);
         float pageZoomFactor() const { return m_pageZoomFactor; }
@@ -154,8 +148,8 @@ namespace WebCore {
 
         String displayStringModifiedByEncoding(const String&) const;
 
-        DragImageRef nodeImage(Node*);
-        DragImageRef dragImageForSelection();
+        PassOwnPtr<DragImage> nodeImage(Node*);
+        PassOwnPtr<DragImage> dragImageForSelection();
 
         VisiblePosition visiblePositionForPoint(const IntPoint& framePoint);
         Document* documentAtPoint(const IntPoint& windowPoint);
@@ -180,7 +174,7 @@ namespace WebCore {
 
         HTMLFrameOwnerElement* m_ownerElement;
         RefPtr<FrameView> m_view;
-        RefPtr<Document> m_doc;
+        RefPtr<DOMWindow> m_domWindow;
 
         OwnPtr<ScriptController> m_script;
         OwnPtr<Editor> m_editor;
@@ -223,9 +217,9 @@ namespace WebCore {
         return m_script.get();
     }
 
-    inline Document* Frame::document() const
+    inline DOMWindow* Frame::domWindow() const
     {
-        return m_doc.get();
+        return m_domWindow.get();
     }
 
     inline FrameSelection* Frame::selection() const

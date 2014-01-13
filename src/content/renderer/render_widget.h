@@ -16,27 +16,30 @@
 #include "base/time.h"
 #include "base/timer.h"
 #include "cc/debug/rendering_stats.h"
+#include "content/common/browser_rendering_stats.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/renderer/paint_aggregator.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextInputInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebWidgetClient.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
+#include "third_party/WebKit/public/web/WebPopupType.h"
+#include "third_party/WebKit/public/web/WebTextDirection.h"
+#include "third_party/WebKit/public/web/WebTextInputInfo.h"
+#include "third_party/WebKit/public/web/WebWidgetClient.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/range/range.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d.h"
+#include "ui/gfx/vector2d_f.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/glue/webcursor.h"
+#include "webkit/common/cursors/webcursor.h"
 
 struct ViewHostMsg_UpdateRect_Params;
+struct ViewMsg_Resize_Params;
 class ViewHostMsg_UpdateRect;
 
 namespace IPC {
@@ -46,6 +49,7 @@ class SyncMessage;
 namespace WebKit {
 class WebGestureEvent;
 class WebInputEvent;
+class WebKeyboardEvent;
 class WebMouseEvent;
 class WebTouchEvent;
 struct WebPoint;
@@ -141,6 +145,7 @@ class CONTENT_EXPORT RenderWidget
   virtual void closeWidgetSoon();
   virtual void show(WebKit::WebNavigationPolicy);
   virtual void runModal() {}
+  virtual void didProgrammaticallyScroll(const WebKit::WebPoint& scroll_point);
   virtual WebKit::WebRect windowRect();
   virtual void setToolTipText(const WebKit::WebString& text,
                               WebKit::WebTextDirection hint);
@@ -170,6 +175,8 @@ class CONTENT_EXPORT RenderWidget
   // uploading.
   // This call is relatively expensive as it blocks on the GPU process
   bool GetGpuRenderingStats(GpuRenderingStats*) const;
+
+  void GetBrowserRenderingStats(BrowserRenderingStats* stats);
 
   RenderWidgetCompositor* compositor() const;
 
@@ -203,13 +210,19 @@ class CONTENT_EXPORT RenderWidget
     SHOW_IME_IF_NEEDED
   };
 
+  // Handle common setup/teardown for handling IME events.
+  void StartHandlingImeEvent();
+  void FinishHandlingImeEvent();
+
   virtual void InstrumentWillBeginFrame() {}
   virtual void InstrumentDidBeginFrame() {}
   virtual void InstrumentDidCancelFrame() {}
   virtual void InstrumentWillComposite() {}
 
   virtual bool AllowPartialSwap() const;
-  bool SynchronouslyDisableVSync() const;
+  bool UsingSynchronousRendererCompositor() const;
+
+  bool is_swapped_out() { return is_swapped_out_; }
 
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
@@ -281,17 +294,14 @@ class CONTENT_EXPORT RenderWidget
 
   // RenderWidget IPC message handlers
   void OnHandleInputEvent(const WebKit::WebInputEvent* event,
+                          const ui::LatencyInfo& latency_info,
                           bool keyboard_shortcut);
   void OnCursorVisibilityChange(bool is_visible);
   void OnMouseCaptureLost();
   virtual void OnSetFocus(bool enable);
   void OnClose();
   void OnCreatingNewAck();
-  virtual void OnResize(const gfx::Size& new_size,
-                        const gfx::Size& physical_backing_size,
-                        float overdraw_bottom_height,
-                        const gfx::Rect& resizer_rect,
-                        bool is_fullscreen);
+  virtual void OnResize(const ViewMsg_Resize_Params& params);
   void OnChangeResizeRect(const gfx::Rect& resizer_rect);
   virtual void OnWasHidden();
   virtual void OnWasShown(bool needs_repainting);
@@ -316,7 +326,6 @@ class CONTENT_EXPORT RenderWidget
   void OnSmoothScrollCompleted();
   void OnSetTextDirection(WebKit::WebTextDirection direction);
   void OnGetFPS();
-  void OnScreenInfoChanged(const WebKit::WebScreenInfo& screen_info);
   void OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
                            const gfx::Rect& window_screen_rect);
 #if defined(OS_ANDROID)
@@ -324,6 +333,7 @@ class CONTENT_EXPORT RenderWidget
   void OnShowImeIfNeeded();
 #endif
   void OnSnapshot(const gfx::Rect& src_subrect);
+  void OnSetBrowserRenderingStats(const BrowserRenderingStats& stats);
 
   // Notify the compositor about a change in viewport size. This should be
   // used only with auto resize mode WebWidgets, as normal WebWidgets should
@@ -396,15 +406,15 @@ class CONTENT_EXPORT RenderWidget
   void set_next_paint_is_restore_ack();
   void set_next_paint_is_repaint_ack();
 
-  void set_throttle_input_events(bool throttle_input_events) {
-    throttle_input_events_ = throttle_input_events;
-  }
-
   // Checks if the text input state and compose inline mode have been changed.
   // If they are changed, the new value will be sent to the browser process.
+  void UpdateTextInputType();
+
+#if defined(OS_ANDROID)
   // |show_ime_if_needed| should be SHOW_IME_IF_NEEDED iff the update may cause
   // the ime to be displayed, e.g. after a tap on an input field on mobile.
   void UpdateTextInputState(ShowIme show_ime);
+#endif
 
   // Checks if the selection bounds have been changed. If they are changed,
   // the new value will be sent to the browser process.
@@ -413,9 +423,7 @@ class CONTENT_EXPORT RenderWidget
   // Checks if the composition range or composition character bounds have been
   // changed. If they are changed, the new value will be sent to the browser
   // process.
-  virtual void UpdateCompositionInfo(
-      const ui::Range& range,
-      const std::vector<gfx::Rect>& character_bounds);
+  virtual void UpdateCompositionInfo(bool should_update_range);
 
   // Override point to obtain that the current input method state and caret
   // position.
@@ -430,6 +438,10 @@ class CONTENT_EXPORT RenderWidget
   // character is zero width rectangle.
   virtual void GetCompositionCharacterBounds(
       std::vector<gfx::Rect>* character_bounds);
+
+  // Returns the range of the text that is being composed or the selection if
+  // the composition does not exist.
+  virtual void GetCompositionRange(ui::Range* range);
 
   // Returns true if the composition range or composition character bounds
   // should be sent to the browser process.
@@ -462,6 +474,12 @@ class CONTENT_EXPORT RenderWidget
   // Returns true if no further handling is needed. In that case, the event
   // won't be sent to WebKit or trigger DidHandleMouseEvent().
   virtual bool WillHandleMouseEvent(const WebKit::WebMouseEvent& event);
+
+  // Called by OnHandleInputEvent() to notify subclasses that a key event is
+  // about to be handled.
+  // Returns true if no further handling is needed. In that case, the event
+  // won't be sent to WebKit or trigger DidHandleKeyEvent().
+  virtual bool WillHandleKeyEvent(const WebKit::WebKeyboardEvent& event);
 
   // Called by OnHandleInputEvent() to notify subclasses that a gesture event is
   // about to be handled.
@@ -683,14 +701,19 @@ class CONTENT_EXPORT RenderWidget
   // |screen_info_| on some platforms, and defaults to 1 on other platforms.
   float device_scale_factor_;
 
-  // Specifies whether input event throttling is enabled for this widget.
-  bool throttle_input_events_;
-
   // State associated with the BeginSmoothScroll synthetic scrolling function.
   SmoothScrollCompletionCallback pending_smooth_scroll_gesture_;
 
   // Specified whether the compositor will run in its own thread.
   bool is_threaded_compositing_enabled_;
+
+  // The last set of rendering stats received from the browser. This is only
+  // received when using the --enable-gpu-benchmarking flag.
+  BrowserRenderingStats browser_rendering_stats_;
+
+  // The latency information for any current non-accelerated-compositing
+  // frame.
+  ui::LatencyInfo latency_info_;
 
   base::WeakPtrFactory<RenderWidget> weak_ptr_factory_;
 

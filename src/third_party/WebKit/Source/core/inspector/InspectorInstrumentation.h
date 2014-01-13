@@ -32,6 +32,7 @@
 #define InspectorInstrumentation_h
 
 #include "bindings/v8/ScriptState.h"
+#include "bindings/v8/ScriptString.h"
 #include "core/css/CSSImportRule.h"
 #include "core/css/CSSRule.h"
 #include "core/css/CSSSelector.h"
@@ -49,12 +50,13 @@
 #include "modules/websockets/WebSocketFrame.h"
 #include "modules/websockets/WebSocketHandshakeRequest.h"
 #include "modules/websockets/WebSocketHandshakeResponse.h"
-#include <wtf/RefPtr.h>
-#include <wtf/UnusedParam.h>
-#include <wtf/Vector.h>
+#include "wtf/RefPtr.h"
+#include "wtf/UnusedParam.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
+struct CSSParserString;
 class CSSRule;
 class CachedResource;
 class CharacterData;
@@ -133,11 +135,13 @@ inline bool hasFrontends() { return FrontendCounter::s_frontendCounter; }
 void registerInstrumentingAgents(InstrumentingAgents*);
 void unregisterInstrumentingAgents(InstrumentingAgents*);
 
+InspectorTimelineAgent* retrieveTimelineAgent(const InspectorInstrumentationCookie&);
+
 InstrumentingAgents* instrumentingAgentsForPage(Page*);
 InstrumentingAgents* instrumentingAgentsForFrame(Frame*);
-InstrumentingAgents* instrumentingAgentsForContext(ScriptExecutionContext*);
+InstrumentingAgents* instrumentingAgentsForScriptExecutionContext(ScriptExecutionContext*);
 InstrumentingAgents* instrumentingAgentsForDocument(Document*);
-InstrumentingAgents* instrumentingAgentsForRenderer(RenderObject*);
+InstrumentingAgents* instrumentingAgentsForRenderObject(RenderObject*);
 InstrumentingAgents* instrumentingAgentsForElement(Element*);
 
 InstrumentingAgents* instrumentingAgentsForWorkerContext(WorkerContext*);
@@ -146,8 +150,10 @@ InstrumentingAgents* instrumentingAgentsForNonDocumentContext(ScriptExecutionCon
 }  // namespace InspectorInstrumentation
 
 namespace InstrumentationEvents {
+extern const char PaintSetup[];
 extern const char PaintLayer[];
 extern const char RasterTask[];
+extern const char ImageDecodeTask[];
 extern const char Paint[];
 extern const char Layer[];
 extern const char BeginFrame[];
@@ -156,11 +162,12 @@ extern const char BeginFrame[];
 namespace InstrumentationEventArguments {
 extern const char LayerId[];
 extern const char PageId[];
+extern const char NodeId[];
 };
 
 namespace InspectorInstrumentation {
 
-inline InstrumentingAgents* instrumentingAgentsForContext(ScriptExecutionContext* context)
+inline InstrumentingAgents* instrumentingAgentsForScriptExecutionContext(ScriptExecutionContext* context)
 {
     if (!context)
         return 0;
@@ -192,7 +199,13 @@ inline InstrumentingAgents* instrumentingAgentsForElement(Element* element)
     return instrumentingAgentsForDocument(element->document());
 }
 
+bool cssErrorFilter(const CSSParserString& content, int propertyId, int errorType);
+
 } // namespace InspectorInstrumentation
+
+InstrumentingAgents* instrumentationForPage(Page*);
+
+InstrumentingAgents* instrumentationForWorkerContext(WorkerContext*);
 
 } // namespace WebCore
 

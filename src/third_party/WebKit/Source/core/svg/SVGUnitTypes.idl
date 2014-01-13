@@ -24,9 +24,7 @@
  */
 
 [
-    Conditional=SVG,
-    DoNotGenerateToV8,
-    ImplementationLacksVTable
+    DoNotGenerateToV8
 ] interface SVGUnitTypes {
     // Unit Types
     const unsigned short SVG_UNIT_TYPE_UNKNOWN           = 0;

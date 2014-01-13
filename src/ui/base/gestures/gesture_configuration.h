@@ -167,6 +167,12 @@ class UI_EXPORT GestureConfiguration {
   static void set_rail_start_proportion(double val) {
     rail_start_proportion_ = val;
   }
+  static double scroll_prediction_seconds() {
+    return scroll_prediction_seconds_;
+  }
+  static void set_scroll_prediction_seconds(double val) {
+    scroll_prediction_seconds_ = val;
+  }
   static void set_fling_acceleration_curve_coefficients(int i, float val) {
     fling_acceleration_curve_coefficients_[i] = val;
   }
@@ -179,6 +185,7 @@ class UI_EXPORT GestureConfiguration {
   static void set_fling_velocity_cap(float val) {
     fling_velocity_cap_ = val;
   }
+  // TODO(davemoore): Move into chrome/browser/ui.
   static int tab_scrub_activation_delay_in_ms() {
     return tab_scrub_activation_delay_in_ms_;
   }
@@ -233,8 +240,10 @@ class UI_EXPORT GestureConfiguration {
   static int points_buffered_for_velocity_;
   static double rail_break_proportion_;
   static double rail_start_proportion_;
+  static double scroll_prediction_seconds_;
   static float fling_acceleration_curve_coefficients_[NumAccelParams];
   static float fling_velocity_cap_;
+  // TODO(davemoore): Move into chrome/browser/ui.
   static int tab_scrub_activation_delay_in_ms_;
 
   DISALLOW_COPY_AND_ASSIGN(GestureConfiguration);

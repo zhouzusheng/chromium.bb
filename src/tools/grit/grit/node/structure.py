@@ -93,6 +93,8 @@ class StructureNode(base.Node):
     if hasattr(self.GetRoot(), 'defines'):
       self.gatherer.SetDefines(self.GetRoot().defines)
     self.gatherer.SetAttributes(self.attrs)
+    if self.ExpandVariables():
+      self.gatherer.SetFilenameExpansionFunction(self._Substitute)
 
     # Parse local variables and instantiate the substituter.
     if self.attrs['variables']:
@@ -109,6 +111,10 @@ class StructureNode(base.Node):
                         is_skeleton=True)
       skel.SetGrdNode(self)  # TODO(benrg): Or child? Only used for ToRealPath
       skel.SetUberClique(self.UberClique())
+      if hasattr(self.GetRoot(), 'defines'):
+        skel.SetDefines(self.GetRoot().defines)
+      if self.ExpandVariables():
+        skel.SetFilenameExpansionFunction(self._Substitute)
       self.skeletons[child.attrs['expr']] = skel
 
   def MandatoryAttributes(self):

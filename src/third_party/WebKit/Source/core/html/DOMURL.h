@@ -27,30 +27,30 @@
 #ifndef DOMURL_h
 #define DOMURL_h
 
-#include "core/platform/KURL.h"
-#include <wtf/HashSet.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Forward.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
 class Blob;
-class MediaSource;
+class MediaSourceBase;
 class MediaStream;
 class ScriptExecutionContext;
+class URLRegistrable;
 
 class DOMURL : public RefCounted<DOMURL> {
 
 public:
     static PassRefPtr<DOMURL> create() { return adoptRef(new DOMURL); }
 
-    static void contextDestroyed(ScriptExecutionContext*);
-
     static String createObjectURL(ScriptExecutionContext*, Blob*);
     static void revokeObjectURL(ScriptExecutionContext*, const String&);
-    static String createObjectURL(ScriptExecutionContext*, MediaSource*);
+    static String createObjectURL(ScriptExecutionContext*, MediaSourceBase*);
     static String createObjectURL(ScriptExecutionContext*, MediaStream*);
+
+private:
+    static String createPublicURL(ScriptExecutionContext*, URLRegistrable*);
 };
 
 } // namespace WebCore

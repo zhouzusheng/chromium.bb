@@ -56,7 +56,7 @@ private:
     virtual void handleTouchEvent(TouchEvent*) OVERRIDE;
     virtual bool hasTouchEventHandler() const OVERRIDE;
     virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) const OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) const OVERRIDE;
     virtual void createShadowSubtree() OVERRIDE;
     virtual Decimal parseToNumber(const String&, const Decimal&) const OVERRIDE;
     virtual String serialize(const Decimal&) const OVERRIDE;
@@ -68,14 +68,12 @@ private:
     virtual bool shouldRespectListAttribute() OVERRIDE;
     virtual HTMLElement* sliderThumbElement() const OVERRIDE;
     virtual HTMLElement* sliderTrackElement() const OVERRIDE;
-#if ENABLE(DATALIST_ELEMENT)
     virtual void listAttributeTargetChanged() OVERRIDE;
     void updateTickMarkValues();
     virtual Decimal findClosestTickMarkValue(const Decimal&) OVERRIDE;
 
     bool m_tickMarkValuesDirty;
     Vector<Decimal> m_tickMarkValues;
-#endif
 };
 
 } // namespace WebCore

@@ -129,9 +129,7 @@ static const int firstDayOfMonth[2][12] = {
 
 static inline void getLocalTime(const time_t* localTime, struct tm* localTM)
 {
-#if COMPILER(MSVC7_OR_LOWER) || COMPILER(MINGW)
-    *localTM = *localtime(localTime);
-#elif COMPILER(MSVC)
+#if COMPILER(MSVC)
     localtime_s(localTM, localTime);
 #else
     localtime_r(localTime, localTM);
@@ -183,7 +181,7 @@ static String twoDigitStringFromNumber(int number)
     ASSERT(number >= 0 && number < 100);
     if (number > 9)
         return String::number(number);
-    return makeString("0", String::number(number));
+    return "0" + String::number(number);
 }
 
 int msToYear(double ms)

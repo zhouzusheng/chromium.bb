@@ -74,7 +74,7 @@
     },
     {
       'target_name': 'wtf',
-      'type': 'static_library',
+      'type': '<(component)',
       'include_dirs': [
         '..',
       ],
@@ -85,6 +85,9 @@
       ],
       'sources': [
         '<@(wtf_files)',
+      ],
+      'defines': [
+        'WTF_IMPLEMENTATION=1',
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -111,6 +114,13 @@
       # Disable c4267 warnings until we fix size_t to int truncations.
       'msvs_disabled_warnings': [4127, 4355, 4510, 4512, 4610, 4706, 4068, 4267],
       'conditions': [
+        ['OS=="android"', {
+          'link_settings': {
+            'libraries': [
+              '-llog',
+            ]
+          }
+        }],
         ['OS=="win"', {
           'sources/': [
             ['exclude', 'ThreadIdentifierDataPthreads\\.(h|cpp)$'],
@@ -136,7 +146,14 @@
             ['exclude', 'Win\\.cpp$'],
           ],
         }],
-        ['OS!="mac"', {
+        ['OS=="mac"', {
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/CoreFoundation.framework',
+              '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
+            ]
+          }
+        }, { # OS!="mac"
           'sources/': [
             ['exclude', 'Mac\\.mm$'],
             # mac is the only OS that uses WebKit's copy of TCMalloc.

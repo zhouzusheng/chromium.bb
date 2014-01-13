@@ -30,9 +30,9 @@
 #include <gtest/gtest.h>
 #include "FakeWebGraphicsContext3D.h"
 #include "SkDevice.h"
-#include "core/platform/chromium/support/GraphicsContext3DPrivate.h"
-#include <public/Platform.h>
-#include <public/WebThread.h>
+#include "core/platform/graphics/GraphicsContext3D.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebThread.h"
 
 using namespace WebCore;
 using testing::InSequence;
@@ -99,7 +99,7 @@ protected:
         Canvas2DLayerManager& manager = Canvas2DLayerManager::get();
         manager.init(10, 10);
         {
-            RefPtr<GraphicsContext3D> context = GraphicsContext3DPrivate::createGraphicsContextFromWebContext(adoptPtr(new WebKit::FakeWebGraphicsContext3D));
+            RefPtr<GraphicsContext3D> context = GraphicsContext3D::createGraphicsContextFromWebContext(adoptPtr(new WebKit::FakeWebGraphicsContext3D));
             OwnPtr<SkDeferredCanvas> canvas1 = createCanvas(context.get());
             FakeCanvas2DLayerBridge layer1(context, canvas1.get());
             EXPECT_EQ((size_t)0, manager.m_bytesAllocated);
@@ -126,7 +126,7 @@ protected:
 
     void evictionTest()
     {
-        RefPtr<GraphicsContext3D> context = GraphicsContext3DPrivate::createGraphicsContextFromWebContext(adoptPtr(new WebKit::FakeWebGraphicsContext3D));
+        RefPtr<GraphicsContext3D> context = GraphicsContext3D::createGraphicsContextFromWebContext(adoptPtr(new WebKit::FakeWebGraphicsContext3D));
         Canvas2DLayerManager& manager = Canvas2DLayerManager::get();
         manager.init(10, 5);
         OwnPtr<SkDeferredCanvas> canvas = createCanvas(context.get());
@@ -143,7 +143,7 @@ protected:
 
     void flushEvictionTest()
     {
-        RefPtr<GraphicsContext3D> context = GraphicsContext3DPrivate::createGraphicsContextFromWebContext(adoptPtr(new WebKit::FakeWebGraphicsContext3D));
+        RefPtr<GraphicsContext3D> context = GraphicsContext3D::createGraphicsContextFromWebContext(adoptPtr(new WebKit::FakeWebGraphicsContext3D));
         Canvas2DLayerManager& manager = Canvas2DLayerManager::get();
         manager.init(10, 5);
         OwnPtr<SkDeferredCanvas> canvas = createCanvas(context.get());
@@ -194,7 +194,7 @@ protected:
 
     void deferredFrameTest()
     {
-        RefPtr<GraphicsContext3D> context = GraphicsContext3DPrivate::createGraphicsContextFromWebContext(adoptPtr(new WebKit::FakeWebGraphicsContext3D));
+        RefPtr<GraphicsContext3D> context = GraphicsContext3D::createGraphicsContextFromWebContext(adoptPtr(new WebKit::FakeWebGraphicsContext3D));
         Canvas2DLayerManager::get().init(10, 10);
         OwnPtr<SkDeferredCanvas> canvas = createCanvas(context.get());
         FakeCanvas2DLayerBridge fakeLayer(context, canvas.get());
@@ -216,21 +216,11 @@ protected:
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
         EXPECT_EQ(0, fakeLayer.m_flushCount);
 
-        // Verify that a flush is triggered every two frames when they are stale.
+        // Verify that a flush is triggered when queue is accumulating a multi-frame backlog.
         WebKit::Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, &fakeLayer, false));
         WebKit::Platform::current()->currentThread()->enterRunLoop();
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
         EXPECT_EQ(1, fakeLayer.m_flushCount);
-
-        WebKit::Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, &fakeLayer, false));
-        WebKit::Platform::current()->currentThread()->enterRunLoop();
-        EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
-        EXPECT_EQ(1, fakeLayer.m_flushCount);
-
-        WebKit::Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, &fakeLayer, false));
-        WebKit::Platform::current()->currentThread()->enterRunLoop();
-        EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
-        EXPECT_EQ(2, fakeLayer.m_flushCount);
 
         WebKit::Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, &fakeLayer, false));
         WebKit::Platform::current()->currentThread()->enterRunLoop();

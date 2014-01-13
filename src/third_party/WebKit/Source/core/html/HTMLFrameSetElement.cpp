@@ -27,16 +27,13 @@
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
 #include "bindings/v8/ScriptEventListener.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/MouseEvent.h"
 #include "core/dom/NodeRenderingContext.h"
-#include "core/dom/Text.h"
-#include "core/loader/FrameLoader.h"
-#include "core/loader/FrameLoaderClient.h"
-#include "core/page/Frame.h"
+#include "core/html/HTMLCollection.h"
+#include "core/html/HTMLFrameElement.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Frame.h"
 #include "core/platform/Length.h"
@@ -159,15 +156,15 @@ bool HTMLFrameSetElement::rendererIsNeeded(const NodeRenderingContext& context)
     return context.style()->isStyleAvailable();
 }
 
-RenderObject *HTMLFrameSetElement::createRenderer(RenderArena *arena, RenderStyle *style)
+RenderObject* HTMLFrameSetElement::createRenderer(RenderStyle *style)
 {
     if (style->hasContent())
         return RenderObject::createObject(this, style);
     
-    return new (arena) RenderFrameSet(this);
+    return new (document()->renderArena()) RenderFrameSet(this);
 }
 
-void HTMLFrameSetElement::attach()
+void HTMLFrameSetElement::attach(const AttachContext& context)
 {
     // Inherit default settings from parent frameset
     // FIXME: This is not dynamic.
@@ -188,13 +185,13 @@ void HTMLFrameSetElement::attach()
         }
     }
 
-    HTMLElement::attach();
+    HTMLElement::attach(context);
 }
 
 void HTMLFrameSetElement::defaultEventHandler(Event* evt)
 {
     if (evt->isMouseEvent() && !m_noresize && renderer() && renderer()->isFrameSet()) {
-        if (toRenderFrameSet(renderer())->userResize(static_cast<MouseEvent*>(evt))) {
+        if (toRenderFrameSet(renderer())->userResize(toMouseEvent(evt))) {
             evt->setDefaultHandled();
             return;
         }
@@ -217,6 +214,17 @@ void HTMLFrameSetElement::willRecalcStyle(StyleChange)
         renderer()->setNeedsLayout(true);
         clearNeedsStyleRecalc();
     }
+}
+
+DOMWindow* HTMLFrameSetElement::anonymousNamedGetter(const AtomicString& name)
+{
+    Node* frameNode = children()->namedItem(name);
+    if (!frameNode || !frameNode->hasTagName(HTMLNames::frameTag))
+        return 0;
+    Document* document = static_cast<HTMLFrameElement*>(frameNode)->contentDocument();
+    if (!document || !document->frame())
+        return 0;
+    return document->domWindow();
 }
 
 } // namespace WebCore

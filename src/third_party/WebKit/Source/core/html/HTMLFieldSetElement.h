@@ -25,7 +25,6 @@
 #define HTMLFieldSetElement_h
 
 #include "core/html/HTMLFormControlElement.h"
-#include <wtf/OwnPtr.h>
 
 namespace WebCore {
 
@@ -50,7 +49,7 @@ private:
 
     virtual bool isEnumeratable() const { return true; }
     virtual bool supportsFocus() const;
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual const AtomicString& formControlType() const;
     virtual bool recalcWillValidate() const { return false; }
     virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;

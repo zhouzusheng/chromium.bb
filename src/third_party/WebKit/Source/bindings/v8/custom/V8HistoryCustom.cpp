@@ -31,8 +31,7 @@
 #include "config.h"
 #include "V8History.h"
 
-#include "V8DOMWindow.h"
-#include "bindings/v8/BindingState.h"
+#include "V8Window.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
@@ -41,54 +40,56 @@
 
 namespace WebCore {
 
-v8::Handle<v8::Value> V8History::stateAttrGetterCustom(v8::Local<v8::String> name, const v8::AccessorInfo& info)
+void V8History::stateAttrGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     History* history = V8History::toNative(info.Holder());
 
     v8::Handle<v8::Value> value = info.Holder()->GetHiddenValue(V8HiddenPropertyName::state());
 
-    if (!value.IsEmpty() && !history->stateChanged())
-        return value;
+    if (!value.IsEmpty() && !history->stateChanged()) {
+        v8SetReturnValue(info, value);
+        return;
+    }
 
     RefPtr<SerializedScriptValue> serialized = history->state();
     value = serialized ? serialized->deserialize(info.GetIsolate()) : v8::Handle<v8::Value>(v8Null(info.GetIsolate()));
     info.Holder()->SetHiddenValue(V8HiddenPropertyName::state(), value);
 
-    return value;
+    v8SetReturnValue(info, value);
 }
 
-v8::Handle<v8::Value> V8History::pushStateMethodCustom(const v8::Arguments& args)
+void V8History::pushStateMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     bool didThrow = false;
     RefPtr<SerializedScriptValue> historyState = SerializedScriptValue::create(args[0], 0, 0, didThrow, args.GetIsolate());
     if (didThrow)
-        return v8::Undefined();
+        return;
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE(V8StringResource<WithUndefinedOrNullCheck>, title, args[1]);
-    V8TRYCATCH_FOR_V8STRINGRESOURCE(V8StringResource<WithUndefinedOrNullCheck>, url, argumentOrNull(args, 2));
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, title, args[1]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, url, argumentOrNull(args, 2));
 
     ExceptionCode ec = 0;
     History* history = V8History::toNative(args.Holder());
     history->stateObjectAdded(historyState.release(), title, url, History::StateObjectPush, ec);
     args.Holder()->DeleteHiddenValue(V8HiddenPropertyName::state());
-    return setDOMException(ec, args.GetIsolate());
+    v8SetReturnValue(args, setDOMException(ec, args.GetIsolate()));
 }
 
-v8::Handle<v8::Value> V8History::replaceStateMethodCustom(const v8::Arguments& args)
+void V8History::replaceStateMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     bool didThrow = false;
     RefPtr<SerializedScriptValue> historyState = SerializedScriptValue::create(args[0], 0, 0, didThrow, args.GetIsolate());
     if (didThrow)
-        return v8::Undefined();
+        return;
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE(V8StringResource<WithUndefinedOrNullCheck>, title, args[1]);
-    V8TRYCATCH_FOR_V8STRINGRESOURCE(V8StringResource<WithUndefinedOrNullCheck>, url, argumentOrNull(args, 2));
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, title, args[1]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, url, argumentOrNull(args, 2));
 
     ExceptionCode ec = 0;
     History* history = V8History::toNative(args.Holder());
     history->stateObjectAdded(historyState.release(), title, url, History::StateObjectReplace, ec);
     args.Holder()->DeleteHiddenValue(V8HiddenPropertyName::state());
-    return setDOMException(ec, args.GetIsolate());
+    v8SetReturnValue(args, setDOMException(ec, args.GetIsolate()));
 }
 
 } // namespace WebCore

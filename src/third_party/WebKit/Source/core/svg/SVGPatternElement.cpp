@@ -21,25 +21,14 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGPatternElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
-#include "core/dom/Document.h"
-#include "core/platform/FloatConversion.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/ImageBuffer.h"
 #include "core/platform/graphics/transforms/AffineTransform.h"
-#include "core/rendering/svg/RenderSVGContainer.h"
 #include "core/rendering/svg/RenderSVGResourcePattern.h"
-#include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/svg/PatternAttributes.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGFitToViewBox.h"
-#include "core/svg/SVGSVGElement.h"
-#include "core/svg/SVGStyledTransformableElement.h"
-#include "core/svg/SVGTransformable.h"
 
 namespace WebCore {
 
@@ -108,7 +97,7 @@ bool SVGPatternElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::widthAttr);
         supportedAttributes.add(SVGNames::heightAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGPatternElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -182,9 +171,9 @@ void SVGPatternElement::childrenChanged(bool changedByParser, Node* beforeChange
         object->setNeedsLayout(true);
 }
 
-RenderObject* SVGPatternElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGPatternElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGResourcePattern(this);
+    return new (document()->renderArena()) RenderSVGResourcePattern(this);
 }
 
 void SVGPatternElement::collectPatternAttributes(PatternAttributes& attributes) const
@@ -259,5 +248,3 @@ bool SVGPatternElement::selfHasRelativeLengths() const
 }
 
 }
-
-#endif // ENABLE(SVG)

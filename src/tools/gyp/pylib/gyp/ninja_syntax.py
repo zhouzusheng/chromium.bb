@@ -11,22 +11,9 @@ use Python.
 
 import textwrap
 import re
-import os
 
 def escape_path(word):
     return word.replace('$ ','$$ ').replace(' ','$ ').replace(':', '$:')
-
-# HACK(shez): When minimizing the code, we need to touch all the input files,
-# otherwise the minimizer doesn't know to pick them up, and ninja builds fail
-# to proceed.  This can happen, for example, if a header file is specified in
-# 'sources', but is not actually #include'd anywhere.
-def touch_dependencies(dependencies):
-    for i in dependencies:
-        if os.path.isabs(i):
-            continue
-        i = os.path.normpath(os.path.join(os.getcwd(), 'src', 'out', 'Debug', i))
-        if os.path.exists(i):
-            os.utime(i, None)
 
 class Writer(object):
     def __init__(self, output, width=78):
@@ -75,12 +62,6 @@ class Writer(object):
 
     def build(self, outputs, rule, inputs=None, implicit=None, order_only=None,
               variables=None):
-        # HACK(shez): see the comment for 'touch_dependencies' above.
-        if os.environ.get('GYP_NINJA_TOUCH_INPUT_FILES') == '1':
-            touch_dependencies(self._as_list(inputs))
-            touch_dependencies(self._as_list(implicit))
-            touch_dependencies(self._as_list(order_only))
-
         outputs = self._as_list(outputs)
         all_inputs = self._as_list(inputs)[:]
         out_outputs = list(map(escape_path, outputs))

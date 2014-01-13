@@ -11,14 +11,15 @@
 
 #include <fstream>
 
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_piece.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 
-using base::FilePath;
+namespace base {
 
 namespace {
 
@@ -33,9 +34,26 @@ static const int kMaxUniqueFiles = 100;
 
 }  // namespace
 
+bool g_bug108724_debug = false;
+
+int64 ComputeDirectorySize(const FilePath& root_path) {
+  int64 running_size = 0;
+  FileEnumerator file_iter(root_path, true, FileEnumerator::FILES);
+  while (!file_iter.Next().empty())
+    running_size += file_iter.GetInfo().GetSize();
+  return running_size;
+}
+
+}  // namespace base
+
+// -----------------------------------------------------------------------------
+
 namespace file_util {
 
-bool g_bug108724_debug = false;
+using base::FileEnumerator;
+using base::FilePath;
+using base::kExtensionSeparator;
+using base::kMaxUniqueFiles;
 
 void InsertBeforeExtension(FilePath* path, const FilePath::StringType& suffix) {
   FilePath::StringType& value =
@@ -61,6 +79,11 @@ bool Move(const FilePath& from_path, const FilePath& to_path) {
   if (from_path.ReferencesParent() || to_path.ReferencesParent())
     return false;
   return MoveUnsafe(from_path, to_path);
+}
+
+bool ReplaceFile(const base::FilePath& from_path,
+                 const base::FilePath& to_path) {
+  return ReplaceFileAndGetError(from_path, to_path, NULL);
 }
 
 bool CopyFile(const FilePath& from_path, const FilePath& to_path) {
@@ -165,7 +188,7 @@ bool ReadFileToString(const FilePath& path, std::string* contents) {
 bool IsDirectoryEmpty(const FilePath& dir_path) {
   FileEnumerator files(dir_path, false,
       FileEnumerator::FILES | FileEnumerator::DIRECTORIES);
-  if (files.Next().value().empty())
+  if (files.Next().empty())
     return true;
   return false;
 }
@@ -176,6 +199,10 @@ FILE* CreateAndOpenTemporaryFile(FilePath* path) {
     return NULL;
 
   return CreateAndOpenTemporaryFileInDir(directory, path);
+}
+
+bool CreateDirectory(const base::FilePath& full_path) {
+  return CreateDirectoryAndGetError(full_path, NULL);
 }
 
 bool GetFileSize(const FilePath& file_path, int64* file_size) {
@@ -259,33 +286,4 @@ int GetUniquePathNumber(
   return -1;
 }
 
-int64 ComputeDirectorySize(const FilePath& root_path) {
-  int64 running_size = 0;
-  FileEnumerator file_iter(root_path, true, FileEnumerator::FILES);
-  for (FilePath current = file_iter.Next(); !current.empty();
-       current = file_iter.Next()) {
-    FileEnumerator::FindInfo info;
-    file_iter.GetFindInfo(&info);
-#if defined(OS_WIN)
-    LARGE_INTEGER li = { info.nFileSizeLow, info.nFileSizeHigh };
-    running_size += li.QuadPart;
-#else
-    running_size += info.stat.st_size;
-#endif
-  }
-  return running_size;
-}
-
-///////////////////////////////////////////////
-// FileEnumerator
-//
-// Note: the main logic is in file_util_<platform>.cc
-
-bool FileEnumerator::ShouldSkip(const FilePath& path) {
-  FilePath::StringType basename = path.BaseName().value();
-  return basename == FILE_PATH_LITERAL(".") ||
-         (basename == FILE_PATH_LITERAL("..") &&
-          !(INCLUDE_DOT_DOT & file_type_));
-}
-
-}  // namespace
+}  // namespace file_util

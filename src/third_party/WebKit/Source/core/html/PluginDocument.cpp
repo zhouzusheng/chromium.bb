@@ -27,7 +27,6 @@
 
 #include "HTMLNames.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
-#include "core/dom/NodeList.h"
 #include "core/dom/RawDataDocumentParser.h"
 #include "core/html/HTMLEmbedElement.h"
 #include "core/html/HTMLHtmlElement.h"
@@ -36,8 +35,6 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 
 namespace WebCore {
@@ -59,7 +56,7 @@ private:
     {
     }
 
-    virtual void appendBytes(DocumentWriter*, const char*, size_t);
+    virtual size_t appendBytes(const char*, size_t) OVERRIDE;
 
     void createDocumentStructure();
 
@@ -94,26 +91,26 @@ void PluginDocumentParser::createDocumentStructure()
     DocumentLoader* loader = document()->loader();
     ASSERT(loader);
     if (loader)
-        m_embedElement->setAttribute(typeAttr, loader->writer()->mimeType());
+        m_embedElement->setAttribute(typeAttr, loader->mimeType());
 
     toPluginDocument(document())->setPluginNode(m_embedElement);
 
     body->appendChild(embedElement, IGNORE_EXCEPTION);
 }
 
-void PluginDocumentParser::appendBytes(DocumentWriter*, const char*, size_t)
+size_t PluginDocumentParser::appendBytes(const char*, size_t)
 {
     if (m_embedElement)
-        return;
+        return 0;
 
     createDocumentStructure();
 
     Frame* frame = document()->frame();
     if (!frame)
-        return;
+        return 0;
     Settings* settings = frame->settings();
     if (!settings || !frame->loader()->subframeLoader()->allowPlugins(NotAboutToInstantiatePlugin))
-        return;
+        return 0;
 
     document()->updateLayout();
 
@@ -126,17 +123,18 @@ void PluginDocumentParser::appendBytes(DocumentWriter*, const char*, size_t)
 
     if (RenderPart* renderer = m_embedElement->renderPart()) {
         if (Widget* widget = renderer->widget()) {
-            frame->loader()->client()->redirectDataToPlugin(widget);
             // In a plugin document, the main resource is the plugin. If we have a null widget, that means
             // the loading of the plugin was cancelled, which gives us a null mainResourceLoader(), so we
             // need to have this call in a null check of the widget or of mainResourceLoader().
-            frame->loader()->activeDocumentLoader()->setMainResourceDataBufferingPolicy(DoNotBufferData);
+            frame->loader()->client()->redirectDataToPlugin(widget);
         }
     }
+
+    return 0;
 }
 
 PluginDocument::PluginDocument(Frame* frame, const KURL& url)
-    : HTMLDocument(frame, url)
+    : HTMLDocument(frame, url, PluginDocumentClass)
     , m_shouldLoadPluginManually(true)
 {
     setCompatibilityMode(QuirksMode);
@@ -162,13 +160,13 @@ Node* PluginDocument::pluginNode()
     return m_pluginNode.get();
 }
 
-void PluginDocument::detach()
+void PluginDocument::detach(const AttachContext& context)
 {
     // Release the plugin node so that we don't have a circular reference.
     m_pluginNode = 0;
     if (FrameLoader* loader = frame()->loader())
         loader->client()->redirectDataToPlugin(0);
-    HTMLDocument::detach();
+    HTMLDocument::detach(context);
 }
 
 void PluginDocument::cancelManualPluginLoad()

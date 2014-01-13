@@ -35,12 +35,14 @@ static bool IsURLSameAsAnySiteInstance(const GURL& url) {
          url == GURL(kChromeUIShorthangURL);
 }
 
+const RenderProcessHostFactory*
+    SiteInstanceImpl::g_render_process_host_factory_ = NULL;
 int32 SiteInstanceImpl::next_site_instance_id_ = 1;
 
 SiteInstanceImpl::SiteInstanceImpl(BrowsingInstance* browsing_instance)
     : id_(next_site_instance_id_++),
+      active_view_count_(0),
       browsing_instance_(browsing_instance),
-      render_process_host_factory_(NULL),
       process_(NULL),
       has_site_(false) {
   DCHECK(browsing_instance);
@@ -73,7 +75,7 @@ bool SiteInstanceImpl::HasProcess() const {
   BrowserContext* browser_context =
       browsing_instance_->browser_context();
   if (has_site_ &&
-      RenderProcessHostImpl::ShouldUseProcessPerSite(browser_context, site_) &&
+      RenderProcessHost::ShouldUseProcessPerSite(browser_context, site_) &&
       RenderProcessHostImpl::GetProcessHostForSite(browser_context, site_)) {
     return true;
   }
@@ -96,7 +98,7 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
     // If we should use process-per-site mode (either in general or for the
     // given site), then look for an existing RenderProcessHost for the site.
     bool use_process_per_site = has_site_ &&
-        RenderProcessHostImpl::ShouldUseProcessPerSite(browser_context, site_);
+        RenderProcessHost::ShouldUseProcessPerSite(browser_context, site_);
     if (use_process_per_site) {
       process_ = RenderProcessHostImpl::GetProcessHostForSite(browser_context,
                                                               site_);
@@ -111,9 +113,9 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
 
     // Otherwise (or if that fails), create a new one.
     if (!process_) {
-      if (render_process_host_factory_) {
-        process_ = render_process_host_factory_->CreateRenderProcessHost(
-            browser_context);
+      if (g_render_process_host_factory_) {
+        process_ = g_render_process_host_factory_->CreateRenderProcessHost(
+            browser_context, this);
       } else {
         StoragePartitionImpl* partition =
             static_cast<StoragePartitionImpl*>(
@@ -170,8 +172,7 @@ void SiteInstanceImpl::SetSite(const GURL& url) {
     LockToOrigin();
 
     // Ensure the process is registered for this site if necessary.
-    if (RenderProcessHostImpl::ShouldUseProcessPerSite(browser_context,
-                                                       site_)) {
+    if (RenderProcessHost::ShouldUseProcessPerSite(browser_context, site_)) {
       RenderProcessHostImpl::RegisterProcessHostForSite(
           browser_context, process_, site_);
     }
@@ -195,8 +196,8 @@ SiteInstance* SiteInstanceImpl::GetRelatedSiteInstance(const GURL& url) {
 }
 
 bool SiteInstanceImpl::IsRelatedSiteInstance(const SiteInstance* instance) {
-  return browsing_instance_ ==
-      static_cast<const SiteInstanceImpl*>(instance)->browsing_instance_;
+  return browsing_instance_.get() == static_cast<const SiteInstanceImpl*>(
+                                         instance)->browsing_instance_.get();
 }
 
 bool SiteInstanceImpl::HasWrongProcessForURL(const GURL& url) {
@@ -218,6 +219,11 @@ bool SiteInstanceImpl::HasWrongProcessForURL(const GURL& url) {
   GURL site_url = GetSiteForURL(browsing_instance_->browser_context(), url);
   return !RenderProcessHostImpl::IsSuitableHost(
       GetProcess(), browsing_instance_->browser_context(), site_url);
+}
+
+void SiteInstanceImpl::set_render_process_host_factory(
+    const RenderProcessHostFactory* rph_factory) {
+  g_render_process_host_factory_ = rph_factory;
 }
 
 BrowserContext* SiteInstanceImpl::GetBrowserContext() const {
@@ -265,7 +271,10 @@ bool SiteInstance::IsSameWebSite(BrowserContext* browser_context,
   if (url1.scheme() != url2.scheme())
     return false;
 
-  return net::RegistryControlledDomainService::SameDomainOrHost(url1, url2);
+  return net::registry_controlled_domains::SameDomainOrHost(
+      url1,
+      url2,
+      net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
 }
 
 /*static*/
@@ -298,7 +307,9 @@ GURL SiteInstance::GetSiteForURL(BrowserContext* browser_context,
 
     // If this URL has a registered domain, we only want to remember that part.
     std::string domain =
-        net::RegistryControlledDomainService::GetDomainAndRegistry(url);
+        net::registry_controlled_domains::GetDomainAndRegistry(
+            url,
+            net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
     if (!domain.empty()) {
       GURL::Replacements rep;
       rep.SetHostStr(domain);

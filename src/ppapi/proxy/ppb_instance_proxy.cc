@@ -18,6 +18,7 @@
 #include "ppapi/proxy/browser_font_singleton_resource.h"
 #include "ppapi/proxy/content_decryptor_private_serializer.h"
 #include "ppapi/proxy/enter_proxy.h"
+#include "ppapi/proxy/ext_crx_file_system_private_resource.h"
 #include "ppapi/proxy/extensions_common_resource.h"
 #include "ppapi/proxy/flash_clipboard_resource.h"
 #include "ppapi/proxy/flash_file_resource.h"
@@ -25,6 +26,7 @@
 #include "ppapi/proxy/flash_resource.h"
 #include "ppapi/proxy/gamepad_resource.h"
 #include "ppapi/proxy/host_dispatcher.h"
+#include "ppapi/proxy/network_proxy_resource.h"
 #include "ppapi/proxy/pdf_resource.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -54,6 +56,10 @@ namespace ppapi {
 namespace proxy {
 
 namespace {
+
+const char kSerializationError[] = "Failed to convert a PostMessage "
+    "argument from a PP_Var to a Javascript value. It may have cycles or be of "
+    "an unsupported type.";
 
 InterfaceProxy* CreateInstanceProxy(Dispatcher* dispatcher) {
   return new PPB_Instance_Proxy(dispatcher);
@@ -365,11 +371,17 @@ Resource* PPB_Instance_Proxy::GetSingletonResource(PP_Instance instance,
     case BROKER_SINGLETON_ID:
       new_singleton = new BrokerResource(connection, instance);
       break;
+    case CRX_FILESYSTEM_SINGLETON_ID:
+      new_singleton = new ExtCrxFileSystemPrivateResource(connection, instance);
+      break;
     case EXTENSIONS_COMMON_SINGLETON_ID:
       new_singleton = new ExtensionsCommonResource(connection, instance);
       break;
     case GAMEPAD_SINGLETON_ID:
       new_singleton = new GamepadResource(connection, instance);
+      break;
+    case NETWORK_PROXY_SINGLETON_ID:
+      new_singleton = new NetworkProxyResource(connection, instance);
       break;
     case TRUETYPE_FONT_SINGLETON_ID:
       new_singleton = new TrueTypeFontSingletonResource(connection, instance);
@@ -407,7 +419,7 @@ Resource* PPB_Instance_Proxy::GetSingletonResource(PP_Instance instance,
 #endif  // !defined(OS_NACL) && !defined(NACL_WIN64)
   }
 
-  if (!new_singleton) {
+  if (!new_singleton.get()) {
     // Getting here implies that a constructor is missing in the above switch.
     NOTREACHED();
     return NULL;
@@ -929,6 +941,12 @@ void PPB_Instance_Proxy::OnHostMsgPostMessage(
     PP_Instance instance,
     SerializedVarReceiveInput message) {
   EnterInstanceNoLock enter(instance);
+  if (!message.is_valid_var()) {
+    PpapiGlobals::Get()->LogWithSource(
+        instance, PP_LOGLEVEL_ERROR, std::string(), kSerializationError);
+    return;
+  }
+
   if (enter.succeeded())
     enter.functions()->PostMessage(instance,
                                    message.GetForInstance(dispatcher(),

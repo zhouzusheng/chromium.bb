@@ -206,7 +206,7 @@
   "chrome/browser/resources/memory_internals_resources.grd": {
     "includes": [27500],
   },
-  "device/device_bluetooth_strings.grd": {
+  "device/bluetooth/bluetooth_strings.grd": {
     "messages": [28000],
   },
   "ui/keyboard/keyboard_resources.grd": {
@@ -217,6 +217,9 @@
   },
   "chrome/browser/resources/sync_file_system_internals_resources.grd": {
     "includes": [29000],
+  },
+  "components/component_strings.grd": {
+    "messages": [30000],
   },
   # Resource ids starting at 31000 are reserved for projects built on Chromium.
 }

@@ -58,6 +58,10 @@ enum EventType {
   // drop or menus, should stop.
   ET_CANCEL_MODE,
 
+  // Sent by the CrOS gesture library for interesting patterns that we want
+  // to track with the UMA system.
+  ET_UMA_DATA,
+
   // Must always be last. User namespace starts above this value.
   // See ui::RegisterCustomEventType().
   ET_LAST
@@ -75,6 +79,7 @@ enum EventFlags {
   EF_RIGHT_MOUSE_BUTTON  = 1 << 6,
   EF_COMMAND_DOWN        = 1 << 7,  // Only useful on OSX
   EF_EXTENDED            = 1 << 8,  // Windows extended key (see WM_KEYDOWN doc)
+  EF_IS_SYNTHESIZED      = 1 << 9,
 };
 
 // Flags specific to mouse events
@@ -82,8 +87,7 @@ enum MouseEventFlags {
   EF_IS_DOUBLE_CLICK    = 1 << 16,
   EF_IS_TRIPLE_CLICK    = 1 << 17,
   EF_IS_NON_CLIENT      = 1 << 18,
-  EF_IS_SYNTHESIZED     = 1 << 19,  // Only for Aura.  See ui/aura/root_window.h
-  EF_FROM_TOUCH         = 1 << 20,  // Indicates this mouse event is generated
+  EF_FROM_TOUCH         = 1 << 19,  // Indicates this mouse event is generated
                                     // from an unconsumed touch/gesture event.
 };
 

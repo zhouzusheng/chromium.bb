@@ -22,14 +22,10 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGStyleElement.h"
 
 #include "SVGNames.h"
 #include "core/css/CSSStyleSheet.h"
-#include "core/dom/Attribute.h"
-#include "core/dom/Document.h"
-#include "core/dom/ExceptionCode.h"
 #include <wtf/StdLibExtras.h>
 
 namespace WebCore {
@@ -74,7 +70,7 @@ const AtomicString& SVGStyleElement::type() const
     return n.isNull() ? defaultValue : n;
 }
 
-void SVGStyleElement::setType(const AtomicString& type, ExceptionCode&)
+void SVGStyleElement::setType(const AtomicString& type)
 {
     setAttribute(SVGNames::typeAttr, type);
 }
@@ -86,7 +82,7 @@ const AtomicString& SVGStyleElement::media() const
     return n.isNull() ? defaultValue : n;
 }
 
-void SVGStyleElement::setMedia(const AtomicString& media, ExceptionCode&)
+void SVGStyleElement::setMedia(const AtomicString& media)
 {
     setAttribute(SVGNames::mediaAttr, media);
 }
@@ -96,7 +92,7 @@ String SVGStyleElement::title() const
     return fastGetAttribute(SVGNames::titleAttr);
 }
 
-void SVGStyleElement::setTitle(const AtomicString& title, ExceptionCode&)
+void SVGStyleElement::setTitle(const AtomicString& title)
 {
     setAttribute(SVGNames::titleAttr, title);
 }
@@ -108,7 +104,7 @@ bool SVGStyleElement::isSupportedAttribute(const QualifiedName& attrName)
         SVGLangSpace::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::titleAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGStyleElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -140,8 +136,13 @@ Node::InsertionNotificationRequest SVGStyleElement::insertedInto(ContainerNode* 
 {
     SVGElement::insertedInto(rootParent);
     if (rootParent->inDocument())
-        StyleElement::insertedIntoDocument(document(), this);
+        return InsertionShouldCallDidNotifySubtreeInsertions;
     return InsertionDone;
+}
+
+void SVGStyleElement::didNotifySubtreeInsertions(ContainerNode* insertionPoint)
+{
+    StyleElement::processStyleSheet(document(), this);
 }
 
 void SVGStyleElement::removedFrom(ContainerNode* rootParent)
@@ -158,5 +159,3 @@ void SVGStyleElement::childrenChanged(bool changedByParser, Node* beforeChange, 
 }
 
 }
-
-#endif // ENABLE(SVG)

@@ -27,19 +27,14 @@ struct IndexedDBHostMsg_FactoryDeleteDatabase_Params;
 struct IndexedDBHostMsg_FactoryGetDatabaseNames_Params;
 struct IndexedDBHostMsg_FactoryOpen_Params;
 
-namespace WebKit {
-class WebIDBCursor;
-class WebIDBDatabase;
-class WebIDBIndex;
-class WebIDBObjectStore;
-struct WebIDBMetadata;
-}
-
 namespace content {
 class IndexedDBContextImpl;
 class IndexedDBKey;
 class IndexedDBKeyPath;
 class IndexedDBKeyRange;
+class WebIDBCursorImpl;
+class WebIDBDatabaseImpl;
+struct IndexedDBDatabaseMetadata;
 
 // Handles all IndexedDB related messages from a particular renderer process.
 class IndexedDBDispatcherHost : public BrowserMessageFilter {
@@ -48,8 +43,8 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
   IndexedDBDispatcherHost(int ipc_process_id,
                           IndexedDBContextImpl* indexed_db_context);
 
-  static IndexedDBDatabaseMetadata ConvertMetadata(
-      const WebKit::WebIDBMetadata& metadata);
+  static ::IndexedDBDatabaseMetadata ConvertMetadata(
+      const content::IndexedDBDatabaseMetadata& metadata);
 
   // BrowserMessageFilter implementation.
   virtual void OnChannelClosing() OVERRIDE;
@@ -61,18 +56,18 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
   void FinishTransaction(int64 host_transaction_id, bool committed);
 
   // A shortcut for accessing our context.
-  IndexedDBContextImpl* Context() { return indexed_db_context_; }
+  IndexedDBContextImpl* Context() { return indexed_db_context_.get(); }
 
   // The various IndexedDBCallbacks children call these methods to add the
   // results into the applicable map.  See below for more details.
-  int32 Add(WebKit::WebIDBCursor* idb_cursor);
-  int32 Add(WebKit::WebIDBDatabase* idb_database,
+  int32 Add(WebIDBCursorImpl* idb_cursor);
+  int32 Add(WebIDBDatabaseImpl* idb_database,
             int32 ipc_thread_id,
             const GURL& origin_url);
 
   void RegisterTransactionId(int64 host_transaction_id, const GURL& origin_url);
 
-  WebKit::WebIDBCursor* GetCursorFromId(int32 ipc_cursor_id);
+  WebIDBCursorImpl* GetCursorFromId(int32 ipc_cursor_id);
 
   int64 HostTransactionId(int64 transaction_id);
   int64 RendererTransactionId(int64 host_transaction_id);
@@ -93,8 +88,8 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
 
   // Helper templates.
   template <class ReturnType>
-  ReturnType* GetOrTerminateProcess(
-    IDMap<ReturnType, IDMapOwnPointer>* map, int32 ipc_return_object_id);
+  ReturnType* GetOrTerminateProcess(IDMap<ReturnType, IDMapOwnPointer>* map,
+                                    int32 ipc_return_object_id);
 
   template <typename ObjectType>
   void DestroyObject(IDMap<ObjectType, IDMapOwnPointer>* map,
@@ -113,7 +108,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     ~DatabaseDispatcherHost();
 
     void CloseAll();
-    bool OnMessageReceived(const IPC::Message& message, bool *msg_is_ok);
+    bool OnMessageReceived(const IPC::Message& message, bool* msg_is_ok);
     void Send(IPC::Message* message);
 
     void OnCreateObjectStore(
@@ -123,7 +118,8 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
                              int64 object_store_id);
     void OnCreateTransaction(
         const IndexedDBHostMsg_DatabaseCreateTransaction_Params&);
-    void OnOpen(int32 ipc_database_id, int32 ipc_thread_id,
+    void OnOpen(int32 ipc_database_id,
+                int32 ipc_thread_id,
                 int32 ipc_callbacks_id);
     void OnClose(int32 ipc_database_id);
     void OnDestroyed(int32 ipc_database_id);
@@ -132,13 +128,11 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnPut(const IndexedDBHostMsg_DatabasePut_Params& params);
     void OnSetIndexKeys(
         const IndexedDBHostMsg_DatabaseSetIndexKeys_Params& params);
-    void OnSetIndexesReady(
-        int32 ipc_database_id,
-        int64 transaction_id,
-        int64 object_store_id,
-        const std::vector<int64>& ids);
-    void OnOpenCursor(
-        const IndexedDBHostMsg_DatabaseOpenCursor_Params& params);
+    void OnSetIndexesReady(int32 ipc_database_id,
+                           int64 transaction_id,
+                           int64 object_store_id,
+                           const std::vector<int64>& ids);
+    void OnOpenCursor(const IndexedDBHostMsg_DatabaseOpenCursor_Params& params);
     void OnCount(const IndexedDBHostMsg_DatabaseCount_Params& params);
     void OnDeleteRange(
         const IndexedDBHostMsg_DatabaseDeleteRange_Params& params);
@@ -157,7 +151,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnAbort(int32 ipc_database_id, int64 transaction_id);
     void OnCommit(int32 ipc_database_id, int64 transaction_id);
     IndexedDBDispatcherHost* parent_;
-    IDMap<WebKit::WebIDBDatabase, IDMapOwnPointer> map_;
+    IDMap<WebIDBDatabaseImpl, IDMapOwnPointer> map_;
     WebIDBObjectIDToURLMap database_url_map_;
     TransactionIDToSizeMap transaction_size_map_;
     TransactionIDToURLMap transaction_url_map_;
@@ -169,7 +163,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     explicit CursorDispatcherHost(IndexedDBDispatcherHost* parent);
     ~CursorDispatcherHost();
 
-    bool OnMessageReceived(const IPC::Message& message, bool *msg_is_ok);
+    bool OnMessageReceived(const IPC::Message& message, bool* msg_is_ok);
     void Send(IPC::Message* message);
 
     void OnAdvance(int32 ipc_object_store_id,
@@ -184,15 +178,13 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
                     int32 ipc_thread_id,
                     int32 ipc_callbacks_id,
                     int n);
-    void OnPrefetchReset(int32 ipc_cursor_id, int used_prefetches,
+    void OnPrefetchReset(int32 ipc_cursor_id,
+                         int used_prefetches,
                          int unused_prefetches);
-    void OnDelete(int32 ipc_object_store_id,
-                  int32 ipc_thread_id,
-                  int32 ipc_callbacks_id);
     void OnDestroyed(int32 ipc_cursor_id);
 
     IndexedDBDispatcherHost* parent_;
-    IDMap<WebKit::WebIDBCursor, IDMapOwnPointer> map_;
+    IDMap<WebIDBCursorImpl, IDMapOwnPointer> map_;
   };
 
   scoped_refptr<IndexedDBContextImpl> indexed_db_context_;

@@ -30,11 +30,12 @@ namespace WebCore {
 
 class CharacterData : public Node {
 public:
+    void atomize();
     String data() const { return m_data; }
-    void setData(const String&, ExceptionCode&);
+    void setData(const String&);
     unsigned length() const { return m_data.length(); }
     String substringData(unsigned offset, unsigned count, ExceptionCode&);
-    void appendData(const String&, ExceptionCode&);
+    void appendData(const String&);
     void insertData(unsigned offset, const String&, ExceptionCode&);
     void deleteData(unsigned offset, unsigned count, ExceptionCode&);
     void replaceData(unsigned offset, unsigned count, const String&, ExceptionCode&);
@@ -50,8 +51,8 @@ public:
     virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
 protected:
-    CharacterData(Document* document, const String& text, ConstructionType type)
-        : Node(document, type)
+    CharacterData(TreeScope* treeScope, const String& text, ConstructionType type)
+        : Node(treeScope, type)
         , m_data(!text.isNull() ? text : emptyString())
     {
         ASSERT(type == CreateOther || type == CreateText || type == CreateEditingText);
@@ -63,7 +64,7 @@ protected:
         ASSERT(!data.isNull());
         m_data = data;
     }
-    void dispatchModifiedEvent(const String& oldValue);
+    void didModifyData(const String& oldValue);
 
 private:
     virtual String nodeValue() const OVERRIDE FINAL;
@@ -73,6 +74,7 @@ private:
     virtual bool offsetInCharacters() const OVERRIDE FINAL;
     void setDataAndUpdate(const String&, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength);
     void checkCharDataOperation(unsigned offset, ExceptionCode&);
+    void dispatchModifiedEvent(const String& oldValue);
 
     String m_data;
 };

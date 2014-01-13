@@ -29,33 +29,26 @@
 #include "core/html/HTMLCanvasElement.h"
 
 #include <math.h>
-#include <stdio.h>
 #include "HTMLNames.h"
 #include "bindings/v8/ScriptController.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/html/ImageData.h"
 #include "core/html/canvas/Canvas2DContextAttributes.h"
-#include "core/html/canvas/CanvasGradient.h"
-#include "core/html/canvas/CanvasPattern.h"
 #include "core/html/canvas/CanvasRenderingContext2D.h"
-#include "core/html/canvas/CanvasStyle.h"
-#include "core/page/Chrome.h"
 #include "core/page/Frame.h"
-#include "core/page/Page.h"
 #include "RuntimeEnabledFeatures.h"
 #include "core/page/Settings.h"
 #include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/ImageBuffer.h"
 #include "core/rendering/RenderHTMLCanvas.h"
 
 #include "core/html/canvas/WebGLContextAttributes.h"
 #include "core/html/canvas/WebGLRenderingContext.h"
 
-#include <public/Platform.h>
+#include "public/platform/Platform.h"
 
 namespace WebCore {
 
@@ -114,22 +107,22 @@ void HTMLCanvasElement::parseAttribute(const QualifiedName& name, const AtomicSt
     HTMLElement::parseAttribute(name, value);
 }
 
-RenderObject* HTMLCanvasElement::createRenderer(RenderArena* arena, RenderStyle* style)
+RenderObject* HTMLCanvasElement::createRenderer(RenderStyle* style)
 {
     Frame* frame = document()->frame();
     if (frame && frame->script()->canExecuteScripts(NotAboutToExecuteScript)) {
         m_rendererIsCanvas = true;
-        return new (arena) RenderHTMLCanvas(this);
+        return new (document()->renderArena()) RenderHTMLCanvas(this);
     }
 
     m_rendererIsCanvas = false;
-    return HTMLElement::createRenderer(arena, style);
+    return HTMLElement::createRenderer(style);
 }
 
-void HTMLCanvasElement::attach()
+void HTMLCanvasElement::attach(const AttachContext& context)
 {
     setIsInCanvasSubtree(true);
-    HTMLElement::attach();
+    HTMLElement::attach(context);
 }
 
 void HTMLCanvasElement::addObserver(CanvasObserver* observer)
@@ -332,9 +325,9 @@ void HTMLCanvasElement::paint(GraphicsContext* context, const LayoutRect& r, boo
         if (imageBuffer) {
             CompositeOperator compositeOperator = !m_context || m_context->hasAlpha() ? CompositeSourceOver : CompositeCopy;
             if (m_presentedImage)
-                context->drawImage(m_presentedImage.get(), ColorSpaceDeviceRGB, pixelSnappedIntRect(r), compositeOperator, DoNotRespectImageOrientation, useLowQualityScale);
+                context->drawImage(m_presentedImage.get(), pixelSnappedIntRect(r), compositeOperator, DoNotRespectImageOrientation, useLowQualityScale);
             else
-                context->drawImageBuffer(imageBuffer, ColorSpaceDeviceRGB, pixelSnappedIntRect(r), compositeOperator, BlendModeNormal, useLowQualityScale);
+                context->drawImageBuffer(imageBuffer, pixelSnappedIntRect(r), compositeOperator, BlendModeNormal, useLowQualityScale);
         }
     }
 
@@ -506,10 +499,9 @@ void HTMLCanvasElement::createImageBuffer() const
 
     RenderingMode renderingMode = shouldAccelerate(bufferSize) ? Accelerated : UnacceleratedNonPlatformBuffer;
     OpacityMode opacityMode = !m_context || m_context->hasAlpha() ? NonOpaque : Opaque;
-    m_imageBuffer = ImageBuffer::create(size(), m_deviceScaleFactor, ColorSpaceDeviceRGB, renderingMode, opacityMode);
+    m_imageBuffer = ImageBuffer::create(size(), m_deviceScaleFactor, renderingMode, opacityMode);
     if (!m_imageBuffer)
         return;
-    m_imageBuffer->context()->setShadowsIgnoreTransforms(true);
     m_imageBuffer->context()->setImageInterpolationQuality(DefaultInterpolationQuality);
     if (document()->settings() && !document()->settings()->antialiased2dCanvasEnabled())
         m_imageBuffer->context()->setShouldAntialias(false);

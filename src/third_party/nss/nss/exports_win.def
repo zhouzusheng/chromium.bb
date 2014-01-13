@@ -62,10 +62,16 @@ DES_InitContext
 DSAU_DecodeDerSig
 DSAU_DecodeDerSigToLen
 DSAU_EncodeDerSigWithLen
+HASH_Begin
+HASH_Create
+HASH_Destroy
+HASH_End
 HASH_GetHashObject
 HASH_GetRawHashObject
 HASH_HashBuf
 HASH_ResultLen
+HASH_ResultLenByOidTag
+HASH_Update
 HMAC_Begin
 HMAC_Destroy
 HMAC_Finish
@@ -245,6 +251,7 @@ SEED_Encrypt
 SEED_InitContext
 SGN_Begin
 SGN_DestroyContext
+SGN_Digest
 SGN_End
 SGN_NewContext
 SGN_Update
@@ -263,3 +270,4 @@ VFY_CreateContextWithAlgorithmID
 VFY_DestroyContext
 VFY_End
 VFY_Update
+VFY_VerifyDigestDirect

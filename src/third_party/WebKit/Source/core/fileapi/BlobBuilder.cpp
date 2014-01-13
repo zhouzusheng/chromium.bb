@@ -32,28 +32,17 @@
 
 #include "core/fileapi/BlobBuilder.h"
 
-#include "core/dom/Document.h"
-#include "core/dom/ExceptionCode.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/File.h"
-#include "core/inspector/ScriptCallStack.h"
-#include "core/platform/HistogramSupport.h"
 #include "core/platform/text/LineEnding.h"
-#include "core/platform/text/TextEncoding.h"
-#include <wtf/ArrayBuffer.h>
-#include <wtf/ArrayBufferView.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/text/AtomicString.h>
-#include <wtf/text/CString.h>
-#include <wtf/Vector.h>
+#include "wtf/ArrayBuffer.h"
+#include "wtf/ArrayBufferView.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/CString.h"
+#include "wtf/text/TextEncoding.h"
 
 namespace WebCore {
-
-enum BlobConstructorArrayBufferOrView {
-    BlobConstructorArrayBuffer,
-    BlobConstructorArrayBufferView,
-    BlobConstructorArrayBufferOrViewMax,
-};
 
 BlobBuilder::BlobBuilder()
     : m_size(0)
@@ -71,7 +60,7 @@ Vector<char>& BlobBuilder::getBuffer()
 
 void BlobBuilder::append(const String& text, const String& endingType)
 {
-    CString utf8Text = UTF8Encoding().encode(text.characters(), text.length(), EntitiesForUnencodables);
+    CString utf8Text = UTF8Encoding().encode(text.characters(), text.length(), WTF::EntitiesForUnencodables);
 
     Vector<char>& buffer = getBuffer();
     size_t oldSize = buffer.size();
@@ -87,8 +76,6 @@ void BlobBuilder::append(const String& text, const String& endingType)
 
 void BlobBuilder::append(ArrayBuffer* arrayBuffer)
 {
-    HistogramSupport::histogramEnumeration("WebCore.Blob.constructor.ArrayBufferOrView", BlobConstructorArrayBuffer, BlobConstructorArrayBufferOrViewMax);
-
     if (!arrayBuffer)
         return;
 
@@ -97,8 +84,6 @@ void BlobBuilder::append(ArrayBuffer* arrayBuffer)
 
 void BlobBuilder::append(ArrayBufferView* arrayBufferView)
 {
-    HistogramSupport::histogramEnumeration("WebCore.Blob.constructor.ArrayBufferOrView", BlobConstructorArrayBufferView, BlobConstructorArrayBufferOrViewMax);
-
     if (!arrayBufferView)
         return;
 

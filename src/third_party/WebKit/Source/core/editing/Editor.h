@@ -28,10 +28,8 @@
 
 #include "core/dom/ClipboardAccessPolicy.h"
 #include "core/dom/DocumentMarker.h"
-#include "core/editing/DictationAlternative.h"
 #include "core/editing/EditAction.h"
 #include "core/editing/EditingBehavior.h"
-#include "core/editing/EditingStyle.h"
 #include "core/editing/EditorInsertAction.h"
 #include "core/editing/FindOptions.h"
 #include "core/editing/FrameSelection.h"
@@ -58,7 +56,6 @@ class Pasteboard;
 class SimpleFontData;
 class SpellChecker;
 class SpellCheckRequest;
-class AlternativeTextController;
 class SharedBuffer;
 class StylePropertySet;
 class Text;
@@ -93,7 +90,6 @@ public:
     CompositeEditCommand* lastEditCommand() { return m_lastEditCommand.get(); }
 
     void handleKeyboardEvent(KeyboardEvent*);
-    void handleInputMethodKeydown(KeyboardEvent*);
     bool handleTextEvent(TextEvent*);
 
     bool canEdit() const;
@@ -166,7 +162,6 @@ public:
     void appliedEditing(PassRefPtr<CompositeEditCommand>);
     void unappliedEditing(PassRefPtr<EditCommandComposition>);
     void reappliedEditing(PassRefPtr<EditCommandComposition>);
-    void unappliedSpellCorrection(const VisibleSelection& selectionOfCorrected, const String& corrected, const String& correction);
 
     void setShouldStyleWithCSS(bool flag) { m_shouldStyleWithCSS = flag; }
     bool shouldStyleWithCSS() const { return m_shouldStyleWithCSS; }
@@ -198,7 +193,6 @@ public:
 
     bool insertText(const String&, Event* triggeringEvent);
     bool insertTextForConfirmedComposition(const String& text);
-    bool insertDictatedText(const String&, const Vector<DictationAlternative>& dictationAlternatives, Event* triggeringEvent);
     bool insertTextWithoutSendingTextEvent(const String&, bool selectInsertedText, TextEvent* triggeringEvent);
     bool insertLineBreak();
     bool insertParagraphSeparator();
@@ -206,49 +200,23 @@ public:
     bool isContinuousSpellCheckingEnabled() const;
     void toggleContinuousSpellChecking();
     bool isGrammarCheckingEnabled();
-    void toggleGrammarChecking();
     void ignoreSpelling();
-    void learnSpelling();
-    int spellCheckerDocumentTag();
-    bool isSelectionUngrammatical();
-    String misspelledSelectionString() const;
     String misspelledWordAtCaretOrRange(Node* clickedNode) const;
-    Vector<String> guessesForMisspelledWord(const String&) const;
-    Vector<String> guessesForUngrammaticalSelection();
-    Vector<String> guessesForMisspelledOrUngrammatical(bool& misspelled, bool& ungrammatical);
     bool isSpellCheckingEnabledInFocusedNode() const;
     bool isSpellCheckingEnabledFor(Node*) const;
-    void markMisspellingsAfterTypingToWord(const VisiblePosition &wordStart, const VisibleSelection& selectionAfterTyping, bool doReplacement);
+    void markMisspellingsAfterTypingToWord(const VisiblePosition &wordStart, const VisibleSelection& selectionAfterTyping);
     void markMisspellings(const VisibleSelection&, RefPtr<Range>& firstMisspellingRange);
     void markBadGrammar(const VisibleSelection&);
     void markMisspellingsAndBadGrammar(const VisibleSelection& spellingSelection, bool markGrammar, const VisibleSelection& grammarSelection);
     void markAndReplaceFor(PassRefPtr<SpellCheckRequest>, const Vector<TextCheckingResult>&);
 
     bool isOverwriteModeEnabled() const { return m_overwriteModeEnabled; }
-    void toggleOverwriteModeEnabled() { m_overwriteModeEnabled = !m_overwriteModeEnabled; }
-
-#if USE(AUTOMATIC_TEXT_REPLACEMENT)
-    void showSubstitutionsPanel();
-    bool substitutionsPanelIsShowing();
-    void toggleSmartInsertDelete();
-    bool isAutomaticQuoteSubstitutionEnabled();
-    void toggleAutomaticQuoteSubstitution();
-    bool isAutomaticLinkDetectionEnabled();
-    void toggleAutomaticLinkDetection();
-    bool isAutomaticDashSubstitutionEnabled();
-    void toggleAutomaticDashSubstitution();
-    bool isAutomaticTextReplacementEnabled();
-    void toggleAutomaticTextReplacement();
-    bool isAutomaticSpellingCorrectionEnabled();
-    void toggleAutomaticSpellingCorrection();
-#endif
+    void toggleOverwriteModeEnabled();
 
     void markAllMisspellingsAndBadGrammarInRanges(TextCheckingTypeMask, Range* spellingRange, Range* grammarRange);
-    void changeBackToReplacedString(const String& replacedString);
 
     void advanceToNextMisspelling(bool startBeforeSelection = false);
     void showSpellingGuessPanel();
-    bool spellingPanelIsShowing();
 
     bool shouldBeginEditing(Range*);
     bool shouldEndEditing(Range*);
@@ -261,32 +229,26 @@ public:
 
     void didBeginEditing();
     void didEndEditing();
-    void willWriteSelectionToPasteboard(PassRefPtr<Range>);
-    void didWriteSelectionToPasteboard();
-    
-    void showFontPanel();
-    void showStylesPanel();
-    void showColorPanel();
-    void toggleBold();
-    void toggleUnderline();
+
     void setBaseWritingDirection(WritingDirection);
 
     // smartInsertDeleteEnabled and selectTrailingWhitespaceEnabled are 
     // mutually exclusive, meaning that enabling one will disable the other.
     bool smartInsertDeleteEnabled();
     bool isSelectTrailingWhitespaceEnabled();
-    
-    bool hasBidiSelection() const;
 
     // international text input composition
     bool hasComposition() const { return m_compositionNode; }
     void setComposition(const String&, const Vector<CompositionUnderline>&, unsigned selectionStart, unsigned selectionEnd);
+    // Inserts the text that is being composed as a regular text.
+    // This method does nothing if composition node is not present.
     void confirmComposition();
-    void confirmComposition(const String&); // if no existing composition, replaces selection
+    // Inserts the given text string in the place of the existing composition, or replaces the selection if composition is not present.
+    void confirmComposition(const String& text);
+    // Deletes the existing composition text.
     void cancelComposition();
-    bool cancelCompositionIfSelectionIsInvalid();
+    void cancelCompositionIfSelectionIsInvalid();
     PassRefPtr<Range> compositionRange() const;
-    bool getCompositionSelection(unsigned& selectionStart, unsigned& selectionEnd) const;
     bool setSelectionOffsets(int selectionStart, int selectionEnd);
 
     // getting international text input composition state (for use by InlineTextBox)
@@ -315,11 +277,6 @@ public:
     PassRefPtr<Range> selectedRange();
     
     void addToKillRing(Range*, bool prepend);
-
-    void startAlternativeTextUITimer();
-    // If user confirmed a correction in the correction panel, correction has non-zero length, otherwise it means that user has dismissed the panel.
-    void handleAlternativeTextUIResult(const String& correction);
-    void dismissCorrectionPanelAsIgnored();
 
     void pasteAsFragment(PassRefPtr<DocumentFragment>, bool smartReplace, bool matchStyle);
     void pasteAsPlainText(const String&, bool smartReplace);
@@ -356,19 +313,15 @@ public:
     bool markedTextMatchesAreHighlighted() const;
     void setMarkedTextMatchesAreHighlighted(bool);
 
-    void textFieldDidBeginEditing(Element*);
     void textFieldDidEndEditing(Element*);
     void textDidChangeInTextField(Element*);
     bool doTextFieldCommandFromEvent(Element*, KeyboardEvent*);
-    void textWillBeDeletedInTextField(Element* input);
-    void textDidChangeInTextArea(Element*);
     WritingDirection baseWritingDirectionForSelectionStart() const;
 
     void replaceSelectionWithFragment(PassRefPtr<DocumentFragment>, bool selectReplacement, bool smartReplace, bool matchStyle);
     void replaceSelectionWithText(const String&, bool selectReplacement, bool smartReplace);
     bool selectionStartHasMarkerFor(DocumentMarker::MarkerType, int from, int length) const;
     void updateMarkersForWordsAffectedByEditing(bool onlyHandleWordsContainingSelection);
-    void deletedAutocorrectionAtPosition(const Position&, const String& originalString);
     
     void simplifyMarkup(Node* startNode, Node* endNode);
 
@@ -376,11 +329,8 @@ public:
 
     EditorParagraphSeparator defaultParagraphSeparator() const { return m_defaultParagraphSeparator; }
     void setDefaultParagraphSeparator(EditorParagraphSeparator separator) { m_defaultParagraphSeparator = separator; }
-    Vector<String> dictationAlternativesForMarker(const DocumentMarker*);
-    void applyDictationAlternativelternative(const String& alternativeString);
-private:
-    virtual void willDetachPage() OVERRIDE;
 
+private:
     RefPtr<CompositeEditCommand> m_lastEditCommand;
     RefPtr<Node> m_removedAnchor;
     RefPtr<Text> m_compositionNode;
@@ -392,7 +342,6 @@ private:
     bool m_shouldStyleWithCSS;
     OwnPtr<KillRing> m_killRing;
     OwnPtr<SpellChecker> m_spellChecker;
-    OwnPtr<AlternativeTextController> m_alternativeTextController;
     VisibleSelection m_mark;
     bool m_areMarkedTextMatchesHighlighted;
     EditorParagraphSeparator m_defaultParagraphSeparator;
@@ -411,8 +360,8 @@ private:
     String selectedText(TextIteratorBehavior) const;
 
     void selectComposition();
-    enum SetCompositionMode { ConfirmComposition, CancelComposition };
-    void setComposition(const String&, SetCompositionMode);
+    enum FinishCompositionMode { ConfirmComposition, CancelComposition };
+    void finishComposition(const String&, FinishCompositionMode);
 
     void changeSelectionAfterCommand(const VisibleSelection& newSelection, FrameSelection::SetSelectionOptions);
     void notifyComponentsOnChangedSelection(const VisibleSelection& oldSelection, FrameSelection::SetSelectionOptions);

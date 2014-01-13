@@ -23,15 +23,19 @@
 #define ElementRareData_h
 
 #include "core/dom/DatasetDOMStringMap.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/NamedNodeMap.h"
 #include "core/dom/NodeRareData.h"
 #include "core/dom/PseudoElement.h"
+#include "core/dom/shadow/ElementShadow.h"
 #include "core/html/ClassList.h"
+#include "core/html/ime/InputMethodContext.h"
 #include "core/rendering/style/StyleInheritedData.h"
-#include <wtf/OwnPtr.h>
+#include "wtf/OwnPtr.h"
 
 namespace WebCore {
+
+class Animation;
+class HTMLElement;
 
 class ElementRareData : public NodeRareData {
 public:
@@ -41,9 +45,8 @@ public:
 
     void setPseudoElement(PseudoId, PassRefPtr<PseudoElement>);
     PseudoElement* pseudoElement(PseudoId) const;
-    bool hasPseudoElements() const { return m_generatedBefore || m_generatedAfter; }
 
-    void resetComputedStyle();
+    void resetStyleState();
     void resetDynamicRestyleObservations();
     
     short tabIndex() const { return m_tabIndex; }
@@ -59,6 +62,9 @@ public:
 
     bool isInCanvasSubtree() const { return m_isInCanvasSubtree; }
     void setIsInCanvasSubtree(bool value) { m_isInCanvasSubtree = value; }
+
+    RegionOversetState regionOversetState() const { return m_regionOversetState; }
+    void setRegionOversetState(RegionOversetState state) { m_regionOversetState = state; }
 
     bool containsFullScreenElement() { return m_containsFullScreenElement; }
     void setContainsFullScreenElement(bool value) { m_containsFullScreenElement = value; }
@@ -103,6 +109,7 @@ public:
 
     RenderStyle* computedStyle() const { return m_computedStyle.get(); }
     void setComputedStyle(PassRefPtr<RenderStyle> computedStyle) { m_computedStyle = computedStyle; }
+    void clearComputedStyle() { m_computedStyle = 0; }
 
     ClassList* classList() const { return m_classList.get(); }
     void setClassList(PassOwnPtr<ClassList> classList) { m_classList = classList; }
@@ -122,10 +129,21 @@ public:
     IntSize savedLayerScrollOffset() const { return m_savedLayerScrollOffset; }
     void setSavedLayerScrollOffset(IntSize size) { m_savedLayerScrollOffset = size; }
 
-#if ENABLE(SVG)
+    Vector<Animation*>* activeAnimations() { return m_activeAnimations.get(); }
+    void setActiveAnimations(PassOwnPtr<Vector<Animation*> > animations)
+    {
+        m_activeAnimations = animations;
+    }
+
     bool hasPendingResources() const { return m_hasPendingResources; }
     void setHasPendingResources(bool has) { m_hasPendingResources = has; }
-#endif
+
+    InputMethodContext* ensureInputMethodContext(HTMLElement* element)
+    {
+        if (!m_inputMethodContext)
+            m_inputMethodContext = InputMethodContext::create(element);
+        return m_inputMethodContext.get();
+    }
 
 private:
     short m_tabIndex;
@@ -136,9 +154,7 @@ private:
     unsigned m_isInCanvasSubtree : 1;
     unsigned m_containsFullScreenElement : 1;
     unsigned m_isInTopLayer : 1;
-#if ENABLE(SVG)
     unsigned m_hasPendingResources : 1;
-#endif
     unsigned m_childrenAffectedByHover : 1;
     unsigned m_childrenAffectedByActive : 1;
     unsigned m_childrenAffectedByDrag : 1;
@@ -151,6 +167,8 @@ private:
     unsigned m_childrenAffectedByForwardPositionalRules : 1;
     unsigned m_childrenAffectedByBackwardPositionalRules : 1;
 
+    RegionOversetState m_regionOversetState;
+
     LayoutSize m_minimumSizeForResizing;
     IntSize m_savedLayerScrollOffset;
     RefPtr<RenderStyle> m_computedStyle;
@@ -159,6 +177,9 @@ private:
     OwnPtr<ClassList> m_classList;
     OwnPtr<ElementShadow> m_shadow;
     OwnPtr<NamedNodeMap> m_attributeMap;
+    OwnPtr<InputMethodContext> m_inputMethodContext;
+
+    OwnPtr<Vector<Animation*> > m_activeAnimations;
 
     RefPtr<PseudoElement> m_generatedBefore;
     RefPtr<PseudoElement> m_generatedAfter;
@@ -182,9 +203,7 @@ inline ElementRareData::ElementRareData(RenderObject* renderer)
     , m_isInCanvasSubtree(false)
     , m_containsFullScreenElement(false)
     , m_isInTopLayer(false)
-#if ENABLE(SVG)
     , m_hasPendingResources(false)
-#endif
     , m_childrenAffectedByHover(false)
     , m_childrenAffectedByActive(false)
     , m_childrenAffectedByDrag(false)
@@ -193,6 +212,7 @@ inline ElementRareData::ElementRareData(RenderObject* renderer)
     , m_childrenAffectedByDirectAdjacentRules(false)
     , m_childrenAffectedByForwardPositionalRules(false)
     , m_childrenAffectedByBackwardPositionalRules(false)
+    , m_regionOversetState(RegionUndefined)
     , m_minimumSizeForResizing(defaultMinimumSizeForResizing())
 {
 }
@@ -246,7 +266,7 @@ inline void ElementRareData::releasePseudoElement(PseudoElement* element)
     element->setParentOrShadowHostNode(0);
 }
 
-inline void ElementRareData::resetComputedStyle()
+inline void ElementRareData::resetStyleState()
 {
     setComputedStyle(0);
     setStyleAffectedByEmpty(false);

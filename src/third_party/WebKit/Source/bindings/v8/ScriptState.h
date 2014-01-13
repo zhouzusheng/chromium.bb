@@ -31,63 +31,65 @@
 #ifndef ScriptState_h
 #define ScriptState_h
 
-#include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScopedPersistent.h"
 #include "bindings/v8/V8Utilities.h"
 #include <v8.h>
 #include "wtf/Noncopyable.h"
-#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
 class DOMWindow;
 class DOMWrapperWorld;
 class Frame;
-class Node;
-class Page;
 class ScriptExecutionContext;
 class WorkerContext;
 
 class ScriptState {
     WTF_MAKE_NONCOPYABLE(ScriptState);
 public:
-    bool hadException() { return !m_exception.IsEmpty(); }
+    bool hadException() { return !m_exception.isEmpty(); }
     void setException(v8::Local<v8::Value> exception)
     {
-        m_exception = exception;
+        m_exception.set(m_isolate, exception);
     }
-    v8::Local<v8::Value> exception() { return m_exception; }
-    void clearException() { m_exception.Clear(); }
+    v8::Local<v8::Value> exception() { return m_exception.newLocal(m_isolate); }
+    void clearException() { m_exception.clear(); }
 
     v8::Local<v8::Context> context() const
     {
-        return v8::Local<v8::Context>::New(m_context.get());
+        return m_context.newLocal(m_isolate);
     }
 
     v8::Isolate* isolate()
     {
-        return m_context->GetIsolate();
+        return m_isolate;
     }
 
     DOMWindow* domWindow() const;
     ScriptExecutionContext* scriptExecutionContext() const;
+    bool evalEnabled() const;
+    void setEvalEnabled(bool);
 
-    static ScriptState* forContext(v8::Local<v8::Context>);
+    static ScriptState* forContext(v8::Handle<v8::Context>);
     static ScriptState* current();
 
 protected:
-    ScriptState() { }
+    ScriptState()
+        : m_isolate(v8::Isolate::GetCurrent())
+    {
+    }
+
     ~ScriptState();
 
 private:
     friend ScriptState* mainWorldScriptState(Frame*);
-    friend class WeakHandleListener<ScriptState>;
     explicit ScriptState(v8::Handle<v8::Context>);
 
-    static void weakReferenceCallback(v8::Isolate*, v8::Persistent<v8::Value>, void* parameter);
+    static void makeWeakCallback(v8::Isolate*, v8::Persistent<v8::Context>*, ScriptState*);
 
-    v8::Local<v8::Value> m_exception;
+    ScopedPersistent<v8::Value> m_exception;
     ScopedPersistent<v8::Context> m_context;
+    v8::Isolate* m_isolate;
 };
 
 class EmptyScriptState : public ScriptState {
@@ -109,7 +111,7 @@ public:
     {
         v8::HandleScope handleScope;
         // Keep the context from being GC'ed. ScriptState is guaranteed to be live while the context is live.
-        m_context.set(scriptState->context());
+        m_context.set(scriptState->isolate(), scriptState->context());
     }
 
     ScriptState* get() const { return m_scriptState; }
@@ -119,20 +121,9 @@ private:
     ScopedPersistent<v8::Context> m_context;
 };
 
-DOMWindow* domWindowFromScriptState(ScriptState*);
-ScriptExecutionContext* scriptExecutionContextFromScriptState(ScriptState*);
-
-bool evalEnabled(ScriptState*);
-void setEvalEnabled(ScriptState*, bool);
-
 ScriptState* mainWorldScriptState(Frame*);
 
-ScriptState* scriptStateFromNode(DOMWrapperWorld*, Node*);
-ScriptState* scriptStateFromPage(DOMWrapperWorld*, Page*);
 ScriptState* scriptStateFromWorkerContext(WorkerContext*);
-
-inline DOMWrapperWorld* debuggerWorld() { return mainThreadNormalWorld(); }
-inline DOMWrapperWorld* pluginWorld() { return mainThreadNormalWorld(); }
 
 }
 

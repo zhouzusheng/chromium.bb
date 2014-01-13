@@ -753,7 +753,7 @@ WebInspector.DataGrid.prototype = {
 
         var emptyData = {};
         for (var column in this.columns)
-            emptyData[column] = '';
+            emptyData[column] = null;
         this.creationNode = new WebInspector.CreationDataGridNode(emptyData, hasChildren);
         this.rootNode().appendChild(this.creationNode);
     },
@@ -1732,8 +1732,8 @@ WebInspector.DataGridNode.prototype = {
 
         this._attached = false;
 
-        if (this._element && this._element.parentNode)
-            this._element.parentNode.removeChild(this._element);
+        if (this._element)
+            this._element.remove();
 
         for (var i = 0; i < this.children.length; ++i)
             this.children[i]._detach();

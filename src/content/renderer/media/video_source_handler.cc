@@ -10,8 +10,8 @@
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_registry_interface.h"
 #include "content/renderer/render_thread_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStream.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaStreamRegistry.h"
+#include "third_party/WebKit/public/platform/WebMediaStream.h"
+#include "third_party/WebKit/public/web/WebMediaStreamRegistry.h"
 #include "third_party/libjingle/source/talk/media/base/videoframe.h"
 #include "third_party/libjingle/source/talk/media/base/videorenderer.h"
 
@@ -60,7 +60,10 @@ VideoSourceHandler::VideoSourceHandler(
     : registry_(registry) {
 }
 
-VideoSourceHandler::~VideoSourceHandler() {}
+VideoSourceHandler::~VideoSourceHandler() {
+  // All the opened readers should have been closed by now.
+  DCHECK(reader_to_receiver_.empty());
+}
 
 bool VideoSourceHandler::Open(const std::string& url,
                               FrameReaderInterface* reader) {
@@ -85,9 +88,15 @@ bool VideoSourceHandler::Close(const std::string& url,
   }
   PpFrameReceiver* receiver =
       static_cast<PpFrameReceiver*>(GetReceiver(reader));
+  if (!receiver) {
+    LOG(ERROR) << "VideoSourceHandler::Close - Failed to find receiver that "
+               << "is associated with the given reader.";
+    return false;
+  }
   receiver->SetReader(NULL);
   source->RemoveSink(receiver);
   reader_to_receiver_.erase(reader);
+  delete receiver;
   return true;
 }
 
@@ -113,7 +122,7 @@ scoped_refptr<VideoSourceInterface> VideoSourceHandler::GetFirstVideoSource(
     LOG(ERROR) << "GetFirstVideoSource - MediaStreamExtraData is NULL.";
     return source;
   }
-  webrtc::MediaStreamInterface* native_stream = extra_data->stream();
+  webrtc::MediaStreamInterface* native_stream = extra_data->stream().get();
   if (!native_stream) {
     LOG(ERROR) << "GetFirstVideoSource - native stream is NULL.";
     return source;

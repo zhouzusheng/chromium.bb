@@ -55,11 +55,11 @@ namespace WebCore {
         WorkerWorld
     };
 
-    typedef v8::Persistent<v8::FunctionTemplate> (*GetTemplateFunction)(v8::Isolate*, WrapperWorldType);
+    typedef v8::Handle<v8::FunctionTemplate> (*GetTemplateFunction)(v8::Isolate*, WrapperWorldType);
     typedef void (*DerefObjectFunction)(void*);
     typedef ActiveDOMObject* (*ToActiveDOMObjectFunction)(v8::Handle<v8::Object>);
     typedef EventTarget* (*ToEventTargetFunction)(v8::Handle<v8::Object>);
-    typedef void* (*OpaqueRootForGC)(void*, v8::Persistent<v8::Object>, v8::Isolate*);
+    typedef void* (*OpaqueRootForGC)(void*, v8::Isolate*);
     typedef void (*InstallPerContextPrototypePropertiesFunction)(v8::Handle<v8::Object>, v8::Isolate*);
 
     enum WrapperTypePrototype {
@@ -93,7 +93,7 @@ namespace WebCore {
             return false;
         }
         
-        v8::Persistent<v8::FunctionTemplate> getTemplate(v8::Isolate* isolate, WrapperWorldType worldType) { return getTemplateFunction(isolate, worldType); }
+        v8::Handle<v8::FunctionTemplate> getTemplate(v8::Isolate* isolate, WrapperWorldType worldType) { return getTemplateFunction(isolate, worldType); }
         
         void derefObject(void* object)
         {
@@ -121,11 +121,11 @@ namespace WebCore {
             return toEventTargetFunction(object);
         }
 
-        void* opaqueRootForGC(void* object, v8::Persistent<v8::Object> wrapper, v8::Isolate* isolate)
+        void* opaqueRootForGC(void* object, v8::Isolate* isolate)
         {
             if (!opaqueRootForGCFunction)
                 return object;
-            return opaqueRootForGCFunction(object, wrapper, isolate);
+            return opaqueRootForGCFunction(object, isolate);
         }
 
         const GetTemplateFunction getTemplateFunction;
@@ -138,22 +138,40 @@ namespace WebCore {
         const WrapperTypePrototype wrapperTypePrototype;
     };
 
+    template<typename T, int offset>
+    inline T* getInternalField(const v8::Persistent<v8::Object>& persistent)
+    {
+        // This would be unsafe, but InternalFieldCount and GetAlignedPointerFromInternalField are guaranteed not to allocate
+        const v8::Handle<v8::Object>& object = reinterpret_cast<const v8::Handle<v8::Object>&>(persistent);
+        ASSERT(object->InternalFieldCount() >= offset);
+        return static_cast<T*>(object->GetAlignedPointerFromInternalField(offset));
+    }
+
+    template<typename T, int offset>
+    inline T* getInternalField(v8::Handle<v8::Object> object)
+    {
+        ASSERT(object->InternalFieldCount() >= offset);
+        return static_cast<T*>(object->GetAlignedPointerFromInternalField(offset));
+    }
+
+    inline void* toNative(const v8::Persistent<v8::Object>& object)
+    {
+        return getInternalField<void, v8DOMWrapperObjectIndex>(object);
+    }
+
     inline void* toNative(v8::Handle<v8::Object> object)
     {
-        ASSERT(object->InternalFieldCount() >= v8DOMWrapperObjectIndex);
-        return object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex);
+        return getInternalField<void, v8DOMWrapperObjectIndex>(object);
     }
 
     inline WrapperTypeInfo* toWrapperTypeInfo(const v8::Persistent<v8::Object>& object)
     {
-        ASSERT(object->InternalFieldCount() >= v8DOMWrapperTypeIndex);
-        return static_cast<WrapperTypeInfo*>(object->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
+        return getInternalField<WrapperTypeInfo, v8DOMWrapperTypeIndex>(object);
     }
 
-    inline WrapperTypeInfo* toWrapperTypeInfo(const v8::Handle<v8::Object>& object)
+    inline WrapperTypeInfo* toWrapperTypeInfo(v8::Handle<v8::Object> object)
     {
-        ASSERT(object->InternalFieldCount() >= v8DOMWrapperTypeIndex);
-        return static_cast<WrapperTypeInfo*>(object->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
+        return getInternalField<WrapperTypeInfo, v8DOMWrapperTypeIndex>(object);
     }
 
     struct WrapperConfiguration {
@@ -162,11 +180,11 @@ namespace WebCore {
             Dependent, Independent
         };
 
-        void configureWrapper(v8::Persistent<v8::Object> wrapper, v8::Isolate* isolate) const
+        void configureWrapper(v8::Persistent<v8::Object>* wrapper, v8::Isolate* isolate) const
         {
-            wrapper.SetWrapperClassId(isolate, classId);
+            wrapper->SetWrapperClassId(isolate, classId);
             if (lifetime == Independent)
-                wrapper.MarkIndependent(isolate);
+                wrapper->MarkIndependent(isolate);
         }
 
         const uint16_t classId;

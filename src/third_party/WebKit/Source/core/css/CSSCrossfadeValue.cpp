@@ -29,12 +29,9 @@
 #include "core/css/CSSImageValue.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/loader/cache/CachedImage.h"
-#include "core/loader/cache/CachedResourceLoader.h"
 #include "core/platform/graphics/CrossfadeGeneratedImage.h"
-#include "core/platform/graphics/ImageBuffer.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/style/StyleCachedImage.h"
-#include "core/rendering/style/StyleGeneratedImage.h"
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
@@ -42,7 +39,7 @@ namespace WebCore {
 static bool subimageIsPending(CSSValue* value)
 {
     if (value->isImageValue())
-        return static_cast<CSSImageValue*>(value)->cachedOrPendingImage()->isPendingImage();
+        return toCSSImageValue(value)->cachedOrPendingImage()->isPendingImage();
     
     if (value->isImageGeneratorValue())
         return static_cast<CSSImageGeneratorValue*>(value)->isPending();
@@ -55,7 +52,7 @@ static bool subimageIsPending(CSSValue* value)
 static bool subimageKnownToBeOpaque(CSSValue* value, const RenderObject* renderer)
 {
     if (value->isImageValue())
-        return static_cast<CSSImageValue*>(value)->knownToBeOpaque(renderer);
+        return toCSSImageValue(value)->knownToBeOpaque(renderer);
 
     if (value->isImageGeneratorValue())
         return static_cast<CSSImageGeneratorValue*>(value)->knownToBeOpaque(renderer);
@@ -71,7 +68,7 @@ static CachedImage* cachedImageForCSSValue(CSSValue* value, CachedResourceLoader
         return 0;
 
     if (value->isImageValue()) {
-        StyleCachedImage* styleCachedImage = static_cast<CSSImageValue*>(value)->cachedImage(cachedResourceLoader);
+        StyleCachedImage* styleCachedImage = toCSSImageValue(value)->cachedImage(cachedResourceLoader);
         if (!styleCachedImage)
             return 0;
 

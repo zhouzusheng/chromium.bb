@@ -91,8 +91,6 @@ public:
 
     virtual PassRefPtr<Scrollbar> createScrollbar(ScrollbarOrientation);
 
-    virtual bool avoidScrollbarCreation() const;
-
     virtual void setContentsSize(const IntSize&);
 
     void layout(bool allowSubtree = true);
@@ -168,6 +166,7 @@ public:
     virtual bool shouldRubberBandInDirection(ScrollDirection) const;
     virtual bool requestScrollPositionUpdate(const IntPoint&) OVERRIDE;
     virtual bool isRubberBandInProgress() const OVERRIDE;
+    void setScrollPositionNonProgrammatically(const IntPoint&);
 
     // This is different than visibleContentRect() in that it ignores negative (or overly positive)
     // offsets from rubber-banding, and it takes zooming into account. 
@@ -238,8 +237,6 @@ public:
 
     Color documentBackgroundColor() const;
 
-    bool isInChildFrameWithFrameFlattening() const;
-
     static double currentPaintTimeStamp() { return sCurrentPaintTimeStamp; } // returns 0 if not painting
     
     void updateLayoutAndStyleIfNeededRecursive();
@@ -308,6 +305,14 @@ public:
     bool containsScrollableArea(ScrollableArea*) const;
     const ScrollableAreaSet* scrollableAreas() const { return m_scrollableAreas.get(); }
 
+    // With CSS style "resize:" enabled, a little resizer handle will appear at the bottom
+    // right of the object. We keep track of these resizer areas for checking if touches
+    // (implemented using Scroll gesture) are targeting the resizer.
+    typedef HashSet<RenderLayer*> ResizerAreaSet;
+    void addResizerArea(RenderLayer*);
+    void removeResizerArea(RenderLayer*);
+    const ResizerAreaSet* resizerAreas() const { return m_resizerAreas.get(); }
+
     virtual void removeChild(Widget*) OVERRIDE;
 
     // This function exists for ports that need to handle wheel events manually.
@@ -323,16 +328,12 @@ public:
     // distinguish between the two.
     const Pagination& pagination() const;
     void setPagination(const Pagination&);
-    
+
     bool inProgrammaticScroll() const { return m_inProgrammaticScroll; }
     void setInProgrammaticScroll(bool programmaticScroll) { m_inProgrammaticScroll = programmaticScroll; }
 
     void setHasSoftwareFilters(bool hasSoftwareFilters) { m_hasSoftwareFilters = hasSoftwareFilters; }
     bool hasSoftwareFilters() const { return m_hasSoftwareFilters; }
-#if ENABLE(CSS_DEVICE_ADAPTATION)
-    IntSize initialViewportSize() const { return m_initialViewportSize; }
-    void setInitialViewportSize(const IntSize& size) { m_initialViewportSize = size; }
-#endif
 
     virtual bool isActive() const OVERRIDE;
 
@@ -391,7 +392,6 @@ private:
     virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) OVERRIDE;
     virtual void getTickmarks(Vector<IntRect>&) const OVERRIDE;
     virtual void scrollTo(const IntSize&) OVERRIDE;
-    virtual void setVisibleScrollerThumbRect(const IntRect&) OVERRIDE;
     virtual ScrollableArea* enclosingScrollableArea() const OVERRIDE;
     virtual IntRect scrollableAreaBoundingBox() const OVERRIDE;
     virtual bool scrollAnimatorEnabled() const OVERRIDE;
@@ -424,8 +424,6 @@ private:
     virtual void updateScrollCorner();
 
     FrameView* parentFrameView() const;
-
-    bool doLayoutWithFrameFlattening(bool allowSubtree);
 
     virtual AXObjectCache* axObjectCache() const;
     void removeFromAXObjectCache();
@@ -526,6 +524,7 @@ private:
     IntSize m_maxAutoSize;
 
     OwnPtr<ScrollableAreaSet> m_scrollableAreas;
+    OwnPtr<ResizerAreaSet> m_resizerAreas;
     OwnPtr<ViewportConstrainedObjectSet> m_viewportConstrainedObjects;
 
     static double s_normalDeferredRepaintDelay;
@@ -534,11 +533,6 @@ private:
     static double s_deferredRepaintDelayIncrementDuringLoading;
 
     bool m_hasSoftwareFilters;
-#if ENABLE(CSS_DEVICE_ADAPTATION)
-    // Size of viewport before any UA or author styles have overridden
-    // the viewport given by the window or viewing area of the UA.
-    IntSize m_initialViewportSize;
-#endif
 
     float m_visibleContentScaleFactor;
 };

@@ -139,7 +139,7 @@ float VideoAdapter::FindLowerScale(int width, int height,
 ///////////////////////////////////////////////////////////////////////
 // Implementation of VideoAdapter
 VideoAdapter::VideoAdapter()
-    : output_num_pixels_(0),
+    : output_num_pixels_(INT_MAX),
       black_output_(false),
       is_black_(false),
       interval_next_frame_(0) {
@@ -148,8 +148,12 @@ VideoAdapter::VideoAdapter()
 VideoAdapter::~VideoAdapter() {
 }
 
-// TODO(fbarchard): Consider SetInputFormat and SetOutputFormat without
-// VideoFormat.
+void VideoAdapter::SetInputFormat(const VideoFrame& in_frame) {
+  talk_base::CritScope cs(&critical_section_);
+  input_format_.width = in_frame.GetWidth();
+  input_format_.height = in_frame.GetHeight();
+}
+
 void VideoAdapter::SetInputFormat(const VideoFormat& format) {
   talk_base::CritScope cs(&critical_section_);
   input_format_ = format;
@@ -194,10 +198,12 @@ int VideoAdapter::GetOutputNumPixels() const {
 bool VideoAdapter::AdaptFrame(const VideoFrame* in_frame,
                               const VideoFrame** out_frame) {
   talk_base::CritScope cs(&critical_section_);
-
-  if (!in_frame || !out_frame || input_format_.IsSize0x0()) {
+  if (!in_frame || !out_frame) {
     return false;
   }
+
+  // Update input to actual frame dimensions.
+  SetInputFormat(*in_frame);
 
   // Drop the input frame if necessary.
   bool should_drop = false;
@@ -218,7 +224,6 @@ bool VideoAdapter::AdaptFrame(const VideoFrame* in_frame,
       }
     }
   }
-
   if (should_drop) {
     *out_frame = NULL;
     return true;
@@ -570,6 +575,8 @@ bool CoordinatedVideoAdapter::AdaptToMinimumFormat(int* new_width,
                   << " GD: " << encoder_desired_num_pixels_
                   << " CPU: " << cpu_desired_num_pixels_
                   << " Pixels: " << min_num_pixels
+                  << " Input: " << input.width
+                  << "x" << input.height
                   << " Scale: " << scale
                   << " Resolution: " << new_output.width
                   << "x" << new_output.height

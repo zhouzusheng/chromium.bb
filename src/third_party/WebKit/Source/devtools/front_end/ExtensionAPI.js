@@ -94,6 +94,8 @@ function defineCommonExtensionSymbols(apiPrivate)
         SetSidebarPage: "setSidebarPage",
         ShowPanel: "showPanel",
         StopAuditCategoryRun: "stopAuditCategoryRun",
+        OpenResource: "openResource",
+        Reload: "Reload",
         Unsubscribe: "unsubscribe",
         UpdateAuditProgress: "updateAuditProgress",
         UpdateButton: "updateButton",
@@ -181,16 +183,6 @@ function InspectorExtensionAPI()
     defineDeprecatedProperty(this, "webInspector", "resources", "network");
     this.timeline = new Timeline();
     this.console = new ConsoleAPI();
-}
-
-/**
- * @constructor
- */
-InspectorExtensionAPI.prototype = {
-    log: function(message)
-    {
-        extensionServer.sendRequest({ command: commands.Log, message: message });
-    }
 }
 
 /**
@@ -327,6 +319,11 @@ Panels.prototype = {
         // Only send command if we either removed an existing handler or added handler and had none before.
         if (hadHandler === !callback)
             extensionServer.sendRequest({ command: commands.SetOpenResourceHandler, "handlerPresent": !!callback });
+    },
+
+    openResource: function(url, lineNumber, callback)
+    {
+        extensionServer.sendRequest({ command: commands.OpenResource, "url": url, "lineNumber": lineNumber }, callback);
     },
 
     get SearchAction()

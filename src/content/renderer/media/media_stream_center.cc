@@ -8,19 +8,18 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_extra_data.h"
 #include "content/renderer/media/media_stream_impl.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStream.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamCenterClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamSource.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamSourcesRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamTrack.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/public/platform/WebMediaStream.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamCenterClient.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/libjingle/source/talk/app/webrtc/jsep.h"
 
 namespace content {
@@ -29,7 +28,7 @@ static webrtc::MediaStreamInterface* GetNativeMediaStream(
     const WebKit::WebMediaStream& stream) {
   MediaStreamExtraData* extra_data =
       static_cast<MediaStreamExtraData*>(stream.extraData());
-  return extra_data->stream();
+  return extra_data->stream().get();
 }
 
 static webrtc::MediaStreamTrackInterface* GetNativeMediaStreamTrack(
@@ -52,12 +51,6 @@ static webrtc::MediaStreamTrackInterface* GetNativeMediaStreamTrack(
 MediaStreamCenter::MediaStreamCenter(WebKit::WebMediaStreamCenterClient* client,
                                      MediaStreamDependencyFactory* factory)
     : rtc_factory_(factory) {
-}
-
-void MediaStreamCenter::queryMediaStreamSources(
-    const WebKit::WebMediaStreamSourcesRequest& request) {
-  WebKit::WebVector<WebKit::WebMediaStreamSource> audioSources, videoSources;
-  request.didCompleteQuery(audioSources, videoSources);
 }
 
 void MediaStreamCenter::didEnableMediaStreamTrack(

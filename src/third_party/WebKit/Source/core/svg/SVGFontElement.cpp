@@ -25,14 +25,12 @@
 #include "core/svg/SVGFontElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Document.h"
-#include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/GlyphPageTreeNode.h"
+#include "core/page/UseCounter.h"
 #include "core/svg/SVGGlyphElement.h"
 #include "core/svg/SVGHKernElement.h"
 #include "core/svg/SVGMissingGlyphElement.h"
 #include "core/svg/SVGVKernElement.h"
-#include <wtf/ASCIICType.h>
+#include "wtf/ASCIICType.h"
 
 namespace WebCore {
 
@@ -52,6 +50,8 @@ inline SVGFontElement::SVGFontElement(const QualifiedName& tagName, Document* do
     ASSERT(hasTagName(SVGNames::fontTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGFontElement();
+
+    UseCounter::count(document, UseCounter::SVGFontElement);
 }
 
 PassRefPtr<SVGFontElement> SVGFontElement::create(const QualifiedName& tagName, Document* document)

@@ -25,8 +25,7 @@
 
 #include "core/dom/Document.h"
 #include "core/loader/cache/CachedResourceClient.h"
-#include <wtf/HashCountedSet.h>
-#include <wtf/text/AtomicStringHash.h>
+#include "wtf/HashCountedSet.h"
 
 namespace WebCore {
 
@@ -66,8 +65,8 @@ public:
 
     void clear();
 
-    void captureEvents();
-    void releaseEvents();
+    void captureEvents() { }
+    void releaseEvents() { }
 
     void addNamedItem(const AtomicString& name);
     void removeNamedItem(const AtomicString& name);
@@ -80,14 +79,9 @@ public:
     static bool isCaseSensitiveAttribute(const QualifiedName&);
 
 protected:
-    HTMLDocument(Frame*, const KURL&);
+    HTMLDocument(Frame*, const KURL&, DocumentClassFlags extendedDocumentClasses = DefaultDocumentClass);
 
 private:
-    virtual PassRefPtr<Element> createElement(const AtomicString& tagName, ExceptionCode&);
-
-    virtual bool isFrameSet() const;
-    virtual PassRefPtr<DocumentParser> createParser();
-
     void addItemToMap(HashCountedSet<AtomicStringImpl*>&, const AtomicString&);
     void removeItemFromMap(HashCountedSet<AtomicStringImpl*>&, const AtomicString&);
 

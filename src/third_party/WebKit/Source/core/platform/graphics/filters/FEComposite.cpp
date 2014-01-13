@@ -26,6 +26,10 @@
 
 #include "core/platform/graphics/filters/FEComposite.h"
 
+#include "SkArithmeticMode.h"
+#include "SkFlattenableBuffers.h"
+#include "SkXfermodeImageFilter.h"
+
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/cpu/arm/filters/FECompositeArithmeticNEON.h"
 #include "core/platform/graphics/filters/Filter.h"
@@ -34,8 +38,6 @@
 
 #include <wtf/Uint8ClampedArray.h>
 
-#include "SkFlattenableBuffers.h"
-#include "SkMorphologyImageFilter.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
 
 namespace WebCore {
@@ -334,8 +336,8 @@ void FEComposite::applySoftware()
 
     switch (m_type) {
     case FECOMPOSITE_OPERATOR_OVER:
-        filterContext->drawImageBuffer(imageBuffer2, ColorSpaceDeviceRGB, drawingRegionOfInputImage(in2->absolutePaintRect()));
-        filterContext->drawImageBuffer(imageBuffer, ColorSpaceDeviceRGB, drawingRegionOfInputImage(in->absolutePaintRect()));
+        filterContext->drawImageBuffer(imageBuffer2, drawingRegionOfInputImage(in2->absolutePaintRect()));
+        filterContext->drawImageBuffer(imageBuffer, drawingRegionOfInputImage(in->absolutePaintRect()));
         break;
     case FECOMPOSITE_OPERATOR_IN: {
         // Applies only to the intersected region.
@@ -349,21 +351,21 @@ void FEComposite::applySoftware()
                                     destinationRect.y() - in->absolutePaintRect().y()), destinationRect.size());
         IntRect source2Rect(IntPoint(destinationRect.x() - in2->absolutePaintRect().x(),
                                      destinationRect.y() - in2->absolutePaintRect().y()), destinationRect.size());
-        filterContext->drawImageBuffer(imageBuffer2, ColorSpaceDeviceRGB, destinationPoint, source2Rect);
-        filterContext->drawImageBuffer(imageBuffer, ColorSpaceDeviceRGB, destinationPoint, sourceRect, CompositeSourceIn);
+        filterContext->drawImageBuffer(imageBuffer2, destinationPoint, source2Rect);
+        filterContext->drawImageBuffer(imageBuffer, destinationPoint, sourceRect, CompositeSourceIn);
         break;
     }
     case FECOMPOSITE_OPERATOR_OUT:
-        filterContext->drawImageBuffer(imageBuffer, ColorSpaceDeviceRGB, drawingRegionOfInputImage(in->absolutePaintRect()));
-        filterContext->drawImageBuffer(imageBuffer2, ColorSpaceDeviceRGB, drawingRegionOfInputImage(in2->absolutePaintRect()), IntRect(IntPoint(), imageBuffer2->logicalSize()), CompositeDestinationOut);
+        filterContext->drawImageBuffer(imageBuffer, drawingRegionOfInputImage(in->absolutePaintRect()));
+        filterContext->drawImageBuffer(imageBuffer2, drawingRegionOfInputImage(in2->absolutePaintRect()), IntRect(IntPoint(), imageBuffer2->logicalSize()), CompositeDestinationOut);
         break;
     case FECOMPOSITE_OPERATOR_ATOP:
-        filterContext->drawImageBuffer(imageBuffer2, ColorSpaceDeviceRGB, drawingRegionOfInputImage(in2->absolutePaintRect()));
-        filterContext->drawImageBuffer(imageBuffer, ColorSpaceDeviceRGB, drawingRegionOfInputImage(in->absolutePaintRect()), IntRect(IntPoint(), imageBuffer->logicalSize()), CompositeSourceAtop);
+        filterContext->drawImageBuffer(imageBuffer2, drawingRegionOfInputImage(in2->absolutePaintRect()));
+        filterContext->drawImageBuffer(imageBuffer, drawingRegionOfInputImage(in->absolutePaintRect()), IntRect(IntPoint(), imageBuffer->logicalSize()), CompositeSourceAtop);
         break;
     case FECOMPOSITE_OPERATOR_XOR:
-        filterContext->drawImageBuffer(imageBuffer2, ColorSpaceDeviceRGB, drawingRegionOfInputImage(in2->absolutePaintRect()));
-        filterContext->drawImageBuffer(imageBuffer, ColorSpaceDeviceRGB, drawingRegionOfInputImage(in->absolutePaintRect()), IntRect(IntPoint(), imageBuffer->logicalSize()), CompositeXOR);
+        filterContext->drawImageBuffer(imageBuffer2, drawingRegionOfInputImage(in2->absolutePaintRect()));
+        filterContext->drawImageBuffer(imageBuffer, drawingRegionOfInputImage(in->absolutePaintRect()), IntRect(IntPoint(), imageBuffer->logicalSize()), CompositeXOR);
         break;
     default:
         break;
@@ -391,10 +393,12 @@ SkXfermode::Mode toXfermode(WebCore::CompositeOperationType mode)
 
 SkImageFilter* FEComposite::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    SkAutoTUnref<SkImageFilter> foreground(builder->build(inputEffect(0)));
-    SkAutoTUnref<SkImageFilter> background(builder->build(inputEffect(1)));
-    if (m_type == FECOMPOSITE_OPERATOR_ARITHMETIC)
-        return 0; // FIXME: Implement arithmetic op
+    SkAutoTUnref<SkImageFilter> foreground(builder->build(inputEffect(0), operatingColorSpace()));
+    SkAutoTUnref<SkImageFilter> background(builder->build(inputEffect(1), operatingColorSpace()));
+    if (m_type == FECOMPOSITE_OPERATOR_ARITHMETIC) {
+        SkAutoTUnref<SkXfermode> mode(SkArithmeticMode::Create(SkFloatToScalar(m_k1), SkFloatToScalar(m_k2), SkFloatToScalar(m_k3), SkFloatToScalar(m_k4)));
+        return new SkXfermodeImageFilter(mode, background, foreground);
+    }
     return new CompositeImageFilter(toXfermode(m_type), background, foreground);
 }
 

@@ -6,9 +6,9 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "net/base/net_errors.h"
 
@@ -20,53 +20,53 @@ namespace {
 // bytes transferred and, if the log level indicates bytes should be logged and
 // |byte_count| > 0, the bytes themselves.  The bytes are hex-encoded, since
 // base::StringValue only supports UTF-8.
-Value* BytesTransferredCallback(int byte_count,
-                                const char* bytes,
-                                NetLog::LogLevel log_level) {
-  DictionaryValue* dict = new DictionaryValue();
+base::Value* BytesTransferredCallback(int byte_count,
+                                      const char* bytes,
+                                      NetLog::LogLevel log_level) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("byte_count", byte_count);
   if (NetLog::IsLoggingBytes(log_level) && byte_count > 0)
     dict->SetString("hex_encoded_bytes", base::HexEncode(bytes, byte_count));
   return dict;
 }
 
-Value* SourceEventParametersCallback(const NetLog::Source source,
-                                     NetLog::LogLevel /* log_level */) {
+base::Value* SourceEventParametersCallback(const NetLog::Source source,
+                                           NetLog::LogLevel /* log_level */) {
   if (!source.IsValid())
     return NULL;
-  DictionaryValue* event_params = new DictionaryValue();
+  base::DictionaryValue* event_params = new base::DictionaryValue();
   source.AddToEventParameters(event_params);
   return event_params;
 }
 
-Value* NetLogIntegerCallback(const char* name,
-                             int value,
-                             NetLog::LogLevel /* log_level */) {
-  DictionaryValue* event_params = new DictionaryValue();
+base::Value* NetLogIntegerCallback(const char* name,
+                                   int value,
+                                   NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* event_params = new base::DictionaryValue();
   event_params->SetInteger(name, value);
   return event_params;
 }
 
-Value* NetLogInt64Callback(const char* name,
-                           int64 value,
-                           NetLog::LogLevel /* log_level */) {
-  DictionaryValue* event_params = new DictionaryValue();
+base::Value* NetLogInt64Callback(const char* name,
+                                 int64 value,
+                                 NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* event_params = new base::DictionaryValue();
   event_params->SetString(name, base::Int64ToString(value));
   return event_params;
 }
 
-Value* NetLogStringCallback(const char* name,
-                            const std::string* value,
-                            NetLog::LogLevel /* log_level */) {
-  DictionaryValue* event_params = new DictionaryValue();
+base::Value* NetLogStringCallback(const char* name,
+                                  const std::string* value,
+                                  NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* event_params = new base::DictionaryValue();
   event_params->SetString(name, *value);
   return event_params;
 }
 
-Value* NetLogString16Callback(const char* name,
-                              const base::string16* value,
-                              NetLog::LogLevel /* log_level */) {
-  DictionaryValue* event_params = new DictionaryValue();
+base::Value* NetLogString16Callback(const char* name,
+                                    const base::string16* value,
+                                    NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* event_params = new base::DictionaryValue();
   event_params->SetString(name, *value);
   return event_params;
 }
@@ -86,8 +86,9 @@ bool NetLog::Source::IsValid() const {
   return id != kInvalidId;
 }
 
-void NetLog::Source::AddToEventParameters(DictionaryValue* event_params) const {
-  DictionaryValue* dict = new DictionaryValue();
+void NetLog::Source::AddToEventParameters(
+    base::DictionaryValue* event_params) const {
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("type", static_cast<int>(type));
   dict->SetInteger("id", static_cast<int>(id));
   event_params->Set("source_dependency", dict);
@@ -98,9 +99,10 @@ NetLog::ParametersCallback NetLog::Source::ToEventParametersCallback() const {
 }
 
 // static
-bool NetLog::Source::FromEventParameters(Value* event_params, Source* source) {
-  DictionaryValue* dict;
-  DictionaryValue* source_dict;
+bool NetLog::Source::FromEventParameters(base::Value* event_params,
+                                         Source* source) {
+  base::DictionaryValue* dict;
+  base::DictionaryValue* source_dict;
   int source_id;
   int source_type;
   if (!event_params ||
@@ -118,13 +120,13 @@ bool NetLog::Source::FromEventParameters(Value* event_params, Source* source) {
   return true;
 }
 
-Value* NetLog::Entry::ToValue() const {
-  DictionaryValue* entry_dict(new DictionaryValue());
+base::Value* NetLog::Entry::ToValue() const {
+  base::DictionaryValue* entry_dict(new base::DictionaryValue());
 
   entry_dict->SetString("time", TickCountToString(time_));
 
   // Set the entry source.
-  DictionaryValue* source_dict = new DictionaryValue();
+  base::DictionaryValue* source_dict = new base::DictionaryValue();
   source_dict->SetInteger("id", source_.id);
   source_dict->SetInteger("type", static_cast<int>(source_.type));
   entry_dict->Set("source", source_dict);
@@ -135,7 +137,7 @@ Value* NetLog::Entry::ToValue() const {
 
   // Set the event-specific parameters.
   if (parameters_callback_) {
-    Value* value = parameters_callback_->Run(log_level_);
+    base::Value* value = parameters_callback_->Run(log_level_);
     if (value)
       entry_dict->Set("params", value);
   }
@@ -143,7 +145,7 @@ Value* NetLog::Entry::ToValue() const {
   return entry_dict;
 }
 
-Value* NetLog::Entry::ParametersToValue() const {
+base::Value* NetLog::Entry::ParametersToValue() const {
   if (parameters_callback_)
     return parameters_callback_->Run(log_level_);
   return NULL;
@@ -187,6 +189,15 @@ NetLog* NetLog::ThreadSafeObserver::net_log() const {
   return net_log_;
 }
 
+NetLog::NetLog()
+    : last_id_(0),
+      base_log_level_(LOG_NONE),
+      effective_log_level_(LOG_NONE) {
+}
+
+NetLog::~NetLog() {
+}
+
 void NetLog::AddGlobalEntry(EventType type) {
   AddEntry(type,
            Source(net::NetLog::SOURCE_NONE, NextID()),
@@ -201,6 +212,73 @@ void NetLog::AddGlobalEntry(
            Source(net::NetLog::SOURCE_NONE, NextID()),
            net::NetLog::PHASE_NONE,
            &parameters_callback);
+}
+
+uint32 NetLog::NextID() {
+  return base::subtle::NoBarrier_AtomicIncrement(&last_id_, 1);
+}
+
+void NetLog::SetBaseLogLevel(LogLevel log_level) {
+  base::AutoLock lock(lock_);
+  base_log_level_ = log_level;
+
+  UpdateLogLevel();
+}
+
+NetLog::LogLevel NetLog::GetLogLevel() const {
+  base::subtle::Atomic32 log_level =
+      base::subtle::NoBarrier_Load(&effective_log_level_);
+  return static_cast<net::NetLog::LogLevel>(log_level);
+}
+
+void NetLog::AddThreadSafeObserver(
+    net::NetLog::ThreadSafeObserver* observer,
+    LogLevel log_level) {
+  base::AutoLock lock(lock_);
+
+  DCHECK(!observer->net_log_);
+  observers_.AddObserver(observer);
+  observer->net_log_ = this;
+  observer->log_level_ = log_level;
+  UpdateLogLevel();
+}
+
+void NetLog::SetObserverLogLevel(
+    net::NetLog::ThreadSafeObserver* observer,
+    LogLevel log_level) {
+  base::AutoLock lock(lock_);
+
+  DCHECK(observers_.HasObserver(observer));
+  DCHECK_EQ(this, observer->net_log_);
+  observer->log_level_ = log_level;
+  UpdateLogLevel();
+}
+
+void NetLog::RemoveThreadSafeObserver(
+    net::NetLog::ThreadSafeObserver* observer) {
+  base::AutoLock lock(lock_);
+
+  DCHECK(observers_.HasObserver(observer));
+  DCHECK_EQ(this, observer->net_log_);
+  observers_.RemoveObserver(observer);
+  observer->net_log_ = NULL;
+  UpdateLogLevel();
+}
+
+void NetLog::UpdateLogLevel() {
+  lock_.AssertAcquired();
+
+  // Look through all the observers and find the finest granularity
+  // log level (higher values of the enum imply *lower* log levels).
+  LogLevel new_effective_log_level = base_log_level_;
+  ObserverListBase<ThreadSafeObserver>::Iterator it(observers_);
+  ThreadSafeObserver* observer;
+  while ((observer = it.GetNext()) != NULL) {
+    new_effective_log_level =
+        std::min(new_effective_log_level, observer->log_level());
+  }
+  base::subtle::NoBarrier_Store(&effective_log_level_,
+                                new_effective_log_level);
 }
 
 // static
@@ -223,7 +301,7 @@ const char* NetLog::EventTypeToString(EventType event) {
 
 // static
 base::Value* NetLog::GetEventTypesAsValue() {
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   for (int i = 0; i < EVENT_COUNT; ++i) {
     dict->SetInteger(EventTypeToString(static_cast<EventType>(i)), i);
   }
@@ -244,7 +322,7 @@ const char* NetLog::SourceTypeToString(SourceType source) {
 
 // static
 base::Value* NetLog::GetSourceTypesAsValue() {
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   for (int i = 0; i < SOURCE_COUNT; ++i) {
     dict->SetInteger(SourceTypeToString(static_cast<SourceType>(i)), i);
   }
@@ -301,23 +379,6 @@ NetLog::ParametersCallback NetLog::StringCallback(const char* name,
   return base::Bind(&NetLogString16Callback, name, value);
 }
 
-void NetLog::OnAddObserver(ThreadSafeObserver* observer, LogLevel log_level) {
-  DCHECK(!observer->net_log_);
-  observer->net_log_ = this;
-  observer->log_level_ = log_level;
-}
-
-void NetLog::OnSetObserverLogLevel(ThreadSafeObserver* observer,
-                                   LogLevel log_level) {
-  DCHECK_EQ(this, observer->net_log_);
-  observer->log_level_ = log_level;
-}
-
-void NetLog::OnRemoveObserver(ThreadSafeObserver* observer) {
-  DCHECK_EQ(this, observer->net_log_);
-  observer->net_log_ = NULL;
-}
-
 void NetLog::AddEntry(EventType type,
                       const Source& source,
                       EventPhase phase,
@@ -327,7 +388,10 @@ void NetLog::AddEntry(EventType type,
     return;
   Entry entry(type, source, phase, base::TimeTicks::Now(),
               parameters_callback, log_level);
-  OnAddEntry(entry);
+
+  // Notify all of the log observers.
+  base::AutoLock lock(lock_);
+  FOR_EACH_OBSERVER(ThreadSafeObserver, observers_, OnAddEntry(entry));
 }
 
 void BoundNetLog::AddEntry(NetLog::EventType type,

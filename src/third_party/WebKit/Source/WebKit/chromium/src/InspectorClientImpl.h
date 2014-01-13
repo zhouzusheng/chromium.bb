@@ -64,17 +64,14 @@ public:
 
     virtual bool overridesShowPaintRects();
     virtual void setShowPaintRects(bool);
-
     virtual void setShowDebugBorders(bool);
-
-    virtual bool canShowFPSCounter();
     virtual void setShowFPSCounter(bool);
-
-    virtual bool canContinuouslyPaint();
     virtual void setContinuousPaintingEnabled(bool);
 
     virtual void getAllocatedObjects(HashSet<const void*>&);
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&);
+
+    virtual void dispatchKeyEvent(const WebCore::PlatformKeyboardEvent&);
 
     virtual void setTraceEventCallback(TraceEventCallback);
 

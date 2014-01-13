@@ -13,7 +13,6 @@
 
 namespace net {
 
-class QuicConfig;
 class QuicSession;
 
 namespace test {
@@ -23,7 +22,6 @@ class CryptoTestUtils;
 class NET_EXPORT_PRIVATE QuicCryptoClientStream : public QuicCryptoStream {
  public:
   QuicCryptoClientStream(const string& server_hostname,
-                         const QuicConfig& config,
                          QuicSession* session,
                          QuicCryptoClientConfig* crypto_config);
   virtual ~QuicCryptoClientStream();
@@ -36,9 +34,6 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream : public QuicCryptoStream {
   // handshake is started successfully.
   // TODO(agl): this should probably return void.
   virtual bool CryptoConnect();
-
-  const QuicNegotiatedParameters& negotiated_params() const;
-  const QuicCryptoNegotiatedParameters& crypto_negotiated_params() const;
 
   // num_sent_client_hellos returns the number of client hello messages that
   // have been sent. If the handshake has completed then this is one greater
@@ -64,11 +59,7 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream : public QuicCryptoStream {
   // connection has sent.
   int num_client_hellos_;
 
-  const QuicConfig& config_;
   QuicCryptoClientConfig* const crypto_config_;
-
-  QuicNegotiatedParameters negotiated_params_;
-  QuicCryptoNegotiatedParameters crypto_negotiated_params_;
 
   // Client's connection nonce (4-byte timestamp + 28 random bytes)
   std::string nonce_;

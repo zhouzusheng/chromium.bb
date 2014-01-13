@@ -6,8 +6,8 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/point_conversions.h"
@@ -50,16 +50,6 @@ float Display::GetForcedDeviceScaleFactor() {
 //static
 bool Display::HasForceDeviceScaleFactor() {
   return HasForceDeviceScaleFactorImpl();
-}
-
-// static
-int64 Display::GetID(uint16 manufacturer_id,
-                     uint32 product_code_hash,
-                     uint8 output_index) {
-  int64 new_id = ((static_cast<int64>(manufacturer_id) << 40) |
-                  (static_cast<int64>(product_code_hash) << 8) | output_index);
-  DCHECK_NE(kInvalidDisplayID, new_id);
-  return new_id;
 }
 
 Display::Display()

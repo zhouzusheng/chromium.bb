@@ -31,6 +31,7 @@
 #include "config.h"
 #include "core/platform/graphics/opentype/OpenTypeSanitizer.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "core/platform/SharedBuffer.h"
 #include "opentype-sanitiser.h"
 #include "ots-memory-stream.h"
@@ -48,6 +49,9 @@ PassRefPtr<SharedBuffer> OpenTypeSanitizer::sanitize()
     if (m_buffer->size() > maxWebFontSize)
         return 0;
 
+    if (RuntimeEnabledFeatures::woff2Enabled())
+        ots::EnableWOFF2();
+
     // A transcoded font is usually smaller than an original font.
     // However, it can be slightly bigger than the original one due to
     // name table replacement and/or padding for glyf table.
@@ -61,6 +65,12 @@ PassRefPtr<SharedBuffer> OpenTypeSanitizer::sanitize()
 
     const size_t transcodeLen = output.Tell();
     return SharedBuffer::create(static_cast<unsigned char*>(output.get()), transcodeLen);
+}
+
+bool OpenTypeSanitizer::supportsFormat(const String& format)
+{
+    return equalIgnoringCase(format, "woff")
+        || (RuntimeEnabledFeatures::woff2Enabled() && equalIgnoringCase(format, "woff2"));
 }
 
 } // namespace WebCore

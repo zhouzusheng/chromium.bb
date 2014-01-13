@@ -33,10 +33,10 @@
 
 #include "TestCommon.h"
 #include "WebTask.h"
-#include <public/WebRTCPeerConnectionHandler.h>
-#include <public/WebRTCSessionDescription.h>
-#include <public/WebRTCSessionDescriptionRequest.h>
-#include <public/WebRTCStatsRequest.h>
+#include "public/platform/WebRTCPeerConnectionHandler.h"
+#include "public/platform/WebRTCSessionDescription.h"
+#include "public/platform/WebRTCSessionDescriptionRequest.h"
+#include "public/platform/WebRTCStatsRequest.h"
 
 namespace WebKit {
 class WebRTCPeerConnectionHandlerClient;
@@ -63,7 +63,7 @@ public:
     virtual bool addStream(const WebKit::WebMediaStream&, const WebKit::WebMediaConstraints&) OVERRIDE;
     virtual void removeStream(const WebKit::WebMediaStream&) OVERRIDE;
     virtual void getStats(const WebKit::WebRTCStatsRequest&) OVERRIDE;
-    virtual WebKit::WebRTCDataChannelHandler* createDataChannel(const WebKit::WebString& label, bool reliable) OVERRIDE;
+    virtual WebKit::WebRTCDataChannelHandler* createDataChannel(const WebKit::WebString& label, const WebKit::WebRTCDataChannelInit&) OVERRIDE;
     virtual WebKit::WebRTCDTMFSenderHandler* createDTMFSender(const WebKit::WebMediaStreamTrack&) OVERRIDE;
     virtual void stop() OVERRIDE;
 

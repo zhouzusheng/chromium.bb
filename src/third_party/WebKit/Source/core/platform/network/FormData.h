@@ -20,26 +20,29 @@
 #ifndef FormData_h
 #define FormData_h
 
-#include "core/platform/KURL.h"
-#include <wtf/Forward.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "weborigin/KURL.h"
+#include "wtf/Forward.h"
+#include "wtf/RefCounted.h"
+#include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
+
+namespace WTF{
+class TextEncoding;
+}
 
 namespace WebCore {
 
 class Document;
 class FormDataList;
-class TextEncoding;
 
 class FormDataElement {
 public:
     FormDataElement() : m_type(data) { }
     explicit FormDataElement(const Vector<char>& array) : m_type(data), m_data(array) { }
 
-    FormDataElement(const String& filename, long long fileStart, long long fileLength, double expectedFileModificationTime, bool shouldGenerateFile) : m_type(encodedFile), m_filename(filename), m_fileStart(fileStart), m_fileLength(fileLength), m_expectedFileModificationTime(expectedFileModificationTime), m_shouldGenerateFile(shouldGenerateFile) { }
+    FormDataElement(const String& filename, long long fileStart, long long fileLength, double expectedFileModificationTime) : m_type(encodedFile), m_filename(filename), m_fileStart(fileStart), m_fileLength(fileLength), m_expectedFileModificationTime(expectedFileModificationTime) { }
     explicit FormDataElement(const KURL& blobURL) : m_type(encodedBlob), m_url(blobURL) { }
-    FormDataElement(const KURL& url, long long start, long long length, double expectedFileModificationTime) : m_type(encodedURL), m_url(url), m_fileStart(start), m_fileLength(length), m_expectedFileModificationTime(expectedFileModificationTime), m_shouldGenerateFile(false) { }
+    FormDataElement(const KURL& url, long long start, long long length, double expectedFileModificationTime) : m_type(encodedURL), m_url(url), m_fileStart(start), m_fileLength(length), m_expectedFileModificationTime(expectedFileModificationTime) { }
 
     void reportMemoryUsage(MemoryObjectInfo*) const;
 
@@ -55,8 +58,6 @@ public:
     long long m_fileStart;
     long long m_fileLength;
     double m_expectedFileModificationTime;
-    String m_generatedFilename;
-    bool m_shouldGenerateFile;
 };
 
 inline bool operator==(const FormDataElement& a, const FormDataElement& b)
@@ -95,15 +96,15 @@ public:
     static PassRefPtr<FormData> create(const void*, size_t);
     static PassRefPtr<FormData> create(const CString&);
     static PassRefPtr<FormData> create(const Vector<char>&);
-    static PassRefPtr<FormData> create(const FormDataList&, const TextEncoding&, EncodingType = FormURLEncoded);
-    static PassRefPtr<FormData> createMultiPart(const FormDataList&, const TextEncoding&, Document*);
+    static PassRefPtr<FormData> create(const FormDataList&, const WTF::TextEncoding&, EncodingType = FormURLEncoded);
+    static PassRefPtr<FormData> createMultiPart(const FormDataList&, const WTF::TextEncoding&, Document*);
     PassRefPtr<FormData> copy() const;
     PassRefPtr<FormData> deepCopy() const;
     ~FormData();
 
     void appendData(const void* data, size_t);
-    void appendFile(const String& filePath, bool shouldGenerateFile = false);
-    void appendFileRange(const String& filename, long long start, long long length, double expectedModificationTime, bool shouldGenerateFile = false);
+    void appendFile(const String& filePath);
+    void appendFileRange(const String& filename, long long start, long long length, double expectedModificationTime);
     void appendBlob(const KURL& blobURL);
     void appendURL(const KURL&);
     void appendURLRange(const KURL&, long long start, long long length, double expectedModificationTime);
@@ -114,9 +115,6 @@ public:
     bool isEmpty() const { return m_elements.isEmpty(); }
     const Vector<FormDataElement>& elements() const { return m_elements; }
     const Vector<char>& boundary() const { return m_boundary; }
-
-    void generateFiles(Document*);
-    void removeGeneratedFilesIfNeeded();
 
     bool alwaysStream() const { return m_alwaysStream; }
     void setAlwaysStream(bool alwaysStream) { m_alwaysStream = alwaysStream; }
@@ -144,12 +142,11 @@ private:
     FormData();
     FormData(const FormData&);
 
-    void appendKeyValuePairItems(const FormDataList&, const TextEncoding&, bool isMultiPartForm, Document*, EncodingType = FormURLEncoded);
+    void appendKeyValuePairItems(const FormDataList&, const WTF::TextEncoding&, bool isMultiPartForm, Document*, EncodingType = FormURLEncoded);
 
     Vector<FormDataElement> m_elements;
 
     int64_t m_identifier;
-    bool m_hasGeneratedFiles;
     bool m_alwaysStream;
     Vector<char> m_boundary;
     bool m_containsPasswordData;

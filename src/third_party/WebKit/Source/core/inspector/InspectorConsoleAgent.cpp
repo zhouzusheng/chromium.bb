@@ -39,8 +39,11 @@
 #include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptCallFrame.h"
 #include "core/inspector/ScriptCallStack.h"
+#include "core/loader/DocumentLoader.h"
 #include "core/page/Console.h"
 #include "core/page/DOMWindow.h"
+#include "core/page/Frame.h"
+#include "core/page/Page.h"
 #include "core/platform/network/ResourceError.h"
 #include "core/platform/network/ResourceResponse.h"
 #include <wtf/CurrentTime.h>
@@ -93,6 +96,7 @@ void InspectorConsoleAgent::enable(ErrorString*)
 
     if (m_expiredConsoleMessageCount) {
         ConsoleMessage expiredMessage(!isWorkerAgent(), OtherMessageSource, LogMessageType, WarningMessageLevel, String::format("%d console messages are not shown.", m_expiredConsoleMessageCount));
+        expiredMessage.setTimestamp(0);
         expiredMessage.addToFrontend(m_frontend, m_injectedScriptManager, false);
     }
 
@@ -177,10 +181,6 @@ void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageTyp
         clearMessages(&error);
     }
 
-    // Ignore errors like "*property=value". This trick is used for IE7: http://stackoverflow.com/questions/4563651/what-does-an-asterisk-do-in-a-css-property-name
-    if (source == CSSMessageSource && message.contains(": *"))
-        return;
-
     bool canGenerateCallStack = !isWorkerAgent() && m_frontend;
     addConsoleMessage(adoptPtr(new ConsoleMessage(canGenerateCallStack, source, type, level, message, scriptId, lineNumber, state, requestIdentifier)));
 }
@@ -193,7 +193,7 @@ Vector<unsigned> InspectorConsoleAgent::consoleMessageArgumentCounts()
     return result;
 }
 
-void InspectorConsoleAgent::startTiming(const String& title)
+void InspectorConsoleAgent::startConsoleTiming(Frame*, const String& title)
 {
     // Follow Firebug's behavior of requiring a title that is not null or
     // undefined for timing functions
@@ -203,7 +203,7 @@ void InspectorConsoleAgent::startTiming(const String& title)
     m_times.add(title, monotonicallyIncreasingTime());
 }
 
-void InspectorConsoleAgent::stopTiming(const String& title, PassRefPtr<ScriptCallStack> callStack)
+void InspectorConsoleAgent::stopConsoleTiming(Frame*, const String& title, PassRefPtr<ScriptCallStack> callStack)
 {
     // Follow Firebug's behavior of requiring a title that is not null or
     // undefined for timing functions
@@ -223,7 +223,7 @@ void InspectorConsoleAgent::stopTiming(const String& title, PassRefPtr<ScriptCal
     addMessageToConsole(ConsoleAPIMessageSource, TimingMessageType, DebugMessageLevel, message, lastCaller.sourceURL(), lastCaller.lineNumber());
 }
 
-void InspectorConsoleAgent::count(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
+void InspectorConsoleAgent::consoleCount(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
 {
     RefPtr<ScriptCallStack> callStack(createScriptCallStackForConsole(state));
     const ScriptCallFrame& lastCaller = callStack->at(0);
@@ -257,14 +257,19 @@ void InspectorConsoleAgent::frameWindowDiscarded(DOMWindow* window)
     m_injectedScriptManager->discardInjectedScriptsFor(window);
 }
 
-void InspectorConsoleAgent::didFinishXHRLoading(ThreadableLoaderClient*, unsigned long requestIdentifier, const String&, const String& url, const String& sendURL, unsigned sendLineNumber)
+void InspectorConsoleAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
+{
+    if (loader->frame() != frame->page()->mainFrame())
+        return;
+    reset();
+}
+
+void InspectorConsoleAgent::didFinishXHRLoading(ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const String& url, const String& sendURL, unsigned sendLineNumber)
 {
     if (m_frontend && m_state->getBoolean(ConsoleAgentState::monitoringXHR)) {
         String message = "XHR finished loading: \"" + url + "\".";
         addMessageToConsole(NetworkMessageSource, LogMessageType, DebugMessageLevel, message, sendURL, sendLineNumber, 0, requestIdentifier);
     }
-
-
 }
 
 void InspectorConsoleAgent::didReceiveResourceResponse(unsigned long requestIdentifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader*)

@@ -30,11 +30,10 @@
 #include "RuntimeEnabledFeatures.h"
 #include "core/css/CSSOMUtils.h"
 #include "core/css/CSSSelectorList.h"
-#include <wtf/Assertions.h>
-#include <wtf/HashMap.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/Vector.h>
+#include "wtf/Assertions.h"
+#include "wtf/HashMap.h"
+#include "wtf/StdLibExtras.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -684,8 +683,12 @@ String CSSSelector::selectorText(const String& rightSide) const
     if (const CSSSelector* tagHistory = cs->tagHistory()) {
         switch (cs->relation()) {
         case CSSSelector::Descendant:
+            if (cs->relationIsForShadowDistributed())
+                return tagHistory->selectorText("::-webkit-distributed(" + str.toString() + rightSide + ")");
             return tagHistory->selectorText(" " + str.toString() + rightSide);
         case CSSSelector::Child:
+            if (cs->relationIsForShadowDistributed())
+                return tagHistory->selectorText("::-webkit-distributed(> " + str.toString() + rightSide + ")");
             return tagHistory->selectorText(" > " + str.toString() + rightSide);
         case CSSSelector::DirectAdjacent:
             return tagHistory->selectorText(" + " + str.toString() + rightSide);
@@ -693,10 +696,8 @@ String CSSSelector::selectorText(const String& rightSide) const
             return tagHistory->selectorText(" ~ " + str.toString() + rightSide);
         case CSSSelector::SubSelector:
             ASSERT_NOT_REACHED();
-        case CSSSelector::ShadowDescendant:
+        case CSSSelector::ShadowPseudo:
             return tagHistory->selectorText(str.toString() + rightSide);
-        case CSSSelector::ShadowDistributed:
-            return tagHistory->selectorText("::-webkit-distributed(" + str.toString() + rightSide + ")");
         }
     }
     return str.toString() + rightSide;

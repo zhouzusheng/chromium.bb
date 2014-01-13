@@ -8,7 +8,7 @@
 #include "base/compiler_specific.h"
 #include "base/debug/trace_event.h"
 #include "base/format_macros.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/sys_byteorder.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_log.h"
@@ -291,8 +291,8 @@ int SOCKS5ClientSocket::DoGreetWrite() {
   handshake_buf_ = new IOBuffer(handshake_buf_len);
   memcpy(handshake_buf_->data(), &buffer_.data()[bytes_sent_],
          handshake_buf_len);
-  return transport_->socket()->Write(handshake_buf_, handshake_buf_len,
-                                     io_callback_);
+  return transport_->socket()
+      ->Write(handshake_buf_.get(), handshake_buf_len, io_callback_);
 }
 
 int SOCKS5ClientSocket::DoGreetWriteComplete(int result) {
@@ -314,8 +314,8 @@ int SOCKS5ClientSocket::DoGreetRead() {
   next_state_ = STATE_GREET_READ_COMPLETE;
   size_t handshake_buf_len = kGreetReadHeaderSize - bytes_received_;
   handshake_buf_ = new IOBuffer(handshake_buf_len);
-  return transport_->socket()->Read(handshake_buf_, handshake_buf_len,
-                                    io_callback_);
+  return transport_->socket()
+      ->Read(handshake_buf_.get(), handshake_buf_len, io_callback_);
 }
 
 int SOCKS5ClientSocket::DoGreetReadComplete(int result) {
@@ -389,8 +389,8 @@ int SOCKS5ClientSocket::DoHandshakeWrite() {
   handshake_buf_ = new IOBuffer(handshake_buf_len);
   memcpy(handshake_buf_->data(), &buffer_[bytes_sent_],
          handshake_buf_len);
-  return transport_->socket()->Write(handshake_buf_, handshake_buf_len,
-                                     io_callback_);
+  return transport_->socket()
+      ->Write(handshake_buf_.get(), handshake_buf_len, io_callback_);
 }
 
 int SOCKS5ClientSocket::DoHandshakeWriteComplete(int result) {
@@ -423,8 +423,8 @@ int SOCKS5ClientSocket::DoHandshakeRead() {
 
   int handshake_buf_len = read_header_size - bytes_received_;
   handshake_buf_ = new IOBuffer(handshake_buf_len);
-  return transport_->socket()->Read(handshake_buf_, handshake_buf_len,
-                                    io_callback_);
+  return transport_->socket()
+      ->Read(handshake_buf_.get(), handshake_buf_len, io_callback_);
 }
 
 int SOCKS5ClientSocket::DoHandshakeReadComplete(int result) {

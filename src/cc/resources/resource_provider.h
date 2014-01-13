@@ -12,7 +12,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "cc/base/cc_export.h"
@@ -59,6 +59,8 @@ class CC_EXPORT ResourceProvider {
                                              int highp_threshold_min);
 
   virtual ~ResourceProvider();
+
+  bool Reinitialize(int highp_threshold_min);
 
   void DidLoseOutputSurface() { lost_output_surface_ = true; }
 
@@ -271,6 +273,7 @@ class CC_EXPORT ResourceProvider {
     friend class base::RefCounted<Fence>;
     virtual ~Fence() {}
 
+   private:
     DISALLOW_COPY_AND_ASSIGN(Fence);
   };
 
@@ -290,11 +293,29 @@ class CC_EXPORT ResourceProvider {
   void BeginSetPixels(ResourceId id);
   void ForceSetPixelsToComplete(ResourceId id);
   bool DidSetPixelsComplete(ResourceId id);
-  void AbortSetPixels(ResourceId id);
+
+  // Acquire and release an image. The image allows direct
+  // manipulation of texture memory.
+  void AcquireImage(ResourceId id);
+  void ReleaseImage(ResourceId id);
+
+  // Maps the acquired image so that its pixels could be modified.
+  // Unmap is called when all pixels are set.
+  uint8_t* MapImage(ResourceId id);
+  void UnmapImage(ResourceId id);
+
+  // Binds the image to a texture.
+  void BindImage(ResourceId id);
+
+  // Returns the stride for the image.
+  int GetImageStride(ResourceId id);
 
   // For tests only! This prevents detecting uninitialized reads.
   // Use SetPixels or LockForWrite to allocate implicitly.
   void AllocateForTesting(ResourceId id);
+
+  // For tests only!
+  void CreateForTesting(ResourceId id);
 
   // Sets the current read fence. If a resource is locked for read
   // and has read fences enabled, the resource will not allow writes
@@ -302,7 +323,7 @@ class CC_EXPORT ResourceProvider {
   void SetReadLockFence(scoped_refptr<Fence> fence) {
     current_read_lock_fence_ = fence;
   }
-  Fence* GetReadLockFence() { return current_read_lock_fence_; }
+  Fence* GetReadLockFence() { return current_read_lock_fence_.get(); }
 
   // Enable read lock fences for a specific resource.
   void EnableReadLockFences(ResourceProvider::ResourceId id, bool enable);
@@ -322,7 +343,12 @@ class CC_EXPORT ResourceProvider {
   struct Resource {
     Resource();
     ~Resource();
-    Resource(unsigned texture_id, gfx::Size size, GLenum format, GLenum filter);
+    Resource(unsigned texture_id,
+             gfx::Size size,
+             GLenum format,
+             GLenum filter,
+             GLenum texture_pool,
+             TextureUsageHint hint);
     Resource(uint8_t* pixels, gfx::Size size, GLenum format, GLenum filter);
 
     unsigned gl_id;
@@ -347,6 +373,9 @@ class CC_EXPORT ResourceProvider {
     GLenum format;
     // TODO(skyostil): Use a separate sampler object for filter state.
     GLenum filter;
+    unsigned image_id;
+    GLenum texture_pool;
+    TextureUsageHint hint;
     ResourceType type;
   };
   typedef base::hash_map<ResourceId, Resource> ResourceMap;
@@ -360,8 +389,8 @@ class CC_EXPORT ResourceProvider {
   typedef base::hash_map<int, Child> ChildMap;
 
   bool ReadLockFenceHasPassed(Resource* resource) {
-    return !resource->read_lock_fence ||
-        resource->read_lock_fence->HasPassed();
+    return !resource->read_lock_fence.get() ||
+           resource->read_lock_fence->HasPassed();
   }
 
   explicit ResourceProvider(OutputSurface* output_surface);
@@ -382,6 +411,7 @@ class CC_EXPORT ResourceProvider {
     ForShutdown,
   };
   void DeleteResourceInternal(ResourceMap::iterator it, DeleteStyle style);
+  void LazyCreate(Resource* resource);
   void LazyAllocate(Resource* resource);
 
   OutputSurface* output_surface_;

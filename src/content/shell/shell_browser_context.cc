@@ -15,9 +15,16 @@
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_switches.h"
+#include "content/shell/common/shell_switches.h"
 #include "content/shell/shell_download_manager_delegate.h"
-#include "content/shell/shell_switches.h"
 #include "content/shell/shell_url_request_context_getter.h"
+
+#include "base/prefs/json_pref_store.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service_builder.h"
+#include "base/prefs/pref_service.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/user_prefs/user_prefs.h"
 
 #if defined(OS_WIN)
 #include "base/base_paths_win.h"
@@ -66,6 +73,7 @@ ShellBrowserContext::~ShellBrowserContext() {
     BrowserThread::DeleteSoon(
       BrowserThread::IO, FROM_HERE, resource_context_.release());
   }
+  BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(this);
 }
 
 void ShellBrowserContext::InitWhileIOAllowed() {
@@ -100,6 +108,18 @@ void ShellBrowserContext::InitWhileIOAllowed() {
 
   if (!file_util::PathExists(path_))
     file_util::CreateDirectory(path_);
+  base::FilePath pref_file = path_.AppendASCII("prefs.json");
+  pref_registry_ = new PrefRegistrySimple();
+  pref_registry_->RegisterStringPref("spellcheck.dictionary", "en-US");
+  pref_registry_->RegisterBooleanPref("browser.enable_spellchecking", true);
+  pref_registry_->RegisterBooleanPref("spellcheck.use_spelling_service", true);
+  pref_registry_->RegisterBooleanPref("browser.enable_autospellcorrect", true);
+  PrefServiceBuilder builder;
+  builder.WithUserFilePrefs(pref_file, JsonPrefStore::GetTaskRunnerForFile(pref_file, BrowserThread::GetBlockingPool()));
+  pref_service_.reset(builder.Create(pref_registry_.get()));
+  user_prefs::UserPrefs::Set(this, pref_service_.get());
+
+  BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(this, false);
 }
 
 base::FilePath ShellBrowserContext::GetPath() {
@@ -113,7 +133,7 @@ bool ShellBrowserContext::IsOffTheRecord() const {
 DownloadManagerDelegate* ShellBrowserContext::GetDownloadManagerDelegate()  {
   DownloadManager* manager = BrowserContext::GetDownloadManager(this);
 
-  if (!download_manager_delegate_) {
+  if (!download_manager_delegate_.get()) {
     download_manager_delegate_ = new ShellDownloadManagerDelegate();
     download_manager_delegate_->SetDownloadManager(manager);
     CommandLine* cmd_line = CommandLine::ForCurrentProcess();
@@ -132,7 +152,7 @@ net::URLRequestContextGetter* ShellBrowserContext::GetRequestContext()  {
 
 net::URLRequestContextGetter* ShellBrowserContext::CreateRequestContext(
     ProtocolHandlerMap* protocol_handlers) {
-  DCHECK(!url_request_getter_);
+  DCHECK(!url_request_getter_.get());
   url_request_getter_ = new ShellURLRequestContextGetter(
       ignore_certificate_errors_,
       GetPath(),

@@ -27,17 +27,13 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGShape.h"
 
 #include "core/platform/graphics/FloatPoint.h"
-#include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/StrokeStyleApplier.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/PointerEventsHitRules.h"
-#include "core/rendering/svg/RenderSVGContainer.h"
 #include "core/rendering/svg/RenderSVGResourceMarker.h"
 #include "core/rendering/svg/RenderSVGResourceSolidColor.h"
 #include "core/rendering/svg/SVGPathData.h"
@@ -45,8 +41,6 @@
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGStyledTransformableElement.h"
-#include "core/svg/SVGTransformList.h"
-#include "core/svg/SVGURIReference.h"
 #include <wtf/MathExtras.h>
 
 namespace WebCore {
@@ -101,16 +95,17 @@ void RenderSVGShape::strokeShape(GraphicsContext* context) const
 bool RenderSVGShape::shapeDependentStrokeContains(const FloatPoint& point)
 {
     ASSERT(m_path);
-    BoundingRectStrokeStyleApplier applier(this, style());
+    StrokeData strokeData;
+    SVGRenderSupport::applyStrokeStyleToStrokeData(&strokeData, style(), this);
 
     if (hasNonScalingStroke()) {
         AffineTransform nonScalingTransform = nonScalingStrokeTransform();
         Path* usePath = nonScalingStrokePath(m_path.get(), nonScalingTransform);
 
-        return usePath->strokeContains(&applier, nonScalingTransform.mapPoint(point));
+        return usePath->strokeContains(nonScalingTransform.mapPoint(point), strokeData);
     }
 
-    return m_path->strokeContains(&applier, point);
+    return m_path->strokeContains(point, strokeData);
 }
 
 bool RenderSVGShape::shapeDependentFillContains(const FloatPoint& point, const WindRule fillRule) const
@@ -270,6 +265,8 @@ void RenderSVGShape::fillAndStrokeShape(GraphicsContext* context)
 
 void RenderSVGShape::paint(PaintInfo& paintInfo, const LayoutPoint&)
 {
+    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
+
     if (paintInfo.context->paintingDisabled() || style()->visibility() == HIDDEN || isEmpty())
         return;
     FloatRect boundingBox = repaintRectInLocalCoordinates();
@@ -383,19 +380,20 @@ FloatRect RenderSVGShape::calculateStrokeBoundingBox() const
     ASSERT(m_path);
     FloatRect strokeBoundingBox = m_fillBoundingBox;
 
-    const SVGRenderStyle* svgStyle = style()->svgStyle();
-    if (svgStyle->hasStroke()) {
-        BoundingRectStrokeStyleApplier strokeStyle(this, style());
+    if (style()->svgStyle()->hasStroke()) {
+        StrokeData strokeData;
+        SVGRenderSupport::applyStrokeStyleToStrokeData(&strokeData, style(), this);
         if (hasNonScalingStroke()) {
             AffineTransform nonScalingTransform = nonScalingStrokeTransform();
             if (nonScalingTransform.isInvertible()) {
                 Path* usePath = nonScalingStrokePath(m_path.get(), nonScalingTransform);
-                FloatRect strokeBoundingRect = usePath->strokeBoundingRect(&strokeStyle);
+                FloatRect strokeBoundingRect = usePath->strokeBoundingRect(strokeData);
                 strokeBoundingRect = nonScalingTransform.inverse().mapRect(strokeBoundingRect);
                 strokeBoundingBox.unite(strokeBoundingRect);
             }
-        } else
-            strokeBoundingBox.unite(path().strokeBoundingRect(&strokeStyle));
+        } else {
+            strokeBoundingBox.unite(path().strokeBoundingRect(strokeData));
+        }
     }
 
     if (!m_markerPositions.isEmpty())
@@ -466,5 +464,3 @@ void RenderSVGShape::processMarkerPositions()
 }
 
 }
-
-#endif // ENABLE(SVG)

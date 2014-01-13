@@ -35,12 +35,8 @@
 namespace WebCore {
 
 class Frame;
-class InspectorArray;
-class InspectorAgent;
 class InspectorFrontend;
-class InspectorObject;
 class InspectorPageAgent;
-class InspectorValue;
 class InspectorState;
 class InstrumentingAgents;
 class Page;

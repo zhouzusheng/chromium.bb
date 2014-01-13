@@ -8,10 +8,10 @@
 #include <string>
 #include <vector>
 
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/values.h"
-#include "cc/debug/latency_info.h"
 #include "cc/layers/layer_impl.h"
+#include "ui/base/latency_info.h"
 
 #if defined(COMPILER_GCC)
 namespace BASE_HASH_NAMESPACE {
@@ -38,7 +38,6 @@ class OutputSurface;
 class PaintTimeCounter;
 class Proxy;
 class ResourceProvider;
-class ScrollbarLayerImpl;
 class TileManager;
 struct RendererCapabilities;
 
@@ -69,6 +68,7 @@ class CC_EXPORT LayerTreeImpl {
   bool PinchGestureActive() const;
   base::TimeTicks CurrentFrameTimeTicks() const;
   base::Time CurrentFrameTime() const;
+  base::TimeTicks CurrentPhysicalTimeTicks() const;
   void SetNeedsCommit();
 
   // Tree specific methods exposed to layer-impl tree.
@@ -80,7 +80,6 @@ class CC_EXPORT LayerTreeImpl {
   const LayerTreeDebugState& debug_state() const;
   float device_scale_factor() const;
   gfx::Size device_viewport_size() const;
-  std::string layer_tree_as_text() const;
   DebugRectHistory* debug_rect_history() const;
   scoped_ptr<base::Value> AsValue() const;
 
@@ -152,8 +151,6 @@ class CC_EXPORT LayerTreeImpl {
 
   void ClearRenderSurfaces();
 
-  bool AreVisibleResourcesReady() const;
-
   const LayerImplList& RenderSurfaceLayerList() const;
 
   // These return the size of the root scrollable area and the size of
@@ -186,32 +183,19 @@ class CC_EXPORT LayerTreeImpl {
   // Useful for debug assertions, probably shouldn't be used for anything else.
   Proxy* proxy() const;
 
-  void SetPinchZoomHorizontalLayerId(int layer_id);
-  void SetPinchZoomVerticalLayerId(int layer_id);
-
-  void DidBeginScroll();
-  void DidUpdateScroll();
-  void DidEndScroll();
-
   void SetRootLayerScrollOffsetDelegate(
       LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate);
 
-  void SetLatencyInfo(const LatencyInfo& latency_info);
-  const LatencyInfo& GetLatencyInfo();
+  void SetLatencyInfo(const ui::LatencyInfo& latency_info);
+  const ui::LatencyInfo& GetLatencyInfo();
   void ClearLatencyInfo();
+
+  void WillModifyTilePriorities();
 
  protected:
   explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);
 
   void UpdateSolidColorScrollbars();
-
-  // Hide existence of pinch-zoom scrollbars.
-  void UpdatePinchZoomScrollbars();
-  void FadeInPinchZoomScrollbars();
-  void FadeOutPinchZoomScrollbars();
-  ScrollbarLayerImpl* PinchZoomScrollbarHorizontal();
-  ScrollbarLayerImpl* PinchZoomScrollbarVertical();
-  bool HasPinchZoomScrollbars() const;
 
   void UpdateRootScrollLayerSizeDelta();
 
@@ -224,9 +208,6 @@ class CC_EXPORT LayerTreeImpl {
   LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate_;
   SkColor background_color_;
   bool has_transparent_background_;
-
-  int pinch_zoom_scrollbar_horizontal_layer_id_;
-  int pinch_zoom_scrollbar_vertical_layer_id_;
 
   float page_scale_factor_;
   float page_scale_delta_;
@@ -252,7 +233,7 @@ class CC_EXPORT LayerTreeImpl {
   // structural differences relative to the active tree.
   bool needs_full_tree_sync_;
 
-  LatencyInfo latency_info_;
+  ui::LatencyInfo latency_info_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeImpl);
 };

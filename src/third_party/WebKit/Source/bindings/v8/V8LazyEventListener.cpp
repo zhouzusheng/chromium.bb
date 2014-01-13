@@ -39,7 +39,7 @@
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
-#include "bindings/v8/V8RecursionScope.h"
+#include "bindings/v8/V8ScriptRunner.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
 #include "core/html/HTMLElement.h"
@@ -84,8 +84,6 @@ v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ScriptExecutionCo
     if (handlerFunction.IsEmpty() || receiver.IsEmpty())
         return v8::Local<v8::Value>();
 
-    v8::Handle<v8::Value> parameters[1] = { jsEvent };
-
     // FIXME: Can |context| be 0 here?
     if (!context)
         return v8::Local<v8::Value>();
@@ -100,20 +98,23 @@ v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ScriptExecutionCo
     if (!frame->script()->canExecuteScripts(AboutToExecuteScript))
         return v8::Local<v8::Value>();
 
-    return frame->script()->callFunction(handlerFunction, receiver, 1, parameters);
+    v8::Handle<v8::Value> parameters[1] = { jsEvent };
+    return frame->script()->callFunction(handlerFunction, receiver, WTF_ARRAY_LENGTH(parameters), parameters);
 }
 
-static v8::Handle<v8::Value> V8LazyEventListenerToString(const v8::Arguments& args)
+static void V8LazyEventListenerToString(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
-    return args.Holder()->GetHiddenValue(V8HiddenPropertyName::toStringString());
+    v8SetReturnValue(args, args.Holder()->GetHiddenValue(V8HiddenPropertyName::toStringString()));
 }
 
 void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
 {
-    if (hasExistingListenerObject())
+    if (context->isDocument() && !toDocument(context)->contentSecurityPolicy()->allowInlineEventHandlers(m_sourceURL, m_position.m_line)) {
+        clearListenerObject();
         return;
+    }
 
-    if (context->isDocument() && !toDocument(context)->contentSecurityPolicy()->allowInlineEventHandlers(m_sourceURL, m_position.m_line))
+    if (hasExistingListenerObject())
         return;
 
     ASSERT(context->isDocument());
@@ -135,6 +136,8 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
 
     v8::Context::Scope scope(v8Context);
 
+    // FIXME: Remove the following 'with' hack.
+    //
     // Nodes other than the document object, when executing inline event
     // handlers push document, form, and the target node on the scope chain.
     // We do this by using 'with' statement.
@@ -161,22 +164,13 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
 
     v8::Handle<v8::String> codeExternalString = v8String(code, isolate);
 
-    v8::Handle<v8::Script> script = ScriptSourceCode::compileScript(codeExternalString, m_sourceURL, m_position, 0, isolate);
-    if (script.IsEmpty())
-        return;
-
-    // FIXME: Remove this code when we stop doing the 'with' hack above.
-    v8::Local<v8::Value> value;
-    {
-        V8RecursionScope::MicrotaskSuppression scope;
-        value = script->Run();
-    }
-    if (value.IsEmpty())
+    v8::Local<v8::Value> result = V8ScriptRunner::compileAndRunInternalScript(codeExternalString, isolate, m_sourceURL, m_position, 0);
+    if (result.IsEmpty())
         return;
 
     // Call the outer function to get the inner function.
-    ASSERT(value->IsFunction());
-    v8::Local<v8::Function> intermediateFunction = value.As<v8::Function>();
+    ASSERT(result->IsFunction());
+    v8::Local<v8::Function> intermediateFunction = result.As<v8::Function>();
 
     HTMLFormElement* formElement = 0;
     if (m_node && m_node->isHTMLElement())
@@ -189,19 +183,15 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
     v8::Local<v8::Object> thisObject = v8::Object::New();
     if (thisObject.IsEmpty())
         return;
-    if (!thisObject->ForceSet(v8Integer(0, isolate), nodeWrapper))
+    if (!thisObject->ForceSet(v8::Integer::New(0, isolate), nodeWrapper))
         return;
-    if (!thisObject->ForceSet(v8Integer(1, isolate), formWrapper))
+    if (!thisObject->ForceSet(v8::Integer::New(1, isolate), formWrapper))
         return;
-    if (!thisObject->ForceSet(v8Integer(2, isolate), documentWrapper))
+    if (!thisObject->ForceSet(v8::Integer::New(2, isolate), documentWrapper))
         return;
 
     // FIXME: Remove this code when we stop doing the 'with' hack above.
-    v8::Local<v8::Value> innerValue;
-    {
-        V8RecursionScope::MicrotaskSuppression scope;
-        innerValue = intermediateFunction->Call(thisObject, 0, 0);
-    }
+    v8::Local<v8::Value> innerValue = V8ScriptRunner::callInternalFunction(intermediateFunction, thisObject, 0, 0, isolate);
     if (innerValue.IsEmpty() || !innerValue->IsFunction())
         return;
 
@@ -215,10 +205,10 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
     // source returned (sometimes a RegExp is applied as well) for some
     // other use. That fails miserably if the actual wrapper source is
     // returned.
-    v8::Persistent<v8::FunctionTemplate>& toStringTemplate =
+    v8::Handle<v8::FunctionTemplate> toStringTemplate =
         V8PerIsolateData::current()->lazyEventListenerToStringTemplate();
     if (toStringTemplate.IsEmpty())
-        toStringTemplate = v8::Persistent<v8::FunctionTemplate>::New(isolate, v8::FunctionTemplate::New(V8LazyEventListenerToString));
+        toStringTemplate = v8::FunctionTemplate::New(V8LazyEventListenerToString);
     v8::Local<v8::Function> toStringFunction;
     if (!toStringTemplate.IsEmpty())
         toStringFunction = toStringTemplate->GetFunction();

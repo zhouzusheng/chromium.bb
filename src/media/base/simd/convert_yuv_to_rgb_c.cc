@@ -5,9 +5,27 @@
 #include "media/base/simd/convert_yuv_to_rgb.h"
 #include "media/base/simd/yuv_to_rgb_table.h"
 
+namespace media {
+
 #define packuswb(x) ((x) < 0 ? 0 : ((x) > 255 ? 255 : (x)))
 #define paddsw(x, y) (((x) + (y)) < -32768 ? -32768 : \
     (((x) + (y)) > 32767 ? 32767 : ((x) + (y))))
+
+// On Android, pixel layout is RGBA (see skia/include/core/SkColorPriv.h);
+// however, other Chrome platforms use BGRA (see skia/config/SkUserConfig.h).
+// Ideally, android should not use the functions here due to performance issue
+// (http://crbug.com/249980).
+#if defined(OS_ANDROID)
+#define SK_R32_SHIFT    0
+#define SK_G32_SHIFT    8
+#define SK_B32_SHIFT    16
+#define SK_A32_SHIFT    24
+#else
+#define SK_B32_SHIFT    0
+#define SK_G32_SHIFT    8
+#define SK_R32_SHIFT    16
+#define SK_A32_SHIFT    24
+#endif
 
 static inline void ConvertYUVToRGB32_C(uint8 y,
                                        uint8 u,
@@ -33,10 +51,10 @@ static inline void ConvertYUVToRGB32_C(uint8 y,
   r >>= 6;
   a >>= 6;
 
-  *reinterpret_cast<uint32*>(rgb_buf) = (packuswb(b)) |
-                                        (packuswb(g) << 8) |
-                                        (packuswb(r) << 16) |
-                                        (packuswb(a) << 24);
+  *reinterpret_cast<uint32*>(rgb_buf) = (packuswb(b) << SK_B32_SHIFT) |
+                                        (packuswb(g) << SK_G32_SHIFT) |
+                                        (packuswb(r) << SK_R32_SHIFT) |
+                                        (packuswb(a) << SK_A32_SHIFT);
 }
 
 static inline void ConvertYUVAToARGB_C(uint8 y,
@@ -64,10 +82,11 @@ static inline void ConvertYUVAToARGB_C(uint8 y,
   g = packuswb(g) * a >> 8;
   r = packuswb(r) * a >> 8;
 
-  *reinterpret_cast<uint32*>(rgb_buf) = b | (g << 8) | (r << 16) | (a << 24);
+  *reinterpret_cast<uint32*>(rgb_buf) = (b << SK_B32_SHIFT) |
+                                        (g << SK_G32_SHIFT) |
+                                        (r << SK_R32_SHIFT) |
+                                        (a << SK_A32_SHIFT);
 }
-
-extern "C" {
 
 void ConvertYUVToRGB32Row_C(const uint8* y_buf,
                             const uint8* u_buf,
@@ -180,10 +199,6 @@ void LinearScaleYUVToRGB32RowWithRange_C(const uint8* y_buf,
     rgb_buf += 8;
   }
 }
-
-}
-
-namespace media {
 
 void ConvertYUVToRGB32_C(const uint8* yplane,
                          const uint8* uplane,

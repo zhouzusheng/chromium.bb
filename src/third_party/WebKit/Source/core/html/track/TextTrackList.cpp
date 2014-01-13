@@ -28,13 +28,11 @@
 #include "core/html/track/TextTrackList.h"
 
 #include "core/dom/EventNames.h"
-#include "core/dom/ScriptExecutionContext.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/track/InbandTextTrack.h"
 #include "core/html/track/LoadableTextTrack.h"
 #include "core/html/track/TextTrack.h"
 #include "core/html/track/TrackEvent.h"
-#include "core/platform/graphics/InbandTextTrackPrivate.h"
 
 using namespace WebCore;
 
@@ -45,6 +43,7 @@ TextTrackList::TextTrackList(HTMLMediaElement* owner, ScriptExecutionContext* co
     , m_dispatchingEvents(0)
 {
     ASSERT(context->isDocument());
+    ScriptWrappable::init(this);
 }
 
 TextTrackList::~TextTrackList()

@@ -30,13 +30,10 @@
 
 #include "HTMLNames.h"
 #include "SVGNames.h"
-#include "bindings/v8/DOMWrapperWorld.h"
 #include "core/css/CSSStyleSheet.h"
-#include "core/css/SelectorChecker.h"
 #include "core/css/StyleInvalidationAnalysis.h"
-#include "core/css/StyleResolver.h"
 #include "core/css/StyleSheetContents.h"
-#include "core/css/StyleSheetList.h"
+#include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ProcessingInstruction.h"
@@ -273,7 +270,7 @@ void DocumentStyleSheetCollection::collectActiveStyleSheets(Vector<RefPtr<StyleS
     for (StyleSheetCandidateListHashSet::iterator it = begin; it != end; ++it) {
         Node* n = *it;
         StyleSheet* sheet = 0;
-        if (n->nodeType() == Node::PROCESSING_INSTRUCTION_NODE) {
+        if (n->nodeType() == Node::PROCESSING_INSTRUCTION_NODE && !m_document->isHTMLDocument()) {
             // Processing instruction (XML documents only).
             // We don't support linking to embedded CSS stylesheets, see <https://bugs.webkit.org/show_bug.cgi?id=49281> for discussion.
             ProcessingInstruction* pi = static_cast<ProcessingInstruction*>(n);
@@ -281,15 +278,11 @@ void DocumentStyleSheetCollection::collectActiveStyleSheets(Vector<RefPtr<StyleS
             // Don't apply XSL transforms to already transformed documents -- <rdar://problem/4132806>
             if (pi->isXSL() && !m_document->transformSourceDocument()) {
                 // Don't apply XSL transforms until loading is finished.
-                if (!m_document->parsing())
+                if (!m_document->parsing() && !pi->isLoading())
                     m_document->applyXSLTransform(pi);
                 return;
             }
-        } else if ((n->isHTMLElement() && (n->hasTagName(linkTag) || n->hasTagName(styleTag)))
-#if ENABLE(SVG)
-                   ||  (n->isSVGElement() && n->hasTagName(SVGNames::styleTag))
-#endif
-                   ) {
+        } else if ((n->isHTMLElement() && (n->hasTagName(linkTag) || n->hasTagName(styleTag))) || (n->isSVGElement() && n->hasTagName(SVGNames::styleTag))) {
             Element* e = toElement(n);
             AtomicString title = e->getAttribute(titleAttr);
             bool enabledViaScript = false;
@@ -315,21 +308,17 @@ void DocumentStyleSheetCollection::collectActiveStyleSheets(Vector<RefPtr<StyleS
             }
             // Get the current preferred styleset. This is the
             // set of sheets that will be enabled.
-#if ENABLE(SVG)
             if (n->isSVGElement() && n->hasTagName(SVGNames::styleTag))
                 sheet = static_cast<SVGStyleElement*>(n)->sheet();
-            else
-#endif
-            if (e->hasLocalName(linkTag))
+            else if (e->hasLocalName(linkTag))
                 sheet = static_cast<HTMLLinkElement*>(n)->sheet();
-            else
-                // <STYLE> element
-                sheet = static_cast<HTMLStyleElement*>(n)->sheet();
+            else if (e->hasTagName(HTMLNames::styleTag))
+                sheet = toHTMLStyleElement(n)->sheet();
             // Check to see if this sheet belongs to a styleset
             // (thus making it PREFERRED or ALTERNATE rather than
             // PERSISTENT).
             AtomicString rel = e->getAttribute(relAttr);
-            if (!enabledViaScript && !title.isEmpty()) {
+            if (!enabledViaScript && sheet && !title.isEmpty()) {
                 // Yes, we have a title.
                 if (m_preferredStylesheetSetName.isEmpty()) {
                     // No preferred set has been established. If
@@ -351,11 +340,11 @@ void DocumentStyleSheetCollection::collectActiveStyleSheets(Vector<RefPtr<StyleS
     }
 }
 
-void DocumentStyleSheetCollection::analyzeStyleSheetChange(UpdateFlag updateFlag, const Vector<RefPtr<CSSStyleSheet> >& newStylesheets, StyleResolverUpdateType& styleResolverUpdateType, bool& requiresFullStyleRecalc)
+void DocumentStyleSheetCollection::analyzeStyleSheetChange(StyleResolverUpdateMode updateMode, const Vector<RefPtr<CSSStyleSheet> >& newStylesheets, StyleResolverUpdateType& styleResolverUpdateType, bool& requiresFullStyleRecalc)
 {
     styleResolverUpdateType = Reconstruct;
     requiresFullStyleRecalc = true;
-    
+
     // Stylesheets of <style> elements that @import stylesheets are active but loading. We need to trigger a full recalc when such loads are done.
     bool hasActiveLoadingStylesheet = false;
     unsigned newStylesheetCount = newStylesheets.size();
@@ -369,7 +358,7 @@ void DocumentStyleSheetCollection::analyzeStyleSheetChange(UpdateFlag updateFlag
     }
     m_hadActiveLoadingStylesheet = hasActiveLoadingStylesheet;
 
-    if (updateFlag != OptimizedUpdate)
+    if (updateMode != AnalyzedStyleUpdate)
         return;
     if (!m_document->styleResolverIfExists())
         return;
@@ -438,7 +427,7 @@ static void collectActiveCSSStyleSheetsFromSeamlessParents(Vector<RefPtr<CSSStyl
     sheets.append(seamlessParentIFrame->document()->styleSheetCollection()->activeAuthorStyleSheets());
 }
 
-bool DocumentStyleSheetCollection::updateActiveStyleSheets(UpdateFlag updateFlag)
+bool DocumentStyleSheetCollection::updateActiveStyleSheets(StyleResolverUpdateMode updateMode)
 {
     if (m_document->inStyleRecalc()) {
         // SVG <use> element may manage to invalidate style selector in the middle of a style recalc.
@@ -463,14 +452,14 @@ bool DocumentStyleSheetCollection::updateActiveStyleSheets(UpdateFlag updateFlag
 
     StyleResolverUpdateType styleResolverUpdateType;
     bool requiresFullStyleRecalc;
-    analyzeStyleSheetChange(updateFlag, activeCSSStyleSheets, styleResolverUpdateType, requiresFullStyleRecalc);
+    analyzeStyleSheetChange(updateMode, activeCSSStyleSheets, styleResolverUpdateType, requiresFullStyleRecalc);
 
     if (styleResolverUpdateType == Reconstruct)
         m_document->clearStyleResolver();
     else {
         StyleResolver* styleResolver = m_document->styleResolver();
         if (styleResolverUpdateType == Reset) {
-            styleResolver->ruleSets().resetAuthorStyle();
+            styleResolver->resetAuthorStyle();
             styleResolver->appendAuthorStyleSheets(0, activeCSSStyleSheets);
         } else {
             ASSERT(styleResolverUpdateType == Additive);

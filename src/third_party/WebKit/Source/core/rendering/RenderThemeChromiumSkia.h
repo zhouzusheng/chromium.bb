@@ -29,7 +29,6 @@
 #define RenderThemeChromiumSkia_h
 
 #include "core/rendering/RenderTheme.h"
-#include "core/rendering/RenderThemeChromiumCommon.h"
 
 namespace WebCore {
 
@@ -55,8 +54,6 @@ public:
     // A method asking if the theme is able to draw the focus ring.
     virtual bool supportsFocusRing(const RenderStyle*) const;
 
-    virtual bool supportsDataListUI(const AtomicString& type) const OVERRIDE;
-
     virtual bool supportsClosedCaptioning() const OVERRIDE;
     // The platform selection color.
     virtual Color platformActiveSelectionBackgroundColor() const;
@@ -69,7 +66,7 @@ public:
     virtual double caretBlinkInterval() const;
 
     // System fonts.
-    virtual void systemFont(int propId, FontDescription&) const;
+    virtual void systemFont(CSSValueID, FontDescription&) const;
 
     virtual int minimumMenuListSize(RenderStyle*) const;
 
@@ -77,23 +74,20 @@ public:
 
     virtual void setRadioSize(RenderStyle*) const;
 
-    virtual void adjustButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual void adjustButtonStyle(RenderStyle*, Element*) const;
 
     virtual bool paintTextArea(RenderObject*, const PaintInfo&, const IntRect&);
 
-    virtual void adjustSearchFieldStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual void adjustSearchFieldStyle(RenderStyle*, Element*) const;
     virtual bool paintSearchField(RenderObject*, const PaintInfo&, const IntRect&);
 
-    virtual void adjustSearchFieldCancelButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual void adjustSearchFieldCancelButtonStyle(RenderStyle*, Element*) const;
     virtual bool paintSearchFieldCancelButton(RenderObject*, const PaintInfo&, const IntRect&);
 
-    virtual void adjustSearchFieldDecorationStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual void adjustSearchFieldDecorationStyle(RenderStyle*, Element*) const;
 
-    virtual void adjustSearchFieldResultsDecorationStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual void adjustSearchFieldResultsDecorationStyle(RenderStyle*, Element*) const;
     virtual bool paintSearchFieldResultsDecoration(RenderObject*, const PaintInfo&, const IntRect&);
-
-    virtual void adjustSearchFieldResultsButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldResultsButton(RenderObject*, const PaintInfo&, const IntRect&);
 
     virtual bool paintMediaSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
     virtual bool paintMediaVolumeSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
@@ -116,8 +110,8 @@ public:
     // In short, we either go down the MenuList code path or the MenuListButton
     // codepath. We never go down both. And in both cases, they render the
     // entire menulist.
-    virtual void adjustMenuListStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual void adjustMenuListButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual void adjustMenuListStyle(RenderStyle*, Element*) const;
+    virtual void adjustMenuListButtonStyle(RenderStyle*, Element*) const;
     virtual bool paintMenuListButton(RenderObject*, const PaintInfo&, const IntRect&);
 
     virtual double animationRepeatIntervalForProgressBar(RenderProgress*) const;
@@ -145,8 +139,6 @@ protected:
 
     virtual int menuListArrowPadding() const;
 
-    static void setSizeIfAuto(RenderStyle*, const IntSize&);
-
     IntRect determinateProgressValueRectFor(RenderProgress*, const IntRect&) const;
     IntRect indeterminateProgressValueRectFor(RenderProgress*, const IntRect&) const;
     IntRect progressValueRectFor(RenderProgress*, const IntRect&) const;
@@ -162,15 +154,7 @@ protected:
     };
 
 private:
-    virtual Color disabledTextColor(const Color& textColor, const Color&) const OVERRIDE { return textColor; }
     virtual bool shouldShowPlaceholderWhenFocused() const OVERRIDE;
-
-#if ENABLE(DATALIST_ELEMENT)
-    virtual LayoutUnit sliderTickSnappingThreshold() const OVERRIDE;
-#endif
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    virtual bool supportsCalendarPicker(const AtomicString& type) const OVERRIDE;
-#endif
 
     int menuListInternalPadding(RenderStyle*, int paddingType) const;
     bool paintMediaButtonInternal(GraphicsContext*, const IntRect&, Image*);

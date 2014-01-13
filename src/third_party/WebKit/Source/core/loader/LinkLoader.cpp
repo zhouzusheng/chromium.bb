@@ -32,17 +32,12 @@
 #include "config.h"
 #include "core/loader/LinkLoader.h"
 
-#include "core/css/CSSStyleSheet.h"
-#include "core/css/StyleResolver.h"
-#include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
 #include "core/html/LinkRelAttribute.h"
 #include "core/loader/Prerenderer.h"
-#include "core/loader/cache/CachedCSSStyleSheet.h"
 #include "core/loader/cache/CachedResourceLoader.h"
 #include "core/loader/cache/CachedResourceRequest.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/loader/cache/CachedResourceRequestInitiators.h"
 #include "core/page/Settings.h"
 #include "core/platform/PrerenderHandle.h"
 #include "core/platform/network/DNS.h"
@@ -109,16 +104,8 @@ void LinkLoader::didSendDOMContentLoadedForPrerender()
     m_client->didSendDOMContentLoadedForLinkPrerender();
 }
 
-bool LinkLoader::loadLink(const LinkRelAttribute& relAttribute, const String& type,
-                          const String& sizes, const KURL& href, Document* document)
+bool LinkLoader::loadLink(const LinkRelAttribute& relAttribute, const String& type, const KURL& href, Document* document)
 {
-    // We'll record this URL per document, even if we later only use it in top level frames
-    if (relAttribute.iconType() != InvalidIcon && href.isValid() && !href.isEmpty()) {
-        if (!m_client->shouldLoadLink()) 
-            return false;
-        document->addIconURL(href.string(), type, sizes, relAttribute.iconType());
-    }
-
     if (relAttribute.isDNSPrefetch()) {
         Settings* settings = document->settings();
         // FIXME: The href attribute of the link element can be in "//hostname" form, and we shouldn't attempt
@@ -130,16 +117,8 @@ bool LinkLoader::loadLink(const LinkRelAttribute& relAttribute, const String& ty
     if ((relAttribute.isLinkPrefetch() || relAttribute.isLinkSubresource()) && href.isValid() && document->frame()) {
         if (!m_client->shouldLoadLink())
             return false;
-        ResourceLoadPriority priority = ResourceLoadPriorityUnresolved;
-        CachedResource::Type type = CachedResource::LinkPrefetch;
-        // We only make one request to the cachedresourcelodaer if multiple rel types are
-        // specified, 
-        if (relAttribute.isLinkSubresource()) {
-            priority = ResourceLoadPriorityLow;
-            type = CachedResource::LinkSubresource;
-        }
-        CachedResourceRequest linkRequest(ResourceRequest(document->completeURL(href)), priority);
-        
+        CachedResource::Type type = relAttribute.isLinkSubresource() ?  CachedResource::LinkSubresource : CachedResource::LinkPrefetch;
+        CachedResourceRequest linkRequest(ResourceRequest(document->completeURL(href)), cachedResourceRequestInitiators().link);
         if (m_cachedLinkResource) {
             m_cachedLinkResource->removeClient(this);
             m_cachedLinkResource = 0;

@@ -34,6 +34,47 @@ int SkIntersections::computePoints(const SkDLine& line, int used) {
     return fUsed;
 }
 
+int SkIntersections::intersectRay(const SkDLine& a, const SkDLine& b) {
+    double axLen = a[1].fX - a[0].fX;
+    double ayLen = a[1].fY - a[0].fY;
+    double bxLen = b[1].fX - b[0].fX;
+    double byLen = b[1].fY - b[0].fY;
+    /* Slopes match when denom goes to zero:
+                      axLen / ayLen ==                   bxLen / byLen
+    (ayLen * byLen) * axLen / ayLen == (ayLen * byLen) * bxLen / byLen
+             byLen  * axLen         ==  ayLen          * bxLen
+             byLen  * axLen         -   ayLen          * bxLen == 0 ( == denom )
+     */
+    double denom = byLen * axLen - ayLen * bxLen;
+    double ab0y = a[0].fY - b[0].fY;
+    double ab0x = a[0].fX - b[0].fX;
+    double numerA = ab0y * bxLen - byLen * ab0x;
+    double numerB = ab0y * axLen - ayLen * ab0x;
+    numerA /= denom;
+    numerB /= denom;
+    int used;
+    if (!approximately_zero(denom)) {
+        fT[0][0] = numerA;
+        fT[1][0] = numerB;
+        used = 1;
+    } else {
+       /* See if the axis intercepts match:
+                  ay - ax * ayLen / axLen  ==          by - bx * ayLen / axLen
+         axLen * (ay - ax * ayLen / axLen) == axLen * (by - bx * ayLen / axLen)
+         axLen *  ay - ax * ayLen          == axLen *  by - bx * ayLen
+        */
+        if (!AlmostEqualUlps(axLen * a[0].fY - ayLen * a[0].fX,
+                axLen * b[0].fY - ayLen * b[0].fX)) {
+            return fUsed = 0;
+        }
+        // there's no great answer for intersection points for coincident rays, but return something
+        fT[0][0] = fT[1][0] = 0;
+        fT[1][0] = fT[1][1] = 1;
+        used = 2;
+    }
+    return computePoints(a, used);
+}
+
 /*
    Determine the intersection point of two line segments
    Return FALSE if the lines don't intersect
@@ -140,27 +181,6 @@ int SkIntersections::horizontal(const SkDLine& line, double y) {
     }
     fT[0][0] = (y - line[0].fY) / (line[1].fY - line[0].fY);
     return fUsed = 1;
-}
-
-// OPTIMIZATION  Given: dy = line[1].fY - line[0].fY
-// and: xIntercept / (y - line[0].fY) == (line[1].fX - line[0].fX) / dy
-// then: xIntercept * dy == (line[1].fX - line[0].fX) * (y - line[0].fY)
-// Assuming that dy is always > 0, the line segment intercepts if:
-//   left * dy <= xIntercept * dy <= right * dy
-// thus: left * dy <= (line[1].fX - line[0].fX) * (y - line[0].fY) <= right * dy
-// (clever as this is, it does not give us the t value, so may be useful only
-// as a quick reject -- and maybe not then; it takes 3 muls, 3 adds, 2 cmps)
-int SkIntersections::horizontal(const SkDLine& line, double left, double right, double y) {
-    int result = horizontal(line, y);
-    if (result != 1) {
-        SkASSERT(0);
-        return result;
-    }
-    double xIntercept = line[0].fX + fT[0][0] * (line[1].fX - line[0].fX);
-    if (!precisely_between(left, xIntercept, right)) {
-        return fUsed = 0;
-    }
-    return result;
 }
 
 int SkIntersections::horizontal(const SkDLine& line, double left, double right,

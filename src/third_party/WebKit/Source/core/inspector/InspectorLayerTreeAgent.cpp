@@ -38,11 +38,12 @@
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
+#include "core/loader/DocumentLoader.h"
+#include "core/page/Page.h"
 #include "core/platform/graphics/IntRect.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderLayerBacking.h"
 #include "core/rendering/RenderLayerCompositor.h"
-#include "core/rendering/RenderView.h"
 
 namespace WebCore {
 
@@ -98,6 +99,14 @@ void InspectorLayerTreeAgent::disable(ErrorString*)
         return;
     m_state->setBoolean(LayerTreeAgentState::layerTreeAgentEnabled, false);
     m_instrumentingAgents->setInspectorLayerTreeAgent(0);
+}
+
+void InspectorLayerTreeAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
+{
+    if (loader->frame() != frame->page()->mainFrame())
+        return;
+
+    reset();
 }
 
 void InspectorLayerTreeAgent::layerTreeDidChange()
@@ -174,7 +183,7 @@ PassRefPtr<TypeBuilder::LayerTree::Layer> InspectorLayerTreeAgent::buildObjectFo
     RefPtr<TypeBuilder::LayerTree::Layer> layerObject = TypeBuilder::LayerTree::Layer::create()
         .setLayerId(bind(renderLayer))
         .setNodeId(idForNode(errorString, node))
-        .setBounds(buildObjectForIntRect(enclosingIntRect(renderer->absoluteBoundingBoxRect())))
+        .setBounds(buildObjectForIntRect(renderer->absoluteBoundingBoxRect()))
         .setMemory(backing->backingStoreMemoryEstimate())
         .setCompositedBounds(buildObjectForIntRect(backing->compositedBounds()))
         .setPaintCount(backing->graphicsLayer()->repaintCount());
@@ -267,7 +276,7 @@ void InspectorLayerTreeAgent::reasonsForCompositingLayer(ErrorString* errorStrin
     if (reasonsBitmask & CompositingReasonOverflowScrollingTouch)
         compositingReasons->setOverflowScrollingTouch(true);
 
-    if (reasonsBitmask & CompositingReasonStacking)
+    if (reasonsBitmask & CompositingReasonAssumedOverlap)
         compositingReasons->setStacking(true);
 
     if (reasonsBitmask & CompositingReasonOverlap)

@@ -20,7 +20,7 @@
 #ifndef SVGPathSegListPropertyTearOff_h
 #define SVGPathSegListPropertyTearOff_h
 
-#if ENABLE(SVG)
+#include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGPathSegList.h"
 #include "core/svg/properties/SVGAnimatedListPropertyTearOff.h"
 
@@ -72,7 +72,7 @@ public:
     {
         // Not specified, but FF/Opera do it this way, and it's just sane.
         if (!passNewItem) {
-            ec = SVGException::SVG_WRONG_TYPE_ERR;
+            ec = TypeError;
             return 0;
         }
 
@@ -87,7 +87,7 @@ public:
     {
         // Not specified, but FF/Opera do it this way, and it's just sane.
         if (!passNewItem) {
-            ec = SVGException::SVG_WRONG_TYPE_ERR;
+            ec = TypeError;
             return 0;
         }
 
@@ -103,7 +103,7 @@ public:
     {
         // Not specified, but FF/Opera do it this way, and it's just sane.
         if (!passNewItem) {
-            ec = SVGException::SVG_WRONG_TYPE_ERR;
+            ec = TypeError;
             return 0;
         }
 
@@ -160,5 +160,4 @@ private:
 
 }
 
-#endif // ENABLE(SVG)
 #endif // SVGListPropertyTearOff_h

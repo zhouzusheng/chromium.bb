@@ -47,7 +47,9 @@ cr.define('cr.ui.dialogs', function() {
 
     this.frame_ = doc.createElement('div');
     this.frame_.className = 'cr-dialog-frame';
-    this.frame_.tabIndex = 0;
+    // Elements that have negative tabIndex can be focused but are not traversed
+    // by Tab key.
+    this.frame_.tabIndex = -1;
     this.container_.appendChild(this.frame_);
 
     this.title_ = doc.createElement('div');
@@ -272,8 +274,10 @@ cr.define('cr.ui.dialogs', function() {
   };
 
   PromptDialog.prototype.onKeyDown_ = function(event) {
-    if (event.keyCode == 13)  // Enter
+    if (event.keyCode == 13) {  // Enter
       this.onOkClick_(event);
+      event.preventDefault();
+    }
   };
 
   PromptDialog.prototype.show = function(message, defaultValue, onOk, onCancel,

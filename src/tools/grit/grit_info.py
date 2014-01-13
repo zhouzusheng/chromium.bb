@@ -62,10 +62,10 @@ def GritSourceFiles():
   return sorted(files)
 
 
-def Inputs(filename, defines, ids_file):
+def Inputs(filename, defines, ids_file, target_platform):
   grd = grd_reader.Parse(
       filename, debug=False, defines=defines, tags_to_ignore=set(['message']),
-      first_ids_file=ids_file)
+      first_ids_file=ids_file, target_platform=target_platform)
   files = set()
   for lang, ctx in grd.GetConfigurations():
     grd.SetOutputLanguage(lang or grd.GetSourceLanguage())
@@ -114,6 +114,7 @@ def DoMain(argv):
   parser.add_option("-w", action="append", dest="whitelist_files", default=[])
   parser.add_option("-f", dest="ids_file",
                     default="GRIT_DIR/../gritsettings/resource_ids")
+  parser.add_option("-t", dest="target_platform", default=None)
 
   options, args = parser.parse_args(argv)
 
@@ -133,7 +134,8 @@ def DoMain(argv):
     inputs = []
     if len(args) == 1:
       filename = args[0]
-      inputs = Inputs(filename, defines, options.ids_file)
+      inputs = Inputs(filename, defines, options.ids_file,
+                      options.target_platform)
 
     # Add in the grit source files.  If one of these change, we want to re-run
     # grit.

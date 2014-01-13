@@ -7,7 +7,11 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+
+namespace ui {
+struct LatencyInfo;
+}
 
 namespace content {
 
@@ -39,11 +43,16 @@ class OverscrollController {
   // RenderWidgetHostView so that the state of the overscroll gesture can be
   // updated properly.
   // Returns true if the event should be dispatched, false otherwise.
-  bool WillDispatchEvent(const WebKit::WebInputEvent& event);
+  bool WillDispatchEvent(const WebKit::WebInputEvent& event,
+                         const ui::LatencyInfo& latency_info);
 
   // This must be called when the ACK for any event comes in. This updates the
   // overscroll gesture status as appropriate.
   void ReceivedEventACK(const WebKit::WebInputEvent& event, bool processed);
+
+  // This must be called when a gesture event is filtered out and not sent to
+  // the renderer.
+  void DiscardingGestureEvent(const WebKit::WebGestureEvent& event);
 
   OverscrollMode overscroll_mode() const { return overscroll_mode_; }
 
@@ -54,8 +63,20 @@ class OverscrollController {
   // Resets internal states.
   void Reset();
 
+  // Cancels any in-progress overscroll (and calls OnOverscrollModeChange on the
+  // delegate if necessary), and resets internal states.
+  void Cancel();
+
  private:
   friend class MockRenderWidgetHost;
+
+  // Different scrolling states.
+  enum ScrollState {
+    STATE_UNKNOWN,
+    STATE_PENDING,
+    STATE_CONTENT_SCROLLING,
+    STATE_OVERSCROLLING,
+  };
 
   // Returns true if the event indicates that the in-progress overscroll gesture
   // can now be completed.
@@ -90,6 +111,13 @@ class OverscrollController {
 
   // The current state of overscroll gesture.
   OverscrollMode overscroll_mode_;
+
+  // Used to keep track of the scrolling state.
+  // If scrolling starts, and some scroll events are consumed at the beginning
+  // of the scroll (i.e. some content on the web-page was scrolled), then do not
+  // process any of the subsequent scroll events for generating overscroll
+  // gestures.
+  ScrollState scroll_state_;
 
   // The amount of overscroll in progress. These values are invalid when
   // |overscroll_mode_| is set to OVERSCROLL_NONE.

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #ifndef V8_I18N_SRC_COLLATOR_H
-#define V8_I18N_SRC_COLLATOR_H_
+#define V8_I18N_SRC_COLLATOR_H
 
 #include "unicode/uversion.h"
 #include "v8/include/v8.h"
@@ -27,7 +27,7 @@ namespace v8_i18n {
 
 class Collator {
  public:
-  static v8::Handle<v8::Value> JSCreateCollator(const v8::Arguments& args);
+  static void JSCreateCollator(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Helper methods for various bindings.
 
@@ -37,12 +37,13 @@ class Collator {
   // Release memory we allocated for the Collator once the JS object that
   // holds the pointer gets garbage collected.
   static void DeleteCollator(v8::Isolate* isolate,
-                             v8::Persistent<v8::Value> object,
+                             v8::Persistent<v8::Object>* object,
                              void* param);
 
   // Compare two strings and returns -1, 0 and 1 depending on
   // whether string1 is smaller than, equal to or larger than string2.
-  static v8::Handle<v8::Value> JSInternalCompare(const v8::Arguments& args);
+  static void JSInternalCompare(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
  private:
   Collator() {}

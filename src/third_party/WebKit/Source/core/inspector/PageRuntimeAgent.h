@@ -45,9 +45,9 @@ class SecurityOrigin;
 
 class PageRuntimeAgent : public InspectorRuntimeAgent {
 public:
-    static PassOwnPtr<PageRuntimeAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, Page* page, InspectorPageAgent* pageAgent)
+    static PassOwnPtr<PageRuntimeAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, Page* page, InspectorPageAgent* pageAgent)
     {
-        return adoptPtr(new PageRuntimeAgent(instrumentingAgents, state, injectedScriptManager, page, pageAgent));
+        return adoptPtr(new PageRuntimeAgent(instrumentingAgents, state, injectedScriptManager, scriptDebugServer, page, pageAgent));
     }
     virtual ~PageRuntimeAgent();
     virtual void setFrontend(InspectorFrontend*);
@@ -56,11 +56,11 @@ public:
     virtual void enable(ErrorString*);
     virtual void disable(ErrorString*);
 
-    void didCreateMainWorldContext(Frame*);
+    void didClearWindowObjectInWorld(Frame*, DOMWrapperWorld*);
     void didCreateIsolatedContext(Frame*, ScriptState*, SecurityOrigin*);
 
 private:
-    PageRuntimeAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*, Page*, InspectorPageAgent*);
+    PageRuntimeAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*, ScriptDebugServer*, Page*, InspectorPageAgent*);
 
     virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId);
     virtual void muteConsole();

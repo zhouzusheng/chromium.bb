@@ -21,7 +21,6 @@
 #ifndef SVGSwitchElement_h
 #define SVGSwitchElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGLangSpace.h"
@@ -45,7 +44,7 @@ private:
 
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGSwitchElement)
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
@@ -59,5 +58,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

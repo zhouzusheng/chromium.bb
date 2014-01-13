@@ -18,8 +18,8 @@
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/quads/yuv_video_draw_quad.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsMemoryAllocation.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsMemoryAllocation.h"
 #include "ui/gfx/quad_f.h"
 
 class SkBitmap;
@@ -45,7 +45,8 @@ class CC_EXPORT GLRenderer
   static scoped_ptr<GLRenderer> Create(RendererClient* client,
                                        OutputSurface* output_surface,
                                        ResourceProvider* resource_provider,
-                                       int highp_threshold_min);
+                                       int highp_threshold_min,
+                                       bool use_skia_gpu_backend);
 
   virtual ~GLRenderer();
 
@@ -59,8 +60,7 @@ class CC_EXPORT GLRenderer
   virtual void Finish() OVERRIDE;
 
   virtual void DoNoOp() OVERRIDE;
-  // Puts backbuffer onscreen.
-  virtual void SwapBuffers(const LatencyInfo& latency_info) OVERRIDE;
+  virtual void SwapBuffers() OVERRIDE;
 
   virtual void GetFramebufferPixels(void* pixels, gfx::Rect rect) OVERRIDE;
 
@@ -77,6 +77,8 @@ class CC_EXPORT GLRenderer
                           const char* file,
                           int line);
 
+  bool CanUseSkiaGPUBackend() const;
+
  protected:
   GLRenderer(RendererClient* client,
              OutputSurface* output_surface,
@@ -85,6 +87,7 @@ class CC_EXPORT GLRenderer
 
   bool IsBackbufferDiscarded() const { return is_backbuffer_discarded_; }
   bool Initialize();
+  void InitializeGrContext();
 
   const gfx::QuadF& SharedGeometryQuad() const { return shared_geometry_quad_; }
   const GeometryBinding* SharedGeometry() const {
@@ -92,15 +95,17 @@ class CC_EXPORT GLRenderer
   }
 
   void GetFramebufferPixelsAsync(gfx::Rect rect,
-                                 CopyRenderPassCallback callback);
-  bool GetFramebufferTexture(ScopedResource* resource, gfx::Rect device_rect);
+                                 scoped_ptr<CopyOutputRequest> request);
+  void GetFramebufferTexture(unsigned texture_id,
+                             unsigned texture_format,
+                             gfx::Rect device_rect);
   void ReleaseRenderPassTextures();
 
   virtual void BindFramebufferToOutputSurface(DrawingFrame* frame) OVERRIDE;
   virtual bool BindFramebufferToTexture(DrawingFrame* frame,
                                         const ScopedResource* resource,
-                                        gfx::Rect framebuffer_rect) OVERRIDE;
-  virtual void SetDrawViewportSize(gfx::Size viewport_size) OVERRIDE;
+                                        gfx::Rect target_rect) OVERRIDE;
+  virtual void SetDrawViewport(gfx::Rect window_space_viewport) OVERRIDE;
   virtual void SetScissorTestRect(gfx::Rect scissor_rect) OVERRIDE;
   virtual void ClearFramebuffer(DrawingFrame* frame) OVERRIDE;
   virtual void DoDrawQuad(DrawingFrame* frame, const class DrawQuad*) OVERRIDE;
@@ -111,7 +116,7 @@ class CC_EXPORT GLRenderer
   virtual void EnsureScissorTestDisabled() OVERRIDE;
   virtual void CopyCurrentRenderPassToBitmap(
       DrawingFrame* frame,
-      const CopyRenderPassCallback& callback) OVERRIDE;
+      scoped_ptr<CopyOutputRequest> request) OVERRIDE;
   virtual void FinishDrawingQuadList() OVERRIDE;
 
  private:
@@ -150,6 +155,8 @@ class CC_EXPORT GLRenderer
                         const YUVVideoDrawQuad* quad);
   void DrawPictureQuad(const DrawingFrame* frame,
                        const PictureDrawQuad* quad);
+  void DrawPictureQuadDirectToBackbuffer(const DrawingFrame* frame,
+                                         const PictureDrawQuad* quad);
 
   void SetShaderOpacity(float opacity, int alpha_location);
   void SetShaderQuadF(const gfx::QuadF& quad, int quad_location);
@@ -164,7 +171,8 @@ class CC_EXPORT GLRenderer
   void CopyTextureToFramebuffer(const DrawingFrame* frame,
                                 int texture_id,
                                 gfx::Rect rect,
-                                const gfx::Transform& draw_matrix);
+                                const gfx::Transform& draw_matrix,
+                                bool flip_vertically);
 
   // Check if quad needs antialiasing and if so, inflate the quad and
   // fill edge array for fragment shader.  local_quad is set to
@@ -186,22 +194,28 @@ class CC_EXPORT GLRenderer
   bool InitializeSharedObjects();
   void CleanupSharedObjects();
 
-  typedef base::Callback<void(bool success)>
+  typedef base::Callback<void(scoped_ptr<CopyOutputRequest> copy_request,
+                              bool success)>
       AsyncGetFramebufferPixelsCleanupCallback;
   void DoGetFramebufferPixels(
       uint8* pixels,
-      gfx::Rect rect,
+      gfx::Rect window_rect,
       const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback);
   void FinishedReadback(
       const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback,
       unsigned source_buffer,
       uint8_t* dest_pixels,
       gfx::Size size);
-  void PassOnSkBitmap(
-      scoped_ptr<SkBitmap> bitmap,
-      scoped_ptr<SkAutoLockPixels> lock,
-      const CopyRenderPassCallback& callback,
-      bool success);
+  void PassOnSkBitmap(scoped_ptr<SkBitmap> bitmap,
+                      scoped_ptr<SkAutoLockPixels> lock,
+                      scoped_ptr<CopyOutputRequest> request,
+                      bool success);
+  void DeleteTextureReleaseCallback(unsigned texture_id,
+                                    unsigned sync_point,
+                                    bool lost_resource);
+
+  void ReinitializeGrCanvas();
+  void ReinitializeGLState();
 
   // WebKit::
   // WebGraphicsContext3D::WebGraphicsMemoryAllocationChangedCallbackCHROMIUM
@@ -253,17 +267,18 @@ class CC_EXPORT GLRenderer
                          FragmentShaderRGBATexAlpha> RenderPassProgram;
   typedef ProgramBinding<VertexShaderPosTexTransform,
                          FragmentShaderRGBATexAlphaMask> RenderPassMaskProgram;
-  typedef ProgramBinding<VertexShaderQuad, FragmentShaderRGBATexAlphaAA>
-      RenderPassProgramAA;
-  typedef ProgramBinding<VertexShaderQuad, FragmentShaderRGBATexAlphaMaskAA>
+  typedef ProgramBinding<VertexShaderQuadTexTransform,
+                         FragmentShaderRGBATexAlphaAA> RenderPassProgramAA;
+  typedef ProgramBinding<VertexShaderQuadTexTransform,
+                         FragmentShaderRGBATexAlphaMaskAA>
       RenderPassMaskProgramAA;
   typedef ProgramBinding<VertexShaderPosTexTransform,
                          FragmentShaderRGBATexColorMatrixAlpha>
       RenderPassColorMatrixProgram;
-  typedef ProgramBinding<VertexShaderQuad,
+  typedef ProgramBinding<VertexShaderQuadTexTransform,
                          FragmentShaderRGBATexAlphaMaskColorMatrixAA>
       RenderPassMaskColorMatrixProgramAA;
-  typedef ProgramBinding<VertexShaderQuad,
+  typedef ProgramBinding<VertexShaderQuadTexTransform,
                          FragmentShaderRGBATexAlphaColorMatrixAA>
       RenderPassColorMatrixProgramAA;
   typedef ProgramBinding<VertexShaderPosTexTransform,
@@ -276,6 +291,8 @@ class CC_EXPORT GLRenderer
       VideoStreamTextureProgram;
   typedef ProgramBinding<VertexShaderPosTexYUVStretch, FragmentShaderYUVVideo>
       VideoYUVProgram;
+  typedef ProgramBinding<VertexShaderPosTexYUVStretch, FragmentShaderYUVAVideo>
+      VideoYUVAProgram;
 
   // Special purpose / effects shaders.
   typedef ProgramBinding<VertexShaderPos, FragmentShaderColor>
@@ -320,6 +337,8 @@ class CC_EXPORT GLRenderer
       TexCoordPrecision precision);
 
   const VideoYUVProgram* GetVideoYUVProgram(
+      TexCoordPrecision precision);
+  const VideoYUVAProgram* GetVideoYUVAProgram(
       TexCoordPrecision precision);
   const VideoStreamTextureProgram* GetVideoStreamTextureProgram(
       TexCoordPrecision precision);
@@ -377,21 +396,24 @@ class CC_EXPORT GLRenderer
       render_pass_mask_color_matrix_program_aa_highp_;
 
   scoped_ptr<VideoYUVProgram> video_yuv_program_;
+  scoped_ptr<VideoYUVAProgram> video_yuva_program_;
   scoped_ptr<VideoStreamTextureProgram> video_stream_texture_program_;
 
   scoped_ptr<VideoYUVProgram> video_yuv_program_highp_;
+  scoped_ptr<VideoYUVAProgram> video_yuva_program_highp_;
   scoped_ptr<VideoStreamTextureProgram> video_stream_texture_program_highp_;
 
   scoped_ptr<DebugBorderProgram> debug_border_program_;
   scoped_ptr<SolidColorProgram> solid_color_program_;
   scoped_ptr<SolidColorProgramAA> solid_color_program_aa_;
 
-  OutputSurface* output_surface_;
   WebKit::WebGraphicsContext3D* context_;
+
+  skia::RefPtr<GrContext> gr_context_;
+  skia::RefPtr<SkCanvas> sk_canvas_;
 
   gfx::Rect swap_buffer_rect_;
   gfx::Rect scissor_rect_;
-  bool is_viewport_changed_;
   bool is_backbuffer_discarded_;
   bool discard_backbuffer_when_not_visible_;
   bool is_using_bind_uniform_;
@@ -401,6 +423,7 @@ class CC_EXPORT GLRenderer
   unsigned program_shadow_;
   TexturedQuadDrawCache draw_cache_;
   int highp_threshold_min_;
+  int highp_threshold_cache_;
 
   struct PendingAsyncReadPixels;
   ScopedPtrVector<PendingAsyncReadPixels> pending_async_read_pixels_;
@@ -411,6 +434,8 @@ class CC_EXPORT GLRenderer
 
   SkBitmap on_demand_tile_raster_bitmap_;
   ResourceProvider::ResourceId on_demand_tile_raster_resource_id_;
+
+  base::WeakPtrFactory<GLRenderer> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GLRenderer);
 };

@@ -11,8 +11,8 @@
 #include <string>
 #include <vector>
 
-#include "base/string16.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
 #include "ui/base/ui_export.h"
 
 #if defined(OS_MACOSX)
@@ -31,6 +31,11 @@ namespace l10n_util {
 // a value if there's a corresponding resource DLL for the locale.  Otherwise,
 // we fall back to en-us.
 UI_EXPORT std::string GetApplicationLocale(const std::string& pref_locale);
+
+// Returns true if a display name for |locale| is available in the locale
+// |display_locale|.
+UI_EXPORT bool IsLocaleNameTranslated(const char* locale,
+                                      const std::string& display_locale);
 
 // Given a locale code, return true if the OS is capable of supporting it.
 // For instance, Oriya is not well supported on Windows XP and we return

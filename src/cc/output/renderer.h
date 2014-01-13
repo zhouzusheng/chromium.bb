@@ -7,7 +7,6 @@
 
 #include "base/basictypes.h"
 #include "cc/base/cc_export.h"
-#include "cc/debug/latency_info.h"
 #include "cc/quads/render_pass.h"
 #include "cc/resources/managed_memory_policy.h"
 #include "cc/trees/layer_tree_host.h"
@@ -20,7 +19,12 @@ class ScopedResource;
 
 class CC_EXPORT RendererClient {
  public:
-  virtual gfx::Size DeviceViewportSize() const = 0;
+  // Draw viewport in non-y-flipped window space. Note that while a draw is in
+  // progress, this is guaranteed to be contained within the output surface
+  // size.
+  virtual gfx::Rect DeviceViewport() const = 0;
+
+  virtual float DeviceScaleFactor() const = 0;
   virtual const LayerTreeSettings& Settings() const = 0;
   virtual void SetFullRootLayerDamage() = 0;
   virtual void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy) = 0;
@@ -43,12 +47,9 @@ class CC_EXPORT Renderer {
 
   const LayerTreeSettings& Settings() const { return client_->Settings(); }
 
-  gfx::Size ViewportSize() const { return client_->DeviceViewportSize(); }
-  int ViewportWidth() const { return ViewportSize().width(); }
-  int ViewportHeight() const { return ViewportSize().height(); }
-
   virtual void ViewportChanged() {}
-  virtual void ReceiveCompositorFrameAck(const CompositorFrameAck& ack) {}
+
+  virtual bool CanReadPixels() const = 0;
 
   virtual void DecideRenderPassAllocationsForFrame(
       const RenderPassList& render_passes_in_draw_order) {}
@@ -64,7 +65,8 @@ class CC_EXPORT Renderer {
   virtual void DoNoOp() {}
 
   // Puts backbuffer onscreen.
-  virtual void SwapBuffers(const LatencyInfo& latency_info) = 0;
+  virtual void SwapBuffers() = 0;
+  virtual void ReceiveSwapBuffersAck(const CompositorFrameAck& ack) {}
 
   virtual void GetFramebufferPixels(void* pixels, gfx::Rect rect) = 0;
 

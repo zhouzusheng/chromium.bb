@@ -153,10 +153,11 @@ WebInspector.DOMBreakpointsSidebarPane.prototype = {
     {
         var node = event.data.node;
         this._removeBreakpointsForNode(event.data.node);
-        if (!node.children)
+        var children = node.children();
+        if (!children)
             return;
-        for (var i = 0; i < node.children.length; ++i)
-            this._removeBreakpointsForNode(node.children[i]);
+        for (var i = 0; i < children.length; ++i)
+            this._removeBreakpointsForNode(children[i]);
         this._saveBreakpoints();
     },
 
@@ -362,7 +363,7 @@ WebInspector.DOMBreakpointsSidebarPane.Proxy = function(pane, panel)
     this._wrappedPane = pane;
     this._panel = panel;
 
-    this.bodyElement.removeSelf();
+    this.bodyElement.remove();
     this.bodyElement = this._wrappedPane.bodyElement;
 }
 

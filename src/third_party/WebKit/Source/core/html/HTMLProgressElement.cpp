@@ -23,16 +23,12 @@
 #include "core/html/HTMLProgressElement.h"
 
 #include "HTMLNames.h"
-#include "core/dom/Attribute.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeRenderingContext.h"
-#include "core/dom/ShadowRoot.h"
-#include "core/html/HTMLDivElement.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ProgressShadowElement.h"
 #include "core/rendering/RenderProgress.h"
-#include <wtf/StdLibExtras.h>
 
 namespace WebCore {
 
@@ -60,12 +56,12 @@ PassRefPtr<HTMLProgressElement> HTMLProgressElement::create(const QualifiedName&
     return progress.release();
 }
 
-RenderObject* HTMLProgressElement::createRenderer(RenderArena* arena, RenderStyle* style)
+RenderObject* HTMLProgressElement::createRenderer(RenderStyle* style)
 {
     if (!style->hasAppearance() || hasAuthorShadowRoot())
         return RenderObject::createObject(this, style);
 
-    return new (arena) RenderProgress(this);
+    return new (document()->renderArena()) RenderProgress(this);
 }
 
 bool HTMLProgressElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
@@ -93,9 +89,9 @@ void HTMLProgressElement::parseAttribute(const QualifiedName& name, const Atomic
         LabelableElement::parseAttribute(name, value);
 }
 
-void HTMLProgressElement::attach()
+void HTMLProgressElement::attach(const AttachContext& context)
 {
-    LabelableElement::attach();
+    LabelableElement::attach(context);
     if (RenderProgress* render = renderProgress())
         render->updateFromElement();
 }

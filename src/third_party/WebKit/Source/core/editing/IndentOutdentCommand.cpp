@@ -28,17 +28,11 @@
 
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/Range.h"
-#include "core/dom/Text.h"
-#include "core/editing/InsertLineBreakCommand.h"
 #include "core/editing/InsertListCommand.h"
-#include "core/editing/SplitElementCommand.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLElement.h"
 #include "core/rendering/RenderObject.h"
-#include <wtf/StdLibExtras.h>
 
 namespace WebCore {
 

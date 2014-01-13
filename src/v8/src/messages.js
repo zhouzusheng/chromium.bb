@@ -98,15 +98,24 @@ var kMessages = {
   observe_non_object:            ["Object.", "%0", " cannot ", "%0", " non-object"],
   observe_non_function:          ["Object.", "%0", " cannot deliver to non-function"],
   observe_callback_frozen:       ["Object.observe cannot deliver to a frozen function object"],
+  observe_invalid_accept:        ["Object.observe accept must be an array of strings."],
   observe_type_non_string:       ["Invalid changeRecord with non-string 'type' property"],
+  observe_perform_non_string:    ["Invalid non-string changeType"],
+  observe_perform_non_function:  ["Cannot perform non-function"],
   observe_notify_non_notifier:   ["notify called on non-notifier object"],
   proto_poison_pill:             ["Generic use of __proto__ accessor not allowed"],
+  parameterless_typed_array_constr:
+                                 ["%0"," constructor should have at least one argument."],
+  not_typed_array:               ["this is not a typed array."],
+  invalid_argument:              ["invalid_argument"],
   // RangeError
   invalid_array_length:          ["Invalid array length"],
   invalid_array_buffer_length:   ["Invalid array buffer length"],
   invalid_typed_array_offset:    ["Start offset is too large"],
   invalid_typed_array_length:    ["Length is too large"],
   invalid_typed_array_alignment: ["%0", "of", "%1", "should be a multiple of", "%3"],
+  typed_array_set_source_too_large:
+                                 ["Source is too large"],
   stack_overflow:                ["Maximum call stack size exceeded"],
   invalid_time_value:            ["Invalid time value"],
   // SyntaxError
@@ -534,11 +543,11 @@ function ScriptLineCount() {
  * If sourceURL comment is available and script starts at zero returns sourceURL
  * comment contents. Otherwise, script name is returned. See
  * http://fbug.googlecode.com/svn/branches/firebug1.1/docs/ReleaseNotes_1.1.txt
- * for details on using //@ sourceURL comment to identify scritps that don't
- * have name.
+ * and Source Map Revision 3 proposal for details on using //# sourceURL and
+ * deprecated //@ sourceURL comment to identify scripts that don't have name.
  *
- * @return {?string} script name if present, value for //@ sourceURL comment
- * otherwise.
+ * @return {?string} script name if present, value for //# sourceURL or
+ * deprecated //@ sourceURL comment otherwise.
  */
 function ScriptNameOrSourceURL() {
   if (this.line_offset > 0 || this.column_offset > 0) {
@@ -563,7 +572,7 @@ function ScriptNameOrSourceURL() {
   this.cachedNameOrSourceURL = this.name;
   if (sourceUrlPos > 4) {
     var sourceUrlPattern =
-        /\/\/@[\040\t]sourceURL=[\040\t]*([^\s\'\"]*)[\040\t]*$/gm;
+        /\/\/[#@][\040\t]sourceURL=[\040\t]*([^\s\'\"]*)[\040\t]*$/gm;
     // Don't reuse lastMatchInfo here, so we create a new array with room
     // for four captures (array with length one longer than the index
     // of the fourth capture, where the numbering is zero-based).
@@ -897,8 +906,8 @@ function CallSiteGetPosition() {
 
 function CallSiteIsConstructor() {
   var receiver = this[CallSiteReceiverKey];
-  var constructor =
-      IS_OBJECT(receiver) ? %GetDataProperty(receiver, "constructor") : null;
+  var constructor = (receiver != null && IS_OBJECT(receiver))
+                        ? %GetDataProperty(receiver, "constructor") : null;
   if (!constructor) return false;
   return this[CallSiteFunctionKey] === constructor;
 }

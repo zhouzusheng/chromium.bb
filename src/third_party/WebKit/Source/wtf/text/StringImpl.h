@@ -24,12 +24,13 @@
 #define StringImpl_h
 
 #include <limits.h>
-#include <wtf/ASCIICType.h>
-#include <wtf/Forward.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/StringHasher.h>
-#include <wtf/Vector.h>
-#include <wtf/unicode/Unicode.h>
+#include "wtf/ASCIICType.h"
+#include "wtf/Forward.h"
+#include "wtf/StdLibExtras.h"
+#include "wtf/StringHasher.h"
+#include "wtf/Vector.h"
+#include "wtf/WTFExport.h"
+#include "wtf/unicode/Unicode.h"
 
 #if USE(CF)
 typedef const struct __CFString * CFStringRef;
@@ -98,12 +99,15 @@ struct StringStats {
     unsigned long long m_totalUpconvertedData;
 };
 
-#define STRING_STATS_ADD_8BIT_STRING(length) StringImpl::stringStats().add8BitString(length)
-#define STRING_STATS_ADD_8BIT_STRING2(length, isSubString) StringImpl::stringStats().add8BitString(length, isSubString)
-#define STRING_STATS_ADD_16BIT_STRING(length) StringImpl::stringStats().add16BitString(length)
-#define STRING_STATS_ADD_16BIT_STRING2(length, isSubString) StringImpl::stringStats().add16BitString(length, isSubString)
+void addStringForStats(StringImpl*);
+void removeStringForStats(StringImpl*);
+
+#define STRING_STATS_ADD_8BIT_STRING(length) StringImpl::stringStats().add8BitString(length); addStringForStats(this)
+#define STRING_STATS_ADD_8BIT_STRING2(length, isSubString) StringImpl::stringStats().add8BitString(length, isSubString); addStringForStats(this)
+#define STRING_STATS_ADD_16BIT_STRING(length) StringImpl::stringStats().add16BitString(length); addStringForStats(this)
+#define STRING_STATS_ADD_16BIT_STRING2(length, isSubString) StringImpl::stringStats().add16BitString(length, isSubString); addStringForStats(this)
 #define STRING_STATS_ADD_UPCONVERTED_STRING(length) StringImpl::stringStats().addUpconvertedString(length)
-#define STRING_STATS_REMOVE_STRING(string) StringImpl::stringStats().removeString(string)
+#define STRING_STATS_REMOVE_STRING(string) StringImpl::stringStats().removeString(string); removeStringForStats(this)
 #else
 #define STRING_STATS_ADD_8BIT_STRING(length) ((void)0)
 #define STRING_STATS_ADD_8BIT_STRING2(length, isSubString) ((void)0)
@@ -113,7 +117,7 @@ struct StringStats {
 #define STRING_STATS_REMOVE_STRING(string) ((void)0)
 #endif
 
-class StringImpl {
+class WTF_EXPORT StringImpl {
     WTF_MAKE_NONCOPYABLE(StringImpl);
     // This is needed because we malloc() space for a StringImpl plus an
     // immediately following buffer, as a performance tweak.
@@ -755,33 +759,21 @@ private:
 
 COMPILE_ASSERT(sizeof(StringImpl) == sizeof(StringImpl::StaticASCIILiteral), StringImpl_should_match_its_StaticASCIILiteral);
 
-#if !ASSERT_DISABLED
-// StringImpls created from StaticASCIILiteral will ASSERT
-// in the generic ValueCheck<T>::checkConsistency
-// as they are not allocated by fastMalloc.
-// We don't currently have any way to detect that case
-// so we ignore the consistency check for all StringImpl*.
-template<> struct
-ValueCheck<StringImpl*> {
-    static void checkConsistency(const StringImpl*) { }
-};
-#endif
-
 template <>
 ALWAYS_INLINE const LChar* StringImpl::getCharacters<LChar>() const { return characters8(); }
 
 template <>
 ALWAYS_INLINE const UChar* StringImpl::getCharacters<UChar>() const { return characters(); }
 
-bool equal(const StringImpl*, const StringImpl*);
-bool equal(const StringImpl*, const LChar*);
+WTF_EXPORT bool equal(const StringImpl*, const StringImpl*);
+WTF_EXPORT bool equal(const StringImpl*, const LChar*);
 inline bool equal(const StringImpl* a, const char* b) { return equal(a, reinterpret_cast<const LChar*>(b)); }
-bool equal(const StringImpl*, const LChar*, unsigned);
+WTF_EXPORT bool equal(const StringImpl*, const LChar*, unsigned);
 inline bool equal(const StringImpl* a, const char* b, unsigned length) { return equal(a, reinterpret_cast<const LChar*>(b), length); }
 inline bool equal(const LChar* a, StringImpl* b) { return equal(b, a); }
 inline bool equal(const char* a, StringImpl* b) { return equal(b, reinterpret_cast<const LChar*>(a)); }
-bool equal(const StringImpl*, const UChar*, unsigned);
-bool equalNonNull(const StringImpl* a, const StringImpl* b);
+WTF_EXPORT bool equal(const StringImpl*, const UChar*, unsigned);
+WTF_EXPORT bool equalNonNull(const StringImpl* a, const StringImpl* b);
 
 // Do comparisons 8 or 4 bytes-at-a-time on architectures where it's safe.
 #if CPU(X86_64)
@@ -939,11 +931,11 @@ ALWAYS_INLINE bool equal(const UChar* a, const LChar* b, unsigned length)
     return true;
 }
 
-bool equalIgnoringCase(const StringImpl*, const StringImpl*);
-bool equalIgnoringCase(const StringImpl*, const LChar*);
+WTF_EXPORT bool equalIgnoringCase(const StringImpl*, const StringImpl*);
+WTF_EXPORT bool equalIgnoringCase(const StringImpl*, const LChar*);
 inline bool equalIgnoringCase(const LChar* a, const StringImpl* b) { return equalIgnoringCase(b, a); }
-bool equalIgnoringCase(const LChar*, const LChar*, unsigned);
-bool equalIgnoringCase(const UChar*, const LChar*, unsigned);
+WTF_EXPORT bool equalIgnoringCase(const LChar*, const LChar*, unsigned);
+WTF_EXPORT bool equalIgnoringCase(const UChar*, const LChar*, unsigned);
 inline bool equalIgnoringCase(const UChar* a, const char* b, unsigned length) { return equalIgnoringCase(a, reinterpret_cast<const LChar*>(b), length); }
 inline bool equalIgnoringCase(const LChar* a, const UChar* b, unsigned length) { return equalIgnoringCase(b, a, length); }
 inline bool equalIgnoringCase(const char* a, const UChar* b, unsigned length) { return equalIgnoringCase(b, reinterpret_cast<const LChar*>(a), length); }
@@ -953,9 +945,9 @@ inline bool equalIgnoringCase(const UChar* a, const UChar* b, int length)
     ASSERT(length >= 0);
     return !Unicode::umemcasecmp(a, b, length);
 }
-bool equalIgnoringCaseNonNull(const StringImpl*, const StringImpl*);
+WTF_EXPORT bool equalIgnoringCaseNonNull(const StringImpl*, const StringImpl*);
 
-bool equalIgnoringNullity(StringImpl*, StringImpl*);
+WTF_EXPORT bool equalIgnoringNullity(StringImpl*, StringImpl*);
 
 template<typename CharacterType>
 inline size_t find(const CharacterType* characters, unsigned length, CharacterType matchCharacter, unsigned index = 0)
@@ -1090,6 +1082,15 @@ inline size_t StringImpl::find(UChar character, unsigned start)
     if (is8Bit())
         return WTF::find(characters8(), m_length, character, start);
     return WTF::find(characters16(), m_length, character, start);
+}
+
+inline unsigned lengthOfNullTerminatedString(const UChar* string)
+{
+    size_t length = 0;
+    while (string[length] != UChar(0))
+        ++length;
+    RELEASE_ASSERT(length <= std::numeric_limits<unsigned>::max());
+    return static_cast<unsigned>(length);
 }
 
 template<size_t inlineCapacity>

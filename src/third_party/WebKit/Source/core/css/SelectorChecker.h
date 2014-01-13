@@ -29,10 +29,7 @@
 #define SelectorChecker_h
 
 #include "core/css/CSSSelector.h"
-#include "core/dom/SpaceSplitString.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include <wtf/HashSet.h>
-#include <wtf/Vector.h>
 
 namespace WebCore {
 
@@ -89,6 +86,10 @@ public:
 
     template<typename SiblingTraversalStrategy>
     Match match(const SelectorCheckingContext&, PseudoId&, const SiblingTraversalStrategy&) const;
+
+    template<typename SiblingTraversalStrategy>
+    Match matchForShadowDistributed(const Element*, const SiblingTraversalStrategy&, PseudoId&, SelectorCheckingContext& nextContext) const;
+
     template<typename SiblingTraversalStrategy>
     bool checkOne(const SelectorCheckingContext&, const SiblingTraversalStrategy&) const;
 

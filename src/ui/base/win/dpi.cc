@@ -5,10 +5,11 @@
 #include "ui/base/win/dpi.h"
 
 #include <windows.h>
-
+#include "base/command_line.h"
 #include "base/win/scoped_hdc.h"
 #include "ui/base/layout.h"
 #include "base/win/registry.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect_conversions.h"
@@ -19,16 +20,28 @@ namespace {
 int kDefaultDPIX = 96;
 int kDefaultDPIY = 96;
 
+// Tests to see if the command line flag "--high-dpi-support" is set.
+bool IsHighDPIEnabled() {
+  // Default is disabled.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kHighDPISupport)) {
+    return CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        switches::kHighDPISupport).compare("1") == 0;
+  }
+  return false;
+}
+
+// Gets the device scale factor. If support is enabled, this will return the
+// best available scale based on the screen's pixel density. This can be
+// affected (overridden) by --force-device-scale-factor=x
 float GetDeviceScaleFactorImpl() {
-#if defined(ENABLE_HIDPI)
-  float scale = gfx::Display::HasForceDeviceScaleFactor() ?
-      gfx::Display::GetForcedDeviceScaleFactor() : ui::GetDPIScale();
-  // Quantize to nearest supported scale factor.
-  scale = ui::GetScaleFactorScale(ui::GetScaleFactorFromScale(scale));
-  return scale;
-#else
+  if (IsHighDPIEnabled()) {
+    float scale = gfx::Display::HasForceDeviceScaleFactor() ?
+        gfx::Display::GetForcedDeviceScaleFactor() : ui::GetDPIScale();
+    // Quantize to nearest supported scale factor.
+    scale = ui::GetScaleFactorScale(ui::GetScaleFactorFromScale(scale));
+    return scale;
+  }
   return 1.0f;
-#endif
 }
 
 BOOL IsProcessDPIAwareWrapper() {
@@ -63,22 +76,27 @@ gfx::Size GetDPI() {
 }
 
 float GetDPIScale() {
-  return static_cast<float>(GetDPI().width()) /
-      static_cast<float>(kDefaultDPIX);
+  if (IsHighDPIEnabled()) {
+    return static_cast<float>(GetDPI().width()) /
+        static_cast<float>(kDefaultDPIX);
+  }
+  return 1.0;
 }
 
 bool IsInHighDPIMode() {
-  gfx::Size dpi(GetDPI());
-  return dpi.width() > kDefaultDPIX || dpi.height() > kDefaultDPIY;
+  return GetDPIScale() > 1.0;
 }
 
 void EnableHighDPISupport() {
-  typedef BOOL(WINAPI *SetProcessDPIAwarePtr)(VOID);
-  SetProcessDPIAwarePtr set_process_dpi_aware_func =
-      reinterpret_cast<SetProcessDPIAwarePtr>(
-          GetProcAddress(GetModuleHandleA("user32.dll"), "SetProcessDPIAware"));
-  if (set_process_dpi_aware_func)
-    set_process_dpi_aware_func();
+  if (IsHighDPIEnabled()) {
+    typedef BOOL(WINAPI *SetProcessDPIAwarePtr)(VOID);
+    SetProcessDPIAwarePtr set_process_dpi_aware_func =
+        reinterpret_cast<SetProcessDPIAwarePtr>(
+            GetProcAddress(GetModuleHandleA("user32.dll"),
+                           "SetProcessDPIAware"));
+    if (set_process_dpi_aware_func)
+      set_process_dpi_aware_func();
+  }
 }
 
 namespace win {
@@ -91,6 +109,11 @@ float GetDeviceScaleFactor() {
 gfx::Point ScreenToDIPPoint(const gfx::Point& pixel_point) {
   return gfx::ToFlooredPoint(
       gfx::ScalePoint(pixel_point, 1.0f / GetDeviceScaleFactor()));
+}
+
+gfx::Point DIPToScreenPoint(const gfx::Point& dip_point) {
+  return gfx::ToFlooredPoint(
+      gfx::ScalePoint(dip_point, GetDeviceScaleFactor()));
 }
 
 gfx::Rect ScreenToDIPRect(const gfx::Rect& pixel_bounds) {

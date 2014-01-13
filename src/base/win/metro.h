@@ -11,7 +11,7 @@
 #include "base/base_export.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 namespace base {
 namespace win {
@@ -115,6 +115,9 @@ typedef void (*MetroNotification)(const char* origin_url,
                                   const char* notification_id,
                                   MetroNotificationClickedHandler handler,
                                   const wchar_t* handler_context);
+
+// Function to cancel displayed notification.
+typedef bool (*MetroCancelNotification)(const char* notification_id);
 
 // Callback for UMA invoked by Metro Pin and UnPin functions after user gesture.
 typedef base::Callback<void(MetroSecondaryTilePinUmaResult)>

@@ -25,8 +25,6 @@
 
 #include "core/dom/Document.h"
 #include "core/html/parser/HTMLDocumentParser.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
 #include "core/xml/parser/XMLDocumentParser.h"
 
 namespace WebCore {
@@ -41,6 +39,11 @@ PassRefPtr<DocumentFragment> DocumentFragment::create(Document* document)
 {
     ASSERT(document);
     return adoptRef(new DocumentFragment(document, Node::CreateDocumentFragment));
+}
+
+PassRefPtr<DocumentFragment> DocumentFragment::create(ScriptExecutionContext* context)
+{
+    return adoptRef(new DocumentFragment(toDocument(context), Node::CreateDocumentFragment));
 }
 
 String DocumentFragment::nodeName() const
@@ -61,7 +64,6 @@ bool DocumentFragment::childTypeAllowed(NodeType type) const
         case COMMENT_NODE:
         case TEXT_NODE:
         case CDATA_SECTION_NODE:
-        case ENTITY_REFERENCE_NODE:
             return true;
         default:
             return false;

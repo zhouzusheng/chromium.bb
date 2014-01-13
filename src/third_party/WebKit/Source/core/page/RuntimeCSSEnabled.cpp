@@ -48,14 +48,13 @@ static void setPropertySwitchesFromRuntimeFeatures(BoolVector& properties)
     CSSPropertyID regionProperites[] = {
         CSSPropertyWebkitFlowInto,
         CSSPropertyWebkitFlowFrom,
-        CSSPropertyWebkitRegionOverflow,
+        CSSPropertyWebkitRegionFragment,
         CSSPropertyWebkitRegionBreakAfter,
         CSSPropertyWebkitRegionBreakBefore,
         CSSPropertyWebkitRegionBreakInside
     };
     setCSSPropertiesEnabled(regionProperites, WTF_ARRAY_LENGTH(regionProperites), RuntimeEnabledFeatures::cssRegionsEnabled());
     CSSPropertyID exclusionProperties[] = {
-        CSSPropertyWebkitWrap,
         CSSPropertyWebkitWrapFlow,
         CSSPropertyWebkitShapeMargin,
         CSSPropertyWebkitShapePadding,
@@ -64,10 +63,31 @@ static void setPropertySwitchesFromRuntimeFeatures(BoolVector& properties)
         CSSPropertyWebkitShapeOutside,
     };
     setCSSPropertiesEnabled(exclusionProperties, WTF_ARRAY_LENGTH(exclusionProperties), RuntimeEnabledFeatures::cssExclusionsEnabled());
-#if ENABLE(CSS_COMPOSITING)
+    CSSPropertyID css3TextDecorationProperties[] = {
+        CSSPropertyTextDecorationColor,
+        CSSPropertyTextDecorationLine,
+        CSSPropertyTextDecorationStyle,
+    };
+    setCSSPropertiesEnabled(css3TextDecorationProperties, WTF_ARRAY_LENGTH(css3TextDecorationProperties), RuntimeEnabledFeatures::css3TextDecorationsEnabled());
+    CSSPropertyID cssGridLayoutProperties[] = {
+        CSSPropertyGridAutoColumns,
+        CSSPropertyGridAutoRows,
+        CSSPropertyGridColumns,
+        CSSPropertyGridRows,
+        CSSPropertyGridStart,
+        CSSPropertyGridEnd,
+        CSSPropertyGridBefore,
+        CSSPropertyGridAfter,
+        CSSPropertyGridColumn,
+        CSSPropertyGridRow,
+        CSSPropertyGridArea,
+        CSSPropertyGridAutoFlow
+    };
+    setCSSPropertiesEnabled(cssGridLayoutProperties, WTF_ARRAY_LENGTH(cssGridLayoutProperties), RuntimeEnabledFeatures::cssGridLayoutEnabled());
+
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyBackgroundBlendMode, RuntimeEnabledFeatures::cssCompositingEnabled());
-    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyWebkitBlendMode, RuntimeEnabledFeatures::cssCompositingEnabled());
-#endif
+    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyMixBlendMode, RuntimeEnabledFeatures::cssCompositingEnabled());
+    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyTouchAction, RuntimeEnabledFeatures::cssTouchActionEnabled());
 }
 
 static BoolVector& propertySwitches()

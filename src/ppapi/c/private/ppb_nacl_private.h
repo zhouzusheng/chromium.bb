@@ -3,16 +3,16 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_nacl_private.idl modified Mon Apr 22 22:25:20 2013. */
+/* From private/ppb_nacl_private.idl modified Wed Jun 19 13:46:04 2013. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
 #define PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
 
 #include "ppapi/c/pp_bool.h"
+#include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_macros.h"
 #include "ppapi/c/pp_stdint.h"
-#include "ppapi/c/pp_var.h"
 
 #define PPB_NACL_PRIVATE_INTERFACE_1_0 "PPB_NaCl_Private;1.0"
 #define PPB_NACL_PRIVATE_INTERFACE PPB_NACL_PRIVATE_INTERFACE_1_0
@@ -57,19 +57,6 @@ typedef enum {
  */
 
 /**
- * @addtogroup Structs
- * @{
- */
-struct PP_NaClExecutableMetadata {
-  /** File path of NaCl executable. This is created by the OpenNaClExecutableFd
-   *  function. It is the caller's responsiblity to release it. */
-  struct PP_Var file_path;
-};
-/**
- * @}
- */
-
-/**
  * @addtogroup Interfaces
  * @{
  */
@@ -86,6 +73,8 @@ struct PPB_NaCl_Private_1_0 {
    * NaCl process.  This is true for ABI stable nexes.
    * The |enable_dyncode_syscalls| flag indicates whether or not the nexe
    * will be able to use dynamic code system calls (e.g., mmap with PROT_EXEC).
+   * The |enable_exception_handling| flag indicates whether or not the nexe
+   * will be able to use hardware exception handling.
    */
   PP_NaClResult (*LaunchSelLdr)(PP_Instance instance,
                                 const char* alleged_url,
@@ -93,6 +82,7 @@ struct PPB_NaCl_Private_1_0 {
                                 PP_Bool uses_ppapi,
                                 PP_Bool enable_ppapi_dev,
                                 PP_Bool enable_dyncode_syscalls,
+                                PP_Bool enable_exception_handling,
                                 void* imc_handle);
   /* This function starts the IPC proxy so the nexe can communicate with the
    * browser. Returns PP_NACL_OK on success, otherwise a result code indicating
@@ -136,6 +126,23 @@ struct PPB_NaCl_Private_1_0 {
    * returns a posix handle to that temporary file.
    */
   PP_FileHandle (*CreateTemporaryFile)(PP_Instance instance);
+  /* Create a temporary file, which will be deleted by the time the last
+   * handle is closed (or earlier on POSIX systems), to use for the nexe
+   * with the cache key given by |cache_key|. If the nexe is already present
+   * in the cache, |is_hit| is set to PP_TRUE and the contents of the nexe
+   * will be copied into the temporary file. Otherwise |is_hit| is set to
+   * PP_FALSE and the temporary file will be writeable.
+   * Currently the implementation is a stub, which always sets is_hit to false
+   * and calls the implementation of CreateTemporaryFile. In a subsequent CL
+   * it will call into the browser which will remember the association between
+   * the cache key and the fd, and copy the nexe into the cache after the
+   * translation finishes.
+   */
+  int32_t (*GetNexeFd)(PP_Instance instance,
+                       const char* cache_key,
+                       PP_Bool* is_hit,
+                       PP_FileHandle* nexe_handle,
+                       struct PP_CompletionCallback callback);
   /* Return true if we are off the record.
    */
   PP_Bool (*IsOffTheRecord)(void);
@@ -149,10 +156,10 @@ struct PPB_NaCl_Private_1_0 {
    * corresponding to the file URL and returns a file descriptor, or an invalid
    * handle on failure. |metadata| is left unchanged on failure.
    */
-  PP_FileHandle (*OpenNaClExecutable)(
-      PP_Instance instance,
-      const char* file_url,
-      struct PP_NaClExecutableMetadata* metadata);
+  PP_FileHandle (*OpenNaClExecutable)(PP_Instance instance,
+                                      const char* file_url,
+                                      uint64_t* file_token_lo,
+                                      uint64_t* file_token_hi);
 };
 
 typedef struct PPB_NaCl_Private_1_0 PPB_NaCl_Private;

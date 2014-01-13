@@ -34,10 +34,12 @@ PicturePile::~PicturePile() {
 void PicturePile::Update(
     ContentLayerClient* painter,
     SkColor background_color,
+    bool contents_opaque,
     const Region& invalidation,
     gfx::Rect visible_layer_rect,
     RenderingStats* stats) {
   background_color_ = background_color;
+  contents_opaque_ = contents_opaque;
 
   gfx::Rect interest_rect = visible_layer_rect;
   interest_rect.Inset(
@@ -46,18 +48,10 @@ void PicturePile::Update(
       -kPixelDistanceToRecord,
       -kPixelDistanceToRecord);
   for (Region::Iterator i(invalidation); i.has_rect(); i.next()) {
-    // Inflate all recordings from invalidations with a margin so that when
-    // scaled down to at least min_contents_scale, any final pixel touched by an
-    // invalidation can be fully rasterized by this picture.
-    gfx::Rect inflated_invalidation = i.rect();
-    inflated_invalidation.Inset(
-        -buffer_pixels(),
-        -buffer_pixels(),
-        -buffer_pixels(),
-        -buffer_pixels());
+    gfx::Rect invalidation = i.rect();
     // Split this inflated invalidation across tile boundaries and apply it
     // to all tiles that it touches.
-    for (TilingData::Iterator iter(&tiling_, inflated_invalidation);
+    for (TilingData::Iterator iter(&tiling_, invalidation);
          iter; ++iter) {
       gfx::Rect tile =
           tiling_.TileBoundsWithBorder(iter.index_x(), iter.index_y());
@@ -68,8 +62,7 @@ void PicturePile::Update(
         continue;
       }
 
-      gfx::Rect tile_invalidation =
-          gfx::IntersectRects(inflated_invalidation, tile);
+      gfx::Rect tile_invalidation = gfx::IntersectRects(invalidation, tile);
       if (tile_invalidation.IsEmpty())
         continue;
       PictureListMap::iterator find = picture_list_map_.find(iter.index());
@@ -77,10 +70,21 @@ void PicturePile::Update(
         continue;
       PictureList& pic_list = find->second;
       // Leave empty pic_lists empty in case there are multiple invalidations.
-      if (!pic_list.empty())
+      if (!pic_list.empty()) {
+        // Inflate all recordings from invalidations with a margin so that when
+        // scaled down to at least min_contents_scale, any final pixel touched
+        // by an invalidation can be fully rasterized by this picture.
+        tile_invalidation.Inset(-buffer_pixels(), -buffer_pixels());
+
+        DCHECK_GE(tile_invalidation.width(), buffer_pixels() * 2 + 1);
+        DCHECK_GE(tile_invalidation.height(), buffer_pixels() * 2 + 1);
+
         InvalidateRect(pic_list, tile_invalidation);
+      }
     }
   }
+
+  int repeat_count = std::max(1, slow_down_raster_scale_factor_for_debug_);
 
   // Walk through all pictures in the rect of interest and record.
   for (TilingData::Iterator iter(&tiling_, interest_rect); iter; ++iter) {
@@ -103,7 +107,9 @@ void PicturePile::Update(
     for (PictureList::iterator pic = pic_list.begin();
          pic != pic_list.end(); ++pic) {
       if (!(*pic)->HasRecording()) {
-        (*pic)->Record(painter, tile_grid_info_, stats);
+        TRACE_EVENT0("cc", "PicturePile::Update recording loop");
+        for (int i = 0; i < repeat_count; i++)
+          (*pic)->Record(painter, tile_grid_info_, stats);
         (*pic)->GatherPixelRefs(tile_grid_info_, stats);
         (*pic)->CloneForDrawing(num_raster_threads_);
       }
@@ -117,7 +123,8 @@ class FullyContainedPredicate {
  public:
   explicit FullyContainedPredicate(gfx::Rect rect) : layer_rect_(rect) {}
   bool operator()(const scoped_refptr<Picture>& picture) {
-    return layer_rect_.Contains(picture->LayerRect());
+    return picture->LayerRect().IsEmpty() ||
+        layer_rect_.Contains(picture->LayerRect());
   }
   gfx::Rect layer_rect_;
 };
@@ -126,6 +133,7 @@ void PicturePile::InvalidateRect(
     PictureList& picture_list,
     gfx::Rect invalidation) {
   DCHECK(!picture_list.empty());
+  DCHECK(!invalidation.IsEmpty());
 
   std::vector<PictureList::iterator> overlaps;
   for (PictureList::iterator i = picture_list.begin();
@@ -142,7 +150,7 @@ void PicturePile::InvalidateRect(
       picture_rect.Union((*overlaps[j])->LayerRect());
   }
 
-  Picture* base_picture = picture_list.front();
+  Picture* base_picture = picture_list.front().get();
   int max_pixels = kResetThreshold * base_picture->LayerRect().size().GetArea();
   if (picture_rect.size().GetArea() > max_pixels) {
     // This picture list will be entirely recreated, so clear it.

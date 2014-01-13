@@ -5,12 +5,12 @@
 #ifndef NET_DISK_CACHE_SIMPLE_SIMPLE_BACKEND_IMPL_H_
 #define NET_DISK_CACHE_SIMPLE_SIMPLE_BACKEND_IMPL_H_
 
-#include <map>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -21,6 +21,7 @@
 
 namespace base {
 class SingleThreadTaskRunner;
+class TaskRunner;
 }
 
 namespace disk_cache {
@@ -48,11 +49,16 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
 
   SimpleIndex* index() { return index_.get(); }
 
+  base::TaskRunner* worker_pool() { return worker_pool_.get(); }
+
   // Must run on IO Thread.
   int Init(const CompletionCallback& completion_callback);
 
   // Sets the maximum size for the total amount of data stored by this instance.
   bool SetMaxSize(int max_bytes);
+
+  // Returns the maximum file size permitted in this backend.
+  int GetMaxFileSize() const;
 
   // Removes |entry| from the |active_entries_| set, forcing future Open/Create
   // operations to construct a new object.
@@ -81,7 +87,7 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
   virtual void OnExternalCacheHit(const std::string& key) OVERRIDE;
 
  private:
-  typedef std::map<uint64, base::WeakPtr<SimpleEntryImpl> > EntryMap;
+  typedef base::hash_map<uint64, base::WeakPtr<SimpleEntryImpl> > EntryMap;
 
   typedef base::Callback<void(uint64 max_size, int result)>
       InitializeIndexCallback;
@@ -114,6 +120,7 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
   const base::FilePath path_;
   scoped_ptr<SimpleIndex> index_;
   const scoped_refptr<base::SingleThreadTaskRunner> cache_thread_;
+  scoped_refptr<base::TaskRunner> worker_pool_;
 
   int orig_max_size_;
 

@@ -11,7 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/time.h"
 #include "ppapi/c/dev/ppb_audio_input_dev.h"
 #include "ppapi/c/dev/ppb_buffer_dev.h"
@@ -34,9 +34,7 @@
 #include "ppapi/c/dev/ppb_trace_event_dev.h"
 #include "ppapi/c/dev/ppb_truetype_font_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
-#include "ppapi/c/dev/ppb_var_array_dev.h"
 #include "ppapi/c/dev/ppb_var_deprecated.h"
-#include "ppapi/c/dev/ppb_var_dictionary_dev.h"
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
 #include "ppapi/c/dev/ppb_video_decoder_dev.h"
 #include "ppapi/c/dev/ppb_view_dev.h"
@@ -57,25 +55,34 @@
 #include "ppapi/c/ppb_fullscreen.h"
 #include "ppapi/c/ppb_graphics_2d.h"
 #include "ppapi/c/ppb_graphics_3d.h"
+#include "ppapi/c/ppb_host_resolver.h"
 #include "ppapi/c/ppb_image_data.h"
 #include "ppapi/c/ppb_instance.h"
 #include "ppapi/c/ppb_messaging.h"
 #include "ppapi/c/ppb_mouse_cursor.h"
 #include "ppapi/c/ppb_mouse_lock.h"
+#include "ppapi/c/ppb_net_address.h"
+#include "ppapi/c/ppb_network_proxy.h"
 #include "ppapi/c/ppb_opengles2.h"
+#include "ppapi/c/ppb_tcp_socket.h"
+#include "ppapi/c/ppb_udp_socket.h"
 #include "ppapi/c/ppb_url_loader.h"
 #include "ppapi/c/ppb_url_request_info.h"
 #include "ppapi/c/ppb_url_response_info.h"
 #include "ppapi/c/ppb_var.h"
+#include "ppapi/c/ppb_var_array.h"
 #include "ppapi/c/ppb_var_array_buffer.h"
+#include "ppapi/c/ppb_var_dictionary.h"
 #include "ppapi/c/ppb_view.h"
 #include "ppapi/c/ppp.h"
 #include "ppapi/c/ppp_instance.h"
+#include "ppapi/c/private/ppb_ext_crx_file_system_private.h"
 #include "ppapi/c/private/ppb_file_io_private.h"
 #include "ppapi/c/private/ppb_file_ref_private.h"
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/c/private/ppb_flash_clipboard.h"
 #include "ppapi/c/private/ppb_flash_device_id.h"
+#include "ppapi/c/private/ppb_flash_drm.h"
 #include "ppapi/c/private/ppb_flash_file.h"
 #include "ppapi/c/private/ppb_flash_font_file.h"
 #include "ppapi/c/private/ppb_flash_fullscreen.h"
@@ -97,15 +104,11 @@
 #include "ppapi/c/private/ppb_video_destination_private.h"
 #include "ppapi/c/private/ppb_video_source_private.h"
 #include "ppapi/c/private/ppb_x509_certificate_private.h"
-#include "ppapi/c/trusted/ppb_audio_trusted.h"
 #include "ppapi/c/trusted/ppb_broker_trusted.h"
 #include "ppapi/c/trusted/ppb_browser_font_trusted.h"
-#include "ppapi/c/trusted/ppb_buffer_trusted.h"
 #include "ppapi/c/trusted/ppb_char_set_trusted.h"
 #include "ppapi/c/trusted/ppb_file_chooser_trusted.h"
 #include "ppapi/c/trusted/ppb_file_io_trusted.h"
-#include "ppapi/c/trusted/ppb_graphics_3d_trusted.h"
-#include "ppapi/c/trusted/ppb_image_data_trusted.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
 #include "ppapi/shared_impl/callback_tracker.h"
 #include "ppapi/shared_impl/ppapi_switches.h"
@@ -148,6 +151,9 @@ namespace {
 // Note that we don't want a Singleton here since destroying this object will
 // try to free some stuff that requires WebKit, and Singletons are destroyed
 // after WebKit.
+// TODO(raymes): I'm not sure if it is completely necessary to leak the
+// HostGlobals. Figure out the shutdown sequence and find a way to do this
+// more elegantly.
 webkit::ppapi::HostGlobals* host_globals = NULL;
 
 // Maintains all currently loaded plugin libs for validating PP_Module
@@ -214,12 +220,13 @@ PP_Bool ReadImageData(PP_Resource device_context_2d,
 }
 
 void RunMessageLoop(PP_Instance instance) {
-  MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
-  MessageLoop::current()->Run();
+  base::MessageLoop::ScopedNestableTaskAllower allow(
+      base::MessageLoop::current());
+  base::MessageLoop::current()->Run();
 }
 
 void QuitMessageLoop(PP_Instance instance) {
-  MessageLoop::current()->QuitNow();
+  base::MessageLoop::current()->QuitNow();
 }
 
 uint32_t GetLiveObjectsForInstance(PP_Instance instance_id) {
@@ -303,54 +310,13 @@ const void* InternalGetInterface(const char* name) {
   #undef UNPROXIED_API
   #undef PROXIED_IFACE
 
-  // Please keep alphabetized by interface macro name with "special" stuff at
-  // the bottom.
-  if (strcmp(name, PPB_AUDIO_TRUSTED_INTERFACE_0_6) == 0)
-    return ::ppapi::thunk::GetPPB_AudioTrusted_0_6_Thunk();
-  if (strcmp(name, PPB_BUFFER_TRUSTED_INTERFACE_0_1) == 0)
-    return ::ppapi::thunk::GetPPB_BufferTrusted_0_1_Thunk();
-  if (strcmp(name, PPB_CORE_INTERFACE_1_0) == 0)
-    return &core_interface;
-  if (strcmp(name, PPB_GPUBLACKLIST_PRIVATE_INTERFACE) == 0)
-    return PPB_GpuBlacklist_Private_Impl::GetInterface();
-  if (strcmp(name, PPB_GRAPHICS_3D_TRUSTED_INTERFACE_1_0) == 0)
-    return ::ppapi::thunk::GetPPB_Graphics3DTrusted_1_0_Thunk();
-  if (strcmp(name, PPB_IMAGEDATA_TRUSTED_INTERFACE_0_4) == 0)
-    return ::ppapi::thunk::GetPPB_ImageDataTrusted_0_4_Thunk();
-  if (strcmp(name, PPB_INPUT_EVENT_INTERFACE_1_0) == 0)
-    return ::ppapi::thunk::GetPPB_InputEvent_1_0_Thunk();
-  if (strcmp(name, PPB_INSTANCE_PRIVATE_INTERFACE_0_1) == 0)
-    return ::ppapi::thunk::GetPPB_Instance_Private_0_1_Thunk();
-  if (strcmp(name, PPB_OPENGLES2_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetInterface();
-  if (strcmp(name, PPB_OPENGLES2_INSTANCEDARRAYS_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetInstancedArraysInterface();
-  if (strcmp(name, PPB_OPENGLES2_FRAMEBUFFERBLIT_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetFramebufferBlitInterface();
-  if (strcmp(name, PPB_OPENGLES2_FRAMEBUFFERMULTISAMPLE_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetFramebufferMultisampleInterface();
-  if (strcmp(name, PPB_OPENGLES2_CHROMIUMENABLEFEATURE_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetChromiumEnableFeatureInterface();
-  if (strcmp(name, PPB_OPENGLES2_CHROMIUMMAPSUB_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetChromiumMapSubInterface();
-  if (strcmp(name, PPB_OPENGLES2_CHROMIUMMAPSUB_DEV_INTERFACE_1_0) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetChromiumMapSubInterface();
-  if (strcmp(name, PPB_OPENGLES2_QUERY_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetQueryInterface();
-  if (strcmp(name, PPB_PROXY_PRIVATE_INTERFACE) == 0)
-    return PPB_Proxy_Impl::GetInterface();
-  if (strcmp(name, PPB_UMA_PRIVATE_INTERFACE) == 0)
-    return PPB_UMA_Private_Impl::GetInterface();
-  if (strcmp(name, PPB_URLLOADERTRUSTED_INTERFACE_0_3) == 0)
-    return ::ppapi::thunk::GetPPB_URLLoaderTrusted_0_3_Thunk();
-  if (strcmp(name, PPB_VAR_DEPRECATED_INTERFACE) == 0)
-    return PPB_Var_Deprecated_Impl::GetVarDeprecatedInterface();
-  if (strcmp(name, PPB_VAR_INTERFACE_1_0) == 0)
-    return ::ppapi::PPB_Var_Shared::GetVarInterface1_0();
-  if (strcmp(name, PPB_VAR_INTERFACE_1_1) == 0)
-    return ::ppapi::PPB_Var_Shared::GetVarInterface1_1();
-  if (strcmp(name, PPB_VAR_ARRAY_BUFFER_INTERFACE_1_0) == 0)
-    return ::ppapi::PPB_Var_Shared::GetVarArrayBufferInterface1_0();
+  #define LEGACY_IFACE(iface_str, function_name) \
+      if (strcmp(name, iface_str) == 0) \
+        return function_name;
+
+  #include "ppapi/thunk/interfaces_legacy.h"
+
+  #undef LEGACY_IFACE
 
   // Only support the testing interface when the command line switch is
   // specified. This allows us to prevent people from (ab)using this interface
@@ -543,9 +509,15 @@ bool PluginModule::IsProxied() const {
 }
 
 base::ProcessId PluginModule::GetPeerProcessId() {
-  if (out_of_process_proxy_.get())
+  if (out_of_process_proxy_)
     return out_of_process_proxy_->GetPeerProcessId();
   return base::kNullProcessId;
+}
+
+int PluginModule::GetPluginChildId() {
+  if (out_of_process_proxy_)
+    return out_of_process_proxy_->GetPluginChildId();
+  return 0;
 }
 
 // static
@@ -573,7 +545,7 @@ PluginInstance* PluginModule::CreateInstance(
     LOG(WARNING) << "Plugin doesn't support instance interface, failing.";
     return NULL;
   }
-  if (out_of_process_proxy_.get())
+  if (out_of_process_proxy_)
     out_of_process_proxy_->AddInstance(instance->pp_instance());
   return instance;
 }
@@ -586,7 +558,7 @@ PluginInstance* PluginModule::GetSomeInstance() const {
 }
 
 const void* PluginModule::GetPluginInterface(const char* name) const {
-  if (out_of_process_proxy_.get())
+  if (out_of_process_proxy_)
     return out_of_process_proxy_->GetProxiedInterface(name);
 
   // In-process plugins.
@@ -600,7 +572,7 @@ void PluginModule::InstanceCreated(PluginInstance* instance) {
 }
 
 void PluginModule::InstanceDeleted(PluginInstance* instance) {
-  if (out_of_process_proxy_.get())
+  if (out_of_process_proxy_)
     out_of_process_proxy_->RemoveInstance(instance->pp_instance());
   instances_.erase(instance);
 }
@@ -641,6 +613,12 @@ void PluginModule::SetBroker(PluginDelegate::Broker* broker) {
 
 PluginDelegate::Broker* PluginModule::GetBroker() {
   return broker_;
+}
+
+// static
+void PluginModule::ResetHostGlobalsForTest() {
+  delete host_globals;
+  host_globals = NULL;
 }
 
 bool PluginModule::InitializeModule(const EntryPoints& entry_points) {

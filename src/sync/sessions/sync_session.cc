@@ -15,13 +15,30 @@
 namespace syncer {
 namespace sessions {
 
+// static
+SyncSession* SyncSession::BuildForNudge(SyncSessionContext* context,
+                                        Delegate* delegate,
+                                        const SyncSourceInfo& source,
+                                        const NudgeTracker* nudge_tracker) {
+  return new SyncSession(context, delegate, source, nudge_tracker);
+}
+
+// static
+SyncSession* SyncSession::Build(SyncSessionContext* context,
+                                Delegate* delegate,
+                                const SyncSourceInfo& source) {
+  return new SyncSession(context, delegate, source, NULL);
+}
+
 SyncSession::SyncSession(
     SyncSessionContext* context,
     Delegate* delegate,
-    const SyncSourceInfo& source)
+    const SyncSourceInfo& source,
+    const NudgeTracker* nudge_tracker)
     : context_(context),
       source_(source),
-      delegate_(delegate) {
+      delegate_(delegate),
+      nudge_tracker_(nudge_tracker) {
   status_controller_.reset(new StatusController());
 }
 
@@ -44,7 +61,7 @@ SyncSessionSnapshot SyncSession::TakeSnapshot() const {
   SyncSessionSnapshot snapshot(
       status_controller_->model_neutral_state(),
       download_progress_markers,
-      delegate_->IsSyncingCurrentlySilenced(),
+      delegate_->IsCurrentlyThrottled(),
       status_controller_->num_encryption_conflicts(),
       status_controller_->num_hierarchy_conflicts(),
       status_controller_->num_server_conflicts(),

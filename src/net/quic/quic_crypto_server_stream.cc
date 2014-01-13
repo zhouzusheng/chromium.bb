@@ -14,11 +14,9 @@
 namespace net {
 
 QuicCryptoServerStream::QuicCryptoServerStream(
-    const QuicConfig& config,
     const QuicCryptoServerConfig& crypto_config,
     QuicSession* session)
     : QuicCryptoStream(session),
-      config_(config),
       crypto_config_(crypto_config) {
 }
 
@@ -40,54 +38,70 @@ void QuicCryptoServerStream::OnHandshakeMessage(
 
   string error_details;
   CryptoHandshakeMessage reply;
-  crypto_config_.ProcessClientHello(
-      message, session()->connection()->guid(),
-      session()->connection()->peer_address(),
-      session()->connection()->clock()->NowAsDeltaSinceUnixEpoch(),
-      session()->connection()->random_generator(),
-      &crypto_negotiated_params_, &reply, &error_details);
 
-  if (reply.tag() == kSHLO) {
-    // If we are returning a SHLO then we accepted the handshake.
-    QuicErrorCode error = config_.ProcessFinalPeerHandshake(
-        message, CryptoUtils::LOCAL_PRIORITY, &negotiated_params_,
-        &error_details);
-    if (error != QUIC_NO_ERROR) {
-      CloseConnectionWithDetails(error, error_details);
-      return;
-    }
+  QuicErrorCode error = ProcessClientHello(message, &reply, &error_details);
 
-    // Receiving a full CHLO implies the client is prepared to decrypt with
-    // the new server write key.  We can start to encrypt with the new server
-    // write key.
-    //
-    // NOTE: the SHLO will be encrypted with the new server write key.
-    session()->connection()->SetEncrypter(
-        ENCRYPTION_INITIAL,
-        crypto_negotiated_params_.encrypter.release());
-    session()->connection()->SetDefaultEncryptionLevel(
-        ENCRYPTION_INITIAL);
-    // Set the decrypter immediately so that we no longer accept unencrypted
-    // packets.
-    session()->connection()->SetDecrypter(
-        crypto_negotiated_params_.decrypter.release());
-    encryption_established_ = true;
-    handshake_confirmed_ = true;
-    session()->OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED);
+  if (error != QUIC_NO_ERROR) {
+    CloseConnectionWithDetails(error, error_details);
+    return;
   }
 
+  if (reply.tag() != kSHLO) {
+    SendHandshakeMessage(reply);
+    return;
+  }
+
+  // If we are returning a SHLO then we accepted the handshake.
+  QuicConfig* config = session()->config();
+  error = config->ProcessClientHello(message, &error_details);
+  if (error != QUIC_NO_ERROR) {
+    CloseConnectionWithDetails(error, error_details);
+    return;
+  }
+
+  config->ToHandshakeMessage(&reply);
+
+  // Receiving a full CHLO implies the client is prepared to decrypt with
+  // the new server write key.  We can start to encrypt with the new server
+  // write key.
+  //
+  // NOTE: the SHLO will be encrypted with the new server write key.
+  session()->connection()->SetEncrypter(
+      ENCRYPTION_INITIAL,
+      crypto_negotiated_params_.initial_crypters.encrypter.release());
+  session()->connection()->SetDefaultEncryptionLevel(
+      ENCRYPTION_INITIAL);
+  // Set the decrypter immediately so that we no longer accept unencrypted
+  // packets.
+  session()->connection()->SetDecrypter(
+      crypto_negotiated_params_.initial_crypters.decrypter.release());
   SendHandshakeMessage(reply);
-  return;
+
+  session()->connection()->SetEncrypter(
+      ENCRYPTION_FORWARD_SECURE,
+      crypto_negotiated_params_.forward_secure_crypters.encrypter.release());
+  session()->connection()->SetDefaultEncryptionLevel(
+      ENCRYPTION_FORWARD_SECURE);
+  session()->connection()->SetAlternativeDecrypter(
+      crypto_negotiated_params_.forward_secure_crypters.decrypter.release(),
+      false /* don't latch */);
+
+  encryption_established_ = true;
+  handshake_confirmed_ = true;
+  session()->OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED);
 }
 
-const QuicNegotiatedParameters&
-QuicCryptoServerStream::negotiated_params() const {
-  return negotiated_params_;
-}
-
-const QuicCryptoNegotiatedParameters&
-QuicCryptoServerStream::crypto_negotiated_params() const {
-  return crypto_negotiated_params_;
+QuicErrorCode QuicCryptoServerStream::ProcessClientHello(
+    const CryptoHandshakeMessage& message,
+    CryptoHandshakeMessage* reply,
+    string* error_details) {
+  return crypto_config_.ProcessClientHello(
+      message,
+      session()->connection()->guid(),
+      session()->connection()->peer_address(),
+      session()->connection()->clock(),
+      session()->connection()->random_generator(),
+      &crypto_negotiated_params_, reply, error_details);
 }
 
 }  // namespace net

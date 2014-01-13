@@ -30,23 +30,18 @@
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
-#include "core/css/CSSParser.h"
 #include "core/css/CSSValuePool.h"
 #include "core/css/StylePropertySet.h"
-#include "core/css/StyleResolver.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeList.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Range.h"
 #include "core/dom/Text.h"
 #include "core/editing/EditingStyle.h"
-#include "core/editing/Editor.h"
 #include "core/editing/HTMLInterchange.h"
 #include "core/editing/TextIterator.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
-#include "core/html/HTMLFontElement.h"
-#include "core/page/Frame.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
 #include <wtf/StdLibExtras.h>
@@ -296,11 +291,11 @@ void ApplyStyleCommand::applyBlockStyle(EditingStyle *style)
         updateStartEnd(startRange->startPosition(), endRange->startPosition());
 }
 
-static PassRefPtr<StylePropertySet> copyStyleOrCreateEmpty(const StylePropertySet* style)
+static PassRefPtr<MutableStylePropertySet> copyStyleOrCreateEmpty(const StylePropertySet* style)
 {
     if (!style)
-        return StylePropertySet::create();
-    return style->copy();
+        return MutableStylePropertySet::create();
+    return style->mutableCopy();
 }
 
 void ApplyStyleCommand::applyRelativeFontStyleChange(EditingStyle* style)
@@ -393,7 +388,7 @@ void ApplyStyleCommand::applyRelativeFontStyleChange(EditingStyle* style)
         }
         lastStyledNode = node;
 
-        RefPtr<StylePropertySet> inlineStyle = copyStyleOrCreateEmpty(element->inlineStyle());
+        RefPtr<MutableStylePropertySet> inlineStyle = copyStyleOrCreateEmpty(element->inlineStyle());
         float currentFontSize = computedFontSize(node);
         float desiredFontSize = max(MinimumFontSize, startingFontSizes.get(node) + style->fontSizeDelta());
         RefPtr<CSSValue> value = inlineStyle->getPropertyCSSValue(CSSPropertyFontSize);
@@ -520,7 +515,7 @@ void ApplyStyleCommand::removeEmbeddingUpToEnclosingBlock(Node* node, Node* unsp
             // other attributes, like we (should) do with B and I elements.
             removeNodeAttribute(element, dirAttr);
         } else {
-            RefPtr<StylePropertySet> inlineStyle = copyStyleOrCreateEmpty(element->inlineStyle());
+            RefPtr<MutableStylePropertySet> inlineStyle = copyStyleOrCreateEmpty(element->inlineStyle());
             inlineStyle->setProperty(CSSPropertyUnicodeBidi, CSSValueNormal);
             inlineStyle->removeProperty(CSSPropertyDirection);
             setNodeAttribute(element, styleAttr, inlineStyle->asText());
@@ -764,7 +759,7 @@ void ApplyStyleCommand::applyInlineStyleToNodeRange(EditingStyle* style, PassRef
                 break;
             // Add to this element's inline style and skip over its contents.
             HTMLElement* element = toHTMLElement(node.get());
-            RefPtr<StylePropertySet> inlineStyle = copyStyleOrCreateEmpty(element->inlineStyle());
+            RefPtr<MutableStylePropertySet> inlineStyle = copyStyleOrCreateEmpty(element->inlineStyle());
             inlineStyle->mergeAndOverrideOnConflict(style->style());
             setNodeAttribute(element, styleAttr, inlineStyle->asText());
             next = NodeTraversal::nextSkippingChildren(node.get());
@@ -1298,18 +1293,16 @@ bool ApplyStyleCommand::mergeStartWithPreviousIfIdentical(const Position& start,
 bool ApplyStyleCommand::mergeEndWithNextIfIdentical(const Position& start, const Position& end)
 {
     Node* endNode = end.containerNode();
-    int endOffset = end.computeOffsetInContainerNode();
 
     if (isAtomicNode(endNode)) {
+        int endOffset = end.computeOffsetInContainerNode();
         if (offsetIsBeforeLastNodeOffset(endOffset, endNode))
             return false;
 
-        unsigned parentLastOffset = end.deprecatedNode()->parentNode()->childNodes()->length() - 1;
         if (end.deprecatedNode()->nextSibling())
             return false;
 
         endNode = end.deprecatedNode()->parentNode();
-        endOffset = parentLastOffset;
     }
 
     if (!endNode->isElementNode() || endNode->hasTagName(brTag))
@@ -1317,8 +1310,8 @@ bool ApplyStyleCommand::mergeEndWithNextIfIdentical(const Position& start, const
 
     Node* nextSibling = endNode->nextSibling();
     if (nextSibling && areIdenticalElements(endNode, nextSibling)) {
-        Element* nextElement = static_cast<Element *>(nextSibling);
-        Element* element = static_cast<Element *>(endNode);
+        Element* nextElement = toElement(nextSibling);
+        Element* element = toElement(endNode);
         Node* nextChild = nextElement->firstChild();
 
         mergeIdenticalElements(element, nextElement);

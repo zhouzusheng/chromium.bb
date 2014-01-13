@@ -5,9 +5,9 @@
 #include "net/http/http_network_layer.h"
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_network_transaction.h"
 #include "net/http/http_server_properties_impl.h"
@@ -62,14 +62,12 @@ HttpCache* HttpNetworkLayer::GetCache() {
   return NULL;
 }
 
-HttpNetworkSession* HttpNetworkLayer::GetSession() {
-  return session_;
-}
+HttpNetworkSession* HttpNetworkLayer::GetSession() { return session_.get(); }
 
 void HttpNetworkLayer::OnSuspend() {
   suspended_ = true;
 
-  if (session_)
+  if (session_.get())
     session_->CloseIdleConnections();
 }
 

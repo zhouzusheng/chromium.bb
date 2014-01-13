@@ -21,8 +21,9 @@
 #include <string>
 #include <vector>
 
+#include "base/callback_forward.h"
 #include "base/files/file_path.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/supports_user_data.h"
 #include "content/public/browser/download_danger_type.h"
 #include "content/public/browser/download_interrupt_reasons.h"
@@ -67,12 +68,6 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
     MAX_DOWNLOAD_STATE
   };
 
-  // Reason for deleting the download.  Passed to Delete().
-  enum DeleteReason {
-    DELETE_DUE_TO_BROWSER_SHUTDOWN = 0,
-    DELETE_DUE_TO_USER_DISCARD
-  };
-
   // How the final target path should be used.
   enum TargetDisposition {
     TARGET_DISPOSITION_OVERWRITE, // Overwrite if the target already exists.
@@ -80,6 +75,9 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
                                   // target. Implies
                                   // TARGET_DISPOSITION_OVERWRITE.
   };
+
+  // Callback used with AcquireFileAndDeleteDownload().
+  typedef base::Callback<void(const base::FilePath&)> AcquireFileCallback;
 
   static const char kEmptyFileHash[];
 
@@ -111,19 +109,22 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   // User Actions --------------------------------------------------------------
 
   // Called when the user has validated the download of a dangerous file.
-  virtual void DangerousDownloadValidated() = 0;
+  virtual void ValidateDangerousDownload() = 0;
+
+  // Called to acquire a dangerous download and remove the DownloadItem from
+  // views and history. |callback| will be invoked on the UI thread with the
+  // path to the downloaded file. The caller is responsible for cleanup.
+  // Note: It is important for |callback| to be valid since the downloaded file
+  // will not be cleaned up if the callback fails.
+  virtual void StealDangerousDownload(const AcquireFileCallback& callback) = 0;
 
   // Pause a download.  Will have no effect if the download is already
   // paused.
   virtual void Pause() = 0;
 
-  // Resume a download.  Will have no effect if the download is not
-  // paused.
+  // Resume a download that has been paused or interrupted. Will have no effect
+  // if the download is neither.
   virtual void Resume() = 0;
-
-  // Resume a download that's been interrupted.  No-op if the download
-  // has not been interrupted.
-  virtual void ResumeInterruptedDownload() = 0;
 
   // Cancel the download operation. We need to distinguish between cancels at
   // exit (DownloadManager destructor) from user interface initiated cancels
@@ -136,11 +137,9 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   // when resuming a download (assuming the server supports byte ranges).
   virtual void Cancel(bool user_cancel) = 0;
 
-  // Deletes the file from disk and removes the download from the views and
-  // history.
-  virtual void Delete(DeleteReason reason) = 0;
-
-  // Removes the download from the views and history.
+  // Removes the download from the views and history. If the download was
+  // in-progress or interrupted, then the intermediate file will also be
+  // deleted.
   virtual void Remove() = 0;
 
   // Open the file associated with this download.  If the download is
@@ -156,28 +155,25 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   virtual DownloadId GetGlobalId() const = 0;
   virtual DownloadState GetState() const = 0;
 
-  // Only valid if |GetState() == DownloadItem::INTERRUPTED|.
+  // Returns the most recent interrupt reason for this download. Returns
+  // DOWNLOAD_INTERRUPT_REASON_NONE if there is no previous interrupt reason.
+  // Cancelled downloads return DOWNLOAD_INTERRUPT_REASON_USER_CANCELLED. If
+  // the download was resumed, then the return value is the interrupt reason
+  // prior to resumption.
   virtual DownloadInterruptReason GetLastReason() const = 0;
 
   virtual bool IsPaused() const = 0;
   virtual bool IsTemporary() const = 0;
 
-  //    Convenience routines for accessing GetState() results conceptually -----
+  // Returns true if the download can be resumed. A download can be resumed if
+  // an in-progress download was paused or if an interrupted download requires
+  // user-interaction to resume.
+  virtual bool CanResume() const = 0;
 
-  // Returns true if the download needs more data.
-  virtual bool IsPartialDownload() const = 0;
-
-  // Returns true if the download is still receiving data.
-  virtual bool IsInProgress() const = 0;
-
-  // Returns true if the download has been cancelled or was interrupted.
-  virtual bool IsCancelled() const = 0;
-
-  // Returns true if the download was interrupted.
-  virtual bool IsInterrupted() const = 0;
-
-  // Returns true if we have all the data and know the final file name.
-  virtual bool IsComplete() const = 0;
+  // Returns true if the download is in a terminal state. This includes
+  // completed downloads, cancelled downloads, and interrupted downloads that
+  // can't be resumed.
+  virtual bool IsDone() const = 0;
 
   //    Origin State accessors -------------------------------------------------
 
@@ -201,7 +197,14 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   // Full path to the downloaded or downloading file. This is the path to the
   // physical file, if one exists. It should be considered a hint; changes to
   // this value and renames of the file on disk are not atomic with each other.
-  // May be empty if the in-progress path hasn't been determined yet.
+  // May be empty if the in-progress path hasn't been determined yet or if the
+  // download was interrupted.
+  //
+  // DO NOT USE THIS METHOD to access the target path of the DownloadItem. Use
+  // GetTargetFilePath() instead. While the download is in progress, the
+  // intermediate file named by GetFullPath() may be renamed or disappear
+  // completely on the FILE thread. The path may also be reset to empty when the
+  // download is interrupted.
   virtual const base::FilePath& GetFullPath() const = 0;
 
   // Target path of an in-progress download. We may be downloading to a
@@ -213,11 +216,6 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   // If the download forced a path rather than requesting name determination,
   // return the path requested.
   virtual const base::FilePath& GetForcedFilePath() const = 0;
-
-  // Returns the user-verified target file path for the download.
-  // This returns the same path as GetTargetFilePath() for safe downloads
-  // but does not for dangerous downloads until the name is verified.
-  virtual base::FilePath GetUserVerifiedFilePath() const = 0;
 
   // Returns the file-name that should be reported to the user. If a display
   // name has been explicitly set using SetDisplayName(), this function returns
@@ -238,7 +236,7 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   virtual bool GetFileExternallyRemoved() const = 0;
 
   // True if the file that will be written by the download is dangerous
-  // and we will require a call to DangerousDownloadValidated() to complete.
+  // and we will require a call to ValidateDangerousDownload() to complete.
   // False if the download is safe or that function has been called.
   virtual bool IsDangerous() const = 0;
 

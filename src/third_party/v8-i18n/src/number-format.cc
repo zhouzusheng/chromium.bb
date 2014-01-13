@@ -56,55 +56,58 @@ icu::DecimalFormat* NumberFormat::UnpackNumberFormat(
 }
 
 void NumberFormat::DeleteNumberFormat(v8::Isolate* isolate,
-                                      v8::Persistent<v8::Value> object,
+                                      v8::Persistent<v8::Object>* object,
                                       void* param) {
-  v8::Persistent<v8::Object> persistent_object =
-      v8::Persistent<v8::Object>::Cast(object);
-
   // First delete the hidden C++ object.
   // Unpacking should never return NULL here. That would only happen if
   // this method is used as the weak callback for persistent handles not
   // pointing to a date time formatter.
-  delete UnpackNumberFormat(persistent_object);
+  v8::HandleScope handle_scope(isolate);
+  v8::Local<v8::Object> handle = v8::Local<v8::Object>::New(isolate, *object);
+  delete UnpackNumberFormat(handle);
 
   // Then dispose of the persistent handle to JS object.
-  persistent_object.Dispose(isolate);
+  object->Dispose(isolate);
 }
 
-v8::Handle<v8::Value> NumberFormat::JSInternalFormat(
-    const v8::Arguments& args) {
+void NumberFormat::JSInternalFormat(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   if (args.Length() != 2 || !args[0]->IsObject() || !args[1]->IsNumber()) {
-    return v8::ThrowException(v8::Exception::Error(
+    v8::ThrowException(v8::Exception::Error(
         v8::String::New("Formatter and numeric value have to be specified.")));
+    return;
   }
 
   icu::DecimalFormat* number_format = UnpackNumberFormat(args[0]->ToObject());
   if (!number_format) {
-    return v8::ThrowException(v8::Exception::Error(
+    v8::ThrowException(v8::Exception::Error(
         v8::String::New("NumberFormat method called on an object "
                         "that is not a NumberFormat.")));
+    return;
   }
 
   // ICU will handle actual NaN value properly and return NaN string.
   icu::UnicodeString result;
   number_format->format(args[1]->NumberValue(), result);
 
-  return v8::String::New(
-      reinterpret_cast<const uint16_t*>(result.getBuffer()), result.length());
+  args.GetReturnValue().Set(v8::String::New(
+      reinterpret_cast<const uint16_t*>(result.getBuffer()), result.length()));
 }
 
-v8::Handle<v8::Value> NumberFormat::JSInternalParse(
-    const v8::Arguments& args) {
+void NumberFormat::JSInternalParse(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   if (args.Length() != 2 || !args[0]->IsObject() || !args[1]->IsString()) {
-    return v8::ThrowException(v8::Exception::Error(
+    v8::ThrowException(v8::Exception::Error(
         v8::String::New("Formatter and string have to be specified.")));
+    return;
   }
 
   icu::DecimalFormat* number_format = UnpackNumberFormat(args[0]->ToObject());
   if (!number_format) {
-    return v8::ThrowException(v8::Exception::Error(
+    v8::ThrowException(v8::Exception::Error(
         v8::String::New("NumberFormat method called on an object "
                         "that is not a NumberFormat.")));
+    return;
   }
 
   // ICU will handle actual NaN value properly and return NaN string.
@@ -123,39 +126,37 @@ v8::Handle<v8::Value> NumberFormat::JSInternalParse(
   // code and the value).
   number_format->parse(string_number, result, status);
   if (U_FAILURE(status)) {
-    return v8::Undefined();
+    return;
   }
 
   switch (result.getType()) {
   case icu::Formattable::kDouble:
-    return v8::Number::New(result.getDouble());
-    break;
+    args.GetReturnValue().Set(result.getDouble());
+    return;
   case icu::Formattable::kLong:
-    return v8::Number::New(result.getLong());
-    break;
+    args.GetReturnValue().Set(v8::Number::New(result.getLong()));
+    return;
   case icu::Formattable::kInt64:
-    return v8::Number::New(result.getInt64());
-    break;
+    args.GetReturnValue().Set(v8::Number::New(result.getInt64()));
+    return;
   default:
-    return v8::Undefined();
+    return;
   }
-
-  // To make compiler happy.
-  return v8::Undefined();
 }
 
-v8::Handle<v8::Value> NumberFormat::JSCreateNumberFormat(
-    const v8::Arguments& args) {
+void NumberFormat::JSCreateNumberFormat(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   if (args.Length() != 3 ||
       !args[0]->IsString() ||
       !args[1]->IsObject() ||
       !args[2]->IsObject()) {
-    return v8::ThrowException(v8::Exception::Error(
+    v8::ThrowException(v8::Exception::Error(
         v8::String::New("Internal error, wrong parameters.")));
+    return;
   }
 
   v8::Isolate* isolate = args.GetIsolate();
-  v8::Persistent<v8::ObjectTemplate> number_format_template =
+  v8::Local<v8::ObjectTemplate> number_format_template =
       Utils::GetTemplate(isolate);
 
   // Create an empty object wrapper.
@@ -163,34 +164,35 @@ v8::Handle<v8::Value> NumberFormat::JSCreateNumberFormat(
   // But the handle shouldn't be empty.
   // That can happen if there was a stack overflow when creating the object.
   if (local_object.IsEmpty()) {
-    return local_object;
+    args.GetReturnValue().Set(local_object);
+    return;
   }
-
-  v8::Persistent<v8::Object> wrapper =
-      v8::Persistent<v8::Object>::New(isolate, local_object);
 
   // Set number formatter as internal field of the resulting JS object.
   icu::DecimalFormat* number_format = InitializeNumberFormat(
       args[0]->ToString(), args[1]->ToObject(), args[2]->ToObject());
 
   if (!number_format) {
-    return v8::ThrowException(v8::Exception::Error(v8::String::New(
+    v8::ThrowException(v8::Exception::Error(v8::String::New(
         "Internal error. Couldn't create ICU number formatter.")));
+    return;
   } else {
-    wrapper->SetAlignedPointerInInternalField(0, number_format);
+    local_object->SetAlignedPointerInInternalField(0, number_format);
 
     v8::TryCatch try_catch;
-    wrapper->Set(v8::String::New("numberFormat"), v8::String::New("valid"));
+    local_object->Set(v8::String::New("numberFormat"), v8::String::New("valid"));
     if (try_catch.HasCaught()) {
-      return v8::ThrowException(v8::Exception::Error(
+      v8::ThrowException(v8::Exception::Error(
           v8::String::New("Internal error, couldn't set property.")));
+      return;
     }
   }
 
+  v8::Persistent<v8::Object> wrapper(isolate, local_object);
   // Make object handle weak so we can delete iterator once GC kicks in.
-  wrapper.MakeWeak(isolate, NULL, DeleteNumberFormat);
-
-  return wrapper;
+  wrapper.MakeWeak<void>(NULL, &DeleteNumberFormat);
+  args.GetReturnValue().Set(wrapper);
+  wrapper.ClearAndLeak();
 }
 
 static icu::DecimalFormat* InitializeNumberFormat(
@@ -306,15 +308,20 @@ static icu::DecimalFormat* CreateICUNumberFormat(
     number_format->setMaximumFractionDigits(digits);
   }
 
+  bool significant_digits_used = false;
   if (Utils::ExtractIntegerSetting(
           options, "minimumSignificantDigits", &digits)) {
     number_format->setMinimumSignificantDigits(digits);
+    significant_digits_used = true;
   }
 
   if (Utils::ExtractIntegerSetting(
           options, "maximumSignificantDigits", &digits)) {
     number_format->setMaximumSignificantDigits(digits);
+    significant_digits_used = true;
   }
+
+  number_format->setSignificantDigitsUsed(significant_digits_used);
 
   bool grouping;
   if (Utils::ExtractBooleanSetting(options, "useGrouping", &grouping)) {

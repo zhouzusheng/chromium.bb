@@ -29,20 +29,11 @@
 #include "core/dom/ViewportArguments.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/ScriptableDocumentParser.h"
-#include "core/page/Chrome.h"
-#include "core/page/Console.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
-#include "core/page/Page.h"
-#include "core/platform/graphics/IntSize.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 using namespace std;
 
 namespace WebCore {
-
-const float ViewportArguments::deprecatedTargetDPI = 160;
 
 static const float& compareIgnoringAuto(const float& value1, const float& value2, const float& (*compare) (const float&, const float&))
 {
@@ -79,7 +70,7 @@ static inline float clampScaleValue(float value)
     return value;
 }
 
-ViewportAttributes ViewportArguments::resolve(const FloatSize& initialViewportSize, const FloatSize& deviceSize, int defaultWidth) const
+PageScaleConstraints ViewportArguments::resolve(const FloatSize& initialViewportSize, const FloatSize& deviceSize, int defaultWidth) const
 {
     float resultWidth = width;
     float resultMaxWidth = maxWidth;
@@ -111,41 +102,16 @@ ViewportAttributes ViewportArguments::resolve(const FloatSize& initialViewportSi
     }
 
     if (type == ViewportArguments::CSSDeviceAdaptation) {
-        switch (int(resultMinWidth)) {
-        case ViewportArguments::ValueDeviceWidth:
-            resultMinWidth = deviceSize.width();
-            break;
-        case ViewportArguments::ValueDeviceHeight:
-            resultMinWidth = deviceSize.height();
-            break;
-        }
 
-        switch (int(resultMaxWidth)) {
-        case ViewportArguments::ValueDeviceWidth:
-            resultMaxWidth = deviceSize.width();
-            break;
-        case ViewportArguments::ValueDeviceHeight:
-            resultMaxWidth = deviceSize.height();
-            break;
-        }
-
-        switch (int(resultMinHeight)) {
-        case ViewportArguments::ValueDeviceWidth:
-            resultMinHeight = deviceSize.width();
-            break;
-        case ViewportArguments::ValueDeviceHeight:
-            resultMinHeight = deviceSize.height();
-            break;
-        }
-
-        switch (int(resultMaxHeight)) {
-        case ViewportArguments::ValueDeviceWidth:
-            resultMaxHeight = deviceSize.width();
-            break;
-        case ViewportArguments::ValueDeviceHeight:
-            resultMaxHeight = deviceSize.height();
-            break;
-        }
+        // device-width/device-height not supported for @viewport.
+        ASSERT(resultMinWidth != ViewportArguments::ValueDeviceWidth);
+        ASSERT(resultMinWidth != ViewportArguments::ValueDeviceHeight);
+        ASSERT(resultMaxWidth != ViewportArguments::ValueDeviceWidth);
+        ASSERT(resultMaxWidth != ViewportArguments::ValueDeviceHeight);
+        ASSERT(resultMinHeight != ViewportArguments::ValueDeviceWidth);
+        ASSERT(resultMinHeight != ViewportArguments::ValueDeviceHeight);
+        ASSERT(resultMaxHeight != ViewportArguments::ValueDeviceWidth);
+        ASSERT(resultMaxHeight != ViewportArguments::ValueDeviceHeight);
 
         if (resultMinWidth != ViewportArguments::ValueAuto || resultMaxWidth != ViewportArguments::ValueAuto)
             resultWidth = compareIgnoringAuto(resultMinWidth, compareIgnoringAuto(resultMaxWidth, deviceSize.width(), min), max);
@@ -190,8 +156,7 @@ ViewportAttributes ViewportArguments::resolve(const FloatSize& initialViewportSi
         resultMaxZoom = clampScaleValue(resultMaxZoom);
     }
 
-    ViewportAttributes result;
-    result.orientation = orientation;
+    PageScaleConstraints result;
 
     // Resolve minimum-scale and maximum-scale values according to spec.
     if (resultMinZoom == ViewportArguments::ValueAuto)
@@ -244,50 +209,16 @@ ViewportAttributes ViewportArguments::resolve(const FloatSize& initialViewportSi
     result.layoutSize.setWidth(resultWidth);
     result.layoutSize.setHeight(resultHeight);
 
-    // FIXME: This might affect some ports, but is the right thing to do.
-    // Only set initialScale to a value if it was explicitly set.
-    // if (resultZoom == ViewportArguments::ValueAuto)
-    //    result.initialScale = ViewportArguments::ValueAuto;
-
-    result.userScalable = resultUserZoom;
-    result.orientation = orientation;
-
-    return result;
-}
-
-static FloatSize convertToUserSpace(const FloatSize& deviceSize, float devicePixelRatio)
-{
-    FloatSize result = deviceSize;
-    if (devicePixelRatio != 1)
-        result.scale(1 / devicePixelRatio);
-    return result;
-}
-
-ViewportAttributes computeViewportAttributes(ViewportArguments args, int desktopWidth, int deviceWidth, int deviceHeight, float devicePixelRatio, IntSize visibleViewport)
-{
-    FloatSize initialViewportSize = convertToUserSpace(visibleViewport, devicePixelRatio);
-    FloatSize deviceSize = convertToUserSpace(FloatSize(deviceWidth, deviceHeight), devicePixelRatio);
-
-    return args.resolve(initialViewportSize, deviceSize, desktopWidth);
-}
-
-float computeMinimumScaleFactorForContentContained(const ViewportAttributes& result, const IntSize& visibleViewport, const IntSize& contentsSize)
-{
-    FloatSize viewportSize(visibleViewport);
-    return max<float>(result.minimumScale, max(viewportSize.width() / contentsSize.width(), viewportSize.height() / contentsSize.height()));
-}
-
-void restrictMinimumScaleFactorToViewportSize(ViewportAttributes& result, IntSize visibleViewport, float devicePixelRatio)
-{
-    FloatSize viewportSize = convertToUserSpace(visibleViewport, devicePixelRatio);
-
-    result.minimumScale = max<float>(result.minimumScale, max(viewportSize.width() / result.layoutSize.width(), viewportSize.height() / result.layoutSize.height()));
-}
-
-void restrictScaleFactorToInitialScaleIfNotUserScalable(ViewportAttributes& result)
-{
-    if (!result.userScalable)
+    // If user-scalable = no, lock the min/max scale to the computed initial
+    // scale.
+    if (!resultUserZoom)
         result.maximumScale = result.minimumScale = result.initialScale;
+
+    // Only set initialScale to a value if it was explicitly set.
+    if (resultZoom == ViewportArguments::ValueAuto)
+        result.initialScale = ViewportArguments::ValueAuto;
+
+    return result;
 }
 
 static float numericPrefix(const String& keyString, const String& valueString, Document* document, bool* ok = 0)

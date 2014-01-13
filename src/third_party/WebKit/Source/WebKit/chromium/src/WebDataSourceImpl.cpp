@@ -33,9 +33,9 @@
 
 #include "ApplicationCacheHostInternal.h"
 #include "core/loader/FrameLoader.h"
-#include <public/WebURL.h>
-#include <public/WebURLError.h>
-#include <public/WebVector.h>
+#include "public/platform/WebURL.h"
+#include "public/platform/WebURLError.h"
+#include "public/platform/WebVector.h"
 
 using namespace WebCore;
 
@@ -87,9 +87,7 @@ void WebDataSourceImpl::redirectChain(WebVector<WebURL>& result) const
 
 bool WebDataSourceImpl::isClientRedirect() const
 {
-    // FIXME: This should return DocumentLoader::isClientRedirect() once that is
-    // changed to be set earlier than the call to WebFrameClient::decidePolicyForNavigation.
-    return frameLoader() ? frameLoader()->quickRedirectComing() : false;
+    return DocumentLoader::isClientRedirect();
 }
 
 WebString WebDataSourceImpl::pageTitle() const

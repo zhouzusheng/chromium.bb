@@ -41,8 +41,6 @@ class HTMLElement : public StyledElement {
 public:
     static PassRefPtr<HTMLElement> create(const QualifiedName& tagName, Document*);
 
-    PassRefPtr<HTMLCollection> children();
-
     virtual String title() const OVERRIDE FINAL;
 
     virtual short tabIndex() const;
@@ -81,7 +79,7 @@ public:
     bool ieForbidsInsertHTML() const;
 
     virtual bool rendererIsNeeded(const NodeRenderingContext&);
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
 
     HTMLFormElement* form() const { return virtualForm(); }
 
@@ -93,6 +91,8 @@ public:
     virtual bool isHTMLUnknownElement() const { return false; }
 
     virtual bool isLabelable() const { return false; }
+
+    virtual void defaultEventHandler(Event*) OVERRIDE;
 
 protected:
     HTMLElement(const QualifiedName& tagName, Document*, ConstructionType);
@@ -107,9 +107,6 @@ protected:
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
     unsigned parseBorderWidthAttribute(const AtomicString&) const;
-
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
 
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
     void calculateAndAdjustDirectionality();
@@ -126,11 +123,15 @@ private:
 
     void dirAttributeChanged(const AtomicString&);
     void adjustDirectionalityIfNeededAfterChildAttributeChanged(Element* child);
+    void adjustDirectionalityIfNeededAfterChildrenChanged(Node* beforeChange, int childCountDelta);
     TextDirection directionality(Node** strongDirectionalityTextNode= 0) const;
 
     TranslateAttributeMode translateAttributeMode() const;
 
     AtomicString eventNameForAttributeName(const QualifiedName& attrName) const;
+
+    void handleKeypressEvent(KeyboardEvent*);
+    bool supportsSpatialNavigationFocus() const;
 };
 
 inline HTMLElement* toHTMLElement(Node* node)

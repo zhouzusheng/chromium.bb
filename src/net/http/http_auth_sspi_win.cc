@@ -9,8 +9,8 @@
 
 #include "base/base64.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_auth.h"
 
@@ -186,7 +186,7 @@ int MapFreeContextBufferStatusToError(SECURITY_STATUS status) {
 
 HttpAuthSSPI::HttpAuthSSPI(SSPILibrary* library,
                            const std::string& scheme,
-                           SEC_WCHAR* security_package,
+                           const SEC_WCHAR* security_package,
                            ULONG max_token_length)
     : library_(library),
       scheme_(scheme),

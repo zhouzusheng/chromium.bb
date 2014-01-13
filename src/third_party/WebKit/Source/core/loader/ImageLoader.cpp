@@ -30,37 +30,15 @@
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/inspector/ScriptCallStack.h"
 #include "core/loader/CrossOriginAccessControl.h"
 #include "core/loader/cache/CachedImage.h"
 #include "core/loader/cache/CachedResourceLoader.h"
 #include "core/loader/cache/CachedResourceRequest.h"
 #include "core/page/Frame.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderVideo.h"
-
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGImage.h"
-#endif
-
-#if !ASSERT_DISABLED
-// ImageLoader objects are allocated as members of other objects, so generic pointer check would always fail.
-namespace WTF {
-
-template<> struct ValueCheck<WebCore::ImageLoader*> {
-    typedef WebCore::ImageLoader* TraitType;
-    static void checkConsistency(const WebCore::ImageLoader* p)
-    {
-        if (!p)
-            return;
-        ASSERT(p->element());
-        ValueCheck<WebCore::Element*>::checkConsistency(p->element());
-    }
-};
-
-}
-#endif
+#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -179,8 +157,7 @@ void ImageLoader::updateFromElement()
     // an empty string.
     CachedResourceHandle<CachedImage> newImage = 0;
     if (!attr.isNull() && !stripLeadingAndTrailingHTMLSpaces(attr).isEmpty()) {
-        CachedResourceRequest request(ResourceRequest(document->completeURL(sourceURI(attr))));
-        request.setInitiator(element());
+        CachedResourceRequest request(ResourceRequest(document->completeURL(sourceURI(attr))), element()->localName());
 
         String crossOriginMode = m_element->fastGetAttribute(HTMLNames::crossoriginAttr);
         if (!crossOriginMode.isNull()) {
@@ -193,7 +170,6 @@ void ImageLoader::updateFromElement()
             document->cachedResourceLoader()->setAutoLoadImages(false);
             newImage = new CachedImage(request.resourceRequest());
             newImage->setLoading(true);
-            newImage->setOwningCachedResourceLoader(document->cachedResourceLoader());
             document->cachedResourceLoader()->m_documentResources.set(newImage->url(), newImage.get());
             document->cachedResourceLoader()->setAutoLoadImages(autoLoadOtherImages);
         } else
@@ -327,10 +303,8 @@ RenderImageResource* ImageLoader::renderImageResource()
     if (renderer->isImage() && !static_cast<RenderImage*>(renderer)->isGeneratedContent())
         return toRenderImage(renderer)->imageResource();
 
-#if ENABLE(SVG)
     if (renderer->isSVGImage())
         return toRenderSVGImage(renderer)->imageResource();
-#endif
 
     if (renderer->isVideo())
         return toRenderVideo(renderer)->imageResource();
@@ -401,7 +375,7 @@ void ImageLoader::dispatchPendingBeforeLoadEvent()
     if (!m_element->document()->attached())
         return;
     m_hasPendingBeforeLoadEvent = false;
-    if (m_element->dispatchBeforeLoadEvent(m_image->url())) {
+    if (m_element->dispatchBeforeLoadEvent(m_image->url().string())) {
         updateRenderer();
         return;
     }

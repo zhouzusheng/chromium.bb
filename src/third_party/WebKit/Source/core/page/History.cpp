@@ -35,8 +35,9 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/SecurityOrigin.h"
-#include <wtf/MainThread.h>
+#include "weborigin/KURL.h"
+#include "weborigin/SecurityOrigin.h"
+#include "wtf/MainThread.h"
 
 namespace WebCore {
 

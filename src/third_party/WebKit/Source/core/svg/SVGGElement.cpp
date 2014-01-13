@@ -20,7 +20,6 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGGElement.h"
 
 #include "SVGNames.h"
@@ -61,7 +60,7 @@ bool SVGGElement::isSupportedAttribute(const QualifiedName& attrName)
         SVGLangSpace::addSupportedAttributes(supportedAttributes);
         SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGGElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -97,16 +96,16 @@ void SVGGElement::svgAttributeChanged(const QualifiedName& attrName)
         RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
 }
 
-RenderObject* SVGGElement::createRenderer(RenderArena* arena, RenderStyle* style)
+RenderObject* SVGGElement::createRenderer(RenderStyle* style)
 {
     // SVG 1.1 testsuite explicitely uses constructs like <g display="none"><linearGradient>
     // We still have to create renderers for the <g> & <linearGradient> element, though the
     // subtree may be hidden - we only want the resource renderers to exist so they can be
     // referenced from somewhere else.
     if (style->display() == NONE)
-        return new (arena) RenderSVGHiddenContainer(this);
+        return new (document()->renderArena()) RenderSVGHiddenContainer(this);
 
-    return new (arena) RenderSVGTransformableContainer(this);
+    return new (document()->renderArena()) RenderSVGTransformableContainer(this);
 }
 
 bool SVGGElement::rendererIsNeeded(const NodeRenderingContext&)
@@ -117,5 +116,3 @@ bool SVGGElement::rendererIsNeeded(const NodeRenderingContext&)
 }
 
 }
-
-#endif // ENABLE(SVG)

@@ -33,8 +33,7 @@
 #include "core/dom/Element.h"
 #include "core/platform/LinkHash.h"
 #include "core/rendering/style/RenderStyleConstants.h"
-#include <wtf/HashSet.h>
-#include <wtf/OwnPtr.h>
+#include "wtf/HashSet.h"
 
 namespace WebCore {
 
@@ -50,7 +49,7 @@ public:
     EInsideLink determineLinkState(Element*);
 
 private:
-    VisitedLinkState(Document*);
+    explicit VisitedLinkState(Document*);
 
     EInsideLink determineLinkStateSlowCase(Element*);
 

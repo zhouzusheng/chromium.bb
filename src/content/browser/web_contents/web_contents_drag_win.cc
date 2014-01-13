@@ -13,9 +13,9 @@
 #include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/pickle.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
-#include "base/utf_string_conversions.h"
 #include "content/browser/download/drag_download_file.h"
 #include "content/browser/download/drag_download_util.h"
 #include "content/browser/web_contents/web_drag_dest_win.h"
@@ -28,7 +28,7 @@
 #include "content/public/browser/web_drag_dest_delegate.h"
 #include "net/base/net_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/base/clipboard/clipboard_util_win.h"
+#include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/layout.h"
@@ -36,7 +36,7 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
-#include "webkit/glue/webdropdata.h"
+#include "webkit/common/webdropdata.h"
 
 using WebKit::WebDragOperationsMask;
 using WebKit::WebDragOperationCopy;
@@ -263,7 +263,7 @@ void WebContentsDragWin::PrepareDragForDownload(
   scoped_refptr<DragDownloadFile> download_file =
       new DragDownloadFile(
           download_path,
-          scoped_ptr<net::FileStream>(NULL),
+          scoped_ptr<net::FileStream>(),
           download_url,
           Referrer(page_url, drop_data.referrer_policy),
           page_encoding,
@@ -338,8 +338,7 @@ bool WebContentsDragWin::DoDragging(const WebDropData& drop_data,
   if (!drop_data.custom_data.empty()) {
     Pickle pickle;
     ui::WriteCustomDataToPickle(drop_data.custom_data, &pickle);
-    data.SetPickledData(ui::ClipboardUtil::GetWebCustomDataFormat()->cfFormat,
-                        pickle);
+    data.SetPickledData(ui::Clipboard::GetWebCustomDataFormatType(), pickle);
   }
 
   // Set drag image.

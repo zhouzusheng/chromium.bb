@@ -31,25 +31,38 @@
 #include "config.h"
 #include "core/fileapi/Blob.h"
 
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/fileapi/BlobRegistry.h"
 #include "core/fileapi/BlobURL.h"
 #include "core/fileapi/File.h"
-#include "core/fileapi/ThreadableBlobRegistry.h"
-#include "core/inspector/ScriptCallStack.h"
-#include "core/platform/HistogramSupport.h"
 
 namespace WebCore {
 
-namespace {
+class BlobURLRegistry : public URLRegistry {
+public:
+    virtual void registerURL(SecurityOrigin*, const KURL&, URLRegistrable*) OVERRIDE;
+    virtual void unregisterURL(const KURL&) OVERRIDE;
 
-// Used in histograms to see when we can actually deprecate the prefixed slice.
-enum SliceHistogramEnum {
-    SliceWithoutPrefix,
-    SliceWithPrefix,
-    SliceHistogramEnumMax,
+    static URLRegistry& registry();
 };
 
-} // namespace
+
+void BlobURLRegistry::registerURL(SecurityOrigin* origin, const KURL& publicURL, URLRegistrable* blob)
+{
+    ASSERT(&blob->registry() == this);
+    BlobRegistry::registerBlobURL(origin, publicURL, static_cast<Blob*>(blob)->url());
+}
+
+void BlobURLRegistry::unregisterURL(const KURL& url)
+{
+    BlobRegistry::unregisterBlobURL(url);
+}
+
+URLRegistry& BlobURLRegistry::registry()
+{
+    DEFINE_STATIC_LOCAL(BlobURLRegistry, instance, ());
+    return instance;
+}
+
 
 Blob::Blob()
     : m_size(0)
@@ -59,7 +72,7 @@ Blob::Blob()
 
     // Create a new internal URL and register it with the provided blob data.
     m_internalURL = BlobURL::createInternalURL();
-    ThreadableBlobRegistry::registerBlobURL(m_internalURL, blobData.release());
+    BlobRegistry::registerBlobURL(m_internalURL, blobData.release());
 }
 
 Blob::Blob(PassOwnPtr<BlobData> blobData, long long size)
@@ -71,7 +84,7 @@ Blob::Blob(PassOwnPtr<BlobData> blobData, long long size)
 
     // Create a new internal URL and register it with the provided blob data.
     m_internalURL = BlobURL::createInternalURL();
-    ThreadableBlobRegistry::registerBlobURL(m_internalURL, blobData);
+    BlobRegistry::registerBlobURL(m_internalURL, blobData);
 }
 
 Blob::Blob(const KURL& srcURL, const String& type, long long size)
@@ -82,12 +95,12 @@ Blob::Blob(const KURL& srcURL, const String& type, long long size)
 
     // Create a new internal URL and register it with the same blob data as the source URL.
     m_internalURL = BlobURL::createInternalURL();
-    ThreadableBlobRegistry::registerBlobURL(0, m_internalURL, srcURL);
+    BlobRegistry::registerBlobURL(0, m_internalURL, srcURL);
 }
 
 Blob::~Blob()
 {
-    ThreadableBlobRegistry::unregisterBlobURL(m_internalURL);
+    BlobRegistry::unregisterBlobURL(m_internalURL);
 }
 
 PassRefPtr<Blob> Blob::slice(long long start, long long end, const String& contentType) const
@@ -136,5 +149,11 @@ PassRefPtr<Blob> Blob::slice(long long start, long long end, const String& conte
 
     return Blob::create(blobData.release(), length);
 }
+
+URLRegistry& Blob::registry() const
+{
+    return BlobURLRegistry::registry();
+}
+
 
 } // namespace WebCore

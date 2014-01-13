@@ -26,17 +26,17 @@
 #ifndef WebGLCompressedTextureS3TC_h
 #define WebGLCompressedTextureS3TC_h
 
-#include "core/dom/ExceptionCode.h"
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
-#include <wtf/PassOwnPtr.h>
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
 class WebGLTexture;
 
-class WebGLCompressedTextureS3TC : public WebGLExtension {
+class WebGLCompressedTextureS3TC : public WebGLExtension, public ScriptWrappable {
 public:
-    static PassOwnPtr<WebGLCompressedTextureS3TC> create(WebGLRenderingContext*);
+    static PassRefPtr<WebGLCompressedTextureS3TC> create(WebGLRenderingContext*);
     static bool supported(WebGLRenderingContext*);
     static const char* getExtensionName();
 

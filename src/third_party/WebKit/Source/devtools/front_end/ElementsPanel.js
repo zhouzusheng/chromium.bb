@@ -106,7 +106,7 @@ WebInspector.ElementsPanel = function()
     WebInspector.domAgent.addEventListener(WebInspector.DOMAgent.Events.AttrRemoved, this._updateBreadcrumbIfNeeded, this);
     WebInspector.domAgent.addEventListener(WebInspector.DOMAgent.Events.NodeRemoved, this._nodeRemoved, this);
     WebInspector.domAgent.addEventListener(WebInspector.DOMAgent.Events.DocumentUpdated, this._documentUpdatedEvent, this);
-    WebInspector.domAgent.addEventListener(WebInspector.DOMAgent.Events.InspectElementRequested, this._inspectElementRequested, this);
+    WebInspector.settings.showShadowDOM.addChangeListener(this._showShadowDOMChanged.bind(this));
 
     if (WebInspector.domAgent.existingDocument())
         this._documentUpdated(WebInspector.domAgent.existingDocument());
@@ -1051,12 +1051,6 @@ WebInspector.ElementsPanel.prototype = {
         this.treeOutline.updateSelection();
     },
 
-    _inspectElementRequested: function(event)
-    {
-        var node = event.data;
-        this.revealAndSelectNode(node.id);
-    },
-
     revealAndSelectNode: function(nodeId)
     {
         WebInspector.inspectorView.setCurrentPanel(this);
@@ -1064,6 +1058,9 @@ WebInspector.ElementsPanel.prototype = {
         var node = WebInspector.domAgent.nodeForId(nodeId);
         if (!node)
             return;
+
+        while (!WebInspector.ElementsTreeOutline.showShadowDOM() && node && node.isInShadowTree())
+            node = node.parentNode;
 
         WebInspector.domAgent.highlightDOMNodeForTwoSeconds(nodeId);
         this.selectDOMNode(node, true);
@@ -1106,6 +1103,11 @@ WebInspector.ElementsPanel.prototype = {
         var dockSide = WebInspector.dockController.dockSide();
         var vertically = dockSide === WebInspector.DockController.State.DockedToRight && WebInspector.settings.splitVerticallyWhenDockedToRight.get();
         this._splitVertically(vertically);
+    },
+
+    _showShadowDOMChanged: function()
+    {
+        this.treeOutline.update();
     },
 
     /**

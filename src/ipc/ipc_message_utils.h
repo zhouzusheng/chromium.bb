@@ -14,9 +14,9 @@
 #include "base/format_macros.h"
 #include "base/memory/scoped_vector.h"
 #include "base/platform_file.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/tuple.h"
 #include "ipc/ipc_message_start.h"
 #include "ipc/ipc_param_traits.h"
@@ -45,12 +45,11 @@
 #error "Please add the noinline property for your new compiler here."
 #endif
 
-class NullableString16;
-
 namespace base {
 class DictionaryValue;
 class FilePath;
 class ListValue;
+class NullableString16;
 class Time;
 class TimeDelta;
 class TimeTicks;
@@ -454,8 +453,8 @@ struct IPC_EXPORT ParamTraits<base::ListValue> {
 };
 
 template <>
-struct IPC_EXPORT ParamTraits<NullableString16> {
-  typedef NullableString16 param_type;
+struct IPC_EXPORT ParamTraits<base::NullableString16> {
+  typedef base::NullableString16 param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter,
                    param_type* r);

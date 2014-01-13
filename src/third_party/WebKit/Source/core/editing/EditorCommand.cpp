@@ -31,7 +31,6 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
-#include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/DocumentFragment.h"
@@ -45,7 +44,6 @@
 #include "core/editing/ReplaceSelectionCommand.h"
 #include "core/editing/TypingCommand.h"
 #include "core/editing/UnlinkCommand.h"
-#include "core/editing/htmlediting.h"
 #include "core/editing/markup.h"
 #include "core/html/HTMLFontElement.h"
 #include "core/html/HTMLHRElement.h"
@@ -118,14 +116,14 @@ static bool applyCommandToFrame(Frame* frame, EditorCommandSource source, EditAc
 
 static bool executeApplyStyle(Frame* frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, const String& propertyValue)
 {
-    RefPtr<StylePropertySet> style = StylePropertySet::create();
+    RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(propertyID, propertyValue);
     return applyCommandToFrame(frame, source, action, style.get());
 }
 
-static bool executeApplyStyle(Frame* frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, int propertyValue)
+static bool executeApplyStyle(Frame* frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, CSSValueID propertyValue)
 {
-    RefPtr<StylePropertySet> style = StylePropertySet::create();
+    RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(propertyID, propertyValue);
     return applyCommandToFrame(frame, source, action, style.get());
 }
@@ -152,7 +150,7 @@ static bool executeToggleStyleInList(Frame* frame, EditorCommandSource source, E
         newStyle = value->cssText();
 
     // FIXME: We shouldn't be having to convert new style into text.  We should have setPropertyCSSValue.
-    RefPtr<StylePropertySet> newMutableStyle = StylePropertySet::create();
+    RefPtr<MutableStylePropertySet> newMutableStyle = MutableStylePropertySet::create();
     newMutableStyle->setProperty(propertyID, newStyle);
     return applyCommandToFrame(frame, source, action, newMutableStyle.get());
 }
@@ -175,7 +173,7 @@ static bool executeToggleStyle(Frame* frame, EditorCommandSource source, EditAct
 
 static bool executeApplyParagraphStyle(Frame* frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, const String& propertyValue)
 {
-    RefPtr<StylePropertySet> style = StylePropertySet::create();
+    RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(propertyID, propertyValue);
     // FIXME: We don't call shouldApplyStyle when the source is DOM; is there a good reason for that?
     switch (source) {
@@ -420,7 +418,7 @@ static bool executeFontName(Frame* frame, Event*, EditorCommandSource source, co
 
 static bool executeFontSize(Frame* frame, Event*, EditorCommandSource source, const String& value)
 {
-    int size;
+    CSSValueID size;
     if (!HTMLFontElement::cssValueFromFontSizeNumber(value, size))
         return false;
     return executeApplyStyle(frame, source, EditActionChangeAttributes, CSSPropertyFontSize, size);
@@ -588,7 +586,7 @@ static bool executeJustifyRight(Frame* frame, Event*, EditorCommandSource source
 
 static bool executeMakeTextWritingDirectionLeftToRight(Frame* frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtr<StylePropertySet> style = StylePropertySet::create();
+    RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(CSSPropertyUnicodeBidi, CSSValueEmbed);
     style->setProperty(CSSPropertyDirection, CSSValueLtr);
     frame->editor()->applyStyle(style.get(), EditActionSetWritingDirection);
@@ -597,7 +595,7 @@ static bool executeMakeTextWritingDirectionLeftToRight(Frame* frame, Event*, Edi
 
 static bool executeMakeTextWritingDirectionNatural(Frame* frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtr<StylePropertySet> style = StylePropertySet::create();
+    RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(CSSPropertyUnicodeBidi, CSSValueNormal);
     frame->editor()->applyStyle(style.get(), EditActionSetWritingDirection);
     return true;
@@ -605,7 +603,7 @@ static bool executeMakeTextWritingDirectionNatural(Frame* frame, Event*, EditorC
 
 static bool executeMakeTextWritingDirectionRightToLeft(Frame* frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtr<StylePropertySet> style = StylePropertySet::create();
+    RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(CSSPropertyUnicodeBidi, CSSValueEmbed);
     style->setProperty(CSSPropertyDirection, CSSValueRtl);
     frame->editor()->applyStyle(style.get(), EditActionSetWritingDirection);
@@ -957,7 +955,7 @@ static bool executePrint(Frame* frame, Event*, EditorCommandSource, const String
     Page* page = frame->page();
     if (!page)
         return false;
-    page->chrome()->print(frame);
+    page->chrome().print(frame);
     return true;
 }
 

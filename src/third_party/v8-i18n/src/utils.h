@@ -63,10 +63,10 @@ class Utils {
                            int32_t target_length);
 
   // Creates an ObjectTemplate with one internal field.
-  static v8::Persistent<v8::ObjectTemplate> GetTemplate(v8::Isolate* isolate);
+  static v8::Local<v8::ObjectTemplate> GetTemplate(v8::Isolate* isolate);
 
   // Creates an ObjectTemplate with two internal fields.
-  static v8::Persistent<v8::ObjectTemplate> GetTemplate2(v8::Isolate* isolate);
+  static v8::Local<v8::ObjectTemplate> GetTemplate2(v8::Isolate* isolate);
 
  private:
   Utils() {}

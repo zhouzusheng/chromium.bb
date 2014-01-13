@@ -4,7 +4,7 @@
 //
 // IPC Messages sent between compositor instances.
 
-#include "cc/debug/latency_info.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/quads/checkerboard_draw_quad.h"
@@ -24,7 +24,7 @@
 #include "content/common/content_export.h"
 #include "gpu/ipc/gpu_command_buffer_traits.h"
 #include "ipc/ipc_message_macros.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperation.h"
+#include "third_party/WebKit/public/platform/WebFilterOperation.h"
 
 #ifndef CONTENT_COMMON_CC_MESSAGES_H_
 #define CONTENT_COMMON_CC_MESSAGES_H_
@@ -34,7 +34,6 @@ class Transform;
 }
 
 namespace WebKit {
-class WebData;
 class WebFilterOperations;
 }
 
@@ -108,7 +107,6 @@ struct CONTENT_EXPORT ParamTraits<cc::DelegatedFrameData> {
 
 IPC_ENUM_TRAITS(cc::DrawQuad::Material)
 IPC_ENUM_TRAITS(cc::IOSurfaceDrawQuad::Orientation)
-IPC_ENUM_TRAITS(cc::LatencyComponentType)
 IPC_ENUM_TRAITS(WebKit::WebFilterOperation::FilterType)
 
 IPC_STRUCT_TRAITS_BEGIN(cc::RenderPass::Id)
@@ -194,6 +192,7 @@ IPC_STRUCT_TRAITS_BEGIN(cc::YUVVideoDrawQuad)
   IPC_STRUCT_TRAITS_MEMBER(y_plane_resource_id)
   IPC_STRUCT_TRAITS_MEMBER(u_plane_resource_id)
   IPC_STRUCT_TRAITS_MEMBER(v_plane_resource_id)
+  IPC_STRUCT_TRAITS_MEMBER(a_plane_resource_id)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::SharedQuadState)
@@ -214,15 +213,10 @@ IPC_STRUCT_TRAITS_BEGIN(cc::TransferableResource)
   IPC_STRUCT_TRAITS_MEMBER(mailbox)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(cc::LatencyInfo::LatencyComponent)
-  IPC_STRUCT_TRAITS_MEMBER(sequence_number)
-  IPC_STRUCT_TRAITS_MEMBER(event_time)
-  IPC_STRUCT_TRAITS_MEMBER(event_count)
-IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_TRAITS_BEGIN(cc::LatencyInfo)
-  IPC_STRUCT_TRAITS_MEMBER(latency_components)
-  IPC_STRUCT_TRAITS_MEMBER(swap_timestamp)
+IPC_STRUCT_TRAITS_BEGIN(cc::BeginFrameArgs)
+  IPC_STRUCT_TRAITS_MEMBER(frame_time)
+  IPC_STRUCT_TRAITS_MEMBER(deadline)
+  IPC_STRUCT_TRAITS_MEMBER(interval)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::CompositorFrameMetadata)
@@ -236,16 +230,19 @@ IPC_STRUCT_TRAITS_BEGIN(cc::CompositorFrameMetadata)
   IPC_STRUCT_TRAITS_MEMBER(location_bar_offset)
   IPC_STRUCT_TRAITS_MEMBER(location_bar_content_translation)
   IPC_STRUCT_TRAITS_MEMBER(overdraw_bottom_height)
+  IPC_STRUCT_TRAITS_MEMBER(latency_info)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::GLFrameData)
   IPC_STRUCT_TRAITS_MEMBER(mailbox)
   IPC_STRUCT_TRAITS_MEMBER(sync_point)
   IPC_STRUCT_TRAITS_MEMBER(size)
+  IPC_STRUCT_TRAITS_MEMBER(sub_buffer_rect)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::SoftwareFrameData)
+  IPC_STRUCT_TRAITS_MEMBER(id)
   IPC_STRUCT_TRAITS_MEMBER(size)
   IPC_STRUCT_TRAITS_MEMBER(damage_rect)
-  IPC_STRUCT_TRAITS_MEMBER(dib_id)
+  IPC_STRUCT_TRAITS_MEMBER(handle)
 IPC_STRUCT_TRAITS_END()

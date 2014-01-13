@@ -14,17 +14,16 @@
 #include "ppapi/shared_impl/url_response_info_data.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_url_request_info_api.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoader.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderOptions.h"
-#include "webkit/appcache/web_application_cache_host_impl.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLLoader.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
@@ -32,7 +31,6 @@
 #include "webkit/plugins/ppapi/url_request_info_util.h"
 #include "webkit/plugins/ppapi/url_response_info_util.h"
 
-using appcache::WebApplicationCacheHostImpl;
 using ppapi::Resource;
 using ppapi::thunk::EnterResourceNoLock;
 using ppapi::thunk::PPB_URLLoader_API;
@@ -141,7 +139,7 @@ int32_t PPB_URLLoader_Impl::Open(
     return PP_ERROR_NOACCESS;
   }
 
-  if (loader_.get())
+  if (loader_)
     return PP_ERROR_INPROGRESS;
 
   WebFrame* frame = GetFrameForResource(this);
@@ -179,7 +177,7 @@ int32_t PPB_URLLoader_Impl::Open(
 
   is_asynchronous_load_suspended_ = false;
   loader_.reset(frame->createAssociatedURLLoader(options));
-  if (!loader_.get())
+  if (!loader_)
     return PP_ERROR_FAILED;
 
   loader_->loadAsynchronously(web_request, this);
@@ -227,7 +225,7 @@ PP_Bool PPB_URLLoader_Impl::GetDownloadProgress(
 
 PP_Resource PPB_URLLoader_Impl::GetResponseInfo() {
   ::ppapi::thunk::EnterResourceCreationNoLock enter(pp_instance());
-  if (enter.failed() || !response_info_.get())
+  if (enter.failed() || !response_info_)
     return 0;
 
   // Since we're the "host" the process-local resource for the file ref is
@@ -295,7 +293,7 @@ int32_t PPB_URLLoader_Impl::FinishStreamingToFile(
 }
 
 void PPB_URLLoader_Impl::Close() {
-  if (loader_.get())
+  if (loader_)
     loader_->cancel();
   else if (main_document_loader_)
     GetFrameForResource(this)->stopLoading();
@@ -318,7 +316,7 @@ void PPB_URLLoader_Impl::RegisterStatusCallback(
 
 bool PPB_URLLoader_Impl::GetResponseInfoData(
     ::ppapi::URLResponseInfoData* data) {
-  if (!response_info_.get())
+  if (!response_info_)
     return false;
 
   *data = *response_info_;
@@ -429,7 +427,7 @@ void PPB_URLLoader_Impl::didFail(WebURLLoader* loader,
 }
 
 void PPB_URLLoader_Impl::SetDefersLoading(bool defers_loading) {
-  if (loader_.get()) {
+  if (loader_) {
     loader_->setDefersLoading(defers_loading);
     is_asynchronous_load_suspended_ = defers_loading;
   }
@@ -472,7 +470,7 @@ void PPB_URLLoader_Impl::RegisterCallback(
 
 void PPB_URLLoader_Impl::RunCallback(int32_t result) {
   // This may be null only when this is a main document loader.
-  if (!pending_callback_.get()) {
+  if (!pending_callback_) {
     CHECK(main_document_loader_);
     return;
   }
@@ -548,3 +546,4 @@ bool PPB_URLLoader_Impl::RecordUploadProgress() const {
 
 }  // namespace ppapi
 }  // namespace webkit
+

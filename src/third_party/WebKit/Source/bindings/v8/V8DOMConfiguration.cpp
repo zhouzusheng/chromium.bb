@@ -43,22 +43,22 @@ void V8DOMConfiguration::batchConfigureConstants(v8::Handle<v8::FunctionTemplate
 {
     for (size_t i = 0; i < constantCount; ++i) {
         const BatchedConstant* constant = &constants[i];
-        functionDescriptor->Set(v8::String::NewSymbol(constant->name), v8Integer(constant->value, isolate), v8::ReadOnly);
-        prototype->Set(v8::String::NewSymbol(constant->name), v8Integer(constant->value, isolate), v8::ReadOnly);
+        functionDescriptor->Set(v8::String::NewSymbol(constant->name), v8::Integer::New(constant->value, isolate), v8::ReadOnly);
+        prototype->Set(v8::String::NewSymbol(constant->name), v8::Integer::New(constant->value, isolate), v8::ReadOnly);
     }
 }
 
 void V8DOMConfiguration::batchConfigureCallbacks(v8::Handle<v8::ObjectTemplate> prototype, v8::Handle<v8::Signature> signature, v8::PropertyAttribute attributes, const BatchedMethod* callbacks, size_t callbackCount, v8::Isolate*, WrapperWorldType currentWorldType)
 {
     for (size_t i = 0; i < callbackCount; ++i) {
-        v8::InvocationCallback callback = callbacks[i].callback;
+        v8::FunctionCallback callback = callbacks[i].callback;
         if (currentWorldType == MainWorld && callbacks[i].callbackForMainWorld)
             callback = callbacks[i].callbackForMainWorld;
         prototype->Set(v8::String::NewSymbol(callbacks[i].name), v8::FunctionTemplate::New(callback, v8Undefined(), signature, callbacks[i].length), attributes);
     }
 }
 
-v8::Local<v8::Signature> V8DOMConfiguration::configureTemplate(v8::Persistent<v8::FunctionTemplate> functionDescriptor, const char* interfaceName, v8::Persistent<v8::FunctionTemplate> parentClass,
+v8::Local<v8::Signature> V8DOMConfiguration::configureTemplate(v8::Handle<v8::FunctionTemplate> functionDescriptor, const char* interfaceName, v8::Handle<v8::FunctionTemplate> parentClass,
     size_t fieldCount, const BatchedAttribute* attributes, size_t attributeCount, const BatchedMethod* callbacks, size_t callbackCount, v8::Isolate* isolate, WrapperWorldType currentWorldType)
 {
     functionDescriptor->SetClassName(v8::String::NewSymbol(interfaceName));

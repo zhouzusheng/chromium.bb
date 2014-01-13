@@ -26,6 +26,7 @@
 #ifndef UseCounter_h
 #define UseCounter_h
 
+#include "CSSPropertyNames.h"
 #include "wtf/BitVector.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
@@ -34,9 +35,11 @@
 
 namespace WebCore {
 
+class CSSStyleSheet;
 class DOMWindow;
 class Document;
 class ScriptExecutionContext;
+class StyleSheetContents;
 
 // UseCounter is used for counting the number of times features of
 // Blink are used on real web pages and help us know commonly
@@ -78,7 +81,7 @@ public:
         UnprefixedTransitionEndEvent,
         PrefixedAndUnprefixedTransitionEndEvent,
         AutoFocusAttribute,
-        AutoSaveAttribute,
+        UnusedSlot01, // Prior to 4/2013, we used this slot for AutoSaveAttribute.
         DataListElement,
         FormAttribute,
         IncrementalAttribute,
@@ -110,7 +113,7 @@ public:
         StepAttribute,
         PageVisits,
         HTMLMarqueeElement,
-        CSSOverflowMarquee,
+        UnusedSlot02, // Removed, was tracking overflow: -webkit-marquee.
         Reflection,
         CursorVisibility, // Removed, was -webkit-cursor-visibility.
         StorageInfo,
@@ -130,13 +133,35 @@ public:
         PrefixedMediaAddKey,
         PrefixedMediaGenerateKeyRequest,
         WebAudioLooping,
-        // Add new features above this line. Don't change assigned numbers of each items.
+        DocumentClear,
+        PrefixedTransitionMediaFeature,
+        SVGFontElement,
+        XMLDocument,
+        XSLProcessingInstruction,
+        XSLTProcessor,
+        SVGSwitchElement,
+        PrefixedDocumentRegister,
+        HTMLShadowElementOlderShadowRoot,
+        DocumentAll,
+        FormElement,
+        DemotedFormElement,
+        CaptureAttributeAsEnum,
+        ShadowDOMPrefixedPseudo,
+        ShadowDOMPrefixedCreateShadowRoot,
+        ShadowDOMPrefixedShadowRoot,
+        SVGAnimationElement,
+        KeyboardEventKeyLocation,
+        CaptureEvents,
+        ReleaseEvents,
+        // Add new features immediately above this line. Don't change assigned
+        // numbers of each items, and don't reuse unused slots.
         NumberOfFeatures, // This enum value must be last.
     };
 
     // "count" sets the bit for this feature to 1. Repeated calls are ignored.
     static void count(Document*, Feature);
     static void count(DOMWindow*, Feature);
+    void count(CSSPropertyID);
 
     // "countDeprecation" sets the bit for this feature to 1, and sends a deprecation
     // warning to the console. Repeated calls are ignored.
@@ -149,6 +174,10 @@ public:
     String deprecationMessage(Feature);
 
     void didCommitLoad();
+
+    static UseCounter* getFrom(const Document*);
+    static UseCounter* getFrom(const CSSStyleSheet*);
+    static UseCounter* getFrom(const StyleSheetContents*);
 
 private:
     bool recordMeasurement(Feature feature)
@@ -170,6 +199,7 @@ private:
     void updateMeasurements();
 
     OwnPtr<BitVector> m_countBits;
+    BitVector m_CSSFeatureBits;
 };
 
 } // namespace WebCore

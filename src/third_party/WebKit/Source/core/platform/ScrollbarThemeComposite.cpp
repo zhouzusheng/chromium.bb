@@ -26,13 +26,6 @@
 #include "config.h"
 #include "core/platform/ScrollbarThemeComposite.h"
 
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/PlatformMouseEvent.h"
 #include "core/platform/ScrollbarThemeClient.h"
 #include "core/platform/graphics/GraphicsContext.h"
 
@@ -268,7 +261,7 @@ int ScrollbarThemeComposite::trackLength(ScrollbarThemeClient* scrollbar)
 
 void ScrollbarThemeComposite::paintScrollCorner(ScrollView*, GraphicsContext* context, const IntRect& cornerRect)
 {
-    context->fillRect(cornerRect, Color::white, ColorSpaceDeviceRGB);
+    context->fillRect(cornerRect, Color::white);
 }
 
 IntRect ScrollbarThemeComposite::thumbRect(ScrollbarThemeClient* scrollbar)
@@ -286,12 +279,10 @@ IntRect ScrollbarThemeComposite::thumbRect(ScrollbarThemeClient* scrollbar)
 }
 
 void ScrollbarThemeComposite::paintOverhangAreas(ScrollView*, GraphicsContext* context, const IntRect& horizontalOverhangRect, const IntRect& verticalOverhangRect, const IntRect& dirtyRect)
-{    
-    context->setFillColor(Color::white, ColorSpaceDeviceRGB);
+{
+    context->setFillColor(Color::white);
     if (!horizontalOverhangRect.isEmpty())
         context->fillRect(intersection(horizontalOverhangRect, dirtyRect));
-
-    context->setFillColor(Color::white, ColorSpaceDeviceRGB);
     if (!verticalOverhangRect.isEmpty())
         context->fillRect(intersection(verticalOverhangRect, dirtyRect));
 }

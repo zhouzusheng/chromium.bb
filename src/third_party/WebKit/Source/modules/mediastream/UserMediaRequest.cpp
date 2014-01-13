@@ -80,7 +80,7 @@ PassRefPtr<UserMediaRequest> UserMediaRequest::create(ScriptExecutionContext* co
 }
 
 UserMediaRequest::UserMediaRequest(ScriptExecutionContext* context, UserMediaController* controller, PassRefPtr<MediaConstraintsImpl> audio, PassRefPtr<MediaConstraintsImpl> video, PassRefPtr<NavigatorUserMediaSuccessCallback> successCallback, PassRefPtr<NavigatorUserMediaErrorCallback> errorCallback)
-    : ContextDestructionObserver(context)
+    : ContextLifecycleObserver(context)
     , m_audio(audio)
     , m_video(video)
     , m_controller(controller)
@@ -124,13 +124,8 @@ Document* UserMediaRequest::ownerDocument()
 
 void UserMediaRequest::start()
 {
-    MediaStreamCenter::instance().queryMediaStreamSources(this);
-}
-
-void UserMediaRequest::didCompleteQuery(const MediaStreamSourceVector& audioSources, const MediaStreamSourceVector& videoSources)
-{
     if (m_controller)
-        m_controller->requestUserMedia(this, audioSources, videoSources);
+        m_controller->requestUserMedia(this);
 }
 
 void UserMediaRequest::succeed(PassRefPtr<MediaStreamDescriptor> streamDescriptor)
@@ -139,16 +134,39 @@ void UserMediaRequest::succeed(PassRefPtr<MediaStreamDescriptor> streamDescripto
         return;
 
     RefPtr<MediaStream> stream = MediaStream::create(m_scriptExecutionContext, streamDescriptor);
+
+    MediaStreamTrackVector audioTracks = stream->getAudioTracks();
+    for (MediaStreamTrackVector::iterator iter = audioTracks.begin(); iter != audioTracks.end(); ++iter) {
+        (*iter)->component()->source()->setConstraints(m_audio);
+    }
+
+    MediaStreamTrackVector videoTracks = stream->getVideoTracks();
+    for (MediaStreamTrackVector::iterator iter = videoTracks.begin(); iter != videoTracks.end(); ++iter) {
+        (*iter)->component()->source()->setConstraints(m_video);
+    }
+
     m_successCallback->handleEvent(stream.get());
 }
 
-void UserMediaRequest::fail()
+void UserMediaRequest::fail(const String& description)
 {
     if (!m_scriptExecutionContext)
         return;
 
     if (m_errorCallback) {
-        RefPtr<NavigatorUserMediaError> error = NavigatorUserMediaError::create(NavigatorUserMediaError::PERMISSION_DENIED);
+        RefPtr<NavigatorUserMediaError> error = NavigatorUserMediaError::create(ASCIILiteral("PERMISSION_DENIED"), description, String());
+        m_errorCallback->handleEvent(error.get());
+    }
+}
+
+void UserMediaRequest::failConstraint(const String& constraintName, const String& description)
+{
+    ASSERT(!constraintName.isEmpty());
+    if (!m_scriptExecutionContext)
+        return;
+
+    if (m_errorCallback) {
+        RefPtr<NavigatorUserMediaError> error = NavigatorUserMediaError::create(ASCIILiteral("CONSTRAINT_NOT_SATISFIED"), description, constraintName);
         m_errorCallback->handleEvent(error.get());
     }
 }
@@ -162,7 +180,7 @@ void UserMediaRequest::contextDestroyed()
         m_controller = 0;
     }
 
-    ContextDestructionObserver::contextDestroyed();
+    ContextLifecycleObserver::contextDestroyed();
 }
 
 } // namespace WebCore

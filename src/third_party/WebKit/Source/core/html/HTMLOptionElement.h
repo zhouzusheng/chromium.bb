@@ -50,9 +50,7 @@ public:
     bool selected();
     void setSelected(bool);
 
-#if ENABLE(DATALIST_ELEMENT)
     HTMLDataListElement* ownerDataListElement() const;
-#endif
     HTMLSelectElement* ownerSelectElement() const;
 
     String label() const;
@@ -69,11 +67,10 @@ public:
 private:
     HTMLOptionElement(const QualifiedName&, Document*);
 
-    virtual bool supportsFocus() const;
-    virtual bool isFocusable() const;
+    virtual bool rendererIsFocusable() const OVERRIDE;
     virtual bool rendererIsNeeded(const NodeRenderingContext&) { return false; }
-    virtual void attach();
-    virtual void detach();
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
@@ -96,26 +93,20 @@ private:
     RefPtr<RenderStyle> m_style;
 };
 
-HTMLOptionElement* toHTMLOptionElement(Node*);
-const HTMLOptionElement* toHTMLOptionElement(const Node*);
 void toHTMLOptionElement(const HTMLOptionElement*); // This overload will catch anyone doing an unnecessary cast.
-
-#ifdef NDEBUG
-
-// The debug versions of these, with assertions, are not inlined.
 
 inline HTMLOptionElement* toHTMLOptionElement(Node* node)
 {
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::optionTag));
     return static_cast<HTMLOptionElement*>(node);
 }
 
 inline const HTMLOptionElement* toHTMLOptionElement(const Node* node)
 {
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::optionTag));
     return static_cast<const HTMLOptionElement*>(node);
 }
 
-#endif
-
-} // namespace
+} // namespace WebCore
 
 #endif

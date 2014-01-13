@@ -33,39 +33,32 @@
 
 #include "V8CSSPrimitiveValue.h"
 #include "V8CSSValueList.h"
-#include "V8WebKitCSSTransformValue.h"
-
-#include "V8WebKitCSSFilterValue.h"
-
-#include "V8WebKitCSSMixFunctionValue.h"
-#include "core/css/WebKitCSSMixFunctionValue.h"
-
-#if ENABLE(SVG)
 #include "V8SVGColor.h"
 #include "V8SVGPaint.h"
-#endif
+#include "V8WebKitCSSFilterValue.h"
+#include "V8WebKitCSSMixFunctionValue.h"
+#include "V8WebKitCSSTransformValue.h"
+#include "core/css/CSSMixFunctionValue.h"
 
 namespace WebCore {
 
 v8::Handle<v8::Object> wrap(CSSValue* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     ASSERT(impl);
-    if (impl->isWebKitCSSTransformValue())
-        return wrap(static_cast<WebKitCSSTransformValue*>(impl), creationContext, isolate);
-    if (impl->isWebKitCSSFilterValue())
-        return wrap(static_cast<WebKitCSSFilterValue*>(impl), creationContext, isolate);
-    if (impl->isWebKitCSSMixFunctionValue())
-        return wrap(static_cast<WebKitCSSMixFunctionValue*>(impl), creationContext, isolate);
+    if (impl->isCSSTransformValue())
+        return wrap(static_cast<CSSTransformValue*>(impl), creationContext, isolate);
+    if (impl->isCSSMixFunctionValue())
+        return wrap(static_cast<CSSMixFunctionValue*>(impl), creationContext, isolate);
+    if (impl->isCSSFilterValue())
+        return wrap(static_cast<CSSFilterValue*>(impl), creationContext, isolate);
     if (impl->isValueList())
         return wrap(static_cast<CSSValueList*>(impl), creationContext, isolate);
     if (impl->isPrimitiveValue())
         return wrap(static_cast<CSSPrimitiveValue*>(impl), creationContext, isolate);
-#if ENABLE(SVG)
     if (impl->isSVGPaint())
         return wrap(static_cast<SVGPaint*>(impl), creationContext, isolate);
     if (impl->isSVGColor())
         return wrap(static_cast<SVGColor*>(impl), creationContext, isolate);
-#endif
     return V8CSSValue::createWrapper(impl, creationContext, isolate);
 }
 

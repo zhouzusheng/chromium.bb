@@ -21,9 +21,9 @@
 #ifndef SVGPathSeg_h
 #define SVGPathSeg_h
 
-#if ENABLE(SVG)
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "bindings/v8/ScriptWrappable.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -56,9 +56,13 @@ enum SVGPathSegRole {
     PathSegUndefinedRole = 2
 };
 
-class SVGPathSeg : public RefCounted<SVGPathSeg> {
+class SVGPathSeg : public RefCounted<SVGPathSeg>, public ScriptWrappable {
 public:
-    SVGPathSeg() { }
+    SVGPathSeg()
+    {
+        ScriptWrappable::init(this);
+    }
+
     virtual ~SVGPathSeg() { }
 
     // Forward declare these enums in the w3c naming scheme, for IDL generation
@@ -91,5 +95,4 @@ public:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

@@ -14,9 +14,8 @@
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "ui/gl/gpu_preference.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -53,6 +52,11 @@ class GpuChannelHost;
 class GpuChannelHostFactory;
 struct GpuMemoryAllocationForRenderer;
 
+const size_t kDefaultCommandBufferSize = 1024 * 1024;
+const size_t kDefaultStartTransferBufferSize = 1 * 1024 * 1024;
+const size_t kDefaultMinTransferBufferSize = 1 * 256 * 1024;
+const size_t kDefaultMaxTransferBufferSize = 16 * 1024 * 1024;
+
 // TODO(piman): move this logic to the compositor and remove it from the
 // context...
 class WebGraphicsContext3DSwapBuffersClient {
@@ -81,7 +85,15 @@ class WebGraphicsContext3DCommandBufferImpl
 
   bool Initialize(const Attributes& attributes,
                   bool bind_generates_resources,
-                  CauseForGpuLaunch cause);
+                  CauseForGpuLaunch cause,
+                  size_t command_buffer_size,
+                  size_t start_transfer_buffer_size,
+                  size_t min_transfer_buffer_size,
+                  size_t max_transfer_buffer_size);
+
+  bool InitializeWithDefaultBufferSizes(const Attributes& attributes,
+                                        bool bind_generates_resources,
+                                        CauseForGpuLaunch cause);
 
   // The following 3 IDs let one uniquely identify this context.
   // Gets the GPU process ID for this context.
@@ -119,22 +131,19 @@ class WebGraphicsContext3DCommandBufferImpl
   virtual int width();
   virtual int height();
 
-  virtual bool isGLES2Compliant();
-
-  virtual bool setParentContext(WebGraphicsContext3D* parent_context);
-
   virtual unsigned int insertSyncPoint();
   virtual void waitSyncPoint(unsigned int sync_point);
   virtual void signalSyncPoint(unsigned sync_point,
                                WebGraphicsSyncPointCallback* callback);
 
   virtual void reshape(int width, int height);
+  virtual void reshapeWithScaleFactor(
+      int width, int height, float scale_factor);
 
   virtual bool readBackFramebuffer(unsigned char* pixels, size_t buffer_size);
   virtual bool readBackFramebuffer(unsigned char* pixels, size_t buffer_size,
                                    WebGLId framebuffer, int width, int height);
 
-  virtual WebGLId getPlatformTextureId();
   virtual void prepareTexture();
   virtual void postSubBufferCHROMIUM(int x, int y, int width, int height);
 
@@ -547,10 +556,6 @@ class WebGraphicsContext3DCommandBufferImpl
 
   virtual void copyTextureCHROMIUM(WGC3Denum target, WebGLId source_id,
                                    WebGLId dest_id, WGC3Dint level,
-                                   WGC3Denum internal_format);
-
-  virtual void copyTextureCHROMIUM(WGC3Denum target, WebGLId source_id,
-                                   WebGLId dest_id, WGC3Dint level,
                                    WGC3Denum internal_format,
                                    WGC3Denum dest_type);
 
@@ -558,6 +563,7 @@ class WebGraphicsContext3DCommandBufferImpl
                                            const WGC3Dchar* uniform);
 
   virtual void shallowFlushCHROMIUM();
+  virtual void shallowFinishCHROMIUM();
 
   virtual void genMailboxCHROMIUM(WGC3Dbyte* mailbox);
   virtual void produceTextureCHROMIUM(WGC3Denum target,
@@ -612,6 +618,13 @@ class WebGraphicsContext3DCommandBufferImpl
       WGC3Dsizei n,
       const WGC3Denum* bufs);
 
+  // GL_ANGLE_instanced_arrays
+  virtual void drawArraysInstancedANGLE(WGC3Denum mode, WGC3Dint first,
+      WGC3Dsizei count, WGC3Dsizei primcount);
+  virtual void drawElementsInstancedANGLE(WGC3Denum mode, WGC3Dsizei count,
+      WGC3Denum type, WGC3Dintptr offset, WGC3Dsizei primcount);
+  virtual void vertexAttribDivisorANGLE(WGC3Duint index, WGC3Duint divisor);
+
  protected:
   virtual GrGLInterface* onCreateGrGLInterface();
 
@@ -652,8 +665,6 @@ class WebGraphicsContext3DCommandBufferImpl
   bool InitializeCommandBuffer(
       bool onscreen,
       const char* allowed_extensions);
-
-  bool SetParent(WebGraphicsContext3DCommandBufferImpl* parent_context);
 
   void Destroy();
 
@@ -734,8 +745,6 @@ class WebGraphicsContext3DCommandBufferImpl
                       unsigned int height);
 
   bool initialized_;
-  WebGraphicsContext3DCommandBufferImpl* parent_;
-  uint32 parent_texture_id_;
   CommandBufferProxyImpl* command_buffer_;
   gpu::gles2::GLES2CmdHelper* gles2_helper_;
   gpu::TransferBuffer* transfer_buffer_;
@@ -746,6 +755,10 @@ class WebGraphicsContext3DCommandBufferImpl
   int frame_number_;
   bool bind_generates_resources_;
   bool use_echo_for_swap_ack_;
+  size_t command_buffer_size_;
+  size_t start_transfer_buffer_size_;
+  size_t min_transfer_buffer_size_;
+  size_t max_transfer_buffer_size_;
 };
 
 }  // namespace content

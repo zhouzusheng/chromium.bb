@@ -28,20 +28,22 @@
 #include "core/dom/MutationEvent.h"
 #include "core/dom/MutationObserverInterestGroup.h"
 #include "core/dom/MutationRecord.h"
-#include "core/dom/NodeRenderingContext.h"
 #include "core/dom/Text.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/editing/FrameSelection.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/platform/text/TextBreakIterator.h"
-#include "core/rendering/RenderText.h"
-#include "core/rendering/style/StyleInheritedData.h"
 
 using namespace std;
 
 namespace WebCore {
 
-void CharacterData::setData(const String& data, ExceptionCode&)
+void CharacterData::atomize()
+{
+    m_data = AtomicString(m_data);
+}
+
+void CharacterData::setData(const String& data)
 {
     const String& nonNullData = !data.isNull() ? data : emptyString();
     if (m_data == nonNullData)
@@ -77,8 +79,9 @@ unsigned CharacterData::parserAppendData(const String& string, unsigned offset, 
     // Some text break iterator implementations work best if the passed buffer is as small as possible,
     // see <https://bugs.webkit.org/show_bug.cgi?id=29092>.
     // We need at least two characters look-ahead to account for UTF-16 surrogates.
-    if (characterLengthLimit < characterLength) {
-        NonSharedCharacterBreakIterator it(string.characters() + offset, (characterLengthLimit + 2 > characterLength) ? characterLength : characterLengthLimit + 2);
+    ASSERT(!string.is8Bit() || string.containsOnlyLatin1()); // Latin-1 doesn't have unbreakable boundaries.
+    if (characterLengthLimit < characterLength && !string.is8Bit()) {
+        NonSharedCharacterBreakIterator it(string.characters16() + offset, (characterLengthLimit + 2 > characterLength) ? characterLength : characterLengthLimit + 2);
         if (!isTextBreak(it, characterLengthLimit))
             characterLengthLimit = textBreakPreceding(it, characterLengthLimit);
     }
@@ -111,7 +114,7 @@ void CharacterData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     info.addMember(m_data, "data");
 }
 
-void CharacterData::appendData(const String& data, ExceptionCode&)
+void CharacterData::appendData(const String& data)
 {
     String newStr = m_data;
     newStr.append(data);
@@ -188,9 +191,9 @@ bool CharacterData::containsOnlyWhitespace() const
     return m_data.containsOnlyWhitespace();
 }
 
-void CharacterData::setNodeValue(const String& nodeValue, ExceptionCode& ec)
+void CharacterData::setNodeValue(const String& nodeValue, ExceptionCode&)
 {
-    setData(nodeValue, ec);
+    setData(nodeValue);
 }
 
 void CharacterData::setDataAndUpdate(const String& newData, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength)
@@ -206,21 +209,27 @@ void CharacterData::setDataAndUpdate(const String& newData, unsigned offsetOfRep
         document()->frame()->selection()->textWasReplaced(this, offsetOfReplacedData, oldLength, newLength);
 
     document()->incDOMTreeVersion();
-    dispatchModifiedEvent(oldData);
+    didModifyData(oldData);
+}
+
+void CharacterData::didModifyData(const String& oldData)
+{
+    if (OwnPtr<MutationObserverInterestGroup> mutationRecipients = MutationObserverInterestGroup::createForCharacterDataMutation(this))
+        mutationRecipients->enqueueMutationRecord(MutationRecord::createCharacterData(this, oldData));
+
+    if (parentNode())
+        parentNode()->childrenChanged();
+
+    if (!isInShadowTree())
+        dispatchModifiedEvent(oldData);
+    InspectorInstrumentation::characterDataModified(document(), this);
 }
 
 void CharacterData::dispatchModifiedEvent(const String& oldData)
 {
-    if (OwnPtr<MutationObserverInterestGroup> mutationRecipients = MutationObserverInterestGroup::createForCharacterDataMutation(this))
-        mutationRecipients->enqueueMutationRecord(MutationRecord::createCharacterData(this, oldData));
-    if (!isInShadowTree()) {
-        if (parentNode())
-            parentNode()->childrenChanged();
-        if (document()->hasListenerType(Document::DOMCHARACTERDATAMODIFIED_LISTENER))
-            dispatchScopedEvent(MutationEvent::create(eventNames().DOMCharacterDataModifiedEvent, true, 0, oldData, m_data));
-        dispatchSubtreeModifiedEvent();
-    }
-    InspectorInstrumentation::characterDataModified(document(), this);
+    if (document()->hasListenerType(Document::DOMCHARACTERDATAMODIFIED_LISTENER))
+        dispatchScopedEvent(MutationEvent::create(eventNames().DOMCharacterDataModifiedEvent, true, 0, oldData, m_data));
+    dispatchSubtreeModifiedEvent();
 }
 
 void CharacterData::checkCharDataOperation(unsigned offset, ExceptionCode& ec)

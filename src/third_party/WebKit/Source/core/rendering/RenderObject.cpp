@@ -27,24 +27,19 @@
 #include "config.h"
 #include "core/rendering/RenderObject.h"
 
-#include <stdio.h>
-#include <algorithm>
 #include "HTMLNames.h"
 #include "core/accessibility/AXObjectCache.h"
-#include "core/css/StyleResolver.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
+#include "core/css/resolver/StyleResolver.h"
 #include "core/editing/EditingBoundary.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLElement.h"
-#include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/page/animation/AnimationController.h"
-#include "core/platform/graphics/DashArray.h"
 #include "core/platform/graphics/FloatQuad.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/transforms/TransformState.h"
@@ -64,6 +59,7 @@
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderLazyBlock.h"
 #include "core/rendering/RenderListItem.h"
+#include "core/rendering/RenderMarquee.h"
 #include "core/rendering/RenderMultiColumnBlock.h"
 #include "core/rendering/RenderNamedFlowThread.h"
 #include "core/rendering/RenderRegion.h"
@@ -78,13 +74,11 @@
 #include "core/rendering/RenderView.h"
 #include "core/rendering/style/ContentData.h"
 #include "core/rendering/style/CursorList.h"
-#include <wtf/RefCountedLeakCounter.h>
-#include <wtf/UnusedParam.h>
-
-#if ENABLE(SVG)
-#include "core/rendering/svg/RenderSVGResourceContainer.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
-#endif
+#include "wtf/RefCountedLeakCounter.h"
+#include "wtf/UnusedParam.h"
+#include <algorithm>
+#include <stdio.h>
 
 using namespace std;
 
@@ -291,11 +285,6 @@ bool RenderObject::isLegend() const
     return node() && node()->hasTagName(legendTag);
 }
 
-bool RenderObject::isHTMLMarquee() const
-{
-    return node() && node()->renderer() == this && node()->hasTagName(marqueeTag);
-}
-
 void RenderObject::setFlowThreadStateIncludingDescendants(FlowThreadState state)
 {
     setFlowThreadState(state);
@@ -366,9 +355,7 @@ void RenderObject::addChild(RenderObject* newChild, RenderObject* beforeChild)
     if (newChild->hasLayer() && !layerCreationAllowedForSubtree())
         toRenderLayerModelObject(newChild)->layer()->removeOnlyThisLayer();
 
-#if ENABLE(SVG)
     SVGRenderSupport::childAdded(this, newChild);
-#endif
 }
 
 void RenderObject::removeChild(RenderObject* oldChild)
@@ -663,10 +650,8 @@ static inline bool objectIsRelayoutBoundary(const RenderObject* object)
     if (object->isTextControl())
         return true;
 
-#if ENABLE(SVG)
     if (object->isSVGRoot())
         return true;
-#endif
 
     if (!object->hasOverflowClip())
         return false;
@@ -820,10 +805,8 @@ RenderBlock* RenderObject::containingBlock() const
                 o = o->containingBlock();
                 break;
             }
-#if ENABLE(SVG)
             if (o->isSVGForeignObject()) //foreignObject is the containing block for contents inside it
                 break;
-#endif
 
             o = o->parent();
         }
@@ -928,7 +911,7 @@ void RenderObject::drawLineForBoxSide(GraphicsContext* graphicsContext, int x1, 
                 bool wasAntialiased = graphicsContext->shouldAntialias();
                 StrokeStyle oldStrokeStyle = graphicsContext->strokeStyle();
                 graphicsContext->setShouldAntialias(antialias);
-                graphicsContext->setStrokeColor(color, m_style->colorSpace());
+                graphicsContext->setStrokeColor(color);
                 graphicsContext->setStrokeThickness(thickness);
                 graphicsContext->setStrokeStyle(style == DASHED ? DashedStroke : DottedStroke);
 
@@ -954,8 +937,8 @@ void RenderObject::drawLineForBoxSide(GraphicsContext* graphicsContext, int x1, 
             if (adjacentWidth1 == 0 && adjacentWidth2 == 0) {
                 StrokeStyle oldStrokeStyle = graphicsContext->strokeStyle();
                 graphicsContext->setStrokeStyle(NoStroke);
-                graphicsContext->setFillColor(color, m_style->colorSpace());
-                
+                graphicsContext->setFillColor(color);
+
                 bool wasAntialiased = graphicsContext->shouldAntialias();
                 graphicsContext->setShouldAntialias(antialias);
 
@@ -1076,7 +1059,7 @@ void RenderObject::drawLineForBoxSide(GraphicsContext* graphicsContext, int x1, 
         case SOLID: {
             StrokeStyle oldStrokeStyle = graphicsContext->strokeStyle();
             graphicsContext->setStrokeStyle(NoStroke);
-            graphicsContext->setFillColor(color, m_style->colorSpace());
+            graphicsContext->setFillColor(color);
             ASSERT(x2 >= x1);
             ASSERT(y2 >= y1);
             if (!adjacentWidth1 && !adjacentWidth2) {
@@ -1144,7 +1127,16 @@ void RenderObject::addPDFURLRect(GraphicsContext* context, const LayoutRect& rec
     const AtomicString& href = toElement(n)->getAttribute(hrefAttr);
     if (href.isNull())
         return;
-    context->setURLForRect(n->document()->completeURL(href), pixelSnappedIntRect(rect));
+    KURL url = n->document()->completeURL(href);
+    if (!url.isValid())
+        return;
+    if (context->supportsURLFragments() && url.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(url, n->document()->baseURL())) {
+        String name = url.fragmentIdentifier();
+        if (document()->findAnchor(name))
+            context->setURLFragmentForRect(name, pixelSnappedIntRect(rect));
+        return;
+    }
+    context->setURLForRect(url, pixelSnappedIntRect(rect));
 }
 
 void RenderObject::paintOutline(PaintInfo& paintInfo, const LayoutRect& paintRect)
@@ -1188,7 +1180,7 @@ void RenderObject::paintOutline(PaintInfo& paintInfo, const LayoutRect& paintRec
             path.addRect(outer);
             path.addRect(inner);
             graphicsContext->setFillRule(RULE_EVENODD);
-            graphicsContext->setFillColor(outlineColor, styleToUse->colorSpace());
+            graphicsContext->setFillColor(outlineColor);
             graphicsContext->fillPath(path);
             return;
         }
@@ -1363,10 +1355,10 @@ void RenderObject::repaintUsingContainer(const RenderLayerModelObject* repaintCo
     if (repaintContainer->isRenderView()) {
         ASSERT(repaintContainer == v);
         bool viewHasCompositedLayer = v->hasLayer() && v->layer()->isComposited();
-        if (!viewHasCompositedLayer || v->layer()->backing()->paintsIntoWindow()) {
-            LayoutRect repaintRectangle = r;
+        if (!viewHasCompositedLayer) {
+            IntRect repaintRectangle = r;
             if (viewHasCompositedLayer &&  v->layer()->transform())
-                repaintRectangle = enclosingIntRect(v->layer()->transform()->mapRect(r));
+                repaintRectangle = v->layer()->transform()->mapRect(r);
             v->repaintViewRectangle(repaintRectangle);
             return;
         }
@@ -1433,6 +1425,13 @@ bool RenderObject::repaintAfterLayoutIfNeeded(const RenderLayerModelObject* repa
     // Presumably a background or a border exists if border-fit:lines was specified.
     if (!fullRepaint && style()->borderFit() == BorderFitLines)
         fullRepaint = true;
+    if (!fullRepaint && style()->hasBorderRadius()) {
+        // If a border-radius exists and width/height is smaller than
+        // radius width/height, we cannot use delta-repaint.
+        RoundedRect oldRoundedRect = style()->getRoundedBorderFor(oldBounds, v);
+        RoundedRect newRoundedRect = style()->getRoundedBorderFor(newBounds, v);
+        fullRepaint = oldRoundedRect.radii() != newRoundedRect.radii();
+    }
     if (!fullRepaint) {
         // This ASSERT fails due to animations.  See https://bugs.webkit.org/show_bug.cgi?id=37048
         // ASSERT(!newOutlineBoxRectPtr || *newOutlineBoxRectPtr == outlineBoundsForRepaint(repaintContainer));
@@ -1644,10 +1643,15 @@ void RenderObject::showRenderTreeAndMark(const RenderObject* markedObject1, cons
 
 #endif // NDEBUG
 
+static bool shouldUseSelectionColor(const RenderStyle& style)
+{
+    return style.userSelect() != SELECT_NONE || style.userModify() != READ_ONLY;
+}
+
 Color RenderObject::selectionBackgroundColor() const
 {
     Color color;
-    if (style()->userSelect() != SELECT_NONE) {
+    if (shouldUseSelectionColor(*style())) {
         RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(PseudoStyleRequest(SELECTION));
         if (pseudoStyle && pseudoStyle->visitedDependentColor(CSSPropertyBackgroundColor).isValid())
             color = pseudoStyle->visitedDependentColor(CSSPropertyBackgroundColor).blendWithWhite();
@@ -1665,7 +1669,7 @@ Color RenderObject::selectionColor(int colorProperty) const
     Color color;
     // If the element is unselectable, or we are only painting the selection,
     // don't override the foreground color with the selection foreground color.
-    if (style()->userSelect() == SELECT_NONE
+    if (!shouldUseSelectionColor(*style())
         || (frame()->view()->paintBehavior() & PaintBehaviorSelectionOnly))
         return color;
 
@@ -1798,6 +1802,20 @@ void RenderObject::setPseudoStyle(PassRefPtr<RenderStyle> pseudoStyle)
     setStyle(pseudoStyle);
 }
 
+inline bool RenderObject::hasImmediateNonWhitespaceTextChild() const
+{
+    for (const RenderObject* r = firstChild(); r; r = r->nextSibling()) {
+        if (r->isText() && !toRenderText(r)->isAllCollapsibleWhitespace())
+            return true;
+    }
+    return false;
+}
+
+inline bool RenderObject::shouldRepaintForStyleDifference(StyleDifference diff) const
+{
+    return diff == StyleDifferenceRepaint || (diff == StyleDifferenceRepaintIfText && hasImmediateNonWhitespaceTextChild());
+}
+
 void RenderObject::setStyle(PassRefPtr<RenderStyle> style)
 {
     if (m_style == style) {
@@ -1857,7 +1875,7 @@ void RenderObject::setStyle(PassRefPtr<RenderStyle> style)
             setNeedsSimplifiedNormalFlowLayout();
     }
     
-    if (updatedDiff == StyleDifferenceRepaintLayer || updatedDiff == StyleDifferenceRepaint) {
+    if (updatedDiff == StyleDifferenceRepaintLayer || shouldRepaintForStyleDifference(updatedDiff)) {
         // Do a repaint with the new style now, e.g., for example if we go from
         // not having an outline to having an outline.
         repaint();
@@ -1898,7 +1916,7 @@ void RenderObject::styleWillChange(StyleDifference diff, const RenderStyle* newS
             }
         }
 
-        if (m_parent && (diff == StyleDifferenceRepaint || newStyle->outlineSize() < m_style->outlineSize()))
+        if (m_parent && (newStyle->outlineSize() < m_style->outlineSize() || shouldRepaintForStyleDifference(diff)))
             repaint();
         if (isFloating() && (m_style->floating() != newStyle->floating()))
             // For changes in float styles, we need to conceivably remove ourselves
@@ -1975,9 +1993,7 @@ void RenderObject::styleDidChange(StyleDifference diff, const RenderStyle* oldSt
     if (s_affectsParentBlock)
         handleDynamicFloatPositionChange();
 
-#if ENABLE(SVG)
     SVGRenderSupport::styleChanged(this);
-#endif
 
     if (!m_parent)
         return;
@@ -2218,7 +2234,7 @@ LayoutSize RenderObject::offsetFromContainer(RenderObject* o, const LayoutPoint&
         offset -= toRenderBox(o)->scrolledContentOffset();
 
     if (offsetDependsOnPoint)
-        *offsetDependsOnPoint = hasColumns();
+        *offsetDependsOnPoint = hasColumns() || o->isRenderFlowThread();
 
     return offset;
 }
@@ -2331,11 +2347,10 @@ RenderObject* RenderObject::container(const RenderLayerModelObject* repaintConta
         // FIXME: The definition of view() has changed to not crawl up the render tree.  It might
         // be safe now to use it.
         while (o && o->parent() && !(o->hasTransform() && o->isRenderBlock())) {
-#if ENABLE(SVG)
             // foreignObject is the containing block for its contents.
             if (o->isSVGForeignObject())
                 break;
-#endif
+
             // The render flow thread is the top most containing block
             // for the fixed positioned elements.
             if (o->isOutOfFlowRenderFlowThread())
@@ -2351,10 +2366,9 @@ RenderObject* RenderObject::container(const RenderLayerModelObject* repaintConta
         // we may not have one if we're part of an uninstalled subtree.  We'll
         // climb as high as we can though.
         while (o && o->style()->position() == StaticPosition && !o->isRenderView() && !(o->hasTransform() && o->isRenderBlock())) {
-#if ENABLE(SVG)
             if (o->isSVGForeignObject()) // foreignObject is the containing block for contents inside it
                 break;
-#endif
+
             if (repaintContainerSkipped && o == repaintContainer)
                 *repaintContainerSkipped = true;
 
@@ -2400,8 +2414,8 @@ void RenderObject::willBeDestroyed()
     // has a null frame, so we assert this. However, we don't want release builds to crash which is why we
     // check that the frame is not null.
     ASSERT(frame());
-    if (frame() && frame()->eventHandler()->autoscrollRenderer() == this)
-        frame()->eventHandler()->stopAutoscrollTimer(true);
+    if (frame() && frame()->page())
+        frame()->page()->stopAutoscrollIfNeeded(this);
 
     animation()->cancelAnimations(this);
 
@@ -2503,10 +2517,8 @@ void RenderObject::willBeRemovedFromTree()
     if (RenderNamedFlowThread* containerFlowThread = parent()->renderNamedFlowThreadWrapper())
         containerFlowThread->removeFlowChild(this);
 
-#if ENABLE(SVG)
-    // Update cached boundaries in SVG renderers, if a child is removed.
+    // Update cached boundaries in SVG renderers if a child is removed.
     parent()->setNeedsBoundariesUpdate();
-#endif
 }
 
 void RenderObject::removeFromRenderFlowThread()
@@ -2546,9 +2558,12 @@ void RenderObject::destroyAndCleanupAnonymousWrappers()
 
     RenderObject* destroyRoot = this;
     for (RenderObject* destroyRootParent = destroyRoot->parent(); destroyRootParent && destroyRootParent->isAnonymous(); destroyRoot = destroyRootParent, destroyRootParent = destroyRootParent->parent()) {
-        // Currently we only remove anonymous cells' and table sections' wrappers but we should remove all unneeded
-        // wrappers. See http://webkit.org/b/52123 as an example where this is needed.
-        if (!destroyRootParent->isTableCell() && !destroyRootParent->isTableSection())
+        // Anonymous block continuations are tracked and destroyed elsewhere (see the bottom of RenderBlock::removeChild)
+        if (destroyRootParent->isRenderBlock() && toRenderBlock(destroyRootParent)->isAnonymousBlockContinuation())
+            break;
+        // Render flow threads are tracked by the FlowThreadController, so we can't destroy them here.
+        // Column spans are tracked elsewhere.
+        if (destroyRootParent->isRenderFlowThread() || destroyRootParent->isAnonymousColumnSpanBlock())
             break;
 
         if (destroyRootParent->firstChild() != this || destroyRootParent->lastChild() != this)
@@ -2791,15 +2806,18 @@ PassRefPtr<RenderStyle> RenderObject::getUncachedPseudoStyle(const PseudoStyleRe
     return document()->styleResolver()->pseudoStyleForElement(element, pseudoStyleRequest, parentStyle);
 }
 
+bool RenderObject::hasBlendMode() const
+{
+    return RuntimeEnabledFeatures::cssCompositingEnabled() && style() && style()->hasBlendMode();
+}
+
 static Color decorationColor(RenderStyle* style)
 {
     Color result;
-#if ENABLE(CSS3_TEXT)
     // Check for text decoration color first.
-    result = style->visitedDependentColor(CSSPropertyWebkitTextDecorationColor);
+    result = style->visitedDependentColor(CSSPropertyTextDecorationColor);
     if (result.isValid())
         return result;
-#endif // CSS3_TEXT
     if (style->textStrokeWidth() > 0) {
         // Prefer stroke color if possible but not if it's fully transparent.
         result = style->visitedDependentColor(CSSPropertyWebkitTextStrokeColor);
@@ -2816,7 +2834,7 @@ void RenderObject::getTextDecorationColors(int decorations, Color& underline, Co
 {
     RenderObject* curr = this;
     RenderStyle* styleToUse = 0;
-    ETextDecoration currDecs = TDNONE;
+    TextDecoration currDecs = TextDecorationNone;
     Color resultColor;
     do {
         styleToUse = curr->style(firstlineStyle);
@@ -2824,16 +2842,16 @@ void RenderObject::getTextDecorationColors(int decorations, Color& underline, Co
         resultColor = decorationColor(styleToUse);
         // Parameter 'decorations' is cast as an int to enable the bitwise operations below.
         if (currDecs) {
-            if (currDecs & UNDERLINE) {
-                decorations &= ~UNDERLINE;
+            if (currDecs & TextDecorationUnderline) {
+                decorations &= ~TextDecorationUnderline;
                 underline = resultColor;
             }
-            if (currDecs & OVERLINE) {
-                decorations &= ~OVERLINE;
+            if (currDecs & TextDecorationOverline) {
+                decorations &= ~TextDecorationOverline;
                 overline = resultColor;
             }
-            if (currDecs & LINE_THROUGH) {
-                decorations &= ~LINE_THROUGH;
+            if (currDecs & TextDecorationLineThrough) {
+                decorations &= ~TextDecorationLineThrough;
                 linethrough = resultColor;
             }
         }
@@ -2849,11 +2867,11 @@ void RenderObject::getTextDecorationColors(int decorations, Color& underline, Co
     if (decorations && curr) {
         styleToUse = curr->style(firstlineStyle);
         resultColor = decorationColor(styleToUse);
-        if (decorations & UNDERLINE)
+        if (decorations & TextDecorationUnderline)
             underline = resultColor;
-        if (decorations & OVERLINE)
+        if (decorations & TextDecorationOverline)
             overline = resultColor;
-        if (decorations & LINE_THROUGH)
+        if (decorations & TextDecorationLineThrough)
             linethrough = resultColor;
     }
 }
@@ -2954,6 +2972,17 @@ AnimationController* RenderObject::animation() const
     return frame()->animation();
 }
 
+bool RenderObject::isInert() const
+{
+    const RenderObject* renderer = this;
+    while (!renderer->node())
+        renderer = renderer->parent();
+    const Node* parentNode = renderer->node();
+    while (parentNode && !parentNode->isElementNode())
+        parentNode = parentNode->parentNode();
+    return parentNode && toElement(parentNode)->isInert();
+}
+
 void RenderObject::imageChanged(CachedImage* image, const IntRect* rect)
 {
     imageChanged(static_cast<WrappedImagePtr>(image), rect);
@@ -2971,15 +3000,16 @@ Element* RenderObject::offsetParent() const
     // chain return the nearest ancestor map HTML element and stop this algorithm.
     // FIXME: Implement!
 
-    // FIXME: Figure out the right behavior for elements inside a flow thread.
-    // https://bugs.webkit.org/show_bug.cgi?id=113276
-
     float effectiveZoom = style()->effectiveZoom();
     Node* node = 0;
     for (RenderObject* ancestor = parent(); ancestor; ancestor = ancestor->parent()) {
-        node = ancestor->node();
-
         // Spec: http://www.w3.org/TR/cssom-view/#offset-attributes
+
+        // CSS regions specification says that region flows should return the body element as their offsetParent.
+        if (ancestor->isRenderNamedFlowThread())
+            return document()->body();
+
+        node = ancestor->node();
 
         if (!node)
             continue;
@@ -3104,8 +3134,6 @@ void RenderObject::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     info.setCustomAllocation(true);
 }
 
-#if ENABLE(SVG)
-
 RenderSVGResourceContainer* RenderObject::toRenderSVGResourceContainer()
 {
     ASSERT_NOT_REACHED();
@@ -3155,8 +3183,6 @@ bool RenderObject::nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const
     ASSERT_NOT_REACHED();
     return false;
 }
-
-#endif // ENABLE(SVG)
 
 } // namespace WebCore
 

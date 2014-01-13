@@ -6,8 +6,7 @@
 
 #include "cc/output/compositor_frame.h"
 #include "content/public/common/common_param_traits.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperations.h"
+#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 #include "ui/gfx/transform.h"
 
 namespace IPC {
@@ -380,7 +379,7 @@ static scoped_ptr<cc::DrawQuad> ReadDrawQuad(const Message* m,
                                              PickleIterator* iter) {
   scoped_ptr<QuadType> quad = QuadType::Create();
   if (!ReadParam(m, iter, quad.get()))
-    return scoped_ptr<QuadType>(NULL).template PassAs<cc::DrawQuad>();
+    return scoped_ptr<QuadType>().template PassAs<cc::DrawQuad>();
   return quad.template PassAs<cc::DrawQuad>();
 }
 
@@ -627,7 +626,7 @@ void ParamTraits<cc::CompositorFrame>::Log(const param_type& p,
 void ParamTraits<cc::CompositorFrameAck>::Write(Message* m,
                                                 const param_type& p) {
   WriteParam(m, p.resources);
-  WriteParam(m, p.last_dib_id);
+  WriteParam(m, p.last_software_frame_id);
   if (p.gl_frame_data) {
     WriteParam(m, static_cast<int>(GL_FRAME));
     WriteParam(m, *p.gl_frame_data);
@@ -642,7 +641,7 @@ bool ParamTraits<cc::CompositorFrameAck>::Read(const Message* m,
   if (!ReadParam(m, iter, &p->resources))
     return false;
 
-  if (!ReadParam(m, iter, &p->last_dib_id))
+  if (!ReadParam(m, iter, &p->last_software_frame_id))
     return false;
 
   int compositor_frame_type;
@@ -668,7 +667,7 @@ void ParamTraits<cc::CompositorFrameAck>::Log(const param_type& p,
   l->append("CompositorFrameAck(");
   LogParam(p.resources, l);
   l->append(", ");
-  LogParam(p.last_dib_id, l);
+  LogParam(p.last_software_frame_id, l);
   l->append(", ");
   if (p.gl_frame_data)
     LogParam(*p.gl_frame_data, l);

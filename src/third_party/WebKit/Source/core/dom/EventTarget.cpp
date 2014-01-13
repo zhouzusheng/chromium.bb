@@ -32,14 +32,13 @@
 #include "config.h"
 #include "core/dom/EventTarget.h"
 
+#include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Event.h"
-#include "core/dom/EventException.h"
-#include "core/dom/TransitionEvent.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include <wtf/MainThread.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/Vector.h>
+#include "wtf/StdLibExtras.h"
+#include "wtf/Vector.h"
 
 using namespace WTF;
 
@@ -104,27 +103,38 @@ bool EventTarget::removeEventListener(const AtomicString& eventType, EventListen
     return true;
 }
 
-bool EventTarget::setAttributeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener)
+bool EventTarget::setAttributeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld)
 {
-    clearAttributeEventListener(eventType);
+    clearAttributeEventListener(eventType, isolatedWorld);
     if (!listener)
         return false;
     return addEventListener(eventType, listener, false);
 }
 
-EventListener* EventTarget::getAttributeEventListener(const AtomicString& eventType)
+EventListener* EventTarget::getAttributeEventListener(const AtomicString& eventType, DOMWrapperWorld* isolatedWorld)
 {
     const EventListenerVector& entry = getEventListeners(eventType);
     for (size_t i = 0; i < entry.size(); ++i) {
-        if (entry[i].listener->isAttribute())
-            return entry[i].listener.get();
+        EventListener* listener = entry[i].listener.get();
+        if (listener->isAttribute()) {
+            DOMWrapperWorld* listenerWorld = listener->world();
+            // Worker listener
+            if (!listenerWorld) {
+                ASSERT(!isolatedWorld);
+                return listener;
+            }
+            if (listenerWorld->isMainWorld() && !isolatedWorld)
+                return listener;
+            if (listenerWorld == isolatedWorld)
+                return listener;
+        }
     }
     return 0;
 }
 
-bool EventTarget::clearAttributeEventListener(const AtomicString& eventType)
+bool EventTarget::clearAttributeEventListener(const AtomicString& eventType, DOMWrapperWorld* isolatedWorld)
 {
-    EventListener* listener = getAttributeEventListener(eventType);
+    EventListener* listener = getAttributeEventListener(eventType, isolatedWorld);
     if (!listener)
         return false;
     return removeEventListener(eventType, listener, false);
@@ -132,13 +142,8 @@ bool EventTarget::clearAttributeEventListener(const AtomicString& eventType)
 
 bool EventTarget::dispatchEvent(PassRefPtr<Event> event, ExceptionCode& ec)
 {
-    if (!event || event->type().isEmpty()) {
-        ec = EventException::UNSPECIFIED_EVENT_TYPE_ERR;
-        return false;
-    }
-
-    if (event->isBeingDispatched()) {
-        ec = EventException::DISPATCH_REQUEST_ERR;
+    if (!event || event->type().isEmpty() || event->isBeingDispatched()) {
+        ec = INVALID_STATE_ERR;
         return false;
     }
 
@@ -160,20 +165,6 @@ bool EventTarget::dispatchEvent(PassRefPtr<Event> event)
 
 void EventTarget::uncaughtExceptionInEventHandler()
 {
-}
-
-static PassRefPtr<Event> createMatchingPrefixedEvent(const Event* event)
-{
-    if (event->type() == eventNames().transitionendEvent) {
-        const TransitionEvent* transitionEvent = static_cast<const TransitionEvent*>(event);
-        RefPtr<Event> prefixedEvent = TransitionEvent::create(eventNames().webkitTransitionEndEvent, transitionEvent->propertyName(), transitionEvent->elapsedTime(), transitionEvent->pseudoElement());
-        prefixedEvent->setTarget(event->target());
-        prefixedEvent->setCurrentTarget(event->currentTarget());
-        prefixedEvent->setEventPhase(event->eventPhase());
-        return prefixedEvent.release();
-    }
-    ASSERT_NOT_REACHED();
-    return 0;
 }
 
 static AtomicString prefixedType(const Event* event)
@@ -202,8 +193,12 @@ bool EventTarget::fireEventListeners(Event* event)
 
     if (listenerUnprefixedVector)
         fireEventListeners(event, d, *listenerUnprefixedVector);
-    else if (listenerPrefixedVector)
-        fireEventListeners(createMatchingPrefixedEvent(event).get(), d, *listenerPrefixedVector);
+    else if (listenerPrefixedVector) {
+        AtomicString unprefixedTypeName = event->type();
+        event->setType(prefixedTypeName);
+        fireEventListeners(event, d, *listenerPrefixedVector);
+        event->setType(unprefixedTypeName);
+    }
 
     if (!prefixedTypeName.isEmpty()) {
         ScriptExecutionContext* context = scriptExecutionContext();

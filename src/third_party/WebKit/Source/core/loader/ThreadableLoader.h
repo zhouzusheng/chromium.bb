@@ -32,7 +32,7 @@
 #define ThreadableLoader_h
 
 #include "core/loader/ResourceLoaderOptions.h"
-#include "core/page/SecurityOrigin.h"
+#include "weborigin/SecurityOrigin.h"
 #include "core/platform/network/ResourceHandle.h"
 #include <wtf/Noncopyable.h>
 #include <wtf/PassRefPtr.h>
@@ -59,12 +59,24 @@ namespace WebCore {
         PreventPreflight
     };
 
+    enum ContentSecurityPolicyEnforcement {
+        EnforceConnectSrcDirective,
+        DoNotEnforceContentSecurityPolicy,
+    };
+
     struct ThreadableLoaderOptions : public ResourceLoaderOptions {
-        ThreadableLoaderOptions() : preflightPolicy(ConsiderPreflight), crossOriginRequestPolicy(DenyCrossOriginRequests) { }
+        ThreadableLoaderOptions()
+            : preflightPolicy(ConsiderPreflight)
+            , crossOriginRequestPolicy(DenyCrossOriginRequests)
+            , contentSecurityPolicyEnforcement(EnforceConnectSrcDirective)
+            , timeoutMilliseconds(0) { }
+
         PreflightPolicy preflightPolicy; // If AccessControl is used, how to determine if a preflight is needed.
         CrossOriginRequestPolicy crossOriginRequestPolicy;
         RefPtr<SecurityOrigin> securityOrigin;
         AtomicString initiator;
+        ContentSecurityPolicyEnforcement contentSecurityPolicyEnforcement;
+        unsigned long timeoutMilliseconds;
     };
 
     // Useful for doing loader operations from any thread (not threadsafe, 

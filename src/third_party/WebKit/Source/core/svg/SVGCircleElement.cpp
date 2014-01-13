@@ -20,18 +20,12 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGCircleElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
-#include "core/dom/ExceptionCode.h"
-#include "core/platform/graphics/FloatPoint.h"
 #include "core/rendering/svg/RenderSVGEllipse.h"
-#include "core/rendering/svg/RenderSVGPath.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGException.h"
 #include "core/svg/SVGLength.h"
 
 namespace WebCore {
@@ -78,7 +72,7 @@ bool SVGCircleElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::cyAttr);
         supportedAttributes.add(SVGNames::rAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGCircleElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -146,11 +140,9 @@ bool SVGCircleElement::selfHasRelativeLengths() const
         || r().isRelative();
 }
 
-RenderObject* SVGCircleElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGCircleElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGEllipse(this);
+    return new (document()->renderArena()) RenderSVGEllipse(this);
 }
 
 }
-
-#endif // ENABLE(SVG)

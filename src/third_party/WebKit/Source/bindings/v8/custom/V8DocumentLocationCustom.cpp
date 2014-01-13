@@ -25,7 +25,6 @@
 #include "V8Document.h"
 
 #include "V8Location.h"
-#include "bindings/v8/BindingState.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
@@ -33,35 +32,35 @@
 
 namespace WebCore {
 
-v8::Handle<v8::Value> V8Document::locationAttrGetterCustom(v8::Local<v8::String> name, const v8::AccessorInfo& info)
+void V8Document::locationAttrGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     Document* document = V8Document::toNative(info.Holder());
-    if (!document->frame())
-        return v8Null(info.GetIsolate());
+    if (!document->frame()) {
+        v8SetReturnValueNull(info);
+        return;
+    }
 
     DOMWindow* window = document->domWindow();
-    return toV8Fast(window->location(), info, document);
+    v8SetReturnValue(info, toV8Fast(window->location(), info, document));
 }
 
-void V8Document::locationAttrSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
+void V8Document::locationAttrSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
     Document* document = V8Document::toNative(info.Holder());
     if (!document->frame())
         return;
 
-    BindingState* state = BindingState::instance();
-
-    DOMWindow* active = activeDOMWindow(state);
+    DOMWindow* active = activeDOMWindow();
     if (!active)
         return;
 
-    DOMWindow* first = firstDOMWindow(state);
+    DOMWindow* first = firstDOMWindow();
     if (!first)
         return;
 
     DOMWindow* window = document->domWindow();
     if (Location* location = window->location())
-        location->setHref(toWebCoreString(value), active, first);
+        location->setHref(active, first, toWebCoreString(value));
 }
 
 } // namespace WebCore

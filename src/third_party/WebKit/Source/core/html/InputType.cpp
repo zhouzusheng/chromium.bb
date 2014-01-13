@@ -31,20 +31,17 @@
 #include <limits>
 #include "HTMLNames.h"
 #include "core/accessibility/AXObjectCache.h"
-#include "core/dom/BeforeTextInsertedEvent.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/KeyboardEvent.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/ScopedEventQueue.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/fileapi/FileList.h"
 #include "core/html/ButtonInputType.h"
 #include "core/html/CheckboxInputType.h"
 #include "core/html/ColorInputType.h"
 #include "core/html/DateInputType.h"
-#include "core/html/DateTimeInputType.h"
 #include "core/html/DateTimeLocalInputType.h"
 #include "core/html/EmailInputType.h"
 #include "core/html/FileInputType.h"
@@ -94,14 +91,9 @@ static PassOwnPtr<InputTypeFactoryMap> createInputTypeFactoryMap()
     OwnPtr<InputTypeFactoryMap> map = adoptPtr(new InputTypeFactoryMap);
     map->add(InputTypeNames::button(), ButtonInputType::create);
     map->add(InputTypeNames::checkbox(), CheckboxInputType::create);
-#if ENABLE(INPUT_TYPE_COLOR)
-    map->add(InputTypeNames::color(), ColorInputType::create);
-#endif
+    if (RuntimeEnabledFeatures::inputTypeColorEnabled())
+        map->add(InputTypeNames::color(), ColorInputType::create);
     map->add(InputTypeNames::date(), DateInputType::create);
-#if ENABLE(INPUT_TYPE_DATETIME_INCOMPLETE)
-    if (RuntimeEnabledFeatures::inputTypeDateTimeEnabled())
-        map->add(InputTypeNames::datetime(), DateTimeInputType::create);
-#endif
     map->add(InputTypeNames::datetimelocal(), DateTimeLocalInputType::create);
     map->add(InputTypeNames::email(), EmailInputType::create);
     map->add(InputTypeNames::file(), FileInputType::create);
@@ -445,7 +437,7 @@ PassRefPtr<HTMLFormElement> InputType::formForSubmission() const
     return element()->form();
 }
 
-RenderObject* InputType::createRenderer(RenderArena*, RenderStyle* style) const
+RenderObject* InputType::createRenderer(RenderStyle* style) const
 {
     return RenderObject::createObject(element(), style);
 }
@@ -481,6 +473,12 @@ void InputType::destroyShadowSubtree()
     }
 }
 
+Element* InputType::elementById(const AtomicString& id) const
+{
+    ShadowRoot* shadowRoot = element()->userAgentShadowRoot();
+    return shadowRoot ? shadowRoot->getElementById(id) : 0;
+}
+
 Decimal InputType::parseToNumber(const String&, const Decimal& defaultValue) const
 {
     ASSERT_NOT_REACHED();
@@ -514,7 +512,7 @@ void InputType::dispatchSimulatedClickIfActive(KeyboardEvent* event) const
 Chrome* InputType::chrome() const
 {
     if (Page* page = element()->document()->page())
-        return page->chrome();
+        return &page->chrome();
     return 0;
 }
 
@@ -554,10 +552,6 @@ void InputType::handleBlurEvent()
 void InputType::accessKeyAction(bool)
 {
     element()->focus(false);
-}
-
-void InputType::addSearchResult()
-{
 }
 
 void InputType::attach()
@@ -804,11 +798,6 @@ bool InputType::isDateField() const
     return false;
 }
 
-bool InputType::isDateTimeField() const
-{
-    return false;
-}
-
 bool InputType::isDateTimeLocalField() const
 {
     return false;
@@ -844,12 +833,10 @@ bool InputType::isSteppable() const
     return false;
 }
 
-#if ENABLE(INPUT_TYPE_COLOR)
 bool InputType::isColorControl() const
 {
     return false;
 }
-#endif
 
 bool InputType::shouldRespectHeightAndWidthAttributes()
 {
@@ -913,7 +900,6 @@ String InputType::defaultToolTip() const
     return String();
 }
 
-#if ENABLE(DATALIST_ELEMENT)
 void InputType::listAttributeTargetChanged()
 {
 }
@@ -923,7 +909,6 @@ Decimal InputType::findClosestTickMarkValue(const Decimal&)
     ASSERT_NOT_REACHED();
     return Decimal::nan();
 }
-#endif
 
 void InputType::updateClearButtonVisibility()
 {

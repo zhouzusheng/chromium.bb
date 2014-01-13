@@ -29,7 +29,6 @@
 #include "config.h"
 #include "core/page/animation/AnimationBase.h"
 
-#include <algorithm>
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/dom/Document.h"
 #include "core/dom/EventNames.h"
@@ -37,36 +36,16 @@
 #include "core/page/animation/CSSPropertyAnimation.h"
 #include "core/page/animation/CompositeAnimation.h"
 #include "core/platform/FloatConversion.h"
-#include "core/platform/graphics/UnitBezier.h"
+#include "core/platform/animation/AnimationUtilities.h"
+#include "core/platform/animation/TimingFunction.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/style/RenderStyle.h"
-#include <wtf/CurrentTime.h>
+#include "wtf/CurrentTime.h"
+#include <algorithm>
 
 using namespace std;
 
 namespace WebCore {
-
-// The epsilon value we pass to UnitBezier::solve given that the animation is going to run over |dur| seconds. The longer the
-// animation, the more precision we need in the timing function result to avoid ugly discontinuities.
-static inline double solveEpsilon(double duration)
-{
-    return 1.0 / (200.0 * duration);
-}
-
-static inline double solveCubicBezierFunction(double p1x, double p1y, double p2x, double p2y, double t, double duration)
-{
-    // Convert from input time to parametric value in curve, then from
-    // that to output time.
-    UnitBezier bezier(p1x, p1y, p2x, p2y);
-    return bezier.solve(t, solveEpsilon(duration));
-}
-
-static inline double solveStepsFunction(int numSteps, bool stepAtStart, double t)
-{
-    if (stepAtStart)
-        return min(1.0, (floor(numSteps * t) + 1) / numSteps);
-    return floor(numSteps * t) / numSteps;
-}
 
 AnimationBase::AnimationBase(const CSSAnimationData* transition, RenderObject* renderer, CompositeAnimation* compAnim)
     : m_animState(AnimationStateNew)
@@ -404,11 +383,7 @@ void AnimationBase::fireAnimationEventsIfNeeded()
         return;
     }
     
-    double elapsedDuration = beginAnimationUpdateTime() - m_startTime;
-    // FIXME: we need to ensure that elapsedDuration is never < 0. If it is, this suggests that
-    // we had a recalcStyle() outside of beginAnimationUpdate()/endAnimationUpdate().
-    // Also check in getTimeToNextEvent().
-    elapsedDuration = max(elapsedDuration, 0.0);
+    double elapsedDuration = getElapsedTime();
     
     // Check for end timeout
     if (m_totalDuration >= 0 && elapsedDuration >= m_totalDuration) {
@@ -506,12 +481,10 @@ double AnimationBase::fractionalTime(double scale, double elapsedTime, double of
     return fractionalTime;
 }
 
-double AnimationBase::progress(double scale, double offset, const TimingFunction* tf) const
+double AnimationBase::progress(double scale, double offset, const TimingFunction* timingFunction) const
 {
     if (preActive())
         return 0;
-
-    double elapsedTime = getElapsedTime();
 
     double dur = m_animation->duration();
     if (m_animation->iterationCount() > 0)
@@ -519,6 +492,8 @@ double AnimationBase::progress(double scale, double offset, const TimingFunction
 
     if (postActive() || !m_animation->duration())
         return 1.0;
+
+    double elapsedTime = getElapsedTime();
     if (m_animation->iterationCount() > 0 && elapsedTime >= dur) {
         const int integralIterationCount = static_cast<int>(m_animation->iterationCount());
         const bool iterationCountHasFractional = m_animation->iterationCount() - integralIterationCount;
@@ -527,27 +502,22 @@ double AnimationBase::progress(double scale, double offset, const TimingFunction
 
     const double fractionalTime = this->fractionalTime(scale, elapsedTime, offset);
 
-    if (!tf)
-        tf = m_animation->timingFunction().get();
+    if (!timingFunction)
+        timingFunction = m_animation->timingFunction().get();
 
-    if (tf->isCubicBezierTimingFunction()) {
-        const CubicBezierTimingFunction* ctf = static_cast<const CubicBezierTimingFunction*>(tf);
-        return solveCubicBezierFunction(ctf->x1(),
-                                        ctf->y1(),
-                                        ctf->x2(),
-                                        ctf->y2(),
-                                        fractionalTime, m_animation->duration());
-    } else if (tf->isStepsTimingFunction()) {
-        const StepsTimingFunction* stf = static_cast<const StepsTimingFunction*>(tf);
-        return solveStepsFunction(stf->numberOfSteps(), stf->stepAtStart(), fractionalTime);
-    } else
-        return fractionalTime;
+    return timingFunction->evaluate(fractionalTime, accuracyForDuration(m_animation->duration()));
 }
 
 void AnimationBase::getTimeToNextEvent(double& time, bool& isLooping) const
 {
+    if (postActive()) {
+        time = -1;
+        isLooping = false;
+        return;
+    }
+
     // Decide when the end or loop event needs to fire
-    const double elapsedDuration = max(beginAnimationUpdateTime() - m_startTime, 0.0);
+    const double elapsedDuration = getElapsedTime();
     double durationLeft = 0;
     double nextIterationTime = m_totalDuration;
 
@@ -584,7 +554,7 @@ void AnimationBase::freezeAtTime(double t)
     if (!m_startTime) {
         // If we haven't started yet, make it as if we started.
         m_animState = AnimationStateStartWaitResponse;
-        onAnimationStartResponse(currentTime());
+        onAnimationStartResponse(beginAnimationUpdateTime());
     }
 
     ASSERT(m_startTime);        // if m_startTime is zero, we haven't started yet, so we'll get a bad pause time.
@@ -607,12 +577,11 @@ double AnimationBase::beginAnimationUpdateTime() const
 
 double AnimationBase::getElapsedTime() const
 {
-    if (paused())    
+    ASSERT(!postActive());
+    if (paused())
         return m_pauseTime - m_startTime;
     if (m_startTime <= 0)
         return 0;
-    if (postActive())
-        return 1;
 
     return beginAnimationUpdateTime() - m_startTime;
 }

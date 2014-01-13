@@ -40,9 +40,9 @@
 #include "core/page/Settings.h"
 #include "core/platform/NotImplemented.h"
 #include "core/platform/graphics/FloatRect.h"
-#include <public/WebRect.h>
-#include <public/WebURL.h>
-#include <public/WebURLRequest.h>
+#include "public/platform/WebRect.h"
+#include "public/platform/WebURL.h"
+#include "public/platform/WebURLRequest.h"
 #include <wtf/Vector.h>
 
 using namespace WebCore;
@@ -123,23 +123,9 @@ void InspectorClientImpl::setShowDebugBorders(bool show)
     m_inspectedWebView->setShowDebugBorders(show);
 }
 
-bool InspectorClientImpl::canShowFPSCounter()
-{
-    if (m_inspectedWebView->page())
-        return m_inspectedWebView->page()->settings()->forceCompositingMode();
-    return false;
-}
-
 void InspectorClientImpl::setShowFPSCounter(bool show)
 {
     m_inspectedWebView->setShowFPSCounter(show);
-}
-
-bool InspectorClientImpl::canContinuouslyPaint()
-{
-    if (m_inspectedWebView->page())
-        return m_inspectedWebView->page()->settings()->forceCompositingMode();
-    return false;
 }
 
 void InspectorClientImpl::setContinuousPaintingEnabled(bool enabled)
@@ -157,6 +143,12 @@ void InspectorClientImpl::dumpUncountedAllocatedObjects(const HashMap<const void
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
         agent->dumpUncountedAllocatedObjects(map);
+}
+
+void InspectorClientImpl::dispatchKeyEvent(const PlatformKeyboardEvent& event)
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->dispatchKeyEvent(event);
 }
 
 void InspectorClientImpl::setTraceEventCallback(TraceEventCallback callback)

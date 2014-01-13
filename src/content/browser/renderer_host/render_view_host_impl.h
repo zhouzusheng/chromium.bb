@@ -14,9 +14,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/process_util.h"
+#include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/common/accessibility_node_data.h"
+#include "content/common/accessibility_notification.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/render_view_host.h"
@@ -24,9 +26,9 @@
 #include "content/public/common/window_container_type.h"
 #include "net/base/load_states.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
+#include "third_party/WebKit/public/web/WebPopupType.h"
+#include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "ui/base/window_open_disposition.h"
 
 class SkBitmap;
@@ -51,10 +53,18 @@ class Range;
 struct SelectedFileInfo;
 }
 
+#if defined(OS_ANDROID)
+namespace media {
+class MediaPlayerManager;
+}
+#endif
+
 namespace content {
 
 class ChildProcessSecurityPolicyImpl;
+class PageState;
 class PowerSaveBlocker;
+class RenderFrameHostImpl;
 class RenderViewHostObserver;
 class RenderWidgetHostDelegate;
 class SessionStorageNamespace;
@@ -64,10 +74,6 @@ struct ContextMenuParams;
 struct FileChooserParams;
 struct Referrer;
 struct ShowDesktopNotificationHostMsgParams;
-
-#if defined(OS_ANDROID)
-class MediaPlayerManagerImpl;
-#endif
 
 #if defined(COMPILER_MSVC)
 // RenderViewHostImpl is the bottom of a diamond-shaped hierarchy,
@@ -117,6 +123,7 @@ class CONTENT_EXPORT RenderViewHostImpl
       RenderViewHostDelegate* delegate,
       RenderWidgetHostDelegate* widget_delegate,
       int routing_id,
+      int main_frame_routing_id,
       bool swapped_out,
       SessionStorageNamespace* session_storage_namespace);
   virtual ~RenderViewHostImpl();
@@ -271,6 +278,13 @@ class CONTENT_EXPORT RenderViewHostImpl
   // RenderViewHost.
   void CancelSuspendedNavigations();
 
+  // Whether the initial empty page of this view has been accessed by another
+  // page, making it unsafe to show the pending URL.  Always false after the
+  // first commit.
+  bool has_accessed_initial_document() {
+    return has_accessed_initial_document_;
+  }
+
   // Whether this RenderViewHost has been swapped out to be displayed by a
   // different process.
   bool is_swapped_out() const { return is_swapped_out_; }
@@ -281,14 +295,11 @@ class CONTENT_EXPORT RenderViewHostImpl
   // exits, in case we come back.  The renderer can exit if it has no other
   // active RenderViews, but not until WasSwappedOut is called (when it is no
   // longer visible).
-  //
-  // Please see ViewMsg_SwapOut_Params in view_messages.h for a description
-  // of the parameters.
-  void SwapOut(int new_render_process_host_id, int new_request_id);
+  void SwapOut();
 
-  // Called by ResourceDispatcherHost after the SwapOutACK is received or the
-  // response times out.
-  void OnSwapOutACK(bool timed_out);
+  // Called when either the SwapOut request has been acknowledged or has timed
+  // out.
+  void OnSwappedOut(bool timed_out);
 
   // Called to notify the renderer that it has been visibly swapped out and
   // replaced by another RenderViewHost, after an earlier call to SwapOut.
@@ -301,16 +312,16 @@ class CONTENT_EXPORT RenderViewHostImpl
   // and the user has agreed to continue with closing the page.
   void ClosePageIgnoringUnloadEvents();
 
+  // Returns whether this RenderViewHost has an outstanding cross-site request.
+  // Cleared when we hear the response and start to swap out the old
+  // RenderViewHost, or if we hear a commit here without a network request.
+  bool HasPendingCrossSiteRequest();
+
   // Sets whether this RenderViewHost has an outstanding cross-site request,
   // for which another renderer will need to run an onunload event handler.
   // This is called before the first navigation event for this RenderViewHost,
-  // and again after the corresponding OnCrossSiteResponse.
-  void SetHasPendingCrossSiteRequest(bool has_pending_request, int request_id);
-
-  // Returns the request_id for the pending cross-site request.
-  // This is just needed in case the unload of the current page
-  // hangs, in which case we need to swap to the pending RenderViewHost.
-  int GetPendingRequestId();
+  // and cleared when we hear the response or commit.
+  void SetHasPendingCrossSiteRequest(bool has_pending_request);
 
   // Notifies the RenderView that the JavaScript message that was shown was
   // closed by the user.
@@ -361,6 +372,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   // Creates a new RenderView with the given route id.
   void CreateNewWindow(
       int route_id,
+      int main_frame_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
       SessionStorageNamespace* session_storage_namespace);
 
@@ -378,7 +390,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 #endif
 
 #if defined(OS_ANDROID)
-  MediaPlayerManagerImpl* media_player_manager() {
+  media::MediaPlayerManager* media_player_manager() {
     return media_player_manager_;
   }
 
@@ -395,13 +407,24 @@ class CONTENT_EXPORT RenderViewHostImpl
     is_subframe_ = is_subframe;
   }
 
+  int64 main_frame_id() const {
+    return main_frame_id_;
+  }
+
   // Set the opener to null in the renderer process.
   void DisownOpener();
 
-  void set_save_accessibility_tree_for_testing(bool save) {
-    save_accessibility_tree_for_testing_ = save;
-  }
+  // Turn on accessibility testing. The given callback will be run
+  // every time an accessibility notification is received from the
+  // renderer process, and the accessibility tree it sent can be
+  // retrieved using accessibility_tree_for_testing().
+  void SetAccessibilityCallbackForTesting(
+      const base::Callback<void(AccessibilityNotification)>& callback);
 
+  // Only valid if SetAccessibilityCallbackForTesting was called and
+  // the callback was run at least once. Returns a snapshot of the
+  // accessibility tree received from the renderer as of the last time
+  // a LoadComplete or LayoutComplete accessibility notification was received.
   const AccessibilityNodeDataTreeNode& accessibility_tree_for_testing() {
     return accessibility_tree_;
   }
@@ -414,9 +437,18 @@ class CONTENT_EXPORT RenderViewHostImpl
   void SetAccessibilityOtherCallbackForTesting(
       const base::Closure& callback);
 
-  bool is_waiting_for_unload_ack_for_testing() {
+  bool is_waiting_for_beforeunload_ack() {
+    return is_waiting_for_beforeunload_ack_;
+  }
+
+  bool is_waiting_for_unload_ack() {
     return is_waiting_for_unload_ack_;
   }
+
+  // Returns whether the given URL is allowed to commit in the current process.
+  // This is a more conservative check than FilterURL, since it will be used to
+  // kill processes that commit unauthorized URLs.
+  bool CanCommitURL(const GURL& url);
 
   // Checks that the given renderer can request |url|, if not it sets it to
   // about:blank.
@@ -470,7 +502,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnDidFailProvisionalLoadWithError(
       const ViewHostMsg_DidFailProvisionalLoadWithError_Params& params);
   void OnNavigate(const IPC::Message& msg);
-  void OnUpdateState(int32 page_id, const std::string& state);
+  void OnUpdateState(int32 page_id, const PageState& state);
   void OnUpdateTitle(int32 page_id,
                      const string16& title,
                      WebKit::WebTextDirection title_direction);
@@ -531,6 +563,7 @@ class CONTENT_EXPORT RenderViewHostImpl
       const base::TimeTicks& renderer_before_unload_start_time,
       const base::TimeTicks& renderer_before_unload_end_time);
   void OnClosePageACK();
+  void OnSwapOutACK();
   void OnAccessibilityNotifications(
       const std::vector<AccessibilityHostMsg_NotificationParams>& params);
   void OnScriptEvalResponse(int id, const base::ListValue& result);
@@ -545,6 +578,7 @@ class CONTENT_EXPORT RenderViewHostImpl
       const ShowDesktopNotificationHostMsgParams& params);
   void OnCancelDesktopNotification(int notification_id);
   void OnRunFileChooser(const FileChooserParams& params);
+  void OnDidAccessInitialDocument();
   void OnDomOperationResponse(const std::string& json_string,
                               int automation_id);
   void OnGetWindowSnapshot(const int snapshot_id);
@@ -555,6 +589,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 
  private:
   friend class TestRenderViewHost;
+  FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, BasicRenderFrameHost);
 
   // Sets whether this RenderViewHost is swapped out in favor of another,
   // and clears any waiting state that is no longer relevant.
@@ -562,7 +597,13 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   void ClearPowerSaveBlockers();
 
-  bool CanAccessFilesOfSerializedState(const std::string& state) const;
+  bool CanAccessFilesOfPageState(const PageState& state) const;
+
+  // This is an RenderFrameHost object associated with the top-level frame in
+  // the page rendered by this RenderViewHost.
+  // TODO(nasko): Remove this pointer once we have enough infrastructure to
+  // move this to the top-level FrameTreeNode.
+  scoped_ptr<RenderFrameHostImpl> main_render_frame_host_;
 
   // Our delegate, which wants to know about changes in the RenderView.
   RenderViewHostDelegate* delegate_;
@@ -580,13 +621,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // See BindingsPolicy for details.
   int enabled_bindings_;
 
-  // The request_id for the pending cross-site request. Set to -1 if
-  // there is a pending request, but we have not yet started the unload
-  // for the current page. Set to the request_id value of the pending
-  // request once we have gotten the some data for the pending page
-  // and thus started the unload process.
-  int pending_request_id_;
-
   // Whether we should buffer outgoing Navigate messages rather than sending
   // them.  This will be true when a RenderViewHost is created for a cross-site
   // request, until we hear back from the onbeforeunload handler of the old
@@ -599,6 +633,12 @@ class CONTENT_EXPORT RenderViewHostImpl
   // a new one if a second navigation occurs.
   scoped_ptr<ViewMsg_Navigate_Params> suspended_nav_params_;
 
+  // Whether the initial empty page of this view has been accessed by another
+  // page, making it unsafe to show the pending URL.  Usually false unless
+  // another window tries to modify the blank page.  Always false after the
+  // first commit.
+  bool has_accessed_initial_document_;
+
   // Whether this RenderViewHost is currently swapped out, such that the view is
   // being rendered by another process.
   bool is_swapped_out_;
@@ -606,6 +646,11 @@ class CONTENT_EXPORT RenderViewHostImpl
   // Whether this RenderView is responsible for displaying a subframe in a
   // different process from its parent page.
   bool is_subframe_;
+
+  // The frame id of the main (top level) frame. This value is set on the
+  // initial navigation of a RenderView and reset when the RenderView is
+  // terminated (in RenderViewGone).
+  int64 main_frame_id_;
 
   // If we were asked to RunModal, then this will hold the reply_msg that we
   // must return to the renderer to unblock it.
@@ -640,22 +685,18 @@ class CONTENT_EXPORT RenderViewHostImpl
   // callbacks.
   std::map<int, JavascriptResultCallback> javascript_callbacks_;
 
-  // Accessibility callbacks.
-  base::Closure accessibility_layout_callback_;
-  base::Closure accessibility_load_callback_;
-  base::Closure accessibility_other_callback_;
+  // Accessibility callback for testing.
+  base::Callback<void(AccessibilityNotification)>
+      accessibility_testing_callback_;
+
+  // The most recently received accessibility tree - for testing only.
+  AccessibilityNodeDataTreeNode accessibility_tree_;
 
   // True if the render view can be shut down suddenly.
   bool sudden_termination_allowed_;
 
   // The session storage namespace to be used by the associated render view.
   scoped_refptr<SessionStorageNamespaceImpl> session_storage_namespace_;
-
-  // Whether the accessibility tree should be saved, for unit testing.
-  bool save_accessibility_tree_for_testing_;
-
-  // The most recently received accessibility tree - for unit testing only.
-  AccessibilityNodeDataTreeNode accessibility_tree_;
 
   // The termination status of the last render view that terminated.
   base::TerminationStatus render_view_termination_status_;
@@ -674,7 +715,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 #if defined(OS_ANDROID)
   // Manages all the android mediaplayer objects and handling IPCs for video.
   // This class inherits from RenderViewHostObserver.
-  MediaPlayerManagerImpl* media_player_manager_;
+  media::MediaPlayerManager* media_player_manager_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostImpl);

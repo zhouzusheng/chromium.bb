@@ -11,13 +11,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/gl/gl_share_group.h"
+#include "ui/gl/gl_state_restorer.h"
 #include "ui/gl/gpu_preference.h"
 
 namespace gfx {
 
 class GLSurface;
 class VirtualGLApi;
-class GLStateRestorer;
 
 // Encapsulates an OpenGL context, hiding platform specific management.
 class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
@@ -47,8 +47,11 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
   // Get the underlying platform specific GL context "handle".
   virtual void* GetHandle() = 0;
 
-  // Gets the GLStateRestore for the context.
-  virtual GLStateRestorer* GetGLStateRestorer();
+  // Gets the GLStateRestorer for the context.
+  GLStateRestorer* GetGLStateRestorer();
+
+  // Sets the GLStateRestorer for the context (takes ownership).
+  void SetGLStateRestorer(GLStateRestorer* state_restorer);
 
   // Set swap interval. This context must be current.
   virtual void SetSwapInterval(int interval) = 0;
@@ -85,6 +88,7 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
 
   static bool LosesAllContextsOnContextLost();
 
+  // Returns the last GLContext made current, virtual or real.
   static GLContext* GetCurrent();
 
   virtual bool WasAllocatedUsingRobustnessExtension();
@@ -96,28 +100,48 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
   bool MakeVirtuallyCurrent(GLContext* virtual_context, GLSurface* surface);
 
   // Notify this context that |virtual_context|, that was using us, is
-  // being destroyed.
-  void OnDestroyVirtualContext(GLContext* virtual_context);
+  // being released or destroyed.
+  void OnReleaseVirtuallyCurrent(GLContext* virtual_context);
 
  protected:
   virtual ~GLContext();
 
   // Sets the GL api to the real hardware API (vs the VirtualAPI)
   static void SetRealGLApi();
-  static void SetCurrent(GLContext* context, GLSurface* surface);
+  virtual void SetCurrent(GLSurface* surface);
 
   // Initialize function pointers to extension functions in the GL
   // implementation. Should be called immediately after this context is made
   // current.
   bool InitializeExtensionBindings();
 
+  // Returns the last real (non-virtual) GLContext made current.
+  static GLContext* GetRealCurrent();
+
  private:
   friend class base::RefCounted<GLContext>;
 
+  // For GetRealCurrent.
+  friend class VirtualGLApi;
+
   scoped_refptr<GLShareGroup> share_group_;
   scoped_ptr<VirtualGLApi> virtual_gl_api_;
+  scoped_ptr<GLStateRestorer> state_restorer_;
 
   DISALLOW_COPY_AND_ASSIGN(GLContext);
+};
+
+class GL_EXPORT GLContextReal : public GLContext {
+ public:
+  explicit GLContextReal(GLShareGroup* share_group);
+
+ protected:
+  virtual ~GLContextReal();
+
+  virtual void SetCurrent(GLSurface* surface) OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(GLContextReal);
 };
 
 }  // namespace gfx

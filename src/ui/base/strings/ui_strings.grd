@@ -359,6 +359,12 @@ need to be translated for each locale.-->
       <message name="IDS_APP_RIGHT_ARROW_KEY" desc="Right arrow key">
         Right Arrow
       </message>
+      <message name="IDS_APP_UP_ARROW_KEY" desc="Up arrow key">
+        Up Arrow
+      </message>
+      <message name="IDS_APP_DOWN_ARROW_KEY" desc="Down arrow key">
+        Down Arrow
+      </message>
       <message name="IDS_APP_ENTER_KEY" desc="Enter key">
         Enter
       </message>
@@ -370,6 +376,12 @@ need to be translated for each locale.-->
       </message>
       <message name="IDS_APP_BACKSPACE_KEY" desc="Backspace key">
         Backspace
+      </message>
+      <message name="IDS_APP_COMMA_KEY" desc="Comma key">
+        Comma
+      </message>
+      <message name="IDS_APP_PERIOD_KEY" desc="Period key">
+        Period
       </message>
 
       <!-- Shortcut Modifiers -->
@@ -425,7 +437,7 @@ need to be translated for each locale.-->
       </message>
 
       <!-- Message center -->
-      <message name="IDS_MESSAGE_CENTER_ACCESSIBLE_NAME" desc="The button label to enter quiet mode in one day.">
+      <message name="IDS_MESSAGE_CENTER_ACCESSIBLE_NAME" desc="The accessible name for the Notification Center window.">
         Notification Center
       </message>
       <message name="IDS_MESSAGE_CENTER_EXTENSIONS_DISABLE" desc="The menu entry for disabling extensions from a notification.">
@@ -440,6 +452,9 @@ need to be translated for each locale.-->
       <message name="IDS_MESSAGE_CENTER_SETTINGS_BUTTON_LABEL" desc="The button label for visiting the appropriate settings page in the footer of the message center.">
         Settings
       </message>
+      <message name="IDS_MESSAGE_CENTER_SETTINGS_GO_BACK_BUTTON_TOOLTIP" desc="The tooltip on back button that returns from settings to the notification list.">
+        Go back to notifications
+      </message>
       <message name="IDS_MESSAGE_CENTER_SETTINGS_DIALOG_DESCRIPTION" desc="The label to describe the settings dialog.">
         Allow notifications from the following:
       </message>
@@ -449,17 +464,33 @@ need to be translated for each locale.-->
       <message name="IDS_MESSAGE_CENTER_CLEAR_ALL" desc="The button for clearing all notifications.">
         Clear All
       </message>
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_MESSAGE_CENTER_QUIET_MODE_BUTTON_TOOLTIP" desc="The tooltip text for the do not disturb button.">
+          Do not disturb
+        </message>
+      </if>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_MESSAGE_CENTER_QUIET_MODE_BUTTON_TOOLTIP" desc="In Title Case: The tooltip text for the do not disturb button.">
+          Do Not Disturb
+        </message>
+      </if>
       <message name="IDS_MESSAGE_CENTER_NO_MESSAGES" desc="The message displayed in the message center when there are no notifications.">
         Nothing to see here, move along.
       </message>
-      <message name="IDS_MESSAGE_CENTER_QUIET_MODE" desc="The button label for quiet mode.">
-        Quiet mode
+      <message name="IDS_MESSAGE_CENTER_QUIET_MODE" desc="The button label for do not disturb mode.">
+        Do not disturb
       </message>
-      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_1HOUR" desc="The button label to enter quiet mode in one hour.">
-        Quiet mode for one hour
+      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_1HOUR" desc="The button label to enter do not disturb mode in one hour.">
+        Do not disturb for one hour
       </message>
-      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_1DAY" desc="The button label to enter quiet mode in one day.">
-        Quiet mode for one day
+      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_1DAY" desc="The button label to enter do not disturb mode in one day.">
+        Do not disturb for one day
+      </message>
+      <message name="IDS_MESSAGE_CENTER_CLOSE_NOTIFICATION_BUTTON_ACCESSIBLE_NAME" desc="The spoken feedback text for the close button in a notification. Usually 'button' is suffixed to this text automatically.">
+	Notification close
+      </message>
+      <message name="IDS_MESSAGE_CENTER_EXPAND_NOTIFICATION_BUTTON_ACCESSIBLE_NAME" desc="The spoken feedback text for the expand button in a notification. Usually 'button' is suffixed to this text automatically.">
+	Notification expand
       </message>
       <message name="IDS_MESSAGE_CENTER_TOOLTIP" desc="Tooltip for notification tray icon without unread notifications">
         <ph name="product">$1<ex>Chrome</ex></ph> - Notifications
@@ -472,6 +503,9 @@ need to be translated for each locale.-->
       </message>
 
       <!-- App list -->
+      <message name="IDS_APP_LIST_HELP" desc="The menu entry to show the app list help UI.">
+        Help
+      </message>
       <message name="IDS_APP_LIST_OPEN_SETTINGS" desc="The menu entry to show the settings UI.">
         Settings
       </message>

@@ -18,11 +18,11 @@
 #include "content/common/content_export.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/renderer/media/media_stream_dispatcher_eventhandler.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStream.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebUserMediaClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebUserMediaRequest.h"
+#include "third_party/WebKit/public/platform/WebMediaStream.h"
+#include "third_party/WebKit/public/web/WebUserMediaClient.h"
+#include "third_party/WebKit/public/web/WebUserMediaRequest.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
-#include "webkit/media/media_stream_client.h"
+#include "webkit/renderer/media/media_stream_client.h"
 
 namespace webkit_media {
 class MediaStreamAudioRenderer;
@@ -62,10 +62,7 @@ class CONTENT_EXPORT MediaStreamImpl
 
   // WebKit::WebUserMediaClient implementation
   virtual void requestUserMedia(
-      const WebKit::WebUserMediaRequest& user_media_request,
-      const WebKit::WebVector<WebKit::WebMediaStreamSource>& audio_sources,
-      const WebKit::WebVector<WebKit::WebMediaStreamSource>& video_sources)
-      OVERRIDE;
+      const WebKit::WebUserMediaRequest& user_media_request) OVERRIDE;
   virtual void cancelUserMediaRequest(
       const WebKit::WebUserMediaRequest& user_media_request) OVERRIDE;
 

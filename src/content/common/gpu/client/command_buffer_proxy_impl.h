@@ -13,17 +13,17 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "cc/debug/latency_info.h"
 #include "content/common/gpu/gpu_memory_allocation.h"
 #include "content/common/gpu/gpu_memory_allocation.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
 #include "ipc/ipc_listener.h"
 #include "media/video/video_decode_accelerator.h"
+#include "ui/base/latency_info.h"
 
 struct GPUCommandBufferConsoleMessage;
 
@@ -77,8 +77,7 @@ class CommandBufferProxyImpl
   // CommandBufferProxy implementation:
   virtual int GetRouteID() const OVERRIDE;
   virtual bool Echo(const base::Closure& callback) OVERRIDE;
-  virtual bool SetParent(CommandBufferProxy* parent_command_buffer,
-                         uint32 parent_texture_id) OVERRIDE;
+  virtual bool ProduceFrontBuffer(const gpu::Mailbox& mailbox) OVERRIDE;
   virtual void SetChannelErrorCallback(const base::Closure& callback) OVERRIDE;
 
   // CommandBuffer implementation:
@@ -127,7 +126,7 @@ class CommandBufferProxyImpl
   void SetOnConsoleMessageCallback(
       const GpuConsoleMessageCallback& callback);
 
-  void SetLatencyInfo(const cc::LatencyInfo& latency_info);
+  void SetLatencyInfo(const ui::LatencyInfo& latency_info);
 
   // TODO(apatrick): this is a temporary optimization while skia is calling
   // ContentGLContext::MakeCurrent prior to every GL call. It saves returning 6

@@ -32,16 +32,19 @@
 #include "bindings/v8/V8Binding.h"
 
 #include "V8DOMStringList.h"
-#include "V8DOMWindow.h"
 #include "V8Element.h"
+#include "V8Window.h"
 #include "V8WorkerContext.h"
 #include "V8XPathNSResolver.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8NodeFilterCondition.h"
 #include "bindings/v8/V8ObjectConstructor.h"
+#include "bindings/v8/V8WindowShell.h"
 #include "bindings/v8/WorkerScriptController.h"
+#include "bindings/v8/custom/V8CustomXPathNSResolver.h"
 #include "core/dom/DOMStringList.h"
 #include "core/dom/Element.h"
+#include "core/dom/NodeFilter.h"
 #include "core/dom/QualifiedName.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/inspector/BindingVisitors.h"
@@ -73,7 +76,7 @@ v8::Handle<v8::Value> throwError(V8ErrorType errorType, const char* message, v8:
     return V8ThrowException::throwError(errorType, message, isolate);
 }
 
-v8::Handle<v8::Value> throwError(v8::Local<v8::Value> exception, v8::Isolate* isolate)
+v8::Handle<v8::Value> throwError(v8::Handle<v8::Value> exception, v8::Isolate* isolate)
 {
     return V8ThrowException::throwError(exception, isolate);
 }
@@ -94,11 +97,11 @@ v8::Handle<v8::Value> v8Array(PassRefPtr<DOMStringList> stringList, v8::Isolate*
         return v8::Array::New();
     v8::Local<v8::Array> result = v8::Array::New(stringList->length());
     for (unsigned i = 0; i < stringList->length(); ++i)
-        result->Set(v8Integer(i, isolate), v8String(stringList->item(i), isolate));
+        result->Set(v8::Integer::New(i, isolate), v8String(stringList->item(i), isolate));
     return result;
 }
 
-Vector<v8::Handle<v8::Value> > toVectorOfArguments(const v8::Arguments& args)
+Vector<v8::Handle<v8::Value> > toVectorOfArguments(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     Vector<v8::Handle<v8::Value> > result;
     size_t length = args.Length();
@@ -112,6 +115,9 @@ PassRefPtr<NodeFilter> toNodeFilter(v8::Handle<v8::Value> callback)
     return NodeFilter::create(V8NodeFilterCondition::create(callback));
 }
 
+static const int8_t kMaxInt8 = 127;
+static const int8_t kMinInt8 = -128;
+static const uint8_t kMaxUInt8 = 255;
 const int32_t kMaxInt32 = 0x7fffffff;
 const int32_t kMinInt32 = -kMaxInt32 - 1;
 const uint32_t kMaxUInt32 = 0xffffffff;
@@ -129,6 +135,79 @@ static double enforceRange(double x, double minimum, double maximum, bool& ok)
         return 0;
     }
     return x;
+}
+
+int8_t toInt8(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+{
+    ok = true;
+
+    // Fast case. The value is already a 32-bit integer in the right range.
+    if (value->IsInt32()) {
+        int32_t result = value->Int32Value();
+        if (result >= kMinInt8 && result <= kMaxInt8)
+            return static_cast<int8_t>(result);
+        if (configuration == EnforceRange) {
+            ok = false;
+            return 0;
+        }
+        result %= 256; // 2^8.
+        return static_cast<int8_t>(result > kMaxInt8 ? result - 256 : result);
+    }
+
+    // Can the value be converted to a number?
+    v8::Local<v8::Number> numberObject = value->ToNumber();
+    if (numberObject.IsEmpty()) {
+        ok = false;
+        return 0;
+    }
+
+    if (configuration == EnforceRange)
+        return enforceRange(numberObject->Value(), kMinInt8, kMaxInt8, ok);
+
+    double numberValue = numberObject->Value();
+    if (std::isnan(numberValue) || std::isinf(numberValue) || !numberValue)
+        return 0;
+
+    numberValue = numberValue < 0 ? -floor(abs(numberValue)) : floor(abs(numberValue));
+    numberValue = fmod(numberValue, 256); // 2^8.
+
+    return static_cast<int8_t>(numberValue > kMaxInt8 ? numberValue - 256 : numberValue);
+}
+
+uint8_t toUInt8(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+{
+    ok = true;
+
+    // Fast case. The value is a 32-bit signed integer - possibly positive?
+    if (value->IsInt32()) {
+        int32_t result = value->Int32Value();
+        if (result >= 0 && result <= kMaxUInt8)
+            return static_cast<uint8_t>(result);
+        if (configuration == EnforceRange) {
+            ok = false;
+            return 0;
+        }
+        // Converting to uint8_t will cause the resulting value to be the value modulo 2^8.
+        return static_cast<uint8_t>(result);
+    }
+
+    // Can the value be converted to a number?
+    v8::Local<v8::Number> numberObject = value->ToNumber();
+    if (numberObject.IsEmpty()) {
+        ok = false;
+        return 0;
+    }
+
+    if (configuration == EnforceRange)
+        return enforceRange(numberObject->Value(), 0, kMaxUInt8, ok);
+
+    // Does the value convert to nan or to an infinity?
+    double numberValue = numberObject->Value();
+    if (std::isnan(numberValue) || std::isinf(numberValue) || !numberValue)
+        return 0;
+
+    numberValue = numberValue < 0 ? -floor(abs(numberValue)) : floor(abs(numberValue));
+    return static_cast<uint8_t>(fmod(numberValue, 256)); // 2^8.
 }
 
 int32_t toInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
@@ -257,11 +336,11 @@ uint64_t toUInt64(v8::Handle<v8::Value> value, IntegerConversionConfiguration co
     return integer;
 }
 
-v8::Persistent<v8::FunctionTemplate> createRawTemplate(v8::Isolate* isolate)
+v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate* isolate)
 {
-    v8::HandleScope scope;
+    v8::HandleScope scope(isolate);
     v8::Local<v8::FunctionTemplate> result = v8::FunctionTemplate::New(V8ObjectConstructor::isValidConstructorMode);
-    return v8::Persistent<v8::FunctionTemplate>::New(isolate, result);
+    return scope.Close(result);
 }        
 
 PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value> value, v8::Isolate* isolate)
@@ -279,7 +358,7 @@ PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value> value, v8::Isola
     RefPtr<DOMStringList> ret = DOMStringList::create();
     v8::Local<v8::Array> v8Array = v8::Local<v8::Array>::Cast(v8Value);
     for (size_t i = 0; i < v8Array->Length(); ++i) {
-        v8::Local<v8::Value> indexedValue = v8Array->Get(v8Integer(i, isolate));
+        v8::Local<v8::Value> indexedValue = v8Array->Get(v8::Integer::New(i, isolate));
         ret->append(toWebCoreString(indexedValue));
     }
     return ret.release();
@@ -304,28 +383,50 @@ DOMWindow* toDOMWindow(v8::Handle<v8::Context> context)
 {
     v8::Handle<v8::Object> global = context->Global();
     ASSERT(!global.IsEmpty());
-    v8::Handle<v8::Object> window = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), MainWorld));
+    v8::Handle<v8::Object> window = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), MainWorld));
     if (!window.IsEmpty())
-        return V8DOMWindow::toNative(window);
-    window = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), IsolatedWorld));
+        return V8Window::toNative(window);
+    window = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), IsolatedWorld));
     ASSERT(!window.IsEmpty());
-    return V8DOMWindow::toNative(window);
+    return V8Window::toNative(window);
 }
 
 ScriptExecutionContext* toScriptExecutionContext(v8::Handle<v8::Context> context)
 {
     v8::Handle<v8::Object> global = context->Global();
-    v8::Handle<v8::Object> windowWrapper = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), MainWorld));
+    v8::Handle<v8::Object> windowWrapper = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), MainWorld));
     if (!windowWrapper.IsEmpty())
-        return V8DOMWindow::toNative(windowWrapper)->scriptExecutionContext();
-    windowWrapper = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(context->GetIsolate(), IsolatedWorld));
+        return V8Window::toNative(windowWrapper)->scriptExecutionContext();
+    windowWrapper = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), IsolatedWorld));
     if (!windowWrapper.IsEmpty())
-        return V8DOMWindow::toNative(windowWrapper)->scriptExecutionContext();
+        return V8Window::toNative(windowWrapper)->scriptExecutionContext();
     v8::Handle<v8::Object> workerWrapper = global->FindInstanceInPrototypeChain(V8WorkerContext::GetTemplate(context->GetIsolate(), WorkerWorld));
     if (!workerWrapper.IsEmpty())
         return V8WorkerContext::toNative(workerWrapper)->scriptExecutionContext();
     // FIXME: Is this line of code reachable?
     return 0;
+}
+
+DOMWindow* activeDOMWindow()
+{
+    v8::Handle<v8::Context> context = v8::Context::GetCalling();
+    if (context.IsEmpty()) {
+        // Unfortunately, when processing script from a plug-in, we might not
+        // have a calling context. In those cases, we fall back to the
+        // entered context.
+        context = v8::Context::GetEntered();
+    }
+    return toDOMWindow(context);
+}
+
+DOMWindow* firstDOMWindow()
+{
+    return toDOMWindow(v8::Context::GetEntered());
+}
+
+Document* currentDocument()
+{
+    return toDOMWindow(v8::Context::GetCurrent())->document();
 }
 
 Frame* toFrameIfNotDetached(v8::Handle<v8::Context> context)
@@ -406,6 +507,17 @@ WrapperWorldType worldTypeInMainThread(v8::Isolate* isolate)
     if (isolatedWorld)
         return IsolatedWorld;
     return MainWorld;
+}
+
+DOMWrapperWorld* isolatedWorldForIsolate(v8::Isolate* isolate)
+{
+    V8PerIsolateData* data = V8PerIsolateData::from(isolate);
+    if (data->workerDOMDataStore())
+        return 0;
+    if (!DOMWrapperWorld::isolatedWorldsExist())
+        return 0;
+    ASSERT(!v8::Context::GetEntered().IsEmpty());
+    return DOMWrapperWorld::isolatedWorld(v8::Context::GetEntered());
 }
 
 } // namespace WebCore

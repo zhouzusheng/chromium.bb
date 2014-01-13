@@ -21,8 +21,7 @@
 #ifndef SVGUseElement_h
 #define SVGUseElement_h
 
-#if ENABLE(SVG)
-#include "core/loader/cache/CachedSVGDocument.h"
+#include "core/loader/cache/CachedDocument.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
@@ -33,7 +32,7 @@
 
 namespace WebCore {
 
-class CachedSVGDocument;
+class CachedDocument;
 class SVGElementInstance;
 
 class SVGUseElement FINAL : public SVGStyledTransformableElement,
@@ -41,7 +40,7 @@ class SVGUseElement FINAL : public SVGStyledTransformableElement,
                             public SVGLangSpace,
                             public SVGExternalResourcesRequired,
                             public SVGURIReference,
-                            public CachedSVGDocumentClient {
+                            public CachedDocumentClient {
 public:
     static PassRefPtr<SVGUseElement> create(const QualifiedName&, Document*, bool wasInsertedByParser);
     virtual ~SVGUseElement();
@@ -70,7 +69,7 @@ private:
 
     virtual void willRecalcStyle(StyleChange) OVERRIDE;
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual void toClipPath(Path&);
 
     void clearResourceReferences();
@@ -113,7 +112,7 @@ private:
     bool instanceTreeIsLoading(SVGElementInstance*);
     virtual void notifyFinished(CachedResource*);
     Document* referencedDocument() const;
-    void setCachedDocument(CachedResourceHandle<CachedSVGDocument>);
+    void setCachedDocument(CachedResourceHandle<CachedDocument>);
 
     // SVGTests
     virtual void synchronizeRequiredFeatures() { SVGTests::synchronizeRequiredFeatures(this); }
@@ -130,11 +129,10 @@ private:
     bool m_haveFiredLoadEvent;
     bool m_needsShadowTreeRecreation;
     RefPtr<SVGElementInstance> m_targetElementInstance;
-    CachedResourceHandle<CachedSVGDocument> m_cachedDocument;
+    CachedResourceHandle<CachedDocument> m_cachedDocument;
     Timer<SVGElement> m_svgLoadEventTimer;
 };
 
 }
 
-#endif
 #endif

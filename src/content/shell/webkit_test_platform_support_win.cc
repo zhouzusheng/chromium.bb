@@ -13,7 +13,7 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 
 #define SIZEOF_STRUCT_WITH_SPECIFIED_LAST_MEMBER(struct_name, member) \
     offsetof(struct_name, member) + \
@@ -54,7 +54,9 @@ bool SetupFonts() {
   return true;
 }
 
-bool CheckLayoutTestSystemDependencies() {
+}  // namespace
+
+bool CheckLayoutSystemDeps() {
   std::list<std::string> errors;
 
   // This metric will be 17 when font size is "Normal".
@@ -103,10 +105,8 @@ bool CheckLayoutTestSystemDependencies() {
   return errors.empty();
 }
 
-}  // namespace
-
 bool WebKitTestPlatformInitialize() {
-  return CheckLayoutTestSystemDependencies() && SetupFonts();
+  return SetupFonts();
 }
 
 }  // namespace content

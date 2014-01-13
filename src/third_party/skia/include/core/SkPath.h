@@ -246,16 +246,6 @@ public:
     */
     bool isRect(SkRect* rect) const;
 
-    /** Returns true if the path specifies a pair of nested rectangles. If so, and if
-        rect is not null, set rect[0] to the outer rectangle and rect[1] to the inner
-        rectangle. If the path does not specify a pair of nested rectangles, return
-        false and ignore rect.
-
-        @param rect If not null, returns the path as a pair of nested rectangles
-        @return true if the path describes a pair of nested rectangles
-    */
-    bool isNestedRects(SkRect rect[2]) const;
-
     /** Return the number of points in the path
      */
     int countPoints() const;
@@ -423,6 +413,14 @@ public:
     */
     void rQuadTo(SkScalar dx1, SkScalar dy1, SkScalar dx2, SkScalar dy2);
 
+    void conicTo(SkScalar x1, SkScalar y1, SkScalar x2, SkScalar y2,
+                 SkScalar w);
+    void conicTo(const SkPoint& p1, const SkPoint& p2, SkScalar w) {
+        this->conicTo(p1.fX, p1.fY, p2.fX, p2.fY, w);
+    }
+    void rConicTo(SkScalar dx1, SkScalar dy1, SkScalar dx2, SkScalar dy2,
+                  SkScalar w);
+
     /** Add a cubic bezier from the last point, approaching control points
         (x1,y1) and (x2,y2), and ending at (x3,y3). If no moveTo() call has been
         made for this contour, the first point is automatically set to (0,0).
@@ -585,6 +583,19 @@ public:
         @return true if the path specifies a rectangle
     */
     bool isRect(bool* isClosed, Direction* direction) const;
+
+    /** Returns true if the path specifies a pair of nested rectangles. If so, and if
+        rect is not null, set rect[0] to the outer rectangle and rect[1] to the inner
+        rectangle. If so, and dirs is not null, set dirs[0] to the direction of
+        the outer rectangle and dirs[1] to the direction of the inner rectangle. If
+        the path does not specify a pair of nested rectangles, return
+        false and ignore rect and dirs.
+
+        @param rect If not null, returns the path as a pair of nested rectangles
+        @param dirs If not null, returns the direction of the rects
+        @return true if the path describes a pair of nested rectangles
+    */
+    bool isNestedRects(SkRect rect[2], Direction dirs[2] = NULL) const;
 
     /**
      *  Add a closed rectangle contour to the path
@@ -776,7 +787,8 @@ public:
     enum SegmentMask {
         kLine_SegmentMask   = 1 << 0,
         kQuad_SegmentMask   = 1 << 1,
-        kCubic_SegmentMask  = 1 << 2
+        kConic_SegmentMask  = 1 << 2,
+        kCubic_SegmentMask  = 1 << 3,
     };
 
     /**
@@ -790,9 +802,10 @@ public:
         kMove_Verb,     //!< iter.next returns 1 point
         kLine_Verb,     //!< iter.next returns 2 points
         kQuad_Verb,     //!< iter.next returns 3 points
+        kConic_Verb,    //!< iter.next returns 3 points + iter.conicWeight()
         kCubic_Verb,    //!< iter.next returns 4 points
         kClose_Verb,    //!< iter.next returns 1 point (contour's moveTo pt)
-        kDone_Verb      //!< iter.next returns 0 points
+        kDone_Verb,     //!< iter.next returns 0 points
     };
 
     /** Iterate through all of the segments (lines, quadratics, cubics) of
@@ -826,6 +839,12 @@ public:
             return this->doNext(pts);
         }
 
+        /**
+         *  Return the weight for the current conic. Only valid if the current
+         *  segment return by next() was a conic.
+         */
+        SkScalar conicWeight() const { return *fConicWeights; }
+
         /** If next() returns kLine_Verb, then this query returns true if the
             line was the result of a close() command (i.e. the end point is the
             initial moveto for this contour). If next() returned a different
@@ -845,6 +864,7 @@ public:
         const SkPoint*  fPts;
         const uint8_t*  fVerbs;
         const uint8_t*  fVerbStop;
+        const SkScalar* fConicWeights;
         SkPoint         fMoveTo;
         SkPoint         fLastPt;
         SkBool8         fForceClose;
@@ -876,10 +896,13 @@ public:
         */
         Verb next(SkPoint pts[4]);
 
+        SkScalar conicWeight() const { return *fConicWeights; }
+
     private:
         const SkPoint*  fPts;
         const uint8_t*  fVerbs;
         const uint8_t*  fVerbStop;
+        const SkScalar* fConicWeights;
         SkPoint         fMoveTo;
         SkPoint         fLastPt;
     };
@@ -919,7 +942,7 @@ private:
         kIsOval_SerializationShift = 24,    // requires 1 bit
         kConvexity_SerializationShift = 16, // requires 2 bits
         kFillType_SerializationShift = 8,   // requires 2 bits
-        kSegmentMask_SerializationShift = 0 // requires 3 bits
+        kSegmentMask_SerializationShift = 0 // requires 4 bits
     };
 
 #if SK_DEBUG_PATH_REF

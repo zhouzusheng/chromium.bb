@@ -20,12 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGForeignObjectElement.h"
 
-#include "CSSPropertyNames.h"
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/rendering/svg/RenderSVGForeignObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
@@ -83,7 +80,7 @@ bool SVGForeignObjectElement::isSupportedAttribute(const QualifiedName& attrName
         supportedAttributes.add(SVGNames::widthAttr);
         supportedAttributes.add(SVGNames::heightAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGForeignObjectElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -133,9 +130,9 @@ void SVGForeignObjectElement::svgAttributeChanged(const QualifiedName& attrName)
         RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
 }
 
-RenderObject* SVGForeignObjectElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGForeignObjectElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGForeignObject(this);
+    return new (document()->renderArena()) RenderSVGForeignObject(this);
 }
 
 bool SVGForeignObjectElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
@@ -175,5 +172,3 @@ bool SVGForeignObjectElement::selfHasRelativeLengths() const
 }
 
 }
-
-#endif

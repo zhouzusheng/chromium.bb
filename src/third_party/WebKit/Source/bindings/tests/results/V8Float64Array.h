@@ -25,27 +25,24 @@
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/WrapperTypeInfo.h"
-#include <v8.h>
-#include <wtf/Float64Array.h>
-#include <wtf/HashMap.h>
-#include <wtf/text/StringHash.h>
+#include "wtf/Float64Array.h"
 
 namespace WebCore {
 
 class V8Float64Array {
 public:
-    static const bool hasDependentLifetime = V8ArrayBufferView::hasDependentLifetime;
     static bool HasInstance(v8::Handle<v8::Value>, v8::Isolate*, WrapperWorldType);
     static bool HasInstanceInAnyWorld(v8::Handle<v8::Value>, v8::Isolate*);
-    static v8::Persistent<v8::FunctionTemplate> GetTemplate(v8::Isolate*, WrapperWorldType);
+    static v8::Handle<v8::FunctionTemplate> GetTemplate(v8::Isolate*, WrapperWorldType);
     static Float64Array* toNative(v8::Handle<v8::Object> object)
     {
         return reinterpret_cast<Float64Array*>(object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
     }
     static void derefObject(void*);
     static WrapperTypeInfo info;
-    static v8::Handle<v8::Value> constructorCallback(const v8::Arguments&);
-    static v8::Handle<v8::Value> indexedPropertySetter(uint32_t, v8::Local<v8::Value>, const v8::AccessorInfo&);
+    static void constructorCallback(const v8::FunctionCallbackInfo<v8::Value>&);
+    static void indexedPropertyGetterCustom(uint32_t, const v8::PropertyCallbackInfo<v8::Value>&);
+    static void indexedPropertySetterCustom(uint32_t, v8::Local<v8::Value>, const v8::PropertyCallbackInfo<v8::Value>&);
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 0;
     static void installPerContextProperties(v8::Handle<v8::Object>, Float64Array*, v8::Isolate*) { }
     static void installPerContextPrototypeProperties(v8::Handle<v8::Object>, v8::Isolate*) { }

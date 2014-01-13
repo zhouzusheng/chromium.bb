@@ -21,14 +21,11 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFESpecularLightingElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/rendering/style/RenderStyle.h"
-#include "core/svg/SVGColor.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGFELightElement.h"
 #include "core/svg/SVGParserUtilities.h"
@@ -92,7 +89,7 @@ bool SVGFESpecularLightingElement::isSupportedAttribute(const QualifiedName& att
         supportedAttributes.add(SVGNames::surfaceScaleAttr);
         supportedAttributes.add(SVGNames::kernelUnitLengthAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFESpecularLightingElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -240,5 +237,3 @@ PassRefPtr<FilterEffect> SVGFESpecularLightingElement::build(SVGFilterBuilder* f
 }
 
 }
-
-#endif // ENABLE(SVG)

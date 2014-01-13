@@ -26,10 +26,9 @@
 #include "config.h"
 #include "bindings/v8/V8Initializer.h"
 
-#include "V8DOMWindow.h"
 #include "V8History.h"
 #include "V8Location.h"
-#include "bindings/v8/BindingState.h"
+#include "V8Window.h"
 #include "bindings/v8/ScriptCallStackFactory.h"
 #include "bindings/v8/ScriptProfiler.h"
 #include "bindings/v8/V8Binding.h"
@@ -50,11 +49,11 @@ static Frame* findFrame(v8::Local<v8::Object> host, v8::Local<v8::Value> data, v
 {
     WrapperTypeInfo* type = WrapperTypeInfo::unwrap(data);
 
-    if (V8DOMWindow::info.equals(type)) {
-        v8::Handle<v8::Object> windowWrapper = host->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(isolate, worldTypeInMainThread(isolate)));
+    if (V8Window::info.equals(type)) {
+        v8::Handle<v8::Object> windowWrapper = host->FindInstanceInPrototypeChain(V8Window::GetTemplate(isolate, worldTypeInMainThread(isolate)));
         if (windowWrapper.IsEmpty())
             return 0;
-        return V8DOMWindow::toNative(windowWrapper)->frame();
+        return V8Window::toNative(windowWrapper)->frame();
     }
 
     if (V8History::info.equals(type))
@@ -77,7 +76,7 @@ static void reportFatalErrorInMainThread(const char* location, const char* messa
 
 static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Handle<v8::Value> data)
 {
-    DOMWindow* firstWindow = firstDOMWindow(BindingState::instance());
+    DOMWindow* firstWindow = firstDOMWindow();
     if (!firstWindow->isCurrentlyDisplayedInFrame())
         return;
 
@@ -101,7 +100,7 @@ static void failedAccessCheckCallbackInMainThread(v8::Local<v8::Object> host, v8
     if (!target)
         return;
     DOMWindow* targetWindow = target->document()->domWindow();
-    targetWindow->printErrorMessage(targetWindow->crossDomainAccessErrorMessage(activeDOMWindow(BindingState::instance())));
+    targetWindow->printErrorMessage(targetWindow->crossDomainAccessErrorMessage(activeDOMWindow()));
 }
 
 static void initializeV8Common()

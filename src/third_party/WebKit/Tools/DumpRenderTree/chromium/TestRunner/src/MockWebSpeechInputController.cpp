@@ -23,13 +23,12 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "MockWebSpeechInputController.h"
 
 #include "WebSpeechInputListener.h"
 #include "WebTestDelegate.h"
-#include <public/WebCString.h>
-#include <public/WebVector.h>
+#include "public/platform/WebCString.h"
+#include "public/platform/WebVector.h"
 
 #if ENABLE_INPUT_SPEECH
 
@@ -195,7 +194,6 @@ void MockWebSpeechInputController::SpeechTask::stop()
 {
     m_object->m_speechTask = 0;
     cancel();
-    delete this;
 }
 
 void MockWebSpeechInputController::SpeechTask::runIfValid()

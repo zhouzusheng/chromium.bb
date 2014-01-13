@@ -29,12 +29,11 @@
 #include "core/css/CSSFontFaceRule.h"
 #include "core/css/CSSFontFaceSource.h"
 #include "core/platform/graphics/FontTraitsMask.h"
-#include <wtf/Forward.h>
-#include <wtf/HashSet.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/unicode/Unicode.h>
-#include <wtf/Vector.h>
+#include "wtf/Forward.h"
+#include "wtf/HashSet.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -99,6 +98,7 @@ private:
     {
         UNUSED_PARAM(rule);
     }
+    void setLoadState(LoadState);
 
     FontTraitsMask m_traitsMask;
     Vector<UnicodeRange> m_ranges;
@@ -108,7 +108,6 @@ private:
     bool m_isLocalFallback;
     LoadState m_loadState;
     RefPtr<CSSFontFaceRule> m_rule;
-    void notifyFontLoader(LoadState);
 };
 
 }

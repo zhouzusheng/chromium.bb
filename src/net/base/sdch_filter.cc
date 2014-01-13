@@ -8,7 +8,6 @@
 #include <ctype.h>
 #include <algorithm>
 
-#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "net/base/sdch_manager.h"
@@ -20,7 +19,6 @@ namespace net {
 SdchFilter::SdchFilter(const FilterContext& filter_context)
     : filter_context_(filter_context),
       decoding_status_(DECODING_UNINITIALIZED),
-      vcdiff_streaming_decoder_(NULL),
       dictionary_hash_(),
       dictionary_hash_is_plausible_(false),
       dictionary_(NULL),

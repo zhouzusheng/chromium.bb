@@ -21,7 +21,6 @@
 #ifndef SVGPathElement_h
 #define SVGPathElement_h
 
-#if ENABLE(SVG)
 #include "SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedNumber.h"
@@ -127,7 +126,7 @@ private:
     virtual void synchronizeRequiredExtensions() { SVGTests::synchronizeRequiredExtensions(this); }
     virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
 
-    RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    RenderObject* createRenderer(RenderStyle*);
 
     virtual Node::InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -148,5 +147,4 @@ inline SVGPathElement* toSVGPathElement(SVGElement* element)
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

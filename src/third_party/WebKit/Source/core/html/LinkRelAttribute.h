@@ -48,16 +48,17 @@ public:
     bool isLinkPrefetch() const { return m_isLinkPrefetch; }
     bool isLinkSubresource() const { return m_isLinkSubresource; }
     bool isLinkPrerender() const { return m_isLinkPrerender; }
+    bool isImport() const { return m_isImport; }
 
 private:
-    bool m_isStyleSheet;
     IconType m_iconType;
-    bool m_isAlternate;
-    bool m_isDNSPrefetch;
-    bool m_isLinkPrefetch;
-    bool m_isLinkSubresource;
-    bool m_isLinkPrerender;
-
+    bool m_isStyleSheet : 1;
+    bool m_isAlternate : 1;
+    bool m_isDNSPrefetch : 1;
+    bool m_isLinkPrefetch : 1;
+    bool m_isLinkSubresource : 1;
+    bool m_isLinkPrerender : 1;
+    bool m_isImport : 1;
 };
     
 }

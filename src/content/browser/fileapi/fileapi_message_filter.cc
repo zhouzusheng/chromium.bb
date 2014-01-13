@@ -11,6 +11,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
+#include "base/sequenced_task_runner.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -24,18 +25,19 @@
 #include "net/base/mime_util.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "webkit/blob/blob_data.h"
-#include "webkit/blob/blob_storage_controller.h"
-#include "webkit/blob/shareable_file_reference.h"
-#include "webkit/fileapi/file_observers.h"
-#include "webkit/fileapi/file_permission_policy.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_types.h"
-#include "webkit/fileapi/file_system_util.h"
-#include "webkit/fileapi/isolated_context.h"
-#include "webkit/fileapi/local_file_system_operation.h"
-#include "webkit/fileapi/sandbox_mount_point_provider.h"
-#include "webkit/quota/quota_manager.h"
+#include "webkit/browser/blob/blob_storage_controller.h"
+#include "webkit/browser/fileapi/file_observers.h"
+#include "webkit/browser/fileapi/file_permission_policy.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_task_runners.h"
+#include "webkit/browser/fileapi/isolated_context.h"
+#include "webkit/browser/fileapi/local_file_system_operation.h"
+#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/common/blob/blob_data.h"
+#include "webkit/common/blob/shareable_file_reference.h"
+#include "webkit/common/fileapi/directory_entry.h"
+#include "webkit/common/fileapi/file_system_types.h"
+#include "webkit/common/fileapi/file_system_util.h"
 
 using fileapi::FileSystemFileUtil;
 using fileapi::FileSystemMountPointProvider;
@@ -69,7 +71,7 @@ FileAPIMessageFilter::FileAPIMessageFilter(
       request_context_(NULL),
       blob_storage_context_(blob_storage_context) {
   DCHECK(context_);
-  DCHECK(request_context_getter_);
+  DCHECK(request_context_getter_.get());
   DCHECK(blob_storage_context);
 }
 
@@ -90,7 +92,7 @@ FileAPIMessageFilter::FileAPIMessageFilter(
 void FileAPIMessageFilter::OnChannelConnected(int32 peer_pid) {
   BrowserMessageFilter::OnChannelConnected(peer_pid);
 
-  if (request_context_getter_) {
+  if (request_context_getter_.get()) {
     DCHECK(!request_context_);
     request_context_ = request_context_getter_->GetURLRequestContext();
     request_context_getter_ = NULL;
@@ -123,13 +125,15 @@ void FileAPIMessageFilter::OnChannelClosing() {
   }
 
   on_close_callbacks_.Clear();
+  operation_runner()->Shutdown();
+  operations_.clear();
 }
 
-void FileAPIMessageFilter::OverrideThreadForMessage(
-    const IPC::Message& message,
-    BrowserThread::ID* thread) {
+base::TaskRunner* FileAPIMessageFilter::OverrideTaskRunnerForMessage(
+    const IPC::Message& message) {
   if (message.type() == FileSystemHostMsg_SyncGetPlatformPath::ID)
-    *thread = BrowserThread::FILE;
+    return context_->task_runners()->file_task_runner();
+  return NULL;
 }
 
 bool FileAPIMessageFilter::OnMessageReceived(
@@ -172,12 +176,6 @@ bool FileAPIMessageFilter::OnMessageReceived(
   return handled;
 }
 
-void FileAPIMessageFilter::UnregisterOperation(int request_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DCHECK(operations_.Lookup(request_id));
-  operations_.Remove(request_id);
-}
-
 FileAPIMessageFilter::~FileAPIMessageFilter() {}
 
 void FileAPIMessageFilter::BadMessageReceived() {
@@ -194,7 +192,11 @@ void FileAPIMessageFilter::OnOpen(
   } else if (type == fileapi::kFileSystemTypePersistent) {
     RecordAction(UserMetricsAction("OpenFileSystemPersistent"));
   }
-  context_->OpenFileSystem(origin_url, type, create, base::Bind(
+  // TODO(kinuko): Use this mode for IPC too.
+  fileapi::OpenFileSystemMode mode =
+      create ? fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT
+             : fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT;
+  context_->OpenFileSystem(origin_url, type, mode, base::Bind(
       &FileAPIMessageFilter::DidOpenFileSystem, this, request_id));
 }
 
@@ -222,10 +224,7 @@ void FileAPIMessageFilter::OnMove(
     return;
   }
 
-  FileSystemOperation* operation = GetNewOperation(dest_url, request_id);
-  if (!operation)
-    return;
-  operation->Move(
+  operations_[request_id] = operation_runner()->Move(
       src_url, dest_url,
       base::Bind(&FileAPIMessageFilter::DidFinish, this, request_id));
 }
@@ -243,10 +242,7 @@ void FileAPIMessageFilter::OnCopy(
     return;
   }
 
-  FileSystemOperation* operation = GetNewOperation(dest_url, request_id);
-  if (!operation)
-    return;
-  operation->Copy(
+  operations_[request_id] = operation_runner()->Copy(
       src_url, dest_url,
       base::Bind(&FileAPIMessageFilter::DidFinish, this, request_id));
 }
@@ -261,10 +257,7 @@ void FileAPIMessageFilter::OnRemove(
     return;
   }
 
-  FileSystemOperation* operation = GetNewOperation(url, request_id);
-  if (!operation)
-    return;
-  operation->Remove(
+  operations_[request_id] = operation_runner()->Remove(
       url, recursive,
       base::Bind(&FileAPIMessageFilter::DidFinish, this, request_id));
 }
@@ -279,12 +272,8 @@ void FileAPIMessageFilter::OnReadMetadata(
     return;
   }
 
-  FileSystemOperation* operation = GetNewOperation(url, request_id);
-  if (!operation)
-    return;
-  operation->GetMetadata(
-      url,
-      base::Bind(&FileAPIMessageFilter::DidGetMetadata, this, request_id));
+  operations_[request_id] = operation_runner()->GetMetadata(
+      url, base::Bind(&FileAPIMessageFilter::DidGetMetadata, this, request_id));
 }
 
 void FileAPIMessageFilter::OnCreate(
@@ -298,15 +287,12 @@ void FileAPIMessageFilter::OnCreate(
     return;
   }
 
-  FileSystemOperation* operation = GetNewOperation(url, request_id);
-  if (!operation)
-    return;
   if (is_directory) {
-    operation->CreateDirectory(
+    operations_[request_id] = operation_runner()->CreateDirectory(
         url, exclusive, recursive,
         base::Bind(&FileAPIMessageFilter::DidFinish, this, request_id));
   } else {
-    operation->CreateFile(
+    operations_[request_id] = operation_runner()->CreateFile(
         url, exclusive,
         base::Bind(&FileAPIMessageFilter::DidFinish, this, request_id));
   }
@@ -322,15 +308,12 @@ void FileAPIMessageFilter::OnExists(
     return;
   }
 
-  FileSystemOperation* operation = GetNewOperation(url, request_id);
-  if (!operation)
-    return;
   if (is_directory) {
-    operation->DirectoryExists(
+    operations_[request_id] = operation_runner()->DirectoryExists(
         url,
         base::Bind(&FileAPIMessageFilter::DidFinish, this, request_id));
   } else {
-    operation->FileExists(
+    operations_[request_id] = operation_runner()->FileExists(
         url,
         base::Bind(&FileAPIMessageFilter::DidFinish, this, request_id));
   }
@@ -346,12 +329,9 @@ void FileAPIMessageFilter::OnReadDirectory(
     return;
   }
 
-  FileSystemOperation* operation = GetNewOperation(url, request_id);
-  if (!operation)
-    return;
-  operation->ReadDirectory(
+  operations_[request_id] = operation_runner()->ReadDirectory(
       url, base::Bind(&FileAPIMessageFilter::DidReadDirectory,
-                       this, request_id));
+                      this, request_id));
 }
 
 void FileAPIMessageFilter::OnWrite(
@@ -373,10 +353,7 @@ void FileAPIMessageFilter::OnWrite(
     return;
   }
 
-  FileSystemOperation* operation = GetNewOperation(url, request_id);
-  if (!operation)
-    return;
-  operation->Write(
+  operations_[request_id] = operation_runner()->Write(
       request_context_, url, blob_url, offset,
       base::Bind(&FileAPIMessageFilter::DidWrite, this, request_id));
 }
@@ -392,10 +369,7 @@ void FileAPIMessageFilter::OnTruncate(
     return;
   }
 
-  FileSystemOperation* operation = GetNewOperation(url, request_id);
-  if (!operation)
-    return;
-  operation->Truncate(
+  operations_[request_id] = operation_runner()->Truncate(
       url, length,
       base::Bind(&FileAPIMessageFilter::DidFinish, this, request_id));
 }
@@ -413,10 +387,7 @@ void FileAPIMessageFilter::OnTouchFile(
     return;
   }
 
-  FileSystemOperation* operation = GetNewOperation(url, request_id);
-  if (!operation)
-    return;
-  operation->TouchFile(
+  operations_[request_id] = operation_runner()->TouchFile(
       url, last_access_time, last_modified_time,
       base::Bind(&FileAPIMessageFilter::DidFinish, this, request_id));
 }
@@ -425,12 +396,14 @@ void FileAPIMessageFilter::OnCancel(
     int request_id,
     int request_id_to_cancel) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  FileSystemOperation* write = operations_.Lookup(request_id_to_cancel);
-  if (write) {
+
+  OperationsMap::iterator found = operations_.find(request_id_to_cancel);
+  if (found != operations_.end()) {
     // The cancel will eventually send both the write failure and the cancel
     // success.
-    write->Cancel(
-        base::Bind(&FileAPIMessageFilter::DidCancel, this, request_id));
+    operation_runner()->Cancel(
+        found->second,
+        base::Bind(&FileAPIMessageFilter::DidFinish, this, request_id));
   } else {
     // The write already finished; report that we failed to stop it.
     Send(new FileSystemMsg_DidFail(
@@ -463,10 +436,7 @@ void FileAPIMessageFilter::OnOpenFile(
     quota_policy = quota::kQuotaLimitTypeLimited;
   }
 
-  FileSystemOperation* operation = GetNewOperation(url, request_id);
-  if (!operation)
-    return;
-  operation->OpenFile(
+  operations_[request_id] = operation_runner()->OpenFile(
       url, file_flags, peer_handle(),
       base::Bind(&FileAPIMessageFilter::DidOpenFile, this, request_id,
                  quota_policy));
@@ -529,10 +499,7 @@ void FileAPIMessageFilter::OnCreateSnapshotFile(
     return;
   }
 
-  FileSystemOperation* operation = GetNewOperation(url, request_id);
-  if (!operation)
-    return;
-  operation->CreateSnapshotFile(
+  operations_[request_id] = operation_runner()->CreateSnapshotFile(
       url,
       base::Bind(&FileAPIMessageFilter::DidCreateSnapshot,
                  this, request_id, url));
@@ -622,41 +589,30 @@ void FileAPIMessageFilter::DidFinish(int request_id,
     Send(new FileSystemMsg_DidSucceed(request_id));
   else
     Send(new FileSystemMsg_DidFail(request_id, result));
-  UnregisterOperation(request_id);
-}
-
-void FileAPIMessageFilter::DidCancel(int request_id,
-                                     base::PlatformFileError result) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (result == base::PLATFORM_FILE_OK)
-    Send(new FileSystemMsg_DidSucceed(request_id));
-  else
-    Send(new FileSystemMsg_DidFail(request_id, result));
-  // For Cancel we do not create a new operation, so no unregister here.
+  operations_.erase(request_id);
 }
 
 void FileAPIMessageFilter::DidGetMetadata(
     int request_id,
     base::PlatformFileError result,
-    const base::PlatformFileInfo& info,
-    const base::FilePath& platform_path) {
+    const base::PlatformFileInfo& info) {
   if (result == base::PLATFORM_FILE_OK)
-    Send(new FileSystemMsg_DidReadMetadata(request_id, info, platform_path));
+    Send(new FileSystemMsg_DidReadMetadata(request_id, info));
   else
     Send(new FileSystemMsg_DidFail(request_id, result));
-  UnregisterOperation(request_id);
+  operations_.erase(request_id);
 }
 
 void FileAPIMessageFilter::DidReadDirectory(
     int request_id,
     base::PlatformFileError result,
-    const std::vector<base::FileUtilProxy::Entry>& entries,
+    const std::vector<fileapi::DirectoryEntry>& entries,
     bool has_more) {
   if (result == base::PLATFORM_FILE_OK)
     Send(new FileSystemMsg_DidReadDirectory(request_id, entries, has_more));
   else
     Send(new FileSystemMsg_DidFail(request_id, result));
-  UnregisterOperation(request_id);
+  operations_.erase(request_id);
 }
 
 void FileAPIMessageFilter::DidOpenFile(int request_id,
@@ -681,7 +637,7 @@ void FileAPIMessageFilter::DidOpenFile(int request_id,
     Send(new FileSystemMsg_DidFail(request_id,
                                    result));
   }
-  UnregisterOperation(request_id);
+  operations_.erase(request_id);
 }
 
 void FileAPIMessageFilter::DidWrite(int request_id,
@@ -691,10 +647,10 @@ void FileAPIMessageFilter::DidWrite(int request_id,
   if (result == base::PLATFORM_FILE_OK) {
     Send(new FileSystemMsg_DidWrite(request_id, bytes, complete));
     if (complete)
-      UnregisterOperation(request_id);
+      operations_.erase(request_id);
   } else {
     Send(new FileSystemMsg_DidFail(request_id, result));
-    UnregisterOperation(request_id);
+    operations_.erase(request_id);
   }
 }
 
@@ -731,6 +687,8 @@ void FileAPIMessageFilter::DidCreateSnapshot(
     const base::FilePath& platform_path,
     const scoped_refptr<webkit_blob::ShareableFileReference>& snapshot_file) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  operations_.erase(request_id);
+
   if (result != base::PLATFORM_FILE_OK) {
     Send(new FileSystemMsg_DidFail(request_id, result));
     return;
@@ -748,15 +706,19 @@ void FileAPIMessageFilter::DidCreateSnapshot(
     // - the file comes from sandboxed filesystem. Reading sandboxed files is
     //   always permitted, but only implicitly.
     // - the underlying filesystem returned newly created snapshot file.
-    // - the file comes from an external drive filesystem. The renderer has
-    //   already been granted read permission for the file's nominal path, but
-    //   for drive files, platform paths differ from the nominal paths.
-    DCHECK(snapshot_file ||
-           fileapi::SandboxMountPointProvider::IsSandboxType(url.type()) ||
-           url.type() == fileapi::kFileSystemTypeDrive);
+    // - the nominal path differs from the platform path. This can happen even
+    //   when the filesystem has been granted permissions. This happens with:
+    //   - Drive filesystems
+    //   - Picasa filesystems
+    //   - iTunes filesystems
+    DCHECK(snapshot_file.get() ||
+           context_->IsSandboxFileSystem(url.type()) ||
+           url.type() == fileapi::kFileSystemTypeDrive ||
+           url.type() == fileapi::kFileSystemTypePicasa ||
+           url.type() == fileapi::kFileSystemTypeItunes);
     ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFile(
         process_id_, platform_path);
-    if (snapshot_file) {
+    if (snapshot_file.get()) {
       // This will revoke all permissions for the file when the last ref
       // of the file is dropped (assuming it's ok).
       snapshot_file->AddFinalReleaseCallback(
@@ -764,7 +726,7 @@ void FileAPIMessageFilter::DidCreateSnapshot(
     }
   }
 
-  if (snapshot_file) {
+  if (snapshot_file.get()) {
     // This ref is held until OnDidReceiveSnapshotFile is called.
     in_transit_snapshot_files_[request_id] = snapshot_file;
   }
@@ -780,20 +742,8 @@ bool FileAPIMessageFilter::HasPermissionsForFile(
                                               permissions, error);
 }
 
-FileSystemOperation* FileAPIMessageFilter::GetNewOperation(
-    const FileSystemURL& target_url,
-    int request_id) {
-  base::PlatformFileError error_code;
-  FileSystemOperation* operation =
-      context_->CreateFileSystemOperation(target_url, &error_code);
-  if (error_code != base::PLATFORM_FILE_OK) {
-    Send(new FileSystemMsg_DidFail(request_id, error_code));
-    return NULL;
-  }
-
-  DCHECK(operation);
-  operations_.AddWithID(operation, request_id);
-  return operation;
+fileapi::FileSystemOperationRunner* FileAPIMessageFilter::operation_runner() {
+  return context_->operation_runner();
 }
 
 }  // namespace content

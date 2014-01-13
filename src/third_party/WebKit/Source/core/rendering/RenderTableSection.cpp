@@ -25,10 +25,6 @@
 
 #include "config.h"
 #include <limits>
-#include "HTMLNames.h"
-#include "core/dom/Document.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/loader/cache/CachedImage.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCell.h"
@@ -36,7 +32,6 @@
 #include "core/rendering/RenderTableRow.h"
 #include "core/rendering/RenderTableSection.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/style/StyleInheritedData.h"
 #include <wtf/HashSet.h>
 #include <wtf/MemoryInstrumentationHashMap.h>
 #include <wtf/MemoryInstrumentationHashSet.h>
@@ -910,6 +905,8 @@ int RenderTableSection::firstLineBoxBaseline() const
 
 void RenderTableSection::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
+    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
+
     // put this back in when all layout tests can handle it
     // ASSERT(!needsLayout());
     // avoid crashing on bugs that cause us to paint with dirty layout
@@ -1158,9 +1155,8 @@ void RenderTableSection::paintObject(PaintInfo& paintInfo, const LayoutPoint& pa
                             continue;
 
                         if (current.cells[i]->rowSpan() > 1 || current.cells[i]->colSpan() > 1) {
-                            if (spanningCells.contains(current.cells[i]))
+                            if (!spanningCells.add(current.cells[i]).isNewEntry)
                                 continue;
-                            spanningCells.add(current.cells[i]);
                         }
 
                         cells.append(current.cells[i]);

@@ -13,11 +13,11 @@
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/devtools/devtools_browser_target.h"
 #include "content/browser/devtools/devtools_protocol.h"
@@ -44,11 +44,11 @@
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/server/http_server_request_info.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgent.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/web/WebDevToolsAgent.h"
 #include "ui/base/layout.h"
-#include "webkit/user_agent/user_agent.h"
-#include "webkit/user_agent/user_agent_util.h"
+#include "webkit/common/user_agent/user_agent.h"
+#include "webkit/common/user_agent/user_agent_util.h"
 
 namespace content {
 
@@ -85,7 +85,7 @@ class DevToolsDefaultBindingHandler
   }
 
   virtual DevToolsAgentHost* ForIdentifier(const std::string& id) OVERRIDE {
-    return DevToolsAgentHost::GetForId(id);
+    return DevToolsAgentHost::GetForId(id).get();
   }
 };
 
@@ -110,8 +110,12 @@ class DevToolsClientHostImpl : public DevToolsClientHost {
       return;
     is_closed_ = true;
 
+    base::DictionaryValue notification;
+    notification.SetString(
+        devtools::Inspector::detached::kParamReason, detach_reason_);
     std::string response = DevToolsProtocol::CreateNotification(
-        devtools::Inspector::detached::kName, NULL)->Serialize();
+        devtools::Inspector::detached::kName,
+        notification.DeepCopy())->Serialize();
     message_loop_->PostTask(
         FROM_HERE,
         base::Bind(&net::HttpServer::SendOverWebSocket,
@@ -489,7 +493,7 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
     version.SetString("Browser",
                       content::GetContentClient()->GetProduct());
     version.SetString("User-Agent",
-                      webkit_glue::GetUserAgent(GURL(chrome::kAboutBlankURL)));
+                      webkit_glue::GetUserAgent(GURL(kAboutBlankURL)));
     SendJson(connection_id, net::HTTP_OK, &version, std::string());
     return;
   }
@@ -571,7 +575,7 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
   return;
 }
 
-void DevToolsHttpHandlerImpl::CollectWorkerInfo(ListValue* target_list,
+void DevToolsHttpHandlerImpl::CollectWorkerInfo(base::ListValue* target_list,
                                                 std::string host) {
 
   std::vector<WorkerService::WorkerInfo> worker_info =
@@ -582,7 +586,7 @@ void DevToolsHttpHandlerImpl::CollectWorkerInfo(ListValue* target_list,
 }
 
 void DevToolsHttpHandlerImpl::SendTargetList(int connection_id,
-                                             ListValue* target_list) {
+                                             base::ListValue* target_list) {
   SendJson(connection_id, net::HTTP_OK, target_list, std::string());
   delete target_list;
   Release();  // Balanced OnJsonRequestUI.
@@ -641,10 +645,8 @@ void DevToolsHttpHandlerImpl::OnWebSocketRequestUI(
     return;
   }
 
-  DevToolsClientHostImpl* client_host =
-      new DevToolsClientHostImpl(thread_->message_loop(),
-                                 server_,
-                                 connection_id);
+  DevToolsClientHostImpl* client_host = new DevToolsClientHostImpl(
+      thread_->message_loop(), server_.get(), connection_id);
   connection_to_client_host_ui_[connection_id] = client_host;
 
   DevToolsManager::GetInstance()->
@@ -818,7 +820,7 @@ base::DictionaryValue* DevToolsHttpHandlerImpl::SerializePageInfo(
   scoped_refptr<DevToolsAgentHost> agent(
       DevToolsAgentHost::GetOrCreateFor(rvh));
 
-  std::string id = binding_->GetIdentifier(agent);
+  std::string id = binding_->GetIdentifier(agent.get());
   dictionary->SetString(kTargetIdField, id);
 
   switch (delegate_->GetTargetType(rvh)) {
@@ -860,7 +862,7 @@ base::DictionaryValue* DevToolsHttpHandlerImpl::SerializeWorkerInfo(
   scoped_refptr<DevToolsAgentHost> agent(DevToolsAgentHost::GetForWorker(
       worker.process_id, worker.route_id));
 
-  std::string id = binding_->GetIdentifier(agent);
+  std::string id = binding_->GetIdentifier(agent.get());
 
   dictionary->SetString(kTargetIdField, id);
   dictionary->SetString(kTargetTypeField, kTargetTypeOther);

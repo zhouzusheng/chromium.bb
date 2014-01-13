@@ -9,9 +9,12 @@
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/compositor_frame_metadata.h"
+#include "cc/output/copy_output_request.h"
 #include "cc/output/output_surface.h"
 #include "cc/output/software_output_device.h"
+#include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
+#include "cc/quads/picture_draw_quad.h"
 #include "cc/quads/render_pass_draw_quad.h"
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
@@ -30,21 +33,14 @@ namespace cc {
 
 namespace {
 
-void ToSkMatrix(SkMatrix* flattened, const gfx::Transform& m) {
-  // Convert from 4x4 to 3x3 by dropping the third row and column.
-  flattened->set(0, SkDoubleToScalar(m.matrix().getDouble(0, 0)));
-  flattened->set(1, SkDoubleToScalar(m.matrix().getDouble(0, 1)));
-  flattened->set(2, SkDoubleToScalar(m.matrix().getDouble(0, 3)));
-  flattened->set(3, SkDoubleToScalar(m.matrix().getDouble(1, 0)));
-  flattened->set(4, SkDoubleToScalar(m.matrix().getDouble(1, 1)));
-  flattened->set(5, SkDoubleToScalar(m.matrix().getDouble(1, 3)));
-  flattened->set(6, SkDoubleToScalar(m.matrix().getDouble(3, 0)));
-  flattened->set(7, SkDoubleToScalar(m.matrix().getDouble(3, 1)));
-  flattened->set(8, SkDoubleToScalar(m.matrix().getDouble(3, 3)));
+static inline bool IsScalarNearlyInteger(SkScalar scalar) {
+  return SkScalarNearlyZero(scalar - SkScalarRound(scalar));
 }
 
-bool IsScaleAndTranslate(const SkMatrix& matrix) {
-  return SkScalarNearlyZero(matrix[SkMatrix::kMSkewX]) &&
+bool IsScaleAndIntegerTranslate(const SkMatrix& matrix) {
+  return IsScalarNearlyInteger(matrix[SkMatrix::kMTransX]) &&
+         IsScalarNearlyInteger(matrix[SkMatrix::kMTransY]) &&
+         SkScalarNearlyZero(matrix[SkMatrix::kMSkewX]) &&
          SkScalarNearlyZero(matrix[SkMatrix::kMSkewY]) &&
          SkScalarNearlyZero(matrix[SkMatrix::kMPersp0]) &&
          SkScalarNearlyZero(matrix[SkMatrix::kMPersp1]) &&
@@ -64,22 +60,24 @@ scoped_ptr<SoftwareRenderer> SoftwareRenderer::Create(
 SoftwareRenderer::SoftwareRenderer(RendererClient* client,
                                    OutputSurface* output_surface,
                                    ResourceProvider* resource_provider)
-  : DirectRenderer(client, resource_provider),
+  : DirectRenderer(client, output_surface, resource_provider),
     visible_(true),
     is_scissor_enabled_(false),
-    is_viewport_changed_(true),
-    output_surface_(output_surface),
     output_device_(output_surface->software_device()),
     current_canvas_(NULL) {
-  capabilities_.max_texture_size = resource_provider_->max_texture_size();
-  capabilities_.best_texture_format = resource_provider_->best_texture_format();
+  if (resource_provider_) {
+    capabilities_.max_texture_size = resource_provider_->max_texture_size();
+    capabilities_.best_texture_format =
+        resource_provider_->best_texture_format();
+  }
   capabilities_.using_set_visibility = true;
   // The updater can access bitmaps while the SoftwareRenderer is using them.
   capabilities_.allow_partial_texture_updates = true;
   capabilities_.using_partial_swap = true;
-  if (Settings().compositor_frame_message && client_->HasImplThread())
-    capabilities_.using_swap_complete_callback = true;
-  compositor_frame_.software_frame_data.reset(new SoftwareFrameData());
+
+  capabilities_.using_map_image =
+      Settings().use_map_image &&
+      output_surface->capabilities().deferred_gl_initialization;
 }
 
 SoftwareRenderer::~SoftwareRenderer() {}
@@ -88,16 +86,8 @@ const RendererCapabilities& SoftwareRenderer::Capabilities() const {
   return capabilities_;
 }
 
-void SoftwareRenderer::ViewportChanged() {
-  is_viewport_changed_ = true;
-}
-
 void SoftwareRenderer::BeginDrawingFrame(DrawingFrame* frame) {
   TRACE_EVENT0("cc", "SoftwareRenderer::BeginDrawingFrame");
-  if (is_viewport_changed_) {
-    is_viewport_changed_ = false;
-    output_device_->Resize(ViewportSize());
-  }
   root_canvas_ = output_device_->BeginPaint(
       gfx::ToEnclosingRect(frame->root_damage_rect));
 }
@@ -107,22 +97,20 @@ void SoftwareRenderer::FinishDrawingFrame(DrawingFrame* frame) {
   current_framebuffer_lock_.reset();
   current_canvas_ = NULL;
   root_canvas_ = NULL;
-  if (Settings().compositor_frame_message) {
-    compositor_frame_.metadata = client_->MakeCompositorFrameMetadata();
-    output_device_->EndPaint(compositor_frame_.software_frame_data.get());
-  } else {
-    output_device_->EndPaint(NULL);
-  }
+
+  current_frame_data_.reset(new SoftwareFrameData);
+  output_device_->EndPaint(current_frame_data_.get());
 }
 
-void SoftwareRenderer::SwapBuffers(const LatencyInfo& latency_info) {
-  if (Settings().compositor_frame_message)
-    output_surface_->SendFrameToParentCompositor(&compositor_frame_);
+void SoftwareRenderer::SwapBuffers() {
+  CompositorFrame compositor_frame;
+  compositor_frame.metadata = client_->MakeCompositorFrameMetadata();
+  compositor_frame.software_frame_data = current_frame_data_.Pass();
+  output_surface_->SwapBuffers(&compositor_frame);
 }
 
-void SoftwareRenderer::ReceiveCompositorFrameAck(
-    const CompositorFrameAck& ack) {
-  output_device_->ReclaimDIB(ack.last_dib_id);
+void SoftwareRenderer::ReceiveSwapBuffersAck(const CompositorFrameAck& ack) {
+  output_device_->ReclaimSoftwareFrame(ack.last_software_frame_id);
 }
 
 bool SoftwareRenderer::FlippedFramebuffer() const {
@@ -154,14 +142,16 @@ void SoftwareRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
 bool SoftwareRenderer::BindFramebufferToTexture(
     DrawingFrame* frame,
     const ScopedResource* texture,
-    gfx::Rect framebuffer_rect) {
+    gfx::Rect target_rect) {
+  current_framebuffer_lock_.reset();
   current_framebuffer_lock_ = make_scoped_ptr(
       new ResourceProvider::ScopedWriteLockSoftware(
           resource_provider_, texture->id()));
   current_canvas_ = current_framebuffer_lock_->sk_canvas();
-  InitializeMatrices(frame, framebuffer_rect, false);
-  SetDrawViewportSize(framebuffer_rect.size());
-
+  InitializeViewport(frame,
+                     target_rect,
+                     gfx::Rect(target_rect.size()),
+                     target_rect.size());
   return true;
 }
 
@@ -200,7 +190,7 @@ void SoftwareRenderer::ClearFramebuffer(DrawingFrame* frame) {
   }
 }
 
-void SoftwareRenderer::SetDrawViewportSize(gfx::Size viewport_size) {}
+void SoftwareRenderer::SetDrawViewport(gfx::Rect window_space_viewport) {}
 
 bool SoftwareRenderer::IsSoftwareResource(
     ResourceProvider::ResourceId resource_id) const {
@@ -223,12 +213,21 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
       frame->window_matrix * frame->projection_matrix * quad_rect_matrix;
   contents_device_transform.FlattenTo2d();
   SkMatrix sk_device_matrix;
-  ToSkMatrix(&sk_device_matrix, contents_device_transform);
+  gfx::TransformToFlattenedSkMatrix(contents_device_transform,
+                                    &sk_device_matrix);
   current_canvas_->setMatrix(sk_device_matrix);
 
   current_paint_.reset();
-  if (!IsScaleAndTranslate(sk_device_matrix)) {
-    current_paint_.setAntiAlias(true);
+  if (!IsScaleAndIntegerTranslate(sk_device_matrix)) {
+    // TODO(danakj): Until we can enable AA only on exterior edges of the
+    // layer, disable AA if any interior edges are present. crbug.com/248175
+    bool all_four_edges_are_exterior = quad->IsTopEdge() &&
+                                       quad->IsLeftEdge() &&
+                                       quad->IsBottomEdge() &&
+                                       quad->IsRightEdge();
+    if (Settings().allow_antialiasing &&
+        all_four_edges_are_exterior)
+      current_paint_.setAntiAlias(true);
     current_paint_.setFilterBitmap(true);
   }
 
@@ -240,8 +239,17 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
   }
 
   switch (quad->material) {
+    case DrawQuad::CHECKERBOARD:
+      DrawCheckerboardQuad(frame, CheckerboardDrawQuad::MaterialCast(quad));
+      break;
     case DrawQuad::DEBUG_BORDER:
       DrawDebugBorderQuad(frame, DebugBorderDrawQuad::MaterialCast(quad));
+      break;
+    case DrawQuad::PICTURE_CONTENT:
+      DrawPictureQuad(frame, PictureDrawQuad::MaterialCast(quad));
+      break;
+    case DrawQuad::RENDER_PASS:
+      DrawRenderPassQuad(frame, RenderPassDrawQuad::MaterialCast(quad));
       break;
     case DrawQuad::SOLID_COLOR:
       DrawSolidColorQuad(frame, SolidColorDrawQuad::MaterialCast(quad));
@@ -252,15 +260,24 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
     case DrawQuad::TILED_CONTENT:
       DrawTileQuad(frame, TileDrawQuad::MaterialCast(quad));
       break;
-    case DrawQuad::RENDER_PASS:
-      DrawRenderPassQuad(frame, RenderPassDrawQuad::MaterialCast(quad));
-      break;
-    default:
+    case DrawQuad::INVALID:
+    case DrawQuad::IO_SURFACE_CONTENT:
+    case DrawQuad::YUV_VIDEO_CONTENT:
+    case DrawQuad::STREAM_VIDEO_CONTENT:
       DrawUnsupportedQuad(frame, quad);
+      NOTREACHED();
       break;
   }
 
   current_canvas_->resetMatrix();
+}
+
+void SoftwareRenderer::DrawCheckerboardQuad(const DrawingFrame* frame,
+                                            const CheckerboardDrawQuad* quad) {
+  current_paint_.setColor(quad->color);
+  current_paint_.setAlpha(quad->opacity() * SkColorGetA(quad->color));
+  current_canvas_->drawRect(gfx::RectFToSkRect(QuadVertexRect()),
+                            current_paint_);
 }
 
 void SoftwareRenderer::DrawDebugBorderQuad(const DrawingFrame* frame,
@@ -280,6 +297,38 @@ void SoftwareRenderer::DrawDebugBorderQuad(const DrawingFrame* frame,
   current_paint_.setStrokeWidth(quad->width);
   current_canvas_->drawPoints(SkCanvas::kPolygon_PointMode,
                               4, transformed_vertices, current_paint_);
+}
+
+void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
+                                       const PictureDrawQuad* quad) {
+  SkMatrix content_matrix;
+  content_matrix.setRectToRect(
+      gfx::RectFToSkRect(quad->tex_coord_rect),
+      gfx::RectFToSkRect(QuadVertexRect()),
+      SkMatrix::kFill_ScaleToFit);
+  current_canvas_->concat(content_matrix);
+
+  if (quad->ShouldDrawWithBlending()) {
+    TRACE_EVENT0("cc", "SoftwareRenderer::DrawPictureQuad with blending");
+    SkBitmap temp_bitmap;
+    temp_bitmap.setConfig(SkBitmap::kARGB_8888_Config,
+                          quad->texture_size.width(),
+                          quad->texture_size.height());
+    temp_bitmap.allocPixels();
+    SkDevice temp_device(temp_bitmap);
+    SkCanvas temp_canvas(&temp_device);
+
+    quad->picture_pile->RasterToBitmap(
+        &temp_canvas, quad->content_rect, quad->contents_scale, NULL);
+
+    current_paint_.setFilterBitmap(true);
+    current_canvas_->drawBitmap(temp_bitmap, 0, 0, &current_paint_);
+  } else {
+    TRACE_EVENT0("cc",
+                 "SoftwareRenderer::DrawPictureQuad direct from PicturePile");
+    quad->picture_pile->RasterDirect(
+        current_canvas_, quad->content_rect, quad->contents_scale, NULL);
+  }
 }
 
 void SoftwareRenderer::DrawSolidColorQuad(const DrawingFrame* frame,
@@ -315,6 +364,7 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
 
 void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
                                     const TileDrawQuad* quad) {
+  DCHECK(!output_surface_->ForcedDrawToSoftwareDevice());
   DCHECK(IsSoftwareResource(quad->resource_id));
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
                                                 quad->resource_id);
@@ -406,21 +456,29 @@ void SoftwareRenderer::DrawUnsupportedQuad(const DrawingFrame* frame,
 
 void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
     DrawingFrame* frame,
-    const CopyRenderPassCallback& callback) {
-  gfx::Size render_pass_size = frame->current_render_pass->output_rect.size();
+    scoped_ptr<CopyOutputRequest> request) {
+  gfx::Rect copy_rect = frame->current_render_pass->output_rect;
+  if (request->has_area()) {
+    // Intersect with the request's area, positioned with its origin at the
+    // origin of the full copy_rect.
+    copy_rect.Intersect(request->area() - copy_rect.OffsetFromOrigin());
+  }
+  gfx::Rect window_copy_rect = MoveFromDrawToWindowSpace(copy_rect);
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
   bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    render_pass_size.width(),
-                    render_pass_size.height());
-  current_canvas_->readPixels(bitmap.get(), 0, 0);
+                    window_copy_rect.width(),
+                    window_copy_rect.height());
+  current_canvas_->readPixels(
+      bitmap.get(), window_copy_rect.x(), window_copy_rect.y());
 
-  callback.Run(bitmap.Pass());
+  request->SendBitmapResult(bitmap.Pass());
 }
 
 void SoftwareRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
   TRACE_EVENT0("cc", "SoftwareRenderer::GetFramebufferPixels");
   SkBitmap subset_bitmap;
+  rect += current_viewport_rect_.OffsetFromOrigin();
   output_device_->CopyToBitmap(rect, &subset_bitmap);
   subset_bitmap.copyPixelsTo(pixels,
                              4 * rect.width() * rect.height(),

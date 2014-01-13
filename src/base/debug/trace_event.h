@@ -200,6 +200,10 @@
 #define TRACE_STR_COPY(str) \
     trace_event_internal::TraceStringWithCopy(str)
 
+// This will mark the trace event as disabled by default. The user will need
+// to explicitly enable the event.
+#define TRACE_DISABLED_BY_DEFAULT(name) "disabled-by-default-" name
+
 // By default, uint64 ID argument values are not mangled with the Process ID in
 // TRACE_EVENT_ASYNC macros. Use this macro to force Process ID mangling.
 #define TRACE_ID_MANGLE(id) \
@@ -516,6 +520,7 @@
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP, \
         category_group, name, id, TRACE_EVENT_FLAG_NONE, "step", step, \
         arg1_name, arg1_val)
+
 #define TRACE_EVENT_COPY_ASYNC_STEP0(category_group, name, id, step) \
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP, \
         category_group, name, id, TRACE_EVENT_FLAG_COPY, "step", step)
@@ -662,6 +667,33 @@
         category_group, name, TRACE_ID_DONT_MANGLE(id), TRACE_EVENT_FLAG_NONE)
 
 
+// Macro to efficiently determine if a given category group is enabled.
+#define TRACE_EVENT_CATEGORY_GROUP_ENABLED(category_group, ret) \
+    do { \
+      INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category_group); \
+      if (*INTERNAL_TRACE_EVENT_UID(catstatic)) { \
+        *ret = true; \
+      } else { \
+        *ret = false; \
+      } \
+    } while (0)
+
+// Macro to efficiently determine, through polling, if a new trace has begun.
+#define TRACE_EVENT_IS_NEW_TRACE(ret) \
+    do { \
+      static int INTERNAL_TRACE_EVENT_UID(lastRecordingNumber) = 0; \
+      int num_traces_recorded = TRACE_EVENT_API_GET_NUM_TRACES_RECORDED(); \
+      if (num_traces_recorded != -1 && \
+          num_traces_recorded != \
+          INTERNAL_TRACE_EVENT_UID(lastRecordingNumber)) { \
+        INTERNAL_TRACE_EVENT_UID(lastRecordingNumber) = \
+            num_traces_recorded; \
+        *ret = true; \
+      } else { \
+        *ret = false; \
+      } \
+    } while (0)
+
 ////////////////////////////////////////////////////////////////////////////////
 // Implementation specific tracing API definitions.
 
@@ -677,6 +709,12 @@
 //     TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(const char* category_group)
 #define TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED \
     base::debug::TraceLog::GetCategoryGroupEnabled
+
+// Get the number of times traces have been recorded. This is used to implement
+// the TRACE_EVENT_IS_NEW_TRACE facility.
+// unsigned int TRACE_EVENT_API_GET_NUM_TRACES_RECORDED()
+#define TRACE_EVENT_API_GET_NUM_TRACES_RECORDED \
+    base::debug::TraceLog::GetInstance()->GetNumTracesRecorded
 
 // Add a trace event to the platform tracing system.
 // void TRACE_EVENT_API_ADD_TRACE_EVENT(
@@ -717,12 +755,15 @@
 // Defines visibility for classes in trace_event.h
 #define TRACE_EVENT_API_CLASS_EXPORT BASE_EXPORT
 
+// Not supported in split-dll build. http://crbug.com/237249
+#if !defined(CHROME_SPLIT_DLL)
 // The thread buckets for the sampling profiler.
 TRACE_EVENT_API_CLASS_EXPORT extern TRACE_EVENT_API_ATOMIC_WORD g_trace_state0;
 TRACE_EVENT_API_CLASS_EXPORT extern TRACE_EVENT_API_ATOMIC_WORD g_trace_state1;
 TRACE_EVENT_API_CLASS_EXPORT extern TRACE_EVENT_API_ATOMIC_WORD g_trace_state2;
 #define TRACE_EVENT_API_THREAD_BUCKET(thread_bucket)                           \
   g_trace_state##thread_bucket
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1081,6 +1122,103 @@ static inline void AddTraceEvent(
   AddTraceEventWithThreadIdAndTimestamp(phase, category_group_enabled, name, id,
                                         thread_id, now, flags, arg1_name,
                                         arg1_val.Pass());
+}
+
+template<class ARG1_TYPE>
+static inline void AddTraceEventWithThreadIdAndTimestamp(
+    char phase,
+    const unsigned char* category_group_enabled,
+    const char* name,
+    unsigned long long id,
+    int thread_id,
+    const base::TimeTicks& timestamp,
+    unsigned char flags,
+    const char* arg1_name,
+    ARG1_TYPE arg1_val,
+    const char* arg2_name,
+    scoped_ptr<base::debug::ConvertableToTraceFormat> arg2_val) {
+  const int num_args = 2;
+  const char* arg_names[2] = { arg1_name, arg2_name };
+
+  unsigned char arg_types[2];
+  unsigned long long arg_values[2];
+  SetTraceValue(arg1_val, &arg_types[0], &arg_values[0]);
+  arg_types[1] = TRACE_VALUE_TYPE_CONVERTABLE;
+
+  scoped_ptr<base::debug::ConvertableToTraceFormat> convertable_values[2];
+  convertable_values[1].reset(arg2_val.release());
+
+  TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
+      phase, category_group_enabled, name, id, thread_id, timestamp,
+      num_args, arg_names, arg_types, arg_values, convertable_values, flags);
+}
+
+template<class ARG1_TYPE>
+static inline void AddTraceEvent(
+    char phase,
+    const unsigned char* category_group_enabled,
+    const char* name,
+    unsigned long long id,
+    unsigned char flags,
+    const char* arg1_name,
+    ARG1_TYPE arg1_val,
+    const char* arg2_name,
+    scoped_ptr<base::debug::ConvertableToTraceFormat> arg2_val) {
+  int thread_id = static_cast<int>(base::PlatformThread::CurrentId());
+  base::TimeTicks now = base::TimeTicks::NowFromSystemTraceTime();
+  AddTraceEventWithThreadIdAndTimestamp(phase, category_group_enabled, name, id,
+                                        thread_id, now, flags,
+                                        arg1_name, arg1_val,
+                                        arg2_name, arg2_val.Pass());
+}
+
+template<class ARG2_TYPE>
+static inline void AddTraceEventWithThreadIdAndTimestamp(
+    char phase,
+    const unsigned char* category_group_enabled,
+    const char* name,
+    unsigned long long id,
+    int thread_id,
+    const base::TimeTicks& timestamp,
+    unsigned char flags,
+    const char* arg1_name,
+    scoped_ptr<base::debug::ConvertableToTraceFormat> arg1_val,
+    const char* arg2_name,
+    ARG2_TYPE arg2_val) {
+  const int num_args = 2;
+  const char* arg_names[2] = { arg1_name, arg2_name };
+
+  unsigned char arg_types[2];
+  unsigned long long arg_values[2];
+  arg_types[0] = TRACE_VALUE_TYPE_CONVERTABLE;
+  arg_values[0] = 0;
+  SetTraceValue(arg2_val, &arg_types[1], &arg_values[1]);
+
+  scoped_ptr<base::debug::ConvertableToTraceFormat> convertable_values[2];
+  convertable_values[0].reset(arg1_val.release());
+
+  TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
+      phase, category_group_enabled, name, id, thread_id, timestamp,
+      num_args, arg_names, arg_types, arg_values, convertable_values, flags);
+}
+
+template<class ARG2_TYPE>
+static inline void AddTraceEvent(
+    char phase,
+    const unsigned char* category_group_enabled,
+    const char* name,
+    unsigned long long id,
+    unsigned char flags,
+    const char* arg1_name,
+    scoped_ptr<base::debug::ConvertableToTraceFormat> arg1_val,
+    const char* arg2_name,
+    ARG2_TYPE arg2_val) {
+  int thread_id = static_cast<int>(base::PlatformThread::CurrentId());
+  base::TimeTicks now = base::TimeTicks::NowFromSystemTraceTime();
+  AddTraceEventWithThreadIdAndTimestamp(phase, category_group_enabled, name, id,
+                                        thread_id, now, flags,
+                                        arg1_name, arg1_val.Pass(),
+                                        arg2_name, arg2_val);
 }
 
 static inline void AddTraceEventWithThreadIdAndTimestamp(

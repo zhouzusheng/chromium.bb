@@ -4,9 +4,9 @@
 
 // This file contains the implementation of the RingBuffer class.
 
-#include "../client/ring_buffer.h"
+#include "gpu/command_buffer/client/ring_buffer.h"
 #include <algorithm>
-#include "../client/cmd_buffer_helper.h"
+#include "gpu/command_buffer/client/cmd_buffer_helper.h"
 
 namespace gpu {
 
@@ -94,8 +94,12 @@ void RingBuffer::FreePendingToken(RingBuffer::Offset offset,
 }
 
 unsigned int RingBuffer::GetLargestFreeSizeNoWaiting() {
-  // TODO(gman): Should check what the current token is and free up to that
-  //    point.
+  unsigned int last_token_read = helper_->last_token_read();
+  while (!blocks_.empty()) {
+    Block& block = blocks_.front();
+    if (block.token > last_token_read || block.state == IN_USE) break;
+    FreeOldestBlock();
+  }
   if (free_offset_ == in_use_offset_) {
     if (blocks_.empty()) {
       // The entire buffer is free.

@@ -30,6 +30,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/platform/mediastream/MediaStreamCenter.h"
 #include "core/platform/mediastream/MediaStreamSource.h"
+#include "modules/mediastream/MediaStreamRegistry.h"
 #include "modules/mediastream/MediaStreamTrackEvent.h"
 
 namespace WebCore {
@@ -102,11 +103,12 @@ PassRefPtr<MediaStream> MediaStream::create(ScriptExecutionContext* context, Pas
 }
 
 MediaStream::MediaStream(ScriptExecutionContext* context, PassRefPtr<MediaStreamDescriptor> streamDescriptor)
-    : ContextDestructionObserver(context)
+    : ContextLifecycleObserver(context)
     , m_stopped(false)
     , m_descriptor(streamDescriptor)
     , m_scheduledEventTimer(this, &MediaStream::scheduledEventTimerFired)
 {
+    ScriptWrappable::init(this);
     m_descriptor->setClient(this);
 
     size_t numberOfAudioTracks = m_descriptor->numberOfAudioComponents();
@@ -252,7 +254,7 @@ void MediaStream::streamEnded()
 
 void MediaStream::contextDestroyed()
 {
-    ContextDestructionObserver::contextDestroyed();
+    ContextLifecycleObserver::contextDestroyed();
     m_stopped = true;
 }
 
@@ -263,7 +265,7 @@ const AtomicString& MediaStream::interfaceName() const
 
 ScriptExecutionContext* MediaStream::scriptExecutionContext() const
 {
-    return ContextDestructionObserver::scriptExecutionContext();
+    return ContextLifecycleObserver::scriptExecutionContext();
 }
 
 EventTargetData* MediaStream::eventTargetData()
@@ -351,6 +353,11 @@ void MediaStream::scheduledEventTimerFired(Timer<MediaStream>*)
         dispatchEvent((*it).release());
 
     events.clear();
+}
+
+URLRegistry& MediaStream::registry() const
+{
+    return MediaStreamRegistry::registry();
 }
 
 } // namespace WebCore

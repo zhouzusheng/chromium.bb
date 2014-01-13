@@ -36,10 +36,10 @@
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/inspector/InspectorValues.h"
 #include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptCallFrame.h"
 #include "core/inspector/ScriptCallStack.h"
+#include "core/platform/JSONValues.h"
 
 #include <v8-debug.h>
 
@@ -126,7 +126,7 @@ PassRefPtr<ScriptCallStack> createScriptCallStack(ScriptState*, size_t maxStackS
     return createScriptCallStackForConsole(maxStackSize);
 }
 
-PassRefPtr<ScriptArguments> createScriptArguments(const v8::Arguments& v8arguments, unsigned skipArgumentCount)
+PassRefPtr<ScriptArguments> createScriptArguments(const v8::FunctionCallbackInfo<v8::Value>& v8arguments, unsigned skipArgumentCount)
 {
     v8::HandleScope scope;
     v8::Local<v8::Context> context = v8::Context::GetCurrent();

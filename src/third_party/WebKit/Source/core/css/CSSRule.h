@@ -51,9 +51,7 @@ public:
         WEBKIT_KEYFRAMES_RULE,
         WEBKIT_KEYFRAME_RULE,
         SUPPORTS_RULE = 12,
-#if ENABLE(CSS_DEVICE_ADAPTATION)
-        WEBKIT_VIEWPORT_RULE = 15,
-#endif
+        VIEWPORT_RULE = 15,
         WEBKIT_REGION_RULE = 16,
         WEBKIT_FILTER_RULE = 17,
         HOST_RULE = 1001,
@@ -86,7 +84,7 @@ public:
     CSSRule* parentRule() const { return m_parentIsRule ? m_parentRule : 0; }
 
     // NOTE: Just calls notImplemented().
-    void setCssText(const String&, ExceptionCode&);
+    void setCssText(const String&);
 
 protected:
     CSSRule(CSSStyleSheet* parent)

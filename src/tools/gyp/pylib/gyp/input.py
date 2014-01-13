@@ -2383,6 +2383,8 @@ def ValidateRulesInTarget(target, target_dict, extra_sources_for_rules):
     rule_names[rule_name] = rule
 
     rule_extension = rule['extension']
+    if rule_extension.startswith('.'):
+      rule_extension = rule_extension[1:]
     if rule_extension in rule_extensions:
       raise GypError(('extension %s associated with multiple rules, ' +
                       'target %s rules %s and %s') %
@@ -2397,7 +2399,6 @@ def ValidateRulesInTarget(target, target_dict, extra_sources_for_rules):
       raise GypError(
             'rule_sources must not exist in input, target %s rule %s' %
             (target, rule_name))
-    extension = rule['extension']
 
     rule_sources = []
     source_keys = ['sources']
@@ -2407,7 +2408,7 @@ def ValidateRulesInTarget(target, target_dict, extra_sources_for_rules):
         (source_root, source_extension) = os.path.splitext(source)
         if source_extension.startswith('.'):
           source_extension = source_extension[1:]
-        if source_extension == extension:
+        if source_extension == rule_extension:
           rule_sources.append(source)
 
     if len(rule_sources) > 0:
@@ -2494,20 +2495,39 @@ def TurnIntIntoStrInList(the_list):
       TurnIntIntoStrInList(item)
 
 
-def PruneUnwantedTargets(targets, flat_list, dependency_nodes, build_files):
-  """
-  Return only the targets that are deep dependencies of the targets specified
-  in |build_files|.
-  """
+def PruneUnwantedTargets(targets, flat_list, dependency_nodes, root_targets,
+                         data):
+  """Return only the targets that are deep dependencies of |root_targets|."""
+  qualified_root_targets = []
+  for target in root_targets:
+    target = target.strip()
+    qualified_targets = gyp.common.FindQualifiedTargets(target, flat_list)
+    if not qualified_targets:
+      raise GypError("Could not find target %s" % target)
+    qualified_root_targets.extend(qualified_targets)
+
   wanted_targets = {}
-  for target in flat_list:
-    if gyp.common.BuildFile(target) in build_files:
-      wanted_targets[target] = targets[target]
-      for dependency in dependency_nodes[target].DeepDependencies():
-        wanted_targets[dependency] = targets[dependency]
+  for target in qualified_root_targets:
+    wanted_targets[target] = targets[target]
+    for dependency in dependency_nodes[target].DeepDependencies():
+      wanted_targets[dependency] = targets[dependency]
 
   wanted_flat_list = [t for t in flat_list if t in wanted_targets]
-  return [wanted_targets, wanted_flat_list]
+
+  # Prune unwanted targets from each build_file's data dict.
+  for build_file in data['target_build_files']:
+    if not 'targets' in data[build_file]:
+      continue
+    new_targets = []
+    for target in data[build_file]['targets']:
+      qualified_name = gyp.common.QualifiedTarget(build_file,
+                                                  target['target_name'],
+                                                  target['toolset'])
+      if qualified_name in wanted_targets:
+        new_targets.append(target)
+    data[build_file]['targets'] = new_targets
+
+  return wanted_targets, wanted_flat_list
 
 
 def VerifyNoCollidingTargets(targets):
@@ -2538,7 +2558,7 @@ def VerifyNoCollidingTargets(targets):
 
 
 def Load(build_files, variables, includes, depth, generator_input_info, check,
-         circular_check, parallel):
+         circular_check, parallel, root_targets):
   # Set up path_sections and non_configuration_keys with the default data plus
   # the generator-specifc data.
   global path_sections
@@ -2565,10 +2585,6 @@ def Load(build_files, variables, includes, depth, generator_input_info, check,
   # for rules.
   extra_sources_for_rules = generator_input_info['extra_sources_for_rules']
 
-  # Normalize paths everywhere.  This is important because paths will be
-  # used as keys to the data dict and for references between input files.
-  build_files = [os.path.normpath(i) for i in build_files]
-
   # Load build files.  This loads every target-containing build file into
   # the |data| dictionary such that the keys to |data| are build file names,
   # and the values are the entire build file contents after "early" or "pre"
@@ -2579,6 +2595,9 @@ def Load(build_files, variables, includes, depth, generator_input_info, check,
   data = {'target_build_files': set()}
   aux_data = {}
   for build_file in build_files:
+    # Normalize paths everywhere.  This is important because paths will be
+    # used as keys to the data dict and for references between input files.
+    build_file = os.path.normpath(build_file)
     try:
       if parallel:
         print >>sys.stderr, 'Using parallel processing.'
@@ -2628,10 +2647,11 @@ def Load(build_files, variables, includes, depth, generator_input_info, check,
 
   [dependency_nodes, flat_list] = BuildDependencyList(targets)
 
-  # Remove, from |targets| and |flat_list|, the targets that are not deep
-  # dependencies of the targets specified in |build_files|.
-  [targets, flat_list] = PruneUnwantedTargets(
-      targets, flat_list, dependency_nodes, build_files)
+  if root_targets:
+    # Remove, from |targets| and |flat_list|, the targets that are not deep
+    # dependencies of the targets specified in |root_targets|.
+    targets, flat_list = PruneUnwantedTargets(
+        targets, flat_list, dependency_nodes, root_targets, data)
 
   # Check that no two targets in the same directory have the same name.
   VerifyNoCollidingTargets(flat_list)

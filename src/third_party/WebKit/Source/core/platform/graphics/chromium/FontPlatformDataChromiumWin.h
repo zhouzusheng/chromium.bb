@@ -34,6 +34,7 @@
 
 #include "config.h"
 
+#include "SkPaint.h"
 #include "SkTypeface.h"
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/graphics/FontOrientation.h"
@@ -69,6 +70,11 @@ public:
     FontPlatformData(HFONT, float size, FontOrientation);
     FontPlatformData(float size, bool bold, bool oblique);
     FontPlatformData(const FontPlatformData&);
+    FontPlatformData(const FontPlatformData&, float textSize);
+
+#if !ENABLE(GDI_FONTS_ON_WINDOWS)
+    void setupPaint(SkPaint*) const;
+#endif
 
     FontPlatformData& operator=(const FontPlatformData&);
 
@@ -76,6 +82,7 @@ public:
 
     ~FontPlatformData();
 
+    bool isFixedPitch() const;
     HFONT hfont() const { return m_font ? m_font->hfont() : 0; }
     float size() const { return m_size; }
     SkTypeface* typeface() const { return m_typeface; }

@@ -25,11 +25,12 @@
 
 namespace v8_i18n {
 
-v8::Handle<v8::Value> JSCanonicalizeLanguageTag(const v8::Arguments& args) {
+void JSCanonicalizeLanguageTag(const v8::FunctionCallbackInfo<v8::Value>& args) {
   // Expect locale id which is a string.
   if (args.Length() != 1 || !args[0]->IsString()) {
-    return v8::ThrowException(v8::Exception::SyntaxError(
+    v8::ThrowException(v8::Exception::SyntaxError(
         v8::String::New("Locale identifier, as a string, is required.")));
+    return;
   }
 
   UErrorCode error = U_ZERO_ERROR;
@@ -42,13 +43,15 @@ v8::Handle<v8::Value> JSCanonicalizeLanguageTag(const v8::Arguments& args) {
 
   v8::String::AsciiValue locale_id(args[0]->ToString());
   if (*locale_id == NULL) {
-    return v8::String::New(kInvalidTag);
+    args.GetReturnValue().Set(v8::String::New(kInvalidTag));
+    return;
   }
 
   uloc_forLanguageTag(*locale_id, icu_result, ULOC_FULLNAME_CAPACITY,
                       &icu_length, &error);
   if (U_FAILURE(error) || icu_length == 0) {
-    return v8::String::New(kInvalidTag);
+    args.GetReturnValue().Set(v8::String::New(kInvalidTag));
+    return;
   }
 
   char result[ULOC_FULLNAME_CAPACITY];
@@ -57,17 +60,19 @@ v8::Handle<v8::Value> JSCanonicalizeLanguageTag(const v8::Arguments& args) {
   uloc_toLanguageTag(icu_result, result, ULOC_FULLNAME_CAPACITY, TRUE, &error);
 
   if (U_FAILURE(error)) {
-    return v8::String::New(kInvalidTag);
+    args.GetReturnValue().Set(v8::String::New(kInvalidTag));
+    return;
   }
 
-  return v8::String::New(result);
+  args.GetReturnValue().Set(v8::String::New(result));
 }
 
-v8::Handle<v8::Value> JSAvailableLocalesOf(const v8::Arguments& args) {
+void JSAvailableLocalesOf(const v8::FunctionCallbackInfo<v8::Value>& args) {
   // Expect service name which is a string.
   if (args.Length() != 1 || !args[0]->IsString()) {
-    return v8::ThrowException(v8::Exception::SyntaxError(
+    v8::ThrowException(v8::Exception::SyntaxError(
         v8::String::New("Service identifier, as a string, is required.")));
+    return;
   }
 
   const icu::Locale* available_locales = NULL;
@@ -108,10 +113,10 @@ v8::Handle<v8::Value> JSAvailableLocalesOf(const v8::Arguments& args) {
     }
   }
 
-  return locales;
+  args.GetReturnValue().Set(locales);
 }
 
-v8::Handle<v8::Value> JSGetDefaultICULocale(const v8::Arguments& args) {
+void JSGetDefaultICULocale(const v8::FunctionCallbackInfo<v8::Value>& args) {
   icu::Locale default_locale;
 
   // Set the locale
@@ -120,19 +125,21 @@ v8::Handle<v8::Value> JSGetDefaultICULocale(const v8::Arguments& args) {
   uloc_toLanguageTag(
       default_locale.getName(), result, ULOC_FULLNAME_CAPACITY, FALSE, &status);
   if (U_SUCCESS(status)) {
-    return v8::String::New(result);
+    args.GetReturnValue().Set(v8::String::New(result));
+    return;
   }
 
-  return v8::String::New("und");
+  args.GetReturnValue().Set(v8::String::New("und"));
 }
 
-v8::Handle<v8::Value> JSGetLanguageTagVariants(const v8::Arguments& args) {
+void JSGetLanguageTagVariants(const v8::FunctionCallbackInfo<v8::Value>& args) {
   v8::TryCatch try_catch;
 
   // Expect an array of strings.
   if (args.Length() != 1 || !args[0]->IsArray()) {
-    return v8::ThrowException(v8::Exception::SyntaxError(
+    v8::ThrowException(v8::Exception::SyntaxError(
         v8::String::New("Internal error. Expected Array<String>.")));
+    return;
   }
 
   v8::Local<v8::Array> input = v8::Local<v8::Array>::Cast(args[0]);
@@ -144,15 +151,17 @@ v8::Handle<v8::Value> JSGetLanguageTagVariants(const v8::Arguments& args) {
     }
 
     if (!locale_id->IsString()) {
-      return v8::ThrowException(v8::Exception::SyntaxError(
+      v8::ThrowException(v8::Exception::SyntaxError(
           v8::String::New("Internal error. Array element is missing "
                           "or it isn't a string.")));
+      return;
     }
 
     v8::String::AsciiValue ascii_locale_id(locale_id);
     if (*ascii_locale_id == NULL) {
-      return v8::ThrowException(v8::Exception::SyntaxError(
+      v8::ThrowException(v8::Exception::SyntaxError(
           v8::String::New("Internal error. Non-ASCII locale identifier.")));
+      return;
     }
 
     UErrorCode error = U_ZERO_ERROR;
@@ -164,8 +173,9 @@ v8::Handle<v8::Value> JSGetLanguageTagVariants(const v8::Arguments& args) {
     uloc_forLanguageTag(*ascii_locale_id, icu_locale, ULOC_FULLNAME_CAPACITY,
                         &icu_locale_length, &error);
     if (U_FAILURE(error) || icu_locale_length == 0) {
-      return v8::ThrowException(v8::Exception::SyntaxError(
+      v8::ThrowException(v8::Exception::SyntaxError(
           v8::String::New("Internal error. Failed to convert locale to ICU.")));
+      return;
     }
 
     // Maximize the locale.
@@ -198,9 +208,10 @@ v8::Handle<v8::Value> JSGetLanguageTagVariants(const v8::Arguments& args) {
         icu_base_locale, base_locale, ULOC_FULLNAME_CAPACITY, FALSE, &error);
 
     if (U_FAILURE(error)) {
-      return v8::ThrowException(v8::Exception::SyntaxError(
+      v8::ThrowException(v8::Exception::SyntaxError(
           v8::String::New("Internal error. Couldn't generate maximized "
                           "or base locale.")));
+      return;
     }
 
     v8::Handle<v8::Object> result = v8::Object::New();
@@ -216,7 +227,7 @@ v8::Handle<v8::Value> JSGetLanguageTagVariants(const v8::Arguments& args) {
     }
   }
 
-  return output;
+  args.GetReturnValue().Set(output);
 }
 
 }  // namespace v8_i18n

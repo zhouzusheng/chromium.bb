@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGTextPositioningElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGText.h"
 #include "core/svg/SVGElementInstance.h"
@@ -66,7 +64,7 @@ bool SVGTextPositioningElement::isSupportedAttribute(const QualifiedName& attrNa
         supportedAttributes.add(SVGNames::dyAttr);
         supportedAttributes.add(SVGNames::rotateAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGTextPositioningElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -174,5 +172,3 @@ SVGTextPositioningElement* SVGTextPositioningElement::elementFromRenderer(Render
 }
 
 }
-
-#endif // ENABLE(SVG)

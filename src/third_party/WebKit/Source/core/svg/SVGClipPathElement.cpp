@@ -21,16 +21,11 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGClipPathElement.h"
 
 #include "SVGNames.h"
-#include "core/css/StyleResolver.h"
-#include "core/dom/Attribute.h"
-#include "core/dom/Document.h"
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGTransformList.h"
 
 namespace WebCore {
 
@@ -68,7 +63,7 @@ bool SVGClipPathElement::isSupportedAttribute(const QualifiedName& attrName)
         SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::clipPathUnitsAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGClipPathElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -119,11 +114,9 @@ void SVGClipPathElement::childrenChanged(bool changedByParser, Node* beforeChang
         object->setNeedsLayout(true);
 }
 
-RenderObject* SVGClipPathElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGClipPathElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGResourceClipper(this);
+    return new (document()->renderArena()) RenderSVGResourceClipper(this);
 }
 
 }
-
-#endif // ENABLE(SVG)

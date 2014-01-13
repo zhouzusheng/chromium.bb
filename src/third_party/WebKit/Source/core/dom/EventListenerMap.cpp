@@ -33,15 +33,12 @@
 #include "config.h"
 #include "core/dom/EventListenerMap.h"
 
-#include "core/dom/Event.h"
-#include "core/dom/EventException.h"
 #include "core/dom/EventTarget.h"
-#include <wtf/MainThread.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/Vector.h>
+#include "wtf/StdLibExtras.h"
+#include "wtf/Vector.h"
 
 #ifndef NDEBUG
-#include <wtf/Threading.h>
+#include "wtf/Threading.h"
 #endif
 
 using namespace WTF;
@@ -158,8 +155,6 @@ EventListenerVector* EventListenerMap::find(const AtomicString& eventType)
     return 0;
 }
 
-#if ENABLE(SVG)
-
 static void removeFirstListenerCreatedFromMarkup(EventListenerVector* listenerVector)
 {
     bool foundListener = false;
@@ -206,8 +201,6 @@ void EventListenerMap::copyEventListenersNotCreatedFromMarkupToTarget(EventTarge
     for (unsigned i = 0; i < m_entries.size(); ++i)
         copyListenersNotCreatedFromMarkupToTarget(m_entries[i].first, m_entries[i].second.get(), target);
 }
-
-#endif // ENABLE(SVG)
 
 EventListenerIterator::EventListenerIterator()
     : m_map(0)

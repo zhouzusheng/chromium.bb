@@ -43,7 +43,7 @@ class SkRegion;
 
 namespace WebCore {
 
-SkXfermode::Mode WebCoreCompositeToSkiaComposite(CompositeOperator);
+SkXfermode::Mode WebCoreCompositeToSkiaComposite(CompositeOperator, BlendMode = BlendModeNormal);
 
 // move this guy into SkColor.h
 SkColor SkPMColorToColor(SkPMColor);
@@ -73,15 +73,10 @@ inline SkRect WebCoreFloatRectToSKRect(const FloatRect& rect)
 // clip, doing the necessary coordinate transforms.
 //
 // srcRect and destRect can be the same.
-void ClipRectToCanvas(const PlatformContextSkia*, const SkRect& srcRect, SkRect* destRect);
+void ClipRectToCanvas(const GraphicsContext*, const SkRect& srcRect, SkRect* destRect);
 
 // Determine if a given WebKit point is contained in a path
 bool SkPathContainsPoint(SkPath*, const FloatPoint&, SkPath::FillType);
-
-// Returns a statically allocated 1x1 GraphicsContext intended for temporary
-// operations. Please save() the state and restore() it when you're done with
-// the context.
-GraphicsContext* scratchContext();
 
 }  // namespace WebCore
 

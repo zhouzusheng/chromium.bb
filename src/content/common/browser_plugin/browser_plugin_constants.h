@@ -14,8 +14,8 @@ extern const char kMethodBack[];
 extern const char kMethodCanGoBack[];
 extern const char kMethodCanGoForward[];
 extern const char kMethodForward[];
-extern const char kMethodGetProcessId[];
-extern const char kMethodGetRouteId[];
+extern const char kMethodGetGuestInstanceId[];
+extern const char kMethodGetInstanceId[];
 extern const char kMethodGo[];
 extern const char kMethodReload[];
 extern const char kMethodStop[];
@@ -27,6 +27,7 @@ extern const char kMethodInternalPersistObject[];
 extern const char kMethodInternalSetPermission[];
 
 // Attributes.
+extern const char kAttributeApi[];
 extern const char kAttributeAutoSize[];
 extern const char kAttributeContentWindow[];
 extern const char kAttributeMaxHeight[];
@@ -40,6 +41,7 @@ extern const char kAttributeSrc[];
 // Events.
 extern const char kEventClose[];
 extern const char kEventConsoleMessage[];
+extern const char kEventContentLoad[];
 extern const char kEventExit[];
 extern const char kEventLoadAbort[];
 extern const char kEventLoadCommit[];

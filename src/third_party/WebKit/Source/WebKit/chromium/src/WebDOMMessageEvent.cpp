@@ -40,7 +40,7 @@
 #include "core/dom/MessagePort.h"
 #include "core/dom/default/chromium/PlatformMessagePortChannelChromium.h"
 #include "core/page/DOMWindow.h"
-#include <public/WebString.h>
+#include "public/platform/WebString.h"
 
 using namespace WebCore;
 
@@ -48,7 +48,7 @@ namespace WebKit {
 
 void WebDOMMessageEvent::initMessageEvent(const WebString& type, bool canBubble, bool cancelable, const WebSerializedScriptValue& messageData, const WebString& origin, const WebFrame* sourceFrame, const WebString& lastEventId)
 {
-    ASSERT(m_private);
+    ASSERT(m_private.get());
     ASSERT(isMessageEvent());
     DOMWindow* window = 0;
     if (sourceFrame)

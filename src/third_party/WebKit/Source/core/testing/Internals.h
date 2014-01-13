@@ -28,7 +28,7 @@
 #define Internals_h
 
 #include "core/css/CSSComputedStyleDeclaration.h"
-#include "core/dom/ContextDestructionObserver.h"
+#include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/NodeList.h"
 #include <wtf/ArrayBuffer.h>
@@ -48,6 +48,7 @@ class DocumentMarker;
 class Element;
 class Frame;
 class InspectorFrontendChannelDummy;
+class InternalRuntimeFlags;
 class InternalSettings;
 class Node;
 class Page;
@@ -61,8 +62,7 @@ class TypeConversions;
 
 typedef int ExceptionCode;
 
-class Internals : public RefCounted<Internals>
-                , public ContextDestructionObserver {
+class Internals : public RefCounted<Internals>, public ContextLifecycleObserver {
 public:
     static PassRefPtr<Internals> create(Document*);
     virtual ~Internals();
@@ -82,7 +82,6 @@ public:
     PassRefPtr<CSSComputedStyleDeclaration> computedStyleIncludingVisitedInfo(Node*, ExceptionCode&) const;
 
     ShadowRoot* ensureShadowRoot(Element* host, ExceptionCode&);
-    ShadowRoot* createShadowRoot(Element* host, ExceptionCode&);
     ShadowRoot* shadowRoot(Element* host, ExceptionCode&);
     ShadowRoot* youngestShadowRoot(Element* host, ExceptionCode&);
     ShadowRoot* oldestShadowRoot(Element* host, ExceptionCode&);
@@ -96,16 +95,11 @@ public:
     String shadowPseudoId(Element*, ExceptionCode&);
     void setShadowPseudoId(Element*, const String&, ExceptionCode&);
 
-    // CSS Animation testing.
+    // CSS Animation / Transition testing.
     unsigned numberOfActiveAnimations() const;
     void suspendAnimations(Document*, ExceptionCode&) const;
     void resumeAnimations(Document*, ExceptionCode&) const;
-    bool pauseAnimationAtTimeOnElement(const String& animationName, double pauseTime, Element*, ExceptionCode&);
-    bool pauseAnimationAtTimeOnPseudoElement(const String& animationName, double pauseTime, Element*, const String& pseudoId, ExceptionCode&);
-
-    // CSS Transition testing.
-    bool pauseTransitionAtTimeOnElement(const String& propertyName, double pauseTime, Element*, ExceptionCode&);
-    bool pauseTransitionAtTimeOnPseudoElement(const String& property, double pauseTime, Element*, const String& pseudoId, ExceptionCode&);
+    void pauseAnimations(double pauseTime, ExceptionCode&);
 
     PassRefPtr<Element> createContentElement(ExceptionCode&);
     bool isValidContentSelect(Element* insertionPoint, ExceptionCode&);
@@ -115,6 +109,7 @@ public:
     bool hasSelectorForClassInShadow(Element* host, const String& className, ExceptionCode&);
     bool hasSelectorForAttributeInShadow(Element* host, const String& attributeName, ExceptionCode&);
     bool hasSelectorForPseudoClassInShadow(Element* host, const String& pseudoClass, ExceptionCode&);
+    unsigned short compareTreeScopePosition(const Node*, const Node*, ExceptionCode&) const;
 
     bool attached(Node*, ExceptionCode&);
 
@@ -126,15 +121,11 @@ public:
     Node* previousNodeByWalker(Node*, ExceptionCode&);
 
     String visiblePlaceholder(Element*);
-#if ENABLE(INPUT_TYPE_COLOR)
     void selectColorInColorChooser(Element*, const String& colorValue);
-#endif
     Vector<String> formControlStateOfPreviousHistoryItem(ExceptionCode&);
     void setFormControlStateOfPreviousHistoryItem(const Vector<String>&, ExceptionCode&);
     void setEnableMockPagePopup(bool, ExceptionCode&);
-#if ENABLE(PAGE_POPUP)
     PassRefPtr<PagePopupController> pagePopupController();
-#endif
 
     PassRefPtr<ClientRect> absoluteCaretBounds(ExceptionCode&);
 
@@ -192,7 +183,6 @@ public:
 
     bool hasSpellingMarker(Document*, int from, int length, ExceptionCode&);
     bool hasGrammarMarker(Document*, int from, int length, ExceptionCode&);
-    bool hasAutocorrectedMarker(Document*, int from, int length, ExceptionCode&);
     void setContinuousSpellCheckingEnabled(bool enabled, ExceptionCode&);
 
     bool isOverwriteModeEnabled(Document*, ExceptionCode&);
@@ -205,24 +195,20 @@ public:
     static const char* internalsId;
 
     InternalSettings* settings() const;
+    InternalRuntimeFlags* runtimeFlags() const;
     unsigned workerThreadCount() const;
-
-    void setBatteryStatus(Document*, const String& eventType, bool charging, double chargingTime, double dischargingTime, double level, ExceptionCode&);
 
     void setDeviceProximity(Document*, const String& eventType, double value, double min, double max, ExceptionCode&);
 
-    enum {
-        // Values need to be kept in sync with Internals.idl.
-        LAYER_TREE_INCLUDES_VISIBLE_RECTS = 1,
-        LAYER_TREE_INCLUDES_TILE_CACHES = 2,
-        LAYER_TREE_INCLUDES_REPAINT_RECTS = 4,
-        LAYER_TREE_INCLUDES_PAINTING_PHASES = 8
-    };
     String layerTreeAsText(Document*, unsigned flags, ExceptionCode&) const;
     String layerTreeAsText(Document*, ExceptionCode&) const;
+    String elementLayerTreeAsText(Element*, unsigned flags, ExceptionCode&) const;
+    String elementLayerTreeAsText(Element*, ExceptionCode&) const;
 
-    PassRefPtr<NodeList> paintOrderListBeforePromote(Element* element, ExceptionCode& ec);
-    PassRefPtr<NodeList> paintOrderListAfterPromote(Element* element, ExceptionCode& ec);
+    PassRefPtr<NodeList> paintOrderListBeforePromote(Element*, ExceptionCode&);
+    PassRefPtr<NodeList> paintOrderListAfterPromote(Element*, ExceptionCode&);
+
+    void setNeedsCompositedScrolling(Element*, unsigned value, ExceptionCode&);
 
     String repaintRectsAsText(Document*, ExceptionCode&) const;
     String scrollingStateTreeAsText(Document*, ExceptionCode&) const;
@@ -241,8 +227,8 @@ public:
     Vector<String> consoleMessageArgumentCounts(Document*) const;
     PassRefPtr<DOMWindow> openDummyInspectorFrontend(const String& url);
     void closeDummyInspectorFrontend();
+    Vector<unsigned long> setMemoryCacheCapacities(unsigned long minDeadBytes, unsigned long maxDeadBytes, unsigned long totalBytes);
     void setInspectorResourcesDataSizeLimits(int maximumResourcesContentSize, int maximumSingleResourceContentSize, ExceptionCode&);
-    void setJavaScriptProfilingEnabled(bool enabled, ExceptionCode&);
 
     String counterValue(Element*);
 
@@ -254,6 +240,7 @@ public:
     String pageProperty(String, int, ExceptionCode& = ASSERT_NO_EXCEPTION) const;
     String pageSizeAndMarginsInPixels(int, int, int, int, int, int, int, ExceptionCode& = ASSERT_NO_EXCEPTION) const;
 
+    void setDeviceScaleFactor(float scaleFactor, ExceptionCode&);
     void setPageScaleFactor(float scaleFactor, int x, int y, ExceptionCode&);
 
     void setIsCursorVisible(Document*, bool, ExceptionCode&);
@@ -285,15 +272,13 @@ public:
 
     void forceReload(bool endToEnd);
 
-#if ENABLE(ENCRYPTED_MEDIA_V2)
-    void initializeMockCDM();
-#endif
-
     void enableMockSpeechSynthesizer();
 
     String getImageSourceURL(Element*, ExceptionCode&);
 
     bool isSelectPopupVisible(Node*);
+
+    PassRefPtr<ClientRect> selectionBounds(ExceptionCode&);
 
 private:
     explicit Internals(Document*);
@@ -304,6 +289,7 @@ private:
     DocumentMarker* markerAt(Node*, const String& markerType, unsigned index, ExceptionCode&);
     RefPtr<DOMWindow> m_frontendWindow;
     OwnPtr<InspectorFrontendChannelDummy> m_frontendChannel;
+    RefPtr<InternalRuntimeFlags> m_runtimeFlags;
 };
 
 } // namespace WebCore

@@ -5,7 +5,7 @@
 #include "net/base/filter.h"
 
 #include "base/files/file_path.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "net/base/gzip_filter.h"
 #include "net/base/io_buffer.h"
 #include "net/base/mime_util.h"
@@ -322,9 +322,7 @@ Filter::Filter()
       stream_buffer_size_(0),
       next_stream_data_(NULL),
       stream_data_len_(0),
-      next_filter_(NULL),
-      last_status_(FILTER_NEED_MORE_DATA) {
-}
+      last_status_(FILTER_NEED_MORE_DATA) {}
 
 Filter::FilterStatus Filter::CopyOut(char* dest_buffer, int* dest_len) {
   int out_len;

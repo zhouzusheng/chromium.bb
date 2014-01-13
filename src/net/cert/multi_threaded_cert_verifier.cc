@@ -196,7 +196,7 @@ class CertVerifierWorker {
         flags_(flags),
         crl_set_(crl_set),
         additional_trust_anchors_(additional_trust_anchors),
-        origin_loop_(MessageLoop::current()),
+        origin_loop_(base::MessageLoop::current()),
         cert_verifier_(cert_verifier),
         canceled_(false),
         error_(ERR_FAILED) {
@@ -204,10 +204,10 @@ class CertVerifierWorker {
 
   // Returns the certificate being verified. May only be called /before/
   // Start() is called.
-  X509Certificate* certificate() const { return cert_; }
+  X509Certificate* certificate() const { return cert_.get(); }
 
   bool Start() {
-    DCHECK_EQ(MessageLoop::current(), origin_loop_);
+    DCHECK_EQ(base::MessageLoop::current(), origin_loop_);
 
     return base::WorkerPool::PostTask(
         FROM_HERE, base::Bind(&CertVerifierWorker::Run, base::Unretained(this)),
@@ -217,7 +217,7 @@ class CertVerifierWorker {
   // Cancel is called from the origin loop when the MultiThreadedCertVerifier is
   // getting deleted.
   void Cancel() {
-    DCHECK_EQ(MessageLoop::current(), origin_loop_);
+    DCHECK_EQ(base::MessageLoop::current(), origin_loop_);
     base::AutoLock locked(lock_);
     canceled_ = true;
   }
@@ -225,8 +225,12 @@ class CertVerifierWorker {
  private:
   void Run() {
     // Runs on a worker thread.
-    error_ = verify_proc_->Verify(cert_, hostname_, flags_, crl_set_,
-                                  additional_trust_anchors_, &verify_result_);
+    error_ = verify_proc_->Verify(cert_.get(),
+                                  hostname_,
+                                  flags_,
+                                  crl_set_.get(),
+                                  additional_trust_anchors_,
+                                  &verify_result_);
 #if defined(USE_NSS) || defined(OS_IOS)
     // Detach the thread from NSPR.
     // Calling NSS functions attaches the thread to NSPR, which stores
@@ -242,7 +246,7 @@ class CertVerifierWorker {
 
   // DoReply runs on the origin thread.
   void DoReply() {
-    DCHECK_EQ(MessageLoop::current(), origin_loop_);
+    DCHECK_EQ(base::MessageLoop::current(), origin_loop_);
     {
       // We lock here because the worker thread could still be in Finished,
       // after the PostTask, but before unlocking |lock_|. If we do not lock in
@@ -250,8 +254,11 @@ class CertVerifierWorker {
       // memory leaks or worse errors.
       base::AutoLock locked(lock_);
       if (!canceled_) {
-        cert_verifier_->HandleResult(cert_, hostname_, flags_,
-                                     additional_trust_anchors_, error_,
+        cert_verifier_->HandleResult(cert_.get(),
+                                     hostname_,
+                                     flags_,
+                                     additional_trust_anchors_,
+                                     error_,
                                      verify_result_);
       }
     }
@@ -291,7 +298,7 @@ class CertVerifierWorker {
   const int flags_;
   scoped_refptr<CRLSet> crl_set_;
   const CertificateList additional_trust_anchors_;
-  MessageLoop* const origin_loop_;
+  base::MessageLoop* const origin_loop_;
   MultiThreadedCertVerifier* const cert_verifier_;
 
   // lock_ protects canceled_.
@@ -448,8 +455,13 @@ int MultiThreadedCertVerifier::Verify(X509Certificate* cert,
   } else {
     // Need to make a new request.
     CertVerifierWorker* worker =
-        new CertVerifierWorker(verify_proc_, cert, hostname, flags, crl_set,
-                               additional_trust_anchors, this);
+        new CertVerifierWorker(verify_proc_.get(),
+                               cert,
+                               hostname,
+                               flags,
+                               crl_set,
+                               additional_trust_anchors,
+                               this);
     job = new CertVerifierJob(
         worker,
         BoundNetLog::Make(net_log.net_log(), NetLog::SOURCE_CERT_VERIFIER_JOB));

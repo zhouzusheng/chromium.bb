@@ -1,7 +1,7 @@
 /*
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * (C) 2002-2003 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2002, 2006, 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2002, 2006, 2008, 2012, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -31,6 +31,7 @@ namespace WebCore {
 class CSSRule;
 class CSSStyleRule;
 class CSSStyleSheet;
+class MutableStylePropertySet;
 class StylePropertySet;
 
 class StyleRuleBase : public WTF::RefCountedBase {
@@ -47,16 +48,14 @@ public:
         Keyframes,
         Keyframe, // Not used. These are internally non-rule StyleKeyframe objects.
         Supports = 12,
-#if ENABLE(CSS_DEVICE_ADAPTATION)
         Viewport = 15,
-#endif
         Region = 16,
         Filter = 17,
         HostInternal = 18, // Spec says Host = 1001, but we can use only 5 bit for type().
     };
 
     Type type() const { return static_cast<Type>(m_type); }
-    
+
     bool isCharsetRule() const { return type() == Charset; }
     bool isFontFaceRule() const { return type() == FontFace; }
     bool isKeyframesRule() const { return type() == Keyframes; }
@@ -65,9 +64,7 @@ public:
     bool isStyleRule() const { return type() == Style; }
     bool isRegionRule() const { return type() == Region; }
     bool isSupportsRule() const { return type() == Supports; }
-#if ENABLE(CSS_DEVICE_ADAPTATION)
     bool isViewportRule() const { return type() == Viewport; }
-#endif
     bool isImportRule() const { return type() == Import; }
     bool isHostRule() const { return type() == HostInternal; }
     bool isFilterRule() const { return type() == Filter; }
@@ -112,7 +109,7 @@ public:
 
     const CSSSelectorList& selectorList() const { return m_selectorList; }
     const StylePropertySet* properties() const { return m_properties.get(); }
-    StylePropertySet* mutableProperties();
+    MutableStylePropertySet* mutableProperties();
     
     void parserAdoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& selectors) { m_selectorList.adoptSelectorVector(selectors); }
     void wrapperAdoptSelectorList(CSSSelectorList& selectors) { m_selectorList.adopt(selectors); }
@@ -131,6 +128,12 @@ private:
     CSSSelectorList m_selectorList;
 };
 
+inline const StyleRule* toStyleRule(const StyleRuleBase* rule)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!rule || rule->isStyleRule());
+    return static_cast<const StyleRule*>(rule);
+}
+
 class StyleRuleFontFace : public StyleRuleBase {
 public:
     static PassRefPtr<StyleRuleFontFace> create() { return adoptRef(new StyleRuleFontFace); }
@@ -138,7 +141,7 @@ public:
     ~StyleRuleFontFace();
 
     const StylePropertySet* properties() const { return m_properties.get(); }
-    StylePropertySet* mutableProperties();
+    MutableStylePropertySet* mutableProperties();
 
     void setProperties(PassRefPtr<StylePropertySet>);
 
@@ -161,7 +164,7 @@ public:
 
     const CSSSelector* selector() const { return m_selectorList.first(); }    
     const StylePropertySet* properties() const { return m_properties.get(); }
-    StylePropertySet* mutableProperties();
+    MutableStylePropertySet* mutableProperties();
 
     void parserAdoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& selectors) { m_selectorList.adoptSelectorVector(selectors); }
     void wrapperAdoptSelectorList(CSSSelectorList& selectors) { m_selectorList.adopt(selectors); }
@@ -269,7 +272,6 @@ private:
     StyleRuleHost(const StyleRuleHost& o) : StyleRuleGroup(o) { }
 };
 
-#if ENABLE(CSS_DEVICE_ADAPTATION)
 class StyleRuleViewport : public StyleRuleBase {
 public:
     static PassRefPtr<StyleRuleViewport> create() { return adoptRef(new StyleRuleViewport); }
@@ -277,7 +279,7 @@ public:
     ~StyleRuleViewport();
 
     const StylePropertySet* properties() const { return m_properties.get(); }
-    StylePropertySet* mutableProperties();
+    MutableStylePropertySet* mutableProperties();
 
     void setProperties(PassRefPtr<StylePropertySet>);
 
@@ -291,7 +293,6 @@ private:
 
     RefPtr<StylePropertySet> m_properties;
 };
-#endif // ENABLE(CSS_DEVICE_ADAPTATION)
 
 inline const StyleRuleMedia* toStyleRuleMedia(const StyleRuleGroup* rule)
 {
@@ -320,7 +321,7 @@ public:
     const String& filterName() const { return m_filterName; }
 
     const StylePropertySet* properties() const { return m_properties.get(); }
-    StylePropertySet* mutableProperties();
+    MutableStylePropertySet* mutableProperties();
 
     void setProperties(PassRefPtr<StylePropertySet>);
 

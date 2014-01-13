@@ -28,11 +28,9 @@
 
 #include "FakeWebGraphicsContext3D.h"
 #include "SkDeferredCanvas.h"
-#include "WebCompositorInitializer.h"
-#include "core/platform/chromium/support/GraphicsContext3DPrivate.h"
 #include "core/platform/graphics/ImageBuffer.h"
-#include <public/Platform.h>
-#include <public/WebThread.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebThread.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -66,9 +64,9 @@ class Canvas2DLayerBridgeTest : public Test {
 protected:
     void fullLifecycleTest(Canvas2DLayerBridge::ThreadMode threadMode)
     {
-        RefPtr<GraphicsContext3D> mainContext = GraphicsContext3DPrivate::createGraphicsContextFromWebContext(adoptPtr(new MockCanvasContext));
+        RefPtr<GraphicsContext3D> mainContext = GraphicsContext3D::createGraphicsContextFromWebContext(adoptPtr(new MockCanvasContext));
 
-        MockCanvasContext& mainMock = *static_cast<MockCanvasContext*>(GraphicsContext3DPrivate::extractWebGraphicsContext3D(mainContext.get()));
+        MockCanvasContext& mainMock = *static_cast<MockCanvasContext*>(mainContext->webContext());
 
         MockWebTextureUpdater updater;
 

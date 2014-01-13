@@ -90,12 +90,12 @@ class CONTENT_EXPORT DownloadItemImpl
   virtual void AddObserver(DownloadItem::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(DownloadItem::Observer* observer) OVERRIDE;
   virtual void UpdateObservers() OVERRIDE;
-  virtual void DangerousDownloadValidated() OVERRIDE;
+  virtual void ValidateDangerousDownload() OVERRIDE;
+  virtual void StealDangerousDownload(const AcquireFileCallback& callback)
+      OVERRIDE;
   virtual void Pause() OVERRIDE;
   virtual void Resume() OVERRIDE;
-  virtual void ResumeInterruptedDownload() OVERRIDE;
   virtual void Cancel(bool user_cancel) OVERRIDE;
-  virtual void Delete(DeleteReason reason) OVERRIDE;
   virtual void Remove() OVERRIDE;
   virtual void OpenDownload() OVERRIDE;
   virtual void ShowDownloadInShell() OVERRIDE;
@@ -105,11 +105,8 @@ class CONTENT_EXPORT DownloadItemImpl
   virtual DownloadInterruptReason GetLastReason() const OVERRIDE;
   virtual bool IsPaused() const OVERRIDE;
   virtual bool IsTemporary() const OVERRIDE;
-  virtual bool IsPartialDownload() const OVERRIDE;
-  virtual bool IsInProgress() const OVERRIDE;
-  virtual bool IsCancelled() const OVERRIDE;
-  virtual bool IsInterrupted() const OVERRIDE;
-  virtual bool IsComplete() const OVERRIDE;
+  virtual bool CanResume() const OVERRIDE;
+  virtual bool IsDone() const OVERRIDE;
   virtual const GURL& GetURL() const OVERRIDE;
   virtual const std::vector<GURL>& GetUrlChain() const OVERRIDE;
   virtual const GURL& GetOriginalUrl() const OVERRIDE;
@@ -127,7 +124,6 @@ class CONTENT_EXPORT DownloadItemImpl
   virtual const base::FilePath& GetFullPath() const OVERRIDE;
   virtual const base::FilePath& GetTargetFilePath() const OVERRIDE;
   virtual const base::FilePath& GetForcedFilePath() const OVERRIDE;
-  virtual base::FilePath GetUserVerifiedFilePath() const OVERRIDE;
   virtual base::FilePath GetFileNameToReportUser() const OVERRIDE;
   virtual TargetDisposition GetTargetDisposition() const OVERRIDE;
   virtual const std::string& GetHash() const OVERRIDE;
@@ -161,6 +157,9 @@ class CONTENT_EXPORT DownloadItemImpl
   // All remaining public interfaces virtual to allow for DownloadItemImpl
   // mocks.
 
+  // Determines the resume mode for an interrupted download. Requires
+  // last_reason_ to be set, but doesn't require the download to be in
+  // INTERRUPTED state.
   virtual ResumeMode GetResumeMode() const;
 
   // State transition operations on regular downloads --------------------------
@@ -194,49 +193,11 @@ class CONTENT_EXPORT DownloadItemImpl
   // Called by SavePackage to set the total number of bytes on the item.
   virtual void SetTotalBytes(int64 total_bytes);
 
-  // Indicate progress in saving data to its destination.
-  // |bytes_so_far| is the number of bytes received so far.
-  // |hash_state| is the current hash state.
-  virtual void UpdateProgress(int64 bytes_so_far,
-                              int64 bytes_per_sec,
-                              const std::string& hash_state);
-
   virtual void OnAllDataSaved(const std::string& final_hash);
 
   // Called by SavePackage to display progress when the DownloadItem
   // should be considered complete.
   virtual void MarkAsComplete();
-
- private:
-  // Fine grained states of a download.
-  enum DownloadInternalState {
-    // Unless otherwise specified, state transitions are linear forward
-    // in this list.
-
-    // Includes both before and after file name determination.
-    // TODO(rdsmith): Put in state variable for file name determination.
-    IN_PROGRESS_INTERNAL,
-
-    // Between commit point (dispatch of download file release) and completed.
-    // Embedder may be opening the file in this state.  Note that the
-    // DownloadItem may be deleted (by shutdown) or interrupted (e.g. due to a
-    // failure during AnnotateWithSourceInformation()) in this state.
-    COMPLETING_INTERNAL,
-
-    // After embedder has had a chance to auto-open.  User may now open
-    // or auto-open based on extension.
-    COMPLETE_INTERNAL,
-
-    // User has cancelled the download.
-    // Only incoming transition IN_PROGRESS->
-    CANCELLED_INTERNAL,
-
-    // An error has interrupted the download.
-    // Only incoming transition IN_PROGRESS->
-    INTERRUPTED_INTERNAL,
-
-    MAX_DOWNLOAD_INTERNAL_STATE,
-  };
 
   // DownloadDestinationObserver
   virtual void DestinationUpdate(int64 bytes_so_far,
@@ -244,6 +205,76 @@ class CONTENT_EXPORT DownloadItemImpl
                                  const std::string& hash_state) OVERRIDE;
   virtual void DestinationError(DownloadInterruptReason reason) OVERRIDE;
   virtual void DestinationCompleted(const std::string& final_hash) OVERRIDE;
+
+ private:
+  // Fine grained states of a download. Note that active downloads are created
+  // in IN_PROGRESS_INTERNAL state. However, downloads creates via history can
+  // be created in COMPLETE_INTERNAL, CANCELLED_INTERNAL and
+  // INTERRUPTED_INTERNAL.
+
+  enum DownloadInternalState {
+    // Includes both before and after file name determination, and paused
+    // downloads.
+    // TODO(rdsmith): Put in state variable for file name determination.
+    // Transitions from:
+    //   <Initial creation>    Active downloads are created in this state.
+    //   RESUMING_INTERNAL
+    // Transitions to:
+    //   COMPLETING_INTERNAL   On final rename completion.
+    //   CANCELLED_INTERNAL    On cancel.
+    //   INTERRUPTED_INTERNAL  On interrupt.
+    //   COMPLETE_INTERNAL     On SavePackage download completion.
+    IN_PROGRESS_INTERNAL,
+
+    // Between commit point (dispatch of download file release) and completed.
+    // Embedder may be opening the file in this state.
+    // Transitions from:
+    //   IN_PROGRESS_INTERNAL
+    // Transitions to:
+    //   COMPLETE_INTERNAL     On successful completion.
+    COMPLETING_INTERNAL,
+
+    // After embedder has had a chance to auto-open.  User may now open
+    // or auto-open based on extension.
+    // Transitions from:
+    //   COMPLETING_INTERNAL
+    //   IN_PROGRESS_INTERNAL  SavePackage only.
+    //   <Initial creation>    Completed persisted downloads.
+    // Transitions to:
+    //   <none>                Terminal state.
+    COMPLETE_INTERNAL,
+
+    // User has cancelled the download.
+    // Transitions from:
+    //   IN_PROGRESS_INTERNAL
+    //   INTERRUPTED_INTERNAL
+    //   RESUMING_INTERNAL
+    //   <Initial creation>    Canceleld persisted downloads.
+    // Transitions to:
+    //   <none>                Terminal state.
+    CANCELLED_INTERNAL,
+
+    // An error has interrupted the download.
+    // Transitions from:
+    //   IN_PROGRESS_INTERNAL
+    //   RESUMING_INTERNAL
+    //   <Initial creation>    Interrupted persisted downloads.
+    // Transitions to:
+    //   RESUMING_INTERNAL     On resumption.
+    INTERRUPTED_INTERNAL,
+
+    // A request to resume this interrupted download is in progress.
+    // Transitions from:
+    //   INTERRUPTED_INTERNAL
+    // Transitions to:
+    //   IN_PROGRESS_INTERNAL  Once a server response is received from a
+    //                         resumption.
+    //   INTERRUPTED_INTERNAL  If the resumption request fails.
+    //   CANCELLED_INTERNAL    On cancel.
+    RESUMING_INTERNAL,
+
+    MAX_DOWNLOAD_INTERNAL_STATE,
+  };
 
   // Normal progression of a download ------------------------------------------
 
@@ -295,14 +326,18 @@ class CONTENT_EXPORT DownloadItemImpl
   // is completed.
   void Completed();
 
+  // Callback invoked when the URLRequest for a download resumption has started.
+  void OnResumeRequestStarted(DownloadItem* item, net::Error error);
+
   // Helper routines -----------------------------------------------------------
 
   // Indicate that an error has occurred on the download.
   void Interrupt(DownloadInterruptReason reason);
 
   // Destroy the DownloadFile object.  If |destroy_file| is true, the file is
-  // destroyed with it.  Otherwise, DownloadFile::Detach() is called
-  // before object destruction to prevent file destruction.
+  // destroyed with it.  Otherwise, DownloadFile::Detach() is called before
+  // object destruction to prevent file destruction. Destroying the file also
+  // resets |current_path_|.
   void ReleaseDownloadFile(bool destroy_file);
 
   // Check if a download is ready for completion.  The callback provided
@@ -319,6 +354,8 @@ class CONTENT_EXPORT DownloadItemImpl
   void SetFullPath(const base::FilePath& new_path);
 
   void AutoResumeIfValid();
+
+  void ResumeInterruptedDownload();
 
   static DownloadState InternalToExternalState(
       DownloadInternalState internal_state);

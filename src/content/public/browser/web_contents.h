@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/process_util.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_controller.h"
@@ -38,6 +38,7 @@ namespace content {
 
 class BrowserContext;
 class InterstitialPage;
+class PageState;
 class RenderProcessHost;
 class RenderViewHost;
 class RenderWidgetHostView;
@@ -77,6 +78,7 @@ class WebContents : public PageNavigator,
     BrowserContext* browser_context;
     SiteInstance* site_instance;
     int routing_id;
+    int main_frame_routing_id;
 
     // Initial size of the new WebContent's view. Can be (0, 0) if not needed.
     gfx::Size initial_size;
@@ -103,6 +105,13 @@ class WebContents : public PageNavigator,
       const CreateParams& params,
       const SessionStorageNamespaceMap& session_storage_namespace_map);
 
+  // Adds/removes a callback called on creation of each new WebContents.
+  typedef base::Callback<void(WebContents*)> CreatedCallback;
+  CONTENT_EXPORT static void AddCreatedCallback(
+      const CreatedCallback& callback);
+  CONTENT_EXPORT static void RemoveCreatedCallback(
+      const CreatedCallback& callback);
+
   // Returns a WebContents that wraps the RenderViewHost, or NULL if the
   // render view host's delegate isn't a WebContents.
   CONTENT_EXPORT static WebContents* FromRenderViewHost(
@@ -125,7 +134,21 @@ class WebContents : public PageNavigator,
   virtual content::BrowserContext* GetBrowserContext() const = 0;
 
   // Gets the URL that is currently being displayed, if there is one.
+  // This method is deprecated. DO NOT USE! Pick either |GetActiveURL| or
+  // |GetLastCommittedURL| as appropriate.
   virtual const GURL& GetURL() const = 0;
+
+  // Gets the URL currently being displayed in the URL bar, if there is one.
+  // This URL might be a pending navigation that hasn't committed yet, so it is
+  // not guaranteed to match the current page in this WebContents. A typical
+  // example of this is interstitials, which show the URL of the new/loading
+  // page (active) but the security context is of the old page (last committed).
+  virtual const GURL& GetActiveURL() const = 0;
+
+  // Gets the last committed URL. It represents the current page that is
+  // displayed in  this WebContents. It represents the current security
+  // context.
+  virtual const GURL& GetLastCommittedURL() const = 0;
 
   // Return the currently active RenderProcessHost and RenderViewHost. Each of
   // these may change over time.
@@ -223,6 +246,9 @@ class WebContents : public PageNavigator,
   // Return the upload progress.
   virtual uint64 GetUploadSize() const = 0;
   virtual uint64 GetUploadPosition() const = 0;
+
+  // Returns a set of the site URLs currently committed in this tab.
+  virtual std::set<GURL> GetSitesInTab() const = 0;
 
   // Return the character encoding of the page.
   virtual const std::string& GetEncoding() const = 0;
@@ -335,18 +361,9 @@ class WebContents : public PageNavigator,
   // Returns the settings which get passed to the renderer.
   virtual content::RendererPreferences* GetMutableRendererPrefs() = 0;
 
-  // Set the time when we started to create the new tab page.  This time is
-  // from before we created this WebContents.
-  virtual void SetNewTabStartTime(const base::TimeTicks& time) = 0;
-  virtual base::TimeTicks GetNewTabStartTime() const = 0;
-
   // Tells the tab to close now. The tab will take care not to close until it's
   // out of nested message loops.
   virtual void Close() = 0;
-
-  // Notification that tab closing has started.  This can be called multiple
-  // times, subsequent calls are ignored.
-  virtual void OnCloseStarted() = 0;
 
   // A render view-originated drag has ended. Informs the render view host and
   // WebContentsDelegate.
@@ -375,7 +392,7 @@ class WebContents : public PageNavigator,
   virtual void ViewSource() = 0;
 
   virtual void ViewFrameSource(const GURL& url,
-                               const std::string& content_state)= 0;
+                               const PageState& page_state)= 0;
 
   // Gets the minimum/maximum zoom percent.
   virtual int GetMinimumZoomPercent() const = 0;
@@ -393,11 +410,10 @@ class WebContents : public PageNavigator,
   virtual bool GotResponseToLockMouseRequest(bool allowed) = 0;
 
   // Called when the user has selected a color in the color chooser.
-  virtual void DidChooseColorInColorChooser(int color_chooser_id,
-                                            SkColor color) = 0;
+  virtual void DidChooseColorInColorChooser(SkColor color) = 0;
 
   // Called when the color chooser has ended.
-  virtual void DidEndColorChooser(int color_chooser_id) = 0;
+  virtual void DidEndColorChooser() = 0;
 
   // Returns true if the location bar should be focused by default rather than
   // the page contents. The view calls this function when the tab is focused
@@ -408,6 +424,7 @@ class WebContents : public PageNavigator,
   virtual bool HasOpener() const = 0;
 
   typedef base::Callback<void(int, /* id */
+                              int, /* HTTP status code */
                               const GURL&, /* image_url */
                               int,  /* requested_size */
                               const std::vector<SkBitmap>& /* bitmaps*/)>
@@ -417,12 +434,15 @@ class WebContents : public PageNavigator,
   // id of the download request. When the download is finished, |callback| will
   // be called with the bitmaps received from the renderer. If |is_favicon| is
   // true, the cookies are not sent and not accepted during download. Note that
-  // |image_size| is a hint for images with multiple sizes. The downloaded image
-  // is not resized to the given image_size. If 0 is passed, the first frame of
-  // the image is returned.
+  // |preferred_image_size| is a hint for images with multiple sizes. The
+  // downloaded image is not resized to the given image_size. If 0 is passed,
+  // the first frame of the image is returned.
+  // |max_image_size| is the maximal size of the returned image. It will be
+  // resized if needed. If 0 is passed, the maximal size is unlimited.
   virtual int DownloadImage(const GURL& url,
                             bool is_favicon,
-                            int image_size,
+                            uint32_t preferred_image_size,
+                            uint32_t max_image_size,
                             const ImageDownloadCallback& callback) = 0;
 
  private:

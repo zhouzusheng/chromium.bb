@@ -30,13 +30,13 @@
 #include "core/rendering/style/CounterDirectives.h"
 #include "core/rendering/style/CursorData.h"
 #include "core/rendering/style/DataRef.h"
-#include "core/rendering/style/ExclusionShapeValue.h"
 #include "core/rendering/style/FillLayer.h"
 #include "core/rendering/style/LineClampValue.h"
 #include "core/rendering/style/NinePieceImage.h"
-#include <wtf/OwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/Vector.h>
+#include "core/rendering/style/ShapeValue.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -125,17 +125,15 @@ public:
 
     LengthSize m_pageSize;
 
-    RefPtr<ExclusionShapeValue> m_shapeInside;
-    RefPtr<ExclusionShapeValue> m_shapeOutside;
+    RefPtr<ShapeValue> m_shapeInside;
+    RefPtr<ShapeValue> m_shapeOutside;
     Length m_shapeMargin;
     Length m_shapePadding;
 
     RefPtr<ClipPathOperation> m_clipPath;
 
-#if ENABLE(CSS3_TEXT)
     Color m_textDecorationColor;
     Color m_visitedLinkTextDecorationColor;
-#endif // CSS3_TEXT
     Color m_visitedLinkBackgroundColor;
     Color m_visitedLinkOutlineColor;
     Color m_visitedLinkBorderLeftColor;
@@ -147,7 +145,7 @@ public:
 
     AtomicString m_flowThread;
     AtomicString m_regionThread;
-    unsigned m_regionOverflow : 1; // RegionOverflow
+    unsigned m_regionFragment : 1; // RegionFragment
 
     unsigned m_regionBreakAfter : 2; // EPageBreak
     unsigned m_regionBreakBefore : 2; // EPageBreak
@@ -170,9 +168,7 @@ public:
     unsigned m_borderFit : 1; // EBorderFit
     unsigned m_textCombine : 1; // CSS3 text-combine properties
 
-#if ENABLE(CSS3_TEXT)
     unsigned m_textDecorationStyle : 3; // TextDecorationStyle
-#endif // CSS3_TEXT
     unsigned m_wrapFlow: 3; // WrapFlow
     unsigned m_wrapThrough: 1; // WrapThrough
 
@@ -180,9 +176,9 @@ public:
 
     unsigned m_hasAspectRatio : 1; // Whether or not an aspect ratio has been specified.
 
-#if ENABLE(CSS_COMPOSITING)
     unsigned m_effectiveBlendMode: 5; // EBlendMode
-#endif
+
+    unsigned m_touchAction : 1; // TouchAction
 
 private:
     StyleRareNonInheritedData();

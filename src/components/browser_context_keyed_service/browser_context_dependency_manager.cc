@@ -9,14 +9,19 @@
 #include <iterator>
 
 #include "base/bind.h"
+#include "base/debug/trace_event.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_base_factory.h"
 #include "content/public/browser/browser_context.h"
 
 #ifndef NDEBUG
 #include "base/command_line.h"
 #include "base/file_util.h"
-#include "content/public/common/content_switches.h"
-#endif
+
+// Dumps dependency information about our browser context keyed services
+// into a dot file in the browser context directory.
+const char kDumpBrowserContextDependencyGraphFlag[] =
+    "dump-browser-context-graph";
+#endif  // NDEBUG
 
 void BrowserContextDependencyManager::AddComponent(
     BrowserContextKeyedBaseFactory* component) {
@@ -36,6 +41,8 @@ void BrowserContextDependencyManager::AddEdge(
 
 void BrowserContextDependencyManager::CreateBrowserContextServices(
     content::BrowserContext* context, bool is_testing_context) {
+  TRACE_EVENT0("browser",
+    "BrowserContextDependencyManager::CreateBrowserContextServices")
 #ifndef NDEBUG
   // Unmark |context| as dead. This exists because of unit tests, which will
   // often have similar stack structures. 0xWhatever might be created, go out
@@ -140,7 +147,7 @@ void BrowserContextDependencyManager::DumpBrowserContextDependencies(
   // Whenever we try to build a destruction ordering, we should also dump a
   // dependency graph to "/path/to/context/context-dependencies.dot".
   if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDumpBrowserContextDependencyGraph)) {
+          kDumpBrowserContextDependencyGraphFlag)) {
     base::FilePath dot_file =
         context->GetPath().AppendASCII("browser-context-dependencies.dot");
     std::string contents = dependency_graph_.DumpAsGraphviz(

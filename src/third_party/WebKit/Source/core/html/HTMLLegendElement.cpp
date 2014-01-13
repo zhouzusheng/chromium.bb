@@ -29,7 +29,6 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/html/HTMLFieldSetElement.h"
 #include "core/html/HTMLFormControlElement.h"
-#include <wtf/StdLibExtras.h>
 
 namespace WebCore {
 
@@ -62,7 +61,7 @@ HTMLFormControlElement* HTMLLegendElement::associatedControl()
     Element* element = fieldset;
     while ((element = ElementTraversal::next(element, fieldset))) {
         if (element->isFormControlElement())
-            return static_cast<HTMLFormControlElement*>(element);
+            return toHTMLFormControlElement(element);
     }
 
     return 0;

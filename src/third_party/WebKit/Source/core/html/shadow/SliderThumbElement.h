@@ -34,10 +34,8 @@
 
 #include "HTMLNames.h"
 #include "core/html/HTMLDivElement.h"
-#include "core/platform/graphics/FloatPoint.h"
 #include "core/rendering/RenderBlock.h"
-#include "core/rendering/style/RenderStyleConstants.h"
-#include <wtf/Forward.h>
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -56,14 +54,14 @@ public:
     virtual void defaultEventHandler(Event*);
     virtual bool willRespondToMouseMoveEvents() OVERRIDE;
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
-    virtual void detach();
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual const AtomicString& shadowPseudoId() const;
     HTMLInputElement* hostInput() const;
     void setPositionFromPoint(const LayoutPoint&);
 
 private:
     SliderThumbElement(Document*);
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren();
     virtual bool isDisabledFormControl() const OVERRIDE;
     virtual bool matchesReadOnlyPseudoClass() const OVERRIDE;
@@ -121,7 +119,7 @@ public:
 
 private:
     SliderContainerElement(Document*);
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual const AtomicString& shadowPseudoId() const;
 };
 

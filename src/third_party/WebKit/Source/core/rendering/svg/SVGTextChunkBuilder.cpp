@@ -19,12 +19,10 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/SVGTextChunkBuilder.h"
 
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/SVGInlineTextBox.h"
-#include "core/svg/SVGElement.h"
 #include "core/svg/SVGLengthContext.h"
 
 namespace WebCore {
@@ -262,5 +260,3 @@ void SVGTextChunkBuilder::buildSpacingAndGlyphsTransform(bool isVerticalText, fl
 }
 
 }
-
-#endif // ENABLE(SVG)

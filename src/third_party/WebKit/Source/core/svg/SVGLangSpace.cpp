@@ -20,12 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGLangSpace.h"
 
 #include "XMLNames.h"
-#include "core/dom/Attribute.h"
-#include "core/svg/SVGElement.h"
 #include <wtf/StdLibExtras.h>
 
 namespace WebCore {
@@ -85,5 +82,3 @@ void SVGLangSpace::addSupportedAttributes(HashSet<QualifiedName>& supportedAttri
 }
 
 }
-
-#endif // ENABLE(SVG)

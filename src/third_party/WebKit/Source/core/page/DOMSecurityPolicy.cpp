@@ -26,12 +26,10 @@
 #include "config.h"
 #include "core/page/DOMSecurityPolicy.h"
 
-#include "core/dom/ContextDestructionObserver.h"
+#include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/DOMStringList.h"
 #include "core/dom/ScriptExecutionContext.h"
-#include "core/inspector/ScriptCallStack.h"
 #include "core/page/ContentSecurityPolicy.h"
-#include "core/page/Frame.h"
 #include <wtf/text/TextPosition.h>
 #include <wtf/text/WTFString.h>
 
@@ -82,8 +80,9 @@ bool isAllowed(ScriptExecutionContext* context)
 } // namespace
 
 DOMSecurityPolicy::DOMSecurityPolicy(ScriptExecutionContext* context)
-    : ContextDestructionObserver(context)
+    : ContextLifecycleObserver(context)
 {
+    ScriptWrappable::init(this);
 }
 
 DOMSecurityPolicy::~DOMSecurityPolicy()

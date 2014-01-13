@@ -29,20 +29,13 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Node.h"
-#include "core/dom/PositionIterator.h"
 #include "core/dom/Range.h"
 #include "core/editing/Editor.h"
-#include "core/editing/TextCheckingHelper.h"
-#include "core/editing/TextIterator.h"
-#include "core/editing/htmlediting.h"
-#include "core/html/HTMLInputElement.h"
-#include "core/html/HTMLTextAreaElement.h"
 #include "core/page/EditorClient.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/platform/text/TextCheckerClient.h"
-#include "core/rendering/RenderObject.h"
 
 namespace WebCore {
 
@@ -96,16 +89,18 @@ void SpellCheckRequest::didSucceed(const Vector<TextCheckingResult>& results)
 {
     if (!m_checker)
         return;
-    m_checker->didCheckSucceed(m_requestData.sequence(), results);
+    SpellChecker* checker = m_checker;
     m_checker = 0;
+    checker->didCheckSucceed(m_requestData.sequence(), results);
 }
 
 void SpellCheckRequest::didCancel()
 {
     if (!m_checker)
         return;
-    m_checker->didCheckCancel(m_requestData.sequence());
+    SpellChecker* checker = m_checker;
     m_checker = 0;
+    checker->didCheckCancel(m_requestData.sequence());
 }
 
 void SpellCheckRequest::setCheckerAndSequence(SpellChecker* requester, int sequence)
@@ -192,6 +187,14 @@ void SpellChecker::requestCheckingFor(PassRefPtr<SpellCheckRequest> request)
     }
 
     invokeRequest(request);
+}
+
+void SpellChecker::cancelCheck()
+{
+    if (!m_requestQueue.isEmpty())
+        m_requestQueue.clear();
+    if (m_processingRequest)
+        m_processingRequest->didCancel();
 }
 
 void SpellChecker::invokeRequest(PassRefPtr<SpellCheckRequest> request)

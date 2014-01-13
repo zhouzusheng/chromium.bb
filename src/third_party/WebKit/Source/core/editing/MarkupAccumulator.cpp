@@ -39,8 +39,8 @@
 #include "core/editing/Editor.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLTemplateElement.h"
-#include "core/platform/KURL.h"
-#include <wtf/unicode/CharacterNames.h>
+#include "weborigin/KURL.h"
+#include "wtf/unicode/CharacterNames.h"
 
 namespace WebCore {
 
@@ -512,7 +512,6 @@ void MarkupAccumulator::appendStartMarkup(StringBuilder& result, const Node* nod
         break;
     case Node::ATTRIBUTE_NODE:
     case Node::ENTITY_NODE:
-    case Node::ENTITY_REFERENCE_NODE:
     case Node::NOTATION_NODE:
     case Node::XPATH_NAMESPACE_NODE:
         ASSERT_NOT_REACHED();

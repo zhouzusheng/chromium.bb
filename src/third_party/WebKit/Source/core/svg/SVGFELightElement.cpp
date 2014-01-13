@@ -21,18 +21,14 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFELightElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGFEDiffuseLightingElement.h"
 #include "core/svg/SVGFESpecularLightingElement.h"
-#include "core/svg/SVGFilterElement.h"
-#include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 
 namespace WebCore {
 
@@ -103,7 +99,7 @@ bool SVGFELightElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::specularExponentAttr);
         supportedAttributes.add(SVGNames::limitingConeAngleAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFELightElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -221,5 +217,3 @@ void SVGFELightElement::childrenChanged(bool changedByParser, Node* beforeChange
 }
 
 }
-
-#endif // ENABLE(SVG)

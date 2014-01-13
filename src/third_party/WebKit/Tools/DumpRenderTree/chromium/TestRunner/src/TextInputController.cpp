@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "TextInputController.h"
 
 #include "TestCommon.h"
@@ -38,8 +37,8 @@
 #include "WebInputEvent.h"
 #include "WebRange.h"
 #include "WebView.h"
-#include <public/WebString.h>
-#include <public/WebVector.h>
+#include "public/platform/WebString.h"
+#include "public/platform/WebVector.h"
 #include <string>
 
 using namespace WebKit;
@@ -49,20 +48,14 @@ namespace WebTestRunner {
 
 TextInputController::TextInputController()
 {
-    bindMethod("attributedSubstringFromRange", &TextInputController::attributedSubstringFromRange);
-    bindMethod("characterIndexForPoint", &TextInputController::characterIndexForPoint);
-    bindMethod("conversationIdentifier", &TextInputController::conversationIdentifier);
     bindMethod("doCommand", &TextInputController::doCommand);
     bindMethod("firstRectForCharacterRange", &TextInputController::firstRectForCharacterRange);
     bindMethod("hasMarkedText", &TextInputController::hasMarkedText);
     bindMethod("insertText", &TextInputController::insertText);
-    bindMethod("makeAttributedString", &TextInputController::makeAttributedString);
     bindMethod("markedRange", &TextInputController::markedRange);
     bindMethod("selectedRange", &TextInputController::selectedRange);
     bindMethod("setMarkedText", &TextInputController::setMarkedText);
-    bindMethod("substringFromRange", &TextInputController::substringFromRange);
     bindMethod("unmarkText", &TextInputController::unmarkText);
-    bindMethod("validAttributesForMarkedText", &TextInputController::validAttributesForMarkedText);
     bindMethod("setComposition", &TextInputController::setComposition);
 }
 
@@ -120,24 +113,6 @@ void TextInputController::hasMarkedText(const CppArgumentList&, CppVariant* resu
     result->set(mainFrame->hasMarkedText());
 }
 
-void TextInputController::conversationIdentifier(const CppArgumentList&, CppVariant* result)
-{
-    // FIXME: Implement this.
-    result->setNull();
-}
-
-void TextInputController::substringFromRange(const CppArgumentList&, CppVariant* result)
-{
-    // FIXME: Implement this.
-    result->setNull();
-}
-
-void TextInputController::attributedSubstringFromRange(const CppArgumentList&, CppVariant* result)
-{
-    // FIXME: Implement this.
-    result->setNull();
-}
-
 void TextInputController::markedRange(const CppArgumentList&, CppVariant* result)
 {
     result->setNull();
@@ -189,30 +164,6 @@ void TextInputController::firstRectForCharacterRange(const CppArgumentList& argu
     intArray[2] = rect.width;
     intArray[3] = rect.height;
     result->set(WebBindings::makeIntArray(intArray));
-}
-
-void TextInputController::characterIndexForPoint(const CppArgumentList&, CppVariant* result)
-{
-    // FIXME: Implement this.
-    result->setNull();
-}
-
-void TextInputController::validAttributesForMarkedText(const CppArgumentList&, CppVariant* result)
-{
-    result->setNull();
-
-    WebFrame* mainFrame = m_webView->mainFrame();
-    if (!mainFrame)
-        return;
-
-    result->set("NSUnderline,NSUnderlineColor,NSMarkedClauseSegment,"
-                "NSTextInputReplacementRangeAttributeName");
-}
-
-void TextInputController::makeAttributedString(const CppArgumentList&, CppVariant* result)
-{
-    // FIXME: Implement this.
-    result->setNull();
 }
 
 void TextInputController::setComposition(const CppArgumentList& arguments, CppVariant* result)

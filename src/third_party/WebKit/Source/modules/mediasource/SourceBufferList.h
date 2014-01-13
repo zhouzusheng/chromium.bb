@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Google Inc. All rights reserved.
+ * Copyright (C) 2013 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -31,6 +31,7 @@
 #ifndef SourceBufferList_h
 #define SourceBufferList_h
 
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/EventTarget.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
@@ -40,19 +41,20 @@ namespace WebCore {
 class SourceBuffer;
 class GenericEventQueue;
 
-class SourceBufferList : public RefCounted<SourceBufferList>, public EventTarget {
+class SourceBufferList : public RefCounted<SourceBufferList>, public ScriptWrappable, public EventTarget {
 public:
     static PassRefPtr<SourceBufferList> create(ScriptExecutionContext* context, GenericEventQueue* asyncEventQueue)
     {
         return adoptRef(new SourceBufferList(context, asyncEventQueue));
     }
-    virtual ~SourceBufferList() { }
+    virtual ~SourceBufferList();
 
-    unsigned long length() const;
-    SourceBuffer* item(unsigned index) const;
+    unsigned long length() const { return m_list.size(); }
+    SourceBuffer* item(unsigned long index) const { return (index < m_list.size()) ? m_list[index].get() : 0; }
 
     void add(PassRefPtr<SourceBuffer>);
-    bool remove(SourceBuffer*);
+    void remove(SourceBuffer*);
+    bool contains(SourceBuffer* buffer) { return m_list.find(buffer) != notFound; }
     void clear();
 
     // EventTarget interface
@@ -69,7 +71,7 @@ protected:
 private:
     SourceBufferList(ScriptExecutionContext*, GenericEventQueue*);
 
-    void createAndFireEvent(const AtomicString&);
+    void scheduleEvent(const AtomicString&);
 
     virtual void refEventTarget() OVERRIDE { ref(); }
     virtual void derefEventTarget() OVERRIDE { deref(); }

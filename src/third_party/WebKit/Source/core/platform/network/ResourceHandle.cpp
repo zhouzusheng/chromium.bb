@@ -31,30 +31,27 @@
 #include "config.h"
 #include "core/platform/network/ResourceHandle.h"
 
-#include "core/platform/SharedBuffer.h"
 #include "core/platform/chromium/support/WrappedResourceRequest.h"
 #include "core/platform/chromium/support/WrappedResourceResponse.h"
-#include "core/platform/network/NetworkingContext.h"
 #include "core/platform/network/ResourceError.h"
 #include "core/platform/network/ResourceHandleClient.h"
 #include "core/platform/network/ResourceHandleInternal.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
-#include <public/Platform.h>
-#include <public/WebURLError.h>
-#include <public/WebURLLoader.h>
-#include <public/WebURLLoaderClient.h>
-#include <public/WebURLRequest.h>
-#include <public/WebURLResponse.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebURLError.h"
+#include "public/platform/WebURLLoader.h"
+#include "public/platform/WebURLLoaderClient.h"
+#include "public/platform/WebURLRequest.h"
+#include "public/platform/WebURLResponse.h"
 
 using namespace WebKit;
 
 namespace WebCore {
 
 // ResourceHandleInternal -----------------------------------------------------
-ResourceHandleInternal::ResourceHandleInternal(NetworkingContext* context, const ResourceRequest& request, ResourceHandleClient* client)
-    : m_context(context)
-    , m_request(request)
+ResourceHandleInternal::ResourceHandleInternal(const ResourceRequest& request, ResourceHandleClient* client)
+    : m_request(request)
     , m_owner(0)
     , m_client(client)
     , m_state(ConnectionStateNew)
@@ -174,38 +171,29 @@ ResourceHandleInternal* ResourceHandleInternal::FromResourceHandle(ResourceHandl
 
 // ResourceHandle -------------------------------------------------------------
 
-ResourceHandle::ResourceHandle(NetworkingContext* context, const ResourceRequest& request, ResourceHandleClient* client, bool defersLoading, bool shouldContentSniff)
-    : d(adoptPtr(new ResourceHandleInternal(context, request, client)))
+ResourceHandle::ResourceHandle(const ResourceRequest& request, ResourceHandleClient* client, bool defersLoading, bool shouldContentSniff)
+    : d(adoptPtr(new ResourceHandleInternal(request, client)))
 {
     d->setOwner(this);
 
     // FIXME: Figure out what to do with the bool params.
 }
 
-PassRefPtr<ResourceHandle> ResourceHandle::create(NetworkingContext* context,
-                                                  const ResourceRequest& request,
+PassRefPtr<ResourceHandle> ResourceHandle::create(const ResourceRequest& request,
                                                   ResourceHandleClient* client,
                                                   bool defersLoading,
                                                   bool shouldContentSniff,
                                                   StoredCredentials storedCredentials)
 {
-    RefPtr<ResourceHandle> newHandle = adoptRef(new ResourceHandle(
-        context, request, client, defersLoading, shouldContentSniff));
+    RefPtr<ResourceHandle> newHandle = adoptRef(new ResourceHandle(request, client, defersLoading, shouldContentSniff));
 
-    if (newHandle->start(storedCredentials))
-        return newHandle.release();
-
-    return 0;
+    newHandle->start(storedCredentials);
+    return newHandle.release();
 }
 
 ResourceRequest& ResourceHandle::firstRequest()
 {
     return d->request();
-}
-
-NetworkingContext* ResourceHandle::context() const
-{
-    return d->context();
 }
 
 ResourceHandleClient* ResourceHandle::client() const
@@ -223,13 +211,9 @@ void ResourceHandle::setDefersLoading(bool value)
     d->setDefersLoading(value);
 }
 
-bool ResourceHandle::start(StoredCredentials storedCredentials)
+void ResourceHandle::start(StoredCredentials storedCredentials)
 {
-    if (!d->context())
-        return false;
-
     d->start(storedCredentials);
-    return true;
 }
 
 void ResourceHandle::cancel()
@@ -243,8 +227,7 @@ ResourceHandle::~ResourceHandle()
 }
 
 // static
-void ResourceHandle::loadResourceSynchronously(NetworkingContext* context,
-                                               const ResourceRequest& request,
+void ResourceHandle::loadResourceSynchronously(const ResourceRequest& request,
                                                StoredCredentials storedCredentials,
                                                ResourceError& error,
                                                ResourceResponse& response,

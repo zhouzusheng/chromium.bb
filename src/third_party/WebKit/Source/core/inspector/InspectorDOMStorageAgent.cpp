@@ -30,25 +30,23 @@
 #include "config.h"
 #include "core/inspector/InspectorDOMStorageAgent.h"
 
-#include "ExceptionCodeDescription.h"
+#include "DOMException.h"
 #include "InspectorFrontend.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/html/VoidCallback.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
-#include "core/inspector/InspectorValues.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/PageGroup.h"
-#include "core/page/SecurityOrigin.h"
+#include "core/platform/JSONValues.h"
 #include "core/storage/Storage.h"
 #include "core/storage/StorageArea.h"
 #include "core/storage/StorageNamespace.h"
-#include "modules/webdatabase/Database.h"
+#include "weborigin/SecurityOrigin.h"
 
 #include <wtf/MemoryInstrumentationHashMap.h>
 #include <wtf/Vector.h>
@@ -78,13 +76,10 @@ InspectorDOMStorageAgent::InspectorDOMStorageAgent(InstrumentingAgents* instrume
     , m_pageAgent(pageAgent)
     , m_frontend(0)
 {
-    m_instrumentingAgents->setInspectorDOMStorageAgent(this);
 }
 
 InspectorDOMStorageAgent::~InspectorDOMStorageAgent()
 {
-    m_instrumentingAgents->setInspectorDOMStorageAgent(0);
-    m_instrumentingAgents = 0;
 }
 
 void InspectorDOMStorageAgent::setFrontend(InspectorFrontend* frontend)
@@ -106,14 +101,16 @@ bool InspectorDOMStorageAgent::isEnabled() const
 void InspectorDOMStorageAgent::enable(ErrorString*)
 {
     m_state->setBoolean(DOMStorageAgentState::domStorageAgentEnabled, true);
+    m_instrumentingAgents->setInspectorDOMStorageAgent(this);
 }
 
 void InspectorDOMStorageAgent::disable(ErrorString*)
 {
+    m_instrumentingAgents->setInspectorDOMStorageAgent(0);
     m_state->setBoolean(DOMStorageAgentState::domStorageAgentEnabled, false);
 }
 
-void InspectorDOMStorageAgent::getDOMStorageItems(ErrorString* errorString, const RefPtr<InspectorObject>& storageId, RefPtr<TypeBuilder::Array<TypeBuilder::Array<String> > >& items)
+void InspectorDOMStorageAgent::getDOMStorageItems(ErrorString* errorString, const RefPtr<JSONObject>& storageId, RefPtr<TypeBuilder::Array<TypeBuilder::Array<String> > >& items)
 {
     Frame* frame;
     RefPtr<StorageArea> storageArea = findStorageArea(errorString, storageId, frame);
@@ -147,7 +144,7 @@ static String toErrorString(const ExceptionCode& ec)
     return "";
 }
 
-void InspectorDOMStorageAgent::setDOMStorageItem(ErrorString* errorString, const RefPtr<InspectorObject>& storageId, const String& key, const String& value)
+void InspectorDOMStorageAgent::setDOMStorageItem(ErrorString* errorString, const RefPtr<JSONObject>& storageId, const String& key, const String& value)
 {
     Frame* frame;
     RefPtr<StorageArea> storageArea = findStorageArea(0, storageId, frame);
@@ -161,7 +158,7 @@ void InspectorDOMStorageAgent::setDOMStorageItem(ErrorString* errorString, const
     *errorString = toErrorString(exception);
 }
 
-void InspectorDOMStorageAgent::removeDOMStorageItem(ErrorString* errorString, const RefPtr<InspectorObject>& storageId, const String& key)
+void InspectorDOMStorageAgent::removeDOMStorageItem(ErrorString* errorString, const RefPtr<JSONObject>& storageId, const String& key)
 {
     Frame* frame;
     RefPtr<StorageArea> storageArea = findStorageArea(0, storageId, frame);
@@ -194,7 +191,7 @@ PassRefPtr<TypeBuilder::DOMStorage::StorageId> InspectorDOMStorageAgent::storage
         .setIsLocalStorage(isLocalStorage).release();
 }
 
-void InspectorDOMStorageAgent::didDispatchDOMStorageEvent(const String& key, const String& oldValue, const String& newValue, StorageType storageType, SecurityOrigin* securityOrigin, Page*)
+void InspectorDOMStorageAgent::didDispatchDOMStorageEvent(const String& key, const String& oldValue, const String& newValue, StorageType storageType, SecurityOrigin* securityOrigin)
 {
     if (!m_frontend || !isEnabled())
         return;
@@ -211,7 +208,7 @@ void InspectorDOMStorageAgent::didDispatchDOMStorageEvent(const String& key, con
         m_frontend->domstorage()->domStorageItemUpdated(id, key, oldValue, newValue);
 }
 
-PassRefPtr<StorageArea> InspectorDOMStorageAgent::findStorageArea(ErrorString* errorString, const RefPtr<InspectorObject>& storageId, Frame*& targetFrame)
+PassRefPtr<StorageArea> InspectorDOMStorageAgent::findStorageArea(ErrorString* errorString, const RefPtr<JSONObject>& storageId, Frame*& targetFrame)
 {
     String securityOrigin;
     bool isLocalStorage = false;

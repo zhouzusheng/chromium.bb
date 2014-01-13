@@ -21,15 +21,12 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGMarkerElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/rendering/svg/RenderSVGResourceMarker.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGFitToViewBox.h"
-#include "core/svg/SVGSVGElement.h"
 
 namespace WebCore {
  
@@ -124,7 +121,7 @@ bool SVGMarkerElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::markerHeightAttr);
         supportedAttributes.add(SVGNames::orientAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGMarkerElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -215,9 +212,9 @@ void SVGMarkerElement::setOrientToAngle(const SVGAngle& angle)
     svgAttributeChanged(orientAnglePropertyInfo()->attributeName);
 }
 
-RenderObject* SVGMarkerElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGMarkerElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGResourceMarker(this);
+    return new (document()->renderArena()) RenderSVGResourceMarker(this);
 }
 
 bool SVGMarkerElement::selfHasRelativeLengths() const
@@ -258,5 +255,3 @@ PassRefPtr<SVGAnimatedEnumerationPropertyTearOff<SVGMarkerOrientType> > SVGMarke
 }
 
 }
-
-#endif

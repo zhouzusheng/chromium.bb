@@ -41,7 +41,7 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/ProgressTracker.h"
 #include "core/loader/TextResourceDecoder.h"
-#include "core/page/AlternativeTextClient.h"
+#include "core/page/AutoscrollController.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/ContextMenuClient.h"
@@ -57,7 +57,6 @@
 #include "core/page/Navigator.h"
 #include "core/page/PageConsole.h"
 #include "core/page/PageGroup.h"
-#include "core/page/PlugInClient.h"
 #include "core/page/PointerLockController.h"
 #include "RuntimeEnabledFeatures.h"
 #include "core/page/Settings.h"
@@ -65,7 +64,6 @@
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/platform/FileSystem.h"
 #include "core/platform/Logging.h"
-#include "core/platform/SchemeRegistry.h"
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/Widget.h"
 #include "core/platform/network/NetworkStateNotifier.h"
@@ -76,11 +74,12 @@
 #include "core/rendering/RenderWidget.h"
 #include "core/storage/StorageArea.h"
 #include "core/storage/StorageNamespace.h"
-#include <wtf/HashMap.h>
-#include <wtf/RefCountedLeakCounter.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/text/Base64.h>
-#include <wtf/text/StringHash.h>
+#include "weborigin/SchemeRegistry.h"
+#include "wtf/HashMap.h"
+#include "wtf/RefCountedLeakCounter.h"
+#include "wtf/StdLibExtras.h"
+#include "wtf/text/Base64.h"
+#include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
@@ -116,7 +115,8 @@ float deviceScaleFactor(Frame* frame)
 }
 
 Page::Page(PageClients& pageClients)
-    : m_chrome(Chrome::create(this, pageClients.chromeClient))
+    : m_autoscrollController(AutoscrollController::create())
+    , m_chrome(Chrome::create(this, pageClients.chromeClient))
     , m_dragCaretController(DragCaretController::create())
     , m_dragController(DragController::create(this, pageClients.dragClient))
     , m_focusController(FocusController::create(this))
@@ -128,14 +128,12 @@ Page::Page(PageClients& pageClients)
     , m_backForwardController(BackForwardController::create(this, pageClients.backForwardClient))
     , m_theme(RenderTheme::themeForPage(this))
     , m_editorClient(pageClients.editorClient)
-    , m_plugInClient(pageClients.plugInClient)
     , m_validationMessageClient(0)
     , m_subframeCount(0)
     , m_openedByDOM(false)
     , m_tabKeyCyclesThroughElements(true)
     , m_defersLoading(false)
     , m_defersLoadingCallCount(0)
-    , m_areMemoryCacheClientCallsEnabled(true)
     , m_pageScaleFactor(1)
     , m_deviceScaleFactor(1)
     , m_didLoadUserStyleSheet(false)
@@ -150,7 +148,6 @@ Page::Page(PageClients& pageClients)
 #ifndef NDEBUG
     , m_isPainting(false)
 #endif
-    , m_alternativeTextClient(pageClients.alternativeTextClient)
     , m_console(PageConsole::create(this))
 {
     ASSERT(m_editorClient);
@@ -179,12 +176,6 @@ Page::~Page()
         frame->willDetachPage();
         frame->detachFromPage();
     }
-
-    m_editorClient->pageDestroyed();
-    if (m_plugInClient)
-        m_plugInClient->pageDestroyed();
-    if (m_alternativeTextClient)
-        m_alternativeTextClient->pageDestroyed();
 
     m_inspectorController->inspectedPageDestroyed();
 
@@ -217,6 +208,60 @@ ViewportArguments Page::viewportArguments() const
     return mainFrame() && mainFrame()->document() ? mainFrame()->document()->viewportArguments() : ViewportArguments();
 }
 
+bool Page::autoscrollInProgress() const
+{
+    return m_autoscrollController->autoscrollInProgress();
+}
+
+bool Page::autoscrollInProgress(const RenderBox* renderer) const
+{
+    return m_autoscrollController->autoscrollInProgress(renderer);
+}
+
+bool Page::panScrollInProgress() const
+{
+    return m_autoscrollController->panScrollInProgress();
+}
+
+void Page::startAutoscrollForSelection(RenderObject* renderer)
+{
+    return m_autoscrollController->startAutoscrollForSelection(renderer);
+}
+
+void Page::stopAutoscrollIfNeeded(RenderObject* renderer)
+{
+    m_autoscrollController->stopAutoscrollIfNeeded(renderer);
+}
+
+
+void Page::stopAutoscrollTimer()
+{
+    m_autoscrollController->stopAutoscrollTimer();
+}
+
+void Page::updateAutoscrollRenderer()
+{
+    m_autoscrollController->updateAutoscrollRenderer();
+}
+
+void Page::updateDragAndDrop(Node* dropTargetNode, const IntPoint& eventPosition, double eventTime)
+{
+    m_autoscrollController->updateDragAndDrop(dropTargetNode, eventPosition, eventTime);
+}
+
+#if ENABLE(PAN_SCROLLING)
+void Page::handleMouseReleaseForPanScrolling(Frame* frame, const PlatformMouseEvent& point)
+{
+    m_autoscrollController->handleMouseReleaseForPanScrolling(frame, point);
+}
+
+void Page::startPanScrolling(RenderBox* renderer, const IntPoint& point)
+{
+    m_autoscrollController->startPanScrolling(renderer, point);
+}
+#endif
+
+
 ScrollingCoordinator* Page::scrollingCoordinator()
 {
     if (!m_scrollingCoordinator && m_settings->scrollingCoordinatorEnabled())
@@ -243,7 +288,7 @@ PassRefPtr<ClientRectList> Page::nonFastScrollableRects(const Frame* frame)
 
     Vector<IntRect> rects;
     if (ScrollingCoordinator* scrollingCoordinator = this->scrollingCoordinator())
-        rects = scrollingCoordinator->computeNonFastScrollableRegion(frame, IntPoint()).rects();
+        rects = scrollingCoordinator->computeShouldHandleScrollGestureOnMainThreadRegion(frame, IntPoint()).rects();
 
     Vector<FloatQuad> quads(rects.size());
     for (size_t i = 0; i < rects.size(); ++i)
@@ -272,7 +317,7 @@ bool Page::goBack()
     HistoryItem* item = backForward()->backItem();
 
     if (item) {
-        goToItem(item, FrameLoadTypeBack);
+        goToItem(item);
         return true;
     }
     return false;
@@ -283,20 +328,9 @@ bool Page::goForward()
     HistoryItem* item = backForward()->forwardItem();
 
     if (item) {
-        goToItem(item, FrameLoadTypeForward);
+        goToItem(item);
         return true;
     }
-    return false;
-}
-
-bool Page::canGoBackOrForward(int distance) const
-{
-    if (distance == 0)
-        return true;
-    if (distance > 0 && distance <= backForward()->forwardCount())
-        return true;
-    if (distance < 0 && -distance <= backForward()->backCount())
-        return true;
     return false;
 }
 
@@ -319,10 +353,10 @@ void Page::goBackOrForward(int distance)
     if (!item)
         return;
 
-    goToItem(item, FrameLoadTypeIndexedBackForward);
+    goToItem(item);
 }
 
-void Page::goToItem(HistoryItem* item, FrameLoadType type)
+void Page::goToItem(HistoryItem* item)
 {
     // stopAllLoaders may end up running onload handlers, which could cause further history traversals that may lead to the passed in HistoryItem
     // being deref()-ed. Make sure we can still use it with HistoryController::goToItem later.
@@ -331,7 +365,7 @@ void Page::goToItem(HistoryItem* item, FrameLoadType type)
     if (m_mainFrame->loader()->history()->shouldStopLoadingForHistoryItem(item))
         m_mainFrame->loader()->stopAllLoaders();
 
-    m_mainFrame->loader()->history()->goToItem(item, type);
+    m_mainFrame->loader()->history()->goToItem(item);
 }
 
 int Page::getHistoryLength()
@@ -352,6 +386,9 @@ void Page::setGroupType(PageGroupType type)
     clearPageGroup();
 
     switch (type) {
+    case InspectorPageGroup:
+        m_group = PageGroup::inspectorGroup();
+        break;
     case PrivatePageGroup:
         m_group = PageGroup::create();
         break;
@@ -452,24 +489,25 @@ void Page::setPageScaleFactor(float scale, const IntPoint& origin)
 {
     FrameView* view = mainFrame()->view();
 
-    if (scale == m_pageScaleFactor) {
-        if (view && view->scrollPosition() != origin)
-            view->setScrollPosition(origin);
-        return;
+    bool oldProgrammaticScroll = view->inProgrammaticScroll();
+    view->setInProgrammaticScroll(false);
+
+    if (scale != m_pageScaleFactor) {
+        m_pageScaleFactor = scale;
+
+        if (view)
+            view->setVisibleContentScaleFactor(scale);
+
+        mainFrame()->deviceOrPageScaleFactorChanged();
+
+        if (view)
+            view->setViewportConstrainedObjectsNeedLayout();
     }
 
-    m_pageScaleFactor = scale;
-
-    if (view)
-        view->setVisibleContentScaleFactor(scale);
-
-    mainFrame()->deviceOrPageScaleFactorChanged();
-
-    if (view)
-        view->setViewportConstrainedObjectsNeedLayout();
-
     if (view && view->scrollPosition() != origin)
-        view->setScrollPosition(origin);
+        view->notifyScrollPositionChanged(origin);
+
+    view->setInProgrammaticScroll(oldProgrammaticScroll);
 }
 
 void Page::setDeviceScaleFactor(float scaleFactor)
@@ -583,19 +621,6 @@ StorageNamespace* Page::sessionStorage(bool optionalCreate)
 void Page::setSessionStorage(PassRefPtr<StorageNamespace> newStorage)
 {
     m_sessionStorage = newStorage;
-}
-
-void Page::setMemoryCacheClientCallsEnabled(bool enabled)
-{
-    if (m_areMemoryCacheClientCallsEnabled == enabled)
-        return;
-
-    m_areMemoryCacheClientCallsEnabled = enabled;
-    if (!enabled)
-        return;
-
-    for (RefPtr<Frame> frame = mainFrame(); frame; frame = frame->tree()->traverseNext())
-        frame->loader()->tellClientAboutPastMemoryCacheLoads();
 }
 
 void Page::setTimerAlignmentInterval(double interval)
@@ -814,26 +839,33 @@ void Page::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     info.addMember(m_bottomRelevantPaintedRegion, "relevantPaintedRegion");
     info.addMember(m_relevantUnpaintedRegion, "relevantUnpaintedRegion");
 
-    info.ignoreMember(m_alternativeTextClient);
     info.ignoreMember(m_editorClient);
-    info.ignoreMember(m_plugInClient);
     info.ignoreMember(m_validationMessageClient);
 }
 
-void Page::captionPreferencesChanged()
+void Page::addMultisamplingChangedObserver(MultisamplingChangedObserver* observer)
 {
-    for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext())
-        frame->document()->captionPreferencesChanged();
+    m_multisamplingChangedObservers.add(observer);
+}
+
+void Page::removeMultisamplingChangedObserver(MultisamplingChangedObserver* observer)
+{
+    m_multisamplingChangedObservers.remove(observer);
+}
+
+void Page::multisamplingChanged()
+{
+    HashSet<MultisamplingChangedObserver*>::iterator stop = m_multisamplingChangedObservers.end();
+    for (HashSet<MultisamplingChangedObserver*>::iterator it = m_multisamplingChangedObservers.begin(); it != stop; ++it)
+        (*it)->multisamplingChanged(m_settings->openGLMultisamplingEnabled());
 }
 
 Page::PageClients::PageClients()
-    : alternativeTextClient(0)
-    , chromeClient(0)
+    : chromeClient(0)
     , contextMenuClient(0)
     , editorClient(0)
     , dragClient(0)
     , inspectorClient(0)
-    , plugInClient(0)
 {
 }
 

@@ -26,7 +26,6 @@
 #include "config.h"
 #include "core/html/HTMLDialogElement.h"
 
-#include "core/css/StyleResolver.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/page/FrameView.h"
 #include "core/rendering/RenderBlock.h"
@@ -35,6 +34,11 @@
 namespace WebCore {
 
 using namespace HTMLNames;
+
+static bool needsCenteredPositioning(const RenderStyle* style)
+{
+    return style->position() == AbsolutePosition && style->hasAutoTopAndBottom();
+}
 
 HTMLDialogElement::HTMLDialogElement(const QualifiedName& tagName, Document* document)
     : HTMLElement(tagName, document)
@@ -62,14 +66,9 @@ void HTMLDialogElement::close(ExceptionCode& ec)
     m_topIsValid = false;
 }
 
-static bool needsCenteredPositioning(const RenderStyle* style)
-{
-    return style->position() == AbsolutePosition && style->hasAutoTopAndBottom();
-}
-
 PassRefPtr<RenderStyle> HTMLDialogElement::customStyleForRenderer()
 {
-    RefPtr<RenderStyle> originalStyle = document()->styleResolver()->styleForElement(this);
+    RefPtr<RenderStyle> originalStyle = originalStyleForRenderer();
     RefPtr<RenderStyle> style = RenderStyle::clone(originalStyle.get());
 
     // Override top to remain centered after style recalcs.
@@ -79,7 +78,7 @@ PassRefPtr<RenderStyle> HTMLDialogElement::customStyleForRenderer()
     return style.release();
 }
 
-void HTMLDialogElement::positionAndReattach()
+void HTMLDialogElement::reposition()
 {
     // Layout because we need to know our ancestors' positions and our own height.
     document()->updateLayoutIgnorePendingStylesheets();
@@ -92,17 +91,13 @@ void HTMLDialogElement::positionAndReattach()
     // FIXME: Figure out what to do in vertical writing mode.
     FrameView* frameView = document()->view();
     int scrollTop = frameView->scrollOffset().height();
-    FloatPoint absolutePoint(0, scrollTop);
     int visibleHeight = frameView->visibleContentRect(ScrollableArea::IncludeScrollbars).height();
+    m_top = scrollTop;
     if (box->height() < visibleHeight)
-        absolutePoint.move(0, (visibleHeight - box->height()) / 2);
-    FloatPoint localPoint = box->containingBlock()->absoluteToLocal(absolutePoint);
-
-    m_top = localPoint.y();
+        m_top += (visibleHeight - box->height()) / 2;
     m_topIsValid = true;
 
-    // FIXME: It's inefficient to reattach here. We could do better by mutating style directly and forcing another layout.
-    reattach();
+    setNeedsStyleRecalc(InlineStyleChange);
 }
 
 void HTMLDialogElement::show()
@@ -110,7 +105,7 @@ void HTMLDialogElement::show()
     if (fastHasAttribute(openAttr))
         return;
     setBooleanAttribute(openAttr, true);
-    positionAndReattach();
+    reposition();
 }
 
 void HTMLDialogElement::showModal(ExceptionCode& ec)
@@ -121,7 +116,7 @@ void HTMLDialogElement::showModal(ExceptionCode& ec)
     }
     document()->addToTopLayer(this);
     setBooleanAttribute(openAttr, true);
-    positionAndReattach();
+    reposition();
 }
 
 bool HTMLDialogElement::isPresentationAttribute(const QualifiedName& name) const
@@ -132,6 +127,13 @@ bool HTMLDialogElement::isPresentationAttribute(const QualifiedName& name) const
         return true;
 
     return HTMLElement::isPresentationAttribute(name);
+}
+
+bool HTMLDialogElement::shouldBeReparentedUnderRenderView(const RenderStyle* style) const
+{
+    if (style && style->position() == AbsolutePosition)
+        return true;
+    return Element::shouldBeReparentedUnderRenderView(style);
 }
 
 } // namespace WebCore

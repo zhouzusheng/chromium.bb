@@ -38,14 +38,14 @@ class UI_EXPORT Vector2dF {
   void operator+=(const Vector2dF& other) { Add(other); }
   void operator-=(const Vector2dF& other) { Subtract(other); }
 
-  void ClampToMax(const Vector2dF& max) {
-    x_ = x_ <= max.x_ ? x_ : max.x_;
-    y_ = y_ <= max.y_ ? y_ : max.y_;
+  void SetToMin(const Vector2dF& other) {
+    x_ = x_ <= other.x_ ? x_ : other.x_;
+    y_ = y_ <= other.y_ ? y_ : other.y_;
   }
 
-  void ClampToMin(const Vector2dF& min) {
-    x_ = x_ >= min.x_ ? x_ : min.x_;
-    y_ = y_ >= min.y_ ? y_ : min.y_;
+  void SetToMax(const Vector2dF& other) {
+    x_ = x_ >= other.x_ ? x_ : other.x_;
+    y_ = y_ >= other.y_ ? y_ : other.y_;
   }
 
   // Gives the square of the diagonal length of the vector.
@@ -68,6 +68,10 @@ class UI_EXPORT Vector2dF {
 
 inline bool operator==(const Vector2dF& lhs, const Vector2dF& rhs) {
   return lhs.x() == rhs.x() && lhs.y() == rhs.y();
+}
+
+inline bool operator!=(const Vector2dF& lhs, const Vector2dF& rhs) {
+  return !(lhs == rhs);
 }
 
 inline Vector2dF operator-(const Vector2dF& v) {

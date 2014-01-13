@@ -8,22 +8,22 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/string_number_conversions.h"
-#include "content/common/plugin_messages.h"
+#include "base/strings/string_number_conversions.h"
+#include "content/child/plugin_messages.h"
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
 #include "content/plugin/webplugin_proxy.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
+#include "skia/ext/platform_device.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
+#include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "third_party/npapi/bindings/npapi.h"
 #include "third_party/npapi/bindings/npruntime.h"
-#include "skia/ext/platform_device.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
+#include "webkit/common/cursors/webcursor.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
-#include "webkit/glue/webcursor.h"
 
 using WebKit::WebBindings;
 using WebKit::WebCursorInfo;
@@ -38,11 +38,16 @@ static void DestroyWebPluginAndDelegate(
     WebPlugin* webplugin) {
   // The plugin may not expect us to try to release the scriptable object
   // after calling NPP_Destroy on the instance, so delete the stub now.
-  if (scriptable_object)
+  if (scriptable_object.get())
     scriptable_object->DeleteSoon();
-  // WebPlugin must outlive WebPluginDelegate.
-  if (delegate)
+
+  if (delegate) {
+    // Un-register the plugin instance as an object owner.
+    WebBindings::unregisterObjectOwner(delegate->GetPluginNPP());
+
+    // WebPlugin must outlive WebPluginDelegate.
     delegate->PluginDestroyed();
+  }
 
   delete webplugin;
 }
@@ -76,6 +81,9 @@ WebPluginDelegateStub::~WebPluginDelegateStub() {
     DestroyWebPluginAndDelegate(
         plugin_scriptable_object_, delegate_, webplugin_);
   }
+
+  // Remove the NPObject owner mapping for this instance.
+  channel_->RemoveMappingForNPObjectOwner(instance_id_);
 }
 
 bool WebPluginDelegateStub::OnMessageReceived(const IPC::Message& msg) {
@@ -165,13 +173,23 @@ void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
   base::FilePath path =
       command_line.GetSwitchValuePath(switches::kPluginPath);
 
-  webplugin_ = new WebPluginProxy(
-      channel_, instance_id_, page_url_, params.host_render_view_routing_id);
+  webplugin_ = new WebPluginProxy(channel_.get(),
+                                  instance_id_,
+                                  page_url_,
+                                  params.host_render_view_routing_id);
   delegate_ = webkit::npapi::WebPluginDelegateImpl::Create(path, mime_type_);
   if (delegate_) {
     webplugin_->set_delegate(delegate_);
     std::vector<std::string> arg_names = params.arg_names;
     std::vector<std::string> arg_values = params.arg_values;
+
+    // Register the plugin as a valid object owner.
+    WebBindings::registerObjectOwner(delegate_->GetPluginNPP());
+
+    // Add an NPObject owner mapping for this instance, to support ownership
+    // tracking in the renderer.
+    channel_->AddMappingForNPObjectOwner(instance_id_,
+                                         delegate_->GetPluginNPP());
 
     *result = delegate_->Initialize(params.url,
                                     arg_names,
@@ -248,7 +266,7 @@ void WebPluginDelegateStub::OnHandleInputEvent(
     const WebKit::WebInputEvent *event,
     bool* handled,
     WebCursor* cursor) {
-  WebCursorInfo cursor_info;
+  WebCursor::CursorInfo cursor_info;
   *handled = delegate_->HandleInputEvent(*event, &cursor_info);
   cursor->InitFromCursorInfo(cursor_info);
 }

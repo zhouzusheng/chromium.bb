@@ -8,7 +8,7 @@
 
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/base_node.h"
@@ -121,7 +121,8 @@ std::string SyncData::ToString() const {
 
   std::string type = ModelTypeToString(GetDataType());
   std::string specifics;
-  scoped_ptr<DictionaryValue> value(EntitySpecificsToValue(GetSpecifics()));
+  scoped_ptr<base::DictionaryValue> value(
+      EntitySpecificsToValue(GetSpecifics()));
   base::JSONWriter::WriteWithOptions(value.get(),
                                      base::JSONWriter::OPTIONS_PRETTY_PRINT,
                                      &specifics);

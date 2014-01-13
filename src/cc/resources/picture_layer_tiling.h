@@ -9,10 +9,9 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
-#include "cc/base/hash_pair.h"
 #include "cc/base/region.h"
 #include "cc/base/tiling_data.h"
 #include "cc/resources/tile.h"
@@ -32,13 +31,13 @@ class CC_EXPORT PictureLayerTilingClient {
     gfx::Rect content_rect) = 0;
   virtual void UpdatePile(Tile* tile) = 0;
   virtual gfx::Size CalculateTileSize(
-    gfx::Size content_bounds) = 0;
+    gfx::Size content_bounds) const = 0;
   virtual const Region* GetInvalidation() = 0;
   virtual const PictureLayerTiling* GetTwinTiling(
       const PictureLayerTiling* tiling) = 0;
 
   // This is on the client so tests can override behaviour.
-  virtual bool TileHasText(Tile* tile);
+  virtual bool TileMayHaveLCDText(Tile* tile);
 
  protected:
   virtual ~PictureLayerTilingClient() {}
@@ -72,7 +71,7 @@ class CC_EXPORT PictureLayerTiling {
     std::vector<Tile*> all_tiles;
     for (TileMap::const_iterator it = tiles_.begin();
          it != tiles_.end(); ++it)
-      all_tiles.push_back(it->second);
+      all_tiles.push_back(it->second.get());
     return all_tiles;
   }
 
@@ -129,8 +128,8 @@ class CC_EXPORT PictureLayerTiling {
   void UpdateTilePriorities(
       WhichTree tree,
       gfx::Size device_viewport,
-      const gfx::RectF& viewport_in_layer_space,
-      const gfx::RectF& visible_layer_rect,
+      gfx::Rect viewport_in_layer_space,
+      gfx::Rect visible_layer_rect,
       gfx::Size last_layer_bounds,
       gfx::Size current_layer_bounds,
       float last_layer_contents_scale,
@@ -138,7 +137,6 @@ class CC_EXPORT PictureLayerTiling {
       const gfx::Transform& last_screen_transform,
       const gfx::Transform& current_screen_transform,
       double current_frame_time_in_seconds,
-      bool store_screen_space_quads_on_tiles,
       size_t max_tiles_for_interest_area);
 
   // Copies the src_tree priority into the dst_tree priority for all tiles.
@@ -151,6 +149,7 @@ class CC_EXPORT PictureLayerTiling {
   }
 
   scoped_ptr<base::Value> AsValue() const;
+  size_t GPUMemoryUsageInBytes() const;
 
   static gfx::Rect ExpandRectEquallyToAreaBoundedBy(
       gfx::Rect starting_rect,
@@ -169,7 +168,7 @@ class CC_EXPORT PictureLayerTiling {
                      gfx::Size layer_bounds,
                      PictureLayerTilingClient* client);
   void SetLiveTilesRect(gfx::Rect live_tiles_rect);
-  void CreateTile(int i, int j);
+  void CreateTile(int i, int j, const PictureLayerTiling* twin_tiling);
   Tile* TileAt(int, int) const;
 
   // Given properties.

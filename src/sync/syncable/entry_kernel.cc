@@ -4,7 +4,7 @@
 
 #include "sync/syncable/entry_kernel.h"
 
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "sync/protocol/proto_value_conversions.h"
 #include "sync/syncable/syncable_enum_conversions.h"
 #include "sync/util/cryptographer.h"
@@ -125,8 +125,8 @@ base::StringValue* StringToValue(const std::string& str) {
   return new base::StringValue(str);
 }
 
-StringValue* UniquePositionToValue(const UniquePosition& pos) {
-  return Value::CreateStringValue(pos.ToDebugString());
+base::StringValue* UniquePositionToValue(const UniquePosition& pos) {
+  return base::Value::CreateStringValue(pos.ToDebugString());
 }
 
 }  // namespace

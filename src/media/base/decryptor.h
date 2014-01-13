@@ -6,12 +6,10 @@
 #define MEDIA_BASE_DECRYPTOR_H_
 
 #include <list>
-#include <string>
 
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "media/base/audio_decoder.h"
 #include "media/base/media_export.h"
 
 namespace media {
@@ -22,31 +20,14 @@ class DecoderBuffer;
 class VideoDecoderConfig;
 class VideoFrame;
 
-// Performs key operations and decrypts (and decodes) encrypted buffer.
+// Decrypts (and decodes) encrypted buffer.
 //
-// Key operations (GenerateKeyRequest(), AddKey() and CancelKeyRequest())
-// are called on the renderer thread. Therefore, these calls should be fast
-// and nonblocking; key events should be fired asynchronously.
-// All other methods are called on the (video/audio) decoder thread.
-// Decryptor implementations must be thread safe when methods are called
-// following the above model.
+// All methods are called on the (video/audio) decoder thread. Decryptor
+// implementations must be thread safe when methods are called this way.
 // Depending on the implementation callbacks may be fired synchronously or
 // asynchronously.
 class MEDIA_EXPORT Decryptor {
  public:
-  // Reported to UMA, so never reuse a value!
-  // Must be kept in sync with WebKit::WebMediaPlayerClient::MediaKeyErrorCode
-  // (enforced in webmediaplayer_impl.cc).
-  enum KeyError {
-    kUnknownError = 1,
-    kClientError,
-    kServiceError,
-    kOutputError,
-    kHardwareChangeError,
-    kDomainError,
-    kMaxKeyError  // Must be last and greater than any legit value.
-  };
-
   // TODO(xhwang): Replace kError with kDecryptError and kDecodeError.
   // TODO(xhwang): Replace kNeedMoreData with kNotEnoughData.
   enum Status {
@@ -65,32 +46,8 @@ class MEDIA_EXPORT Decryptor {
   Decryptor();
   virtual ~Decryptor();
 
-  // Generates a key request for the |key_system| with |type| and
-  // |init_data| provided.
-  // Returns true if generating key request succeeded, false otherwise.
-  // Note: AddKey() and CancelKeyRequest() should only be called after
-  // GenerateKeyRequest() returns true.
-  virtual bool GenerateKeyRequest(const std::string& key_system,
-                                  const std::string& type,
-                                  const uint8* init_data,
-                                  int init_data_length) = 0;
-
-  // Adds a |key| to the |key_system|. The |key| is not limited to a decryption
-  // key. It can be any data that the key system accepts, such as a license.
-  // If multiple calls of this function set different keys for the same
-  // key ID, the older key will be replaced by the newer key.
-  virtual void AddKey(const std::string& key_system,
-                      const uint8* key,
-                      int key_length,
-                      const uint8* init_data,
-                      int init_data_length,
-                      const std::string& session_id) = 0;
-
-  // Cancels the key request specified by |session_id|.
-  virtual void CancelKeyRequest(const std::string& key_system,
-                                const std::string& session_id) = 0;
-
-  // Indicates that a new key has been added to the Decryptor.
+  // Indicates that a new key has been added to the MediaKeys object associated
+  // with the Decryptor.
   typedef base::Callback<void()> NewKeyCB;
 
   // Registers a NewKeyCB which should be called when a new key is added to the
@@ -215,28 +172,6 @@ typedef base::Callback<void(Decryptor*)> DecryptorReadyCB;
 // decryptor ready notification. Any previously provided callback will be
 // fired immediately with NULL.
 typedef base::Callback<void(const DecryptorReadyCB&)> SetDecryptorReadyCB;
-
-
-// Key event callbacks. See the spec for details:
-// http://dvcs.w3.org/hg/html-media/raw-file/eme-v0.1b/encrypted-media/encrypted-media.html#event-summary
-typedef base::Callback<void(const std::string& key_system,
-                            const std::string& session_id)> KeyAddedCB;
-
-typedef base::Callback<void(const std::string& key_system,
-                            const std::string& session_id,
-                            media::Decryptor::KeyError error_code,
-                            int system_code)> KeyErrorCB;
-
-typedef base::Callback<void(const std::string& key_system,
-                            const std::string& session_id,
-                            const std::string& message,
-                            const std::string& default_url)> KeyMessageCB;
-
-typedef base::Callback<void(const std::string& key_system,
-                            const std::string& session_id,
-                            const std::string& type,
-                            scoped_ptr<uint8[]> init_data,
-                            int init_data_size)> NeedKeyCB;
 
 }  // namespace media
 

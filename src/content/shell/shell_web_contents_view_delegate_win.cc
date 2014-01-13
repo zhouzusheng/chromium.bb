@@ -11,14 +11,14 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/context_menu_params.h"
+#include "content/shell/common/shell_switches.h"
 #include "content/shell/shell.h"
 #include "content/shell/shell_browser_context.h"
 #include "content/shell/shell_browser_main_parts.h"
 #include "content/shell/shell_content_browser_client.h"
 #include "content/shell/shell_devtools_frontend.h"
-#include "content/shell/shell_switches.h"
 #include "content/shell/shell_web_contents_view_delegate_creator.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
+#include "third_party/WebKit/public/web/WebContextMenuData.h"
 
 using WebKit::WebContextMenuData;
 
@@ -70,8 +70,7 @@ ShellWebContentsViewDelegate::~ShellWebContentsViewDelegate() {
 }
 
 void ShellWebContentsViewDelegate::ShowContextMenu(
-    const ContextMenuParams& params,
-    ContextMenuSourceType type) {
+    const ContextMenuParams& params) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
 

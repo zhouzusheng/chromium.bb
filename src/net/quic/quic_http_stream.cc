@@ -5,7 +5,7 @@
 #include "net/quic/quic_http_stream.h"
 
 #include "base/callback_helpers.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
@@ -45,7 +45,9 @@ int QuicHttpStream::InitializeStream(const HttpRequestInfo* request_info,
                                      RequestPriority priority,
                                      const BoundNetLog& stream_net_log,
                                      const CompletionCallback& callback) {
-  CHECK(stream_);
+  if (!stream_)
+    return ERR_SOCKET_NOT_CONNECTED;
+
   DCHECK_EQ("http", request_info->url.scheme());
 
   stream_net_log_ = stream_net_log;
@@ -67,11 +69,7 @@ int QuicHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
   SpdyHeaderBlock headers;
   CreateSpdyHeadersFromHttpRequest(*request_info_, request_headers,
                                    &headers, 3, /*direct=*/true);
-  size_t len = SpdyFramer::GetSerializedLength(3, &headers);
-  SpdyFrameBuilder builder(len);
-  SpdyFramer::WriteHeaderBlock(&builder, 3, &headers);
-  scoped_ptr<SpdyFrame> frame(builder.take());
-  request_ = std::string(frame->data(), len);
+  request_ = stream_->compressor()->CompressHeaders(headers);
   // Log the actual request with the URL Request's net log.
   stream_net_log_.AddEvent(
       NetLog::TYPE_HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS,
@@ -91,7 +89,7 @@ int QuicHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
     // packet due to overhead.
     raw_request_body_buf_ = new IOBufferWithSize(kMaxPacketSize);
     // The request body buffer is empty at first.
-    request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_, 0);
+    request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_.get(), 0);
   }
 
   // Store the response info.
@@ -168,7 +166,7 @@ int QuicHttpStream::ReadResponseBody(
   }
 
   CHECK(callback_.is_null());
-  CHECK(!user_buffer_);
+  CHECK(!user_buffer_.get());
   CHECK_EQ(0, user_buffer_len_);
 
   callback_ = callback;
@@ -381,10 +379,10 @@ int QuicHttpStream::DoSendHeadersComplete(int rv) {
 
 int QuicHttpStream::DoReadRequestBody() {
   next_state_ = STATE_READ_REQUEST_BODY_COMPLETE;
-  return request_body_stream_->Read(raw_request_body_buf_,
-                                    raw_request_body_buf_->size(),
-                                    base::Bind(&QuicHttpStream::OnIOComplete,
-                                               weak_factory_.GetWeakPtr()));
+  return request_body_stream_->Read(
+      raw_request_body_buf_.get(),
+      raw_request_body_buf_->size(),
+      base::Bind(&QuicHttpStream::OnIOComplete, weak_factory_.GetWeakPtr()));
 }
 
 int QuicHttpStream::DoReadRequestBodyComplete(int rv) {
@@ -393,7 +391,7 @@ int QuicHttpStream::DoReadRequestBodyComplete(int rv) {
   if (rv < 0)
     return rv;
 
-  request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_, rv);
+  request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_.get(), rv);
   if (rv == 0) {  // Reached the end.
     DCHECK(request_body_stream_->IsEOF());
   }
@@ -407,7 +405,7 @@ int QuicHttpStream::DoSendBody() {
     return ERR_UNEXPECTED;
 
   CHECK(request_body_stream_);
-  CHECK(request_body_buf_);
+  CHECK(request_body_buf_.get());
   const bool eof = request_body_stream_->IsEOF();
   int len = request_body_buf_->BytesRemaining();
   if (len > 0 || eof) {
@@ -436,7 +434,7 @@ int QuicHttpStream::DoSendBodyComplete(int rv) {
 
 int QuicHttpStream::ParseResponseHeaders() {
   size_t read_buf_len = static_cast<size_t>(read_buf_->offset());
-  SpdyFramer framer(3);
+  SpdyFramer framer(SPDY3);
   SpdyHeaderBlock headers;
   char* data = read_buf_->StartOfBuffer();
   size_t len = framer.ParseHeaderBlockInBuffer(data, read_buf_->offset(),
@@ -467,7 +465,8 @@ int QuicHttpStream::ParseResponseHeaders() {
   response_info_->socket_address = HostPortPair::FromIPEndPoint(address);
   response_info_->connection_info =
       HttpResponseInfo::CONNECTION_INFO_QUIC1_SPDY3;
-  response_info_->vary_data.Init(*request_info_, *response_info_->headers);
+  response_info_->vary_data
+      .Init(*request_info_, *response_info_->headers.get());
   response_info_->was_npn_negotiated = true;
   response_info_->npn_negotiated_protocol = "quic/1+spdy/3";
   response_headers_received_ = true;

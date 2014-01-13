@@ -13,8 +13,8 @@ const char kMethodBack[] = "back";
 const char kMethodCanGoBack[] = "canGoBack";
 const char kMethodCanGoForward[] = "canGoForward";
 const char kMethodForward[] = "forward";
-const char kMethodGetProcessId[] = "getProcessId";
-const char kMethodGetRouteId[] = "getRouteId";
+const char kMethodGetInstanceId[] = "getInstanceId";
+const char kMethodGetGuestInstanceId[] = "getGuestInstanceId";
 const char kMethodGo[] = "go";
 const char kMethodReload[] = "reload";
 const char kMethodStop[] = "stop";
@@ -26,6 +26,7 @@ const char kMethodInternalPersistObject[] = "-internal-persistObject";
 const char kMethodInternalSetPermission[] = "-internal-setPermission";
 
 // Attributes.
+const char kAttributeApi[] = "api";
 const char kAttributeAutoSize[] = "autosize";
 const char kAttributeContentWindow[] = "contentWindow";
 const char kAttributeMaxHeight[] = "maxheight";
@@ -39,6 +40,7 @@ const char kAttributeSrc[] = "src";
 // Events.
 const char kEventClose[] = "close";
 const char kEventConsoleMessage[] = "consolemessage";
+const char kEventContentLoad[] = "contentload";
 const char kEventExit[] = "exit";
 const char kEventLoadAbort[] = "loadabort";
 const char kEventLoadCommit[] = "loadcommit";

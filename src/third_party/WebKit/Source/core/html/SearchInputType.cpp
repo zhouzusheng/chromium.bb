@@ -33,7 +33,6 @@
 
 #include "HTMLNames.h"
 #include "core/dom/KeyboardEvent.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/InputTypeNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
@@ -46,7 +45,7 @@ using namespace HTMLNames;
 
 inline SearchInputType::SearchInputType(HTMLInputElement* element)
     : BaseTextInputType(element)
-    , m_resultsButton(0)
+    , m_searchDecoration(0)
     , m_cancelButton(0)
     , m_searchEventTimer(this, &SearchInputType::searchEventTimerFired)
 {
@@ -63,15 +62,9 @@ void SearchInputType::attach()
     observeFeatureIfVisible(UseCounter::InputTypeSearch);
 }
 
-void SearchInputType::addSearchResult()
+RenderObject* SearchInputType::createRenderer(RenderStyle*) const
 {
-    if (RenderObject* renderer = element()->renderer())
-        toRenderSearchField(renderer)->addSearchResult();
-}
-
-RenderObject* SearchInputType::createRenderer(RenderArena* arena, RenderStyle*) const
-{
-    return new (arena) RenderSearchField(element());
+    return new (element()->document()->renderArena()) RenderSearchField(element());
 }
 
 const AtomicString& SearchInputType::formControlType() const
@@ -96,7 +89,7 @@ bool SearchInputType::needsContainer() const
 
 void SearchInputType::createShadowSubtree()
 {
-    ASSERT(!m_resultsButton);
+    ASSERT(!m_searchDecoration);
     ASSERT(!m_cancelButton);
 
     TextFieldInputType::createShadowSubtree();
@@ -105,18 +98,18 @@ void SearchInputType::createShadowSubtree()
     ASSERT(container);
     ASSERT(textWrapper);
 
-    RefPtr<SearchFieldResultsButtonElement> resultsButton = SearchFieldResultsButtonElement::create(element()->document());
-    m_resultsButton = resultsButton.get();
-    container->insertBefore(m_resultsButton, textWrapper, IGNORE_EXCEPTION);
+    RefPtr<SearchFieldDecorationElement> searchDecoration = SearchFieldDecorationElement::create(element()->document());
+    m_searchDecoration = searchDecoration.get();
+    container->insertBefore(m_searchDecoration, textWrapper, IGNORE_EXCEPTION);
 
     RefPtr<SearchFieldCancelButtonElement> cancelButton = SearchFieldCancelButtonElement::create(element()->document());
     m_cancelButton = cancelButton.get();
     container->insertBefore(m_cancelButton, textWrapper->nextSibling(), IGNORE_EXCEPTION);
 }
 
-HTMLElement* SearchInputType::resultsButtonElement() const
+HTMLElement* SearchInputType::searchDecorationElement() const
 {
-    return m_resultsButton;
+    return m_searchDecoration;
 }
 
 HTMLElement* SearchInputType::cancelButtonElement() const
@@ -145,7 +138,7 @@ void SearchInputType::handleKeydownEvent(KeyboardEvent* event)
 void SearchInputType::destroyShadowSubtree()
 {
     TextFieldInputType::destroyShadowSubtree();
-    m_resultsButton = 0;
+    m_searchDecoration = 0;
     m_cancelButton = 0;
 }
 

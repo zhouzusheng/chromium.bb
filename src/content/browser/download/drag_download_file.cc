@@ -5,7 +5,6 @@
 #include "content/browser/download/drag_download_file.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/message_loop.h"
 #include "content/browser/download/download_stats.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -68,7 +67,7 @@ class DragDownloadFile::DragDownloadFileUI : public DownloadItem::Observer {
     params->set_callback(base::Bind(&DragDownloadFileUI::OnDownloadStarted,
                                     weak_ptr_factory_.GetWeakPtr()));
     params->set_file_path(file_path);
-    params->set_file_stream(file_stream.Pass()); // Nulls file_stream.
+    params->set_file_stream(file_stream.Pass());  // Nulls file_stream.
     download_manager->DownloadUrl(params.Pass());
   }
 
@@ -106,12 +105,13 @@ class DragDownloadFile::DragDownloadFileUI : public DownloadItem::Observer {
   virtual void OnDownloadUpdated(DownloadItem* item) OVERRIDE {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     DCHECK_EQ(download_item_, item);
-    if (download_item_->IsComplete() ||
-        download_item_->IsCancelled() ||
-        download_item_->IsInterrupted()) {
+    DownloadItem::DownloadState state = download_item_->GetState();
+    if (state == DownloadItem::COMPLETE ||
+        state == DownloadItem::CANCELLED ||
+        state == DownloadItem::INTERRUPTED) {
       if (!on_completed_.is_null()) {
         on_completed_loop_->PostTask(FROM_HERE, base::Bind(
-            on_completed_, download_item_->IsComplete()));
+            on_completed_, state == DownloadItem::COMPLETE));
         on_completed_.Reset();
       }
       download_item_->RemoveObserver(this);
@@ -124,8 +124,10 @@ class DragDownloadFile::DragDownloadFileUI : public DownloadItem::Observer {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     DCHECK_EQ(download_item_, item);
     if (!on_completed_.is_null()) {
+      const bool is_complete =
+          download_item_->GetState() == DownloadItem::COMPLETE;
       on_completed_loop_->PostTask(FROM_HERE, base::Bind(
-          on_completed_, download_item_->IsComplete()));
+          on_completed_, is_complete));
       on_completed_.Reset();
     }
     download_item_->RemoveObserver(this);
@@ -190,7 +192,7 @@ void DragDownloadFile::Start(ui::DownloadFileObserver* observer) {
 
   DCHECK(!observer_.get());
   observer_ = observer;
-  DCHECK(observer_);
+  DCHECK(observer_.get());
 
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
       &DragDownloadFileUI::InitiateDownload, base::Unretained(drag_ui_),

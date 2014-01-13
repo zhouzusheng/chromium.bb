@@ -15,6 +15,7 @@
 #include "media/base/demuxer.h"
 #include "media/base/ranges.h"
 #include "media/base/stream_parser.h"
+#include "media/base/text_track.h"
 #include "media/filters/source_buffer_stream.h"
 
 namespace media {
@@ -41,9 +42,13 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   //   is ready to receive media data via AppenData().
   // |need_key_cb| Run when the demuxer determines that an encryption key is
   //   needed to decrypt the content.
+  // |add_text_track_cb| Run when demuxer detects the presence of an inband
+  //   text track.
   // |log_cb| Run when parsing error messages need to be logged to the error
   //   console.
-  ChunkDemuxer(const base::Closure& open_cb, const NeedKeyCB& need_key_cb,
+  ChunkDemuxer(const base::Closure& open_cb,
+               const NeedKeyCB& need_key_cb,
+               const AddTextTrackCB& add_text_track_cb,
                const LogCB& log_cb);
   virtual ~ChunkDemuxer();
 
@@ -57,7 +62,22 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   virtual base::TimeDelta GetStartTime() const OVERRIDE;
 
   // Methods used by an external object to control this demuxer.
+  //
+  // Indicates that a new Seek() call is on its way. Any pending Reads on the
+  // DemuxerStream objects should be aborted immediately inside this call and
+  // future Read calls should return kAborted until the Seek() call occurs.
+  // This method MUST ALWAYS be called before Seek() is called to signal that
+  // the next Seek() call represents the seek point we actually want to return
+  // data for.
   void StartWaitingForSeek();
+
+  // Indicates that a Seek() call is on its way, but another seek has been
+  // requested that will override the impending Seek() call. Any pending Reads
+  // on the DemuxerStream objects should be aborted immediately inside this call
+  // and future Read calls should return kAborted until the next
+  // StartWaitingForSeek() call. This method also arranges for the next Seek()
+  // call received before a StartWaitingForSeek() call to immediately call its
+  // callback without waiting for any data.
   void CancelPendingSeek();
 
   // Registers a new |id| to use for AppendData() calls. |type| indicates
@@ -99,9 +119,7 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   bool SetTimestampOffset(const std::string& id, base::TimeDelta offset);
 
   // Signals an EndOfStream request.
-  // Returns false if called in an unexpected state or if there is a gap between
-  // the current position and the end of the buffered data.
-  bool EndOfStream(PipelineStatus status);
+  void EndOfStream(PipelineStatus status);
   void Shutdown();
 
  private:
@@ -121,7 +139,7 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   void ReportError_Locked(PipelineStatus error);
 
   // Returns true if any stream has seeked to a time without buffered data.
-  bool IsSeekPending_Locked() const;
+  bool IsSeekWaitingForData_Locked() const;
 
   // Returns true if all streams can successfully call EndOfStream,
   // false if any can not.
@@ -134,6 +152,8 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
                     const VideoDecoderConfig& video_config);
   bool OnAudioBuffers(const StreamParser::BufferQueue& buffers);
   bool OnVideoBuffers(const StreamParser::BufferQueue& buffers);
+  bool OnTextBuffers(TextTrack* text_track,
+                     const StreamParser::BufferQueue& buffers);
   bool OnNeedKey(const std::string& type,
                  scoped_ptr<uint8[]> init_data,
                  int init_data_size);
@@ -171,10 +191,12 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   mutable base::Lock lock_;
   State state_;
+  bool cancel_next_seek_;
 
   DemuxerHost* host_;
   base::Closure open_cb_;
   NeedKeyCB need_key_cb_;
+  AddTextTrackCB add_text_track_cb_;
   // Callback used to report error strings that can help the web developer
   // figure out what is wrong with the content.
   LogCB log_cb_;

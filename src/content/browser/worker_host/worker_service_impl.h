@@ -11,6 +11,7 @@
 #include "base/observer_list.h"
 #include "base/threading/non_thread_safe.h"
 #include "content/browser/worker_host/worker_process_host.h"
+#include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/worker_service.h"
 
@@ -21,12 +22,16 @@ namespace content {
 class ResourceContext;
 class WorkerServiceObserver;
 class WorkerStoragePartition;
+class WorkerPrioritySetter;
 
 class CONTENT_EXPORT WorkerServiceImpl
     : public NON_EXPORTED_BASE(WorkerService) {
  public:
   // Returns the WorkerServiceImpl singleton.
   static WorkerServiceImpl* GetInstance();
+
+  // Releases the priority setter to avoid memory leak error.
+  void PerformTeardownForTesting();
 
   // WorkerService implementation:
   virtual bool TerminateWorker(int process_id, int route_id) OVERRIDE;
@@ -47,7 +52,6 @@ class CONTENT_EXPORT WorkerServiceImpl
                           const WorkerStoragePartition& worker_partition,
                           bool* exists,
                           bool* url_error);
-  void CancelCreateDedicatedWorker(int route_id, WorkerMessageFilter* filter);
   void ForwardToWorker(const IPC::Message& message,
                        WorkerMessageFilter* filter);
   void DocumentDetached(unsigned long long document_id,
@@ -71,6 +75,8 @@ class CONTENT_EXPORT WorkerServiceImpl
   void NotifyWorkerDestroyed(
       WorkerProcessHost* process,
       int worker_route_id);
+
+  void NotifyWorkerProcessCreated();
 
   // Used when we run each worker in a separate process.
   static const int kMaxWorkersWhenSeparate;
@@ -122,7 +128,8 @@ class CONTENT_EXPORT WorkerServiceImpl
       const WorkerStoragePartition& worker_partition,
       ResourceContext* resource_context);
 
-  NotificationRegistrar registrar_;
+  scoped_refptr<WorkerPrioritySetter> priority_setter_;
+
   int next_worker_route_id_;
 
   WorkerProcessHost::Instances queued_workers_;

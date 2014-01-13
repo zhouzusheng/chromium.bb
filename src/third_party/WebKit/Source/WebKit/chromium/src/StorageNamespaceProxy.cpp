@@ -26,6 +26,10 @@
 #include "config.h"
 #include "StorageNamespaceProxy.h"
 
+#include "public/platform/Platform.h"
+#include "public/platform/WebStorageArea.h"
+#include "public/platform/WebStorageNamespace.h"
+#include "public/platform/WebString.h"
 #include "ChromeClientImpl.h"
 #include "StorageAreaProxy.h"
 #include "WebKit.h"
@@ -33,10 +37,7 @@
 #include "WebViewImpl.h"
 #include "core/page/Chrome.h"
 #include "core/page/Page.h"
-#include "core/page/SecurityOrigin.h"
-#include <public/Platform.h>
-#include <public/WebStorageNamespace.h>
-#include <public/WebString.h>
+#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -47,7 +48,7 @@ PassRefPtr<StorageNamespace> StorageNamespace::localStorageNamespace(unsigned qu
 
 PassRefPtr<StorageNamespace> StorageNamespace::sessionStorageNamespace(Page* page, unsigned quota)
 {
-    WebKit::WebViewClient* webViewClient = static_cast<WebKit::WebViewImpl*>(page->chrome()->client()->webView())->client();
+    WebKit::WebViewClient* webViewClient = static_cast<WebKit::WebViewImpl*>(page->chrome().client()->webView())->client();
     return adoptRef(new StorageNamespaceProxy(webViewClient->createSessionStorageNamespace(quota), SessionStorage));
 }
 
@@ -77,7 +78,7 @@ PassRefPtr<StorageNamespace> StorageNamespaceProxy::copy()
 
 PassRefPtr<StorageArea> StorageNamespaceProxy::storageArea(PassRefPtr<SecurityOrigin> origin)
 {
-    return adoptRef(new StorageAreaProxy(m_storageNamespace->createStorageArea(origin->toString()), m_storageType));
+    return adoptRef(new StorageAreaProxy(adoptPtr(m_storageNamespace->createStorageArea(origin->toString())), m_storageType));
 }
 
 void StorageNamespaceProxy::close()

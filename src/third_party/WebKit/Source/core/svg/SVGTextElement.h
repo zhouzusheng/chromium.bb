@@ -21,7 +21,6 @@
 #ifndef SVGTextElement_h
 #define SVGTextElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedTransformList.h"
 #include "core/svg/SVGTextPositioningElement.h"
 #include "core/svg/SVGTransformable.h"
@@ -52,7 +51,7 @@ private:
     virtual AffineTransform* supplementalTransform();
     virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope mode) const { return SVGTransformable::localCoordinateSpaceTransform(mode); }
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
             
     virtual void svgAttributeChanged(const QualifiedName&);
@@ -67,5 +66,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

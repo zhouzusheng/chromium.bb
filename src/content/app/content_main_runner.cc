@@ -20,9 +20,9 @@
 #include "base/path_service.h"
 #include "base/process_util.h"
 #include "base/profiler/alternate_timer.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "content/browser/browser_main.h"
 #include "content/common/set_process_title.h"
 #include "content/common/url_schemes.h"
@@ -42,7 +42,7 @@
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/win/dpi.h"
-#include "webkit/user_agent/user_agent.h"
+#include "webkit/common/user_agent/user_agent.h"
 
 #if defined(USE_TCMALLOC)
 #include "third_party/tcmalloc/chromium/src/gperftools/malloc_extension.h"
@@ -299,6 +299,7 @@ class ContentClientInitializer {
         content_client->plugin_ = delegate->CreateContentPluginClient();
       if (!content_client->plugin_)
         content_client->plugin_ = &g_empty_content_plugin_client.Get();
+      // Single process not supported in split dll mode.
     } else if (process_type == switches::kRendererProcess ||
                CommandLine::ForCurrentProcess()->HasSwitch(
                    switches::kSingleProcess)) {
@@ -309,6 +310,7 @@ class ContentClientInitializer {
     } else if (process_type == switches::kUtilityProcess) {
       if (delegate)
         content_client->utility_ = delegate->CreateContentUtilityClient();
+      // TODO(scottmg): http://crbug.com/237249 Should be in _child.
       if (!content_client->utility_)
         content_client->utility_ = &g_empty_content_utility_client.Get();
     }
@@ -401,7 +403,6 @@ int RunNamedProcessTypeMain(
     ContentMainDelegate* delegate) {
   static const MainFunction kMainFunctions[] = {
     { "",                            BrowserMain },
-    { switches::kRendererProcess,    RendererMain },
 #if defined(ENABLE_PLUGINS)
     { switches::kPluginProcess,      PluginMain },
     { switches::kWorkerProcess,      WorkerMain },
@@ -409,6 +410,7 @@ int RunNamedProcessTypeMain(
     { switches::kPpapiBrokerProcess, PpapiBrokerMain },
 #endif
     { switches::kUtilityProcess,     UtilityMain },
+    { switches::kRendererProcess,    RendererMain },
     { switches::kGpuProcess,         GpuMain },
   };
 
@@ -662,9 +664,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // This must be done early enough since some helper functions like
     // IsTouchEnabled, needed to load resources, may call into the theme dll.
     EnableThemeSupportOnAllWindowStations();
-#if defined(ENABLE_HIDPI)
     ui::EnableHighDPISupport();
-#endif
     SetupCRT(command_line);
 #endif
 

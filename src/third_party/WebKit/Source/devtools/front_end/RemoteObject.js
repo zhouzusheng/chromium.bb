@@ -221,7 +221,7 @@ WebInspector.RemoteObject.prototype = {
             }
             callback(result, internalPropertiesResult);
         }
-        RuntimeAgent.getProperties(this._objectId, ownProperties, remoteObjectBinder);
+        RuntimeAgent.getProperties(this._objectId, ownProperties, false, remoteObjectBinder);
     },
 
     /**
@@ -252,8 +252,8 @@ WebInspector.RemoteObject.prototype = {
 
             this.doSetObjectPropertyValue(result, name, callback);
 
-            if (result._objectId)
-                RuntimeAgent.releaseObject(result._objectId);
+            if (result.objectId)
+                RuntimeAgent.releaseObject(result.objectId);
         }
     },
 

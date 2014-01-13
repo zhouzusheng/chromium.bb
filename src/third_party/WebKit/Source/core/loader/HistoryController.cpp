@@ -118,7 +118,7 @@ void HistoryController::restoreScrollPositionAndViewState()
             if (page && page->mainFrame() == m_frame && m_currentItem->pageScaleFactor())
                 page->setPageScaleFactor(m_currentItem->pageScaleFactor(), m_currentItem->scrollPoint());
             else
-                view->setScrollPosition(m_currentItem->scrollPoint());
+                view->setScrollPositionNonProgrammatically(m_currentItem->scrollPoint());
         }
     }
 }
@@ -197,10 +197,9 @@ void HistoryController::restoreDocumentState()
         case FrameLoadTypeSame:
         case FrameLoadTypeReplace:
             break;
-        case FrameLoadTypeBack:
-        case FrameLoadTypeForward:
-        case FrameLoadTypeIndexedBackForward:
+        case FrameLoadTypeBackForward:
         case FrameLoadTypeRedirectWithLockedBackForwardList:
+        case FrameLoadTypeInitialInChildFrame:
         case FrameLoadTypeStandard:
             itemToRestore = m_currentItem.get(); 
     }
@@ -227,7 +226,7 @@ bool HistoryController::shouldStopLoadingForHistoryItem(HistoryItem* targetItem)
 
 // Main funnel for navigating to a previous location (back/forward, non-search snap-back)
 // This includes recursion to handle loading into framesets properly
-void HistoryController::goToItem(HistoryItem* targetItem, FrameLoadType type)
+void HistoryController::goToItem(HistoryItem* targetItem)
 {
     ASSERT(!m_frame->tree()->parent());
     
@@ -242,7 +241,6 @@ void HistoryController::goToItem(HistoryItem* targetItem, FrameLoadType type)
         return;
     if (m_defersLoading) {
         m_deferredItem = targetItem;
-        m_deferredFrameLoadType = type;
         return;
     }
 
@@ -256,16 +254,16 @@ void HistoryController::goToItem(HistoryItem* targetItem, FrameLoadType type)
     // This must be done before trying to navigate the desired frame, because some
     // navigations can commit immediately (such as about:blank).  We must be sure that
     // all frames have provisional items set before the commit.
-    recursiveSetProvisionalItem(targetItem, currentItem.get(), type);
+    recursiveSetProvisionalItem(targetItem, currentItem.get());
     // Now that all other frames have provisional items, do the actual navigation.
-    recursiveGoToItem(targetItem, currentItem.get(), type);
+    recursiveGoToItem(targetItem, currentItem.get());
 }
 
 void HistoryController::setDefersLoading(bool defer)
 {
     m_defersLoading = defer;
     if (!defer && m_deferredItem) {
-        goToItem(m_deferredItem.get(), m_deferredFrameLoadType);
+        goToItem(m_deferredItem.get());
         m_deferredItem = 0;
     }
 }
@@ -308,61 +306,33 @@ void HistoryController::updateForReload()
 //     1) Back/forward: The m_currentItem is part of this mechanism.
 //     2) Global history: Handled by the client.
 //
-void HistoryController::updateForStandardLoad(HistoryUpdateType updateType)
+void HistoryController::updateForStandardLoad()
 {
     LOG(History, "WebCoreHistory: Updating History for Standard Load in frame %s", m_frame->loader()->documentLoader()->url().string().ascii().data());
 
-    FrameLoader* frameLoader = m_frame->loader();
-
-    const KURL& historyURL = frameLoader->documentLoader()->urlForHistory();
-
-    if (!frameLoader->documentLoader()->isClientRedirect()) {
-        if (!historyURL.isEmpty()) {
-            if (updateType != UpdateAllExceptBackForwardList)
-                updateBackForwardListClippedAtTarget(true);
-        }
-    } else {
-        // The client redirect replaces the current history item.
-        updateCurrentItem();
-    }
+    if (!m_frame->loader()->documentLoader()->urlForHistory().isEmpty())
+        updateBackForwardListClippedAtTarget(true);
 }
 
 void HistoryController::updateForRedirectWithLockedBackForwardList()
 {
 #if !LOG_DISABLED
-    if (m_frame->loader()->documentLoader())
-        LOG(History, "WebCoreHistory: Updating History for redirect load in frame %s", m_frame->loader()->documentLoader()->title().string().utf8().data());
+    LOG(History, "WebCoreHistory: Updating History for redirect load in frame %s", m_frame->loader()->documentLoader()->title().string().utf8().data());
 #endif
-    
-    const KURL& historyURL = m_frame->loader()->documentLoader()->urlForHistory();
 
-    if (m_frame->loader()->documentLoader()->isClientRedirect()) {
-        if (!m_currentItem && !m_frame->tree()->parent()) {
-            if (!historyURL.isEmpty())
-                updateBackForwardListClippedAtTarget(true);
-        }
-        // The client redirect replaces the current history item.
-        updateCurrentItem();
-    } else {
-        Frame* parentFrame = m_frame->tree()->parent();
-        if (parentFrame && parentFrame->loader()->history()->m_currentItem)
-            parentFrame->loader()->history()->m_currentItem->setChildItem(createItem());
+    if (!m_currentItem && !m_frame->tree()->parent()) {
+        if (!m_frame->loader()->documentLoader()->urlForHistory().isEmpty())
+            updateBackForwardListClippedAtTarget(true);
     }
+    // The client redirect replaces the current history item.
+    updateCurrentItem();
 }
 
-void HistoryController::updateForClientRedirect()
+void HistoryController::updateForInitialLoadInChildFrame()
 {
-#if !LOG_DISABLED
-    if (m_frame->loader()->documentLoader())
-        LOG(History, "WebCoreHistory: Updating History for client redirect in frame %s", m_frame->loader()->documentLoader()->title().string().utf8().data());
-#endif
-
-    // Clear out form data so we don't try to restore it into the incoming page.  Must happen after
-    // webcore has closed the URL and saved away the form state.
-    if (m_currentItem) {
-        m_currentItem->clearDocumentState();
-        m_currentItem->clearScrollPoint();
-    }
+    Frame* parentFrame = m_frame->tree()->parent();
+    if (parentFrame && parentFrame->loader()->history()->m_currentItem)
+        parentFrame->loader()->history()->m_currentItem->setChildItem(createItem());
 }
 
 void HistoryController::updateForCommit()
@@ -375,7 +345,7 @@ void HistoryController::updateForCommit()
     FrameLoadType type = frameLoader->loadType();
     if (isBackForwardLoadType(type)
         || isReplaceLoadTypeWithProvisionalItem(type)
-        || (isReloadTypeWithProvisionalItem(type) && !frameLoader->provisionalDocumentLoader()->unreachableURL().isEmpty())) {
+        || (isReloadTypeWithProvisionalItem(type) && !frameLoader->documentLoader()->unreachableURL().isEmpty())) {
         // Once committed, we want to use current item for saving DocState, and
         // the provisional item for restoring state.
         // Note previousItem must be set before we close the URL, which will
@@ -392,6 +362,29 @@ void HistoryController::updateForCommit()
         Page* page = m_frame->page();
         ASSERT(page);
         page->mainFrame()->loader()->history()->recursiveUpdateForCommit();
+    }
+
+    switch (type) {
+    case FrameLoadTypeBackForward:
+        updateForBackForwardNavigation();
+        return;
+    case FrameLoadTypeReload:
+    case FrameLoadTypeReloadFromOrigin:
+    case FrameLoadTypeSame:
+    case FrameLoadTypeReplace:
+        updateForReload();
+        return;
+    case FrameLoadTypeStandard:
+        updateForStandardLoad();
+        return;
+    case FrameLoadTypeRedirectWithLockedBackForwardList:
+        updateForRedirectWithLockedBackForwardList();
+        return;
+    case FrameLoadTypeInitialInChildFrame:
+        updateForInitialLoadInChildFrame();
+        return;
+    default:
+        ASSERT_NOT_REACHED();
     }
 }
 
@@ -615,7 +608,7 @@ PassRefPtr<HistoryItem> HistoryController::createItemTree(Frame* targetFrame, bo
 // tracking whether each frame already has the content the item requests.  If there is
 // a match, we set the provisional item and recurse.  Otherwise we will reload that
 // frame and all its kids in recursiveGoToItem.
-void HistoryController::recursiveSetProvisionalItem(HistoryItem* item, HistoryItem* fromItem, FrameLoadType type)
+void HistoryController::recursiveSetProvisionalItem(HistoryItem* item, HistoryItem* fromItem)
 {
     ASSERT(item);
 
@@ -633,14 +626,14 @@ void HistoryController::recursiveSetProvisionalItem(HistoryItem* item, HistoryIt
             ASSERT(fromChildItem);
             Frame* childFrame = m_frame->tree()->child(childFrameName);
             ASSERT(childFrame);
-            childFrame->loader()->history()->recursiveSetProvisionalItem(childItems[i].get(), fromChildItem, type);
+            childFrame->loader()->history()->recursiveSetProvisionalItem(childItems[i].get(), fromChildItem);
         }
     }
 }
 
 // We now traverse the frame tree and item tree a second time, loading frames that
 // do have the content the item requests.
-void HistoryController::recursiveGoToItem(HistoryItem* item, HistoryItem* fromItem, FrameLoadType type)
+void HistoryController::recursiveGoToItem(HistoryItem* item, HistoryItem* fromItem)
 {
     ASSERT(item);
 
@@ -655,10 +648,10 @@ void HistoryController::recursiveGoToItem(HistoryItem* item, HistoryItem* fromIt
             ASSERT(fromChildItem);
             Frame* childFrame = m_frame->tree()->child(childFrameName);
             ASSERT(childFrame);
-            childFrame->loader()->history()->recursiveGoToItem(childItems[i].get(), fromChildItem, type);
+            childFrame->loader()->history()->recursiveGoToItem(childItems[i].get(), fromChildItem);
         }
     } else {
-        m_frame->loader()->loadItem(item, type);
+        m_frame->loader()->loadItem(item);
     }
 }
 

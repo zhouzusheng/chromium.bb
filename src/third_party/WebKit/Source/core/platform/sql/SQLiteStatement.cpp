@@ -329,8 +329,11 @@ SQLValue SQLiteStatement::getColumnValue(int col)
         case SQLITE_FLOAT:
             return SQLValue(sqlite3_value_double(value));
         case SQLITE_BLOB:       // SQLValue and JS don't represent blobs, so use TEXT -case
-        case SQLITE_TEXT:
-            return SQLValue(String(reinterpret_cast<const UChar*>(sqlite3_value_text16(value))));
+        case SQLITE_TEXT: {
+            const UChar* string = reinterpret_cast<const UChar*>(sqlite3_value_text16(value));
+            unsigned length = WTF::lengthOfNullTerminatedString(string);
+            return SQLValue(StringImpl::create8BitIfPossible(string, length));
+        }
         case SQLITE_NULL:
             return SQLValue();
         default:
@@ -348,9 +351,10 @@ String SQLiteStatement::getColumnText(int col)
             return String();
     if (columnCount() <= col)
         return String();
-    return String(reinterpret_cast<const UChar*>(sqlite3_column_text16(m_statement, col)), sqlite3_column_bytes16(m_statement, col) / sizeof(UChar));
+    const UChar* string = reinterpret_cast<const UChar*>(sqlite3_column_text16(m_statement, col));
+    return StringImpl::create8BitIfPossible(string, sqlite3_column_bytes16(m_statement, col) / sizeof(UChar));
 }
-    
+
 double SQLiteStatement::getColumnDouble(int col)
 {
     ASSERT(col >= 0);

@@ -25,26 +25,18 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGImage.h"
 
-#include "core/dom/Attr.h"
-#include "core/platform/FloatConversion.h"
-#include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/ImageQualityController.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/PointerEventsHitRules.h"
 #include "core/rendering/RenderImageResource.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/svg/RenderSVGResourceContainer.h"
-#include "core/rendering/svg/RenderSVGResourceFilter.h"
+#include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGImageElement.h"
-#include "core/svg/SVGLength.h"
-#include "core/svg/SVGPreserveAspectRatio.h"
 
 namespace WebCore {
 
@@ -67,16 +59,32 @@ bool RenderSVGImage::updateImageViewport()
 {
     SVGImageElement* image = static_cast<SVGImageElement*>(node());
     FloatRect oldBoundaries = m_objectBoundingBox;
+    bool updatedViewport = false;
 
     SVGLengthContext lengthContext(image);
     m_objectBoundingBox = FloatRect(image->x().value(lengthContext), image->y().value(lengthContext), image->width().value(lengthContext), image->height().value(lengthContext));
 
-    if (oldBoundaries == m_objectBoundingBox)
-        return false;
+    // Images with preserveAspectRatio=none should force non-uniform scaling. This can be achieved
+    // by setting the image's container size to its intrinsic size.
+    // See: http://www.w3.org/TR/SVG/single-page.html, 7.8 The ‘preserveAspectRatio’ attribute.
+    if (image->preserveAspectRatio().align() == SVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_NONE) {
+        if (CachedImage* cachedImage = m_imageResource->cachedImage()) {
+            LayoutSize intrinsicSize = cachedImage->imageSizeForRenderer(0, style()->effectiveZoom());
+            if (intrinsicSize != m_imageResource->imageSize(style()->effectiveZoom())) {
+                m_imageResource->setContainerSizeForRenderer(roundedIntSize(intrinsicSize));
+                updatedViewport = true;
+            }
+        }
+    }
 
-    m_imageResource->setContainerSizeForRenderer(enclosingIntRect(m_objectBoundingBox).size());
-    m_needsBoundariesUpdate = true;
-    return true;
+    if (oldBoundaries != m_objectBoundingBox) {
+        if (!updatedViewport)
+            m_imageResource->setContainerSizeForRenderer(enclosingIntRect(m_objectBoundingBox).size());
+        updatedViewport = true;
+        m_needsBoundariesUpdate = true;
+    }
+
+    return updatedViewport;
 }
 
 void RenderSVGImage::layout()
@@ -117,6 +125,8 @@ void RenderSVGImage::layout()
 
 void RenderSVGImage::paint(PaintInfo& paintInfo, const LayoutPoint&)
 {
+    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
+
     if (paintInfo.context->paintingDisabled() || style()->visibility() == HIDDEN || !m_imageResource->hasImage())
         return;
 
@@ -159,7 +169,7 @@ void RenderSVGImage::paintForeground(PaintInfo& paintInfo)
     if (style()->svgStyle()->bufferedRendering() != BR_STATIC)
         useLowQualityScaling = ImageQualityController::imageQualityController()->shouldPaintAtLowQuality(paintInfo.context, this, image.get(), image.get(), LayoutSize(destRect.size()));
 
-    paintInfo.context->drawImage(image.get(), style()->colorSpace(), destRect, srcRect, CompositeSourceOver, DoNotRespectImageOrientation, useLowQualityScaling);
+    paintInfo.context->drawImage(image.get(), destRect, srcRect, CompositeSourceOver, DoNotRespectImageOrientation, useLowQualityScaling);
 }
 
 void RenderSVGImage::invalidateBufferedForeground()
@@ -221,5 +231,3 @@ void RenderSVGImage::addFocusRingRects(Vector<IntRect>& rects, const LayoutPoint
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(SVG)

@@ -26,9 +26,7 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderMarquee.h"
 
 namespace WebCore {
@@ -186,9 +184,14 @@ void HTMLMarqueeElement::resume()
 
 RenderMarquee* HTMLMarqueeElement::renderMarquee() const
 {
-    if (renderer() && renderer()->hasLayer())
-        return renderBoxModelObject()->layer()->marquee();
+    if (renderer() && renderer()->isMarquee())
+        return toRenderMarquee(renderer());
     return 0;
+}
+
+RenderObject* HTMLMarqueeElement::createRenderer(RenderStyle*)
+{
+    return new (document()->renderArena()) RenderMarquee(this);
 }
 
 } // namespace WebCore

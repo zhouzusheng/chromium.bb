@@ -32,7 +32,7 @@ class CachedRawResourceClient;
 
 class CachedRawResource : public CachedResource {
 public:
-    CachedRawResource(ResourceRequest&, Type);
+    CachedRawResource(const ResourceRequest&, Type);
 
     // FIXME: AssociatedURLLoader shouldn't be a DocumentThreadableLoader and therefore shouldn't
     // use CachedRawResource. However, it is, and it needs to be able to defer loading.
@@ -40,9 +40,6 @@ public:
     virtual void setDefersLoading(bool);
 
     virtual void setDataBufferingPolicy(DataBufferingPolicy);
-    
-    // FIXME: This is exposed for the InpsectorInstrumentation for preflights in DocumentThreadableLoader. It's also really lame.
-    unsigned long identifier() const { return m_identifier; }
 
     void clear();
 
@@ -55,16 +52,11 @@ private:
     virtual void appendData(const char*, int) OVERRIDE;
 
     virtual bool shouldIgnoreHTTPStatusCodeErrors() const { return true; }
-    virtual void allClientsRemoved();
 
     virtual void willSendRequest(ResourceRequest&, const ResourceResponse&);
     virtual void responseReceived(const ResourceResponse&);
     virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent);
     virtual void didDownloadData(int);
-
-    virtual void switchClientsToRevalidatedResource() OVERRIDE;
-
-    unsigned long m_identifier;
 
     struct RedirectPair {
     public:

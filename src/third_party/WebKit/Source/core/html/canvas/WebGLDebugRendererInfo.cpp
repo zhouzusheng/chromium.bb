@@ -27,13 +27,12 @@
 
 #include "core/html/canvas/WebGLDebugRendererInfo.h"
 
-#include "core/html/canvas/WebGLRenderingContext.h"
-
 namespace WebCore {
 
 WebGLDebugRendererInfo::WebGLDebugRendererInfo(WebGLRenderingContext* context)
     : WebGLExtension(context)
 {
+    ScriptWrappable::init(this);
 }
 
 WebGLDebugRendererInfo::~WebGLDebugRendererInfo()
@@ -45,9 +44,9 @@ WebGLExtension::ExtensionName WebGLDebugRendererInfo::getName() const
     return WebGLDebugRendererInfoName;
 }
 
-PassOwnPtr<WebGLDebugRendererInfo> WebGLDebugRendererInfo::create(WebGLRenderingContext* context)
+PassRefPtr<WebGLDebugRendererInfo> WebGLDebugRendererInfo::create(WebGLRenderingContext* context)
 {
-    return adoptPtr(new WebGLDebugRendererInfo(context));
+    return adoptRef(new WebGLDebugRendererInfo(context));
 }
 
 bool WebGLDebugRendererInfo::supported(WebGLRenderingContext*)

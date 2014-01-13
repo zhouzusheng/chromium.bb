@@ -16,7 +16,7 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d_f.h"
-#include "webkit/glue/webcursor.h"
+#include "webkit/common/cursors/webcursor.h"
 
 #if defined(TOOLKIT_GTK)
 #include "webkit/plugins/npapi/gtk_plugin_container_manager.h"
@@ -84,8 +84,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
+  virtual void TextInputTypeChanged(ui::TextInputType type,
+                                    bool can_compose_inline) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const ui::Range& range,
@@ -93,7 +93,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   virtual void DidUpdateBackingStore(
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& copy_rects) OVERRIDE;
+      const std::vector<gfx::Rect>& copy_rects,
+      const ui::LatencyInfo& latency_info) OVERRIDE;
   virtual void RenderViewGone(base::TerminationStatus status,
                               int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
@@ -131,8 +132,9 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
 #if defined(OS_WIN) || defined(USE_AURA)
-  virtual void ProcessAckedTouchEvent(const WebKit::WebTouchEvent& touch,
-                                      InputEventAckState ack_result) OVERRIDE;
+  virtual void ProcessAckedTouchEvent(
+      const TouchEventWithLatencyInfo& touch,
+      InputEventAckState ack_result) OVERRIDE;
 #endif  // defined(OS_WIN) || defined(USE_AURA)
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
@@ -174,6 +176,11 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 #if defined(OS_WIN) && !defined(USE_AURA)
   virtual void WillWmDestroy() OVERRIDE;
 #endif  // defined(OS_WIN) && !defined(USE_AURA)
+
+#if defined(OS_WIN) && defined(USE_AURA)
+  virtual void SetParentNativeViewAccessible(
+      gfx::NativeViewAccessible accessible_parent) OVERRIDE;
+#endif
 
   // Overridden from ui::GestureEventHelper.
   virtual bool DispatchLongPressGestureEvent(ui::GestureEvent* event) OVERRIDE;

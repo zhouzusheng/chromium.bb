@@ -52,7 +52,7 @@ protected:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void didNotifySubtreeInsertions(ContainerNode*) OVERRIDE;
-    virtual void attach();
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
 
 private:
     virtual bool supportsFocus() const;
@@ -66,7 +66,7 @@ private:
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     void setNameAndOpenURL();
-    void openURL(bool lockHistory = true, bool lockBackForwardList = true);
+    void openURL(bool lockBackForwardList = true);
 
     AtomicString m_URL;
     AtomicString m_frameName;

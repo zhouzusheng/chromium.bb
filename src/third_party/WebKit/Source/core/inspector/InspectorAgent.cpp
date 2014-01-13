@@ -32,26 +32,19 @@
 #include "core/inspector/InspectorAgent.h"
 
 #include "InspectorFrontend.h"
+#include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptController.h"
-#include "bindings/v8/ScriptFunctionCall.h"
-#include "bindings/v8/ScriptObject.h"
 #include "core/dom/Document.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorController.h"
-#include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorState.h"
-#include "core/inspector/InspectorValues.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/SecurityOrigin.h"
-#include "core/page/Settings.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/network/ResourceRequest.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
+#include "core/platform/JSONValues.h"
+#include "weborigin/SecurityOrigin.h"
 
 using namespace std;
 
@@ -111,8 +104,11 @@ void InspectorAgent::clearFrontend()
     disable(&error);
 }
 
-void InspectorAgent::didCommitLoad()
+void InspectorAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
 {
+    if (loader->frame() != frame->page()->mainFrame())
+        return;
+
     m_injectedScriptManager->discardInjectedScripts();
 }
 
@@ -133,8 +129,16 @@ void InspectorAgent::disable(ErrorString*)
     m_state->setBoolean(InspectorAgentState::inspectorAgentEnabled, false);
 }
 
-void InspectorAgent::domContentLoadedEventFired()
+void InspectorAgent::reset(ErrorString*)
 {
+    m_inspectedPage->inspectorController()->reconnectFrontend();
+}
+
+void InspectorAgent::domContentLoadedEventFired(Frame* frame)
+{
+    if (frame->page()->mainFrame() != frame)
+        return;
+
     m_injectedScriptManager->injectedScriptHost()->clearInspectedObjects();
 }
 
@@ -156,7 +160,7 @@ void InspectorAgent::setInjectedScriptForOrigin(const String& origin, const Stri
     m_injectedScriptForOrigin.set(origin, source);
 }
 
-void InspectorAgent::inspect(PassRefPtr<TypeBuilder::Runtime::RemoteObject> objectToInspect, PassRefPtr<InspectorObject> hints)
+void InspectorAgent::inspect(PassRefPtr<TypeBuilder::Runtime::RemoteObject> objectToInspect, PassRefPtr<JSONObject> hints)
 {
     if (m_state->getBoolean(InspectorAgentState::inspectorAgentEnabled) && m_frontend) {
         m_frontend->inspector()->inspect(objectToInspect, hints);

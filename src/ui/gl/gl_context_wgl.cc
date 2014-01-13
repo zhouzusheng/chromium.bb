@@ -15,7 +15,7 @@
 namespace gfx {
 
 GLContextWGL::GLContextWGL(GLShareGroup* share_group)
-    : GLContext(share_group),
+    : GLContextReal(share_group),
       context_(NULL) {
 }
 
@@ -81,7 +81,10 @@ bool GLContextWGL::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
-  SetCurrent(this, surface);
+  // Set this as soon as the context is current, since we might call into GL.
+  SetRealGLApi();
+
+  SetCurrent(surface);
   if (!InitializeExtensionBindings()) {
     ReleaseCurrent(surface);
     return false;
@@ -92,7 +95,6 @@ bool GLContextWGL::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
-  SetRealGLApi();
   return true;
 }
 
@@ -100,7 +102,7 @@ void GLContextWGL::ReleaseCurrent(GLSurface* surface) {
   if (!IsCurrent(surface))
     return;
 
-  SetCurrent(NULL, NULL);
+  SetCurrent(NULL);
   wglMakeCurrent(NULL, NULL);
 }
 
@@ -111,7 +113,7 @@ bool GLContextWGL::IsCurrent(GLSurface* surface) {
   // If our context is current then our notion of which GLContext is
   // current must be correct. On the other hand, third-party code
   // using OpenGL might change the current context.
-  DCHECK(!native_context_is_current || (GetCurrent() == this));
+  DCHECK(!native_context_is_current || (GetRealCurrent() == this));
 
   if (!native_context_is_current)
     return false;

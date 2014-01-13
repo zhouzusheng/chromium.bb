@@ -3,18 +3,18 @@
 // found in the LICENSE file.
 #include "content/renderer/media/peer_connection_tracker.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/common/media/peer_connection_tracker_messages.h"
 #include "content/renderer/media/rtc_media_constraints.h"
 #include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/render_thread_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStream.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamSource.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamTrack.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCICECandidate.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCPeerConnectionHandlerClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/public/platform/WebMediaStream.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/WebKit/public/platform/WebRTCICECandidate.h"
+#include "third_party/WebKit/public/platform/WebRTCPeerConnectionHandlerClient.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 
 using std::string;
 using webrtc::MediaConstraintsInterface;
@@ -155,16 +155,17 @@ static string GetIceGatheringStateString(
 // Note:
 // The format must be consistent with what webrtc_internals.js expects.
 // If you change it here, you must change webrtc_internals.js as well.
-static DictionaryValue* GetDictValueStats(const webrtc::StatsReport& report) {
+static base::DictionaryValue* GetDictValueStats(
+    const webrtc::StatsReport& report) {
   if (report.values.empty())
     return NULL;
 
-  DictionaryValue* dict = new DictionaryValue();
+  DictionaryValue* dict = new base::DictionaryValue();
   if (!dict)
     return NULL;
   dict->SetDouble("timestamp", report.timestamp);
 
-  ListValue* values = new ListValue();
+  base::ListValue* values = new base::ListValue();
   if (!values) {
     delete dict;
     return NULL;
@@ -180,14 +181,14 @@ static DictionaryValue* GetDictValueStats(const webrtc::StatsReport& report) {
 
 // Builds a DictionaryValue from the StatsReport.
 // The caller takes the ownership of the returned value.
-static DictionaryValue* GetDictValue(const webrtc::StatsReport& report) {
-  scoped_ptr<DictionaryValue> stats, result;
+static base::DictionaryValue* GetDictValue(const webrtc::StatsReport& report) {
+  scoped_ptr<base::DictionaryValue> stats, result;
 
   stats.reset(GetDictValueStats(report));
   if (!stats)
     return NULL;
 
-  result.reset(new DictionaryValue());
+  result.reset(new base::DictionaryValue());
   if (!result)
     return NULL;
 
@@ -209,10 +210,10 @@ class InternalStatsObserver : public webrtc::StatsObserver {
 
   virtual void OnComplete(
       const std::vector<webrtc::StatsReport>& reports) OVERRIDE {
-    ListValue list;
+    base::ListValue list;
 
     for (size_t i = 0; i < reports.size(); ++i) {
-      DictionaryValue* report = GetDictValue(reports[i]);
+      base::DictionaryValue* report = GetDictValue(reports[i]);
       if (report)
         list.Append(report);
     }

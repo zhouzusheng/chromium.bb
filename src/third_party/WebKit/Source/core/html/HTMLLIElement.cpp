@@ -26,8 +26,6 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
-#include "core/dom/Attribute.h"
-#include "core/dom/EventPathWalker.h"
 #include "core/rendering/RenderListItem.h"
 
 namespace WebCore {
@@ -86,11 +84,11 @@ void HTMLLIElement::parseAttribute(const QualifiedName& name, const AtomicString
         HTMLElement::parseAttribute(name, value);
 }
 
-void HTMLLIElement::attach()
+void HTMLLIElement::attach(const AttachContext& context)
 {
     ASSERT(!attached());
 
-    HTMLElement::attach();
+    HTMLElement::attach(context);
 
     if (renderer() && renderer()->isListItem()) {
         RenderListItem* listItemRenderer = toRenderListItem(renderer());

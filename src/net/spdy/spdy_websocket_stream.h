@@ -38,12 +38,12 @@ class NET_EXPORT_PRIVATE SpdyWebSocketStream
     // has been sent.
     virtual void OnSentSpdyHeaders() = 0;
 
-    // Called on corresponding to OnResponseReceived() or SPDY's SYN_STREAM,
-    // SYN_REPLY, or HEADERS frames are received. This callback may be called
-    // multiple times as SPDY's delegate does.
-    virtual int OnReceivedSpdyResponseHeader(
-        const SpdyHeaderBlock& headers,
-        int status) = 0;
+    // Called on corresponding to OnResponseHeadersUpdated() or
+    // SPDY's SYN_STREAM, SYN_REPLY, or HEADERS frames are
+    // received. This callback may be called multiple times as SPDY's
+    // delegate does.
+    virtual void OnSpdyResponseHeadersUpdated(
+        const SpdyHeaderBlock& response_headers) = 0;
 
     // Called when data is sent.
     virtual void OnSentSpdyData(size_t bytes_sent) = 0;
@@ -74,15 +74,11 @@ class NET_EXPORT_PRIVATE SpdyWebSocketStream
   void Close();
 
   // SpdyStream::Delegate
-  virtual SpdySendStatus OnSendHeadersComplete() OVERRIDE;
-  virtual int OnSendBody() OVERRIDE;
-  virtual SpdySendStatus OnSendBodyComplete(size_t bytes_sent) OVERRIDE;
-  virtual int OnResponseReceived(const SpdyHeaderBlock& response,
-                                 base::Time response_time,
-                                 int status) OVERRIDE;
-  virtual void OnHeadersSent() OVERRIDE;
-  virtual int OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
-  virtual void OnDataSent(size_t bytes_sent) OVERRIDE;
+  virtual void OnRequestHeadersSent() OVERRIDE;
+  virtual SpdyResponseHeadersStatus OnResponseHeadersUpdated(
+      const SpdyHeaderBlock& response_headers) OVERRIDE;
+  virtual void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
+  virtual void OnDataSent() OVERRIDE;
   virtual void OnClose(int status) OVERRIDE;
 
  private:
@@ -95,8 +91,9 @@ class NET_EXPORT_PRIVATE SpdyWebSocketStream
 
   base::WeakPtrFactory<SpdyWebSocketStream> weak_ptr_factory_;
   SpdyStreamRequest stream_request_;
-  scoped_refptr<SpdyStream> stream_;
+  base::WeakPtr<SpdyStream> stream_;
   scoped_refptr<SpdySession> spdy_session_;
+  size_t pending_send_data_length_;
   Delegate* delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyWebSocketStream);

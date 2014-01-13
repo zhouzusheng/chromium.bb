@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFEColorMatrixElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
@@ -65,7 +63,7 @@ bool SVGFEColorMatrixElement::isSupportedAttribute(const QualifiedName& attrName
         supportedAttributes.add(SVGNames::valuesAttr);
         supportedAttributes.add(SVGNames::inAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFEColorMatrixElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -174,5 +172,3 @@ PassRefPtr<FilterEffect> SVGFEColorMatrixElement::build(SVGFilterBuilder* filter
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(SVG)

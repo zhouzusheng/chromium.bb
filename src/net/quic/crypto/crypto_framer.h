@@ -20,8 +20,9 @@
 namespace net {
 
 class CryptoFramer;
-class QuicDataReader;
 class QuicData;
+class QuicDataReader;
+class QuicDataWriter;
 
 class NET_EXPORT_PRIVATE CryptoFramerVisitorInterface {
  public:
@@ -56,19 +57,15 @@ class NET_EXPORT_PRIVATE CryptoFramer {
     visitor_ = visitor;
   }
 
-  QuicErrorCode error() const {
-    return error_;
-  }
+  QuicErrorCode error() const { return error_; }
 
-  // Processes input data, which must be delivered in order.  Returns
+  // Processes input data, which must be delivered in order. Returns
   // false if there was an error, and true otherwise.
   bool ProcessInput(base::StringPiece input);
 
   // Returns the number of bytes of buffered input data remaining to be
   // parsed.
-  size_t InputBytesRemaining() const {
-    return buffer_.length();
-  }
+  size_t InputBytesRemaining() const { return buffer_.length(); }
 
   // Returns a new QuicData owned by the caller that contains a serialized
   // |message|, or NULL if there was an error.
@@ -79,9 +76,15 @@ class NET_EXPORT_PRIVATE CryptoFramer {
   // Clears per-message state.  Does not clear the visitor.
   void Clear();
 
-  void set_error(QuicErrorCode error) {
-    error_ = error;
-  }
+  // Process does does the work of |ProcessInput|, but returns an error code,
+  // doesn't set error_ and doesn't call |visitor_->OnError()|.
+  QuicErrorCode Process(base::StringPiece input);
+
+  static bool WritePadTag(QuicDataWriter* writer,
+                          size_t pad_length,
+                          uint32* end_offset);
+
+  void set_error(QuicErrorCode error) { error_ = error; }
 
   // Represents the current state of the parsing state machine.
   enum CryptoFramerState {
@@ -105,7 +108,7 @@ class NET_EXPORT_PRIVATE CryptoFramer {
   uint16 num_entries_;
   // tags_and_lengths_ contains the tags that are currently being parsed and
   // their lengths.
-  std::vector<std::pair<CryptoTag, size_t> > tags_and_lengths_;
+  std::vector<std::pair<QuicTag, size_t> > tags_and_lengths_;
   // Cumulative length of all values in the message currently being parsed.
   size_t values_len_;
 };

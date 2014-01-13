@@ -20,12 +20,19 @@ class NET_EXPORT_PRIVATE QuicConnectionLogger
 
   virtual ~QuicConnectionLogger();
 
+  // QuicPacketGenerator::DebugDelegateInterface
+  virtual void OnFrameAddedToPacket(const QuicFrame& frame) OVERRIDE;
+
   // QuicConnectionDebugVisitorInterface
+  virtual void OnPacketSent(QuicPacketSequenceNumber sequence_number,
+                            EncryptionLevel level,
+                            const QuicEncryptedPacket& packet,
+                            int rv) OVERRIDE;
+
   virtual void OnPacketReceived(const IPEndPoint& self_address,
                                 const IPEndPoint& peer_address,
                                 const QuicEncryptedPacket& packet) OVERRIDE;
-  virtual void OnProtocolVersionMismatch(
-      QuicVersionTag version) OVERRIDE;
+  virtual void OnProtocolVersionMismatch(QuicTag version) OVERRIDE;
   virtual void OnPacketHeader(const QuicPacketHeader& header) OVERRIDE;
   virtual void OnStreamFrame(const QuicStreamFrame& frame) OVERRIDE;
   virtual void OnAckFrame(const QuicAckFrame& frame) OVERRIDE;

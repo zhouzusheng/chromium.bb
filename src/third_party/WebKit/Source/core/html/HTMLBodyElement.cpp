@@ -36,7 +36,6 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
-#include "core/page/Page.h"
 
 namespace WebCore {
 
@@ -77,7 +76,7 @@ void HTMLBodyElement::collectStyleForPresentationAttribute(const QualifiedName& 
         if (!url.isEmpty()) {
             RefPtr<CSSImageValue> imageValue = CSSImageValue::create(document()->completeURL(url).string());
             imageValue->setInitiator(localName());
-            style->setProperty(CSSProperty(CSSPropertyBackgroundImage, imageValue));
+            style->setProperty(CSSProperty(CSSPropertyBackgroundImage, imageValue.release()));
         }
     } else if (name == marginwidthAttr || name == leftmarginAttr) {
         addHTMLLengthToStyle(style, CSSPropertyMarginRight, value);
@@ -195,6 +194,8 @@ bool HTMLBodyElement::isURLAttribute(const Attribute& attribute) const
 
 bool HTMLBodyElement::supportsFocus() const
 {
+    // This override is needed because the inherited method bails if the parent is editable.
+    // The <body> should be focusable even if <html> is editable.
     return rendererIsEditable() || HTMLElement::supportsFocus();
 }
 

@@ -4,6 +4,7 @@
 
 #include "cc/quads/render_pass.h"
 
+#include "cc/output/copy_output_request.h"
 #include "cc/quads/draw_quad.h"
 #include "cc/quads/shared_quad_state.h"
 
@@ -21,8 +22,6 @@ RenderPass::RenderPass()
 RenderPass::~RenderPass() {}
 
 scoped_ptr<RenderPass> RenderPass::Copy(Id new_id) const {
-  DCHECK(new_id != id);
-
   scoped_ptr<RenderPass> copy_pass(Create());
   copy_pass->SetAll(new_id,
                     output_rect,

@@ -20,16 +20,18 @@
 #include "config.h"
 #include "core/dom/EventRetargeter.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/EventContext.h"
 #include "core/dom/EventPathWalker.h"
 #include "core/dom/FocusEvent.h"
+#include "core/dom/FullscreenController.h"
 #include "core/dom/MouseEvent.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/dom/Touch.h"
 #include "core/dom/TouchEvent.h"
 #include "core/dom/TouchList.h"
 #include "core/dom/TreeScope.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 #include <wtf/Vector.h>
@@ -45,7 +47,7 @@ static inline EventDispatchBehavior determineDispatchBehavior(Event* event, Shad
 {
     // Video-only full screen is a mode where we use the shadow DOM as an implementation
     // detail that should not be detectable by the web content.
-    if (Element* element = target->toNode()->document()->webkitCurrentFullScreenElement()) {
+    if (Element* element = FullscreenController::currentFullScreenElementFrom(target->toNode()->document())) {
         // FIXME: We assume that if the full screen element is a media element that it's
         // the video-only full screen. Both here and elsewhere. But that is probably wrong.
         if (element->isMediaElement() && shadowRoot && shadowRoot->host() == element)
@@ -71,6 +73,12 @@ static inline EventDispatchBehavior determineDispatchBehavior(Event* event, Shad
     return RetargetEvent;
 }
 
+void EventRetargeter::ensureEventPath(Node* node, Event* event)
+{
+    calculateEventPath(node, event);
+    calculateAdjustedEventPathForEachNode(event->eventPath());
+}
+
 void EventRetargeter::calculateEventPath(Node* node, Event* event)
 {
     EventPath& eventPath = event->eventPath();
@@ -93,15 +101,39 @@ void EventRetargeter::calculateEventPath(Node* node, Event* event)
         else
             eventPath.append(adoptPtr(new EventContext(node, eventTargetRespectingTargetRules(node), targetStack.last())));
         if (!inDocument)
-            return;
+            break;
         if (!node->isShadowRoot())
             continue;
         if (determineDispatchBehavior(event, toShadowRoot(node), targetStack.last()) == StayInsideShadowDOM)
-            return;
+            break;
         if (!isSVGElement) {
             ASSERT(!targetStack.isEmpty());
             targetStack.removeLast();
         }
+    }
+}
+
+void EventRetargeter::calculateAdjustedEventPathForEachNode(EventPath& eventPath)
+{
+    if (!RuntimeEnabledFeatures::experimentalShadowDOMEnabled())
+        return;
+    TreeScope* lastScope = 0;
+    size_t eventPathSize = eventPath.size();
+    for (size_t i = 0; i < eventPathSize; ++i) {
+        TreeScope* currentScope = eventPath[i]->node()->treeScope();
+        if (currentScope == lastScope) {
+            // Fast path.
+            eventPath[i]->setEventPath(eventPath[i - 1]->eventPath());
+            continue;
+        }
+        lastScope = currentScope;
+        Vector<RefPtr<Node> > nodes;
+        for (size_t j = 0; j < eventPathSize; ++j) {
+            Node* node = eventPath[j]->node();
+            if (node->treeScope()->isInclusiveAncestorOf(currentScope))
+                nodes.append(node);
+        }
+        eventPath[i]->adoptEventPath(nodes);
     }
 }
 

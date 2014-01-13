@@ -33,6 +33,7 @@
 #include "core/html/HTMLMediaElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/cache/CachedResourceLoader.h"
+#include "core/page/Chrome.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameTree.h"
 #include "core/page/FrameView.h"
@@ -107,11 +108,7 @@ static EditingBehaviorType editingBehaviorTypeForPlatform()
     ;
 }
 
-#if USE(UNIFIED_TEXT_CHECKING)
-static const bool defaultUnifiedTextCheckerEnabled = true;
-#else
 static const bool defaultUnifiedTextCheckerEnabled = false;
-#endif
 #if OS(DARWIN)
 static const bool defaultSmartInsertDeleteEnabled = true;
 #else
@@ -133,6 +130,8 @@ Settings::Settings(Page* page)
 #else
     , m_textAutosizingEnabled(false)
 #endif
+    , m_useWideViewport(true)
+    , m_loadWithOverviewMode(true)
     SETTINGS_INITIALIZER_LIST
     , m_isJavaEnabled(false)
     , m_loadsImagesAutomatically(false)
@@ -142,15 +141,10 @@ Settings::Settings(Page* page)
     , m_fontRenderingMode(0)
     , m_isCSSCustomFilterEnabled(false)
     , m_cssStickyPositionEnabled(true)
-    , m_cssVariablesEnabled(false)
     , m_dnsPrefetchingEnabled(false)
     , m_touchEventEmulationEnabled(false)
     , m_setImageLoadingSettingsTimer(this, &Settings::imageLoadingSettingsTimerFired)
 {
-    // A Frame may not have been created yet, so we initialize the AtomicString
-    // hash before trying to use it.
-    AtomicString::init();
-    initializeDefaultFontFamilies();
     m_page = page; // Page is not yet fully initialized wen constructing Settings, so keeping m_page null over initializeDefaultFontFamilies() call.
 }
 
@@ -160,11 +154,6 @@ PassOwnPtr<Settings> Settings::create(Page* page)
 } 
 
 SETTINGS_SETTER_BODIES
-
-void Settings::initializeDefaultFontFamilies()
-{
-    // Other platforms can set up fonts from a client, but on Mac, we want it in WebCore to share code between WebKit1 and WebKit2.
-}
 
 const AtomicString& Settings::standardFontFamily(UScriptCode script) const
 {
@@ -254,6 +243,26 @@ void Settings::setTextAutosizingWindowSizeOverride(const IntSize& textAutosizing
     m_page->setNeedsRecalcStyleInAllFrames();
 }
 
+void Settings::setUseWideViewport(bool useWideViewport)
+{
+    if (m_useWideViewport == useWideViewport)
+        return;
+
+    m_useWideViewport = useWideViewport;
+    if (m_page->mainFrame())
+        m_page->chrome().dispatchViewportPropertiesDidChange(m_page->mainFrame()->document()->viewportArguments());
+}
+
+void Settings::setLoadWithOverviewMode(bool loadWithOverviewMode)
+{
+    if (m_loadWithOverviewMode == loadWithOverviewMode)
+        return;
+
+    m_loadWithOverviewMode = loadWithOverviewMode;
+    if (m_page->mainFrame())
+        m_page->chrome().dispatchViewportPropertiesDidChange(m_page->mainFrame()->document()->viewportArguments());
+}
+
 void Settings::setTextAutosizingFontScaleFactor(float fontScaleFactor)
 {
     m_textAutosizingFontScaleFactor = fontScaleFactor;
@@ -262,15 +271,6 @@ void Settings::setTextAutosizingFontScaleFactor(float fontScaleFactor)
     for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree()->traverseNext())
         frame->document()->textAutosizer()->recalculateMultipliers();
 
-    m_page->setNeedsRecalcStyleInAllFrames();
-}
-
-void Settings::setResolutionOverride(const IntSize& densityPerInchOverride)
-{
-    if (m_resolutionDensityPerInchOverride == densityPerInchOverride)
-        return;
-
-    m_resolutionDensityPerInchOverride = densityPerInchOverride;
     m_page->setNeedsRecalcStyleInAllFrames();
 }
 
@@ -383,6 +383,20 @@ void Settings::setUsesOverlayScrollbars(bool flag)
 bool Settings::usesOverlayScrollbars()
 {
     return gUsesOverlayScrollbars;
+}
+
+void Settings::setOpenGLMultisamplingEnabled(bool flag)
+{
+    if (m_openGLMultisamplingEnabled == flag)
+        return;
+
+    m_openGLMultisamplingEnabled = flag;
+    m_page->multisamplingChanged();
+}
+
+bool Settings::openGLMultisamplingEnabled()
+{
+    return m_openGLMultisamplingEnabled;
 }
 
 } // namespace WebCore

@@ -257,16 +257,18 @@ public:
 
     /**
      * Sets the render target.
-     * @param target    the render target to set. (should not be NULL.)
+     * @param target    the render target to set.
      */
-    void setRenderTarget(GrRenderTarget* target);
+    void setRenderTarget(GrRenderTarget* target) {
+        fRenderTarget.reset(SkSafeRef(target));
+    }
 
     /**
      * Gets the current render target.
-     * @return the currently bound render target. Should never be NULL.
+     * @return the currently bound render target.
      */
-    const GrRenderTarget* getRenderTarget() const;
-    GrRenderTarget* getRenderTarget();
+    const GrRenderTarget* getRenderTarget() const { return fRenderTarget.get(); }
+    GrRenderTarget* getRenderTarget() { return fRenderTarget.get(); }
 
     GrAARectRenderer* getAARectRenderer() { return fAARectRenderer; }
 
@@ -321,25 +323,25 @@ public:
      * Gets the current transformation matrix.
      * @return the current matrix.
      */
-    const SkMatrix& getMatrix() const;
+    const SkMatrix& getMatrix() const { return fViewMatrix; }
 
     /**
      * Sets the transformation matrix.
      * @param m the matrix to set.
      */
-    void setMatrix(const SkMatrix& m);
+    void setMatrix(const SkMatrix& m) { fViewMatrix = m; }
 
     /**
      * Sets the current transformation matrix to identity.
      */
-    void setIdentityMatrix();
+    void setIdentityMatrix() { fViewMatrix.reset(); }
 
     /**
      * Concats the current matrix. The passed matrix is applied before the
      * current matrix.
      * @param m the matrix to concat.
      */
-    void concatMatrix(const SkMatrix& m) const;
+    void concatMatrix(const SkMatrix& m) { fViewMatrix.preConcat(m); }
 
 
     ///////////////////////////////////////////////////////////////////////////
@@ -348,13 +350,13 @@ public:
      * Gets the current clip.
      * @return the current clip.
      */
-    const GrClipData* getClip() const;
+    const GrClipData* getClip() const { return fClip; }
 
     /**
      * Sets the clip.
      * @param clipData  the clip to set.
      */
-    void setClip(const GrClipData* clipData);
+    void setClip(const GrClipData* clipData) { fClip = clipData; }
 
     ///////////////////////////////////////////////////////////////////////////
     // Draws
@@ -834,7 +836,7 @@ public:
     GrGpu* getGpu() { return fGpu; }
     const GrGpu* getGpu() const { return fGpu; }
     GrFontCache* getFontCache() { return fFontCache; }
-    GrDrawTarget* getTextTarget(const GrPaint& paint);
+    GrDrawTarget* getTextTarget();
     const GrIndexBuffer* getQuadIndexBuffer() const;
 
     /**
@@ -864,25 +866,28 @@ private:
     };
     BufferedDraw fLastDrawWasBuffered;
 
-    GrGpu*              fGpu;
-    GrDrawState*        fDrawState;
+    GrGpu*                          fGpu;
+    SkMatrix                        fViewMatrix;
+    SkAutoTUnref<GrRenderTarget>    fRenderTarget;
+    const GrClipData*               fClip;  // TODO: make this ref counted
+    GrDrawState*                    fDrawState;
 
-    GrResourceCache*    fTextureCache;
-    GrFontCache*        fFontCache;
+    GrResourceCache*                fTextureCache;
+    GrFontCache*                    fFontCache;
 
-    GrPathRendererChain*        fPathRendererChain;
-    GrSoftwarePathRenderer*     fSoftwarePathRenderer;
+    GrPathRendererChain*            fPathRendererChain;
+    GrSoftwarePathRenderer*         fSoftwarePathRenderer;
 
-    GrVertexBufferAllocPool*    fDrawBufferVBAllocPool;
-    GrIndexBufferAllocPool*     fDrawBufferIBAllocPool;
-    GrInOrderDrawBuffer*        fDrawBuffer;
+    GrVertexBufferAllocPool*        fDrawBufferVBAllocPool;
+    GrIndexBufferAllocPool*         fDrawBufferIBAllocPool;
+    GrInOrderDrawBuffer*            fDrawBuffer;
 
-    GrAARectRenderer*           fAARectRenderer;
-    GrOvalRenderer*             fOvalRenderer;
+    GrAARectRenderer*               fAARectRenderer;
+    GrOvalRenderer*                 fOvalRenderer;
 
-    bool                        fDidTestPMConversions;
-    int                         fPMToUPMConversion;
-    int                         fUPMToPMConversion;
+    bool                            fDidTestPMConversions;
+    int                             fPMToUPMConversion;
+    int                             fUPMToPMConversion;
 
     struct CleanUpData {
         PFCleanUpFunc fFunc;
@@ -898,9 +903,10 @@ private:
 
     void flushDrawBuffer();
 
+    class AutoRestoreEffects;
     /// Sets the paint and returns the target to draw into. The paint can be NULL in which case the
     /// draw state is left unmodified.
-    GrDrawTarget* prepareToDraw(const GrPaint*, BufferedDraw);
+    GrDrawTarget* prepareToDraw(const GrPaint*, BufferedDraw, AutoRestoreEffects*);
 
     void internalDrawPath(GrDrawTarget* target, bool useAA, const SkPath& path,
                           const SkStrokeRec& stroke);
@@ -978,6 +984,9 @@ public:
      * returned texture.
      */
     GrTexture* detach() {
+        if (NULL == fTexture) {
+            return NULL;
+        }
         GrTexture* texture = fTexture;
         fTexture = NULL;
 

@@ -56,13 +56,16 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
   virtual bool ScheduleConfiguration(
       const ConfigurationParams& params) OVERRIDE;
   virtual void RequestStop(const base::Closure& callback) OVERRIDE;
-  virtual void ScheduleNudgeAsync(
+  virtual void ScheduleLocalNudge(
       const base::TimeDelta& desired_delay,
-      NudgeSource source,
       ModelTypeSet types,
       const tracked_objects::Location& nudge_location) OVERRIDE;
-  virtual void ScheduleNudgeWithStatesAsync(
-      const base::TimeDelta& desired_delay, NudgeSource source,
+  virtual void ScheduleLocalRefreshRequest(
+      const base::TimeDelta& desired_delay,
+      ModelTypeSet types,
+      const tracked_objects::Location& nudge_location) OVERRIDE;
+  virtual void ScheduleInvalidationNudge(
+      const base::TimeDelta& desired_delay,
       const ModelTypeInvalidationMap& invalidation_map,
       const tracked_objects::Location& nudge_location) OVERRIDE;
   virtual void SetNotificationsEnabled(bool notifications_enabled) OVERRIDE;
@@ -73,15 +76,18 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
   virtual void OnConnectionStatusChange() OVERRIDE;
 
   // SyncSession::Delegate implementation.
-  virtual void OnSilencedUntil(
-      const base::TimeTicks& silenced_until) OVERRIDE;
-  virtual bool IsSyncingCurrentlySilenced() OVERRIDE;
+  virtual void OnThrottled(const base::TimeDelta& throttle_duration) OVERRIDE;
+  virtual void OnTypesThrottled(
+      ModelTypeSet types,
+      const base::TimeDelta& throttle_duration) OVERRIDE;
+  virtual bool IsCurrentlyThrottled() OVERRIDE;
   virtual void OnReceivedShortPollIntervalUpdate(
       const base::TimeDelta& new_interval) OVERRIDE;
   virtual void OnReceivedLongPollIntervalUpdate(
       const base::TimeDelta& new_interval) OVERRIDE;
   virtual void OnReceivedSessionsCommitDelay(
       const base::TimeDelta& new_delay) OVERRIDE;
+  virtual void OnReceivedClientInvalidationHintBufferSize(int size) OVERRIDE;
   virtual void OnShouldStopSyncingPermanently() OVERRIDE;
   virtual void OnSyncProtocolError(
       const sessions::SyncSessionSnapshot& snapshot) OVERRIDE;
@@ -183,8 +189,6 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
   // save it for later, depending on the scheduler's current state.
   void ScheduleNudgeImpl(
       const base::TimeDelta& delay,
-      sync_pb::GetUpdatesCallerInfo::GetUpdatesSource source,
-      const ModelTypeInvalidationMap& invalidation_map,
       const tracked_objects::Location& nudge_location);
 
   // Returns true if the client is currently in exponential backoff.
@@ -193,8 +197,11 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
   // Helper to signal all listeners registered with |session_context_|.
   void Notify(SyncEngineEvent::EventCause cause);
 
-  // Helper to signal listeners about changed retry time
+  // Helper to signal listeners about changed retry time.
   void NotifyRetryTime(base::Time retry_time);
+
+  // Helper to signal listeners about changed throttled types.
+  void NotifyThrottledTypesChanged(ModelTypeSet types);
 
   // Looks for pending work and, if it finds any, run this work at "canary"
   // priority.
@@ -202,6 +209,12 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
 
   // Transitions out of the THROTTLED WaitInterval then calls TryCanaryJob().
   void Unthrottle();
+
+  // Called when a per-type throttling interval expires.
+  void TypeUnthrottle(base::TimeTicks unthrottle_time);
+
+  // Runs a normal nudge job when the scheduled timer expires.
+  void PerformDelayedNudge();
 
   // Attempts to exit EXPONENTIAL_BACKOFF by calling TryCanaryJob().
   void ExponentialBackoffRetry();
@@ -221,7 +234,7 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
   // SyncScheduler is the ultimate choke-point for all such invocations (with
   // and without InvalidationState variants, all NudgeSources, etc) and as such
   // is the most flexible place to do this bookkeeping.
-  void UpdateNudgeTimeRecords(const sessions::SyncSourceInfo& info);
+  void UpdateNudgeTimeRecords(ModelTypeSet types);
 
   virtual void OnActionableError(const sessions::SyncSessionSnapshot& snapshot);
 
@@ -262,6 +275,9 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
   // The event that will wake us up.
   base::OneShotTimer<SyncSchedulerImpl> pending_wakeup_timer_;
 
+  // An event that fires when data type throttling expires.
+  base::OneShotTimer<SyncSchedulerImpl> type_unthrottle_timer_;
+
   // Storage for variables related to an in-progress configure request.  Note
   // that (mode_ != CONFIGURATION_MODE) \implies !pending_configure_params_.
   scoped_ptr<ConfigurationParams> pending_configure_params_;
@@ -289,6 +305,15 @@ class SYNC_EXPORT_PRIVATE SyncSchedulerImpl
   // take place during a sync cycle. We call this out because such violations
   // could result in tight sync loops hitting sync servers.
   bool no_scheduling_allowed_;
+
+  // crbug/251307. This is a workaround for M29. crbug/259913 tracks proper fix
+  // for M30.
+  // The issue is that poll job runs after few hours of inactivity and therefore
+  // will always fail with auth error because of expired access token. Once
+  // fresh access token is requested poll job is not retried.
+  // The change is to remember that poll timer just fired and retry poll job
+  // after credentials are updated.
+  bool do_poll_after_credentials_updated_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncSchedulerImpl);
 };

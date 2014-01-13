@@ -15,7 +15,7 @@ base.exportTo('tracing.analysis', function() {
   var tsRound = tracing.analysis.tsRound;
 
   var RequestSelectionChangeEvent = base.Event.bind(
-    undefined, 'requestSelectionChange', true, false);
+      undefined, 'requestSelectionChange', true, false);
 
   /**
    * A clickable link that requests a change of selection to the return value of
@@ -37,13 +37,14 @@ base.exportTo('tracing.analysis', function() {
       event.selection = this.selectionGenerator();
       this.dispatchEvent(event);
     }
-  }
+  };
 
   /**
    * Changes the selection to the given ObjectSnapshot when clicked.
    * @constructor
    */
-  var ObjectSnapshotLink = ui.define(AnalysisLink);
+  var ObjectSnapshotLink = ui.define(
+      'object-snapshot-link', AnalysisLink);
 
   ObjectSnapshotLink.prototype = {
     __proto__: AnalysisLink.prototype,
@@ -53,14 +54,12 @@ base.exportTo('tracing.analysis', function() {
 
     set objectSnapshot(snapshot) {
       this.textContent =
-        snapshot.objectInstance.typeName + ' ' +
-        snapshot.objectInstance.id + ' @ ' +
-        tsRound(snapshot.ts) + ' ms';
+          snapshot.objectInstance.typeName + ' ' +
+          snapshot.objectInstance.id + ' @ ' +
+          tsRound(snapshot.ts) + ' ms';
       this.selectionGenerator = function() {
-        var selection = new tracing.Selection();
-        selection.addObjectSnapshot(undefined, snapshot);
-        return selection;
-      };
+        return tracing.createSelectionFromObjectAndView(snapshot, this);
+      }.bind(this);
     }
   };
 
@@ -68,7 +67,8 @@ base.exportTo('tracing.analysis', function() {
    * Changes the selection to the given ObjectInstance when clicked.
    * @constructor
    */
-  var ObjectInstanceLink = ui.define(AnalysisLink);
+  var ObjectInstanceLink = ui.define(
+      'object-instance-link', AnalysisLink);
 
   ObjectInstanceLink.prototype = {
     __proto__: AnalysisLink.prototype,
@@ -79,10 +79,8 @@ base.exportTo('tracing.analysis', function() {
     set objectInstance(instance) {
       this.textContent = instance.typeName + ' ' + instance.id;
       this.selectionGenerator = function() {
-        var selection = new tracing.Selection();
-        selection.addObjectInstance(undefined, instance);
-        return selection;
-      };
+        return tracing.createSelectionFromObjectAndView(instance, this);
+      }.bind(this);
     }
   };
 
@@ -90,6 +88,6 @@ base.exportTo('tracing.analysis', function() {
     RequestSelectionChangeEvent: RequestSelectionChangeEvent,
     AnalysisLink: AnalysisLink,
     ObjectSnapshotLink: ObjectSnapshotLink,
-    ObjectInstanceLink: ObjectInstanceLink,
+    ObjectInstanceLink: ObjectInstanceLink
   };
 });

@@ -26,16 +26,20 @@
 #ifndef WebGLTexture_h
 #define WebGLTexture_h
 
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLSharedObject.h"
-
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/Vector.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
-class WebGLTexture : public WebGLSharedObject {
+class WebGLTexture : public WebGLSharedObject, public ScriptWrappable {
 public:
+    enum TextureExtensionFlag {
+        NoTextureExtensionEnabled = 0,
+        TextureFloatLinearExtensionEnabled = 1 << 0,
+        TextureHalfFloatLinearExtensionEnabled = 1 << 1
+    };
     virtual ~WebGLTexture();
 
     static PassRefPtr<WebGLTexture> create(WebGLRenderingContext*);
@@ -65,7 +69,7 @@ public:
 
     bool isNPOT() const;
     // Determine if texture sampling should always return [0, 0, 0, 1] (OpenGL ES 2.0 Sec 3.8.2).
-    bool needToUseBlackTexture() const;
+    bool needToUseBlackTexture(TextureExtensionFlag) const;
 
     bool hasEverBeenBound() const { return object() && m_target; }
 
@@ -122,8 +126,11 @@ private:
     Vector<Vector<LevelInfo> > m_info;
 
     bool m_isNPOT;
+    bool m_isCubeComplete;
     bool m_isComplete;
     bool m_needToUseBlackTexture;
+    bool m_isFloatType;
+    bool m_isHalfFloatType;
 };
 
 } // namespace WebCore

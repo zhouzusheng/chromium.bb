@@ -27,7 +27,6 @@
 
 #include "core/html/canvas/WebGLProgram.h"
 
-#include "core/html/canvas/WebGLContextGroup.h"
 #include "core/html/canvas/WebGLRenderingContext.h"
 
 namespace WebCore {
@@ -43,6 +42,7 @@ WebGLProgram::WebGLProgram(WebGLRenderingContext* ctx)
     , m_linkCount(0)
     , m_infoValid(true)
 {
+    ScriptWrappable::init(this);
     setObject(ctx->graphicsContext3D()->createProgram());
 }
 

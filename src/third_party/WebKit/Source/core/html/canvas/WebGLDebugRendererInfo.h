@@ -26,19 +26,20 @@
 #ifndef WebGLDebugRendererInfo_h
 #define WebGLDebugRendererInfo_h
 
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
-#include <wtf/PassOwnPtr.h>
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
-class WebGLDebugRendererInfo : public WebGLExtension {
+class WebGLDebugRendererInfo : public WebGLExtension, public ScriptWrappable {
 public:
     enum EnumType {
         UNMASKED_VENDOR_WEBGL = 0x9245,
         UNMASKED_RENDERER_WEBGL = 0x9246
     };
 
-    static PassOwnPtr<WebGLDebugRendererInfo> create(WebGLRenderingContext*);
+    static PassRefPtr<WebGLDebugRendererInfo> create(WebGLRenderingContext*);
     static bool supported(WebGLRenderingContext*);
     static const char* getExtensionName();
 

@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFETurbulenceElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGParserUtilities.h"
 
@@ -86,7 +84,7 @@ bool SVGFETurbulenceElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::stitchTilesAttr);
         supportedAttributes.add(SVGNames::typeAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFETurbulenceElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -139,8 +137,11 @@ bool SVGFETurbulenceElement::setFilterEffectAttribute(FilterEffect* effect, cons
         return turbulence->setType(type());
     if (attrName == SVGNames::stitchTilesAttr)
         return turbulence->setStitchTiles(stitchTiles());
-    if (attrName == SVGNames::baseFrequencyAttr)
-        return (turbulence->setBaseFrequencyX(baseFrequencyX()) || turbulence->setBaseFrequencyY(baseFrequencyY()));
+    if (attrName == SVGNames::baseFrequencyAttr) {
+        bool baseFrequencyXChanged = turbulence->setBaseFrequencyX(baseFrequencyX());
+        bool baseFrequencyYChanged = turbulence->setBaseFrequencyY(baseFrequencyY());
+        return (baseFrequencyXChanged || baseFrequencyYChanged);
+    }
     if (attrName == SVGNames::seedAttr)
         return turbulence->setSeed(seed());
     if (attrName == SVGNames::numOctavesAttr)
@@ -179,5 +180,3 @@ PassRefPtr<FilterEffect> SVGFETurbulenceElement::build(SVGFilterBuilder*, Filter
 }
 
 }
-
-#endif // ENABLE(SVG)

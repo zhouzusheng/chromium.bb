@@ -20,7 +20,6 @@
 #ifndef SVGAnimatedInteger_h
 #define SVGAnimatedInteger_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/properties/SVGAnimatedPropertyMacros.h"
 #include "core/svg/properties/SVGAnimatedStaticPropertyTearOff.h"
@@ -34,10 +33,10 @@ typedef SVGAnimatedStaticPropertyTearOff<int> SVGAnimatedInteger;
 DECLARE_ANIMATED_PROPERTY(SVGAnimatedInteger, int, UpperProperty, LowerProperty)
 
 #define DEFINE_ANIMATED_INTEGER(OwnerType, DOMAttribute, UpperProperty, LowerProperty) \
-DEFINE_ANIMATED_PROPERTY(AnimatedInteger, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty)
+DEFINE_ANIMATED_PROPERTY(AnimatedInteger, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty, SVGAnimatedInteger, int)
 
 #define DEFINE_ANIMATED_INTEGER_MULTIPLE_WRAPPERS(OwnerType, DOMAttribute, SVGDOMAttributeIdentifier, UpperProperty, LowerProperty) \
-DEFINE_ANIMATED_PROPERTY(AnimatedIntegerOptionalInteger, OwnerType, DOMAttribute, SVGDOMAttributeIdentifier, UpperProperty, LowerProperty)
+DEFINE_ANIMATED_PROPERTY(AnimatedIntegerOptionalInteger, OwnerType, DOMAttribute, SVGDOMAttributeIdentifier, UpperProperty, LowerProperty, SVGAnimatedInteger, int)
 
 class SVGAnimationElement;
 
@@ -62,5 +61,4 @@ public:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

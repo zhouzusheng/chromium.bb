@@ -80,8 +80,6 @@ bool makeAllDirectories(const String& path);
 String pathGetFileName(const String&);
 String directoryName(const String&);
 
-Vector<String> listDirectory(const String& path, const String& filter = String());
-
 inline bool isHandleValid(const PlatformFileHandle& handle) { return handle != invalidPlatformFileHandle; }
 
 inline double invalidFileTime() { return std::numeric_limits<double>::quiet_NaN(); }
@@ -96,9 +94,6 @@ bool truncateFile(PlatformFileHandle, long long offset);
 int writeToFile(PlatformFileHandle, const char* data, int length);
 // Returns number of bytes actually written if successful, -1 otherwise.
 int readFromFile(PlatformFileHandle, char* data, int length);
-
-// Encode a string for use within a file name.
-String encodeForFileName(const String&);
 
 } // namespace WebCore
 

@@ -10,12 +10,11 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
-#include "base/file_util.h"
 #include "base/process_util.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
-#include "base/utf_string_conversions.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/dom_storage/dom_storage_context_impl.h"
@@ -32,6 +31,7 @@
 #include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/child_process_messages.h"
+#include "content/common/cookie_data.h"
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/media/media_param_traits.h"
 #include "content/common/view_messages.h"
@@ -61,9 +61,8 @@
 #include "net/http/http_cache.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNotificationPresenter.h"
+#include "third_party/WebKit/public/web/WebNotificationPresenter.h"
 #include "ui/gfx/color_profile.h"
-#include "webkit/glue/webcookie.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/plugin_constants.h"
@@ -298,6 +297,7 @@ RenderMessageFilter::RenderMessageFilter(
     BrowserContext* browser_context,
     net::URLRequestContextGetter* request_context,
     RenderWidgetHelper* render_widget_helper,
+    media::AudioManager* audio_manager,
     MediaInternals* media_internals,
     DOMStorageContextImpl* dom_storage_context)
     : resource_dispatcher_host_(ResourceDispatcherHostImpl::Get()),
@@ -310,8 +310,9 @@ RenderMessageFilter::RenderMessageFilter(
       dom_storage_context_(dom_storage_context),
       render_process_id_(render_process_id),
       cpu_usage_(0),
+      audio_manager_(audio_manager),
       media_internals_(media_internals) {
-  DCHECK(request_context_);
+  DCHECK(request_context_.get());
 
   render_widget_helper_->Init(render_process_id_, resource_dispatcher_host_);
 }
@@ -401,7 +402,7 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
                         OnCheckNotificationPermission)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedMemory,
                         OnAllocateSharedMemory)
-#if defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_AllocTransportDIB, OnAllocTransportDIB)
     IPC_MESSAGE_HANDLER(ViewHostMsg_FreeTransportDIB, OnFreeTransportDIB)
 #endif
@@ -437,6 +438,11 @@ base::TaskRunner* RenderMessageFilter::OverrideTaskRunnerForMessage(
   if (message.type() == ViewHostMsg_GetMonitorColorProfile::ID)
     return BrowserThread::GetBlockingPool();
 #endif
+#if defined(OS_MACOSX)
+  // OSX CoreAudio calls must all happen on the main thread.
+  if (message.type() == ViewHostMsg_GetAudioHardwareConfig::ID)
+    return audio_manager_->GetMessageLoop();
+#endif
   return NULL;
 }
 
@@ -447,6 +453,7 @@ bool RenderMessageFilter::OffTheRecord() const {
 void RenderMessageFilter::OnCreateWindow(
     const ViewHostMsg_CreateWindow_Params& params,
     int* route_id,
+    int* main_frame_route_id,
     int* surface_id,
     int64* cloned_session_storage_namespace_id) {
   bool no_javascript_access;
@@ -461,13 +468,14 @@ void RenderMessageFilter::OnCreateWindow(
 
   if (!can_create_window) {
     *route_id = MSG_ROUTING_NONE;
+    *main_frame_route_id = MSG_ROUTING_NONE;
     *surface_id = 0;
     return;
   }
 
   // This will clone the sessionStorage for namespace_id_to_clone.
   scoped_refptr<SessionStorageNamespaceImpl> cloned_namespace =
-      new SessionStorageNamespaceImpl(dom_storage_context_,
+      new SessionStorageNamespaceImpl(dom_storage_context_.get(),
                                       params.session_storage_namespace_id);
   *cloned_session_storage_namespace_id = cloned_namespace->id();
 
@@ -475,8 +483,9 @@ void RenderMessageFilter::OnCreateWindow(
                                          no_javascript_access,
                                          peer_handle(),
                                          route_id,
+                                         main_frame_route_id,
                                          surface_id,
-                                         cloned_namespace);
+                                         cloned_namespace.get());
 }
 
 void RenderMessageFilter::OnCreateWidget(int opener_id,
@@ -734,7 +743,7 @@ void RenderMessageFilter::OnDidCreateOutOfProcessPepperInstance(
   // mapping to decide how to handle messages received from the (untrusted)
   // plugin, so an exploited renderer must not be able to insert fake mappings
   // that may allow it access to other render processes.
-  DCHECK(instance_data.render_process_id == 0);
+  DCHECK_EQ(0, instance_data.render_process_id);
   instance_data.render_process_id = render_process_id_;
   if (is_external) {
     // We provide the BrowserPpapiHost to the embedder, so it's safe to cast.
@@ -795,13 +804,11 @@ void RenderMessageFilter::OnGetAudioHardwareConfig(
     media::AudioParameters* output_params) {
   DCHECK(input_params);
   DCHECK(output_params);
-  media::AudioManager* audio_manager = BrowserMainLoop::GetAudioManager();
-  *output_params = audio_manager->GetDefaultOutputStreamParameters();
+  *output_params = audio_manager_->GetDefaultOutputStreamParameters();
 
   // TODO(henrika): add support for all available input devices.
-  *input_params =
-      audio_manager->GetInputStreamParameters(
-          media::AudioManagerBase::kDefaultDeviceId);
+  *input_params = audio_manager_->GetInputStreamParameters(
+      media::AudioManagerBase::kDefaultDeviceId);
 }
 
 void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
@@ -868,9 +875,9 @@ net::URLRequestContext* RenderMessageFilter::GetRequestContextForURL(
   return context;
 }
 
-#if defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
 void RenderMessageFilter::OnAllocTransportDIB(
-    size_t size, bool cache_in_browser, TransportDIB::Handle* handle) {
+    uint32 size, bool cache_in_browser, TransportDIB::Handle* handle) {
   render_widget_helper_->AllocTransportDIB(size, cache_in_browser, handle);
 }
 
@@ -910,9 +917,11 @@ void RenderMessageFilter::OnCacheableMetadataAvailable(
   const net::RequestPriority kPriority = net::LOW;
   scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(data.size()));
   memcpy(buf->data(), &data.front(), data.size());
-  cache->WriteMetadata(
-      url, kPriority,
-      base::Time::FromDoubleT(expected_response_time), buf, data.size());
+  cache->WriteMetadata(url,
+                       kPriority,
+                       base::Time::FromDoubleT(expected_response_time),
+                       buf.get(),
+                       data.size());
 }
 
 void RenderMessageFilter::OnKeygen(uint32 key_size_index,
@@ -1049,9 +1058,9 @@ void RenderMessageFilter::SendGetCookiesResponse(IPC::Message* reply_msg,
 void RenderMessageFilter::SendGetRawCookiesResponse(
     IPC::Message* reply_msg,
     const net::CookieList& cookie_list) {
-  std::vector<webkit_glue::WebCookie> cookies;
+  std::vector<CookieData> cookies;
   for (size_t i = 0; i < cookie_list.size(); ++i)
-    cookies.push_back(webkit_glue::WebCookie(cookie_list[i]));
+    cookies.push_back(CookieData(cookie_list[i]));
   ViewHostMsg_GetRawCookies::WriteReplyParams(reply_msg, cookies);
   Send(reply_msg);
 }
@@ -1155,7 +1164,7 @@ void RenderMessageFilter::OnPreCacheFontCharacters(const LOGFONT& font,
 void RenderMessageFilter::OnWebAudioMediaCodec(
     base::SharedMemoryHandle encoded_data_handle,
     base::FileDescriptor pcm_output,
-    size_t data_size) {
+    uint32_t data_size) {
   // Let a WorkerPool handle this request since the WebAudio
   // MediaCodec bridge is slow and can block while sending the data to
   // the renderer.

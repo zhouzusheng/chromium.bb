@@ -9,9 +9,9 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/http/http_version.h"

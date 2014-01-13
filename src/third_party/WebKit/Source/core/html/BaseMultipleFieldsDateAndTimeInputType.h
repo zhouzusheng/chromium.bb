@@ -112,15 +112,16 @@ private:
     virtual void listAttributeTargetChanged() OVERRIDE FINAL;
     virtual void updateClearButtonVisibility() OVERRIDE FINAL;
 
+    DateTimeEditElement* dateTimeEditElement() const;
+    SpinButtonElement* spinButtonElement() const;
+    ClearButtonElement* clearButtonElement() const;
+    PickerIndicatorElement* pickerIndicatorElement() const;
     bool containsFocusedShadowElement() const;
     void showPickerIndicator();
     void hidePickerIndicator();
     void updatePickerIndicatorVisibility();
 
-    DateTimeEditElement* m_dateTimeEditElement;
-    SpinButtonElement* m_spinButtonElement;
-    ClearButtonElement* m_clearButton;
-    PickerIndicatorElement* m_pickerIndicatorElement;
+    bool m_isDestroyingShadowSubtree;
     bool m_pickerIndicatorIsVisible;
     bool m_pickerIndicatorIsAlwaysVisible;
 };

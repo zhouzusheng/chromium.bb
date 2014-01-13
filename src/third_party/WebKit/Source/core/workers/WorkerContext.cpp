@@ -29,13 +29,15 @@
 
 #include "core/workers/WorkerContext.h"
 
+#include <wtf/RefPtr.h>
+#include <wtf/UnusedParam.h>
 #include "bindings/v8/ScheduledAction.h"
 #include "bindings/v8/ScriptSourceCode.h"
 #include "bindings/v8/ScriptValue.h"
 #include "core/dom/ActiveDOMObject.h"
+#include "core/dom/ContextLifecycleNotifier.h"
 #include "core/dom/ErrorEvent.h"
 #include "core/dom/Event.h"
-#include "core/dom/EventException.h"
 #include "core/dom/MessagePort.h"
 #include "core/html/DOMURL.h"
 #include "core/inspector/InspectorConsoleInstrumentation.h"
@@ -45,16 +47,14 @@
 #include "core/page/ContentSecurityPolicy.h"
 #include "core/page/DOMTimer.h"
 #include "core/page/DOMWindow.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/page/WorkerNavigator.h"
-#include "core/platform/KURL.h"
 #include "core/platform/NotImplemented.h"
 #include "core/workers/WorkerLocation.h"
 #include "core/workers/WorkerObjectProxy.h"
 #include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerThread.h"
-#include <wtf/RefPtr.h>
-#include <wtf/UnusedParam.h>
+#include "weborigin/KURL.h"
+#include "weborigin/SecurityOrigin.h"
 
 #if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
 #include "modules/notifications/NotificationCenter.h"
@@ -82,7 +82,7 @@ public:
     virtual bool isCleanupTask() const { return true; }
 };
 
-WorkerContext::WorkerContext(const KURL& url, const String& userAgent, PassOwnPtr<GroupSettings> settings, WorkerThread* thread, PassRefPtr<SecurityOrigin> topOrigin)
+WorkerContext::WorkerContext(const KURL& url, const String& userAgent, PassOwnPtr<GroupSettings> settings, WorkerThread* thread, PassRefPtr<SecurityOrigin> topOrigin, double timeOrigin)
     : m_url(url)
     , m_userAgent(userAgent)
     , m_groupSettings(settings)
@@ -92,13 +92,15 @@ WorkerContext::WorkerContext(const KURL& url, const String& userAgent, PassOwnPt
     , m_closing(false)
     , m_eventQueue(WorkerEventQueue::create(this))
     , m_topOrigin(topOrigin)
+    , m_timeOrigin(timeOrigin)
 {
+    ScriptWrappable::init(this);
     setSecurityOrigin(SecurityOrigin::create(url));
 }
 
 WorkerContext::~WorkerContext()
 {
-    ASSERT(currentThread() == thread()->threadID());
+    ASSERT(thread()->isCurrentThread());
 
     // Make sure we have no observers.
     notifyObserversOfStop();
@@ -172,23 +174,6 @@ WorkerNavigator* WorkerContext::navigator() const
     if (!m_navigator)
         m_navigator = WorkerNavigator::create(m_userAgent);
     return m_navigator.get();
-}
-
-bool WorkerContext::hasPendingActivity() const
-{
-    ActiveDOMObjectsSet::const_iterator activeObjectsEnd = activeDOMObjects().end();
-    for (ActiveDOMObjectsSet::const_iterator iter = activeDOMObjects().begin(); iter != activeObjectsEnd; ++iter) {
-        if ((*iter)->hasPendingActivity())
-            return true;
-    }
-
-    HashSet<MessagePort*>::const_iterator messagePortsEnd = messagePorts().end();
-    for (HashSet<MessagePort*>::const_iterator iter = messagePorts().begin(); iter != messagePortsEnd; ++iter) {
-        if ((*iter)->hasPendingActivity())
-            return true;
-    }
-
-    return false;
 }
 
 void WorkerContext::postTask(PassOwnPtr<Task> task)
@@ -301,7 +286,7 @@ void WorkerContext::addMessageToWorkerConsole(MessageSource source, MessageLevel
 
 bool WorkerContext::isContextThread() const
 {
-    return currentThread() == thread()->threadID();
+    return thread()->isCurrentThread();
 }
 
 bool WorkerContext::isJSExecutionForbidden() const

@@ -57,12 +57,10 @@ public:
     virtual Color platformActiveTextSearchHighlightColor() const OVERRIDE;
     virtual Color platformInactiveTextSearchHighlightColor() const OVERRIDE;
 
-    virtual Color systemColor(int cssValueId) const OVERRIDE;
+    virtual Color systemColor(CSSValueID) const OVERRIDE;
 
-#if ENABLE(DATALIST_ELEMENT)
     virtual IntSize sliderTickSize() const OVERRIDE;
     virtual int sliderTickOffsetFromTrackCenter() const OVERRIDE;
-#endif
     virtual void adjustSliderThumbSize(RenderStyle*, Element*) const OVERRIDE;
 
     // Various paint functions.
@@ -79,18 +77,19 @@ public:
     virtual bool paintMenuList(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
     virtual bool paintMenuListButton(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
 
-    virtual void adjustInnerSpinButtonStyle(StyleResolver*, RenderStyle*, Element*) const OVERRIDE;
+    virtual void adjustInnerSpinButtonStyle(RenderStyle*, Element*) const OVERRIDE;
     virtual bool paintInnerSpinButton(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
 
     virtual double animationRepeatIntervalForProgressBar(RenderProgress*) const OVERRIDE;
     virtual double animationDurationForProgressBar(RenderProgress*) const OVERRIDE;
-    virtual void adjustProgressBarStyle(StyleResolver*, RenderStyle*, Element*) const OVERRIDE;
+    virtual void adjustProgressBarStyle(RenderStyle*, Element*) const OVERRIDE;
     virtual bool paintProgressBar(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
 
     virtual bool shouldOpenPickerWithF4Key() const OVERRIDE;
 
 protected:
     virtual double caretBlinkIntervalInternal() const OVERRIDE;
+    virtual bool shouldUseFallbackTheme(RenderStyle*) const OVERRIDE;
 
 private:
     enum ControlSubPart {

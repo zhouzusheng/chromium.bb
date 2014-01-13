@@ -15,13 +15,13 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/strings/string_split.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/win/object_watcher.h"
 #include "base/win/registry.h"
 #include "base/win/windows_version.h"
@@ -622,7 +622,7 @@ class DnsConfigServiceWin::ConfigReader : public SerialWorker {
     } else {
       LOG(WARNING) << "Failed to read DnsConfig.";
       // Try again in a while in case DnsConfigWatcher missed the signal.
-      MessageLoop::current()->PostDelayedTask(
+      base::MessageLoop::current()->PostDelayedTask(
           FROM_HERE,
           base::Bind(&ConfigReader::WorkNow, this),
           base::TimeDelta::FromSeconds(kRetryIntervalSeconds));

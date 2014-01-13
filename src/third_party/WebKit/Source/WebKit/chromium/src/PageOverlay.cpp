@@ -36,9 +36,7 @@
 #include "core/page/Settings.h"
 #include "core/platform/graphics/GraphicsLayer.h"
 #include "core/platform/graphics/GraphicsLayerClient.h"
-#include "core/platform/graphics/chromium/GraphicsLayerChromium.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
-#include <public/WebLayer.h>
+#include "public/platform/WebLayer.h"
 
 using namespace WebCore;
 
@@ -48,7 +46,7 @@ namespace {
 
 WebCanvas* ToWebCanvas(GraphicsContext* gc)
 {
-    return gc->platformContext()->canvas();
+    return gc->canvas();
 }
 
 } // namespace
@@ -67,9 +65,9 @@ PageOverlay::PageOverlay(WebViewImpl* viewImpl, WebPageOverlay* overlay)
 
 class OverlayGraphicsLayerClientImpl : public WebCore::GraphicsLayerClient {
 public:
-    static PassOwnPtr<OverlayGraphicsLayerClientImpl*> create(WebViewImpl* webViewImpl, WebPageOverlay* overlay)
+    static PassOwnPtr<OverlayGraphicsLayerClientImpl*> create(WebPageOverlay* overlay)
     {
-        return adoptPtr(new OverlayGraphicsLayerClientImpl(webViewImpl, overlay));
+        return adoptPtr(new OverlayGraphicsLayerClientImpl(overlay));
     }
 
     virtual ~OverlayGraphicsLayerClientImpl() { }
@@ -83,25 +81,13 @@ public:
         gc.restore();
     }
 
-    virtual float deviceScaleFactor() const
-    {
-        return m_webViewImpl->deviceScaleFactor();
-    }
-
-    virtual float pageScaleFactor() const
-    {
-        return m_webViewImpl->pageScaleFactor();
-    }
-
 private:
-    OverlayGraphicsLayerClientImpl(WebViewImpl* webViewImpl, WebPageOverlay* overlay)
+    explicit OverlayGraphicsLayerClientImpl(WebPageOverlay* overlay)
         : m_overlay(overlay)
-        , m_webViewImpl(webViewImpl)
     {
     }
 
     WebPageOverlay* m_overlay;
-    WebViewImpl* m_webViewImpl;
 };
 
 void PageOverlay::clear()
@@ -120,7 +106,7 @@ void PageOverlay::update()
     invalidateWebFrame();
 
     if (!m_layer) {
-        m_layerClient = OverlayGraphicsLayerClientImpl::create(m_viewImpl, m_overlay);
+        m_layerClient = OverlayGraphicsLayerClientImpl::create(m_overlay);
         m_layer = GraphicsLayer::create(m_viewImpl->graphicsLayerFactory(), m_layerClient.get());
         m_layer->setName("WebViewImpl page overlay content");
         m_layer->setDrawsContent(true);
@@ -137,7 +123,7 @@ void PageOverlay::update()
     m_viewImpl->setOverlayLayer(m_layer.get());
     m_layer->setNeedsDisplay();
 
-    WebLayer* platformLayer = static_cast<GraphicsLayerChromium*>(m_layer.get())->platformLayer();
+    WebLayer* platformLayer = m_layer->platformLayer();
     platformLayer->setShouldScrollOnMainThread(true);
 }
 

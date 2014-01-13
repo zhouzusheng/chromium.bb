@@ -9,14 +9,12 @@
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/mime_util.h"
-#include "webkit/glue/webkit_glue.h"
-#include "webkit/plugins/npapi/plugin_lib.h"
 #include "webkit/plugins/npapi/plugin_utils.h"
 #include "webkit/plugins/plugin_switches.h"
 
@@ -81,6 +79,10 @@ bool PluginList::DebugPluginLoading() {
       switches::kDebugPluginLoading);
 }
 
+void PluginList::DisablePluginsDiscovery() {
+  plugins_discovery_disabled_ = true;
+}
+
 void PluginList::RefreshPlugins() {
   base::AutoLock lock(lock_);
   loading_state_ = LOADING_STATE_NEEDS_REFRESH;
@@ -103,11 +105,7 @@ void PluginList::AddExtraPluginPath(const base::FilePath& plugin_path) {
 
 void PluginList::RemoveExtraPluginPath(const base::FilePath& plugin_path) {
   base::AutoLock lock(lock_);
-  std::vector<base::FilePath>::iterator it =
-      std::find(extra_plugin_paths_.begin(), extra_plugin_paths_.end(),
-                plugin_path);
-  if (it != extra_plugin_paths_.end())
-    extra_plugin_paths_.erase(it);
+  RemoveExtraPluginPathLocked(plugin_path);
 }
 
 void PluginList::AddExtraPluginDir(const base::FilePath& plugin_dir) {
@@ -150,13 +148,16 @@ void PluginList::RegisterInternalPluginWithEntryPoints(
 
 void PluginList::UnregisterInternalPlugin(const base::FilePath& path) {
   base::AutoLock lock(lock_);
+  bool found = false;
   for (size_t i = 0; i < internal_plugins_.size(); i++) {
     if (internal_plugins_[i].info.path == path) {
       internal_plugins_.erase(internal_plugins_.begin() + i);
-      return;
+      found = true;
+      break;
     }
   }
-  NOTREACHED();
+  DCHECK(found);
+  RemoveExtraPluginPathLocked(path);
 }
 
 void PluginList::GetInternalPlugins(
@@ -187,7 +188,7 @@ bool PluginList::ReadPluginInfo(const base::FilePath& filename,
   // Not an internal plugin.
   *entry_points = NULL;
 
-  return PluginLib::ReadWebPluginInfo(filename, info);
+  return PluginList::ReadWebPluginInfo(filename, info);
 }
 
 // static
@@ -239,7 +240,8 @@ PluginList::PluginList()
 #if defined(OS_WIN)
       dont_load_new_wmp_(false),
 #endif
-      loading_state_(LOADING_STATE_NEEDS_REFRESH) {
+      loading_state_(LOADING_STATE_NEEDS_REFRESH),
+      plugins_discovery_disabled_(false) {
 }
 
 void PluginList::LoadPluginsIntoPluginListInternal(
@@ -348,7 +350,7 @@ void PluginList::GetPluginPathsToLoad(std::vector<base::FilePath>* plugin_paths)
       GetPluginsInDir(directories_to_scan[i], plugin_paths);
 
 #if defined(OS_WIN)
-  GetPluginPathsFromRegistry(plugin_paths);
+    GetPluginPathsFromRegistry(plugin_paths);
 #endif
   }
 }
@@ -467,6 +469,16 @@ bool PluginList::SupportsExtension(const webkit::WebPluginInfo& plugin,
     }
   }
   return false;
+}
+
+void PluginList::RemoveExtraPluginPathLocked(
+    const base::FilePath& plugin_path) {
+  lock_.AssertAcquired();
+  std::vector<base::FilePath>::iterator it =
+      std::find(extra_plugin_paths_.begin(), extra_plugin_paths_.end(),
+                plugin_path);
+  if (it != extra_plugin_paths_.end())
+    extra_plugin_paths_.erase(it);
 }
 
 PluginList::~PluginList() {

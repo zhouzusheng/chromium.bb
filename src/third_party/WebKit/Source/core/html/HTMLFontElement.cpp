@@ -26,11 +26,9 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
-#include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/CSSValuePool.h"
 #include "core/css/StylePropertySet.h"
-#include "core/dom/Attribute.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include <wtf/text/StringBuilder.h>
 
@@ -145,7 +143,7 @@ static bool parseFontSize(const String& input, int& size)
     return parseFontSize(input.characters16(), input.length(), size);
 }
 
-bool HTMLFontElement::cssValueFromFontSizeNumber(const String& s, int& size)
+bool HTMLFontElement::cssValueFromFontSizeNumber(const String& s, CSSValueID& size)
 {
     int num = 0;
     if (!parseFontSize(s, num))
@@ -190,7 +188,7 @@ bool HTMLFontElement::isPresentationAttribute(const QualifiedName& name) const
 void HTMLFontElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {
     if (name == sizeAttr) {
-        int size = 0;
+        CSSValueID size = CSSValueInvalid;
         if (cssValueFromFontSizeNumber(value, size))
             addPropertyToPresentationAttributeStyle(style, CSSPropertyFontSize, size);
     } else if (name == colorAttr)

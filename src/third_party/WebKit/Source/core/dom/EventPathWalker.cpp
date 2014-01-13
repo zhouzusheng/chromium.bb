@@ -27,9 +27,9 @@
 #include "config.h"
 #include "core/dom/EventPathWalker.h"
 
-#include "core/dom/ShadowRoot.h"
-#include "core/html/shadow/ContentDistributor.h"
-#include "core/html/shadow/InsertionPoint.h"
+#include "core/dom/shadow/ContentDistributor.h"
+#include "core/dom/shadow/InsertionPoint.h"
+#include "core/dom/shadow/ShadowRoot.h"
 
 namespace WebCore {
 
@@ -53,7 +53,7 @@ void EventPathWalker::moveToParent()
     ASSERT(m_node);
     ASSERT(m_distributedNode);
     if (ElementShadow* shadow = shadowOfParent(m_node)) {
-        ContentDistributor::ensureDistribution(shadow->youngestShadowRoot());
+        shadow->host()->ensureDistribution();
         if (InsertionPoint* insertionPoint = shadow->distributor().findInsertionPointFor(m_distributedNode)) {
             m_node = insertionPoint;
             m_isVisitingInsertionPointInReprojection = true;

@@ -42,8 +42,6 @@ var Preferences = {
 }
 
 var Capabilities = {
-    canShowFPSCounter: false,
-    canContinuouslyPaint: false,
     canInspectWorkers: false
 }
 
@@ -80,10 +78,6 @@ WebInspector.Settings = function()
     this.deviceMetrics = this.createSetting("deviceMetrics", "");
     this.deviceFitWindow = this.createSetting("deviceFitWindow", false);
     this.emulateTouchEvents = this.createSetting("emulateTouchEvents", false);
-    this.showPaintRects = this.createSetting("showPaintRects", false);
-    this.continuousPainting = this.createSetting("continuousPainting", false);
-    this.showDebugBorders = this.createSetting("showDebugBorders", false);
-    this.showFPSCounter = this.createSetting("showFPSCounter", false);
     this.showShadowDOM = this.createSetting("showShadowDOM", false);
     this.zoomLevel = this.createSetting("zoomLevel", 0);
     this.savedURLs = this.createSetting("savedURLs", {});
@@ -106,11 +100,13 @@ WebInspector.Settings = function()
     this.workerInspectorWidth = this.createSetting("workerInspectorWidth", 600);
     this.workerInspectorHeight = this.createSetting("workerInspectorHeight", 600);
     this.messageURLFilters = this.createSetting("messageURLFilters", {});
+    this.messageSourceFilters = this.createSetting("messageSourceFilters", {"CSS": true});
+    this.messageLevelFilters = this.createSetting("messageLevelFilters", {});
     this.splitVerticallyWhenDockedToRight = this.createSetting("splitVerticallyWhenDockedToRight", true);
     this.visiblePanels = this.createSetting("visiblePanels", {});
     this.shortcutPanelSwitch = this.createSetting("shortcutPanelSwitch", false);
     this.portForwardings = this.createSetting("portForwardings", []);
-    this.codemirror = this.createSetting("codemirror", false);
+    this.showWhitespacesInEditor = this.createSetting("showWhitespacesInEditor", false);
 }
 
 WebInspector.Settings.prototype = {
@@ -123,6 +119,19 @@ WebInspector.Settings.prototype = {
     {
         if (!this._registry[key])
             this._registry[key] = new WebInspector.Setting(key, defaultValue, this._eventSupport, window.localStorage);
+        return this._registry[key];
+    },
+
+    /**
+     * @param {string} key
+     * @param {*} defaultValue
+     * @param {function(*, function(string, ...))} setterCallback
+     * @return {!WebInspector.Setting}
+     */
+    createBackendSetting: function(key, defaultValue, setterCallback)
+    {
+        if (!this._registry[key])
+            this._registry[key] = new WebInspector.BackendSetting(key, defaultValue, this._eventSupport, window.localStorage, setterCallback);
         return this._registry[key];
     }
 }
@@ -190,6 +199,44 @@ WebInspector.Setting.prototype = {
 
 /**
  * @constructor
+ * @extends {WebInspector.Setting}
+ * @param {string} name
+ * @param {*} defaultValue
+ * @param {!WebInspector.Object} eventSupport
+ * @param {?Storage} storage
+ * @param {function(*,function(string, ...))} setterCallback
+ */
+WebInspector.BackendSetting = function(name, defaultValue, eventSupport, storage, setterCallback)
+{
+    WebInspector.Setting.call(this, name, defaultValue, eventSupport, storage);
+    this._setterCallback = setterCallback;
+    var currentValue = this.get();
+    if (currentValue !== defaultValue) {
+        this._value = defaultValue; // Make sure we're in sync with backend, in case setting fails.
+        this.set(currentValue);
+    }
+}
+
+WebInspector.BackendSetting.prototype = {
+    set: function(value)
+    {
+        function callback(error)
+        {
+            if (error) {
+                WebInspector.log("Error applying setting " + this._name + ": " + error);
+                this._eventSupport.dispatchEventToListeners(this._name, this._value);
+                return;
+            }
+            WebInspector.Setting.prototype.set.call(this, value);
+        }
+        this._setterCallback(value, callback.bind(this));
+    },
+
+    __proto__: WebInspector.Setting.prototype
+};
+
+/**
+ * @constructor
  */
 WebInspector.ExperimentsSettings = function()
 {
@@ -202,15 +249,13 @@ WebInspector.ExperimentsSettings = function()
     this.nativeMemoryTimeline = this._createExperiment("nativeMemoryTimeline", "Native memory timeline");
     this.fileSystemInspection = this._createExperiment("fileSystemInspection", "FileSystem inspection");
     this.canvasInspection = this._createExperiment("canvasInspection ", "Canvas inspection");
-    this.sass = this._createExperiment("sass", "Support for Sass");
+    this.sass = this._createExperiment("sass", "Sass stylesheet debugging");
     this.cssRegions = this._createExperiment("cssRegions", "CSS Regions Support");
     this.showOverridesInDrawer = this._createExperiment("showOverridesInDrawer", "Show Overrides in drawer");
-    this.fileSystemProject = this._createExperiment("fileSystemProject", "File system folders in Sources Panel");
-    this.showWhitespaceInEditor = this._createExperiment("showWhitespaceInEditor", "Show whitespace characters in editor");
     this.customizableToolbar = this._createExperiment("customizableToolbar", "Enable toolbar customization");
-    this.tethering = this._createExperiment("tethering", "Enable reverse port forwarding");
+    this.tethering = this._createExperiment("tethering", "Enable port forwarding");
     this.drawerOverlay = this._createExperiment("drawerOverlay", "Open console as overlay");
-    this.heapObjectsTracking = this._createExperiment("heapObjectsTracking", "Enable heap objects tracking profile type");
+    this.textEditorAutocomplete = this._createExperiment("textEditorAutocomplete", "Enable text editor autocompletion");
 
     this._cleanUpSetting();
 }
@@ -351,7 +396,7 @@ WebInspector.VersionController = function()
 {
 }
 
-WebInspector.VersionController.currentVersion = 2;
+WebInspector.VersionController.currentVersion = 3;
 
 WebInspector.VersionController.prototype = {
     updateVersion: function()
@@ -386,6 +431,13 @@ WebInspector.VersionController.prototype = {
     {
         var versionSetting = WebInspector.settings.createSetting("previouslyViewedFiles", []);
         versionSetting.set([]);
+    },
+
+    _updateVersionFrom2To3: function()
+    {
+        var fileSystemMappingSetting = WebInspector.settings.createSetting("fileSystemMapping", {});
+        fileSystemMappingSetting.set({});
+        delete window.localStorage["fileMappingEntries"];
     },
 
     /**

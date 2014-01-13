@@ -43,8 +43,9 @@ WebGLVertexArrayObjectOES::WebGLVertexArrayObjectOES(WebGLRenderingContext* ctx,
     , m_hasEverBeenBound(false)
     , m_boundElementArrayBuffer(0)
 {
+    ScriptWrappable::init(this);
     m_vertexAttribState.resize(ctx->getMaxVertexAttribs());
-    
+
     Extensions3D* extensions = context()->graphicsContext3D()->getExtensions();
     switch (m_type) {
     case VaoTypeDefault:
@@ -127,6 +128,12 @@ void WebGLVertexArrayObjectOES::unbindBuffer(PassRefPtr<WebGLBuffer> buffer)
             state.bufferBinding = 0;
         }
     }
+}
+
+void WebGLVertexArrayObjectOES::setVertexAttribDivisor(GC3Duint index, GC3Duint divisor)
+{
+    VertexAttribState& state = m_vertexAttribState[index];
+    state.divisor = divisor;
 }
 
 }

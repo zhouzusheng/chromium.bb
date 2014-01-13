@@ -20,11 +20,11 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGSwitchElement.h"
 
 #include "SVGNames.h"
 #include "core/dom/NodeRenderingContext.h"
+#include "core/page/UseCounter.h"
 #include "core/rendering/svg/RenderSVGTransformableContainer.h"
 
 namespace WebCore {
@@ -44,6 +44,8 @@ inline SVGSwitchElement::SVGSwitchElement(const QualifiedName& tagName, Document
     ASSERT(hasTagName(SVGNames::switchTag));
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGSwitchElement();
+
+    UseCounter::count(document, UseCounter::SVGSwitchElement);
 }
 
 PassRefPtr<SVGSwitchElement> SVGSwitchElement::create(const QualifiedName& tagName, Document* document)
@@ -69,11 +71,9 @@ bool SVGSwitchElement::childShouldCreateRenderer(const NodeRenderingContext& chi
     return false;
 }
 
-RenderObject* SVGSwitchElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGSwitchElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGTransformableContainer(this);
+    return new (document()->renderArena()) RenderSVGTransformableContainer(this);
 }
 
 }
-
-#endif // ENABLE(SVG)

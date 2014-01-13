@@ -10,11 +10,11 @@
 #include <string.h>
 #include <time.h>
 
-#include "../../gpu_export.h"
-#include "../common/logging.h"
-#include "../common/constants.h"
-#include "../common/cmd_buffer_common.h"
-#include "../common/command_buffer.h"
+#include "gpu/command_buffer/common/cmd_buffer_common.h"
+#include "gpu/command_buffer/common/command_buffer.h"
+#include "gpu/command_buffer/common/constants.h"
+#include "gpu/command_buffer/common/logging.h"
+#include "gpu/gpu_export.h"
 
 namespace gpu {
 
@@ -130,8 +130,6 @@ class GPU_EXPORT CommandBufferHelper {
   int32 get_offset() const {
     return command_buffer_->GetLastState().get_offset;
   }
-
-  error::Error GetError();
 
   // Common Commands
   void Noop(uint32 skip_count) {

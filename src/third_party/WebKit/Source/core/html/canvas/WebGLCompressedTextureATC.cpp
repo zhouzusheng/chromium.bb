@@ -34,6 +34,7 @@ namespace WebCore {
 WebGLCompressedTextureATC::WebGLCompressedTextureATC(WebGLRenderingContext* context)
     : WebGLExtension(context)
 {
+    ScriptWrappable::init(this);
     context->addCompressedTextureFormat(Extensions3D::COMPRESSED_ATC_RGB_AMD);
     context->addCompressedTextureFormat(Extensions3D::COMPRESSED_ATC_RGBA_EXPLICIT_ALPHA_AMD);
     context->addCompressedTextureFormat(Extensions3D::COMPRESSED_ATC_RGBA_INTERPOLATED_ALPHA_AMD);
@@ -48,9 +49,9 @@ WebGLExtension::ExtensionName WebGLCompressedTextureATC::getName() const
     return WebGLCompressedTextureATCName;
 }
 
-PassOwnPtr<WebGLCompressedTextureATC> WebGLCompressedTextureATC::create(WebGLRenderingContext* context)
+PassRefPtr<WebGLCompressedTextureATC> WebGLCompressedTextureATC::create(WebGLRenderingContext* context)
 {
-    return adoptPtr(new WebGLCompressedTextureATC(context));
+    return adoptRef(new WebGLCompressedTextureATC(context));
 }
 
 bool WebGLCompressedTextureATC::supported(WebGLRenderingContext* context)

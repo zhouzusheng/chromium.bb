@@ -23,8 +23,8 @@
 #ifndef TextResourceDecoder_h
 #define TextResourceDecoder_h
 
-#include "core/platform/text/TextEncoding.h"
-#include <wtf/RefCounted.h>
+#include "wtf/RefCounted.h"
+#include "wtf/text/TextEncoding.h"
 
 namespace WebCore {
 
@@ -35,6 +35,7 @@ public:
     enum EncodingSource {
         DefaultEncoding,
         AutoDetectedEncoding,
+        EncodingFromContentSniffing,
         EncodingFromXMLHeader,
         EncodingFromMetaTag,
         EncodingFromCSSCharset,
@@ -43,14 +44,14 @@ public:
         EncodingFromParentFrame
     };
 
-    static PassRefPtr<TextResourceDecoder> create(const String& mimeType, const TextEncoding& defaultEncoding = TextEncoding(), bool usesEncodingDetector = false)
+    static PassRefPtr<TextResourceDecoder> create(const String& mimeType, const WTF::TextEncoding& defaultEncoding = WTF::TextEncoding(), bool usesEncodingDetector = false)
     {
         return adoptRef(new TextResourceDecoder(mimeType, defaultEncoding, usesEncodingDetector));
     }
     ~TextResourceDecoder();
 
-    void setEncoding(const TextEncoding&, EncodingSource);
-    const TextEncoding& encoding() const { return m_encoding; }
+    void setEncoding(const WTF::TextEncoding&, EncodingSource);
+    const WTF::TextEncoding& encoding() const { return m_encoding; }
 
     String decode(const char* data, size_t length);
     String flush();
@@ -59,37 +60,39 @@ public:
     {
         // hintEncoding is for use with autodetection, which should be 
         // only invoked when hintEncoding comes from auto-detection.
-        if (hintDecoder && hintDecoder->m_source == AutoDetectedEncoding)
+        if (hintDecoder && hintDecoder->wasDetectedHueristically())
             m_hintEncoding = hintDecoder->encoding().name();
     }
-   
+
     void useLenientXMLDecoding() { m_useLenientXMLDecoding = true; }
     bool sawError() const { return m_sawError; }
 
 private:
-    TextResourceDecoder(const String& mimeType, const TextEncoding& defaultEncoding,
-                        bool usesEncodingDetector);
+    TextResourceDecoder(const String& mimeType, const WTF::TextEncoding& defaultEncoding, bool usesEncodingDetector);
 
     enum ContentType { PlainText, HTML, XML, CSS }; // PlainText only checks for BOM.
     static ContentType determineContentType(const String& mimeType);
-    static const TextEncoding& defaultEncoding(ContentType, const TextEncoding& defaultEncoding);
+    static const WTF::TextEncoding& defaultEncoding(ContentType, const WTF::TextEncoding& defaultEncoding);
+
+    bool wasDetectedHueristically() const { return m_source == AutoDetectedEncoding || m_source == EncodingFromContentSniffing; }
 
     size_t checkForBOM(const char*, size_t);
     bool checkForCSSCharset(const char*, size_t, bool& movedDataToBuffer);
-    bool checkForHeadCharset(const char*, size_t, bool& movedDataToBuffer);
-    bool checkForMetaCharset(const char*, size_t);
+    bool checkForXMLCharset(const char*, size_t, bool& movedDataToBuffer);
+    void checkForMetaCharset(const char*, size_t);
     void detectJapaneseEncoding(const char*, size_t);
     bool shouldAutoDetect() const;
 
     ContentType m_contentType;
-    TextEncoding m_encoding;
+    WTF::TextEncoding m_encoding;
     OwnPtr<TextCodec> m_codec;
     EncodingSource m_source;
     const char* m_hintEncoding;
     Vector<char> m_buffer;
     bool m_checkedForBOM;
     bool m_checkedForCSSCharset;
-    bool m_checkedForHeadCharset;
+    bool m_checkedForXMLCharset;
+    bool m_checkedForMetaCharset;
     bool m_useLenientXMLDecoding; // Don't stop on XML decoding errors.
     bool m_sawError;
     bool m_usesEncodingDetector;

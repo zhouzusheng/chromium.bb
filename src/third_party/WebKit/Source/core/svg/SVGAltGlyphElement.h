@@ -46,7 +46,7 @@ public:
 private:
     SVGAltGlyphElement(const QualifiedName&, Document*);
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGAltGlyphElement)
@@ -56,5 +56,5 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
+#endif
 #endif

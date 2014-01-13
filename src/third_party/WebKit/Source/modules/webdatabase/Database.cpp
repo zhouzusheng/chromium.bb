@@ -34,7 +34,6 @@
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/html/VoidCallback.h"
 #include "core/page/Page.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/platform/Logging.h"
 #include "core/platform/NotImplemented.h"
 #include "core/platform/sql/SQLiteStatement.h"
@@ -50,6 +49,7 @@
 #include "modules/webdatabase/SQLTransaction.h"
 #include "modules/webdatabase/SQLTransactionCallback.h"
 #include "modules/webdatabase/SQLTransactionErrorCallback.h"
+#include "weborigin/SecurityOrigin.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -75,6 +75,7 @@ Database::Database(PassRefPtr<DatabaseBackendContext> databaseContext,
     , m_databaseContext(DatabaseBackend::databaseContext()->frontend())
     , m_deleted(false)
 {
+    ScriptWrappable::init(this);
     m_databaseThreadSecurityOrigin = m_contextThreadSecurityOrigin->isolatedCopy();
     setFrontend(this);
 

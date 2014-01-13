@@ -27,18 +27,15 @@
 #include "core/html/parser/XSSAuditorDelegate.h"
 
 #include "core/dom/Document.h"
-#include "core/html/parser/HTMLParserIdioms.h"
-#include "core/inspector/InspectorValues.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/PingLoader.h"
-#include "core/page/Console.h"
-#include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
-#include "core/page/SecurityOrigin.h"
+#include "core/platform/JSONValues.h"
 #include "core/platform/network/FormData.h"
-#include <wtf/text/StringBuilder.h>
+#include "weborigin/SecurityOrigin.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -82,11 +79,11 @@ PassRefPtr<FormData> XSSAuditorDelegate::generateViolationReport()
             httpBody = formData->flattenToString();
     }
 
-    RefPtr<InspectorObject> reportDetails = InspectorObject::create();
+    RefPtr<JSONObject> reportDetails = JSONObject::create();
     reportDetails->setString("request-url", m_document->url().string());
     reportDetails->setString("request-body", httpBody);
 
-    RefPtr<InspectorObject> reportObject = InspectorObject::create();
+    RefPtr<JSONObject> reportObject = JSONObject::create();
     reportObject->setObject("xss-report", reportDetails.release());
 
     return FormData::create(reportObject->toJSONString().utf8().data());

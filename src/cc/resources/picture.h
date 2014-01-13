@@ -10,17 +10,22 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
+#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
-#include "cc/base/hash_pair.h"
 #include "skia/ext/lazy_pixel_ref.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
 #include "third_party/skia/include/core/SkTileGridPicture.h"
 #include "ui/gfx/rect.h"
+
+namespace base {
+class Value;
+}
 
 namespace skia {
 class AnalysisCanvas;
@@ -39,8 +44,7 @@ class CC_EXPORT Picture
   typedef base::hash_map<PixelRefMapKey, PixelRefs> PixelRefMap;
 
   static scoped_refptr<Picture> Create(gfx::Rect layer_rect);
-  static scoped_refptr<Picture> CreateFromBase64String(
-      const std::string& encoded_string);
+  static scoped_refptr<Picture> CreateFromValue(const base::Value* value);
 
   gfx::Rect LayerRect() const { return layer_rect_; }
   gfx::Rect OpaqueRect() const { return opaque_rect_; }
@@ -67,11 +71,11 @@ class CC_EXPORT Picture
 
   // Apply this contents scale and raster the content rect into the canvas.
   void Raster(SkCanvas* canvas,
+              SkDrawPictureCallback* callback,
               gfx::Rect content_rect,
-              float contents_scale,
-              bool enable_lcd_text);
+              float contents_scale);
 
-  void AsBase64String(std::string* output) const;
+  scoped_ptr<base::Value> AsValue() const;
 
   class CC_EXPORT PixelRefIterator {
    public:
@@ -106,9 +110,11 @@ class CC_EXPORT Picture
     int current_y_;
   };
 
+  void EmitTraceSnapshot();
+
  private:
   explicit Picture(gfx::Rect layer_rect);
-  Picture(const std::string& encoded_string, bool* success);
+  Picture(const base::Value*, bool* success);
   // This constructor assumes SkPicture is already ref'd and transfers
   // ownership to this picture.
   Picture(const skia::RefPtr<SkPicture>&,
@@ -128,6 +134,9 @@ class CC_EXPORT Picture
   gfx::Point min_pixel_cell_;
   gfx::Point max_pixel_cell_;
   gfx::Size cell_size_;
+
+  scoped_ptr<base::debug::ConvertableToTraceFormat>
+    AsTraceableRasterData(gfx::Rect rect, float scale);
 
   friend class base::RefCountedThreadSafe<Picture>;
   friend class PixelRefIterator;

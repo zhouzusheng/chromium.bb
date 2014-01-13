@@ -33,11 +33,12 @@
 #include "core/loader/CrossOriginAccessControl.h"
 #include "core/loader/cache/CachedResourceLoader.h"
 #include "core/loader/cache/CachedResourceRequest.h"
+#include "core/loader/cache/CachedResourceRequestInitiators.h"
 #include "core/loader/cache/CachedTextTrack.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/platform/Logging.h"
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/network/ResourceHandle.h"
+#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
     
@@ -60,12 +61,12 @@ TextTrackLoader::~TextTrackLoader()
 void TextTrackLoader::cueLoadTimerFired(Timer<TextTrackLoader>* timer)
 {
     ASSERT_UNUSED(timer, timer == &m_cueLoadTimer);
-    
+
     if (m_newCuesAvailable) {
         m_newCuesAvailable = false;
         m_client->newCuesAvailable(this); 
     }
-    
+
     if (m_state >= Finished)
         m_client->cueLoadingCompleted(this, m_state == Failed);
 }
@@ -153,7 +154,7 @@ bool TextTrackLoader::load(const KURL& url, const String& crossOriginMode)
 
     ASSERT(m_scriptExecutionContext->isDocument());
     Document* document = toDocument(m_scriptExecutionContext);
-    CachedResourceRequest cueRequest(ResourceRequest(document->completeURL(url)));
+    CachedResourceRequest cueRequest(ResourceRequest(document->completeURL(url)), cachedResourceRequestInitiators().texttrack);
 
     if (!crossOriginMode.isNull()) {
         m_crossOriginMode = crossOriginMode;

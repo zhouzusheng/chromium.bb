@@ -8,7 +8,7 @@
 #include <map>
 #include <set>
 
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -36,6 +36,7 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
   // Caller guarantees that |net_log| will remain valid
   // for the lifetime of DownloadManagerImpl (until Shutdown() is called).
   DownloadManagerImpl(net::NetLog* net_log, BrowserContext* browser_context);
+  virtual ~DownloadManagerImpl();
 
   // Implementation functions (not part of the DownloadManager interface).
 
@@ -60,7 +61,6 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
   virtual DownloadItem* StartDownload(
       scoped_ptr<DownloadCreateInfo> info,
       scoped_ptr<ByteStreamReader> stream) OVERRIDE;
-  virtual void CancelDownload(int32 download_id) OVERRIDE;
   virtual int RemoveDownloadsBetween(base::Time remove_begin,
                                      base::Time remove_end) OVERRIDE;
   virtual int RemoveDownloads(base::Time remove_begin) OVERRIDE;
@@ -102,13 +102,10 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
   friend class DownloadManagerTest;
   friend class DownloadTest;
 
-  friend class base::RefCountedThreadSafe<DownloadManagerImpl>;
-
-  virtual ~DownloadManagerImpl();
-
   // Create a new active item based on the info.  Separate from
   // StartDownload() for testing.
-  void CreateActiveItem(DownloadId id, const DownloadCreateInfo& info);
+  DownloadItemImpl* CreateActiveItem(DownloadId id,
+                                     const DownloadCreateInfo& info);
 
   // Get next download id.
   DownloadId GetNextId();
@@ -164,6 +161,8 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
   DownloadManagerDelegate* delegate_;
 
   net::NetLog* net_log_;
+
+  base::WeakPtrFactory<DownloadManagerImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadManagerImpl);
 };

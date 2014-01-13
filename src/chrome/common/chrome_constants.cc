@@ -133,8 +133,6 @@ const char* const kHelperFlavorSuffixes[] = {
 };
 #endif  // OS_MACOSX
 
-const wchar_t kNaClAppName[] = L"nacl64";
-
 #if defined(OS_WIN)
 const base::FilePath::CharType kMetroDriverDll[] = FPL("metro_driver.dll");
 const wchar_t kStatusTrayWindowClass[] = L"Chrome_StatusTrayWindow";
@@ -210,14 +208,6 @@ const base::FilePath::CharType kPepperFlashPluginFilename[] =
 // directory names
 const wchar_t kUserDataDirname[] = L"User Data";
 
-#if defined(OS_CHROMEOS)
-const base::FilePath::CharType kDriveCacheDirname[] = FPL("GCache");
-const char kOemDeviceRequisitionKey[] = "oem_device_requisition";
-const char kOemIsEnterpriseManagedKey[] = "oem_enterprise_managed";
-const char kOemCanExitEnterpriseEnrollmentKey[] = "oem_can_exit_enrollment";
-const char kOemKeyboardDrivenOobeKey[] = "oem_keyboard_driven_oobe";
-#endif  // defined(OS_CHROMEOS)
-
 // We don't enable record mode in the released product because users could
 // potentially be tricked into running a product in record mode without
 // knowing it.  Enable in debug builds.  Playback mode is allowed always,
@@ -259,6 +249,10 @@ const wchar_t kMetroGetCurrentTabInfoMessage[] =
 const wchar_t kMetroRegistryPath[] =
     L"Software\\" PRODUCT_STRING_PATH L"\\Metro";
 const wchar_t kLaunchModeValue[] = L"launch_mode";
+#endif
+
+#if defined(OS_CHROMEOS)
+const char kProfileDirPrefix[] = "u-";
 #endif
 
 }  // namespace chrome

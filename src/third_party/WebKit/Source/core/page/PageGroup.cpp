@@ -28,11 +28,9 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
-#include "core/page/CaptionUserPreferences.h"
 #include "core/page/Frame.h"
 #include "core/page/GroupSettings.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
 #include "core/storage/StorageNamespace.h"
 
 namespace WebCore {
@@ -51,6 +49,12 @@ PageGroup* PageGroup::sharedGroup()
 {
     static PageGroup* staticSharedGroup = create().leakRef();
     return staticSharedGroup;
+}
+
+PageGroup* PageGroup::inspectorGroup()
+{
+    static PageGroup* staticInspectorGroup = create().leakRef();
+    return staticInspectorGroup;
 }
 
 void PageGroup::addPage(Page* page)
@@ -104,20 +108,5 @@ void PageGroup::invalidatedInjectedStyleSheetCacheInAllFrames()
             frame->document()->styleSheetCollection()->invalidateInjectedStyleSheetCache();
     }
 }
-
-void PageGroup::captionPreferencesChanged()
-{
-    for (HashSet<Page*>::iterator i = m_pages.begin(); i != m_pages.end(); ++i)
-        (*i)->captionPreferencesChanged();
-}
-
-CaptionUserPreferences* PageGroup::captionPreferences()
-{
-    if (!m_captionPreferences)
-        m_captionPreferences = CaptionUserPreferences::create(this);
-
-    return m_captionPreferences.get();
-}
-
 
 } // namespace WebCore

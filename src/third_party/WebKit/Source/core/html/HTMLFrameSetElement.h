@@ -45,6 +45,8 @@ public:
     const Length* rowLengths() const { return m_rowLengths.get(); }
     const Length* colLengths() const { return m_colLengths.get(); }
 
+    DOMWindow* anonymousNamedGetter(const AtomicString&);
+
     // Declared virtual in Element
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(blur);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(error);
@@ -71,9 +73,9 @@ private:
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
-    virtual void attach();
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual bool rendererIsNeeded(const NodeRenderingContext&);
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
 
     virtual void defaultEventHandler(Event*);
 

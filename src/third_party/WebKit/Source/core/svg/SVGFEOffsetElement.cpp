@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFEOffsetElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
@@ -64,7 +62,7 @@ bool SVGFEOffsetElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::dxAttr);
         supportedAttributes.add(SVGNames::dyAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFEOffsetElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -122,5 +120,3 @@ PassRefPtr<FilterEffect> SVGFEOffsetElement::build(SVGFilterBuilder* filterBuild
 }
 
 }
-
-#endif // ENABLE(SVG)

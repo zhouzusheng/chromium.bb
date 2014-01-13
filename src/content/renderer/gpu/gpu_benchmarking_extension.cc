@@ -10,25 +10,31 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_vector.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "content/common/browser_rendering_stats.h"
 #include "content/common/gpu/gpu_rendering_stats.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/all_rendering_benchmarks.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/rendering_benchmark.h"
+#include "content/renderer/skia_benchmarking_extension.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebImageCache.h"
+#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/WebKit/public/web/WebViewBenchmarkSupport.h"
+#include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/core/SkPixelRef.h"
 #include "third_party/skia/include/core/SkStream.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebViewBenchmarkSupport.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "v8/include/v8.h"
-#include "webkit/compositor_bindings/web_rendering_stats_impl.h"
+#include "webkit/renderer/compositor_bindings/web_rendering_stats_impl.h"
 
 using WebKit::WebCanvas;
 using WebKit::WebFrame;
+using WebKit::WebImageCache;
 using WebKit::WebPrivatePtr;
 using WebKit::WebRenderingStatsImpl;
 using WebKit::WebSize;
@@ -37,26 +43,23 @@ using WebKit::WebViewBenchmarkSupport;
 
 const char kGpuBenchmarkingExtensionName[] = "v8/GpuBenchmarking";
 
-static bool PNGEncodeBitmapToStream(SkWStream* stream, const SkBitmap& bm) {
+static SkData* EncodeBitmapToData(size_t* offset, const SkBitmap& bm) {
+    SkPixelRef* pr = bm.pixelRef();
+    if (pr != NULL) {
+        SkData* data = pr->refEncodedData();
+        if (data != NULL) {
+            *offset = bm.pixelRefOffset();
+            return data;
+        }
+    }
     std::vector<unsigned char> vector;
     if (gfx::PNGCodec::EncodeBGRASkBitmap(bm, true, &vector)) {
-        if (stream->write(&vector.front() , vector.size()))
-            return true;
+        return SkData::NewWithCopy(&vector.front() , vector.size());
     }
-    return false;
+    return NULL;
 }
 
 namespace {
-
-// Always called on the main render thread.
-// Does not need to be thread-safe.
-void InitSkGraphics() {
-  static bool init = false;
-  if (!init) {
-    SkGraphics::Init();
-    init = true;
-  }
-}
 
 class SkPictureRecorder : public WebViewBenchmarkSupport::PaintClient {
  public:
@@ -65,7 +68,7 @@ class SkPictureRecorder : public WebViewBenchmarkSupport::PaintClient {
         layer_id_(0) {
     // Let skia register known effect subclasses. This basically enables
     // reflection on those subclasses required for picture serialization.
-    InitSkGraphics();
+    content::SkiaBenchmarkingExtension::InitSkGraphics();
   }
 
   virtual WebCanvas* willPaint(const WebSize& size) {
@@ -84,7 +87,7 @@ class SkPictureRecorder : public WebViewBenchmarkSupport::PaintClient {
     DCHECK(!filepath.empty());
     SkFILEWStream file(filepath.c_str());
     DCHECK(file.isValid());
-    picture_.serialize(&file, &PNGEncodeBitmapToStream);
+    picture_.serialize(&file, &EncodeBitmapToData);
   }
 
  private:
@@ -124,6 +127,46 @@ class RenderingStatsEnumerator : public cc::RenderingStats::Enumerator {
 
 namespace content {
 
+namespace {
+
+class CallbackAndContext : public base::RefCounted<CallbackAndContext> {
+ public:
+  CallbackAndContext(v8::Isolate* isolate,
+                     v8::Handle<v8::Function> callback,
+                     v8::Handle<v8::Context> context)
+      : isolate_(isolate) {
+    callback_.Reset(isolate_, callback);
+    context_.Reset(isolate_, context);
+  }
+
+  v8::Isolate* isolate() {
+    return isolate_;
+  }
+
+  v8::Handle<v8::Function> GetCallback() {
+    return v8::Local<v8::Function>::New(isolate_, callback_);
+  }
+
+  v8::Handle<v8::Context> GetContext() {
+    return v8::Local<v8::Context>::New(isolate_, context_);
+  }
+
+ private:
+  friend class base::RefCounted<CallbackAndContext>;
+
+  virtual ~CallbackAndContext() {
+    callback_.Dispose();
+    context_.Dispose();
+  }
+
+  v8::Isolate* isolate_;
+  v8::Persistent<v8::Function> callback_;
+  v8::Persistent<v8::Context> context_;
+  DISALLOW_COPY_AND_ASSIGN(CallbackAndContext);
+};
+
+}  // namespace
+
 class GpuBenchmarkingWrapper : public v8::Extension {
  public:
   GpuBenchmarkingWrapper() :
@@ -137,6 +180,10 @@ class GpuBenchmarkingWrapper : public v8::Extension {
           "chrome.gpuBenchmarking.setNeedsDisplayOnAllLayers = function() {"
           "  native function SetNeedsDisplayOnAllLayers();"
           "  return SetNeedsDisplayOnAllLayers();"
+          "};"
+          "chrome.gpuBenchmarking.setRasterizeOnlyVisibleContent = function() {"
+          "  native function SetRasterizeOnlyVisibleContent();"
+          "  return SetRasterizeOnlyVisibleContent();"
           "};"
           "chrome.gpuBenchmarking.renderingStats = function() {"
           "  native function GetRenderingStats();"
@@ -169,12 +216,18 @@ class GpuBenchmarkingWrapper : public v8::Extension {
           "chrome.gpuBenchmarking.beginWindowSnapshotPNG = function(callback) {"
           "  native function BeginWindowSnapshotPNG();"
           "  BeginWindowSnapshotPNG(callback);"
+          "};"
+          "chrome.gpuBenchmarking.clearImageCache = function() {"
+          "  native function ClearImageCache();"
+          "  ClearImageCache();"
           "};") {}
 
   virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
       v8::Handle<v8::String> name) OVERRIDE {
     if (name->Equals(v8::String::New("SetNeedsDisplayOnAllLayers")))
       return v8::FunctionTemplate::New(SetNeedsDisplayOnAllLayers);
+    if (name->Equals(v8::String::New("SetRasterizeOnlyVisibleContent")))
+      return v8::FunctionTemplate::New(SetRasterizeOnlyVisibleContent);
     if (name->Equals(v8::String::New("GetRenderingStats")))
       return v8::FunctionTemplate::New(GetRenderingStats);
     if (name->Equals(v8::String::New("PrintToSkPicture")))
@@ -185,80 +238,106 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       return v8::FunctionTemplate::New(RunRenderingBenchmarks);
     if (name->Equals(v8::String::New("BeginWindowSnapshotPNG")))
       return v8::FunctionTemplate::New(BeginWindowSnapshotPNG);
+    if (name->Equals(v8::String::New("ClearImageCache")))
+      return v8::FunctionTemplate::New(ClearImageCache);
 
     return v8::Handle<v8::FunctionTemplate>();
   }
 
-  static v8::Handle<v8::Value> SetNeedsDisplayOnAllLayers(
-      const v8::Arguments& args) {
+  static void SetNeedsDisplayOnAllLayers(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
     WebFrame* web_frame = WebFrame::frameForCurrentContext();
     if (!web_frame)
-      return v8::Undefined();
+      return;
 
     WebView* web_view = web_frame->view();
     if (!web_view)
-      return v8::Undefined();
+      return;
 
     RenderViewImpl* render_view_impl = RenderViewImpl::FromWebView(web_view);
     if (!render_view_impl)
-      return v8::Undefined();
+      return;
 
     RenderWidgetCompositor* compositor = render_view_impl->compositor();
     if (!compositor)
-      return v8::Undefined();
+      return;
 
     compositor->SetNeedsDisplayOnAllLayers();
-
-    return v8::Undefined();
   }
 
-  static v8::Handle<v8::Value> GetRenderingStats(const v8::Arguments& args) {
-
+  static void SetRasterizeOnlyVisibleContent(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
     WebFrame* web_frame = WebFrame::frameForCurrentContext();
     if (!web_frame)
-      return v8::Undefined();
+      return;
 
     WebView* web_view = web_frame->view();
     if (!web_view)
-      return v8::Undefined();
+      return;
 
     RenderViewImpl* render_view_impl = RenderViewImpl::FromWebView(web_view);
     if (!render_view_impl)
-      return v8::Undefined();
+      return;
+
+    RenderWidgetCompositor* compositor = render_view_impl->compositor();
+    if (!compositor)
+      return;
+
+    compositor->SetRasterizeOnlyVisibleContent();
+  }
+
+  static void GetRenderingStats(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
+
+    WebFrame* web_frame = WebFrame::frameForCurrentContext();
+    if (!web_frame)
+      return;
+
+    WebView* web_view = web_frame->view();
+    if (!web_view)
+      return;
+
+    RenderViewImpl* render_view_impl = RenderViewImpl::FromWebView(web_view);
+    if (!render_view_impl)
+      return;
 
     WebRenderingStatsImpl stats;
     render_view_impl->GetRenderingStats(stats);
 
     content::GpuRenderingStats gpu_stats;
     render_view_impl->GetGpuRenderingStats(&gpu_stats);
+    BrowserRenderingStats browser_stats;
+    render_view_impl->GetBrowserRenderingStats(&browser_stats);
     v8::Handle<v8::Object> stats_object = v8::Object::New();
 
     RenderingStatsEnumerator enumerator(stats_object);
     stats.rendering_stats.EnumerateFields(&enumerator);
     gpu_stats.EnumerateFields(&enumerator);
+    browser_stats.EnumerateFields(&enumerator);
 
-    return stats_object;
+    args.GetReturnValue().Set(stats_object);
   }
 
-  static v8::Handle<v8::Value> PrintToSkPicture(const v8::Arguments& args) {
+  static void PrintToSkPicture(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
     if (args.Length() != 1)
-      return v8::Undefined();
+      return;
 
     v8::String::AsciiValue dirname(args[0]);
     if (dirname.length() == 0)
-      return v8::Undefined();
+      return;
 
     WebFrame* web_frame = WebFrame::frameForCurrentContext();
     if (!web_frame)
-      return v8::Undefined();
+      return;
 
     WebView* web_view = web_frame->view();
     if (!web_view)
-      return v8::Undefined();
+      return;
 
     WebViewBenchmarkSupport* benchmark_support = web_view->benchmarkSupport();
     if (!benchmark_support)
-      return v8::Undefined();
+      return;
 
     base::FilePath dirpath(
         base::FilePath::StringType(*dirname, *dirname + dirname.length()));
@@ -266,60 +345,60 @@ class GpuBenchmarkingWrapper : public v8::Extension {
         !file_util::PathIsWritable(dirpath)) {
       std::string msg("Path is not writable: ");
       msg.append(dirpath.MaybeAsASCII());
-      return v8::ThrowException(v8::Exception::Error(
+      v8::ThrowException(v8::Exception::Error(
           v8::String::New(msg.c_str(), msg.length())));
+      return;
     }
 
     SkPictureRecorder recorder(dirpath);
     benchmark_support->paint(&recorder,
                              WebViewBenchmarkSupport::PaintModeEverything);
-    return v8::Undefined();
   }
 
-  static void OnSmoothScrollCompleted(v8::Persistent<v8::Function> callback,
-                                      v8::Persistent<v8::Context> context) {
-    v8::HandleScope scope;
+  static void OnSmoothScrollCompleted(
+      CallbackAndContext* callback_and_context) {
+    v8::HandleScope scope(callback_and_context->isolate());
+    v8::Handle<v8::Context> context = callback_and_context->GetContext();
     v8::Context::Scope context_scope(context);
     WebFrame* frame = WebFrame::frameForContext(context);
     if (frame) {
-      frame->callFunctionEvenIfScriptDisabled(callback,
-                                              v8::Object::New(),
-                                              0,
-                                              NULL);
+      frame->callFunctionEvenIfScriptDisabled(
+          callback_and_context->GetCallback(), v8::Object::New(), 0, NULL);
     }
-    v8::Isolate* isolate = context->GetIsolate();
-    callback.Dispose(isolate);
-    context.Dispose(isolate);
   }
 
-  static v8::Handle<v8::Value> BeginSmoothScroll(const v8::Arguments& args) {
+  static void BeginSmoothScroll(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
     WebFrame* web_frame = WebFrame::frameForCurrentContext();
     if (!web_frame)
-      return v8::Undefined();
+      return;
 
     WebView* web_view = web_frame->view();
     if (!web_view)
-      return v8::Undefined();
+      return;
 
     RenderViewImpl* render_view_impl = RenderViewImpl::FromWebView(web_view);
     if (!render_view_impl)
-      return v8::Undefined();
+      return;
 
     // Account for the 2 optional arguments, mouse_event_x and mouse_event_y.
     int arglen = args.Length();
     if (arglen < 3 ||
         !args[0]->IsBoolean() ||
         !args[1]->IsFunction() ||
-        !args[2]->IsNumber())
-      return v8::False();
+        !args[2]->IsNumber()) {
+      args.GetReturnValue().Set(false);
+      return;
+    }
 
     bool scroll_down = args[0]->BooleanValue();
     v8::Local<v8::Function> callback_local =
-        v8::Local<v8::Function>(v8::Function::Cast(*args[1]));
-    v8::Isolate* isolate = args.GetIsolate();
-    v8::Persistent<v8::Function> callback(isolate, callback_local);
-    v8::Persistent<v8::Context> context(isolate,
-                                        web_frame->mainWorldScriptContext());
+        v8::Local<v8::Function>::Cast(args[1]);
+
+    scoped_refptr<CallbackAndContext> callback_and_context =
+        new CallbackAndContext(args.GetIsolate(),
+                               callback_local,
+                               web_frame->mainWorldScriptContext());
 
     int pixels_to_scroll = args[2]->IntegerValue();
 
@@ -333,8 +412,10 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     } else {
       if (arglen != 5 ||
           !args[3]->IsNumber() ||
-          !args[4]->IsNumber())
-        return v8::False();
+          !args[4]->IsNumber()) {
+        args.GetReturnValue().Set(false);
+        return;
+      }
 
       mouse_event_x = args[3]->IntegerValue() * web_view->pageScaleFactor();
       mouse_event_y = args[4]->IntegerValue() * web_view->pageScaleFactor();
@@ -346,23 +427,22 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     render_view_impl->BeginSmoothScroll(
         scroll_down,
         base::Bind(&OnSmoothScrollCompleted,
-                   callback,
-                   context),
+                   callback_and_context),
         pixels_to_scroll,
         mouse_event_x,
         mouse_event_y);
 
-    return v8::True();
+    args.GetReturnValue().Set(true);
   }
 
-  static v8::Handle<v8::Value> RunRenderingBenchmarks(
-      const v8::Arguments& args) {
+  static void RunRenderingBenchmarks(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
     // For our name filter, the argument can be undefined or null to run
     // all benchmarks, or a string for filtering by name.
     if (!args.Length() ||
         (!args[0]->IsString() &&
          !(args[0]->IsNull() || args[0]->IsUndefined()))) {
-      return v8::Undefined();
+      return;
     }
 
     std::string name_filter;
@@ -376,15 +456,15 @@ class GpuBenchmarkingWrapper : public v8::Extension {
 
     WebFrame* web_frame = WebFrame::frameForCurrentContext();
     if (!web_frame)
-      return v8::Undefined();
+      return;
 
     WebView* web_view = web_frame->view();
     if (!web_view)
-      return v8::Undefined();
+      return;
 
     WebViewBenchmarkSupport* support = web_view->benchmarkSupport();
     if (!support)
-      return v8::Undefined();
+      return;
 
     ScopedVector<RenderingBenchmark> benchmarks = AllRenderingBenchmarks();
 
@@ -408,14 +488,14 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       results->Set(results->Length(), result_object);
     }
 
-    return results;
+    args.GetReturnValue().Set(results);
   }
 
-  static void OnSnapshotCompleted(v8::Persistent<v8::Function> callback,
-                                  v8::Persistent<v8::Context> context,
+  static void OnSnapshotCompleted(CallbackAndContext* callback_and_context,
                                   const gfx::Size& size,
                                   const std::vector<unsigned char>& png) {
-    v8::HandleScope scope;
+    v8::HandleScope scope(callback_and_context->isolate());
+    v8::Handle<v8::Context> context = callback_and_context->GetContext();
     v8::Context::Scope context_scope(context);
     WebFrame* frame = WebFrame::frameForContext(context);
     if (frame) {
@@ -446,44 +526,43 @@ class GpuBenchmarkingWrapper : public v8::Extension {
 
       v8::Handle<v8::Value> argv[] = { result };
 
-      frame->callFunctionEvenIfScriptDisabled(callback,
-                                              v8::Object::New(),
-                                              1,
-                                              argv);
+      frame->callFunctionEvenIfScriptDisabled(
+          callback_and_context->GetCallback(), v8::Object::New(), 1, argv);
     }
-    v8::Isolate* isolate = context->GetIsolate();
-    callback.Dispose(isolate);
-    context.Dispose(isolate);
   }
 
-  static v8::Handle<v8::Value> BeginWindowSnapshotPNG(
-      const v8::Arguments& args) {
+  static void BeginWindowSnapshotPNG(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
     WebFrame* web_frame = WebFrame::frameForCurrentContext();
     if (!web_frame)
-      return v8::Undefined();
+      return;
 
     WebView* web_view = web_frame->view();
     if (!web_view)
-      return v8::Undefined();
+      return;
 
     RenderViewImpl* render_view_impl = RenderViewImpl::FromWebView(web_view);
     if (!render_view_impl)
-      return v8::Undefined();
+      return;
 
     if (!args[0]->IsFunction())
-      return v8::Undefined();
+      return;
 
     v8::Local<v8::Function> callback_local =
-        v8::Local<v8::Function>(v8::Function::Cast(*args[0]));
-    v8::Isolate* isolate = args.GetIsolate();
-    v8::Persistent<v8::Function> callback(isolate, callback_local);
-    v8::Persistent<v8::Context> context(isolate,
-                                        web_frame->mainWorldScriptContext());
+        v8::Local<v8::Function>::Cast(args[0]);
+
+    scoped_refptr<CallbackAndContext> callback_and_context =
+        new CallbackAndContext(args.GetIsolate(),
+                               callback_local,
+                               web_frame->mainWorldScriptContext());
 
     render_view_impl->GetWindowSnapshot(
-        base::Bind(&OnSnapshotCompleted, callback, context));
+        base::Bind(&OnSnapshotCompleted, callback_and_context));
+  }
 
-    return v8::Undefined();
+  static void ClearImageCache(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
+    WebImageCache::clear();
   }
 };
 

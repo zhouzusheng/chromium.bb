@@ -27,21 +27,16 @@
 #ifndef HTMLTreeBuilder_h
 #define HTMLTreeBuilder_h
 
-#include "core/dom/FragmentScriptingPermission.h"
 #include "core/html/parser/HTMLConstructionSite.h"
 #include "core/html/parser/HTMLElementStack.h"
-#include "core/html/parser/HTMLFormattingElementList.h"
 #include "core/html/parser/HTMLParserOptions.h"
-#include "core/html/parser/HTMLTokenizer.h"
-#include <wtf/Noncopyable.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/text/TextPosition.h>
-#include <wtf/unicode/Unicode.h>
-#include <wtf/Vector.h>
+#include "wtf/Noncopyable.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/StringBuilder.h"
+#include "wtf/text/TextPosition.h"
 
 namespace WebCore {
 
@@ -58,7 +53,7 @@ class HTMLDocumentParser;
 class HTMLTreeBuilder {
     WTF_MAKE_NONCOPYABLE(HTMLTreeBuilder); WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<HTMLTreeBuilder> create(HTMLDocumentParser* parser, HTMLDocument* document, ParserContentPolicy parserContentPolicy, bool reportErrors, const HTMLParserOptions& options)
+    static PassOwnPtr<HTMLTreeBuilder> create(HTMLDocumentParser* parser, Document* document, ParserContentPolicy parserContentPolicy, bool reportErrors, const HTMLParserOptions& options)
     {
         return adoptPtr(new HTMLTreeBuilder(parser, document, parserContentPolicy, reportErrors, options));
     }
@@ -88,7 +83,7 @@ public:
     void setShouldSkipLeadingNewline(bool shouldSkip) { m_shouldSkipLeadingNewline = shouldSkip; }
 
 private:
-    class ExternalCharacterTokenBuffer;
+    class CharacterTokenBuffer;
     // Represents HTML5 "insertion mode"
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/parsing.html#insertion-mode
     enum InsertionMode {
@@ -117,7 +112,7 @@ private:
         AfterAfterFramesetMode,
     };
 
-    HTMLTreeBuilder(HTMLDocumentParser*, HTMLDocument*, ParserContentPolicy, bool reportErrors, const HTMLParserOptions&);
+    HTMLTreeBuilder(HTMLDocumentParser*, Document*, ParserContentPolicy, bool reportErrors, const HTMLParserOptions&);
     HTMLTreeBuilder(HTMLDocumentParser*, DocumentFragment*, Element* contextElement, ParserContentPolicy, const HTMLParserOptions&);
 
     void processToken(AtomicHTMLToken*);
@@ -149,8 +144,8 @@ private:
     // needs to assert which tokens it can be called with.
     void processAnyOtherEndTagForInBody(AtomicHTMLToken*);
 
-    void processCharacterBuffer(ExternalCharacterTokenBuffer&);
-    inline void processCharacterBufferForInBody(ExternalCharacterTokenBuffer&);
+    void processCharacterBuffer(CharacterTokenBuffer&);
+    inline void processCharacterBufferForInBody(CharacterTokenBuffer&);
 
     void processFakeStartTag(const QualifiedName&, const Vector<Attribute>& attributes = Vector<Attribute>());
     void processFakeEndTag(const QualifiedName&);

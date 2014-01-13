@@ -208,7 +208,7 @@ bool AddIntersectTs(SkOpContour* test, SkOpContour* next) {
                         case SkIntersectionHelper::kLine_Segment: {
                             pts = ts.lineHorizontal(wn.pts(), wt.left(),
                                     wt.right(), wt.y(), wt.xFlipped());
-                            debugShowLineIntersection(pts, wt, wn, ts);
+                            debugShowLineIntersection(pts, wn, wt, ts);
                             break;
                         }
                         case SkIntersectionHelper::kQuad_Segment: {
@@ -235,7 +235,7 @@ bool AddIntersectTs(SkOpContour* test, SkOpContour* next) {
                         case SkIntersectionHelper::kLine_Segment: {
                             pts = ts.lineVertical(wn.pts(), wt.top(),
                                     wt.bottom(), wt.x(), wt.yFlipped());
-                            debugShowLineIntersection(pts, wt, wn, ts);
+                            debugShowLineIntersection(pts, wn, wt, ts);
                             break;
                         }
                         case SkIntersectionHelper::kQuad_Segment: {
@@ -413,7 +413,7 @@ void AddSelfIntersectTs(SkOpContour* test) {
 
 // resolve any coincident pairs found while intersecting, and
 // see if coincidence is formed by clipping non-concident segments
-void CoincidenceCheck(SkTDArray<SkOpContour*>* contourList, int total) {
+void CoincidenceCheck(SkTArray<SkOpContour*, true>* contourList, int total) {
     int contourCount = (*contourList).count();
     for (int cIndex = 0; cIndex < contourCount; ++cIndex) {
         SkOpContour* contour = (*contourList)[cIndex];

@@ -32,15 +32,11 @@
 
 #include "skia/ext/image_operations.h"
 
-#include "SkPixelRef.h"
 #include "core/platform/PlatformInstrumentation.h"
 #include "core/platform/PlatformMemoryInstrumentation.h"
-#include "core/platform/graphics/GraphicsContext3D.h"
 #include "core/platform/graphics/skia/MemoryInstrumentationSkia.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
-#include "core/platform/graphics/skia/SkiaUtils.h"
 
-#include "core/platform/chromium/TraceEvent.h"
 #include "core/platform/graphics/chromium/DeferredImageDecoder.h"
 
 namespace WebCore {
@@ -85,8 +81,7 @@ bool NativeImageSkia::hasResizedBitmap(const SkISize& scaledImageSize, const SkI
 
 SkBitmap NativeImageSkia::resizedBitmap(const SkISize& scaledImageSize, const SkIRect& scaledImageSubset) const
 {
-    if (DeferredImageDecoder::isLazyDecoded(m_image))
-        return DeferredImageDecoder::createResizedLazyDecodingBitmap(m_image, scaledImageSize, scaledImageSubset);
+    ASSERT(!DeferredImageDecoder::isLazyDecoded(m_image));
 
     if (!hasResizedBitmap(scaledImageSize, scaledImageSubset)) {
         bool shouldCache = isDataComplete()
@@ -187,11 +182,6 @@ void NativeImageSkia::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) cons
     info.addMember(m_image, "image");
     info.addMember(m_resizedImage, "resizedImage");
     info.addMember(m_cachedImageInfo, "cachedImageInfo");
-}
-
-void reportMemoryUsage(const NativeImageSkia* image, MemoryObjectInfo* memoryObjectInfo)
-{
-    image->reportMemoryUsage(memoryObjectInfo);
 }
 
 } // namespace WebCore

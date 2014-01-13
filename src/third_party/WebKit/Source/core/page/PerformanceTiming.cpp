@@ -52,6 +52,7 @@ static unsigned long long toIntegerMilliseconds(double seconds)
 PerformanceTiming::PerformanceTiming(Frame* frame)
     : DOMWindowProperty(frame)
 {
+    ScriptWrappable::init(this);
 }
 
 unsigned long long PerformanceTiming::navigationStart() const
@@ -126,13 +127,13 @@ unsigned long long PerformanceTiming::domainLookupStart() const
     if (!timing)
         return fetchStart();
 
-    // This will be -1 when a DNS request is not performed.
+    // This will be zero when a DNS request is not performed.
     // Rather than exposing a special value that indicates no DNS, we "backfill" with fetchStart.
-    int dnsStart = timing->dnsStart;
-    if (dnsStart < 0)
+    double dnsStart = timing->dnsStart;
+    if (dnsStart == 0.0)
         return fetchStart();
 
-    return resourceLoadTimeRelativeToAbsolute(dnsStart);
+    return monotonicTimeToIntegerMilliseconds(dnsStart);
 }
 
 unsigned long long PerformanceTiming::domainLookupEnd() const
@@ -141,13 +142,13 @@ unsigned long long PerformanceTiming::domainLookupEnd() const
     if (!timing)
         return domainLookupStart();
 
-    // This will be -1 when a DNS request is not performed.
+    // This will be zero when a DNS request is not performed.
     // Rather than exposing a special value that indicates no DNS, we "backfill" with domainLookupStart.
-    int dnsEnd = timing->dnsEnd;
-    if (dnsEnd < 0)
+    double dnsEnd = timing->dnsEnd;
+    if (dnsEnd == 0.0)
         return domainLookupStart();
 
-    return resourceLoadTimeRelativeToAbsolute(dnsEnd);
+    return monotonicTimeToIntegerMilliseconds(dnsEnd);
 }
 
 unsigned long long PerformanceTiming::connectStart() const
@@ -160,18 +161,18 @@ unsigned long long PerformanceTiming::connectStart() const
     if (!timing)
         return domainLookupEnd();
 
-    // connectStart will be -1 when a network request is not made.
+    // connectStart will be zero when a network request is not made.
     // Rather than exposing a special value that indicates no new connection, we "backfill" with domainLookupEnd.
-    int connectStart = timing->connectStart;
-    if (connectStart < 0 || loader->response().connectionReused())
+    double connectStart = timing->connectStart;
+    if (connectStart == 0.0 || loader->response().connectionReused())
         return domainLookupEnd();
 
     // ResourceLoadTiming's connect phase includes DNS, however Navigation Timing's
     // connect phase should not. So if there is DNS time, trim it from the start.
-    if (timing->dnsEnd >= 0 && timing->dnsEnd > connectStart)
+    if (timing->dnsEnd > 0.0 && timing->dnsEnd > connectStart)
         connectStart = timing->dnsEnd;
 
-    return resourceLoadTimeRelativeToAbsolute(connectStart);
+    return monotonicTimeToIntegerMilliseconds(connectStart);
 }
 
 unsigned long long PerformanceTiming::connectEnd() const
@@ -184,13 +185,13 @@ unsigned long long PerformanceTiming::connectEnd() const
     if (!timing)
         return connectStart();
 
-    // connectEnd will be -1 when a network request is not made.
+    // connectEnd will be zero when a network request is not made.
     // Rather than exposing a special value that indicates no new connection, we "backfill" with connectStart.
-    int connectEnd = timing->connectEnd;
-    if (connectEnd < 0 || loader->response().connectionReused())
+    double connectEnd = timing->connectEnd;
+    if (connectEnd == 0.0 || loader->response().connectionReused())
         return connectStart();
 
-    return resourceLoadTimeRelativeToAbsolute(connectEnd);
+    return monotonicTimeToIntegerMilliseconds(connectEnd);
 }
 
 unsigned long long PerformanceTiming::secureConnectionStart() const
@@ -203,27 +204,27 @@ unsigned long long PerformanceTiming::secureConnectionStart() const
     if (!timing)
         return 0;
 
-    int sslStart = timing->sslStart;
-    if (sslStart < 0)
+    double sslStart = timing->sslStart;
+    if (sslStart == 0.0)
         return 0;
 
-    return resourceLoadTimeRelativeToAbsolute(sslStart);
+    return monotonicTimeToIntegerMilliseconds(sslStart);
 }
 
 unsigned long long PerformanceTiming::requestStart() const
 {
     ResourceLoadTiming* timing = resourceLoadTiming();
-    if (!timing)
+
+    if (!timing || timing->sendStart == 0.0)
         return connectEnd();
 
-    ASSERT(timing->sendStart >= 0);
-    return resourceLoadTimeRelativeToAbsolute(timing->sendStart);
+    return monotonicTimeToIntegerMilliseconds(timing->sendStart);
 }
 
 unsigned long long PerformanceTiming::responseStart() const
 {
     ResourceLoadTiming* timing = resourceLoadTiming();
-    if (!timing)
+    if (!timing || timing->receiveHeadersEnd == 0.0)
         return requestStart();
 
     // FIXME: Response start needs to be the time of the first received byte.
@@ -232,8 +233,7 @@ unsigned long long PerformanceTiming::responseStart() const
     // sized cookies, the HTTP headers fit into a single packet so this time
     // is basically equivalent. But for some responses, particularly those with
     // headers larger than a single packet, this time will be too late.
-    ASSERT(timing->receiveHeadersEnd >= 0);
-    return resourceLoadTimeRelativeToAbsolute(timing->receiveHeadersEnd);
+    return monotonicTimeToIntegerMilliseconds(timing->receiveHeadersEnd);
 }
 
 unsigned long long PerformanceTiming::responseEnd() const
@@ -344,14 +344,6 @@ ResourceLoadTiming* PerformanceTiming::resourceLoadTiming() const
         return 0;
 
     return loader->response().resourceLoadTiming();
-}
-
-unsigned long long PerformanceTiming::resourceLoadTimeRelativeToAbsolute(int relativeMilliseconds) const
-{
-    ASSERT(relativeMilliseconds >= 0);
-    ResourceLoadTiming* resourceTiming = resourceLoadTiming();
-    ASSERT(resourceTiming);
-    return monotonicTimeToIntegerMilliseconds(resourceTiming->convertResourceLoadTimeToMonotonicTime(relativeMilliseconds));
 }
 
 unsigned long long PerformanceTiming::monotonicTimeToIntegerMilliseconds(double monotonicSeconds) const

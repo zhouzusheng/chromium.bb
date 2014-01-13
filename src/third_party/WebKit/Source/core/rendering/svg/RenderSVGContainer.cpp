@@ -23,18 +23,14 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGContainer.h"
 
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/svg/RenderSVGResource.h"
-#include "core/rendering/svg/RenderSVGResourceFilter.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
-#include "core/svg/SVGStyledElement.h"
 
 namespace WebCore {
 
@@ -109,6 +105,8 @@ bool RenderSVGContainer::selfWillPaint()
 
 void RenderSVGContainer::paint(PaintInfo& paintInfo, const LayoutPoint&)
 {
+    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
+
     if (paintInfo.context->paintingDisabled())
         return;
 
@@ -192,5 +190,3 @@ bool RenderSVGContainer::nodeAtFloatPoint(const HitTestRequest& request, HitTest
 }
 
 }
-
-#endif // ENABLE(SVG)

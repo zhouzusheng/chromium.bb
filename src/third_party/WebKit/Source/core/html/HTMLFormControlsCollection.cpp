@@ -25,7 +25,6 @@
 
 #include "HTMLNames.h"
 #include "core/html/HTMLFieldSetElement.h"
-#include "core/html/HTMLFormControlElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLImageElement.h"
 
@@ -57,15 +56,14 @@ const Vector<FormAssociatedElement*>& HTMLFormControlsCollection::formControlEle
     ASSERT(ownerNode());
     ASSERT(ownerNode()->hasTagName(formTag) || ownerNode()->hasTagName(fieldsetTag));
     if (ownerNode()->hasTagName(formTag))
-        return static_cast<HTMLFormElement*>(ownerNode())->associatedElements();
+        return toHTMLFormElement(ownerNode())->associatedElements();
     return static_cast<HTMLFieldSetElement*>(ownerNode())->associatedElements();
 }
 
 const Vector<HTMLImageElement*>& HTMLFormControlsCollection::formImageElements() const
 {
     ASSERT(ownerNode());
-    ASSERT(ownerNode()->hasTagName(formTag));
-    return static_cast<HTMLFormElement*>(ownerNode())->imageElements();
+    return toHTMLFormElement(ownerNode())->imageElements();
 }
 
 Element* HTMLFormControlsCollection::virtualItemAfter(unsigned& offset, Element* previousItem) const
@@ -159,6 +157,24 @@ void HTMLFormControlsCollection::updateNameCache() const
     }
 
     setHasNameCache();
+}
+
+void HTMLFormControlsCollection::namedGetter(const AtomicString& name, bool& returnValue0Enabled, RefPtr<RadioNodeList>& returnValue0, bool& returnValue1Enabled, RefPtr<Node>& returnValue1)
+{
+    Vector<RefPtr<Node> > namedItems;
+    this->namedItems(name, namedItems);
+
+    if (!namedItems.size())
+        return;
+
+    if (namedItems.size() == 1) {
+        returnValue1Enabled = true;
+        returnValue1 = namedItems.at(0);
+        return;
+    }
+
+    returnValue0Enabled = true;
+    returnValue0 = this->ownerNode()->radioNodeList(name);
 }
 
 }

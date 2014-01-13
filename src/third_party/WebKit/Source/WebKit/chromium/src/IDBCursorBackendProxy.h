@@ -26,7 +26,7 @@
 #ifndef IDBCursorBackendProxy_h
 #define IDBCursorBackendProxy_h
 
-#include <public/WebIDBCursor.h>
+#include "public/platform/WebIDBCursor.h"
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/PassRefPtr.h>
@@ -42,9 +42,6 @@ public:
 
     virtual void advance(unsigned long, PassRefPtr<WebCore::IDBCallbacks>);
     virtual void continueFunction(PassRefPtr<WebCore::IDBKey>, PassRefPtr<WebCore::IDBCallbacks>);
-    virtual void deleteFunction(PassRefPtr<WebCore::IDBCallbacks>) { ASSERT_NOT_REACHED(); } // FIXME: Remove: http://crbug.com/241526
-    virtual void prefetchContinue(int numberToFetch, PassRefPtr<WebCore::IDBCallbacks>) { ASSERT_NOT_REACHED(); } // Only used in the backend.
-    virtual void prefetchReset(int usedPrefetches, int unusedPrefetches) { ASSERT_NOT_REACHED(); } // Only used in the backend.
     virtual void postSuccessHandlerCallback();
 
 private:

@@ -44,7 +44,7 @@ public:
     Widget* pluginWidget();
     Node* pluginNode();
 
-    virtual void detach() OVERRIDE;
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
 
     void cancelManualPluginLoad();
 
@@ -54,7 +54,6 @@ private:
     PluginDocument(Frame*, const KURL&);
 
     virtual PassRefPtr<DocumentParser> createParser() OVERRIDE;
-    virtual bool isPluginDocument() const OVERRIDE { return true; }    
         
     void setShouldLoadPluginManually(bool loadManually) { m_shouldLoadPluginManually = loadManually; }
 

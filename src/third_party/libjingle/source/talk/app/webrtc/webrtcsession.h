@@ -60,6 +60,8 @@ namespace webrtc {
 class IceRestartAnswerLatch;
 class MediaStreamSignaling;
 
+extern const char kSetLocalSdpFailed[];
+extern const char kSetRemoteSdpFailed[];
 extern const char kCreateChannelFailed[];
 extern const char kInvalidCandidates[];
 extern const char kInvalidSdp[];
@@ -67,6 +69,9 @@ extern const char kMlineMismatch[];
 extern const char kSdpWithoutCrypto[];
 extern const char kSessionError[];
 extern const char kUpdateStateFailed[];
+extern const char kPushDownOfferTDFailed[];
+extern const char kPushDownPranswerTDFailed[];
+extern const char kPushDownAnswerTDFailed[];
 
 // ICE state callback interface.
 class IceObserver {
@@ -154,6 +159,8 @@ class WebRtcSession : public cricket::BaseSession,
   virtual void SetAudioPlayout(uint32 ssrc, bool enable) OVERRIDE;
   virtual void SetAudioSend(uint32 ssrc, bool enable,
                             const cricket::AudioOptions& options) OVERRIDE;
+  virtual bool SetAudioRenderer(uint32 ssrc,
+                                cricket::AudioRenderer* renderer) OVERRIDE;
 
   // Implements VideoMediaProviderInterface.
   virtual bool SetCaptureDevice(uint32 ssrc,
@@ -174,6 +181,8 @@ class WebRtcSession : public cricket::BaseSession,
       const std::string& label,
       const DataChannelInit* config);
 
+  cricket::DataChannelType data_channel_type() const;
+
  private:
   // Indicates the type of SessionDescription in a call to SetLocalDescription
   // and SetRemoteDescription.
@@ -186,7 +195,8 @@ class WebRtcSession : public cricket::BaseSession,
   // candidates allocation.
   bool StartCandidatesAllocation();
   bool UpdateSessionState(Action action, cricket::ContentSource source,
-                          const cricket::SessionDescription* desc);
+                          const cricket::SessionDescription* desc,
+                          std::string* err_desc);
   static Action GetAction(const std::string& type);
 
   // Transport related callbacks, override from cricket::BaseSession.
@@ -266,9 +276,14 @@ class WebRtcSession : public cricket::BaseSession,
   uint64 session_version_;
   // If the remote peer is using a older version of implementation.
   bool older_version_remote_peer_;
-  // True if this session can create an RTP data engine. This is controlled
-  // by the constraint kEnableRtpDataChannels.
-  bool allow_rtp_data_engine_;
+  // Specifies which kind of data channel is allowed. This is controlled
+  // by the chrome command-line flag and constraints:
+  // 1. If chrome command-line switch 'enable-sctp-data-channels' is enabled,
+  // constraint kEnableDtlsSrtp is true, and constaint kEnableRtpDataChannels is
+  // not set or false, SCTP is allowed (DCT_SCTP);
+  // 2. If constraint kEnableRtpDataChannels is true, RTP is allowed (DCT_RTP);
+  // 3. If both 1&2 are false, data channel is not allowed (DCT_NONE).
+  cricket::DataChannelType data_channel_type_;
   talk_base::scoped_ptr<IceRestartAnswerLatch> ice_restart_latch_;
   sigslot::signal0<> SignalVoiceChannelDestroyed;
   sigslot::signal0<> SignalVideoChannelDestroyed;

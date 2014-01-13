@@ -50,8 +50,6 @@ public:
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitspeechchange);
 
-    virtual HTMLInputElement* toInputElement() { return this; }
-
     virtual bool shouldAutocomplete() const;
 
     // For ValidityState
@@ -75,9 +73,7 @@ public:
     bool getAllowedValueStep(Decimal*) const;
     StepRange createStepRange(AnyStepHandling) const;
 
-#if ENABLE(DATALIST_ELEMENT)
     Decimal findClosestTickMarkValue(const Decimal&);
-#endif
 
     // Implementations of HTMLInputElement::stepUp() and stepDown().
     void stepUp(int, ExceptionCode&);
@@ -96,10 +92,7 @@ public:
     bool isPasswordField() const;
     bool isCheckbox() const;
     bool isRangeControl() const;
-
-#if ENABLE(INPUT_TYPE_COLOR)
     bool isColorControl() const;
-#endif
 
     // FIXME: It's highly likely that any call site calling this function should instead
     // be using a different one. Many input elements behave like text fields, and in addition
@@ -115,7 +108,6 @@ public:
     bool isTelephoneField() const;
     bool isURLField() const;
     bool isDateField() const;
-    bool isDateTimeField() const;
     bool isDateTimeLocalField() const;
     bool isMonthField() const;
     bool isTimeField() const;
@@ -129,7 +121,7 @@ public:
     virtual HTMLElement* innerTextElement() const;
     HTMLElement* innerBlockElement() const;
     HTMLElement* innerSpinButtonElement() const;
-    HTMLElement* resultsButtonElement() const;
+    HTMLElement* searchDecorationElement() const;
     HTMLElement* cancelButtonElement() const;
 #if ENABLE(INPUT_SPEECH)
     HTMLElement* speechButtonElement() const;
@@ -184,11 +176,18 @@ public:
 
     void setValueFromRenderer(const String&);
 
-    bool canHaveSelection() const;
+    int selectionStartForBinding(ExceptionCode&) const;
+    int selectionEndForBinding(ExceptionCode&) const;
+    String selectionDirectionForBinding(ExceptionCode&) const;
+    void setSelectionStartForBinding(int, ExceptionCode&);
+    void setSelectionEndForBinding(int, ExceptionCode&);
+    void setSelectionDirectionForBinding(const String&, ExceptionCode&);
+    void setSelectionRangeForBinding(int start, int end, ExceptionCode&);
+    void setSelectionRangeForBinding(int start, int end, const String& direction, ExceptionCode&);
 
     virtual bool rendererIsNeeded(const NodeRenderingContext&);
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
-    virtual void detach();
+    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
 
     // FIXME: For isActivatedSubmit and setActivatedSubmit, we should use the NVI-idiom here by making
     // it private virtual in all classes and expose a public method in HTMLFormControlElement to call
@@ -235,18 +234,15 @@ public:
     bool canReceiveDroppedFiles() const;
     void setCanReceiveDroppedFiles(bool);
 
-    void addSearchResult();
     void onSearch();
 
     void updateClearButtonVisibility();
 
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
-#if ENABLE(DATALIST_ELEMENT)
     HTMLElement* list() const;
     HTMLDataListElement* dataList() const;
     void listAttributeTargetChanged();
-#endif
 
     HTMLInputElement* checkedRadioButtonForGroup() const;
     bool isInRequiredRadioButtonGroup();
@@ -259,10 +255,8 @@ public:
 
     void cacheSelectionInResponseToSetValue(int caretOffset) { cacheSelection(caretOffset, caretOffset, SelectionHasNoDirection); }
 
-#if ENABLE(INPUT_TYPE_COLOR)
     // For test purposes.
     void selectColorInColorChooser(const Color&);
-#endif
 
     String defaultToolTip() const;
 
@@ -347,7 +341,7 @@ private:
 
     virtual void copyNonAttributePropertiesFromElement(const Element&);
 
-    virtual void attach();
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
 
     virtual bool appendFormData(FormDataList&, bool);
 
@@ -384,11 +378,11 @@ private:
     
     virtual void subtreeHasChanged();
 
-#if ENABLE(DATALIST_ELEMENT)
     void resetListAttributeTargetObserver();
-#endif
     void parseMaxLengthAttribute(const AtomicString&);
     void updateValueIfNeeded();
+
+    bool canHaveSelection() const;
 
     // Returns null if this isn't associated with any radio button group.
     CheckedRadioButtons* checkedRadioButtons() const;
@@ -411,9 +405,7 @@ private:
     bool m_isActivatedSubmit : 1;
     unsigned m_autocomplete : 2; // AutoCompleteSetting
     bool m_isAutofilled : 1;
-#if ENABLE(DATALIST_ELEMENT)
     bool m_hasNonEmptyList : 1;
-#endif
     bool m_stateRestored : 1;
     bool m_parsingInProgress : 1;
     bool m_valueAttributeWasUpdatedAfterParsing : 1;
@@ -425,10 +417,24 @@ private:
     // that it lives as long as its owning element lives. If we move the loader into
     // the ImageInput object we may delete the loader while this element lives on.
     OwnPtr<HTMLImageLoader> m_imageLoader;
-#if ENABLE(DATALIST_ELEMENT)
     OwnPtr<ListAttributeTargetObserver> m_listAttributeTargetObserver;
-#endif
 };
+
+inline HTMLInputElement* toHTMLInputElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::inputTag));
+    return static_cast<HTMLInputElement*>(node);
+}
+
+inline const HTMLInputElement* toHTMLInputElement(const Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::inputTag));
+    return static_cast<const HTMLInputElement*>(node);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toHTMLElement(const HTMLElement*);
+
 
 } //namespace
 #endif

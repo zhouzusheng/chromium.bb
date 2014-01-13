@@ -34,7 +34,6 @@
 #include "core/page/animation/CSSPropertyAnimation.h"
 #include "core/page/animation/ImplicitAnimation.h"
 #include "core/page/animation/KeyframeAnimation.h"
-#include "core/rendering/RenderObject.h"
 #include "core/rendering/style/RenderStyle.h"
 
 namespace WebCore {
@@ -121,7 +120,7 @@ void CompositeAnimation::updateTransitions(RenderObject* renderer, RenderStyle* 
                 RenderStyle* fromStyle = keyframeAnim ? keyframeAnim->unanimatedStyle() : currentStyle;
 
                 // See if there is a current transition for this prop
-                ImplicitAnimation* implAnim = m_transitions.get(prop).get();
+                ImplicitAnimation* implAnim = m_transitions.get(prop);
                 bool equal = true;
 
                 if (implAnim) {
@@ -356,6 +355,45 @@ double CompositeAnimation::timeToNextService() const
     return minT;
 }
 
+double CompositeAnimation::timeToNextEvent() const
+{
+    // Returns the time at which next service to trigger events is required. -1 means no service is required. 0 means
+    // service is required now, and > 0 means service is required that many seconds in the future.
+    double minT = -1;
+
+    if (!m_transitions.isEmpty()) {
+        CSSPropertyTransitionsMap::const_iterator transitionsEnd = m_transitions.end();
+        for (CSSPropertyTransitionsMap::const_iterator it = m_transitions.begin(); it != transitionsEnd; ++it) {
+            ImplicitAnimation* transition = it->value.get();
+            double t = -1;
+            bool isLooping;
+            if (transition)
+                transition->getTimeToNextEvent(t, isLooping);
+            if (t < minT || minT == -1)
+                minT = t;
+            if (!minT)
+                return 0;
+        }
+    }
+    if (!m_keyframeAnimations.isEmpty()) {
+        m_keyframeAnimations.checkConsistency();
+        AnimationNameMap::const_iterator animationsEnd = m_keyframeAnimations.end();
+        for (AnimationNameMap::const_iterator it = m_keyframeAnimations.begin(); it != animationsEnd; ++it) {
+            KeyframeAnimation* animation = it->value.get();
+            double t = -1;
+            bool isLooping;
+            if (animation)
+                animation->getTimeToNextEvent(t, isLooping);
+            if (t < minT || minT == -1)
+                minT = t;
+            if (!minT)
+                return 0;
+        }
+    }
+
+    return minT;
+}
+
 PassRefPtr<KeyframeAnimation> CompositeAnimation::getAnimationForProperty(CSSPropertyID property) const
 {
     RefPtr<KeyframeAnimation> retval;
@@ -474,51 +512,31 @@ bool CompositeAnimation::isAnimatingProperty(CSSPropertyID property, bool accele
     return false;
 }
 
-bool CompositeAnimation::pauseAnimationAtTime(const AtomicString& name, double t)
+void CompositeAnimation::pauseAnimationsForTesting(double t)
 {
     m_keyframeAnimations.checkConsistency();
 
-    RefPtr<KeyframeAnimation> keyframeAnim = m_keyframeAnimations.get(name.impl());
-    if (!keyframeAnim || !keyframeAnim->running())
-        return false;
+    AnimationNameMap::const_iterator animationsEnd = m_keyframeAnimations.end();
+    for (AnimationNameMap::const_iterator it = m_keyframeAnimations.begin(); it != animationsEnd; ++it) {
+        RefPtr<KeyframeAnimation> keyframeAnim = it->value;
+        if (!keyframeAnim || !keyframeAnim->running())
+            continue;
 
-    double count = keyframeAnim->m_animation->iterationCount();
-    if ((t >= 0.0) && ((count == CSSAnimationData::IterationCountInfinite) || (t <= count * keyframeAnim->duration()))) {
-        keyframeAnim->freezeAtTime(t);
-        return true;
+        double count = keyframeAnim->m_animation->iterationCount();
+        if ((t >= 0.0) && ((count == CSSAnimationData::IterationCountInfinite) || (t <= count * keyframeAnim->duration())))
+            keyframeAnim->freezeAtTime(t);
     }
 
-    return false;
-}
+    CSSPropertyTransitionsMap::const_iterator transitionsEnd = m_transitions.end();
+    for (CSSPropertyTransitionsMap::const_iterator it = m_transitions.begin(); it != transitionsEnd; ++it) {
+        RefPtr<ImplicitAnimation> implAnim = it->value;
 
-bool CompositeAnimation::pauseTransitionAtTime(CSSPropertyID property, double t)
-{
-    if ((property < firstCSSProperty) || (property >= firstCSSProperty + numCSSProperties))
-        return false;
+        if (!implAnim->running())
+            continue;
 
-    ImplicitAnimation* implAnim = m_transitions.get(property).get();
-    if (!implAnim) {
-        // Check to see if this property is being animated via a shorthand.
-        // This code is only used for testing, so performance is not critical here.
-        HashSet<CSSPropertyID> shorthandProperties = CSSPropertyAnimation::animatableShorthandsAffectingProperty(property);
-        bool anyPaused = false;
-        HashSet<CSSPropertyID>::const_iterator end = shorthandProperties.end();
-        for (HashSet<CSSPropertyID>::const_iterator it = shorthandProperties.begin(); it != end; ++it) {
-            if (pauseTransitionAtTime(*it, t))
-                anyPaused = true;
-        }
-        return anyPaused;
+        if ((t >= 0.0) && (t <= implAnim->duration()))
+            implAnim->freezeAtTime(t);
     }
-
-    if (!implAnim->running())
-        return false;
-
-    if ((t >= 0.0) && (t <= implAnim->duration())) {
-        implAnim->freezeAtTime(t);
-        return true;
-    }
-
-    return false;
 }
 
 unsigned CompositeAnimation::numberOfActiveAnimations() const

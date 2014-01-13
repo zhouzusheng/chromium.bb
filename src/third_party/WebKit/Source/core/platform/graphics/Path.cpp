@@ -32,44 +32,14 @@
 #include <math.h>
 #include "core/platform/graphics/FloatPoint.h"
 #include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/PathTraversalState.h"
-#include "core/platform/graphics/StrokeStyleApplier.h"
-#include "core/platform/graphics/skia/PlatformContextSkia.h"
+#include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/skia/SkiaUtils.h"
 #include "core/platform/graphics/transforms/AffineTransform.h"
 #include "third_party/skia/include/core/SkPath.h"
+#include "third_party/skia/include/core/SkPathMeasure.h"
 #include <wtf/MathExtras.h>
 
 namespace WebCore {
-
-static void pathLengthApplierFunction(void* info, const PathElement* element)
-{
-    PathTraversalState& traversalState = *static_cast<PathTraversalState*>(info);
-    if (traversalState.m_success)
-        return;
-    FloatPoint* points = element->points;
-    float segmentLength = 0;
-    switch (element->type) {
-        case PathElementMoveToPoint:
-            segmentLength = traversalState.moveTo(points[0]);
-            break;
-        case PathElementAddLineToPoint:
-            segmentLength = traversalState.lineTo(points[0]);
-            break;
-        case PathElementAddQuadCurveToPoint:
-            segmentLength = traversalState.quadraticBezierTo(points[0], points[1]);
-            break;
-        case PathElementAddCurveToPoint:
-            segmentLength = traversalState.cubicBezierTo(points[0], points[1], points[2]);
-            break;
-        case PathElementCloseSubpath:
-            segmentLength = traversalState.closeSubpath();
-            break;
-    }
-    traversalState.m_totalLength += segmentLength; 
-    traversalState.processSegment();
-}
 
 Path::Path()
     : m_path()
@@ -103,24 +73,14 @@ bool Path::contains(const FloatPoint& point, WindRule rule) const
     return SkPathContainsPoint(path, point, rule == RULE_NONZERO ? SkPath::kWinding_FillType : SkPath::kEvenOdd_FillType);
 }
 
-bool Path::strokeContains(StrokeStyleApplier* applier, const FloatPoint& point) const
+bool Path::strokeContains(const FloatPoint& point, const StrokeData& strokeData) const
 {
-    // FIXME(crbug.com/229267): Rewrite this to not require a scratch context.
-    GraphicsContext* scratch = scratchContext();
-    scratch->save();
-
-    ASSERT(applier);
-    applier->strokeStyle(scratch);
-
     SkPaint paint;
-    scratch->platformContext()->setupPaintForStroking(&paint, 0, 0);
+    strokeData.setupPaint(&paint);
     SkPath strokePath;
     paint.getFillPath(m_path, &strokePath);
 
-    bool contains = SkPathContainsPoint(&strokePath, point, SkPath::kWinding_FillType);
-
-    scratch->restore();
-    return contains;
+    return SkPathContainsPoint(&strokePath, point, SkPath::kWinding_FillType);
 }
 
 FloatRect Path::boundingRect() const
@@ -128,23 +88,14 @@ FloatRect Path::boundingRect() const
     return m_path.getBounds();
 }
 
-FloatRect Path::strokeBoundingRect(StrokeStyleApplier* applier) const
+FloatRect Path::strokeBoundingRect(const StrokeData& strokeData) const
 {
-    // FIXME(crbug.com/229267): Rewrite this to not require a scratch context.
-    GraphicsContext* scratch = scratchContext();
-    scratch->save();
-
-    if (applier)
-        applier->strokeStyle(scratch);
-
     SkPaint paint;
-    scratch->platformContext()->setupPaintForStroking(&paint, 0, 0);
+    strokeData.setupPaint(&paint);
     SkPath boundingPath;
     paint.getFillPath(m_path, &boundingPath);
 
-    FloatRect boundingRect = boundingPath.getBounds();
-    scratch->restore();
-    return boundingRect;
+    return boundingPath.getBounds();
 }
 
 static FloatPoint* convertPathPoints(FloatPoint dst[], const SkPoint src[], int count)
@@ -187,6 +138,8 @@ void Path::apply(void* info, PathApplierFunction function) const
             break;
         case SkPath::kDone_Verb:
             return;
+        default: // place-holder for kConic_Verb, when that lands from skia
+            break;
         }
         function(info, &pathElement);
     }
@@ -199,27 +152,54 @@ void Path::transform(const AffineTransform& xform)
 
 float Path::length() const
 {
-    PathTraversalState traversalState(PathTraversalState::TraversalTotalLength);
-    apply(&traversalState, pathLengthApplierFunction);
-    return traversalState.m_totalLength;
+    SkScalar length = 0;
+    SkPathMeasure measure(m_path, false);
+
+    do {
+        length += measure.getLength();
+    } while (measure.nextContour());
+
+    return SkScalarToFloat(length);
 }
 
 FloatPoint Path::pointAtLength(float length, bool& ok) const
 {
-    PathTraversalState traversalState(PathTraversalState::TraversalPointAtLength);
-    traversalState.m_desiredLength = length;
-    apply(&traversalState, pathLengthApplierFunction);
-    ok = traversalState.m_success;
-    return traversalState.m_current;
+    FloatPoint point;
+    float normal;
+    ok = pointAndNormalAtLength(length, point, normal);
+    return point;
 }
 
 float Path::normalAngleAtLength(float length, bool& ok) const
 {
-    PathTraversalState traversalState(PathTraversalState::TraversalNormalAngleAtLength);
-    traversalState.m_desiredLength = length ? length : std::numeric_limits<float>::epsilon();
-    apply(&traversalState, pathLengthApplierFunction);
-    ok = traversalState.m_success;
-    return traversalState.m_normalAngle;
+    FloatPoint point;
+    float normal;
+    ok = pointAndNormalAtLength(length, point, normal);
+    return normal;
+}
+
+bool Path::pointAndNormalAtLength(float length, FloatPoint& point, float& normal) const
+{
+    SkPathMeasure measure(m_path, false);
+
+    do {
+        SkScalar contourLength = measure.getLength();
+        if (length <= contourLength) {
+            SkVector tangent;
+            SkPoint position;
+
+            if (measure.getPosTan(length, &position, &tangent)) {
+                normal = rad2deg(SkScalarToFloat(SkScalarATan2(tangent.fY, tangent.fX)));
+                point = FloatPoint(SkScalarToFloat(position.fX), SkScalarToFloat(position.fY));
+                return true;
+            }
+        }
+        length -= contourLength;
+    } while (measure.nextContour());
+
+    normal = 0;
+    point = FloatPoint(0, 0);
+    return false;
 }
 
 void Path::clear()

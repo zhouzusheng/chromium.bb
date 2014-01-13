@@ -26,11 +26,10 @@
 #ifndef OESVertexArrayObject_h
 #define OESVertexArrayObject_h
 
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
-#include "core/html/canvas/WebGLVertexArrayObjectOES.h"
 #include "core/platform/graphics/GraphicsTypes3D.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/UnusedParam.h>
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
@@ -39,15 +38,15 @@ class WebGLVertexArrayObjectOES;
 
 typedef int ExceptionCode;
 
-class OESVertexArrayObject : public WebGLExtension {
+class OESVertexArrayObject : public WebGLExtension, public ScriptWrappable {
 public:
-    static PassOwnPtr<OESVertexArrayObject> create(WebGLRenderingContext*);
+    static PassRefPtr<OESVertexArrayObject> create(WebGLRenderingContext*);
     static bool supported(WebGLRenderingContext*);
     static const char* getExtensionName();
 
     virtual ~OESVertexArrayObject();
     virtual ExtensionName getName() const;
-    
+
     PassRefPtr<WebGLVertexArrayObjectOES> createVertexArrayOES();
     void deleteVertexArrayOES(WebGLVertexArrayObjectOES*);
     GC3Dboolean isVertexArrayOES(WebGLVertexArrayObjectOES*);

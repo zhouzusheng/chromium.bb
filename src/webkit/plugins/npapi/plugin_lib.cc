@@ -8,10 +8,9 @@
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/metrics/stats_counters.h"
-#include "base/string_util.h"
-#include "webkit/glue/webkit_glue.h"
-#include "webkit/plugins/npapi/plugin_instance.h"
+#include "base/strings/string_util.h"
 #include "webkit/plugins/npapi/plugin_host.h"
+#include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 
 namespace webkit {
@@ -32,7 +31,7 @@ PluginLib* PluginLib::CreatePluginLib(const base::FilePath& filename) {
 
   for (size_t i = 0; i < g_loaded_libs->size(); ++i) {
     if ((*g_loaded_libs)[i]->plugin_info().path == filename)
-      return (*g_loaded_libs)[i];
+      return (*g_loaded_libs)[i].get();
   }
 
   webkit::WebPluginInfo info;
@@ -312,7 +311,7 @@ void PluginLib::Unload() {
       LOG_IF(ERROR, PluginList::DebugPluginLoading())
           << "Scheduling delayed unload for plugin "
           << web_plugin_info_.path.value();
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(&FreePluginLibraryHelper,
                      web_plugin_info_.path,

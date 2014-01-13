@@ -17,12 +17,12 @@
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCanvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebLayer.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
+#include "third_party/WebKit/public/platform/WebCanvas.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebLayer.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
+#include "third_party/WebKit/public/web/WebCursorInfo.h"
+#include "third_party/WebKit/public/web/WebWidget.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gl/gpu_preference.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
@@ -406,26 +406,6 @@ void RenderWidgetFullscreenPepper::DidChangeCursor(
   didChangeCursor(cursor);
 }
 
-webkit::ppapi::PluginDelegate::PlatformContext3D*
-RenderWidgetFullscreenPepper::CreateContext3D() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableFlashFullscreen3d))
-    return NULL;
-  return new PlatformContext3DImpl;
-}
-
-void RenderWidgetFullscreenPepper::ReparentContext(
-    webkit::ppapi::PluginDelegate::PlatformContext3D* context) {
-  PlatformContext3DImpl* context_impl =
-      static_cast<PlatformContext3DImpl*>(context);
-
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableFlashFullscreen3d))
-    context_impl->DestroyParentContextProviderAndBackingTexture();
-  else
-    context_impl->SetParentAndCreateBackingTextureIfNeeded();
-}
-
 void RenderWidgetFullscreenPepper::SetLayer(WebKit::WebLayer* layer) {
   layer_ = layer;
   bool compositing = !!layer_;
@@ -501,15 +481,11 @@ RenderWidgetFullscreenPepper::GetBitmapForOptimizedPluginPaint(
   return NULL;
 }
 
-void RenderWidgetFullscreenPepper::OnResize(const gfx::Size& size,
-    const gfx::Size& physical_backing_size,
-    float overdraw_bottom_height,
-    const gfx::Rect& resizer_rect,
-    bool is_fullscreen) {
+void RenderWidgetFullscreenPepper::OnResize(
+    const ViewMsg_Resize_Params& params) {
   if (layer_)
-    layer_->setBounds(WebKit::WebSize(size));
-  RenderWidget::OnResize(size, physical_backing_size, overdraw_bottom_height,
-                         resizer_rect, is_fullscreen);
+    layer_->setBounds(WebKit::WebSize(params.new_size));
+  RenderWidget::OnResize(params);
 }
 
 WebWidget* RenderWidgetFullscreenPepper::CreateWebWidget() {

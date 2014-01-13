@@ -7,12 +7,17 @@
 
 #include <map>
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "content/port/common/input_event_ack_state.h"
 #include "content/renderer/render_view_impl.h"
-#include "ipc/ipc_channel_proxy.h"
 
 namespace base {
 class MessageLoopProxy;
+}
+
+namespace cc {
+class InputHandler;
 }
 
 namespace WebKit {
@@ -21,55 +26,53 @@ class WebInputEvent;
 
 namespace content {
 
-class InputEventFilter;
+class InputHandlerWrapper;
+class InputHandlerManagerClient;
 
-// InputHandlerManager class manages WebCompositorInputHandler instances for
+// InputHandlerManager class manages InputHandlerProxy instances for
 // the WebViews in this renderer.
 class InputHandlerManager {
  public:
-  // |main_listener| refers to the central IPC message listener that lives on
-  // the main thread, where all incoming IPC messages are first handled.
-  // |message_loop_proxy| is the MessageLoopProxy of the compositor thread.
-  // The underlying MessageLoop must outlive this object.
+  // |message_loop_proxy| is the MessageLoopProxy of the compositor thread. Both
+  // the underlying MessageLoop and supplied |client| must outlive this object.
   InputHandlerManager(
-      IPC::Listener* main_listener,
-      const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy);
+      const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy,
+      InputHandlerManagerClient* client);
   ~InputHandlerManager();
 
-  // This MessageFilter should be added to allow input events to be redirected
-  // to the compositor's thread.
-  IPC::ChannelProxy::MessageFilter* GetMessageFilter() const;
-
   // Callable from the main thread only.
-  void AddInputHandler(int routing_id,
-                       int input_handler_id,
-                       const base::WeakPtr<RenderViewImpl>& render_view_impl);
+  void AddInputHandler(
+      int routing_id,
+      const base::WeakPtr<cc::InputHandler>& input_handler,
+      const base::WeakPtr<RenderViewImpl>& render_view_impl);
 
-
- private:
   // Callback only from the compositor's thread.
   void RemoveInputHandler(int routing_id);
 
   // Called from the compositor's thread.
-  void HandleInputEvent(int routing_id,
-                        const WebKit::WebInputEvent* input_event);
+  InputEventAckState HandleInputEvent(int routing_id,
+                                      const WebKit::WebInputEvent* input_event,
+                                      const ui::LatencyInfo& latency_info);
 
+  // Called from the compositor's thread.
+  void DidOverscroll(int routing_id,
+                     gfx::Vector2dF accumulated_overscroll,
+                     gfx::Vector2dF current_fling_velocity);
+
+ private:
   // Called from the compositor's thread.
   void AddInputHandlerOnCompositorThread(
       int routing_id,
-      int input_handler_id,
       const scoped_refptr<base::MessageLoopProxy>& main_loop,
+      const base::WeakPtr<cc::InputHandler>& input_handler,
       const base::WeakPtr<RenderViewImpl>& render_view_impl);
-
-  class InputHandlerWrapper;
-  friend class InputHandlerWrapper;
 
   typedef std::map<int,  // routing_id
                    scoped_refptr<InputHandlerWrapper> > InputHandlerMap;
   InputHandlerMap input_handlers_;
 
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
-  scoped_refptr<InputEventFilter> filter_;
+  InputHandlerManagerClient* client_;
 };
 
 }  // namespace content

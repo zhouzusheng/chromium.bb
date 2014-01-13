@@ -12,6 +12,7 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/global_request_id.h"
 #include "content/public/browser/resource_controller.h"
 #include "content/public/common/resource_response.h"
 #include "net/http/http_response_headers.h"
@@ -27,7 +28,7 @@ void OnCrossSiteResponseHelper(int render_process_id,
                                                        render_view_id);
   if (rvh && rvh->GetDelegate()->GetRendererManagementDelegate()) {
     rvh->GetDelegate()->GetRendererManagementDelegate()->OnCrossSiteResponse(
-        render_process_id, request_id);
+        rvh, GlobalRequestID(render_process_id, request_id));
   }
 }
 
@@ -91,9 +92,8 @@ bool CrossSiteResourceHandler::OnResponseStarted(
   // In both cases, the pending RenderViewHost will stick around until the next
   // cross-site navigation, since we are unable to tell when to destroy it.
   // See RenderViewHostManager::RendererAbortedProvisionalLoad.
-  if (info->is_download() ||
-      (response->head.headers &&
-       response->head.headers->response_code() == 204)) {
+  if (info->is_download() || (response->head.headers.get() &&
+                              response->head.headers->response_code() == 204)) {
     return next_handler_->OnResponseStarted(request_id, response, defer);
   }
 

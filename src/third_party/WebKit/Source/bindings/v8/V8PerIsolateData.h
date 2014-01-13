@@ -27,6 +27,7 @@
 #define V8PerIsolateData_h
 
 #include "bindings/v8/ScopedPersistent.h"
+#include "bindings/v8/UnsafePersistent.h"
 #include "bindings/v8/WrapperTypeInfo.h"
 #include <v8.h>
 #include "wtf/Forward.h"
@@ -38,7 +39,6 @@ namespace WebCore {
 
 class DOMDataStore;
 class GCEventData;
-class IntegerCache;
 class StringCache;
 class V8HiddenPropertyName;
 struct WrapperTypeInfo;
@@ -63,7 +63,7 @@ public:
     }
     static void dispose(v8::Isolate*);
 
-    typedef HashMap<void*, v8::Persistent<v8::FunctionTemplate> > TemplateMap;
+    typedef HashMap<void*, UnsafePersistent<v8::FunctionTemplate> > TemplateMap;
 
     TemplateMap& rawTemplateMap(WrapperWorldType worldType)
     {
@@ -80,17 +80,16 @@ public:
     }
 
     v8::Handle<v8::FunctionTemplate> toStringTemplate();
-    v8::Persistent<v8::FunctionTemplate>& lazyEventListenerToStringTemplate()
+    v8::Handle<v8::FunctionTemplate> lazyEventListenerToStringTemplate()
     {
-        return m_lazyEventListenerToStringTemplate;
+        return v8::Local<v8::FunctionTemplate>::New(m_isolate, m_lazyEventListenerToStringTemplate);
     }
 
     StringCache* stringCache() { return m_stringCache.get(); }
-    IntegerCache* integerCache() { return m_integerCache.get(); }
 
     v8::Handle<v8::Value> v8Null() { return m_v8Null.get(); }
 
-    v8::Persistent<v8::Value> ensureLiveRoot();
+    v8::Persistent<v8::Value>& ensureLiveRoot();
 
     void visitExternalStrings(ExternalStringVisitor*);
     DOMDataList& allStores() { return m_domDataList; }
@@ -136,9 +135,9 @@ public:
     bool shouldCollectGarbageSoon() const { return m_shouldCollectGarbageSoon; }
 
     bool hasPrivateTemplate(WrapperWorldType, void* privatePointer);
-    v8::Persistent<v8::FunctionTemplate> privateTemplate(WrapperWorldType, void* privatePointer, v8::InvocationCallback, v8::Handle<v8::Value> data, v8::Handle<v8::Signature>, int length = 0);
+    v8::Handle<v8::FunctionTemplate> privateTemplate(WrapperWorldType, void* privatePointer, v8::FunctionCallback, v8::Handle<v8::Value> data, v8::Handle<v8::Signature>, int length = 0);
 
-    v8::Persistent<v8::FunctionTemplate> rawTemplate(WrapperTypeInfo*, WrapperWorldType);
+    v8::Handle<v8::FunctionTemplate> rawTemplate(WrapperTypeInfo*, WrapperWorldType);
 
     bool hasInstance(WrapperTypeInfo*, v8::Handle<v8::Value>, WrapperWorldType);
 
@@ -147,7 +146,7 @@ public:
 private:
     explicit V8PerIsolateData(v8::Isolate*);
     ~V8PerIsolateData();
-    static v8::Handle<v8::Value> constructorOfToString(const v8::Arguments&);
+    static void constructorOfToString(const v8::FunctionCallbackInfo<v8::Value>&);
 
     v8::Isolate* m_isolate;
     TemplateMap m_rawTemplatesForMainWorld;
@@ -157,7 +156,6 @@ private:
     ScopedPersistent<v8::FunctionTemplate> m_toStringTemplate;
     v8::Persistent<v8::FunctionTemplate> m_lazyEventListenerToStringTemplate;
     OwnPtr<StringCache> m_stringCache;
-    OwnPtr<IntegerCache> m_integerCache;
     ScopedPersistent<v8::Value> m_v8Null;
 
     Vector<DOMDataStore*> m_domDataList;

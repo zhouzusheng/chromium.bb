@@ -4,7 +4,7 @@
 
 /**
  * @fileoverview Imports text files in the Linux event trace format into the
- * model. This format is output both by sched_trace and by Linux's perf
+ * Tracemodel. This format is output both by sched_trace and by Linux's perf
  * tool.
  *
  * This importer assumes the events arrive as a string. The unit tests provide
@@ -18,7 +18,7 @@
  */
 'use strict';
 
-base.require('tracing.model');
+base.require('tracing.trace_model');
 base.require('tracing.color_scheme');
 base.require('tracing.importer.linux_perf.bus_parser');
 base.require('tracing.importer.linux_perf.clock_parser');
@@ -63,16 +63,17 @@ base.exportTo('tracing.importer', function() {
         else
           name = this.lastActiveComm;
 
-        var slice = new tracing.model.Slice('', name,
-                                            tracing.getStringColorId(name),
-                                            this.lastActiveTs,
-                                            {
-                                              comm: this.lastActiveComm,
-                                              tid: this.lastActivePid,
-                                              prio: this.lastActivePrio,
-                                              stateWhenDescheduled: prevState
-                                            },
-                                            duration);
+        var slice = new tracing.trace_model.Slice(
+            '', name,
+            tracing.getStringColorId(name),
+            this.lastActiveTs,
+            {
+              comm: this.lastActiveComm,
+              tid: this.lastActivePid,
+              prio: this.lastActivePrio,
+              stateWhenDescheduled: prevState
+            },
+            duration);
         this.cpu.slices.push(slice);
       }
 
@@ -134,7 +135,7 @@ base.exportTo('tracing.importer', function() {
       eventName: groups[6],
       details: groups[7]
     };
-  }
+  };
   TestExports.lineParserWithTGID = lineParserWithTGID;
 
   // Matches the default trace record in 3.2 and later (includes irq-info):
@@ -156,13 +157,13 @@ base.exportTo('tracing.importer', function() {
       eventName: groups[5],
       details: groups[6]
     };
-  }
+  };
   TestExports.lineParserWithIRQInfo = lineParserWithIRQInfo;
 
   // Matches the default trace record pre-3.2:
   //          <idle>-0     [001]  1.23: sched_switch
   var lineREWithLegacyFmt =
-    /^\s*(.+)-(\d+)\s+\[(\d+)\]\s*(\d+\.\d+):\s+(\S+):\s(.*)$/;
+      /^\s*(.+)-(\d+)\s+\[(\d+)\]\s*(\d+\.\d+):\s+(\S+):\s(.*)$/;
   var lineParserWithLegacyFmt = function(line) {
     var groups = lineREWithLegacyFmt.exec(line);
     if (!groups) {
@@ -176,7 +177,7 @@ base.exportTo('tracing.importer', function() {
       eventName: groups[5],
       details: groups[6]
     };
-  }
+  };
   TestExports.lineParserWithLegacyFmt = lineParserWithLegacyFmt;
 
   // Matches the trace_event_clock_sync record
@@ -197,6 +198,8 @@ base.exportTo('tracing.importer', function() {
    * recognized; otherwise null.
    */
   function autoDetectLineParser(line) {
+    if (line[0] == '{')
+      return false;
     if (lineREWithTGID.test(line))
       return lineParserWithTGID;
     if (lineREWithIRQInfo.test(line))
@@ -235,7 +238,7 @@ base.exportTo('tracing.importer', function() {
   };
 
   LinuxPerfImporter._extractEventsFromSystraceHTML = function(
-    incoming_events, produce_result) {
+      incoming_events, produce_result) {
     var failure = {ok: false};
     if (produce_result === undefined)
       produce_result = true;
@@ -300,12 +303,16 @@ base.exportTo('tracing.importer', function() {
     events[events.length - 1] = newLastEvent;
 
     return {ok: true,
-            lines: produce_result ? events : undefined,
-            events_begin_at_line: events_begin_at_line};
-  }
+      lines: produce_result ? events : undefined,
+      events_begin_at_line: events_begin_at_line};
+  };
 
   LinuxPerfImporter.prototype = {
     __proto__: Object.prototype,
+
+    extractSubtrace: function() {
+      return undefined;
+    },
 
     get model() {
       return this.model_;
@@ -391,6 +398,13 @@ base.exportTo('tracing.importer', function() {
     },
 
     /**
+     * Called by the model to join references between objects, after final model
+     * bounds have been computed.
+     */
+    joinRefs: function() {
+    },
+
+    /**
      * Builds the cpuSlices array on each thread based on our knowledge of what
      * each Cpu is doing.  This is done only for Threads that are
      * already in the model, on the assumption that not having any traced data
@@ -455,11 +469,11 @@ base.exportTo('tracing.importer', function() {
             var wakeup = wakeups.shift();
             var wakeupDuration = slice.start - wakeup.ts;
             var args = {'wakeup from tid': wakeup.fromTid};
-            slices.push(new tracing.model.Slice('', 'Runnable', runnableId,
-                wakeup.ts, args, wakeupDuration));
+            slices.push(new tracing.trace_model.Slice(
+                '', 'Runnable', runnableId, wakeup.ts, args, wakeupDuration));
           }
 
-          slices.push(new tracing.model.Slice('', 'Running', runningId,
+          slices.push(new tracing.trace_model.Slice('', 'Running', runningId,
               slice.start, {}, slice.duration));
         }
 
@@ -481,55 +495,57 @@ base.exportTo('tracing.importer', function() {
             if (wakeup !== undefined) {
               midDuration = wakeup.ts - prevSlice.end;
             }
-            slices.push(new tracing.model.Slice('', title, id, prevSlice.end,
-              {}, midDuration));
+            slices.push(new tracing.trace_model.Slice(
+                '', title, id, prevSlice.end, {}, midDuration));
             if (wakeup !== undefined) {
               var wakeupDuration = nextSlice.start - wakeup.ts;
               var args = {'wakeup from tid': wakeup.fromTid};
-              slices.push(new tracing.model.Slice('', 'Runnable', runnableId,
-                  wakeup.ts, args, wakeupDuration));
+              slices.push(new tracing.trace_model.Slice(
+                  '', 'Runnable', runnableId, wakeup.ts, args, wakeupDuration));
               wakeup = undefined;
             }
-          }
+          };
 
           if (prevSlice.args.stateWhenDescheduled == 'S') {
             pushSleep('Sleeping', sleepingId);
           } else if (prevSlice.args.stateWhenDescheduled == 'R' ||
                      prevSlice.args.stateWhenDescheduled == 'R+') {
-            slices.push(new tracing.model.Slice('', 'Runnable', runnableId,
-                prevSlice.end, {}, midDuration));
+            slices.push(new tracing.trace_model.Slice(
+                '', 'Runnable', runnableId, prevSlice.end, {}, midDuration));
           } else if (prevSlice.args.stateWhenDescheduled == 'D') {
             pushSleep('Uninterruptible Sleep', ioWaitId);
           } else if (prevSlice.args.stateWhenDescheduled == 'T') {
-            slices.push(new tracing.model.Slice('', '__TASK_STOPPED',
+            slices.push(new tracing.trace_model.Slice('', '__TASK_STOPPED',
                 ioWaitId, prevSlice.end, {}, midDuration));
           } else if (prevSlice.args.stateWhenDescheduled == 't') {
-            slices.push(new tracing.model.Slice('', 'debug', ioWaitId,
+            slices.push(new tracing.trace_model.Slice('', 'debug', ioWaitId,
                 prevSlice.end, {}, midDuration));
           } else if (prevSlice.args.stateWhenDescheduled == 'Z') {
-            slices.push(new tracing.model.Slice('', 'Zombie', ioWaitId,
+            slices.push(new tracing.trace_model.Slice('', 'Zombie', ioWaitId,
                 prevSlice.end, {}, midDuration));
           } else if (prevSlice.args.stateWhenDescheduled == 'X') {
-            slices.push(new tracing.model.Slice('', 'Exit Dead', ioWaitId,
+            slices.push(new tracing.trace_model.Slice('', 'Exit Dead', ioWaitId,
                 prevSlice.end, {}, midDuration));
           } else if (prevSlice.args.stateWhenDescheduled == 'x') {
-            slices.push(new tracing.model.Slice('', 'Task Dead', ioWaitId,
+            slices.push(new tracing.trace_model.Slice('', 'Task Dead', ioWaitId,
                 prevSlice.end, {}, midDuration));
           } else if (prevSlice.args.stateWhenDescheduled == 'W') {
-            slices.push(new tracing.model.Slice('', 'WakeKill', ioWaitId,
+            slices.push(new tracing.trace_model.Slice('', 'WakeKill', ioWaitId,
                 prevSlice.end, {}, midDuration));
           } else if (prevSlice.args.stateWhenDescheduled == 'D|W') {
             pushSleep('Uninterruptable Sleep | WakeKill', ioWaitId);
           } else {
-            throw new Error('Unrecognized state: ') +
-                prevSlice.args.stateWhenDescheduled;
+            slices.push(new tracing.trace_model.Slice('', 'UNKNOWN', ioWaitId,
+                prevSlice.end, {}, midDuration));
+            this.model_.importErrors.push('Unrecognized sleep state: ' +
+                prevSlice.args.stateWhenDescheduled);
           }
 
-          slices.push(new tracing.model.Slice('', 'Running', runningId,
+          slices.push(new tracing.trace_model.Slice('', 'Running', runningId,
               nextSlice.start, {}, nextSlice.duration));
         }
         thread.cpuSlices = slices;
-      });
+      }, this);
     },
 
     /**
@@ -648,7 +664,7 @@ base.exportTo('tracing.importer', function() {
 
     importError: function(message) {
       this.model_.importErrors.push(
-        'Line ' + (this.lineNumberBase + this.lineNumber + 1) +
+          'Line ' + (this.lineNumberBase + this.lineNumber + 1) +
           ': ' + message);
     },
 
@@ -700,7 +716,7 @@ base.exportTo('tracing.importer', function() {
      */
     importCpuData: function() {
       var extractResult = LinuxPerfImporter._extractEventsFromSystraceHTML(
-        this.events_, true);
+          this.events_, true);
       if (extractResult.ok) {
         this.lineNumberBase = extractResult.events_begin_at_line;
         this.lines_ = extractResult.lines;
@@ -745,7 +761,7 @@ base.exportTo('tracing.importer', function() {
     }
   };
 
-  tracing.Model.registerImporter(LinuxPerfImporter);
+  tracing.TraceModel.registerImporter(LinuxPerfImporter);
 
   return {
     LinuxPerfImporter: LinuxPerfImporter,

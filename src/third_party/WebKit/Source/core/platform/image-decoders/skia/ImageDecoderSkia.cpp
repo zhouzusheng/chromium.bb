@@ -29,6 +29,7 @@
 
 #include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
@@ -40,6 +41,10 @@ ImageFrame::ImageFrame()
     , m_duration(0)
     , m_disposalMethod(DisposeNotSpecified)
     , m_premultiplyAlpha(true)
+    , m_requiredPreviousFrameIndex(notFound)
+#if !ASSERT_DISABLED
+    , m_requiredPreviousFrameIndexValid(false)
+#endif
 {
 }
 
@@ -61,6 +66,11 @@ ImageFrame& ImageFrame::operator=(const ImageFrame& other)
     // Be sure that this is called after we've called setStatus(), since we
     // look at our status to know what to do with the alpha value.
     setHasAlpha(other.hasAlpha());
+    // Copy raw fields to avoid ASSERT failure in requiredPreviousFrameIndex().
+    m_requiredPreviousFrameIndex = other.m_requiredPreviousFrameIndex;
+#if !ASSERT_DISABLED
+    m_requiredPreviousFrameIndexValid = other.m_requiredPreviousFrameIndexValid;
+#endif
     return *this;
 }
 
@@ -104,7 +114,7 @@ bool ImageFrame::setSize(int newWidth, int newHeight)
     return true;
 }
 
-PassNativeImagePtr ImageFrame::asNewNativeImage() const
+PassRefPtr<NativeImageSkia> ImageFrame::asNewNativeImage() const
 {
     return m_bitmap->clone();
 }
@@ -125,12 +135,6 @@ void ImageFrame::setHasAlpha(bool alpha)
     if (m_status != FrameComplete)
         isOpaque = false;
     m_bitmap->bitmap().setIsOpaque(isOpaque);
-}
-
-void ImageFrame::setColorProfile(const ColorProfile& colorProfile)
-{
-    // FIXME: Do we need this ImageFrame function anymore, on any port?
-    UNUSED_PARAM(colorProfile);
 }
 
 void ImageFrame::setStatus(FrameStatus status)

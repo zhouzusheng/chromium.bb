@@ -6,6 +6,7 @@
 #define MEDIA_BASE_YUV_CONVERT_H_
 
 #include "base/basictypes.h"
+#include "media/base/media_export.h"
 
 // Visual Studio 2010 does not support MMX intrinsics on x64.
 // Some win64 yuv_convert code paths use SSE+MMX yasm, so without rewriting
@@ -13,7 +14,8 @@
 // hide the versions implemented with heavy use of MMX intrinsics.
 // TODO(wolenetz): Use MMX intrinsics when compiling win64 with Visual
 // Studio 2012? http://crbug.com/173450
-#if !(defined(ARCH_CPU_X86_64) && defined(COMPILER_MSVC))
+#if defined(ARCH_CPU_X86_FAMILY) && \
+    !(defined(ARCH_CPU_X86_64) && defined(COMPILER_MSVC))
 #define MEDIA_MMX_INTRINSICS_AVAILABLE
 #endif
 
@@ -22,8 +24,8 @@ namespace media {
 // Type of YUV surface.
 // The value of these enums matter as they are used to shift vertical indices.
 enum YUVType {
-  YV16 = 0,           // YV16 is half width and full height chroma channels.
-  YV12 = 1,           // YV12 is half width and half height chroma channels.
+  YV16 = 0,  // YV16 is half width and full height chroma channels.
+  YV12 = 1,  // YV12 is half width and half height chroma channels.
 };
 
 // Mirror means flip the image horizontally, as in looking in a mirror.
@@ -47,106 +49,108 @@ enum ScaleFilter {
   FILTER_BILINEAR = 3,    // Bilinear filter.
 };
 
+MEDIA_EXPORT void InitializeCPUSpecificYUVConversions();
+
 // Convert a frame of YUV to 32 bit ARGB.
 // Pass in YV16/YV12 depending on source format
-void ConvertYUVToRGB32(const uint8* yplane,
-                       const uint8* uplane,
-                       const uint8* vplane,
-                       uint8* rgbframe,
-                       int width,
-                       int height,
-                       int ystride,
-                       int uvstride,
-                       int rgbstride,
-                       YUVType yuv_type);
+MEDIA_EXPORT void ConvertYUVToRGB32(const uint8* yplane,
+                                    const uint8* uplane,
+                                    const uint8* vplane,
+                                    uint8* rgbframe,
+                                    int width,
+                                    int height,
+                                    int ystride,
+                                    int uvstride,
+                                    int rgbstride,
+                                    YUVType yuv_type);
 
 // Convert a frame of YUVA to 32 bit ARGB.
 // Pass in YV12A
-void ConvertYUVAToARGB(const uint8* yplane,
-                       const uint8* uplane,
-                       const uint8* vplane,
-                       const uint8* aplane,
-                       uint8* rgbframe,
-                       int width,
-                       int height,
-                       int ystride,
-                       int uvstride,
-                       int astride,
-                       int rgbstride,
-                       YUVType yuv_type);
+MEDIA_EXPORT void ConvertYUVAToARGB(const uint8* yplane,
+                                    const uint8* uplane,
+                                    const uint8* vplane,
+                                    const uint8* aplane,
+                                    uint8* rgbframe,
+                                    int width,
+                                    int height,
+                                    int ystride,
+                                    int uvstride,
+                                    int astride,
+                                    int rgbstride,
+                                    YUVType yuv_type);
 
 // Scale a frame of YUV to 32 bit ARGB.
 // Supports rotation and mirroring.
-void ScaleYUVToRGB32(const uint8* yplane,
-                     const uint8* uplane,
-                     const uint8* vplane,
-                     uint8* rgbframe,
-                     int source_width,
-                     int source_height,
-                     int width,
-                     int height,
-                     int ystride,
-                     int uvstride,
-                     int rgbstride,
-                     YUVType yuv_type,
-                     Rotate view_rotate,
-                     ScaleFilter filter);
+MEDIA_EXPORT void ScaleYUVToRGB32(const uint8* yplane,
+                                  const uint8* uplane,
+                                  const uint8* vplane,
+                                  uint8* rgbframe,
+                                  int source_width,
+                                  int source_height,
+                                  int width,
+                                  int height,
+                                  int ystride,
+                                  int uvstride,
+                                  int rgbstride,
+                                  YUVType yuv_type,
+                                  Rotate view_rotate,
+                                  ScaleFilter filter);
 
 // Biliner Scale a frame of YV12 to 32 bits ARGB on a specified rectangle.
 // |yplane|, etc and |rgbframe| should point to the top-left pixels of the
 // source and destination buffers.
-void ScaleYUVToRGB32WithRect(const uint8* yplane,
-                             const uint8* uplane,
-                             const uint8* vplane,
-                             uint8* rgbframe,
-                             int source_width,
-                             int source_height,
-                             int dest_width,
-                             int dest_height,
-                             int dest_rect_left,
-                             int dest_rect_top,
-                             int dest_rect_right,
-                             int dest_rect_bottom,
-                             int ystride,
-                             int uvstride,
-                             int rgbstride);
+MEDIA_EXPORT void ScaleYUVToRGB32WithRect(const uint8* yplane,
+                                          const uint8* uplane,
+                                          const uint8* vplane,
+                                          uint8* rgbframe,
+                                          int source_width,
+                                          int source_height,
+                                          int dest_width,
+                                          int dest_height,
+                                          int dest_rect_left,
+                                          int dest_rect_top,
+                                          int dest_rect_right,
+                                          int dest_rect_bottom,
+                                          int ystride,
+                                          int uvstride,
+                                          int rgbstride);
 
-void ConvertRGB32ToYUV(const uint8* rgbframe,
-                       uint8* yplane,
-                       uint8* uplane,
-                       uint8* vplane,
-                       int width,
-                       int height,
-                       int rgbstride,
-                       int ystride,
-                       int uvstride);
+MEDIA_EXPORT void ConvertRGB32ToYUV(const uint8* rgbframe,
+                                    uint8* yplane,
+                                    uint8* uplane,
+                                    uint8* vplane,
+                                    int width,
+                                    int height,
+                                    int rgbstride,
+                                    int ystride,
+                                    int uvstride);
 
-void ConvertRGB24ToYUV(const uint8* rgbframe,
-                       uint8* yplane,
-                       uint8* uplane,
-                       uint8* vplane,
-                       int width,
-                       int height,
-                       int rgbstride,
-                       int ystride,
-                       int uvstride);
+MEDIA_EXPORT void ConvertRGB24ToYUV(const uint8* rgbframe,
+                                    uint8* yplane,
+                                    uint8* uplane,
+                                    uint8* vplane,
+                                    int width,
+                                    int height,
+                                    int rgbstride,
+                                    int ystride,
+                                    int uvstride);
 
-void ConvertYUY2ToYUV(const uint8* src,
-                      uint8* yplane,
-                      uint8* uplane,
-                      uint8* vplane,
-                      int width,
-                      int height);
+MEDIA_EXPORT void ConvertYUY2ToYUV(const uint8* src,
+                                   uint8* yplane,
+                                   uint8* uplane,
+                                   uint8* vplane,
+                                   int width,
+                                   int height);
 
-void ConvertNV21ToYUV(const uint8* src,
-                      uint8* yplane,
-                      uint8* uplane,
-                      uint8* vplane,
-                      int width,
-                      int height);
+MEDIA_EXPORT void ConvertNV21ToYUV(const uint8* src,
+                                   uint8* yplane,
+                                   uint8* uplane,
+                                   uint8* vplane,
+                                   int width,
+                                   int height);
 
 // Empty SIMD register state after calling optimized scaler functions.
-void EmptyRegisterState();
+MEDIA_EXPORT void EmptyRegisterState();
 
 }  // namespace media
 

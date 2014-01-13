@@ -7,15 +7,14 @@
 #include <map>
 #include <string>
 
-#include "net/base/mime_util.h"
-#include "net/base/platform_mime_util.h"
-
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "net/base/mime_util.h"
+#include "net/base/platform_mime_util.h"
 
 using std::string;
 
@@ -77,6 +76,8 @@ class MimeUtil : public PlatformMimeUtil {
   bool IsSupportedStrictMediaMimeType(
       const std::string& mime_type,
       const std::vector<std::string>& codecs) const;
+
+  void RemoveProprietaryMediaTypesAndCodecsForTests();
 
  private:
   friend struct base::DefaultLazyInstanceTraits<MimeUtil>;
@@ -219,11 +220,8 @@ bool MimeUtil::GetMimeTypeFromExtensionHelper(
   // Finally, we scan a secondary hard-coded list to catch types that we can
   // deduce but that we also want to allow the OS to override.
 
-#if defined(OS_WIN)
-  string ext_narrow_str = WideToUTF8(ext);
-#elif defined(OS_POSIX)
-  const string& ext_narrow_str = ext;
-#endif
+  base::FilePath path_ext(ext);
+  const string ext_narrow_str = path_ext.AsUTF8Unsafe();
   const char* mime_type;
 
   mime_type = FindMimeType(primary_mappings, arraysize(primary_mappings),
@@ -268,7 +266,7 @@ static const char* const common_media_types[] = {
   // Ogg.
   "audio/ogg",
   "application/ogg",
-#if defined(ENABLE_MEDIA_CODEC_THEORA)
+#if !defined(OS_ANDROID)  // Android doesn't support Ogg Theora.
   "video/ogg",
 #endif
 
@@ -304,11 +302,12 @@ static const char* const proprietary_media_types[] = {
 // The codecs for WAV are integers as defined in Appendix A of RFC2361:
 // http://tools.ietf.org/html/rfc2361
 static const char* const common_media_codecs[] = {
-#if defined(ENABLE_MEDIA_CODEC_THEORA)
+#if !defined(OS_ANDROID)  // Android doesn't support Ogg Theora.
   "theora",
 #endif
   "vorbis",
   "vp8",
+  "vp9",
   "1"  // WAVE_FORMAT_PCM.
 };
 
@@ -414,7 +413,7 @@ struct MediaFormatStrict {
 };
 
 static const MediaFormatStrict format_codec_mappings[] = {
-  { "video/webm", "vorbis,vp8,vp8.0" },
+  { "video/webm", "vorbis,vp8,vp8.0,vp9,vp9.0" },
   { "audio/webm", "vorbis" },
   { "audio/wav", "1" }
 };
@@ -678,6 +677,15 @@ bool MimeUtil::IsSupportedStrictMediaMimeType(
       AreSupportedCodecs(it->second, codecs);
 }
 
+void MimeUtil::RemoveProprietaryMediaTypesAndCodecsForTests() {
+  for (size_t i = 0; i < arraysize(proprietary_media_types); ++i) {
+    non_image_map_.erase(proprietary_media_types[i]);
+    media_map_.erase(proprietary_media_types[i]);
+  }
+  for (size_t i = 0; i < arraysize(proprietary_media_codecs); ++i)
+    codecs_map_.erase(proprietary_media_codecs[i]);
+}
+
 //----------------------------------------------------------------------------
 // Wrappers for the singleton
 //----------------------------------------------------------------------------
@@ -937,28 +945,8 @@ void GetExtensionsForMimeType(
   HashSetToVector(&unique_extensions, extensions);
 }
 
-void GetMediaTypesBlacklistedForTests(std::vector<std::string>* types) {
-  types->clear();
-
-// Unless/until WebM files are added to the media layout tests, we need to avoid
-// blacklisting mp4 and H.264 when Theora is not supported (and proprietary
-// codecs are) so that the media tests can still run.
-#if defined(ENABLE_MEDIA_CODEC_THEORA) || !defined(USE_PROPRIETARY_CODECS)
-  for (size_t i = 0; i < arraysize(proprietary_media_types); ++i)
-    types->push_back(proprietary_media_types[i]);
-#endif
-}
-
-void GetMediaCodecsBlacklistedForTests(std::vector<std::string>* codecs) {
-  codecs->clear();
-
-// Unless/until WebM files are added to the media layout tests, we need to avoid
-// blacklisting mp4 and H.264 when Theora is not supported (and proprietary
-// codecs are) so that the media tests can still run.
-#if defined(ENABLE_MEDIA_CODEC_THEORA) || !defined(USE_PROPRIETARY_CODECS)
-  for (size_t i = 0; i < arraysize(proprietary_media_codecs); ++i)
-    codecs->push_back(proprietary_media_codecs[i]);
-#endif
+void RemoveProprietaryMediaTypesAndCodecsForTests() {
+  g_mime_util.Get().RemoveProprietaryMediaTypesAndCodecsForTests();
 }
 
 const std::string GetIANAMediaType(const std::string& mime_type) {
@@ -985,6 +973,31 @@ bool IsSupportedCertificateMimeType(const std::string& mime_type) {
   CertificateMimeType file_type =
       GetCertificateMimeTypeForMimeType(mime_type);
   return file_type != CERTIFICATE_MIME_TYPE_UNKNOWN;
+}
+
+void AddMultipartValueForUpload(const std::string& value_name,
+                                const std::string& value,
+                                const std::string& mime_boundary,
+                                const std::string& content_type,
+                                std::string* post_data) {
+  DCHECK(post_data);
+  // First line is the boundary.
+  post_data->append("--" + mime_boundary + "\r\n");
+  // Next line is the Content-disposition.
+  post_data->append("Content-Disposition: form-data; name=\"" +
+                    value_name + "\"\r\n");
+  if (!content_type.empty()) {
+    // If Content-type is specified, the next line is that.
+    post_data->append("Content-Type: " + content_type + "\r\n");
+  }
+  // Leave an empty line and append the value.
+  post_data->append("\r\n" + value + "\r\n");
+}
+
+void AddMultipartFinalDelimiterForUpload(const std::string& mime_boundary,
+                                         std::string* post_data) {
+  DCHECK(post_data);
+  post_data->append("--" + mime_boundary + "--\r\n");
 }
 
 }  // namespace net

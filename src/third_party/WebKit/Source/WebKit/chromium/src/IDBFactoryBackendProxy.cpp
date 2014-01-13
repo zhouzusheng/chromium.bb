@@ -29,10 +29,10 @@
 #include "config.h"
 #include "IDBFactoryBackendProxy.h"
 
-#include <public/WebIDBDatabase.h>
-#include <public/WebIDBDatabaseError.h>
-#include <public/WebIDBFactory.h>
-#include <public/WebVector.h>
+#include "public/platform/WebIDBDatabase.h"
+#include "public/platform/WebIDBDatabaseError.h"
+#include "public/platform/WebIDBFactory.h"
+#include "public/platform/WebVector.h"
 #include "IDBDatabaseBackendProxy.h"
 #include "WebFrameImpl.h"
 #include "WebIDBCallbacksImpl.h"
@@ -47,24 +47,17 @@
 #include "bindings/v8/WorkerScriptController.h"
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/ScriptExecutionContext.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/workers/WorkerContext.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerThread.h"
 #include "modules/indexeddb/IDBDatabaseCallbacks.h"
 #include "modules/indexeddb/IDBDatabaseError.h"
+#include "weborigin/SecurityOrigin.h"
 
 
 using namespace WebCore;
 
 namespace WebKit {
-
-static WebIDBFactory* s_webIDBFactory = 0;
-
-void setIDBFactory(WebIDBFactory* factory)
-{
-    s_webIDBFactory = factory;
-}
 
 PassRefPtr<IDBFactoryBackendInterface> IDBFactoryBackendProxy::create()
 {
@@ -73,8 +66,7 @@ PassRefPtr<IDBFactoryBackendInterface> IDBFactoryBackendProxy::create()
 
 IDBFactoryBackendProxy::IDBFactoryBackendProxy()
 {
-    ASSERT(s_webIDBFactory);
-    m_webIDBFactory = s_webIDBFactory;
+    m_webIDBFactory = WebKit::Platform::current()->idbFactory();
 }
 
 IDBFactoryBackendProxy::~IDBFactoryBackendProxy()

@@ -44,14 +44,28 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   // navigating to the URL.
   bool HasWrongProcessForURL(const GURL& url);
 
-  // Sets the factory used to create new RenderProcessHosts. This will also be
-  // passed on to SiteInstances spawned by this one.
-  // The factory must outlive the SiteInstance; ownership is not transferred. It
-  // may be NULL, in which case the default BrowserRenderProcessHost will be
-  // created (this is the behavior if you don't call this function).
-  void set_render_process_host_factory(RenderProcessHostFactory* rph_factory) {
-    render_process_host_factory_ = rph_factory;
-  }
+  // Increase the number of active views in this SiteInstance. This is
+  // increased when a view is created, or a currently swapped out view
+  // is swapped in.
+  void increment_active_view_count() { active_view_count_++; }
+
+  // Decrease the number of active views in this SiteInstance. This is
+  // decreased when a view is destroyed, or a currently active view is
+  // swapped out.
+  void decrement_active_view_count() { active_view_count_--; }
+
+  // Get the number of active views which belong to this
+  // SiteInstance. If there is no active view left in this
+  // SiteInstance, all view in this SiteInstance can be safely
+  // discarded to save memory.
+  size_t active_view_count() { return active_view_count_; }
+
+  // Sets the global factory used to create new RenderProcessHosts.  It may be
+  // NULL, in which case the default BrowserRenderProcessHost will be created
+  // (this is the behavior if you don't call this function).  The factory must
+  // be set back to NULL before it's destroyed; ownership is not transferred.
+  static void set_render_process_host_factory(
+      const RenderProcessHostFactory* rph_factory);
 
  protected:
   friend class BrowsingInstance;
@@ -78,11 +92,17 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   // Used to restrict a process' origin access rights.
   void LockToOrigin();
 
+  // An object used to construct RenderProcessHosts.
+  static const RenderProcessHostFactory* g_render_process_host_factory_;
+
   // The next available SiteInstance ID.
   static int32 next_site_instance_id_;
 
   // A unique ID for this SiteInstance.
   int32 id_;
+
+  // The number of active views under this SiteInstance.
+  size_t active_view_count_;
 
   NotificationRegistrar registrar_;
 

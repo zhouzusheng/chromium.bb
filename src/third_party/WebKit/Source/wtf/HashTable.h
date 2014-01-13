@@ -53,10 +53,6 @@
 #include <wtf/DataLog.h>
 #endif
 
-#if !ASSERT_DISABLED
-#include <wtf/ValueCheck.h>
-#endif
-
 namespace WTF {
 
 #if DUMP_HASHTABLE_STATS
@@ -303,7 +299,7 @@ namespace WTF {
     template<typename HashFunctions> class IdentityHashTranslator {
     public:
         template<typename T> static unsigned hash(const T& key) { return HashFunctions::hash(key); }
-        template<typename T> static bool equal(const T& a, const T& b) { return HashFunctions::equal(a, b); }
+        template<typename T, typename U> static bool equal(const T& a, const U& b) { return HashFunctions::equal(a, b); }
         template<typename T, typename U> static void translate(T& location, const U&, const T& value) { location = value; }
     };
 
@@ -812,7 +808,7 @@ namespace WTF {
 
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits>
     template<typename HashTranslator, typename T, typename Extra>
-    inline typename HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::AddResult HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::add(const T& key, const Extra& extra)
+    typename HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::AddResult HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::add(const T& key, const Extra& extra)
     {
         checkKey<HashTranslator>(key);
 
@@ -908,7 +904,7 @@ namespace WTF {
 
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits>
     template<typename HashTranslator, typename T, typename Extra>
-    inline typename HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::AddResult HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::addPassingHashCode(const T& key, const Extra& extra)
+    typename HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::AddResult HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::addPassingHashCode(const T& key, const Extra& extra)
     {
         checkKey<HashTranslator>(key);
 
@@ -1251,8 +1247,6 @@ namespace WTF {
             const_iterator it = find(Extractor::extract(*entry));
             ASSERT(entry == it.m_position);
             ++count;
-
-            ValueCheck<Key>::checkConsistency(it->key);
         }
 
         ASSERT(count == m_keyCount);

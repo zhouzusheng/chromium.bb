@@ -34,9 +34,10 @@ PassRefPtr<SpeechSynthesisUtterance> SpeechSynthesisUtterance::create(ScriptExec
 }
 
 SpeechSynthesisUtterance::SpeechSynthesisUtterance(ScriptExecutionContext* context, const String& text)
-    : ContextDestructionObserver(context)
+    : ContextLifecycleObserver(context)
     , m_platformUtterance(PlatformSpeechSynthesisUtterance::create(this))
 {
+    ScriptWrappable::init(this);
     m_platformUtterance->setText(text);
 }
 
@@ -47,7 +48,7 @@ SpeechSynthesisUtterance::~SpeechSynthesisUtterance()
     
 ScriptExecutionContext* SpeechSynthesisUtterance::scriptExecutionContext() const
 {
-    return ContextDestructionObserver::scriptExecutionContext();
+    return ContextLifecycleObserver::scriptExecutionContext();
 }    
     
 const AtomicString& SpeechSynthesisUtterance::interfaceName() const

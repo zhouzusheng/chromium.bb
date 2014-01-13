@@ -33,7 +33,6 @@
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/StylePropertySet.h"
-#include "core/css/StyleResolver.h"
 #include "core/css/StyleRule.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
@@ -54,7 +53,7 @@ inline SVGFontFaceElement::SVGFontFaceElement(const QualifiedName& tagName, Docu
 {
     ASSERT(hasTagName(font_faceTag));
     ScriptWrappable::init(this);
-    RefPtr<StylePropertySet> styleDeclaration = StylePropertySet::create(CSSStrictMode);
+    RefPtr<MutableStylePropertySet> styleDeclaration = MutableStylePropertySet::create(CSSStrictMode);
     m_fontFaceRule->setProperties(styleDeclaration.release());
 }
 
@@ -340,7 +339,7 @@ void SVGFontFaceElement::removedFrom(ContainerNode* rootParent)
     if (rootParent->inDocument()) {
         m_fontElement = 0;
         document()->accessSVGExtensions()->unregisterSVGFontFaceElement(this);
-        m_fontFaceRule->mutableProperties()->parseDeclaration(emptyString(), 0);
+        m_fontFaceRule->mutableProperties()->clear();
 
         document()->styleResolverChanged(DeferRecalcStyle);
     } else

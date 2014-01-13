@@ -23,7 +23,7 @@
 #ifndef SVGFilterElement_h
 #define SVGFilterElement_h
 
-#if ENABLE(SVG)
+#include "SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedInteger.h"
@@ -55,7 +55,7 @@ private:
     virtual void svgAttributeChanged(const QualifiedName&);
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
 
     virtual bool selfHasRelativeLengths() const;
@@ -77,7 +77,12 @@ private:
     END_DECLARE_ANIMATED_PROPERTIES
 };
 
+inline SVGFilterElement* toSVGFilterElement(SVGElement* element)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!element || element->hasTagName(SVGNames::filterTag));
+    return static_cast<SVGFilterElement*>(element);
 }
 
-#endif
+}
+
 #endif

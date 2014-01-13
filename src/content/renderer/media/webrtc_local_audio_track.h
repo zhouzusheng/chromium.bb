@@ -14,6 +14,9 @@
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreamtrack.h"
 
+namespace cricket {
+class AudioRenderer;
+}
 
 namespace content {
 
@@ -44,6 +47,14 @@ class CONTENT_EXPORT WebRtcLocalAudioTrack
   // Called on the main render thread.
   void RemoveSink(WebRtcAudioCapturerSink* sink);
 
+  // Starts the local audio track. Called on the main render thread and
+  // should be called only once when audio track is created.
+  void Start();
+
+  // Stops the local audio track. Called on the main render thread and
+  // should be called only once when audio track going away.
+  void Stop();
+
  protected:
   WebRtcLocalAudioTrack(const std::string& label,
                         const scoped_refptr<WebRtcAudioCapturer>& capturer,
@@ -66,6 +77,7 @@ class CONTENT_EXPORT WebRtcLocalAudioTrack
 
   // webrtc::AudioTrackInterface implementation.
   virtual webrtc::AudioSourceInterface* GetSource() const OVERRIDE;
+  virtual cricket::AudioRenderer* FrameInput() OVERRIDE;
 
   // webrtc::MediaStreamTrack implementation.
   virtual std::string kind() const OVERRIDE;

@@ -44,8 +44,8 @@ class DocumentLoader;
 class Frame;
 class InjectedScriptManager;
 class InspectorFrontend;
-class InspectorObject;
 class InstrumentingAgents;
+class JSONObject;
 class KURL;
 class Page;
 
@@ -64,6 +64,7 @@ public:
     // Inspector front-end API.
     void enable(ErrorString*);
     void disable(ErrorString*);
+    void reset(ErrorString*);
 
     KURL inspectedURL() const;
     KURL inspectedURLWithoutFragment() const;
@@ -75,8 +76,8 @@ public:
 
     void didClearWindowObjectInWorld(Frame*, DOMWrapperWorld*);
 
-    void didCommitLoad();
-    void domContentLoadedEventFired();
+    void didCommitLoad(Frame*, DocumentLoader*);
+    void domContentLoadedEventFired(Frame*);
 
     bool hasFrontend() const { return m_frontend; }
 
@@ -85,7 +86,7 @@ public:
 
     void setInjectedScriptForOrigin(const String& origin, const String& source);
 
-    void inspect(PassRefPtr<TypeBuilder::Runtime::RemoteObject> objectToInspect, PassRefPtr<InspectorObject> hints);
+    void inspect(PassRefPtr<TypeBuilder::Runtime::RemoteObject> objectToInspect, PassRefPtr<JSONObject> hints);
 
 private:
     InspectorAgent(Page*, InjectedScriptManager*, InstrumentingAgents*, InspectorCompositeState*);
@@ -101,7 +102,7 @@ private:
     InjectedScriptManager* m_injectedScriptManager;
 
     Vector<pair<long, String> > m_pendingEvaluateTestCommands;
-    pair<RefPtr<TypeBuilder::Runtime::RemoteObject>, RefPtr<InspectorObject> > m_pendingInspectData;
+    pair<RefPtr<TypeBuilder::Runtime::RemoteObject>, RefPtr<JSONObject> > m_pendingInspectData;
     typedef HashMap<String, String> InjectedScriptForOriginMap;
     InjectedScriptForOriginMap m_injectedScriptForOrigin;
 };

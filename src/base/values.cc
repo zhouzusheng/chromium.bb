@@ -10,8 +10,10 @@
 #include "base/float_util.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+
+namespace base {
 
 namespace {
 
@@ -75,10 +77,6 @@ class ValueEquals {
 };
 
 }  // namespace
-
-namespace base {
-
-///////////////////// Value ////////////////////
 
 Value::~Value() {
 }
@@ -464,8 +462,10 @@ void DictionaryValue::SetStringWithoutPathExpansion(
 bool DictionaryValue::Get(
     const std::string& path, const Value** out_value) const {
   DCHECK(IsStringUTF8(path));
+//  LOG(WARNING) << "\n1\n";
   std::string current_path(path);
   const DictionaryValue* current_dictionary = this;
+//  LOG(WARNING) << "\n2\n";
   for (size_t delimiter_position = current_path.find('.');
        delimiter_position != std::string::npos;
        delimiter_position = current_path.find('.')) {
@@ -477,6 +477,7 @@ bool DictionaryValue::Get(
     current_dictionary = child_dictionary;
     current_path.erase(0, delimiter_position + 1);
   }
+//  LOG(WARNING) << "\n3\n";
 
   return current_dictionary->GetWithoutPathExpansion(current_path, out_value);
 }

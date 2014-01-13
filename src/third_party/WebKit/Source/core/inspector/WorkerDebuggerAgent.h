@@ -43,14 +43,14 @@ class WorkerDebuggerAgent : public InspectorDebuggerAgent {
     WTF_MAKE_NONCOPYABLE(WorkerDebuggerAgent);
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<WorkerDebuggerAgent> create(InstrumentingAgents*, InspectorCompositeState*, WorkerContext*, InjectedScriptManager*);
+    static PassOwnPtr<WorkerDebuggerAgent> create(InstrumentingAgents*, InspectorCompositeState*, WorkerScriptDebugServer*, WorkerContext*, InjectedScriptManager*);
     virtual ~WorkerDebuggerAgent();
 
     static const char* debuggerTaskMode;
     static void interruptAndDispatchInspectorCommands(WorkerThread*);
 
 private:
-    WorkerDebuggerAgent(InstrumentingAgents*, InspectorCompositeState*, WorkerContext*, InjectedScriptManager*);
+    WorkerDebuggerAgent(InstrumentingAgents*, InspectorCompositeState*, WorkerScriptDebugServer*, WorkerContext*, InjectedScriptManager*);
 
     virtual void startListeningScriptDebugServer();
     virtual void stopListeningScriptDebugServer();
@@ -58,8 +58,9 @@ private:
     virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId);
     virtual void muteConsole();
     virtual void unmuteConsole();
+    virtual void addConsoleMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL);
 
-    WorkerScriptDebugServer m_scriptDebugServer;
+    WorkerScriptDebugServer* m_scriptDebugServer;
     WorkerContext* m_inspectedWorkerContext;
 };
 

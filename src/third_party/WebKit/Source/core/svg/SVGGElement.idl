@@ -23,12 +23,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-[
-    Conditional=SVG
-] interface SVGGElement : SVGStyledElement,
-                                          SVGTests,
-                                          SVGLangSpace,
-                                          SVGExternalResourcesRequired,
-                                          SVGTransformable {
+interface SVGGElement : SVGStyledElement,
+                        SVGLangSpace,
+                        SVGTransformable {
 };
+
+SVGGElement implements SVGExternalResourcesRequired;
+SVGGElement implements SVGTests;
 

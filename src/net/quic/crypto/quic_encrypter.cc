@@ -4,16 +4,16 @@
 
 #include "net/quic/crypto/quic_encrypter.h"
 
-#include "net/quic/crypto/aes_128_gcm_encrypter.h"
+#include "net/quic/crypto/aes_128_gcm_12_encrypter.h"
 #include "net/quic/crypto/null_encrypter.h"
 
 namespace net {
 
 // static
-QuicEncrypter* QuicEncrypter::Create(CryptoTag algorithm) {
+QuicEncrypter* QuicEncrypter::Create(QuicTag algorithm) {
   switch (algorithm) {
     case kAESG:
-      return new Aes128GcmEncrypter();
+      return new Aes128Gcm12Encrypter();
     case kNULL:
       return new NullEncrypter();
     default:

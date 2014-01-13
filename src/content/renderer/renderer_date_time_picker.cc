@@ -4,14 +4,14 @@
 
 #include "content/renderer/renderer_date_time_picker.h"
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/common/view_messages.h"
 #include "content/renderer/date_time_formatter.h"
 #include "content/renderer/render_view_impl.h"
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDateTimeChooserCompletion.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDateTimeChooserParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDateTimeInputType.h"
+#include "third_party/WebKit/public/web/WebDateTimeChooserCompletion.h"
+#include "third_party/WebKit/public/web/WebDateTimeChooserParams.h"
+#include "third_party/WebKit/public/web/WebDateTimeInputType.h"
 
 using WebKit::WebString;
 
@@ -31,17 +31,21 @@ RendererDateTimePicker::~RendererDateTimePicker() {
 
 bool RendererDateTimePicker::Open() {
   DateTimeFormatter parser(chooser_params_);
-  std::string test_s = chooser_params_.currentValue.utf8();
-
   ViewHostMsg_DateTimeDialogValue_Params message;
-  message.year =  parser.GetYear();
-  message.month =  parser.GetMonth();
-  message.day =  parser.GetDay();
-  message.hour =  parser.GetHour();
-  message.minute = parser.GetMinute();
-  message.second = parser.GetSecond();
   message.dialog_type = parser.GetType();
-
+  if (message.dialog_type == ui::TEXT_INPUT_TYPE_WEEK) {
+    message.year = parser.GetWeekYear();
+    message.week = parser.GetWeek();
+  } else {
+    message.year = parser.GetYear();
+    message.month = parser.GetMonth();
+    message.day = parser.GetDay();
+    message.hour = parser.GetHour();
+    message.minute = parser.GetMinute();
+    message.second = parser.GetSecond();
+  }
+  message.minimum = chooser_params_.minimum;
+  message.maximum = chooser_params_.maximum;
   Send(new ViewHostMsg_OpenDateTimeDialog(routing_id(), message));
   return true;
 }
@@ -63,7 +67,7 @@ void RendererDateTimePicker::OnReplaceDateTime(
   DateTimeFormatter formatter(
       static_cast<ui::TextInputType>(value.dialog_type),
       value.year, value.month, value.day,
-      value.hour, value.minute, value.second);
+      value.hour, value.minute, value.second, value.year, value.week);
 
   if (chooser_completion_)
     chooser_completion_->didChooseValue(WebString::fromUTF8(

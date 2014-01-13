@@ -24,10 +24,10 @@
  */
 
 #include "config.h"
-#include "WebActiveGestureAnimation.h"
+#include "core/platform/chromium/support/WebActiveGestureAnimation.h"
 
-#include <public/WebGestureCurve.h>
-#include <public/WebGestureCurveTarget.h>
+#include "public/platform/WebGestureCurve.h"
+#include "public/platform/WebGestureCurveTarget.h"
 
 namespace WebKit {
 

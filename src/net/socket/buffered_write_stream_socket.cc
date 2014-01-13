@@ -50,7 +50,7 @@ int BufferedWriteStreamSocket::Write(IOBuffer* buf, int buf_len,
       wrapped_write_in_progress_ ? backup_buffer_.get() : io_buffer_.get();
   AppendBuffer(idle_buffer, buf, buf_len);
   if (!callback_pending_) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&BufferedWriteStreamSocket::DoDelayedWrite,
                    weak_factory_.GetWeakPtr()));
@@ -125,7 +125,8 @@ bool BufferedWriteStreamSocket::GetSSLInfo(SSLInfo* ssl_info) {
 
 void BufferedWriteStreamSocket::DoDelayedWrite() {
   int result = wrapped_socket_->Write(
-      io_buffer_, io_buffer_->RemainingCapacity(),
+      io_buffer_.get(),
+      io_buffer_->RemainingCapacity(),
       base::Bind(&BufferedWriteStreamSocket::OnIOComplete,
                  base::Unretained(this)));
   if (result == ERR_IO_PENDING) {

@@ -35,18 +35,13 @@
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "bindings/v8/WrapperTypeInfo.h"
-#include "core/dom/Node.h"
 #include <v8.h>
-#include "wtf/HashMap.h"
-#include "wtf/MainThread.h"
 #include "wtf/Noncopyable.h"
-#include "wtf/OwnPtr.h"
 #include "wtf/StdLibExtras.h"
-#include "wtf/ThreadSpecific.h"
-#include "wtf/Threading.h"
-#include "wtf/Vector.h"
 
 namespace WebCore {
+
+class Node;
 
 class DOMDataStore {
     WTF_MAKE_NONCOPYABLE(DOMDataStore);
@@ -66,8 +61,12 @@ public:
         // way is to check whether the wrappable's wrapper is the same as
         // the holder.
         if ((!DOMWrapperWorld::isolatedWorldsExist() && !canExistInWorker(object)) || holderContainsWrapper(container, holder)) {
-            if (ScriptWrappable::wrapperCanBeStoredInObject(object))
-                return ScriptWrappable::getUnsafeWrapperFromObject(object).handle();
+            if (ScriptWrappable::wrapperCanBeStoredInObject(object)) {
+                v8::Handle<v8::Object> result = ScriptWrappable::getUnsafeWrapperFromObject(object).handle();
+                // Security: always guard against malicious tampering.
+                RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(result.IsEmpty() || result->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex) == static_cast<void*>(object));
+                return result;
+            }
             return mainWorldStore()->m_wrapperMap.get(object);
         }
         return current(container.GetIsolate())->get(object);
@@ -77,8 +76,12 @@ public:
     static v8::Handle<v8::Object> getWrapper(T* object, v8::Isolate* isolate)
     {
         if (ScriptWrappable::wrapperCanBeStoredInObject(object) && !canExistInWorker(object)) {
-            if (LIKELY(!DOMWrapperWorld::isolatedWorldsExist()))
-                return ScriptWrappable::getUnsafeWrapperFromObject(object).handle();
+            if (LIKELY(!DOMWrapperWorld::isolatedWorldsExist())) {
+                v8::Handle<v8::Object> result = ScriptWrappable::getUnsafeWrapperFromObject(object).handle();
+                // Security: always guard against malicious tampering.
+                RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(result.IsEmpty() || result->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex) == static_cast<void*>(object));
+                return result;
+            }
         }
         return current(isolate)->get(object);
     }
@@ -148,18 +151,6 @@ private:
     WrapperWorldType m_type;
     DOMWrapperMap<void> m_wrapperMap;
 };
-
-template<>
-inline void WeakHandleListener<DOMWrapperMap<void> >::callback(v8::Isolate* isolate, v8::Persistent<v8::Value> value, DOMWrapperMap<void>* map)
-{
-    ASSERT(value->IsObject());
-    v8::Persistent<v8::Object> wrapper = v8::Persistent<v8::Object>::Cast(value);
-    WrapperTypeInfo* type = toWrapperTypeInfo(wrapper);
-    ASSERT(type->derefObjectFunction);
-    void* key = static_cast<void*>(toNative(wrapper));
-    map->removeAndDispose(key, wrapper, isolate);
-    type->derefObject(key);
-}
 
 } // namespace WebCore
 

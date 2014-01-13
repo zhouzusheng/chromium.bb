@@ -22,7 +22,6 @@
 #ifndef SVGAElement_h
 #define SVGAElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGLangSpace.h"
@@ -52,14 +51,14 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
 
     virtual void defaultEventHandler(Event*);
     
-    virtual bool supportsFocus() const;
+    virtual bool supportsFocus() const OVERRIDE;
     virtual bool isMouseFocusable() const;
     virtual bool isKeyboardFocusable(KeyboardEvent*) const;
-    virtual bool isFocusable() const;
+    virtual bool rendererIsFocusable() const OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const;
 
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
@@ -80,5 +79,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif // SVGAElement_h

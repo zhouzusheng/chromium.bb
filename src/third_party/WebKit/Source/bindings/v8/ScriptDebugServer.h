@@ -32,6 +32,7 @@
 #define ScriptDebugServer_h
 
 
+#include "InspectorBackendDispatcher.h"
 #include "bindings/v8/ScopedPersistent.h"
 #include "core/inspector/ScriptBreakpoint.h"
 #include <v8-debug.h>
@@ -66,13 +67,14 @@ public:
     void setPauseOnExceptionsState(PauseOnExceptionsState pauseOnExceptionsState);
 
     void setPauseOnNextStatement(bool pause);
+    bool canBreakProgram();
     void breakProgram();
     void continueProgram();
     void stepIntoStatement();
     void stepOverStatement();
     void stepOutOfFunction();
 
-    bool setScriptSource(const String& sourceID, const String& newContent, bool preview, String* error, ScriptValue* newCallFrames, ScriptObject* result);
+    bool setScriptSource(const String& sourceID, const String& newContent, bool preview, String* error, RefPtr<TypeBuilder::Debugger::SetScriptSourceError>&, ScriptValue* newCallFrames, ScriptObject* result);
     void updateCallStack(ScriptValue* callFrame);
 
     void setScriptPreprocessor(const String& preprocessorBody);
@@ -90,7 +92,7 @@ public:
 
     v8::Local<v8::Value> functionScopes(v8::Handle<v8::Function>);
     v8::Local<v8::Value> getInternalProperties(v8::Handle<v8::Object>&);
-    v8::Local<v8::Value> setFunctionVariableValue(v8::Handle<v8::Value> functionValue, int scopeNumber, const String& variableName, v8::Handle<v8::Value> newValue);
+    v8::Handle<v8::Value> setFunctionVariableValue(v8::Handle<v8::Value> functionValue, int scopeNumber, const String& variableName, v8::Handle<v8::Value> newValue);
 
 
     virtual void compileScript(ScriptState*, const String& expression, const String& sourceURL, String* scriptId, String* exceptionMessage);
@@ -98,7 +100,7 @@ public:
     virtual void runScript(ScriptState*, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionMessage);
 
 protected:
-    ScriptDebugServer(v8::Isolate*);
+    explicit ScriptDebugServer(v8::Isolate*);
     virtual ~ScriptDebugServer();
     
     ScriptValue currentCallFrame();
@@ -107,8 +109,9 @@ protected:
     virtual void runMessageLoopOnPause(v8::Handle<v8::Context>) = 0;
     virtual void quitMessageLoopOnPause() = 0;
 
-    static v8::Handle<v8::Value> breakProgramCallback(const v8::Arguments& args);
-    void breakProgram(v8::Handle<v8::Object> executionState, v8::Handle<v8::Value> exception);
+    static void breakProgramCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
+    void breakProgram(v8::Handle<v8::Object> executionState, v8::Handle<v8::Value> exception, v8::Handle<v8::Array> hitBreakpoints);
+    void breakProgram(const v8::Debug::EventDetails&, v8::Handle<v8::Value> exception, v8::Handle<v8::Array> hitBreakpointNumbers);
 
     static void v8DebugEventCallback(const v8::Debug::EventDetails& eventDetails);
     void handleV8DebugEvent(const v8::Debug::EventDetails& eventDetails);
@@ -124,7 +127,7 @@ protected:
     PauseOnExceptionsState m_pauseOnExceptionsState;
     ScopedPersistent<v8::Object> m_debuggerScript;
     ScopedPersistent<v8::Object> m_executionState;
-    v8::Local<v8::Context> m_pausedContext;
+    v8::Handle<v8::Context> m_pausedContext;
     bool m_breakpointsActivated;
     ScopedPersistent<v8::FunctionTemplate> m_breakProgramCallbackTemplate;
     HashMap<String, OwnPtr<ScopedPersistent<v8::Script> > > m_compiledScripts;

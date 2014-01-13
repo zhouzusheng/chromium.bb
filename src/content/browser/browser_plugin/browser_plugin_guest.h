@@ -22,6 +22,7 @@
 #define CONTENT_BROWSER_BROWSER_PLUGIN_BROWSER_PLUGIN_GUEST_H_
 
 #include <map>
+#include <queue>
 
 #include "base/compiler_specific.h"
 #include "base/id_map.h"
@@ -29,15 +30,16 @@
 #include "base/shared_memory.h"
 #include "base/time.h"
 #include "content/common/browser_plugin/browser_plugin_message_enums.h"
+#include "content/common/edit_command.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/render_view_host_observer.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragStatus.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebDragOperation.h"
+#include "third_party/WebKit/public/web/WebDragStatus.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/rect.h"
 #include "ui/surface/transport_dib.h"
 
@@ -131,7 +133,10 @@ class CONTENT_EXPORT BrowserPluginGuest
   bool visible() const { return guest_visible_; }
   void clear_damage_buffer() { damage_buffer_.reset(); }
 
-  BrowserPluginGuest* opener() const { return opener_; }
+  BrowserPluginGuest* opener() const { return opener_.get(); }
+
+  // Returns whether the mouse pointer was unlocked.
+  bool UnlockMouseIfNecessary(const NativeWebKeyboardEvent& event);
 
   void UpdateVisibility();
 
@@ -167,7 +172,6 @@ class CONTENT_EXPORT BrowserPluginGuest
   virtual void RenderViewReady() OVERRIDE;
   virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-
 
   // WebContentsDelegate implementation.
 
@@ -253,6 +257,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   // Returns whether BrowserPluginGuest is interested in receiving the given
   // |message|.
   static bool ShouldForwardToBrowserPluginGuest(const IPC::Message& message);
+  gfx::Rect ToGuestRect(const gfx::Rect& rect);
 
   void DragSourceEndedAt(int client_x, int client_y, int screen_x,
       int screen_y, WebKit::WebDragOperation operation);
@@ -291,6 +296,9 @@ class CONTENT_EXPORT BrowserPluginGuest
   // Returns the damage buffer corresponding to the handle in resize |params|.
   base::SharedMemory* GetDamageBufferFromEmbedder(
       const BrowserPluginHostMsg_ResizeGuest_Params& params);
+
+  // Called after the load handler is called in the guest's main frame.
+  void LoadHandlerCalled();
 
   // Called when a redirect notification occurs.
   void LoadRedirect(const GURL& old_url,
@@ -359,6 +367,9 @@ class CONTENT_EXPORT BrowserPluginGuest
       int instance_id,
       const BrowserPluginHostMsg_AutoSize_Params& auto_size_params,
       const BrowserPluginHostMsg_ResizeGuest_Params& resize_guest_params);
+  void OnSetEditCommandsForNextKeyEvent(
+      int instance_id,
+      const std::vector<EditCommand>& edit_commands);
   // The guest WebContents is visible if both its embedder is visible and
   // the browser plugin element is visible. If either one is not then the
   // WebContents is marked as hidden. A hidden WebContents will consume
@@ -387,6 +398,7 @@ class CONTENT_EXPORT BrowserPluginGuest
   void OnTerminateGuest(int instance_id);
   void OnUnlockMouse();
   void OnUnlockMouseAck(int instance_id);
+  void OnUpdateGeometry(int instance_id, const gfx::Rect& view_rect);
   void OnUpdateRectACK(
       int instance_id,
       const BrowserPluginHostMsg_AutoSize_Params& auto_size_params,
@@ -424,6 +436,9 @@ class CONTENT_EXPORT BrowserPluginGuest
   void SetGeolocationPermission(
       GeolocationCallback callback, int bridge_id, bool allowed);
 
+  // Forwards all messages from the |pending_messages_| queue to the embedder.
+  void SendQueuedMessages();
+
   // Weak pointer used to ask GeolocationPermissionContext about geolocation
   // permission.
   base::WeakPtrFactory<BrowserPluginGuest> weak_ptr_factory_;
@@ -460,18 +475,20 @@ class CONTENT_EXPORT BrowserPluginGuest
   gfx::Size max_auto_size_;
   gfx::Size min_auto_size_;
 
-  // Tracks the target URL of the new window and whether or not it has changed
-  // since the WebContents has been created and before the new window has been
-  // attached to a BrowserPlugin. Once the first navigation commits, we no
-  // longer track this URL.
-  struct TargetURL {
+  // Tracks the name, and target URL of the new window and whether or not it has
+  // changed since the WebContents has been created and before the new window
+  // has been attached to a BrowserPlugin. Once the first navigation commits, we
+  // no longer track this information.
+  struct NewWindowInfo {
     bool changed;
     GURL url;
-    explicit TargetURL(const GURL& url) :
+    std::string name;
+    NewWindowInfo(const GURL& url, const std::string& name) :
         changed(false),
-        url(url) {}
+        url(url),
+        name(name) {}
   };
-  typedef std::map<BrowserPluginGuest*, TargetURL> PendingWindowMap;
+  typedef std::map<BrowserPluginGuest*, NewWindowInfo> PendingWindowMap;
   PendingWindowMap pending_new_windows_;
   base::WeakPtr<BrowserPluginGuest> opener_;
   // A counter to generate a unique request id for a permission request.
@@ -486,6 +503,10 @@ class CONTENT_EXPORT BrowserPluginGuest
   // This is used to determine whether or not to create a new RenderView when
   // this guest is attached.
   bool has_render_view_;
+
+  // This is a queue of messages that are destined to be sent to the embedder
+  // once the guest is attached to a particular embedder.
+  std::queue<IPC::Message*> pending_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginGuest);
 };

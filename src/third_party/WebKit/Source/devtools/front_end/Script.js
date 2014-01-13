@@ -136,22 +136,23 @@ WebInspector.Script.prototype = {
 
     /**
      * @param {string} newSource
-     * @param {function(?Protocol.Error, Array.<DebuggerAgent.CallFrame>=)} callback
+     * @param {function(?Protocol.Error, DebuggerAgent.SetScriptSourceError=, Array.<DebuggerAgent.CallFrame>=)} callback
      */
     editSource: function(newSource, callback)
     {
         /**
          * @this {WebInspector.Script}
          * @param {?Protocol.Error} error
+         * @param {DebuggerAgent.SetScriptSourceError=} errorData
          * @param {Array.<DebuggerAgent.CallFrame>=} callFrames
          * @param {Object=} debugData
          */
-        function didEditScriptSource(error, callFrames, debugData)
+        function didEditScriptSource(error, errorData, callFrames, debugData)
         {
             // FIXME: support debugData.stack_update_needs_step_in flag by calling WebInspector.debugger_model.callStackModified
             if (!error)
                 this._source = newSource;
-            callback(error, callFrames);
+            callback(error, errorData, callFrames);
             if (!error)
                 this.dispatchEventToListeners(WebInspector.Script.Events.ScriptEdited, newSource);
         }
@@ -177,22 +178,6 @@ WebInspector.Script.prototype = {
     isAnonymousScript: function()
     {
         return !this.sourceURL;
-    },
-
-    /**
-     * @param {boolean} isDynamicScript
-     */
-    setIsDynamicScript: function(isDynamicScript)
-    {
-        this._isDynamicScript = isDynamicScript;
-    },
-
-    /**
-     * @return {boolean}
-     */
-    isDynamicScript: function()
-    {
-        return !!this._isDynamicScript;
     },
 
     /**

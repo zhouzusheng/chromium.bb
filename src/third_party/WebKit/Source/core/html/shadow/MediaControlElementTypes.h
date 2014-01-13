@@ -68,17 +68,12 @@ enum MediaControlElementType {
     MediaTextTrackDisplay,
     MediaExitFullscreenButton,
     MediaOverlayPlayButton,
-    MediaClosedCaptionsContainer,
-    MediaClosedCaptionsTrackList,
 };
 
 HTMLMediaElement* toParentMediaElement(Node*);
 inline HTMLMediaElement* toParentMediaElement(RenderObject* renderer) { return toParentMediaElement(renderer->node()); }
 
 MediaControlElementType mediaControlElementType(Node*);
-
-const AtomicString& trackIndexAttributeName();
-int trackListIndexForElement(Element*);
 
 // ----------------------------
 
@@ -155,33 +150,6 @@ protected:
 
 private:
     virtual void updateDisplayType() OVERRIDE;
-};
-
-// ----------------------------
-
-class MediaControlSeekButtonElement : public MediaControlInputElement {
-public:
-    virtual bool willRespondToMouseClickEvents() OVERRIDE { return true; }
-
-protected:
-    explicit MediaControlSeekButtonElement(Document*, MediaControlElementType);
-
-    virtual void defaultEventHandler(Event*) OVERRIDE;
-    virtual bool isForwardButton() const = 0;
-
-private:
-    void setActive(bool /*flag*/ = true, bool /*pause*/ = false);
-
-    void startTimer();
-    void stopTimer();
-    double nextRate() const;
-    void seekTimerFired(Timer<MediaControlSeekButtonElement>*);
-
-    enum ActionType { Nothing, Play, Pause };
-    ActionType m_actionOnStop;
-    enum SeekType { Skip, Scan };
-    SeekType m_seekType;
-    Timer<MediaControlSeekButtonElement> m_seekTimer;
 };
 
 // ----------------------------

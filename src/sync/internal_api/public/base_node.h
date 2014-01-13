@@ -158,6 +158,10 @@ class SYNC_EXPORT BaseNode {
   const sync_pb::ManagedUserSettingSpecifics&
       GetManagedUserSettingSpecifics() const;
 
+  // Getter specific to the MANAGED_USERS datatype.  Returns protobuf data.
+  // Can only be called if GetModelType() == MANAGED_USERS.
+  const sync_pb::ManagedUserSpecifics& GetManagedUserSpecifics() const;
+
   // Getter specific to the DEVICE_INFO datatype.  Returns protobuf
   // data.  Can only be called if GetModelType() == DEVICE_INFO.
   const sync_pb::DeviceInfoSpecifics& GetDeviceInfoSpecifics() const;
@@ -191,9 +195,19 @@ class SYNC_EXPORT BaseNode {
   // children, return 0.
   int64 GetFirstChildId() const;
 
+  // Returns the IDs of the children of this node.
+  // If this type supports user-defined positions the returned IDs will be in
+  // the correct order.
+  void GetChildIds(std::vector<int64>* result) const;
+
   // Returns the total number of nodes including and beneath this node.
   // Recursively iterates through all children.
   int GetTotalNodeCount() const;
+
+  // Returns this item's position within its parent.
+  // Do not call this function on items that do not support positioning
+  // (ie. non-bookmarks).
+  int GetPositionIndex() const;
 
   // These virtual accessors provide access to data members of derived classes.
   virtual const syncable::Entry* GetEntry() const = 0;

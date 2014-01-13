@@ -19,7 +19,6 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGViewSpec.h"
 
 #include "SVGNames.h"
@@ -83,6 +82,7 @@ SVGViewSpec::SVGViewSpec(SVGElement* contextElement)
     , m_zoomAndPan(SVGZoomAndPanMagnify)
 {
     ASSERT(m_contextElement);
+    ScriptWrappable::init(this);
 }
 
 const AtomicString& SVGViewSpec::viewBoxIdentifier()
@@ -295,5 +295,3 @@ bool SVGViewSpec::parseViewSpec(const String& viewSpec)
 }
 
 }
-
-#endif // ENABLE(SVG)

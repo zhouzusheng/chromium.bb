@@ -5,11 +5,29 @@
 #include "init_webrtc.h"
 
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/files/file_path.h"
-#include "base/logging.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
 #include "talk/base/basictypes.h"
+
+const unsigned char* GetCategoryGroupEnabled(const char* category_group) {
+  return TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(category_group);
+}
+
+void AddTraceEvent(char phase,
+                   const unsigned char* category_group_enabled,
+                   const char* name,
+                   unsigned long long id,
+                   int num_args,
+                   const char** arg_names,
+                   const unsigned char* arg_types,
+                   const unsigned long long* arg_values,
+                   unsigned char flags) {
+  TRACE_EVENT_API_ADD_TRACE_EVENT(phase, category_group_enabled, name, id,
+                                  num_args, arg_names, arg_types, arg_values,
+                                  NULL, flags);
+}
 
 #if defined(LIBPEERCONNECTION_LIB)
 
@@ -18,6 +36,7 @@
 // provide an empty intialization routine so that this #ifdef doesn't
 // have to be in other places.
 bool InitializeWebRtcModule() {
+  webrtc::SetupEventTracer(&GetCategoryGroupEnabled, &AddTraceEvent);
   return true;
 }
 
@@ -42,6 +61,8 @@ static base::FilePath GetLibPeerConnectionPath() {
   // Simulate '@loader_path/Libraries'.
   path = path.Append(FILE_PATH_LITERAL("Libraries"))
              .Append(FILE_PATH_LITERAL("libpeerconnection.so"));
+#elif defined(OS_ANDROID)
+  path = path.Append(FILE_PATH_LITERAL("libpeerconnection.so"));
 #else
   path = path.Append(FILE_PATH_LITERAL("lib"))
              .Append(FILE_PATH_LITERAL("libpeerconnection.so"));
@@ -59,7 +80,7 @@ bool InitializeWebRtcModule() {
   std::string error;
   static base::NativeLibrary lib =
       base::LoadNativeLibrary(path, &error);
-  CHECK(lib);
+  CHECK(lib) << error;
 
   InitializeModuleFunction initialize_module =
       reinterpret_cast<InitializeModuleFunction>(
@@ -73,22 +94,26 @@ bool InitializeWebRtcModule() {
   // PS: This function is actually implemented in allocator_proxy.cc with the
   // new/delete overrides.
   return initialize_module(*CommandLine::ForCurrentProcess(),
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
       &Allocate, &Dellocate,
 #endif
+      logging::GetLogMessageHandler(),
+      &GetCategoryGroupEnabled, &AddTraceEvent,
       &g_create_webrtc_media_engine, &g_destroy_webrtc_media_engine);
 }
 
 cricket::MediaEngineInterface* CreateWebRtcMediaEngine(
     webrtc::AudioDeviceModule* adm,
     webrtc::AudioDeviceModule* adm_sc,
+    cricket::WebRtcVideoEncoderFactory* encoder_factory,
     cricket::WebRtcVideoDecoderFactory* decoder_factory) {
   // For convenience of tests etc, we call InitializeWebRtcModule here.
   // For Chrome however, InitializeWebRtcModule must be called
   // explicitly before the sandbox is initialized.  In that case, this call is
   // effectively a noop.
   InitializeWebRtcModule();
-  return g_create_webrtc_media_engine(adm, adm_sc, decoder_factory);
+  return g_create_webrtc_media_engine(adm, adm_sc, encoder_factory,
+      decoder_factory);
 }
 
 void DestroyWebRtcMediaEngine(cricket::MediaEngineInterface* media_engine) {

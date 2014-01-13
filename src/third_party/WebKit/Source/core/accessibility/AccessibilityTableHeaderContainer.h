@@ -31,30 +31,29 @@
 
 #include "core/accessibility/AccessibilityMockObject.h"
 #include "core/accessibility/AccessibilityTable.h"
-#include "core/platform/graphics/IntRect.h"
 
 namespace WebCore {
 
 class AccessibilityTableHeaderContainer : public AccessibilityMockObject {
-    
+
 private:
     AccessibilityTableHeaderContainer();
 public:
     static PassRefPtr<AccessibilityTableHeaderContainer> create();
     virtual ~AccessibilityTableHeaderContainer();
-    
-    virtual AccessibilityRole roleValue() const { return TableHeaderContainerRole; }
-    
-    virtual void addChildren();
-    
-    virtual LayoutRect elementRect() const;
-    
+
+    virtual AccessibilityRole roleValue() const OVERRIDE { return TableHeaderContainerRole; }
+
+    virtual void addChildren() OVERRIDE;
+
+    virtual LayoutRect elementRect() const OVERRIDE;
+
 private:
     LayoutRect m_headerRect;
-    
-    virtual bool computeAccessibilityIsIgnored() const;
-}; 
-    
-} // namespace WebCore 
+
+    virtual bool computeAccessibilityIsIgnored() const OVERRIDE;
+};
+
+} // namespace WebCore
 
 #endif // AccessibilityTableHeaderContainer_h

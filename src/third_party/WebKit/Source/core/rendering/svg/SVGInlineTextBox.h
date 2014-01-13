@@ -22,7 +22,6 @@
 #ifndef SVGInlineTextBox_h
 #define SVGInlineTextBox_h
 
-#if ENABLE(SVG)
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/svg/SVGTextLayoutEngine.h"
 
@@ -74,8 +73,8 @@ private:
     bool prepareGraphicsContextForTextPainting(GraphicsContext*&, float scalingFactor, TextRun&, RenderStyle*);
     void restoreGraphicsContextAfterTextPainting(GraphicsContext*&, TextRun&);
 
-    void paintDecoration(GraphicsContext*, ETextDecoration, const SVGTextFragment&);
-    void paintDecorationWithStyle(GraphicsContext*, ETextDecoration, const SVGTextFragment&, RenderObject* decorationRenderer);
+    void paintDecoration(GraphicsContext*, TextDecoration, const SVGTextFragment&);
+    void paintDecorationWithStyle(GraphicsContext*, TextDecoration, const SVGTextFragment&, RenderObject* decorationRenderer);
     void paintTextWithShadows(GraphicsContext*, RenderStyle*, TextRun&, const SVGTextFragment&, int startPosition, int endPosition);
     void paintText(GraphicsContext*, RenderStyle*, RenderStyle* selectionStyle, const SVGTextFragment&, bool hasSelection, bool paintSelectedTextOnly);
 
@@ -91,5 +90,4 @@ private:
 
 } // namespace WebCore
 
-#endif
 #endif // SVGInlineTextBox_h

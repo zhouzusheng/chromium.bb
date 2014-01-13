@@ -7,13 +7,21 @@
 base.require('ui');
 
 base.exportTo('tracing.analysis', function() {
-  var ObjectSnapshotView = ui.define('div');
+  var ObjectSnapshotView = ui.define('object-snapshot-view');
 
   ObjectSnapshotView.prototype = {
     __proto__: HTMLDivElement.prototype,
 
     decorate: function() {
       this.objectSnapshot_ = undefined;
+    },
+
+    set modelObject(obj) {
+      this.objectSnapshot = obj;
+    },
+
+    get modelObject(obj) {
+      return this.objectSnapshot;
     },
 
     get objectSnapshot() {
@@ -30,19 +38,32 @@ base.exportTo('tracing.analysis', function() {
     }
   };
 
-  ObjectSnapshotView.typeNameToViewConstructorMap = {};
-  ObjectSnapshotView.register = function(typeName, viewConstructor) {
-    if (ObjectSnapshotView.typeNameToViewConstructorMap[typeName])
-      throw new Error('Handler already registerd for ' + typeName);
-    ObjectSnapshotView.typeNameToViewConstructorMap[typeName] =
-      viewConstructor;
+  ObjectSnapshotView.typeNameToViewInfoMap = {};
+  ObjectSnapshotView.register = function(typeName,
+                                         viewConstructor,
+                                         opt_options) {
+    if (ObjectSnapshotView.typeNameToViewInfoMap[typeName])
+      throw new Error('Handler already registered for ' + typeName);
+    var options = opt_options || {
+      showInTrackView: true
+    };
+    ObjectSnapshotView.typeNameToViewInfoMap[typeName] = {
+      constructor: viewConstructor,
+      options: options
+    };
   };
 
-  ObjectSnapshotView.getViewConstructor = function(typeName) {
-    return ObjectSnapshotView.typeNameToViewConstructorMap[typeName];
+  ObjectSnapshotView.unregister = function(typeName) {
+    if (ObjectSnapshotView.typeNameToViewInfoMap[typeName] === undefined)
+      throw new Error(typeName + ' not registered');
+    delete ObjectSnapshotView.typeNameToViewInfoMap[typeName];
+  };
+
+  ObjectSnapshotView.getViewInfo = function(typeName) {
+    return ObjectSnapshotView.typeNameToViewInfoMap[typeName];
   };
 
   return {
-    ObjectSnapshotView: ObjectSnapshotView,
+    ObjectSnapshotView: ObjectSnapshotView
   };
 });

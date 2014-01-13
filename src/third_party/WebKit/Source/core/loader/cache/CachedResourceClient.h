@@ -32,16 +32,13 @@ namespace WebCore {
 class CachedResource;
 
 class CachedResourceClient {
-    WTF_MAKE_FAST_ALLOCATED;
 public:
     enum CachedResourceClientType {
         BaseResourceType,
         ImageType,
         FontType,
         StyleSheetType,
-#if ENABLE(SVG)
-        SVGDocumentType,
-#endif
+        DocumentType,
         RawResourceType
     };
 

@@ -37,58 +37,52 @@
 
 namespace WebCore {
 
+template<typename Map>
+static void disposeMapWithUnsafePersistentValues(Map* map)
+{
+    typename Map::iterator it = map->begin();
+    for (; it != map->end(); ++it)
+        it->value.dispose();
+    map->clear();
+}
+
 void V8PerContextData::dispose()
 {
-    v8::HandleScope handleScope;
-    v8::Isolate* isolate = m_context->GetIsolate();
-    m_context->SetAlignedPointerInEmbedderData(v8ContextPerContextDataIndex, 0);
+    v8::HandleScope handleScope(m_isolate);
+    v8::Local<v8::Context>::New(m_isolate, m_context)->SetAlignedPointerInEmbedderData(v8ContextPerContextDataIndex, 0);
 
-    {
-        WrapperBoilerplateMap::iterator it = m_wrapperBoilerplates.begin();
-        for (; it != m_wrapperBoilerplates.end(); ++it) {
-            v8::Persistent<v8::Object> wrapper = it->value;
-            wrapper.Dispose(isolate);
-            wrapper.Clear();
-        }
-        m_wrapperBoilerplates.clear();
-    }
+    disposeMapWithUnsafePersistentValues(&m_wrapperBoilerplates);
+    disposeMapWithUnsafePersistentValues(&m_constructorMap);
+    disposeMapWithUnsafePersistentValues(&m_customElementPrototypeMap);
 
-    {
-        ConstructorMap::iterator it = m_constructorMap.begin();
-        for (; it != m_constructorMap.end(); ++it) {
-            v8::Persistent<v8::Function> wrapper = it->value;
-            wrapper.Dispose(isolate);
-            wrapper.Clear();
-        }
-        m_constructorMap.clear();
-    }
+    m_context.Dispose();
 }
 
 #define V8_STORE_PRIMORDIAL(name, Name) \
 { \
-    ASSERT(m_##name##Prototype.get().IsEmpty()); \
+    ASSERT(m_##name##Prototype.isEmpty()); \
     v8::Handle<v8::String> symbol = v8::String::NewSymbol(#Name); \
     if (symbol.IsEmpty()) \
         return false; \
-    v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(m_context->Global()->Get(symbol)); \
+    v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(v8::Local<v8::Context>::New(m_isolate, m_context)->Global()->Get(symbol)); \
     if (object.IsEmpty()) \
         return false; \
     v8::Handle<v8::Value> prototypeValue = object->Get(prototypeString); \
     if (prototypeValue.IsEmpty()) \
         return false; \
-    m_##name##Prototype.set(prototypeValue); \
+    m_##name##Prototype.set(m_isolate, prototypeValue);  \
 }
 
 bool V8PerContextData::init()
 {
-    m_context->SetAlignedPointerInEmbedderData(v8ContextPerContextDataIndex, this);
+    v8::Handle<v8::Context> context = v8::Local<v8::Context>::New(m_isolate, m_context);
+    context->SetAlignedPointerInEmbedderData(v8ContextPerContextDataIndex, this);
 
     v8::Handle<v8::String> prototypeString = v8::String::NewSymbol("prototype");
     if (prototypeString.IsEmpty())
         return false;
 
     V8_STORE_PRIMORDIAL(error, Error);
-    V8_STORE_PRIMORDIAL(object, Object);
 
     return true;
 }
@@ -98,13 +92,12 @@ bool V8PerContextData::init()
 v8::Local<v8::Object> V8PerContextData::createWrapperFromCacheSlowCase(WrapperTypeInfo* type)
 {
     ASSERT(!m_errorPrototype.isEmpty());
-    ASSERT(!m_objectPrototype.isEmpty());
 
-    v8::Context::Scope scope(m_context);
+    v8::Context::Scope scope(v8::Local<v8::Context>::New(m_isolate, m_context));
     v8::Local<v8::Function> function = constructorForType(type);
     v8::Local<v8::Object> instance = V8ObjectConstructor::newInstance(function);
     if (!instance.IsEmpty()) {
-        m_wrapperBoilerplates.set(type, v8::Persistent<v8::Object>(m_context->GetIsolate(), instance));
+        m_wrapperBoilerplates.set(type, UnsafePersistent<v8::Object>(m_isolate, instance));
         return instance->Clone();
     }
     return v8::Local<v8::Object>();
@@ -113,29 +106,27 @@ v8::Local<v8::Object> V8PerContextData::createWrapperFromCacheSlowCase(WrapperTy
 v8::Local<v8::Function> V8PerContextData::constructorForTypeSlowCase(WrapperTypeInfo* type)
 {
     ASSERT(!m_errorPrototype.isEmpty());
-    ASSERT(!m_objectPrototype.isEmpty());
 
-    v8::Context::Scope scope(m_context);
-    v8::Handle<v8::FunctionTemplate> functionTemplate = type->getTemplate(m_context->GetIsolate(), worldType(m_context->GetIsolate()));
+    v8::Context::Scope scope(v8::Local<v8::Context>::New(m_isolate, m_context));
+    v8::Handle<v8::FunctionTemplate> functionTemplate = type->getTemplate(m_isolate, worldType(m_isolate));
     // Getting the function might fail if we're running out of stack or memory.
     v8::TryCatch tryCatch;
     v8::Local<v8::Function> function = functionTemplate->GetFunction();
     if (function.IsEmpty())
         return v8::Local<v8::Function>();
 
-    function->SetPrototype(m_objectPrototype.get());
     v8::Local<v8::Value> prototypeValue = function->Get(v8::String::NewSymbol("prototype"));
     if (!prototypeValue.IsEmpty() && prototypeValue->IsObject()) {
         v8::Local<v8::Object> prototypeObject = v8::Local<v8::Object>::Cast(prototypeValue);
         if (prototypeObject->InternalFieldCount() == v8PrototypeInternalFieldcount
             && type->wrapperTypePrototype == WrapperTypeObjectPrototype)
             prototypeObject->SetAlignedPointerInInternalField(v8PrototypeTypeIndex, type);
-        type->installPerContextPrototypeProperties(prototypeObject, m_context->GetIsolate());
+        type->installPerContextPrototypeProperties(prototypeObject, m_isolate);
         if (type->wrapperTypePrototype == WrapperTypeErrorPrototype)
-            prototypeObject->SetPrototype(m_errorPrototype.get());
+            prototypeObject->SetPrototype(m_errorPrototype.newLocal(m_isolate));
     }
 
-    m_constructorMap.set(type, v8::Persistent<v8::Function>::New(m_context->GetIsolate(), function));
+    m_constructorMap.set(type, UnsafePersistent<v8::Function>(m_isolate, function));
 
     return function;
 }

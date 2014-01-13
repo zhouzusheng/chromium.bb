@@ -22,6 +22,7 @@
 #include "core/html/HTMLOptionsCollection.h"
 
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/NamedNodesCollection.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLSelectElement.h"
 
@@ -64,7 +65,7 @@ void HTMLOptionsCollection::add(PassRefPtr<HTMLOptionElement> element, int index
     if (index == -1 || unsigned(index) >= length())
         select->add(newOption, 0, ec);
     else
-        select->add(newOption, static_cast<HTMLOptionElement*>(item(index)), ec);
+        select->add(newOption, toHTMLOptionElement(item(index)), ec);
 
     ASSERT(!ec);
 }
@@ -89,4 +90,41 @@ void HTMLOptionsCollection::setLength(unsigned length, ExceptionCode& ec)
     toHTMLSelectElement(ownerNode())->setLength(length, ec);
 }
 
+void HTMLOptionsCollection::anonymousNamedGetter(const AtomicString& name, bool& returnValue0Enabled, RefPtr<NodeList>& returnValue0, bool& returnValue1Enabled, RefPtr<Node>& returnValue1)
+{
+    Vector<RefPtr<Node> > namedItems;
+    this->namedItems(name, namedItems);
+
+    if (!namedItems.size())
+        return;
+
+    if (namedItems.size() == 1) {
+        returnValue1Enabled = true;
+        returnValue1 = namedItems.at(0);
+        return;
+    }
+
+    returnValue0Enabled = true;
+    returnValue0 = NamedNodesCollection::create(namedItems);
+}
+
+bool HTMLOptionsCollection::anonymousIndexedSetterRemove(unsigned index, ExceptionCode& ec)
+{
+    HTMLSelectElement* base = toHTMLSelectElement(ownerNode());
+    base->remove(index);
+    return true;
+}
+
+bool HTMLOptionsCollection::anonymousIndexedSetter(unsigned index, PassRefPtr<HTMLOptionElement> value, ExceptionCode& ec)
+{
+    HTMLSelectElement* base = toHTMLSelectElement(ownerNode());
+    if (!value) {
+        ec = TYPE_MISMATCH_ERR;
+        return true;
+    }
+    base->setOption(index, value.get(), ec);
+    return true;
+}
+
 } //namespace
+

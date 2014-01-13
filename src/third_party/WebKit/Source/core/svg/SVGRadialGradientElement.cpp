@@ -23,20 +23,13 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGRadialGradientElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
-#include "core/platform/FloatConversion.h"
-#include "core/platform/graphics/FloatPoint.h"
 #include "core/rendering/svg/RenderSVGResourceRadialGradient.h"
 #include "core/svg/RadialGradientAttributes.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGStopElement.h"
-#include "core/svg/SVGTransform.h"
 #include "core/svg/SVGTransformList.h"
-#include "core/svg/SVGUnitTypes.h"
 
 namespace WebCore {
 
@@ -89,7 +82,7 @@ bool SVGRadialGradientElement::isSupportedAttribute(const QualifiedName& attrNam
         supportedAttributes.add(SVGNames::rAttr);
         supportedAttributes.add(SVGNames::frAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGRadialGradientElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -131,9 +124,9 @@ void SVGRadialGradientElement::svgAttributeChanged(const QualifiedName& attrName
         object->setNeedsLayout(true);
 }
 
-RenderObject* SVGRadialGradientElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGRadialGradientElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGResourceRadialGradient(this);
+    return new (document()->renderArena()) RenderSVGResourceRadialGradient(this);
 }
 
 bool SVGRadialGradientElement::collectGradientAttributes(RadialGradientAttributes& attributes)
@@ -225,5 +218,3 @@ bool SVGRadialGradientElement::selfHasRelativeLengths() const
 }
 
 }
-
-#endif // ENABLE(SVG)

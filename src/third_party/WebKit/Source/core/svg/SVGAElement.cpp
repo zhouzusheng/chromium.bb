@@ -22,7 +22,6 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAElement.h"
 
 #include "SVGNames.h"
@@ -101,7 +100,7 @@ bool SVGAElement::isSupportedAttribute(const QualifiedName& attrName)
         SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::targetAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGAElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -148,12 +147,12 @@ void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
     }
 }
 
-RenderObject* SVGAElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGAElement::createRenderer(RenderStyle*)
 {
     if (parentNode() && parentNode()->isSVGElement() && toSVGElement(parentNode())->isTextContent())
-        return new (arena) RenderSVGInline(this);
+        return new (document()->renderArena()) RenderSVGInline(this);
 
-    return new (arena) RenderSVGTransformableContainer(this);
+    return new (document()->renderArena()) RenderSVGTransformableContainer(this);
 }
 
 void SVGAElement::defaultEventHandler(Event* event)
@@ -188,7 +187,7 @@ void SVGAElement::defaultEventHandler(Event* event)
             Frame* frame = document()->frame();
             if (!frame)
                 return;
-            frame->loader()->urlSelected(document()->completeURL(url), target, event, false, false, MaybeSendReferrer);
+            frame->loader()->urlSelected(document()->completeURL(url), target, event, false, MaybeSendReferrer);
             return;
         }
     }
@@ -203,12 +202,12 @@ bool SVGAElement::supportsFocus() const
     return true;
 }
 
-bool SVGAElement::isFocusable() const
+bool SVGAElement::rendererIsFocusable() const
 {
     if (renderer() && renderer()->absoluteClippedOverflowRect().isEmpty())
         return false;
-    
-    return SVGElement::isFocusable();
+
+    return SVGElement::rendererIsFocusable();
 }
 
 bool SVGAElement::isURLAttribute(const Attribute& attribute) const
@@ -230,7 +229,7 @@ bool SVGAElement::isKeyboardFocusable(KeyboardEvent*) const
     if (!page)
         return false;
     
-    return page->chrome()->client()->tabsToLinks();
+    return page->chrome().client()->tabsToLinks();
 }
 
 bool SVGAElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
@@ -246,5 +245,3 @@ bool SVGAElement::childShouldCreateRenderer(const NodeRenderingContext& childCon
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(SVG)

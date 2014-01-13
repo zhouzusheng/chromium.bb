@@ -29,10 +29,10 @@
  */
 
 #include "config.h"
-#include <public/WebURLLoadTiming.h>
+#include "public/platform/WebURLLoadTiming.h"
 
 #include "core/platform/network/ResourceLoadTiming.h"
-#include <public/WebString.h>
+#include "public/platform/WebString.h"
 
 using namespace WebCore;
 
@@ -63,112 +63,112 @@ void WebURLLoadTiming::setRequestTime(double time)
     m_private->requestTime = time;
 }
 
-int WebURLLoadTiming::proxyStart() const
+double WebURLLoadTiming::proxyStart() const
 {
     return m_private->proxyStart;
 }
 
-void WebURLLoadTiming::setProxyStart(int start)
+void WebURLLoadTiming::setProxyStart(double start)
 {
     m_private->proxyStart = start;
 }
 
-int WebURLLoadTiming::proxyEnd() const
+double WebURLLoadTiming::proxyEnd() const
 {
     return m_private->proxyEnd;
 }
 
-void WebURLLoadTiming::setProxyEnd(int end)
+void WebURLLoadTiming::setProxyEnd(double end)
 {
     m_private->proxyEnd = end;
 }
 
-int WebURLLoadTiming::dnsStart() const
+double WebURLLoadTiming::dnsStart() const
 {
     return m_private->dnsStart;
 }
 
-void WebURLLoadTiming::setDNSStart(int start)
+void WebURLLoadTiming::setDNSStart(double start)
 {
     m_private->dnsStart = start;
 }
 
-int WebURLLoadTiming::dnsEnd() const
+double WebURLLoadTiming::dnsEnd() const
 {
     return m_private->dnsEnd;
 }
 
-void WebURLLoadTiming::setDNSEnd(int end)
+void WebURLLoadTiming::setDNSEnd(double end)
 {
     m_private->dnsEnd = end;
 }
 
-int WebURLLoadTiming::connectStart() const
+double WebURLLoadTiming::connectStart() const
 {
     return m_private->connectStart;
 }
 
-void WebURLLoadTiming::setConnectStart(int start)
+void WebURLLoadTiming::setConnectStart(double start)
 {
     m_private->connectStart = start;
 }
 
-int WebURLLoadTiming::connectEnd() const
+double WebURLLoadTiming::connectEnd() const
 {
     return m_private->connectEnd;
 }
 
-void WebURLLoadTiming::setConnectEnd(int end)
+void WebURLLoadTiming::setConnectEnd(double end)
 {
     m_private->connectEnd = end;
 }
 
-int WebURLLoadTiming::sendStart() const
+double WebURLLoadTiming::sendStart() const
 {
     return m_private->sendStart;
 }
 
-void WebURLLoadTiming::setSendStart(int start)
+void WebURLLoadTiming::setSendStart(double start)
 {
     m_private->sendStart = start;
 }
 
-int WebURLLoadTiming::sendEnd() const
+double WebURLLoadTiming::sendEnd() const
 {
     return m_private->sendEnd;
 }
 
-void WebURLLoadTiming::setSendEnd(int end)
+void WebURLLoadTiming::setSendEnd(double end)
 {
     m_private->sendEnd = end;
 }
 
-int WebURLLoadTiming::receiveHeadersEnd() const
+double WebURLLoadTiming::receiveHeadersEnd() const
 {
     return m_private->receiveHeadersEnd;
 }
 
-void WebURLLoadTiming::setReceiveHeadersEnd(int end)
+void WebURLLoadTiming::setReceiveHeadersEnd(double end)
 {
     m_private->receiveHeadersEnd = end;
 }
 
-int WebURLLoadTiming::sslStart() const
+double WebURLLoadTiming::sslStart() const
 {
     return m_private->sslStart;
 }
 
-void WebURLLoadTiming::setSSLStart(int start)
+void WebURLLoadTiming::setSSLStart(double start)
 {
     m_private->sslStart = start;
 }
 
-int WebURLLoadTiming::sslEnd() const
+double WebURLLoadTiming::sslEnd() const
 {
     return m_private->sslEnd;
 }
 
-void WebURLLoadTiming::setSSLEnd(int end)
+void WebURLLoadTiming::setSSLEnd(double end)
 {
     m_private->sslEnd = end;
 }

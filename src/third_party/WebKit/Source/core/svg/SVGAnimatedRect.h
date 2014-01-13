@@ -20,7 +20,6 @@
 #ifndef SVGAnimatedRect_h
 #define SVGAnimatedRect_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/SVGRect.h"
 #include "core/svg/properties/SVGAnimatedPropertyMacros.h"
@@ -35,7 +34,7 @@ typedef SVGAnimatedPropertyTearOff<FloatRect> SVGAnimatedRect;
 DECLARE_ANIMATED_PROPERTY(SVGAnimatedRect, FloatRect, UpperProperty, LowerProperty)
 
 #define DEFINE_ANIMATED_RECT(OwnerType, DOMAttribute, UpperProperty, LowerProperty) \
-DEFINE_ANIMATED_PROPERTY(AnimatedRect, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty)
+DEFINE_ANIMATED_PROPERTY(AnimatedRect, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty, SVGAnimatedRect, FloatRect)
 
 class SVGAnimationElement;
 
@@ -60,5 +59,4 @@ public:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

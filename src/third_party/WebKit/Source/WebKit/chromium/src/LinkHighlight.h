@@ -27,13 +27,13 @@
 #define LinkHighlight_h
 
 #include "core/platform/graphics/FloatPoint.h"
+#include "core/platform/graphics/GraphicsLayer.h"
 #include "core/platform/graphics/IntPoint.h"
 #include "core/platform/graphics/Path.h"
-#include "core/platform/graphics/chromium/GraphicsLayerChromium.h"
-#include <public/WebAnimationDelegate.h>
-#include <public/WebContentLayer.h>
-#include <public/WebContentLayerClient.h>
-#include <public/WebLayer.h>
+#include "public/platform/WebAnimationDelegate.h"
+#include "public/platform/WebContentLayer.h"
+#include "public/platform/WebContentLayerClient.h"
+#include "public/platform/WebLayer.h"
 #include <wtf/OwnPtr.h>
 
 namespace WebCore {
@@ -69,7 +69,7 @@ public:
     virtual WebLayer* layer() OVERRIDE;
     virtual void clearCurrentGraphicsLayer() OVERRIDE;
 
-    WebCore::GraphicsLayerChromium* currentGraphicsLayerForTesting() const { return m_currentGraphicsLayer; }
+    WebCore::GraphicsLayer* currentGraphicsLayerForTesting() const { return m_currentGraphicsLayer; }
 
 private:
     LinkHighlight(WebCore::Node*, WebViewImpl*);
@@ -89,8 +89,7 @@ private:
     RefPtr<WebCore::Node> m_node;
     OwnPtr<WebAnimation> m_animation;
     WebViewImpl* m_owningWebViewImpl;
-    WebCore::GraphicsLayerChromium* m_currentGraphicsLayer;
-    bool m_usingNonCompositedContentHost;
+    WebCore::GraphicsLayer* m_currentGraphicsLayer;
 
     bool m_geometryNeedsUpdate;
     bool m_isAnimating;

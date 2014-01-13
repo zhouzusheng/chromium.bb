@@ -28,9 +28,8 @@
 
 #include "core/dom/NodeRenderingTraversal.h"
 
-#include <wtf/Noncopyable.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/AtomicString.h>
+#include "wtf/RefPtr.h"
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
@@ -47,6 +46,7 @@ class NodeRenderingContext {
 public:
     explicit NodeRenderingContext(Node*);
     NodeRenderingContext(Node*, RenderStyle*);
+    NodeRenderingContext(Node*, const Node::AttachContext&);
     ~NodeRenderingContext();
 
     void createRendererForTextIfNeeded();

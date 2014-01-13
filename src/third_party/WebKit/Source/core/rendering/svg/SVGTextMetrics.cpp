@@ -19,10 +19,8 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/SVGTextMetrics.h"
 
-#include "core/platform/graphics/WidthIterator.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/SVGTextRunRenderingContext.h"
 
@@ -116,5 +114,3 @@ SVGTextMetrics::SVGTextMetrics(RenderSVGInlineText* text, unsigned position, uns
 }
 
 }
-
-#endif // ENABLE(SVG)

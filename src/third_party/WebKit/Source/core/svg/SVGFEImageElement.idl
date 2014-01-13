@@ -23,13 +23,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-[
-    Conditional=SVG
-] interface SVGFEImageElement : SVGStyledElement,
-                                                        SVGURIReference,
-                                                        SVGLangSpace,
-                                                        SVGExternalResourcesRequired,
-                                                        SVGFilterPrimitiveStandardAttributes {
+interface SVGFEImageElement : SVGStyledElement,
+                              SVGLangSpace,
+                              SVGFilterPrimitiveStandardAttributes {
     readonly attribute SVGAnimatedPreserveAspectRatio preserveAspectRatio;
 };
+
+SVGFEImageElement implements SVGExternalResourcesRequired;
+SVGFEImageElement implements SVGURIReference;
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// From ppb_image_data.idl modified Thu Apr 25 14:42:27 2013.
+// From ppb_image_data.idl modified Thu Jun  6 18:05:40 2013.
 
 #include <string.h>
 

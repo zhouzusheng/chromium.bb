@@ -15,17 +15,18 @@
 #include "content/common/browser_plugin/browser_plugin_message_enums.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
+#include "content/common/edit_command.h"
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragStatus.h"
+#include "third_party/WebKit/public/web/WebDragOperation.h"
+#include "third_party/WebKit/public/web/WebDragStatus.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
-#include "webkit/glue/webcursor.h"
-#include "webkit/glue/webdropdata.h"
+#include "webkit/common/webdropdata.h"
+#include "webkit/common/cursors/webcursor.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -50,8 +51,8 @@ IPC_STRUCT_BEGIN(BrowserPluginHostMsg_ResizeGuest_Params)
   IPC_STRUCT_MEMBER(base::SharedMemoryHandle, damage_buffer_handle)
   // The size of the damage buffer.
   IPC_STRUCT_MEMBER(size_t, damage_buffer_size)
-  // The new size of the guest view area.
-  IPC_STRUCT_MEMBER(gfx::Size, view_size)
+  // The new rect of the guest view area.
+  IPC_STRUCT_MEMBER(gfx::Rect, view_rect)
   // Indicates the scale factor of the embedder WebView.
   IPC_STRUCT_MEMBER(float, scale_factor)
   // Indicates a request for a full repaint of the page.
@@ -61,6 +62,7 @@ IPC_STRUCT_BEGIN(BrowserPluginHostMsg_ResizeGuest_Params)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(BrowserPluginHostMsg_Attach_Params)
+  IPC_STRUCT_MEMBER(int, browser_plugin_instance_id)
   IPC_STRUCT_MEMBER(std::string, storage_partition_id)
   IPC_STRUCT_MEMBER(bool, persist_storage)
   IPC_STRUCT_MEMBER(bool, focused)
@@ -83,10 +85,6 @@ IPC_STRUCT_BEGIN(BrowserPluginMsg_LoadCommit_Params)
   IPC_STRUCT_MEMBER(GURL, url)
   // Indicates whether the navigation was on the top-level frame.
   IPC_STRUCT_MEMBER(bool, is_top_level)
-  // The browser's process ID for the guest.
-  IPC_STRUCT_MEMBER(int, process_id)
-  // The browser's routing ID for the guest's RenderView.
-  IPC_STRUCT_MEMBER(int, route_id)
   // The index of the current navigation entry after this navigation was
   // committed.
   IPC_STRUCT_MEMBER(int, current_entry_index)
@@ -152,6 +150,11 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_ExecuteEditCommand,
                      int /* instance_id */,
                      std::string /* command */)
 
+// This message must be sent just before sending a key event.
+IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetEditCommandsForNextKeyEvent,
+                    int /* instance_id */,
+                    std::vector<content::EditCommand> /* edit_commands */)
+
 // This message is sent to the browser process to enable or disable autosize
 // mode.
 IPC_MESSAGE_ROUTED3(
@@ -165,9 +168,10 @@ IPC_MESSAGE_ROUTED3(
 // |params| is the state of the BrowserPlugin taking ownership of
 // the guest. If a guest doesn't already exist with the given |instance_id|,
 // a new one will be created.
-IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_Attach,
+IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_Attach,
                     int /* instance_id */,
-                    BrowserPluginHostMsg_Attach_Params /* params */)
+                    BrowserPluginHostMsg_Attach_Params /* params */,
+                    base::DictionaryValue /* extra_params */)
 
 // Tells the browser process to terminate the guest associated with the
 // browser plugin associated with the provided |instance_id|.
@@ -284,6 +288,11 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_LockMouse_ACK,
 // Sends a PointerLock Unlock ACK to the BrowserPluginGuest.
 IPC_MESSAGE_ROUTED1(BrowserPluginHostMsg_UnlockMouse_ACK, int /* instance_id */)
 
+// Sent when plugin's position has changed without UpdateRect.
+IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_UpdateGeometry,
+                    int /* instance_id */,
+                    gfx::Rect /* view_rect */)
+
 // -----------------------------------------------------------------------------
 // These messages are from the guest renderer to the browser process
 
@@ -306,7 +315,7 @@ IPC_MESSAGE_ROUTED2(BrowserPluginMsg_AllocateInstanceID_ACK,
 
 IPC_MESSAGE_CONTROL2(BrowserPluginMsg_AddMessageToConsole,
                      int /* instance_id */,
-                     DictionaryValue /* message_info */)
+                     base::DictionaryValue /* message_info */)
 
 // This message is sent in response to a completed attachment of a guest
 // to a BrowserPlugin. This message carries information about the guest
@@ -325,6 +334,12 @@ IPC_MESSAGE_CONTROL1(BrowserPluginMsg_Close,
 IPC_MESSAGE_CONTROL2(BrowserPluginMsg_GuestContentWindowReady,
                      int /* instance_id */,
                      int /* source_routing_id */)
+
+// After the load handler of the guest's main frame is called, the browser
+// process informs the embedder through the BrowserPluginMsg_LoadHandlerCalled
+// message.
+IPC_MESSAGE_CONTROL1(BrowserPluginMsg_LoadHandlerCalled,
+                     int /* instance_id */)
 
 // When the guest begins to load a page, the browser process informs the
 // embedder through the BrowserPluginMsg_LoadStart message.
@@ -440,7 +455,7 @@ IPC_MESSAGE_CONTROL4(BrowserPluginMsg_RequestPermission,
                      int /* instance_id */,
                      BrowserPluginPermissionType /* permission_type */,
                      int /* request_id */,
-                     DictionaryValue /* request_info */)
+                     base::DictionaryValue /* request_info */)
 
 // Forwards a PointerLock Unlock request to the BrowserPlugin.
 IPC_MESSAGE_CONTROL1(BrowserPluginMsg_UnlockMouse, int /* instance_id */)

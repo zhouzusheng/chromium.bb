@@ -11,7 +11,7 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time.h"
@@ -21,9 +21,9 @@
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/gpu_data_manager.h"
-#include "content/public/common/gpu_info.h"
 #include "googleurl/src/gurl.h"
 #include "gpu/command_buffer/common/constants.h"
+#include "gpu/config/gpu_info.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
 #include "ui/gfx/native_widget_types.h"
@@ -54,7 +54,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
     GPU_PROCESS_KIND_COUNT
   };
 
-  typedef base::Callback<void(const IPC::ChannelHandle&, const GPUInfo&)>
+  typedef base::Callback<void(const IPC::ChannelHandle&, const gpu::GPUInfo&)>
       EstablishChannelCallback;
 
   typedef base::Callback<void(int32)> CreateCommandBufferCallback;
@@ -148,7 +148,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   virtual void OnProcessCrashed(int exit_code) OVERRIDE;
 
   // Message handlers.
-  void OnInitialized(bool result);
+  void OnInitialized(bool result, const gpu::GPUInfo& gpu_info);
   void OnChannelEstablished(const IPC::ChannelHandle& channel_handle);
   void OnCommandBufferCreated(const int32 route_id);
   void OnDestroyCommandBuffer(int32 surface_id);
@@ -174,7 +174,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
     const GpuHostMsg_AcceleratedSurfaceRelease_Params& params);
 #endif
 
-  void CreateChannelCache(int32 client_id, size_t cache_size);
+  void CreateChannelCache(int32 client_id);
   void OnDestroyChannel(int32 client_id);
   void OnCacheShader(int32 client_id, const std::string& key,
                      const std::string& shader);

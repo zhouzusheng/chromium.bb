@@ -28,15 +28,12 @@
 #include "core/dom/MessagePort.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/EventException.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/MessageEvent.h"
 #include "core/page/DOMWindow.h"
-#include "core/page/SecurityOrigin.h"
-#include "core/platform/Timer.h"
 #include "core/workers/WorkerContext.h"
-#include <wtf/text/AtomicString.h>
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
@@ -45,6 +42,7 @@ MessagePort::MessagePort(ScriptExecutionContext& scriptExecutionContext)
     , m_closed(false)
     , m_scriptExecutionContext(&scriptExecutionContext)
 {
+    ScriptWrappable::init(this);
     m_scriptExecutionContext->createdMessagePort(this);
 
     // Don't need to call processMessagePortMessagesSoon() here, because the port will not be opened until start() is invoked.

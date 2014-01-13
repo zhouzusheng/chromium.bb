@@ -9,7 +9,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/i18n/base_i18n_export.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "build/build_config.h"
 
 namespace base {
@@ -31,6 +31,7 @@ enum TextDirection {
   UNKNOWN_DIRECTION = 0,
   RIGHT_TO_LEFT = 1,
   LEFT_TO_RIGHT = 2,
+  TEXT_DIRECTION_NUM_DIRECTIONS = 3,
 };
 
 // Get the locale that the currently running process has been configured to use.

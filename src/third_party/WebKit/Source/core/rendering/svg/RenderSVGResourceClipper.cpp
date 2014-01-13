@@ -22,33 +22,16 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
 
 #include "SVGNames.h"
-#include "core/page/Frame.h"
 #include "core/page/FrameView.h"
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
-#include "core/rendering/HitTestRequest.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/svg/RenderSVGResource.h"
-#include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
-#include "core/svg/SVGClipPathElement.h"
-#include "core/svg/SVGElement.h"
-#include "core/svg/SVGStyledElement.h"
-#include "core/svg/SVGStyledTransformableElement.h"
-#include "core/svg/SVGUnitTypes.h"
 #include "core/svg/SVGUseElement.h"
-#include <wtf/UnusedParam.h>
 
 namespace WebCore {
 
@@ -172,7 +155,7 @@ bool RenderSVGResourceClipper::applyClippingToContext(RenderObject* object, cons
     SVGRenderingContext::calculateTransformationToOutermostCoordinateSystem(object, absoluteTransform);
 
     if (shouldCreateClipData && !repaintRect.isEmpty()) {
-        if (!SVGRenderingContext::createImageBuffer(repaintRect, absoluteTransform, clipperData->clipMaskImage, ColorSpaceDeviceRGB, Unaccelerated))
+        if (!SVGRenderingContext::createImageBuffer(repaintRect, absoluteTransform, clipperData->clipMaskImage, Unaccelerated))
             return false;
 
         GraphicsContext* maskContext = clipperData->clipMaskImage->context();
@@ -340,5 +323,3 @@ FloatRect RenderSVGResourceClipper::resourceBoundingBox(RenderObject* object)
 }
 
 }
-
-#endif // ENABLE(SVG)

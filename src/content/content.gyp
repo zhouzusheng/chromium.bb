@@ -5,23 +5,12 @@
 {
   'variables': {
     'chromium_code': 1,  # Use higher warning level.
+    'chromium_enable_vtune_jit_for_v8%': 0,  # enable the vtune support for V8 engine.
     'directxsdk_exists': '<!(python <(DEPTH)/build/dir_exists.py ../third_party/directxsdk)',
-    'conditions': [
-      ['inside_chromium_build==0', {
-        'webkit_src_dir': '../../../..',
-      },{
-        'webkit_src_dir': '../third_party/WebKit',
-      }],
-    ],
   },
   'target_defaults': {
     'defines': ['CONTENT_IMPLEMENTATION'],
     'conditions': [
-      ['inside_chromium_build==0', {
-        'dependencies': [
-          '../webkit/support/setup_third_party.gyp:third_party_headers',
-        ],
-      }],
       # TODO(jschuh): Remove this after crbug.com/173851 gets fixed.
       ['OS=="win" and target_arch=="x64"', {
         'msvs_settings': {
@@ -32,6 +21,9 @@
       }],
     ],
   },
+  'includes': [
+    'content_tests.gypi',
+  ],
   'conditions': [
     ['OS != "ios"', {
       'includes': [
@@ -56,10 +48,11 @@
           'dependencies': [
             'content_app',
             'content_browser',
+            'content_child',
             'content_common',
           ],
           'conditions': [
-            ['OS != "ios"', {
+            ['OS != "ios" and chrome_split_dll != 1', {
               'dependencies': [
                 'content_gpu',
                 'content_plugin',
@@ -94,12 +87,22 @@
             'content_resources.gyp:content_resources',
           ],
           'conditions': [
-            ['OS != "ios"', {
+            ['OS != "ios" and chrome_split_dll != 1', {
               'dependencies': [
                 'content_gpu',
                 'content_renderer',
               ],
             }],
+            ['chrome_split_dll', {
+              'dependencies': [
+                'content_gpu',
+              ],
+            }],
+            ['java_bridge==1', {
+              'dependencies': [
+                'content_child',
+              ]
+            }]
           ],
         },
         {
@@ -119,6 +122,24 @@
           # Disable c4267 warnings until we fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
         },
+        {
+          'target_name': 'content_child',
+          'type': 'static_library',
+          'variables': { 'enable_wexit_time_destructors': 1, },
+          'includes': [
+            'content_child.gypi',
+          ],
+          'conditions': [
+            ['OS != "ios"', {
+              'dependencies': [
+                'content_resources.gyp:content_resources',
+              ],
+            }],
+          ],
+          # Disable c4267 warnings until we fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
+        },
+
       ],
       'conditions': [
         ['OS != "ios"', {
@@ -142,6 +163,7 @@
                 'content_plugin.gypi',
               ],
               'dependencies': [
+                'content_child',
                 'content_common',
               ],
             },
@@ -163,8 +185,16 @@
                 'content_renderer.gypi',
               ],
               'dependencies': [
+                'content_child',
                 'content_common',
                 'content_resources.gyp:content_resources',
+              ],
+              'conditions': [
+                ['chromium_enable_vtune_jit_for_v8==1', {
+                  'dependencies': [
+                    '../v8/src/third_party/vtune/v8vtune.gyp:v8_vtune',
+                  ],
+                }],
               ],
             },
             {
@@ -186,6 +216,7 @@
                 'content_worker.gypi',
               ],
               'dependencies': [
+                'content_child',
                 'content_common',
               ],
             },
@@ -208,10 +239,16 @@
                 '<(DEPTH)/third_party/mach_override/mach_override.gyp:mach_override',
               ],
             }],
+            ['chromium_enable_vtune_jit_for_v8==1', {
+              'dependencies': [
+                '../v8/src/third_party/vtune/v8vtune.gyp:v8_vtune',
+              ],
+            }],
           ],
           'includes': [
             'content_app.gypi',
             'content_browser.gypi',
+            'content_child.gypi',
             'content_common.gypi',
             'content_gpu.gypi',
             'content_plugin.gypi',
@@ -246,6 +283,11 @@
           'dependencies': ['content', 'content_resources.gyp:content_resources'],
           # Disable c4267 warnings until we fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
+        },
+        {
+          'target_name': 'content_child',
+          'type': 'none',
+          'dependencies': ['content'],
         },
         {
           'target_name': 'content_gpu',
@@ -322,6 +364,8 @@
             'content_common',
             'page_transition_types_java',
             'result_codes_java',
+            'speech_recognition_error_java',
+            'top_controls_state_java',
             'content_native_libraries_gen',
           ],
           'variables': {
@@ -363,6 +407,30 @@
           'variables': {
             'package_name': 'org/chromium/content/common',
             'template_deps': ['public/common/result_codes_list.h'],
+          },
+          'includes': [ '../build/android/java_cpp_template.gypi' ],
+        },
+        {
+          'target_name': 'speech_recognition_error_java',
+          'type': 'none',
+          'sources': [
+            'public/android/java/src/org/chromium/content/browser/SpeechRecognitionError.template',
+          ],
+          'variables': {
+            'package_name': 'org/chromium/content/browser',
+            'template_deps': ['public/common/speech_recognition_error_list.h'],
+          },
+          'includes': [ '../build/android/java_cpp_template.gypi' ],
+        },
+        {
+          'target_name': 'top_controls_state_java',
+          'type': 'none',
+          'sources': [
+            'public/android/java/src/org/chromium/content/common/TopControlsState.template',
+          ],
+          'variables': {
+            'package_name': 'org/chromium/content/common',
+            'template_deps': ['public/common/top_controls_state_list.h'],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },

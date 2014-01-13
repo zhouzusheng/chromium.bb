@@ -8,8 +8,8 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
-#include "third_party/angle/include/EGL/egl.h"
-#include "third_party/angle/include/EGL/eglext.h"
+#include "third_party/khronos/EGL/egl.h"
+#include "third_party/khronos/EGL/eglext.h"
 #include "ui/gl/egl_util.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_surface_egl.h"
@@ -25,7 +25,7 @@ using ui::GetLastEGLErrorString;
 namespace gfx {
 
 GLContextEGL::GLContextEGL(GLShareGroup* share_group)
-    : GLContext(share_group),
+    : GLContextReal(share_group),
       context_(NULL),
       display_(NULL),
       config_(NULL),
@@ -98,8 +98,10 @@ bool GLContextEGL::MakeCurrent(GLSurface* surface) {
                "context", context_,
                "surface", surface);
 
-  if (unbind_fbo_on_makecurrent_)
+  if (unbind_fbo_on_makecurrent_ &&
+      eglGetCurrentContext() != EGL_NO_CONTEXT) {
     glBindFramebufferEXT(GL_FRAMEBUFFER, 0);
+  }
 
   if (!eglMakeCurrent(display_,
                       surface->GetHandle(),
@@ -110,7 +112,10 @@ bool GLContextEGL::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
-  SetCurrent(this, surface);
+  // Set this as soon as the context is current, since we might call into GL.
+  SetRealGLApi();
+
+  SetCurrent(surface);
   if (!InitializeExtensionBindings()) {
     ReleaseCurrent(surface);
     return false;
@@ -121,7 +126,6 @@ bool GLContextEGL::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
-  SetRealGLApi();
   return true;
 }
 
@@ -136,7 +140,7 @@ void GLContextEGL::ReleaseCurrent(GLSurface* surface) {
   if (unbind_fbo_on_makecurrent_)
     glBindFramebufferEXT(GL_FRAMEBUFFER, 0);
 
-  SetCurrent(NULL, NULL);
+  SetCurrent(NULL);
   eglMakeCurrent(display_,
                  EGL_NO_SURFACE,
                  EGL_NO_SURFACE,
@@ -151,7 +155,7 @@ bool GLContextEGL::IsCurrent(GLSurface* surface) {
   // If our context is current then our notion of which GLContext is
   // current must be correct. On the other hand, third-party code
   // using OpenGL might change the current context.
-  DCHECK(!native_context_is_current || (GetCurrent() == this));
+  DCHECK(!native_context_is_current || (GetRealCurrent() == this));
 
   if (!native_context_is_current)
     return false;

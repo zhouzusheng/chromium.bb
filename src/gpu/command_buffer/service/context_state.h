@@ -36,21 +36,21 @@ struct GPU_EXPORT TextureUnit {
   GLenum bind_target;
 
   // texture currently bound to this unit's GL_TEXTURE_2D with glBindTexture
-  scoped_refptr<Texture> bound_texture_2d;
+  scoped_refptr<TextureRef> bound_texture_2d;
 
   // texture currently bound to this unit's GL_TEXTURE_CUBE_MAP with
   // glBindTexture
-  scoped_refptr<Texture> bound_texture_cube_map;
+  scoped_refptr<TextureRef> bound_texture_cube_map;
 
   // texture currently bound to this unit's GL_TEXTURE_EXTERNAL_OES with
   // glBindTexture
-  scoped_refptr<Texture> bound_texture_external_oes;
+  scoped_refptr<TextureRef> bound_texture_external_oes;
 
   // texture currently bound to this unit's GL_TEXTURE_RECTANGLE_ARB with
   // glBindTexture
-  scoped_refptr<Texture> bound_texture_rectangle_arb;
+  scoped_refptr<TextureRef> bound_texture_rectangle_arb;
 
-  scoped_refptr<Texture> GetInfoForSamplerType(
+  scoped_refptr<TextureRef> GetInfoForSamplerType(
       GLenum type) {
     DCHECK(type == GL_SAMPLER_2D || type == GL_SAMPLER_CUBE ||
            type == GL_SAMPLER_EXTERNAL_OES || type == GL_SAMPLER_2D_RECT_ARB);
@@ -69,14 +69,14 @@ struct GPU_EXPORT TextureUnit {
     return NULL;
   }
 
-  void Unbind(Texture* texture) {
-    if (bound_texture_2d == texture) {
+  void Unbind(TextureRef* texture) {
+    if (bound_texture_2d.get() == texture) {
       bound_texture_2d = NULL;
     }
-    if (bound_texture_cube_map == texture) {
+    if (bound_texture_cube_map.get() == texture) {
       bound_texture_cube_map = NULL;
     }
-    if (bound_texture_external_oes == texture) {
+    if (bound_texture_external_oes.get() == texture) {
       bound_texture_external_oes = NULL;
     }
   }
@@ -103,6 +103,7 @@ struct GPU_EXPORT ContextState {
   void InitState() const;
 
   void RestoreActiveTexture() const;
+  void RestoreAllTextureUnitBindings() const;
   void RestoreAttribute(GLuint index) const;
   void RestoreBufferBindings() const;
   void RestoreGlobalState() const;
@@ -122,12 +123,6 @@ struct GPU_EXPORT ContextState {
   #include "gpu/command_buffer/service/context_state_autogen.h"
 
   EnableFlags enable_flags;
-
-  // pack alignment as last set by glPixelStorei
-  GLint pack_alignment;
-
-  // unpack alignment as last set by glPixelStorei
-  GLint unpack_alignment;
 
   // Current active texture by 0 - n index.
   // In other words, if we call glActiveTexture(GL_TEXTURE2) this value would
@@ -158,9 +153,6 @@ struct GPU_EXPORT ContextState {
   scoped_refptr<Renderbuffer> bound_renderbuffer;
 
   scoped_refptr<QueryManager::Query> current_query;
-
-  GLenum hint_generate_mipmap;
-  GLenum hint_fragment_shader_derivative;
 
   bool pack_reverse_row_order;
 

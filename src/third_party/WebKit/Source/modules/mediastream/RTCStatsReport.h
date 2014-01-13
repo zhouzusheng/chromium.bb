@@ -25,15 +25,17 @@
 #ifndef RTCStatsReport_h
 #define RTCStatsReport_h
 
+#include "bindings/v8/ScriptWrappable.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
+#include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class RTCStatsReport : public RefCounted<RTCStatsReport> {
+class RTCStatsReport : public RefCounted<RTCStatsReport>, public ScriptWrappable {
 public:
     static PassRefPtr<RTCStatsReport> create(const String& id, const String& type, double timestamp);
 

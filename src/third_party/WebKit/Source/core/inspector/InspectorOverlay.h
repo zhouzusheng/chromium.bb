@@ -43,12 +43,16 @@
 namespace WebCore {
 
 class Color;
+class EmptyChromeClient;
 class GraphicsContext;
 class InspectorClient;
-class InspectorValue;
+class InspectorOverlayHost;
 class IntRect;
+class JSONValue;
 class Node;
 class Page;
+class PlatformMouseEvent;
+class PlatformTouchEvent;
 
 struct HighlightConfig {
     WTF_MAKE_FAST_ALLOCATED;
@@ -115,21 +119,31 @@ public:
     void drawOutline(GraphicsContext*, const LayoutRect&, const Color&);
     void getHighlight(Highlight*) const;
     void resize(const IntSize&);
+    bool handleMouseEvent(const PlatformMouseEvent&);
+    bool handleTouchEvent(const PlatformTouchEvent&);
 
     void setPausedInDebuggerMessage(const String*);
+    void setInspectModeEnabled(bool);
 
     void hideHighlight();
     void highlightNode(Node*, Node* eventTarget, const HighlightConfig&);
     void highlightQuad(PassOwnPtr<FloatQuad>, const HighlightConfig&);
-    void showAndHideViewSize();
+    void showAndHideViewSize(bool showGrid);
 
     Node* highlightedNode() const;
 
     void reportMemoryUsage(MemoryObjectInfo*) const;
 
     void freePage();
+
+    InspectorOverlayHost* overlayHost() const { return m_overlayHost.get(); }
+
+    // Methods supporting underlying overlay page.
+    void invalidate();
 private:
     InspectorOverlay(Page*, InspectorClient*);
+
+    bool isEmpty();
 
     void drawGutter();
     void drawNodeHighlight();
@@ -140,20 +154,24 @@ private:
     Page* overlayPage();
     void reset(const IntSize& viewportSize, const IntSize& frameViewFullSize, int scrollX, int scrollY);
     void evaluateInOverlay(const String& method, const String& argument);
-    void evaluateInOverlay(const String& method, PassRefPtr<InspectorValue> argument);
+    void evaluateInOverlay(const String& method, PassRefPtr<JSONValue> argument);
     void onTimer(Timer<InspectorOverlay>*);
 
     Page* m_page;
     InspectorClient* m_client;
     String m_pausedInDebuggerMessage;
+    bool m_inspectModeEnabled;
     RefPtr<Node> m_highlightNode;
     RefPtr<Node> m_eventTargetNode;
     HighlightConfig m_nodeHighlightConfig;
     OwnPtr<FloatQuad> m_highlightQuad;
     OwnPtr<Page> m_overlayPage;
+    OwnPtr<EmptyChromeClient> m_overlayChromeClient;
+    RefPtr<InspectorOverlayHost> m_overlayHost;
     HighlightConfig m_quadHighlightConfig;
     IntSize m_size;
     bool m_drawViewSize;
+    bool m_drawViewSizeWithGrid;
     Timer<InspectorOverlay> m_timer;
 };
 

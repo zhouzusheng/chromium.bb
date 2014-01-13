@@ -9,15 +9,15 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ppapi/shared_impl/api_id.h"
 #include "ppapi/shared_impl/id_assignment.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "webkit/plugins/plugin_switches.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
@@ -107,7 +107,7 @@ HostGlobals::~HostGlobals() {
   InstanceMap::iterator found = instance_map_.find(instance);
   if (found == instance_map_.end())
     return NULL;
-  return found->second->module()->GetCallbackTracker();
+  return found->second->module()->GetCallbackTracker().get();
 }
 
 ::ppapi::thunk::PPB_Instance_API* HostGlobals::GetInstanceAPI(

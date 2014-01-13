@@ -35,7 +35,6 @@
 
 #include "core/html/BaseButtonInputType.h"
 #include "core/platform/graphics/IntPoint.h"
-#include <wtf/OwnPtr.h>
 
 namespace WebCore {
 
@@ -49,7 +48,7 @@ private:
     virtual bool isFormDataAppendable() const OVERRIDE;
     virtual bool appendFormData(FormDataList&, bool) const OVERRIDE;
     virtual bool supportsValidation() const OVERRIDE;
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) const OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) const OVERRIDE;
     virtual void handleDOMActivateEvent(Event*) OVERRIDE;
     virtual void altAttributeChanged() OVERRIDE;
     virtual void srcAttributeChanged() OVERRIDE;

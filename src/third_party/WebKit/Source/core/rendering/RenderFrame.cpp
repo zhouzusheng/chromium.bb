@@ -26,12 +26,11 @@
 
 #include "core/html/HTMLFrameElement.h"
 #include "core/page/FrameView.h"
-#include "core/rendering/RenderView.h"
 
 namespace WebCore {
 
 RenderFrame::RenderFrame(HTMLFrameElement* frame)
-    : RenderFrameBase(frame)
+    : RenderPart(frame)
 {
     setInline(false);
 }

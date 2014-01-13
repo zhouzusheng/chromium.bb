@@ -35,15 +35,14 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
-#include "RuntimeEnabledFeatures.h"
 #include "core/platform/Logging.h"
 #include "core/rendering/InlineIterator.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderText.h"
-#include <wtf/text/CString.h>
-#include <wtf/unicode/CharacterNames.h>
+#include "wtf/text/CString.h"
+#include "wtf/unicode/CharacterNames.h"
 
 namespace WebCore {
 
@@ -843,7 +842,7 @@ bool Position::hasRenderedNonAnonymousDescendantsWithHeight(RenderObject* render
 
 bool Position::nodeIsUserSelectNone(Node* node)
 {
-    return node && node->renderer() && node->renderer()->style()->userSelect() == SELECT_NONE;
+    return node && node->renderer() && node->renderer()->style()->userSelect() == SELECT_NONE && node->renderer()->style()->userModify() == READ_ONLY;
 }
 
 ContainerNode* Position::findParent(const Node* node)

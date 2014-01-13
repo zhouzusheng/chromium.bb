@@ -35,15 +35,14 @@
 #include "WebDocument.h"
 #include "WebSocketClient.h"
 #include "core/dom/Document.h"
-#include "RuntimeEnabledFeatures.h"
-#include "core/platform/KURL.h"
+#include "core/page/ConsoleTypes.h"
+#include "core/page/Settings.h"
 #include "modules/websockets/MainThreadWebSocketChannel.h"
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketChannelClient.h"
-
-#include <public/WebString.h>
-#include <public/WebURL.h>
-#include <wtf/ArrayBuffer.h>
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
+#include "wtf/ArrayBuffer.h"
 
 using namespace WebCore;
 
@@ -53,11 +52,13 @@ WebSocketImpl::WebSocketImpl(const WebDocument& document, WebSocketClient* clien
     : m_client(client)
     , m_binaryType(BinaryTypeBlob)
 {
-    if (RuntimeEnabledFeatures::experimentalWebSocketEnabled()) {
+    RefPtr<Document> coreDocument = PassRefPtr<Document>(document);
+    Settings* settings = coreDocument->settings();
+    if (settings && settings->experimentalWebSocketEnabled()) {
         // FIXME: Create an "experimental" WebSocketChannel instead of a MainThreadWebSocketChannel.
-        m_private = MainThreadWebSocketChannel::create(PassRefPtr<Document>(document).get(), this);
+        m_private = MainThreadWebSocketChannel::create(coreDocument.get(), this);
     } else
-        m_private = MainThreadWebSocketChannel::create(PassRefPtr<Document>(document).get(), this);
+        m_private = MainThreadWebSocketChannel::create(coreDocument.get(), this);
 }
 
 WebSocketImpl::~WebSocketImpl()
@@ -115,7 +116,7 @@ void WebSocketImpl::close(int code, const WebString& reason)
 
 void WebSocketImpl::fail(const WebString& reason)
 {
-    m_private->fail(reason);
+    m_private->fail(reason, ErrorMessageLevel);
 }
 
 void WebSocketImpl::disconnect()

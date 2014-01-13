@@ -28,7 +28,7 @@
 #include "core/html/BaseChooserOnlyDateAndTimeInputType.h"
 
 #include "bindings/v8/ScriptController.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/page/Chrome.h"
@@ -50,13 +50,10 @@ void BaseChooserOnlyDateAndTimeInputType::handleDOMActivateEvent(Event*)
         return;
     if (!element()->document()->page())
         return;
-    Chrome* chrome = element()->document()->page()->chrome();
-    if (!chrome)
-        return;
     DateTimeChooserParameters parameters;
     if (!element()->setupDateTimeChooserParameters(parameters))
         return;
-    m_dateTimeChooser = chrome->openDateTimeChooser(this, parameters);
+    m_dateTimeChooser = element()->document()->page()->chrome().openDateTimeChooser(this, parameters);
 }
 
 void BaseChooserOnlyDateAndTimeInputType::createShadowSubtree()

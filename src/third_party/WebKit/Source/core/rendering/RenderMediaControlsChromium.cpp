@@ -28,7 +28,6 @@
 #include "config.h"
 #include "core/rendering/RenderMediaControlsChromium.h"
 
-#include "HTMLNames.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/TimeRanges.h"
 #include "core/platform/graphics/Gradient.h"
@@ -62,7 +61,7 @@ static bool hasSource(const HTMLMediaElement* mediaElement)
 
 static bool paintMediaButton(GraphicsContext* context, const IntRect& rect, Image* image)
 {
-    context->drawImage(image, ColorSpaceDeviceRGB, rect);
+    context->drawImage(image, rect);
     return true;
 }
 
@@ -134,7 +133,7 @@ static void paintRoundedSliderBackground(const IntRect& rect, const RenderStyle*
     IntSize radii(borderRadius, borderRadius);
     Color sliderBackgroundColor = Color(11, 11, 11);
     context->save();
-    context->fillRoundedRect(rect, radii, radii, radii, radii, sliderBackgroundColor, ColorSpaceDeviceRGB);
+    context->fillRoundedRect(rect, radii, radii, radii, radii, sliderBackgroundColor);
     context->restore();
 }
 
@@ -183,11 +182,11 @@ static void paintSliderRangeHighlight(const IntRect& rect, const RenderStyle* st
     context->setFillGradient(gradient);
 
     if (startOffset < borderRadius && endOffset < borderRadius)
-        context->fillRoundedRect(highlightRect, radii, radii, radii, radii, startColor, ColorSpaceDeviceRGB);
+        context->fillRoundedRect(highlightRect, radii, radii, radii, radii, startColor);
     else if (startOffset < borderRadius)
-        context->fillRoundedRect(highlightRect, radii, IntSize(0, 0), radii, IntSize(0, 0), startColor, ColorSpaceDeviceRGB);
+        context->fillRoundedRect(highlightRect, radii, IntSize(0, 0), radii, IntSize(0, 0), startColor);
     else if (endOffset < borderRadius)
-        context->fillRoundedRect(highlightRect, IntSize(0, 0), radii, IntSize(0, 0), radii, startColor, ColorSpaceDeviceRGB);
+        context->fillRoundedRect(highlightRect, IntSize(0, 0), radii, IntSize(0, 0), radii, startColor);
     else
         context->fillRect(highlightRect);
 
@@ -381,8 +380,6 @@ bool RenderMediaControlsChromium::paintMediaControlsPart(MediaControlElementType
     case MediaTextTrackDisplay:
     case MediaFullScreenVolumeSlider:
     case MediaFullScreenVolumeSliderThumb:
-    case MediaClosedCaptionsContainer:
-    case MediaClosedCaptionsTrackList:
         ASSERT_NOT_REACHED();
         break;
     }

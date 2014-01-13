@@ -36,8 +36,6 @@
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/KURL.h"
 #include "core/rendering/RenderPart.h"
 
 namespace WebCore {
@@ -72,7 +70,7 @@ bool HTMLFrameElementBase::isURLAllowed() const
     return true;
 }
 
-void HTMLFrameElementBase::openURL(bool lockHistory, bool lockBackForwardList)
+void HTMLFrameElementBase::openURL(bool lockBackForwardList)
 {
     if (!isURLAllowed())
         return;
@@ -84,7 +82,7 @@ void HTMLFrameElementBase::openURL(bool lockHistory, bool lockBackForwardList)
     if (!parentFrame)
         return;
 
-    parentFrame->loader()->subframeLoader()->requestFrame(this, m_URL, m_frameName, lockHistory, lockBackForwardList);
+    parentFrame->loader()->subframeLoader()->requestFrame(this, m_URL, m_frameName, lockBackForwardList);
 }
 
 void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -163,9 +161,9 @@ void HTMLFrameElementBase::didNotifySubtreeInsertions(ContainerNode*)
     setNameAndOpenURL();
 }
 
-void HTMLFrameElementBase::attach()
+void HTMLFrameElementBase::attach(const AttachContext& context)
 {
-    HTMLFrameOwnerElement::attach();
+    HTMLFrameOwnerElement::attach(context);
 
     if (RenderPart* part = renderPart()) {
         if (Frame* frame = contentFrame())
@@ -185,7 +183,7 @@ void HTMLFrameElementBase::setLocation(const String& str)
     m_URL = AtomicString(str);
 
     if (inDocument())
-        openURL(false, false);
+        openURL(false);
 }
 
 bool HTMLFrameElementBase::supportsFocus() const

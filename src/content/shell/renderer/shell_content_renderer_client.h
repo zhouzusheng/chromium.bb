@@ -10,6 +10,8 @@
 #include "base/platform_file.h"
 #include "content/public/renderer/content_renderer_client.h"
 
+class SpellCheck;
+
 namespace WebKit {
 class WebFrame;
 class WebPlugin;
@@ -25,7 +27,6 @@ class MockWebHyphenator;
 }
 
 class MockWebClipboardImpl;
-class TestShellWebMimeRegistryImpl;
 
 namespace content {
 
@@ -54,7 +55,6 @@ class ShellContentRendererClient : public ContentRendererClient {
   OverrideCreateWebRTCPeerConnectionHandler(
       WebKit::WebRTCPeerConnectionHandlerClient* client) OVERRIDE;
   virtual WebKit::WebClipboard* OverrideWebClipboard() OVERRIDE;
-  virtual WebKit::WebMimeRegistry* OverrideWebMimeRegistry() OVERRIDE;
   virtual WebKit::WebHyphenator* OverrideWebHyphenator() OVERRIDE;
   virtual WebKit::WebThemeEngine* OverrideThemeEngine() OVERRIDE;
   virtual bool AllowBrowserPlugin(
@@ -66,8 +66,8 @@ class ShellContentRendererClient : public ContentRendererClient {
 
   scoped_ptr<ShellRenderProcessObserver> shell_observer_;
   scoped_ptr<MockWebClipboardImpl> clipboard_;
-  scoped_ptr<TestShellWebMimeRegistryImpl> mime_registry_;
   scoped_ptr<webkit_glue::MockWebHyphenator> hyphenator_;
+  scoped_ptr<SpellCheck> spellcheck_;
 };
 
 }  // namespace content

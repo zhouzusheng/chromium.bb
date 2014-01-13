@@ -28,14 +28,13 @@
 
 #include "HTMLElementFactory.h"
 #include "HTMLNames.h"
-#include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/PositionIterator.h"
 #include "core/dom/Range.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/dom/Text.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/Editor.h"
 #include "core/editing/HTMLInterchange.h"
 #include "core/editing/TextIterator.h"
@@ -46,9 +45,7 @@
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLLIElement.h"
 #include "core/html/HTMLOListElement.h"
-#include "core/html/HTMLObjectElement.h"
 #include "core/html/HTMLParagraphElement.h"
-#include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/HTMLUListElement.h"
 #include "core/page/Frame.h"
 #include "core/rendering/RenderObject.h"
@@ -898,7 +895,7 @@ PassRefPtr<HTMLElement> createHTMLElement(Document* document, const AtomicString
 
 bool isTabSpanNode(const Node *node)
 {
-    return node && node->hasTagName(spanTag) && node->isElementNode() && static_cast<const Element *>(node)->getAttribute(classAttr) == AppleTabSpanClass;
+    return node && node->hasTagName(spanTag) && node->isElementNode() && toElement(node)->getAttribute(classAttr) == AppleTabSpanClass;
 }
 
 bool isTabSpanTextNode(const Node *node)
@@ -1010,7 +1007,7 @@ bool isMailBlockquote(const Node *node)
     if (!node || !node->hasTagName(blockquoteTag))
         return false;
         
-    return static_cast<const Element *>(node)->getAttribute("type") == "cite";
+    return toElement(node)->getAttribute("type") == "cite";
 }
 
 int caretMinOffset(const Node* n)

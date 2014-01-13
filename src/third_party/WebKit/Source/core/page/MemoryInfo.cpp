@@ -35,8 +35,9 @@
 #include "bindings/v8/ScriptGCEvent.h"
 #include "core/page/Frame.h"
 #include "core/page/Settings.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/MainThread.h>
+#include "wtf/CurrentTime.h"
+#include "wtf/MainThread.h"
+#include "wtf/MathExtras.h"
 
 namespace WebCore {
 
@@ -134,6 +135,7 @@ size_t quantizeMemorySize(size_t size)
 
 MemoryInfo::MemoryInfo(Frame* frame)
 {
+    ScriptWrappable::init(this);
     if (!frame || !frame->settings())
         return;
 

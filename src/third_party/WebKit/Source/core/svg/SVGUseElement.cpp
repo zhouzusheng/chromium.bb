@@ -24,36 +24,24 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGUseElement.h"
 
-#include "HTMLNames.h"
 #include "SVGNames.h"
 #include "XLinkNames.h"
-#include "core/css/StyleResolver.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/Event.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/NodeRenderStyle.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/dom/RegisteredEventListener.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ElementShadow.h"
+#include "core/dom/shadow/ShadowRoot.h"
+#include "core/loader/cache/CachedDocument.h"
 #include "core/loader/cache/CachedResourceLoader.h"
 #include "core/loader/cache/CachedResourceRequest.h"
-#include "core/loader/cache/CachedSVGDocument.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGTransformableContainer.h"
 #include "core/svg/SVGElementInstance.h"
-#include "core/svg/SVGElementInstanceList.h"
-#include "core/svg/SVGElementRareData.h"
 #include "core/svg/SVGGElement.h"
 #include "core/svg/SVGLengthContext.h"
 #include "core/svg/SVGSVGElement.h"
-#include "core/svg/SVGSymbolElement.h"
-#include "core/svg/animation/SVGSMILElement.h"
-#include "core/xml/XMLSerializer.h"
 #include "core/xml/parser/XMLDocumentParser.h"
 
 // Dump SVGElementInstance object tree - useful to debug instanceRoot problems
@@ -146,7 +134,7 @@ bool SVGUseElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::widthAttr);
         supportedAttributes.add(SVGNames::heightAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGUseElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -251,8 +239,7 @@ void SVGUseElement::svgAttributeChanged(const QualifiedName& attrName)
         if (isExternalReference) {
             KURL url = document()->completeURL(href());
             if (url.hasFragmentIdentifier()) {
-                CachedResourceRequest request(ResourceRequest(url.string()));
-                request.setInitiator(this);
+                CachedResourceRequest request(ResourceRequest(url.string()), localName());
                 setCachedDocument(document()->cachedResourceLoader()->requestSVGDocument(request));
             }
         } else
@@ -375,7 +362,7 @@ static bool isDisallowedElement(Node* node)
         allowedElementTags.add(SVGNames::tspanTag);
         allowedElementTags.add(SVGNames::useTag);
     }
-    return !allowedElementTags.contains<QualifiedName, SVGAttributeHashTranslator>(element->tagQName());
+    return !allowedElementTags.contains<SVGAttributeHashTranslator>(element->tagQName());
 }
 
 static bool subtreeContainsDisallowedElement(Node* start)
@@ -538,9 +525,9 @@ void SVGUseElement::buildShadowAndInstanceTree(SVGElement* target)
 #endif
 }
 
-RenderObject* SVGUseElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGUseElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderSVGTransformableContainer(this);
+    return new (document()->renderArena()) RenderSVGTransformableContainer(this);
 }
 
 static bool isDirectReference(const Node* node)
@@ -995,7 +982,7 @@ void SVGUseElement::finishParsingChildren()
     }
 }
 
-void SVGUseElement::setCachedDocument(CachedResourceHandle<CachedSVGDocument> cachedDocument)
+void SVGUseElement::setCachedDocument(CachedResourceHandle<CachedDocument> cachedDocument)
 {
     if (m_cachedDocument == cachedDocument)
         return;
@@ -1009,5 +996,3 @@ void SVGUseElement::setCachedDocument(CachedResourceHandle<CachedSVGDocument> ca
 }
 
 }
-
-#endif // ENABLE(SVG)

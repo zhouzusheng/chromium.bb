@@ -26,11 +26,11 @@
 #include "config.h"
 #include "WebIDBCallbacksImpl.h"
 
-#include <public/WebData.h>
-#include <public/WebIDBCallbacks.h>
-#include <public/WebIDBDatabase.h>
-#include <public/WebIDBDatabaseError.h>
-#include <public/WebIDBKey.h>
+#include "public/platform/WebData.h"
+#include "public/platform/WebIDBCallbacks.h"
+#include "public/platform/WebIDBDatabase.h"
+#include "public/platform/WebIDBDatabaseError.h"
+#include "public/platform/WebIDBKey.h"
 #include "IDBCursorBackendProxy.h"
 #include "IDBDatabaseBackendProxy.h"
 #include "modules/indexeddb/IDBCallbacks.h"
@@ -114,10 +114,10 @@ void WebIDBCallbacksImpl::onBlocked(long long oldVersion)
     m_callbacks->onBlocked(oldVersion);
 }
 
-void WebIDBCallbacksImpl::onUpgradeNeeded(long long oldVersion, WebIDBDatabase* database, const WebIDBMetadata& metadata)
+void WebIDBCallbacksImpl::onUpgradeNeeded(long long oldVersion, WebIDBDatabase* database, const WebIDBMetadata& metadata, DataLoss dataLoss)
 {
     m_databaseProxy = IDBDatabaseBackendProxy::create(adoptPtr(database));
-    m_callbacks->onUpgradeNeeded(oldVersion, m_databaseProxy, metadata);
+    m_callbacks->onUpgradeNeeded(oldVersion, m_databaseProxy, metadata, dataLoss);
 }
 
 } // namespace WebKit

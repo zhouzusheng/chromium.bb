@@ -45,7 +45,6 @@
 
 namespace WebCore {
 
-class AutoscrollController;
 class Clipboard;
 class Document;
 class Element;
@@ -53,6 +52,7 @@ class Event;
 class EventTarget;
 class FloatPoint;
 class FloatQuad;
+class FullscreenController;
 class Frame;
 class HTMLFrameSetElement;
 class HitTestRequest;
@@ -101,23 +101,17 @@ public:
     void setMousePressNode(PassRefPtr<Node>);
 
 #if ENABLE(PAN_SCROLLING)
-    void didPanScrollStart();
-    void didPanScrollStop();
     void startPanScrolling(RenderObject*);
 #endif
 
-    void stopAutoscrollTimer(bool rendererIsBeingDestroyed = false);
-    RenderObject* autoscrollRenderer() const;
-    void updateAutoscrollRenderer();
-    bool autoscrollInProgress() const;
+    void stopAutoscrollTimer();
     bool mouseDownWasInSubframe() const { return m_mouseDownWasInSubframe; }
-    bool panScrollInProgress() const;
 
     void dispatchFakeMouseMoveEventSoon();
     void dispatchFakeMouseMoveEventSoonInQuad(const FloatQuad&);
 
     HitTestResult hitTestResultAtPoint(const LayoutPoint&,
-        HitTestRequest::HitTestRequestType hitType = HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent,
+        HitTestRequest::HitTestRequestType hitType = HitTestRequest::ReadOnly | HitTestRequest::Active,
         const LayoutSize& padding = LayoutSize());
 
     bool mousePressed() const { return m_mousePressed; }
@@ -212,7 +206,9 @@ private:
 
     bool updateSelectionForMouseDownDispatchingSelectStart(Node*, const VisibleSelection&, TextGranularity);
     void selectClosestWordFromHitTestResult(const HitTestResult&, AppendTrailingWhitespace);
+    void selectClosestMisspellingFromHitTestResult(const HitTestResult&, AppendTrailingWhitespace);
     void selectClosestWordFromMouseEvent(const MouseEventWithHitTestResults&);
+    void selectClosestMisspellingFromMouseEvent(const MouseEventWithHitTestResults&);
     void selectClosestWordOrLinkFromMouseEvent(const MouseEventWithHitTestResults&);
 
     bool handleMousePressEvent(const MouseEventWithHitTestResults&);
@@ -291,14 +287,18 @@ private:
 
     bool capturesDragging() const { return m_capturesDragging; }
 
-    bool isKeyEventAllowedInFullScreen(const PlatformKeyboardEvent&) const;
+    bool isKeyEventAllowedInFullScreen(FullscreenController*, const PlatformKeyboardEvent&) const;
 
     bool handleGestureTapDown();
+
+    bool handleScrollGestureOnResizer(Node*, const PlatformGestureEvent&);
+
     bool passGestureEventToWidget(const PlatformGestureEvent&, Widget*);
     bool passGestureEventToWidgetIfPossible(const PlatformGestureEvent&, RenderObject*);
     bool sendScrollEventToView(const PlatformGestureEvent&, const FloatSize&);
     Frame* getSubFrameForGestureEvent(const IntPoint& touchAdjustedPoint, const PlatformGestureEvent&);
 
+    bool panScrollInProgress() const;
     void setLastKnownMousePosition(const PlatformMouseEvent&);
 
     Frame* m_frame;
@@ -320,17 +320,14 @@ private:
 
     Timer<EventHandler> m_hoverTimer;
 
-    OwnPtr<AutoscrollController> m_autoscrollController;
     bool m_mouseDownMayStartAutoscroll;
     bool m_mouseDownWasInSubframe;
 
     Timer<EventHandler> m_fakeMouseMoveEventTimer;
 
-#if ENABLE(SVG)
     bool m_svgPan;
     RefPtr<SVGElementInstance> m_instanceUnderMouse;
     RefPtr<SVGElementInstance> m_lastInstanceUnderMouse;
-#endif
 
     RenderLayer* m_resizeLayer;
 

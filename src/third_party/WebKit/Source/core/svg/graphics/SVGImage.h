@@ -27,8 +27,6 @@
 #ifndef SVGImage_h
 #define SVGImage_h
 
-#if ENABLE(SVG)
-
 #include "core/platform/graphics/Image.h"
 
 namespace WebCore {
@@ -50,11 +48,11 @@ public:
     RenderBox* embeddedContentBox() const;
     FrameView* frameView() const;
 
-    virtual bool isSVGImage() const { return true; }
+    virtual bool isSVGImage() const OVERRIDE { return true; }
     virtual IntSize size() const OVERRIDE { return m_intrinsicSize; }
 
-    virtual bool hasRelativeWidth() const;
-    virtual bool hasRelativeHeight() const;
+    virtual bool hasRelativeWidth() const OVERRIDE;
+    virtual bool hasRelativeHeight() const OVERRIDE;
 
     virtual void startAnimation(bool /*catchUpIfNecessary*/ = true) OVERRIDE;
     virtual void stopAnimation() OVERRIDE;
@@ -62,7 +60,7 @@ public:
 
     virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
-    virtual PassNativeImagePtr nativeImageForCurrentFrame() OVERRIDE;
+    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() OVERRIDE;
 
 private:
     friend class SVGImageChromeClient;
@@ -70,27 +68,27 @@ private:
 
     virtual ~SVGImage();
 
-    virtual String filenameExtension() const;
+    virtual String filenameExtension() const OVERRIDE;
 
-    virtual void setContainerSize(const IntSize&);
+    virtual void setContainerSize(const IntSize&) OVERRIDE;
     IntSize containerSize() const;
-    virtual bool usesContainerSize() const { return true; }
-    virtual void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio);
+    virtual bool usesContainerSize() const OVERRIDE { return true; }
+    virtual void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio) OVERRIDE;
 
-    virtual bool dataChanged(bool allDataReceived);
+    virtual bool dataChanged(bool allDataReceived) OVERRIDE;
 
     // FIXME: SVGImages are underreporting decoded sizes and will be unable
     // to prune because these functions are not implemented yet.
-    virtual void destroyDecodedData(bool) { }
-    virtual unsigned decodedSize() const { return 0; }
+    virtual void destroyDecodedData() OVERRIDE { }
+    virtual unsigned decodedSize() const OVERRIDE { return 0; }
 
     // FIXME: Implement this to be less conservative.
     virtual bool currentFrameKnownToBeOpaque() OVERRIDE { return false; }
 
     SVGImage(ImageObserver*);
-    virtual void draw(GraphicsContext*, const FloatRect& fromRect, const FloatRect& toRect, ColorSpace styleColorSpace, CompositeOperator, BlendMode);
-    void drawForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatRect&, ColorSpace, CompositeOperator, BlendMode);
-    void drawPatternForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const AffineTransform&, const FloatPoint&, ColorSpace,
+    virtual void draw(GraphicsContext*, const FloatRect& fromRect, const FloatRect& toRect, CompositeOperator, BlendMode) OVERRIDE;
+    void drawForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatRect&, CompositeOperator, BlendMode);
+    void drawPatternForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatSize&, const FloatPoint&,
         CompositeOperator, const FloatRect&);
 
     OwnPtr<SVGImageChromeClient> m_chromeClient;
@@ -99,5 +97,4 @@ private:
 };
 }
 
-#endif // ENABLE(SVG)
 #endif // SVGImage_h

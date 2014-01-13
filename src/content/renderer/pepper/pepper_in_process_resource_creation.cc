@@ -15,6 +15,7 @@
 #include "ipc/ipc_message_macros.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/browser_font_resource_trusted.h"
+#include "ppapi/proxy/ext_crx_file_system_private_resource.h"
 #include "ppapi/proxy/file_chooser_resource.h"
 #include "ppapi/proxy/file_io_resource.h"
 #include "ppapi/proxy/file_system_resource.h"
@@ -69,10 +70,12 @@ PP_Resource PepperInProcessResourceCreation::CreateFileChooser(
     const PP_Var& accept_types) {
   scoped_refptr<ppapi::StringVar> string_var =
       ppapi::StringVar::FromPPVar(accept_types);
-  std::string str = string_var ? string_var->value() : std::string();
+  std::string str = string_var.get() ? string_var->value() : std::string();
   return (new ppapi::proxy::FileChooserResource(
       host_impl_->in_process_router()->GetPluginConnection(),
-      instance, mode, str.c_str()))->GetReference();
+      instance,
+      mode,
+      str.c_str()))->GetReference();
 }
 
 PP_Resource PepperInProcessResourceCreation::CreateFileIO(

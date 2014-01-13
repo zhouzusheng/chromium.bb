@@ -23,7 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "TestPlugin.h"
 
 #include "TestCommon.h"
@@ -34,9 +33,9 @@
 #include "WebTestDelegate.h"
 #include "WebTouchPoint.h"
 #include "WebUserGestureIndicator.h"
-#include <public/Platform.h>
-#include <public/WebCompositorSupport.h>
-#include <public/WebGraphicsContext3D.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebCompositorSupport.h"
+#include "public/platform/WebGraphicsContext3D.h"
 
 using namespace WebKit;
 using namespace std;

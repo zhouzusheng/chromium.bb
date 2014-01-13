@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
-#include "content/common/child_process.h"
+#include "base/strings/string_util.h"
+#include "content/child/child_process.h"
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/webrtc_audio_capturer_sink_owner.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
@@ -27,7 +27,7 @@ static int kValidInputRates[] = {96000, 48000, 44100, 32000, 16000, 8000};
 #elif defined(OS_LINUX) || defined(OS_OPENBSD)
 static int kValidInputRates[] = {48000, 44100};
 #elif defined(OS_ANDROID)
-static int kValidInputRates[] = {48000, 44100, 16000};
+static int kValidInputRates[] = {48000, 44100};
 #else
 static int kValidInputRates[] = {44100};
 #endif
@@ -35,34 +35,17 @@ static int kValidInputRates[] = {44100};
 static int GetBufferSizeForSampleRate(int sample_rate) {
   int buffer_size = 0;
 #if defined(OS_WIN) || defined(OS_MACOSX)
-  // Use different buffer sizes depending on the current hardware sample rate.
-  if (sample_rate == 44100) {
-    // We do run at 44.1kHz at the actual audio layer, but ask for frames
-    // at 44.0kHz to ensure that we can feed them to the webrtc::VoiceEngine.
-    buffer_size = 440;
-  } else {
-    buffer_size = (sample_rate / 100);
-    DCHECK_EQ(buffer_size * 100, sample_rate) <<
-        "Sample rate not supported";
-  }
+  // Use a buffer size of 10ms.
+  buffer_size = (sample_rate / 100);
 #elif defined(OS_LINUX) || defined(OS_OPENBSD)
   // Based on tests using the current ALSA implementation in Chrome, we have
   // found that the best combination is 20ms on the input side and 10ms on the
   // output side.
-  // TODO(henrika): It might be possible to reduce the input buffer
-  // size and reduce the delay even more.
-  if (sample_rate == 44100)
-    buffer_size = 2 * 440;
-  else
-    buffer_size = 2 * sample_rate / 100;
+  buffer_size = 2 * sample_rate / 100;
 #elif defined(OS_ANDROID)
   // TODO(leozwang): Tune and adjust buffer size on Android.
-  if (sample_rate == 44100)
-    buffer_size = 2 * 440;
-  else
     buffer_size = 2 * sample_rate / 100;
 #endif
-
   return buffer_size;
 }
 
@@ -76,10 +59,7 @@ class WebRtcAudioCapturer::ConfiguredBuffer :
   bool Initialize(int sample_rate,
                   media::ChannelLayout channel_layout) {
     int buffer_size = GetBufferSizeForSampleRate(sample_rate);
-    if (!buffer_size) {
-      DLOG(ERROR) << "Unsupported sample-rate: " << sample_rate;
-      return false;
-    }
+    DVLOG(1) << "Using WebRTC input buffer size: " << buffer_size;
 
     media::AudioParameters::Format format =
         media::AudioParameters::AUDIO_PCM_LOW_LATENCY;
@@ -157,8 +137,13 @@ bool WebRtcAudioCapturer::Initialize(int render_view_id,
   }
 
   DVLOG(1) << "Audio input hardware sample rate: " << sample_rate;
-  UMA_HISTOGRAM_ENUMERATION("WebRTC.AudioInputSampleRate",
-                            sample_rate, media::kUnexpectedAudioSampleRate);
+  media::AudioSampleRate asr = media::AsAudioSampleRate(sample_rate);
+  if (asr != media::kUnexpectedAudioSampleRate) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "WebRTC.AudioInputSampleRate", asr, media::kUnexpectedAudioSampleRate);
+  } else {
+    UMA_HISTOGRAM_COUNTS("WebRTC.AudioInputSampleRateUnexpected", sample_rate);
+  }
 
   // Verify that the reported input hardware sample rate is supported
   // on the current platform.
@@ -184,7 +169,8 @@ bool WebRtcAudioCapturer::Initialize(int render_view_id,
 }
 
 WebRtcAudioCapturer::WebRtcAudioCapturer()
-    : source_(NULL),
+    : default_sink_(NULL),
+      source_(NULL),
       running_(false),
       agc_is_enabled_(false),
       session_id_(0) {
@@ -195,14 +181,32 @@ WebRtcAudioCapturer::~WebRtcAudioCapturer() {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(tracks_.empty());
   DCHECK(!running_);
+  DCHECK(!default_sink_);
   DVLOG(1) << "WebRtcAudioCapturer::~WebRtcAudioCapturer()";
 }
 
-void WebRtcAudioCapturer::AddSink(
-    WebRtcAudioCapturerSink* track) {
-  DCHECK(thread_checker_.CalledOnValidThread());
+void WebRtcAudioCapturer::SetDefaultSink(WebRtcAudioCapturerSink* sink) {
+  DVLOG(1) << "WebRtcAudioCapturer::SetDefaultSink()";
+  if (sink) {
+    DCHECK(!default_sink_);
+    default_sink_ = sink;
+    AddSink(sink);
+  } else {
+    DCHECK(default_sink_);
+    RemoveSink(default_sink_);
+    default_sink_ = NULL;
+  }
+}
+
+void WebRtcAudioCapturer::AddSink(WebRtcAudioCapturerSink* track) {
   DCHECK(track);
   DVLOG(1) << "WebRtcAudioCapturer::AddSink()";
+
+  // Start the source if an audio track is connected to the capturer.
+  // |default_sink_| is not an audio track.
+  if (track != default_sink_)
+    Start();
+
   base::AutoLock auto_lock(lock_);
   // Verify that |track| is not already added to the list.
   DCHECK(std::find_if(
@@ -228,19 +232,38 @@ void WebRtcAudioCapturer::RemoveSink(
   DCHECK(thread_checker_.CalledOnValidThread());
   DVLOG(1) << "WebRtcAudioCapturer::RemoveSink()";
 
-  base::AutoLock auto_lock(lock_);
+  bool stop_source = false;
+  {
+    base::AutoLock auto_lock(lock_);
 
-  // Get iterator to the first element for which WrapsSink(track) returns true.
-  TrackList::iterator it = std::find_if(
-      tracks_.begin(), tracks_.end(),
-      WebRtcAudioCapturerSinkOwner::WrapsSink(track));
-  if (it != tracks_.end()) {
-    // Clear the delegate to ensure that no more capture callbacks will
-    // be sent to this sink. Also avoids a possible crash which can happen
-    // if this method is called while capturing is active.
-    (*it)->Reset();
-    tracks_.erase(it);
+    // Get iterator to the first element for which WrapsSink(track) returns
+    // true.
+    TrackList::iterator it = std::find_if(
+        tracks_.begin(), tracks_.end(),
+        WebRtcAudioCapturerSinkOwner::WrapsSink(track));
+    if (it != tracks_.end()) {
+      // Clear the delegate to ensure that no more capture callbacks will
+      // be sent to this sink. Also avoids a possible crash which can happen
+      // if this method is called while capturing is active.
+      (*it)->Reset();
+      tracks_.erase(it);
+    }
+
+    // Stop the source if the last audio track is going away.
+    // The |tracks_| might contain the |default_sink_|, we need to stop the
+    // source if the only remaining element is |default_sink_|.
+    if (tracks_.size() == 1 && default_sink_ &&
+        (*tracks_.begin())->IsEqual(default_sink_)) {
+      stop_source = true;
+    } else {
+      // The source might have been stopped, but it is safe to call Stop()
+      // again to make sure the source is stopped correctly.
+      stop_source = tracks_.empty();
+    }
   }
+
+  if (stop_source)
+    Stop();
 }
 
 void WebRtcAudioCapturer::SetCapturerSource(
@@ -252,28 +275,30 @@ void WebRtcAudioCapturer::SetCapturerSource(
            << "sample_rate=" << sample_rate << ")";
   scoped_refptr<media::AudioCapturerSource> old_source;
   scoped_refptr<ConfiguredBuffer> current_buffer;
+  bool restart_source = false;
   {
     base::AutoLock auto_lock(lock_);
-    if (source_ == source)
+    if (source_.get() == source.get())
       return;
 
     source_.swap(old_source);
     source_ = source;
     current_buffer = buffer_;
 
-    // Reset the flag to allow calling Start() for the new source.
+    // Reset the flag to allow starting the new source.
+    restart_source = running_;
     running_ = false;
   }
 
-  const bool no_default_audio_source_exists = !current_buffer;
+  const bool no_default_audio_source_exists = !current_buffer.get();
 
   // Detach the old source from normal recording or perform first-time
   // initialization if Initialize() has never been called. For the second
   // case, the caller is not "taking over an ongoing session" but instead
   // "taking control over a new session".
-  if (old_source || no_default_audio_source_exists) {
+  if (old_source.get() || no_default_audio_source_exists) {
     DVLOG(1) << "New capture source will now be utilized.";
-    if (old_source)
+    if (old_source.get())
       old_source->Stop();
 
     // Dispatch the new parameters both to the sink(s) and to the new source.
@@ -288,10 +313,13 @@ void WebRtcAudioCapturer::SetCapturerSource(
     }
   }
 
-  if (source) {
+  if (source.get()) {
     // Make sure to grab the new parameters in case they were reconfigured.
     source->Initialize(current_buffer->params(), this, session_id_);
   }
+
+  if (restart_source)
+    Start();
 }
 
 void WebRtcAudioCapturer::Start() {
@@ -302,7 +330,7 @@ void WebRtcAudioCapturer::Start() {
 
   // Start the data source, i.e., start capturing data from the current source.
   // Note that, the source does not have to be a microphone.
-  if (source_) {
+  if (source_.get()) {
     // We need to set the AGC control before starting the stream.
     source_->SetAutomaticGainControl(agc_is_enabled_);
     source_->Start();
@@ -323,14 +351,14 @@ void WebRtcAudioCapturer::Stop() {
     running_ = false;
   }
 
-  if (source)
+  if (source.get())
     source->Stop();
 }
 
 void WebRtcAudioCapturer::SetVolume(double volume) {
   DVLOG(1) << "WebRtcAudioCapturer::SetVolume()";
   base::AutoLock auto_lock(lock_);
-  if (source_)
+  if (source_.get())
     source_->SetVolume(volume);
 }
 
@@ -340,7 +368,7 @@ void WebRtcAudioCapturer::SetAutomaticGainControl(bool enable) {
   // Initialize(), in this case stored setting will be applied in Start().
   agc_is_enabled_ = enable;
 
-  if (source_)
+  if (source_.get())
     source_->SetAutomaticGainControl(enable);
 }
 

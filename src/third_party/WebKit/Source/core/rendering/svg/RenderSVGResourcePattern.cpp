@@ -20,12 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGResourcePattern.h"
 
-#include "core/page/FrameView.h"
 #include "core/platform/graphics/GraphicsContext.h"
-#include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/svg/PatternAttributes.h"
@@ -244,7 +241,7 @@ PassOwnPtr<ImageBuffer> RenderSVGResourcePattern::createTileImage(const PatternA
 
     OwnPtr<ImageBuffer> tileImage;
 
-    if (!SVGRenderingContext::createImageBufferForPattern(absoluteTileBoundaries, clampedAbsoluteTileBoundaries, tileImage, ColorSpaceDeviceRGB, Unaccelerated))
+    if (!SVGRenderingContext::createImageBufferForPattern(absoluteTileBoundaries, clampedAbsoluteTileBoundaries, tileImage, Unaccelerated))
         return nullptr;
 
     GraphicsContext* tileImageContext = tileImage->context();
@@ -275,5 +272,3 @@ PassOwnPtr<ImageBuffer> RenderSVGResourcePattern::createTileImage(const PatternA
 }
 
 }
-
-#endif

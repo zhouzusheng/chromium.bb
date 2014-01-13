@@ -36,15 +36,16 @@
 #include "bindings/v8/ScriptGCEvent.h"
 #include "core/dom/EventContext.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include "core/inspector/InspectorValues.h"
 #include "core/inspector/ScriptGCEventListener.h"
+#include "core/platform/JSONValues.h"
 #include "core/platform/PlatformInstrumentation.h"
 #include "core/platform/graphics/LayoutRect.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/Vector.h>
-#include <wtf/WeakPtr.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/WeakPtr.h"
 
 namespace WebCore {
+struct CachedResourceInitiatorInfo;
 class DOMWindow;
 class Document;
 class DocumentLoader;
@@ -53,6 +54,7 @@ class FloatQuad;
 class Frame;
 class GraphicsContext;
 class InspectorClient;
+class InspectorDOMAgent;
 class InspectorFrontend;
 class InspectorMemoryAgent;
 class InspectorPageAgent;
@@ -67,6 +69,8 @@ class ResourceError;
 class ResourceLoader;
 class ResourceRequest;
 class ResourceResponse;
+class ScriptArguments;
+class ScriptCallStack;
 class ScriptExecutionContext;
 class TimelineTraceEventProcessor;
 class WebSocketHandshakeRequest;
@@ -78,6 +82,7 @@ typedef String ErrorString;
 namespace TimelineRecordType {
 extern const char DecodeImage[];
 extern const char Rasterize[];
+extern const char PaintSetup[];
 };
 
 class TimelineTimeConverter {
@@ -102,9 +107,9 @@ class InspectorTimelineAgent
 public:
     enum InspectorType { PageInspector, WorkerInspector };
 
-    static PassOwnPtr<InspectorTimelineAgent> create(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorMemoryAgent* memoryAgent, InspectorCompositeState* state, InspectorType type, InspectorClient* client)
+    static PassOwnPtr<InspectorTimelineAgent> create(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorMemoryAgent* memoryAgent, InspectorDOMAgent* domAgent, InspectorCompositeState* state, InspectorType type, InspectorClient* client)
     {
-        return adoptPtr(new InspectorTimelineAgent(instrumentingAgents, pageAgent, memoryAgent, state, type, client));
+        return adoptPtr(new InspectorTimelineAgent(instrumentingAgents, pageAgent, memoryAgent, domAgent, state, type, client));
     }
 
     ~InspectorTimelineAgent();
@@ -141,7 +146,7 @@ public:
     void didRecalculateStyle();
     void didRecalculateStyleForElement();
 
-    void willPaint(Frame*);
+    void willPaint(RenderObject*);
     void didPaint(RenderObject*, GraphicsContext*, const LayoutRect&);
 
     void willScrollLayer(Frame*);
@@ -166,18 +171,18 @@ public:
     bool willEvaluateScript(Frame*, const String&, int);
     void didEvaluateScript();
 
-    void didTimeStamp(Frame*, const String&);
-    void didMarkDOMContentEvent(Frame*);
-    void didMarkLoadEvent(Frame*);
+    void consoleTimeStamp(Frame*, PassRefPtr<ScriptArguments>);
+    void domContentLoadedEventFired(Frame*);
+    void loadEventFired(Frame*);
 
-    void time(Frame*, const String&);
-    void timeEnd(Frame*, const String&);
+    void startConsoleTiming(Frame*, const String&);
+    void stopConsoleTiming(Frame*, const String&, PassRefPtr<ScriptCallStack>);
 
     void didScheduleResourceRequest(Document*, const String& url);
-    void willSendResourceRequest(unsigned long, DocumentLoader*, const ResourceRequest&, const ResourceResponse&);
+    void willSendRequest(unsigned long, DocumentLoader*, const ResourceRequest&, const ResourceResponse&, const CachedResourceInitiatorInfo&);
     bool willReceiveResourceResponse(Frame*, unsigned long, const ResourceResponse&);
     void didReceiveResourceResponse(unsigned long, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
-    void didFinishLoadingResource(unsigned long, bool didFail, double finishTime, Frame*);
+    void didFinishLoading(unsigned long, DocumentLoader*, double monotonicFinishTime);
     void didFailLoading(unsigned long identifier, DocumentLoader* loader, const ResourceError& error);
     bool willReceiveResourceData(Frame*, unsigned long identifier, int length);
     void didReceiveResourceData();
@@ -209,44 +214,50 @@ private:
     friend class TimelineTraceEventProcessor;
 
     struct TimelineRecordEntry {
-        TimelineRecordEntry(PassRefPtr<InspectorObject> record, PassRefPtr<InspectorObject> data, PassRefPtr<InspectorArray> children, const String& type, size_t usedHeapSizeAtStart)
+        TimelineRecordEntry(PassRefPtr<JSONObject> record, PassRefPtr<JSONObject> data, PassRefPtr<JSONArray> children, const String& type, size_t usedHeapSizeAtStart)
             : record(record), data(data), children(children), type(type), usedHeapSizeAtStart(usedHeapSizeAtStart)
         {
         }
-        RefPtr<InspectorObject> record;
-        RefPtr<InspectorObject> data;
-        RefPtr<InspectorArray> children;
+        RefPtr<JSONObject> record;
+        RefPtr<JSONObject> data;
+        RefPtr<JSONArray> children;
         String type;
         size_t usedHeapSizeAtStart;
     };
         
-    InspectorTimelineAgent(InstrumentingAgents*, InspectorPageAgent*, InspectorMemoryAgent*, InspectorCompositeState*, InspectorType, InspectorClient*);
+    InspectorTimelineAgent(InstrumentingAgents*, InspectorPageAgent*, InspectorMemoryAgent*, InspectorDOMAgent*, InspectorCompositeState*, InspectorType, InspectorClient*);
 
-    void sendEvent(PassRefPtr<InspectorObject>);
-    void appendRecord(PassRefPtr<InspectorObject> data, const String& type, bool captureCallStack, Frame*);
-    void pushCurrentRecord(PassRefPtr<InspectorObject>, const String& type, bool captureCallStack, Frame*, bool hasLowLevelDetails = false);
+    void didFinishLoadingResource(unsigned long, bool didFail, double finishTime, Frame*);
+
+    void sendEvent(PassRefPtr<JSONObject>);
+    void appendRecord(PassRefPtr<JSONObject> data, const String& type, bool captureCallStack, Frame*);
+    void pushCurrentRecord(PassRefPtr<JSONObject>, const String& type, bool captureCallStack, Frame*, bool hasLowLevelDetails = false);
 
     void setDOMCounters(TypeBuilder::Timeline::TimelineEvent* record);
     void setNativeHeapStatistics(TypeBuilder::Timeline::TimelineEvent* record);
-    void setFrameIdentifier(InspectorObject* record, Frame*);
+    void setFrameIdentifier(JSONObject* record, Frame*);
     void pushGCEventRecords();
 
     void didCompleteCurrentRecord(const String& type);
 
-    void setHeapSizeStatistics(InspectorObject* record);
+    void setHeapSizeStatistics(JSONObject* record);
     void commitFrameRecord();
 
-    void addRecordToTimeline(PassRefPtr<InspectorObject>, const String& type);
-    void innerAddRecordToTimeline(PassRefPtr<InspectorObject>, const String& type);
+    void addRecordToTimeline(PassRefPtr<JSONObject>);
+    void innerAddRecordToTimeline(PassRefPtr<JSONObject>);
     void clearRecordStack();
 
     void localToPageQuad(const RenderObject& renderer, const LayoutRect&, FloatQuad*);
     const TimelineTimeConverter& timeConverter() const { return m_timeConverter; }
+    long long idForNode(Node*);
+    void releaseNodeIds();
+
     double timestamp();
     Page* page();
 
     InspectorPageAgent* m_pageAgent;
     InspectorMemoryAgent* m_memoryAgent;
+    InspectorDOMAgent* m_domAgent;
     TimelineTimeConverter m_timeConverter;
 
     InspectorFrontend::Timeline* m_frontend;
@@ -268,7 +279,7 @@ private:
     GCEvents m_gcEvents;
     int m_maxCallStackDepth;
     unsigned m_platformInstrumentationClientInstalledAtStackDepth;
-    RefPtr<InspectorObject> m_pendingFrameRecord;
+    RefPtr<JSONObject> m_pendingFrameRecord;
     InspectorType m_inspectorType;
     InspectorClient* m_client;
     WeakPtrFactory<InspectorTimelineAgent> m_weakFactory;

@@ -23,24 +23,20 @@
 #include "core/css/StyleRule.h"
 
 #include "RuntimeEnabledFeatures.h"
-#include "core/css/CSSCharsetRule.h"
+#include "core/css/CSSFilterRule.h"
 #include "core/css/CSSFontFaceRule.h"
 #include "core/css/CSSHostRule.h"
 #include "core/css/CSSImportRule.h"
+#include "core/css/CSSKeyframesRule.h"
 #include "core/css/CSSMediaRule.h"
 #include "core/css/CSSPageRule.h"
+#include "core/css/CSSRegionRule.h"
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSSupportsRule.h"
-#include "core/css/CSSUnknownRule.h"
+#include "core/css/CSSViewportRule.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRuleImport.h"
-#include "core/css/WebKitCSSFilterRule.h"
-#include "core/css/WebKitCSSKeyframeRule.h"
-#include "core/css/WebKitCSSKeyframesRule.h"
-#include "core/css/WebKitCSSRegionRule.h"
-#include "core/css/WebKitCSSViewportRule.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
-#include <wtf/MemoryInstrumentationVector.h>
 
 namespace WebCore {
 
@@ -88,11 +84,9 @@ void StyleRuleBase::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     case HostInternal:
         static_cast<const StyleRuleHost*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
-#if ENABLE(CSS_DEVICE_ADAPTATION)
     case Viewport:
         static_cast<const StyleRuleViewport*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
-#endif
     case Filter:
         static_cast<const StyleRuleFilter*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
@@ -135,11 +129,9 @@ void StyleRuleBase::destroy()
     case HostInternal:
         delete static_cast<StyleRuleHost*>(this);
         return;
-#if ENABLE(CSS_DEVICE_ADAPTATION)
     case Viewport:
         delete static_cast<StyleRuleViewport*>(this);
         return;
-#endif
     case Filter:
         delete static_cast<StyleRuleFilter*>(this);
         return;
@@ -175,10 +167,8 @@ PassRefPtr<StyleRuleBase> StyleRuleBase::copy() const
         return static_cast<const StyleRuleKeyframes*>(this)->copy();
     case HostInternal:
         return static_cast<const StyleRuleHost*>(this)->copy();
-#if ENABLE(CSS_DEVICE_ADAPTATION)
     case Viewport:
         return static_cast<const StyleRuleViewport*>(this)->copy();
-#endif
     case Filter:
         return static_cast<const StyleRuleFilter*>(this)->copy();
     case Unknown:
@@ -212,24 +202,22 @@ PassRefPtr<CSSRule> StyleRuleBase::createCSSOMWrapper(CSSStyleSheet* parentSheet
         rule = CSSSupportsRule::create(static_cast<StyleRuleSupports*>(self), parentSheet);
         break;
     case Region:
-        rule = WebKitCSSRegionRule::create(static_cast<StyleRuleRegion*>(self), parentSheet);
+        rule = CSSRegionRule::create(static_cast<StyleRuleRegion*>(self), parentSheet);
         break;
     case Import:
         rule = CSSImportRule::create(static_cast<StyleRuleImport*>(self), parentSheet);
         break;
     case Keyframes:
-        rule = WebKitCSSKeyframesRule::create(static_cast<StyleRuleKeyframes*>(self), parentSheet);
+        rule = CSSKeyframesRule::create(static_cast<StyleRuleKeyframes*>(self), parentSheet);
         break;
-#if ENABLE(CSS_DEVICE_ADAPTATION)
     case Viewport:
-        rule = WebKitCSSViewportRule::create(static_cast<StyleRuleViewport*>(self), parentSheet);
+        rule = CSSViewportRule::create(static_cast<StyleRuleViewport*>(self), parentSheet);
         break;
-#endif
     case HostInternal:
         rule = CSSHostRule::create(static_cast<StyleRuleHost*>(self), parentSheet);
         break;
     case Filter:
-        rule = WebKitCSSFilterRule::create(static_cast<StyleRuleFilter*>(self), parentSheet);
+        rule = CSSFilterRule::create(static_cast<StyleRuleFilter*>(self), parentSheet);
         break;
     case Unknown:
     case Charset:
@@ -261,7 +249,7 @@ StyleRule::StyleRule(int sourceLine)
 
 StyleRule::StyleRule(const StyleRule& o)
     : StyleRuleBase(o)
-    , m_properties(o.m_properties->copy())
+    , m_properties(o.m_properties->mutableCopy())
     , m_selectorList(o.m_selectorList)
 {
 }
@@ -270,11 +258,11 @@ StyleRule::~StyleRule()
 {
 }
 
-StylePropertySet* StyleRule::mutableProperties()
+MutableStylePropertySet* StyleRule::mutableProperties()
 {
     if (!m_properties->isMutable())
-        m_properties = m_properties->copy();
-    return m_properties.get();
+        m_properties = m_properties->mutableCopy();
+    return static_cast<MutableStylePropertySet*>(m_properties.get());
 }
 
 void StyleRule::setProperties(PassRefPtr<StylePropertySet> properties)
@@ -289,7 +277,7 @@ StyleRulePage::StyleRulePage()
 
 StyleRulePage::StyleRulePage(const StyleRulePage& o)
     : StyleRuleBase(o)
-    , m_properties(o.m_properties->copy())
+    , m_properties(o.m_properties->mutableCopy())
     , m_selectorList(o.m_selectorList)
 {
 }
@@ -298,11 +286,11 @@ StyleRulePage::~StyleRulePage()
 {
 }
 
-StylePropertySet* StyleRulePage::mutableProperties()
+MutableStylePropertySet* StyleRulePage::mutableProperties()
 {
     if (!m_properties->isMutable())
-        m_properties = m_properties->copy();
-    return m_properties.get();
+        m_properties = m_properties->mutableCopy();
+    return static_cast<MutableStylePropertySet*>(m_properties.get());
 }
 
 void StyleRulePage::setProperties(PassRefPtr<StylePropertySet> properties)
@@ -324,7 +312,7 @@ StyleRuleFontFace::StyleRuleFontFace()
 
 StyleRuleFontFace::StyleRuleFontFace(const StyleRuleFontFace& o)
     : StyleRuleBase(o)
-    , m_properties(o.m_properties->copy())
+    , m_properties(o.m_properties->mutableCopy())
 {
 }
 
@@ -332,11 +320,11 @@ StyleRuleFontFace::~StyleRuleFontFace()
 {
 }
 
-StylePropertySet* StyleRuleFontFace::mutableProperties()
+MutableStylePropertySet* StyleRuleFontFace::mutableProperties()
 {
     if (!m_properties->isMutable())
-        m_properties = m_properties->copy();
-    return m_properties.get();
+        m_properties = m_properties->mutableCopy();
+    return static_cast<MutableStylePropertySet*>(m_properties.get());
 }
 
 void StyleRuleFontFace::setProperties(PassRefPtr<StylePropertySet> properties)
@@ -435,27 +423,28 @@ void StyleRuleRegion::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObject
     info.addMember(m_selectorList, "selectorList");
 }
 
-#if ENABLE(CSS_DEVICE_ADAPTATION)
 StyleRuleViewport::StyleRuleViewport()
     : StyleRuleBase(Viewport, 0)
 {
+    ASSERT(RuntimeEnabledFeatures::cssViewportEnabled());
 }
 
 StyleRuleViewport::StyleRuleViewport(const StyleRuleViewport& o)
     : StyleRuleBase(o)
-    , m_properties(o.m_properties->copy())
+    , m_properties(o.m_properties->mutableCopy())
 {
+    ASSERT(RuntimeEnabledFeatures::cssViewportEnabled());
 }
 
 StyleRuleViewport::~StyleRuleViewport()
 {
 }
 
-StylePropertySet* StyleRuleViewport::mutableProperties()
+MutableStylePropertySet* StyleRuleViewport::mutableProperties()
 {
     if (!m_properties->isMutable())
-        m_properties = m_properties->copy();
-    return m_properties.get();
+        m_properties = m_properties->mutableCopy();
+    return static_cast<MutableStylePropertySet*>(m_properties.get());
 }
 
 void StyleRuleViewport::setProperties(PassRefPtr<StylePropertySet> properties)
@@ -468,7 +457,6 @@ void StyleRuleViewport::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObje
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
     info.addMember(m_properties, "properties");
 }
-#endif // ENABLE(CSS_DEVICE_ADAPTATION)
 
 StyleRuleFilter::StyleRuleFilter(const String& filterName)
     : StyleRuleBase(Filter, 0)
@@ -479,7 +467,7 @@ StyleRuleFilter::StyleRuleFilter(const String& filterName)
 StyleRuleFilter::StyleRuleFilter(const StyleRuleFilter& o)
     : StyleRuleBase(o)
     , m_filterName(o.m_filterName)
-    , m_properties(o.m_properties->copy())
+    , m_properties(o.m_properties->mutableCopy())
 {
 }
 
@@ -487,11 +475,11 @@ StyleRuleFilter::~StyleRuleFilter()
 {
 }
 
-StylePropertySet* StyleRuleFilter::mutableProperties()
+MutableStylePropertySet* StyleRuleFilter::mutableProperties()
 {
     if (!m_properties->isMutable())
-        m_properties = m_properties->copy();
-    return m_properties.get();
+        m_properties = m_properties->mutableCopy();
+    return static_cast<MutableStylePropertySet*>(m_properties.get());
 }
 
 void StyleRuleFilter::setProperties(PassRefPtr<StylePropertySet> properties)

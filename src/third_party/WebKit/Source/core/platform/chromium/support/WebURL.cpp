@@ -29,14 +29,14 @@
  */
 
 #include "config.h"
-#include <public/WebURL.h>
+#include "public/platform/WebURL.h"
 
-#include "core/platform/KURL.h"
+#include "weborigin/KURL.h"
 
 namespace WebKit {
 
 WebURL::WebURL(const WebCore::KURL& url)
-    : m_spec(url.utf8String())
+    : m_spec(url.string().utf8())
     , m_parsed(url.parsed())
     , m_isValid(url.isValid())
 {
@@ -44,7 +44,7 @@ WebURL::WebURL(const WebCore::KURL& url)
 
 WebURL& WebURL::operator=(const WebCore::KURL& url)
 {
-    m_spec = url.utf8String();
+    m_spec = url.string().utf8();
     m_parsed = url.parsed();
     m_isValid = url.isValid();
     return *this;

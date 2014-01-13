@@ -40,23 +40,19 @@ namespace WebCore {
 // memory pointed by the it is not going away: 1) When GC cannot happen while
 // the UnsafePersistent is alive or 2) when there is a strong Persistent keeping
 // the memory alive while the UnsafePersistent is alive.
-
-// FIXME: assert that GC doesn't happen during the lifetime of UnsafePersistent.
 template<typename T> class UnsafePersistent {
 public:
     UnsafePersistent() : m_value(0) { }
-    UnsafePersistent(T* value) : m_value(value) { }
-    UnsafePersistent(v8::Persistent<T>& handle)
+    explicit UnsafePersistent(T* value) : m_value(value) { }
+    explicit UnsafePersistent(v8::Persistent<T>& handle)
     {
-        m_value = *reinterpret_cast<T**>(&handle);
+        m_value = handle.ClearAndLeak();
     }
 
-    // The end result is generally unsafe to use, see the class level comment
-    // for when it's safe to use.
-    void copyTo(v8::Persistent<T>* handle) const
+    UnsafePersistent(v8::Isolate* isolate, v8::Handle<T>& handle)
     {
-        T** rawValue = reinterpret_cast<T**>(handle);
-        *rawValue = m_value;
+        v8::Persistent<T> persistent(isolate, handle);
+        m_value = persistent.ClearAndLeak();
     }
 
     T* value() const
@@ -64,15 +60,45 @@ public:
         return m_value;
     }
 
-    // FIXME: This is unsafe and this function will be removed. If you really
-    // need a persistent handle (which you shouldn't), use copyTo. Calls to this
-    // function will be replaced with constructing a local handle, once we have
-    // an efficient way for doing so.
-    v8::Handle<v8::Object> handle()
+    // This is incredibly unsafe: the handle is valid only when this
+    // UnsafePersistent is alive and valid (see class level comment).
+    v8::Persistent<T>* persistent()
     {
-        v8::Persistent<v8::Object> handle;
-        copyTo(&handle);
+        v8::Persistent<T>* handle = reinterpret_cast<v8::Persistent<T>*>(&m_value);
         return handle;
+    }
+
+    // FIXME: Remove this function, replace the usages with newLocal().
+    v8::Handle<T> handle()
+    {
+        v8::Handle<T>* handle = reinterpret_cast<v8::Handle<T>*>(&m_value);
+        return *handle;
+    }
+
+    void dispose()
+    {
+        persistent()->Dispose();
+        m_value = 0;
+    }
+
+    void clear()
+    {
+        m_value = 0;
+    }
+
+    v8::Local<T> newLocal(v8::Isolate* isolate)
+    {
+        return v8::Local<T>::New(isolate, *persistent());
+    }
+
+    bool isEmpty() const
+    {
+        return !m_value;
+    }
+
+    bool isWeak()
+    {
+        return persistent()->IsWeak();
     }
 
 private:

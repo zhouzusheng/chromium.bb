@@ -32,19 +32,13 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
-#include "XMLNSNames.h"
 #include "core/css/CSSPrimitiveValue.h"
-#include "core/css/CSSRule.h"
-#include "core/css/CSSRuleList.h"
-#include "core/css/CSSStyleRule.h"
 #include "core/css/CSSValue.h"
 #include "core/css/StylePropertySet.h"
-#include "core/css/StyleResolver.h"
 #include "core/dom/CDATASection.h"
 #include "core/dom/ChildListMutationScope.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/DocumentFragment.h"
-#include "core/dom/DocumentType.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/NodeTraversal.h"
@@ -59,13 +53,10 @@
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/page/Frame.h"
-#include "core/page/Settings.h"
-#include "core/platform/KURL.h"
-#include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderObject.h"
-#include <wtf/StdLibExtras.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/unicode/CharacterNames.h>
+#include "weborigin/KURL.h"
+#include "wtf/StdLibExtras.h"
+#include "wtf/text/StringBuilder.h"
 
 using namespace std;
 
@@ -472,7 +463,7 @@ static bool propertyMissingOrEqualToNone(StylePropertySet* style, CSSPropertyID 
         return true;
     if (!value->isPrimitiveValue())
         return false;
-    return static_cast<CSSPrimitiveValue*>(value.get())->getIdent() == CSSValueNone;
+    return static_cast<CSSPrimitiveValue*>(value.get())->getValueID() == CSSValueNone;
 }
 
 static bool needInterchangeNewlineAfter(const VisiblePosition& v)
@@ -1063,7 +1054,7 @@ void replaceChildrenWithFragment(ContainerNode* container, PassRefPtr<DocumentFr
     }
 
     if (hasOneTextChild(containerNode.get()) && hasOneTextChild(fragment.get())) {
-        toText(containerNode->firstChild())->setData(toText(fragment->firstChild())->data(), ec);
+        toText(containerNode->firstChild())->setData(toText(fragment->firstChild())->data());
         return;
     }
 
@@ -1083,7 +1074,7 @@ void replaceChildrenWithText(ContainerNode* container, const String& text, Excep
     ChildListMutationScope mutation(containerNode.get());
 
     if (hasOneTextChild(containerNode.get())) {
-        toText(containerNode->firstChild())->setData(text, ec);
+        toText(containerNode->firstChild())->setData(text);
         return;
     }
 

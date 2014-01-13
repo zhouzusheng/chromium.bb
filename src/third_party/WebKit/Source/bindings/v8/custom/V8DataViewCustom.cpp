@@ -32,7 +32,7 @@
 
 namespace WebCore {
 
-v8::Handle<v8::Value> V8DataView::constructorCustom(const v8::Arguments& args)
+void V8DataView::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     if (!args.Length()) {
         // see constructWebGLArray -- we don't seem to be able to distingish between
@@ -40,11 +40,14 @@ v8::Handle<v8::Value> V8DataView::constructorCustom(const v8::Arguments& args)
         RefPtr<DataView> dataView = DataView::create(0);
         v8::Handle<v8::Object> wrapper = args.Holder();
         V8DOMWrapper::associateObjectWithWrapper(dataView.release(), &info, wrapper, args.GetIsolate(), WrapperConfiguration::Dependent);
-        return wrapper;
+        args.GetReturnValue().Set(wrapper);
+        return;
     }
-    if (args[0]->IsNull() || !V8ArrayBuffer::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate())))
-        return throwTypeError(0, args.GetIsolate());
-    return constructWebGLArrayWithArrayBufferArgument<DataView, char>(args, &info, v8::kExternalByteArray, false);
+    if (args[0]->IsNull() || !V8ArrayBuffer::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate()))) {
+        throwTypeError(0, args.GetIsolate());
+        return;
+    }
+    constructWebGLArrayWithArrayBufferArgument<DataView, char>(args, &info, v8::kExternalByteArray, false);
 }
 
 // FIXME: Don't need this override.
@@ -52,64 +55,6 @@ v8::Handle<v8::Object> wrap(DataView* impl, v8::Handle<v8::Object> creationConte
 {
     ASSERT(impl);
     return V8DataView::createWrapper(impl, creationContext, isolate);
-}
-
-v8::Handle<v8::Value> V8DataView::getInt8MethodCustom(const v8::Arguments& args)
-{
-    if (args.Length() < 1)
-        return throwNotEnoughArgumentsError(args.GetIsolate());
-
-    DataView* imp = V8DataView::toNative(args.Holder());
-    ExceptionCode ec = 0;
-    V8TRYCATCH(unsigned, byteOffset, toUInt32(args[0]));
-    int8_t result = imp->getInt8(byteOffset, ec);
-    if (UNLIKELY(ec))
-        return setDOMException(ec, args.GetIsolate());
-    return v8Integer(result, args.GetIsolate());
-}
-
-v8::Handle<v8::Value> V8DataView::getUint8MethodCustom(const v8::Arguments& args)
-{
-    if (args.Length() < 1)
-        return throwNotEnoughArgumentsError(args.GetIsolate());
-
-    DataView* imp = V8DataView::toNative(args.Holder());
-    ExceptionCode ec = 0;
-    V8TRYCATCH(unsigned, byteOffset, toUInt32(args[0]));
-    uint8_t result = imp->getUint8(byteOffset, ec);
-    if (UNLIKELY(ec))
-        return setDOMException(ec, args.GetIsolate());
-    return v8Integer(result, args.GetIsolate());
-}
-
-v8::Handle<v8::Value> V8DataView::setInt8MethodCustom(const v8::Arguments& args)
-{
-    if (args.Length() < 2)
-        return throwNotEnoughArgumentsError(args.GetIsolate());
-
-    DataView* imp = V8DataView::toNative(args.Holder());
-    ExceptionCode ec = 0;
-    V8TRYCATCH(unsigned, byteOffset, toUInt32(args[0]));
-    V8TRYCATCH(int, value, toInt32(args[1]));
-    imp->setInt8(byteOffset, static_cast<int8_t>(value), ec);
-    if (UNLIKELY(ec))
-        return setDOMException(ec, args.GetIsolate());
-    return v8Undefined();
-}
-
-v8::Handle<v8::Value> V8DataView::setUint8MethodCustom(const v8::Arguments& args)
-{
-    if (args.Length() < 2)
-        return throwNotEnoughArgumentsError(args.GetIsolate());
-
-    DataView* imp = V8DataView::toNative(args.Holder());
-    ExceptionCode ec = 0;
-    V8TRYCATCH(unsigned, byteOffset, toUInt32(args[0]));
-    V8TRYCATCH(int, value, toInt32(args[1]));
-    imp->setUint8(byteOffset, static_cast<uint8_t>(value), ec);
-    if (UNLIKELY(ec))
-        return setDOMException(ec, args.GetIsolate());
-    return v8Undefined();
 }
 
 } // namespace WebCore

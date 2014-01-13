@@ -32,20 +32,19 @@
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSSelectorList.h"
 #include "core/css/SiblingTraversalStrategies.h"
-#include "core/dom/CustomElementRegistry.h"
 #include "core/dom/Document.h"
+#include "core/dom/FullscreenController.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/dom/StyledElement.h"
 #include "core/dom/Text.h"
+#include "core/dom/shadow/InsertionPoint.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLOptionElement.h"
-#include "core/html/HTMLProgressElement.h"
-#include "core/html/HTMLStyleElement.h"
-#include "core/html/shadow/InsertionPoint.h"
+#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/FocusController.h"
 #include "core/page/Frame.h"
@@ -141,6 +140,13 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
 
     switch (relation) {
     case CSSSelector::Descendant:
+        if (context.selector->relationIsForShadowDistributed()) {
+            for (Element* element = context.element; element; element = element->parentElement()) {
+                if (matchForShadowDistributed(element, siblingTraversalStrategy, ignoreDynamicPseudo, nextContext) == SelectorMatches)
+                    return SelectorMatches;
+            }
+            return SelectorFailsCompletely;
+        }
         nextContext.element = context.element->parentElement();
         nextContext.isSubSelector = false;
         nextContext.elementStyle = 0;
@@ -152,15 +158,15 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
                 return SelectorFailsCompletely;
         }
         return SelectorFailsCompletely;
-
     case CSSSelector::Child:
+        if (context.selector->relationIsForShadowDistributed())
+            return matchForShadowDistributed(context.element, siblingTraversalStrategy, ignoreDynamicPseudo, nextContext);
         nextContext.element = context.element->parentElement();
         if (!nextContext.element)
             return SelectorFailsCompletely;
         nextContext.isSubSelector = false;
         nextContext.elementStyle = 0;
         return match(nextContext, ignoreDynamicPseudo, siblingTraversalStrategy);
-
     case CSSSelector::DirectAdjacent:
         if (m_mode == ResolvingStyle) {
             if (Element* parentElement = context.element->parentElement())
@@ -201,7 +207,7 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
         nextContext.isSubSelector = true;
         return match(nextContext, dynamicPseudo, siblingTraversalStrategy);
 
-    case CSSSelector::ShadowDescendant:
+    case CSSSelector::ShadowPseudo:
         {
             // If we're in the same tree-scope as the scoping element, then following a shadow descendant combinator would escape that and thus the scope.
             if (context.scope && context.scope->treeScope() == context.element->treeScope() && (context.behaviorAtBoundary & BoundaryBehaviorMask) != StaysWithinTreeScope)
@@ -214,26 +220,33 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
             nextContext.elementStyle = 0;
             return match(nextContext, ignoreDynamicPseudo, siblingTraversalStrategy);
         }
-    case CSSSelector::ShadowDistributed:
-        {
-            Vector<InsertionPoint*, 8> insertionPoints;
-            for (Element* element = context.element; element; element = element->parentElement()) {
-                insertionPoints.clear();
-                collectInsertionPointsWhereNodeIsDistributed(element, insertionPoints);
-                for (size_t i = 0; i < insertionPoints.size(); ++i) {
-                    nextContext.element = insertionPoints[i];
-                    nextContext.isSubSelector = false;
-                    nextContext.elementStyle = 0;
-                    if (match(nextContext, ignoreDynamicPseudo, siblingTraversalStrategy) == SelectorMatches)
-                        return SelectorMatches;
-                }
-            }
-            return SelectorFailsCompletely;
-        }
     }
 
     ASSERT_NOT_REACHED();
     return SelectorFailsCompletely;
+}
+
+template<typename SiblingTraversalStrategy>
+SelectorChecker::Match SelectorChecker::matchForShadowDistributed(const Element* element, const SiblingTraversalStrategy& siblingTraversalStrategy, PseudoId& dynamicPseudo, SelectorCheckingContext& nextContext) const
+{
+    Vector<InsertionPoint*, 8> insertionPoints;
+    collectInsertionPointsWhereNodeIsDistributed(element, insertionPoints);
+    for (size_t i = 0; i < insertionPoints.size(); ++i) {
+        nextContext.element = insertionPoints[i];
+        nextContext.isSubSelector = false;
+        nextContext.elementStyle = 0;
+        if (match(nextContext, dynamicPseudo, siblingTraversalStrategy) == SelectorMatches)
+            return SelectorMatches;
+    }
+    return SelectorFailsCompletely;
+}
+
+static inline bool containsHTMLSpace(const AtomicString& string)
+{
+    for (unsigned i = 0; i < string.length(); i++)
+        if (isHTMLSpace(string[i]))
+            return true;
+    return false;
 }
 
 static bool attributeValueMatches(const Attribute* attributeItem, CSSSelector::Match match, const AtomicString& selectorValue, bool caseSensitive)
@@ -249,8 +262,8 @@ static bool attributeValueMatches(const Attribute* attributeItem, CSSSelector::M
         break;
     case CSSSelector::List:
         {
-            // Ignore empty selectors or selectors containing spaces
-            if (selectorValue.contains(' ') || selectorValue.isEmpty())
+            // Ignore empty selectors or selectors containing HTML spaces
+            if (containsHTMLSpace(selectorValue) || selectorValue.isEmpty())
                 return false;
 
             unsigned startSearchAt = 0;
@@ -258,9 +271,9 @@ static bool attributeValueMatches(const Attribute* attributeItem, CSSSelector::M
                 size_t foundPos = value.find(selectorValue, startSearchAt, caseSensitive);
                 if (foundPos == notFound)
                     return false;
-                if (!foundPos || value[foundPos - 1] == ' ') {
+                if (!foundPos || isHTMLSpace(value[foundPos - 1])) {
                     unsigned endStr = foundPos + selectorValue.length();
-                    if (endStr == value.length() || value[endStr] == ' ')
+                    if (endStr == value.length() || isHTMLSpace(value[endStr]))
                         break; // We found a match.
                 }
 
@@ -327,7 +340,7 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
         return SelectorChecker::tagMatches(element, selector->tagQName());
 
     if (selector->m_match == CSSSelector::Class)
-        return element->hasClass() && static_cast<StyledElement*>(element)->classNames().contains(selector->value());
+        return element->hasClass() && element->classNames().contains(selector->value());
 
     if (selector->m_match == CSSSelector::Id)
         return element->hasID() && element->idForStyleResolution() == selector->value();
@@ -552,8 +565,8 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
         case CSSSelector::PseudoAutofill:
             if (!element || !element->isFormControlElement())
                 break;
-            if (HTMLInputElement* inputElement = element->toInputElement())
-                return inputElement->isAutofilled();
+            if (element->hasTagName(inputTag))
+                return toHTMLInputElement(element)->isAutofilled();
             break;
         case CSSSelector::PseudoAnyLink:
         case CSSSelector::PseudoLink:
@@ -637,13 +650,16 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
             {
                 if (!element)
                     break;
-                // Even though WinIE allows checked and indeterminate to co-exist, the CSS selector spec says that
-                // you can't be both checked and indeterminate. We will behave like WinIE behind the scenes and just
-                // obey the CSS spec here in the test for matching the pseudo.
-                HTMLInputElement* inputElement = element->toInputElement();
-                if (inputElement && inputElement->shouldAppearChecked() && !inputElement->shouldAppearIndeterminate())
-                    return true;
-                if (element->hasTagName(optionTag) && toHTMLOptionElement(element)->selected())
+                if (element->hasTagName(inputTag)) {
+                    HTMLInputElement* inputElement = toHTMLInputElement(element);
+                    // Even though WinIE allows checked and indeterminate to
+                    // co-exist, the CSS selector spec says that you can't be
+                    // both checked and indeterminate. We will behave like WinIE
+                    // behind the scenes and just obey the CSS spec here in the
+                    // test for matching the pseudo.
+                    if (inputElement->shouldAppearChecked() && !inputElement->shouldAppearIndeterminate())
+                        return true;
+                } else if (element->hasTagName(optionTag) && toHTMLOptionElement(element)->selected())
                     return true;
                 break;
             }
@@ -672,21 +688,27 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
             // element is an element in the document, the 'full-screen' pseudoclass applies to
             // that element. Also, an <iframe>, <object> or <embed> element whose child browsing
             // context's Document is in the fullscreen state has the 'full-screen' pseudoclass applied.
-            if (element->isFrameElementBase() && static_cast<HTMLFrameElementBase*>(element)->containsFullScreenElement())
+            if (element->isFrameElementBase() && element->containsFullScreenElement())
                 return true;
-            if (!element->document()->webkitIsFullScreen())
-                return false;
-            return element == element->document()->webkitCurrentFullScreenElement();
+            if (FullscreenController* fullscreen = FullscreenController::fromIfExists(element->document())) {
+                if (!fullscreen->webkitIsFullScreen())
+                    return false;
+                return element == fullscreen->webkitCurrentFullScreenElement();
+            }
+            return false;
         case CSSSelector::PseudoAnimatingFullScreenTransition:
-            if (element != element->document()->webkitCurrentFullScreenElement())
-                return false;
-            return element->document()->isAnimatingFullScreen();
+            if (FullscreenController* fullscreen = FullscreenController::fromIfExists(element->document())) {
+                if (!fullscreen->isAnimatingFullScreen())
+                    return false;
+                return element == fullscreen->webkitCurrentFullScreenElement();
+            }
+            return false;
         case CSSSelector::PseudoFullScreenAncestor:
             return element->containsFullScreenElement();
         case CSSSelector::PseudoFullScreenDocument:
             // While a Document is in the fullscreen state, the 'full-screen-document' pseudoclass applies
             // to all elements of that Document.
-            if (!element->document()->webkitIsFullScreen())
+            if (!FullscreenController::isFullScreen(element->document()))
                 return false;
             return true;
         case CSSSelector::PseudoSeamlessDocument:

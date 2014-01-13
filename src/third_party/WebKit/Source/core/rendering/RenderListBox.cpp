@@ -34,7 +34,7 @@
 #include "HTMLNames.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/css/CSSFontSelector.h"
-#include "core/css/StyleResolver.h"
+#include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentEventQueue.h"
 #include "core/dom/NodeRenderStyle.h"
@@ -49,12 +49,10 @@
 #include "core/page/Page.h"
 #include "core/page/SpatialNavigation.h"
 #include "core/platform/Scrollbar.h"
-#include "core/platform/ScrollbarTheme.h"
 #include "core/platform/graphics/FontCache.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderScrollbar.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderTheme.h"
@@ -418,8 +416,7 @@ void RenderListBox::paintItemForeground(PaintInfo& paintInfo, const LayoutPoint&
             textColor = theme()->inactiveListBoxSelectionForegroundColor();
     }
 
-    ColorSpace colorSpace = itemStyle->colorSpace();
-    paintInfo.context->setFillColor(textColor, colorSpace);
+    paintInfo.context->setFillColor(textColor);
 
     TextRun textRun(itemText, 0, 0, TextRun::AllowTrailingExpansion, itemStyle->direction(), isOverride(itemStyle->unicodeBidi()), true, TextRun::NoRounding);
     Font itemFont = style()->font();
@@ -434,7 +431,9 @@ void RenderListBox::paintItemForeground(PaintInfo& paintInfo, const LayoutPoint&
     }
 
     // Draw the item text
-    paintInfo.context->drawBidiText(itemFont, textRun, roundedIntPoint(r.location()));
+    TextRunPaintInfo textRunPaintInfo(textRun);
+    textRunPaintInfo.bounds = r;
+    paintInfo.context->drawBidiText(itemFont, textRunPaintInfo, roundedIntPoint(r.location()));
 }
 
 void RenderListBox::paintItemBackground(PaintInfo& paintInfo, const LayoutPoint& paintOffset, int listIndex)
@@ -453,10 +452,9 @@ void RenderListBox::paintItemBackground(PaintInfo& paintInfo, const LayoutPoint&
 
     // Draw the background for this list box item
     if (!element->renderStyle() || element->renderStyle()->visibility() != HIDDEN) {
-        ColorSpace colorSpace = element->renderStyle() ? element->renderStyle()->colorSpace() : style()->colorSpace();
         LayoutRect itemRect = itemBoundingBoxRect(paintOffset, listIndex);
         itemRect.intersect(controlClipRect(paintOffset));
-        paintInfo.context->fillRect(pixelSnappedIntRect(itemRect), backColor, colorSpace);
+        paintInfo.context->fillRect(pixelSnappedIntRect(itemRect), backColor);
     }
 }
 
@@ -562,6 +560,9 @@ void RenderListBox::autoscroll(const IntPoint&)
     IntPoint pos = frame()->view()->windowToContents(frame()->eventHandler()->lastKnownMousePosition());
 
     int endIndex = scrollToward(pos);
+    if (selectElement()->isDisabledFormControl())
+        return;
+
     if (endIndex >= 0) {
         HTMLSelectElement* select = selectElement();
         m_inAutoscroll = true;
@@ -577,6 +578,9 @@ void RenderListBox::autoscroll(const IntPoint&)
 
 void RenderListBox::stopAutoscroll()
 {
+    if (selectElement()->isDisabledFormControl())
+        return;
+
     selectElement()->listBoxOnChange();
 }
 

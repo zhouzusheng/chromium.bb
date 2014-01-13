@@ -36,9 +36,8 @@
 
 namespace WebCore {
 
-CachedRawResource::CachedRawResource(ResourceRequest& resourceRequest, Type type)
+CachedRawResource::CachedRawResource(const ResourceRequest& resourceRequest, Type type)
     : CachedResource(resourceRequest, type)
-    , m_identifier(0)
 {
 }
 
@@ -82,12 +81,6 @@ void CachedRawResource::didAddClient(CachedResourceClient* c)
     CachedResource::didAddClient(client);
 }
 
-void CachedRawResource::allClientsRemoved()
-{
-    if (m_loader)
-        m_loader->cancelIfNotFinishing();
-}
-
 void CachedRawResource::willSendRequest(ResourceRequest& request, const ResourceResponse& response)
 {
     CachedResourceHandle<CachedRawResource> protect(this);
@@ -103,8 +96,6 @@ void CachedRawResource::willSendRequest(ResourceRequest& request, const Resource
 void CachedRawResource::responseReceived(const ResourceResponse& response)
 {
     CachedResourceHandle<CachedRawResource> protect(this);
-    if (!m_identifier)
-        m_identifier = m_loader->identifier();
     CachedResource::responseReceived(response);
     CachedResourceClientWalker<CachedRawResourceClient> w(m_clients);
     while (CachedRawResourceClient* c = w.next())
@@ -123,15 +114,6 @@ void CachedRawResource::didDownloadData(int dataLength)
     CachedResourceClientWalker<CachedRawResourceClient> w(m_clients);
     while (CachedRawResourceClient* c = w.next())
         c->dataDownloaded(this, dataLength);
-}
-
-void CachedRawResource::switchClientsToRevalidatedResource()
-{
-    ASSERT(m_loader);
-    // If we're in the middle of a successful revalidation, responseReceived() hasn't been called, so we haven't set m_identifier.
-    ASSERT(!m_identifier);
-    static_cast<CachedRawResource*>(resourceToRevalidate())->m_identifier = m_loader->identifier();
-    CachedResource::switchClientsToRevalidatedResource();
 }
 
 void CachedRawResource::setDefersLoading(bool defers)

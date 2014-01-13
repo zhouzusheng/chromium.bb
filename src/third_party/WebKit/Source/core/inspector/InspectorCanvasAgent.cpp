@@ -44,9 +44,9 @@
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
+#include "core/loader/DocumentLoader.h"
 #include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
-#include "core/page/Page.h"
 
 using WebCore::TypeBuilder::Array;
 using WebCore::TypeBuilder::Canvas::ResourceId;
@@ -111,6 +111,8 @@ void InspectorCanvasAgent::disable(ErrorString*)
     m_state->setBoolean(CanvasAgentState::canvasAgentEnabled, m_enabled);
     m_instrumentingAgents->setInspectorCanvasAgent(0);
     m_framesWithUninstrumentedCanvases.clear();
+    if (m_frontend)
+        m_frontend->traceLogsRemoved(0, 0);
 }
 
 void InspectorCanvasAgent::dropTraceLog(ErrorString* errorString, const TraceLogId& traceLogId)
@@ -210,7 +212,9 @@ ScriptObject InspectorCanvasAgent::notifyRenderingContextWasWrapped(const Script
 {
     ASSERT(m_frontend);
     ScriptState* scriptState = wrappedContext.scriptState();
-    DOMWindow* domWindow = scriptState ? domWindowFromScriptState(scriptState) : 0;
+    DOMWindow* domWindow = 0;
+    if (scriptState)
+        domWindow = scriptState->domWindow();
     Frame* frame = domWindow ? domWindow->frame() : 0;
     if (frame && !m_framesWithUninstrumentedCanvases.contains(frame))
         m_framesWithUninstrumentedCanvases.set(frame, false);
@@ -288,10 +292,12 @@ void InspectorCanvasAgent::findFramesWithUninstrumentedCanvases()
     m_framesWithUninstrumentedCanvases.clear();
     ScriptProfiler::visitNodeWrappers(&nodeVisitor);
 
-    for (FramesWithUninstrumentedCanvases::iterator it = m_framesWithUninstrumentedCanvases.begin(); it != m_framesWithUninstrumentedCanvases.end(); ++it) {
-        String frameId = m_pageAgent->frameId(it->key);
-        if (!frameId.isEmpty())
-            m_frontend->contextCreated(frameId);
+    if (m_frontend) {
+        for (FramesWithUninstrumentedCanvases::iterator it = m_framesWithUninstrumentedCanvases.begin(); it != m_framesWithUninstrumentedCanvases.end(); ++it) {
+            String frameId = m_pageAgent->frameId(it->key);
+            if (!frameId.isEmpty())
+                m_frontend->contextCreated(frameId);
+        }
     }
 }
 
@@ -303,8 +309,9 @@ bool InspectorCanvasAgent::checkIsEnabled(ErrorString* errorString) const
     return false;
 }
 
-void InspectorCanvasAgent::frameNavigated(Frame* frame)
+void InspectorCanvasAgent::didCommitLoad(Frame*, DocumentLoader* loader)
 {
+    Frame* frame = loader->frame();
     if (!m_enabled)
         return;
     if (frame == m_pageAgent->mainFrame()) {

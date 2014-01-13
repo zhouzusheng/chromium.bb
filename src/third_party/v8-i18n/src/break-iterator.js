@@ -64,38 +64,47 @@ function initializeBreakIterator(iterator, locales, options) {
  *
  * @constructor
  */
-Intl.v8BreakIterator = function() {
-  var locales = arguments[0];
-  var options = arguments[1];
+%SetProperty(Intl, 'v8BreakIterator', function() {
+    var locales = arguments[0];
+    var options = arguments[1];
 
-  if (!this || this === Intl) {
-    // Constructor is called as a function.
-    return new Intl.v8BreakIterator(locales, options);
-  }
+    if (!this || this === Intl) {
+      // Constructor is called as a function.
+      return new Intl.v8BreakIterator(locales, options);
+    }
 
-  return initializeBreakIterator(toObject(this), locales, options);
-};
+    return initializeBreakIterator(toObject(this), locales, options);
+  },
+  ATTRIBUTES.DONT_ENUM
+);
 
 
 /**
  * BreakIterator resolvedOptions method.
  */
-Intl.v8BreakIterator.prototype.resolvedOptions = function() {
-  if (!this || typeof this !== 'object' ||
-      this.__initializedIntlObject !== 'breakiterator') {
-    throw new TypeError('resolvedOptions method called on a non-object or ' +
-        'on a object that is not Intl.v8BreakIterator.');
-  }
+%SetProperty(Intl.v8BreakIterator.prototype, 'resolvedOptions', function() {
+    if (%_IsConstructCall()) {
+      throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+    }
 
-  var segmenter = this;
-  var locale = getOptimalLanguageTag(segmenter.resolved.requestedLocale,
-                                     segmenter.resolved.locale);
+    if (!this || typeof this !== 'object' ||
+        this.__initializedIntlObject !== 'breakiterator') {
+      throw new TypeError('resolvedOptions method called on a non-object or ' +
+          'on a object that is not Intl.v8BreakIterator.');
+    }
 
-  return {
-    locale: locale,
-    type: segmenter.resolved.type
-  };
-};
+    var segmenter = this;
+    var locale = getOptimalLanguageTag(segmenter.resolved.requestedLocale,
+                                       segmenter.resolved.locale);
+
+    return {
+      locale: locale,
+      type: segmenter.resolved.type
+    };
+  },
+  ATTRIBUTES.DONT_ENUM
+);
+%FunctionRemovePrototype(Intl.v8BreakIterator.prototype.resolvedOptions);
 
 
 /**
@@ -104,9 +113,16 @@ Intl.v8BreakIterator.prototype.resolvedOptions = function() {
  * order in the returned list as in the input list.
  * Options are optional parameter.
  */
-Intl.v8BreakIterator.supportedLocalesOf = function(locales) {
-  return supportedLocalesOf('breakiterator', locales, arguments[1]);
-};
+%SetProperty(Intl.v8BreakIterator, 'supportedLocalesOf', function(locales) {
+    if (%_IsConstructCall()) {
+      throw new TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+    }
+
+    return supportedLocalesOf('breakiterator', locales, arguments[1]);
+  },
+  ATTRIBUTES.DONT_ENUM
+);
+%FunctionRemovePrototype(Intl.v8BreakIterator.supportedLocalesOf);
 
 
 /**

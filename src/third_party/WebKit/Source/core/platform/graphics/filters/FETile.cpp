@@ -45,8 +45,6 @@ PassRefPtr<FETile> FETile::create(Filter* filter)
 
 void FETile::applySoftware()
 {
-// FIXME: See bug 47315. This is a hack to work around a compile failure, but is incorrect behavior otherwise.
-#if ENABLE(SVG)
     FilterEffect* in = inputEffect(0);
 
     ImageBuffer* resultImage = createImageBufferResult();
@@ -62,17 +60,17 @@ void FETile::applySoftware()
     FloatPoint maxEffectLocation = maxEffectRect().location();
     if (in->filterEffectType() == FilterEffectTypeSourceInput) {
         Filter* filter = this->filter();
-        tileRect = filter->filterRegion();
+        tileRect = filter->absoluteFilterRegion();
         tileRect.scale(filter->filterResolution().width(), filter->filterResolution().height());
     }
 
     OwnPtr<ImageBuffer> tileImage;
-    if (!SVGRenderingContext::createImageBufferForPattern(tileRect, tileRect, tileImage, ColorSpaceDeviceRGB, filter()->renderingMode()))
+    if (!SVGRenderingContext::createImageBufferForPattern(tileRect, tileRect, tileImage, filter()->renderingMode()))
         return;
 
     GraphicsContext* tileImageContext = tileImage->context();
     tileImageContext->translate(-inMaxEffectLocation.x(), -inMaxEffectLocation.y());
-    tileImageContext->drawImageBuffer(in->asImageBuffer(), ColorSpaceDeviceRGB, in->absolutePaintRect().location());
+    tileImageContext->drawImageBuffer(in->asImageBuffer(), in->absolutePaintRect().location());
 
     RefPtr<Pattern> pattern = Pattern::create(tileImage->copyImage(CopyBackingStore), true, true);
 
@@ -82,7 +80,6 @@ void FETile::applySoftware()
     GraphicsContext* filterContext = resultImage->context();
     filterContext->setFillPattern(pattern);
     filterContext->fillRect(FloatRect(FloatPoint(), absolutePaintRect().size()));
-#endif
 }
 
 TextStream& FETile::externalRepresentation(TextStream& ts, int indent) const

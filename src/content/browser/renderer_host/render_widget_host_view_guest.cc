@@ -17,7 +17,7 @@
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
+#include "third_party/WebKit/public/web/WebScreenInfo.h"
 #include "webkit/plugins/npapi/webplugin.h"
 
 namespace content {
@@ -81,7 +81,8 @@ void RenderWidgetHostViewGuest::SetSize(const gfx::Size& size) {
 }
 
 gfx::Rect RenderWidgetHostViewGuest::GetBoundsInRootWindow() {
-  return gfx::Rect(size_);
+  // We do not have any root window specific parts in this view.
+  return GetViewBounds();
 }
 
 gfx::GLSurfaceHandle RenderWidgetHostViewGuest::GetCompositingSurface() {
@@ -90,7 +91,7 @@ gfx::GLSurfaceHandle RenderWidgetHostViewGuest::GetCompositingSurface() {
 
 #if defined(OS_WIN) || defined(USE_AURA)
 void RenderWidgetHostViewGuest::ProcessAckedTouchEvent(
-    const WebKit::WebTouchEvent& touch, InputEventAckState ack_result) {
+    const TouchEventWithLatencyInfo& touch, InputEventAckState ack_result) {
   // TODO(fsamuel): Currently we will only take this codepath if the guest has
   // requested touch events. A better solution is to always forward touchpresses
   // to the embedder process to target a BrowserPlugin, and then route all
@@ -125,7 +126,12 @@ bool RenderWidgetHostViewGuest::IsShowing() {
 }
 
 gfx::Rect RenderWidgetHostViewGuest::GetViewBounds() const {
-  return gfx::Rect(size_);
+  gfx::Rect embedder_bounds = static_cast<RenderWidgetHostViewPort*>(
+      guest_->GetEmbedderRenderWidgetHostView())->GetViewBounds();
+  gfx::Rect shifted_rect = guest_->ToGuestRect(embedder_bounds);
+  shifted_rect.set_width(size_.width());
+  shifted_rect.set_height(size_.height());
+  return shifted_rect;
 }
 
 void RenderWidgetHostViewGuest::RenderViewGone(base::TerminationStatus status,
@@ -169,6 +175,23 @@ void RenderWidgetHostViewGuest::AcceleratedSurfacePostSubBuffer(
 
 void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
     scoped_ptr<cc::CompositorFrame> frame) {
+  if (frame->software_frame_data) {
+    cc::SoftwareFrameData* frame_data = frame->software_frame_data.get();
+#ifdef OS_WIN
+    base::SharedMemory shared_memory(frame_data->handle, true,
+                                     host_->GetProcess()->GetHandle());
+#else
+    base::SharedMemory shared_memory(frame_data->handle, true);
+#endif
+
+    RenderWidgetHostView* embedder_view =
+        guest_->GetEmbedderRenderWidgetHostView();
+    base::ProcessHandle embedder_pid =
+        embedder_view->GetRenderWidgetHost()->GetProcess()->GetHandle();
+
+    shared_memory.GiveToProcess(embedder_pid, &frame_data->handle);
+  }
+
   guest_->clear_damage_buffer();
   guest_->SendMessageToEmbedder(
       new BrowserPluginMsg_CompositorFrameSwapped(
@@ -244,9 +267,11 @@ void RenderWidgetHostViewGuest::SetIsLoading(bool is_loading) {
   platform_view_->SetIsLoading(is_loading);
 }
 
-void RenderWidgetHostViewGuest::TextInputStateChanged(
-    const ViewHostMsg_TextInputState_Params& params) {
-  platform_view_->TextInputStateChanged(params);
+void RenderWidgetHostViewGuest::TextInputTypeChanged(ui::TextInputType type,
+                                                     bool can_compose_inline) {
+  RenderWidgetHostViewPort::FromRWHV(
+      guest_->GetEmbedderRenderWidgetHostView())->
+          TextInputTypeChanged(type, can_compose_inline);
 }
 
 void RenderWidgetHostViewGuest::ImeCancelComposition() {
@@ -261,7 +286,8 @@ void RenderWidgetHostViewGuest::ImeCompositionRangeChanged(
 void RenderWidgetHostViewGuest::DidUpdateBackingStore(
     const gfx::Rect& scroll_rect,
     const gfx::Vector2d& scroll_delta,
-    const std::vector<gfx::Rect>& copy_rects) {
+    const std::vector<gfx::Rect>& copy_rects,
+    const ui::LatencyInfo& latency_info) {
   NOTREACHED();
 }
 
@@ -351,7 +377,7 @@ void RenderWidgetHostViewGuest::UnlockMouse() {
 
 void RenderWidgetHostViewGuest::GetScreenInfo(WebKit::WebScreenInfo* results) {
   RenderWidgetHostViewPort* embedder_view =
-      static_cast<RenderWidgetHostViewPort*>(
+      RenderWidgetHostViewPort::FromRWHV(
           guest_->GetEmbedderRenderWidgetHostView());
   embedder_view->GetScreenInfo(results);
 }
@@ -424,12 +450,18 @@ GdkEventButton* RenderWidgetHostViewGuest::GetLastMouseDown() {
 }
 
 gfx::NativeView RenderWidgetHostViewGuest::BuildInputMethodsGtkMenu() {
-  return gfx::NativeView();
+  return platform_view_->BuildInputMethodsGtkMenu();
 }
 #endif  // defined(TOOLKIT_GTK)
 
 #if defined(OS_WIN) && !defined(USE_AURA)
 void RenderWidgetHostViewGuest::WillWmDestroy() {
+}
+#endif
+
+#if defined(OS_WIN) && defined(USE_AURA)
+void RenderWidgetHostViewGuest::SetParentNativeViewAccessible(
+    gfx::NativeViewAccessible accessible_parent) {
 }
 #endif
 
@@ -451,7 +483,7 @@ bool RenderWidgetHostViewGuest::DispatchCancelTouchEvent(
   WebKit::WebTouchEvent cancel_event;
   cancel_event.type = WebKit::WebInputEvent::TouchCancel;
   cancel_event.timeStampSeconds = event->time_stamp().InSecondsF();
-  host_->ForwardTouchEvent(cancel_event);
+  host_->ForwardTouchEventWithLatencyInfo(cancel_event, *event->latency());
   return true;
 }
 

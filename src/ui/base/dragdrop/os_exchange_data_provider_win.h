@@ -8,6 +8,7 @@
 #include <objidl.h>
 #include <shlobj.h>
 #include <string>
+#include <vector>
 
 // Win8 SDK compatibility, see http://goo.gl/fufvl for more information.
 // "Note: This interface has been renamed IDataObjectAsyncCapability."
@@ -17,6 +18,7 @@
 #define IDataObjectAsyncCapability IAsyncOperation
 #endif
 
+#include "base/memory/scoped_vector.h"
 #include "base/win/scoped_comptr.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/ui_export.h"
@@ -97,21 +99,8 @@ class DataObjectImpl : public DownloadFileObserver,
     bool owns_medium;
     scoped_refptr<DownloadFileProvider> downloader;
 
-    StoredDataInfo(CLIPFORMAT cf, STGMEDIUM* medium)
-        : medium(medium),
-          owns_medium(true) {
-      format_etc.cfFormat = cf;
-      format_etc.dwAspect = DVASPECT_CONTENT;
-      format_etc.lindex = -1;
-      format_etc.ptd = NULL;
-      format_etc.tymed = medium ? medium->tymed : TYMED_HGLOBAL;
-    }
-
-    StoredDataInfo(FORMATETC* format_etc, STGMEDIUM* medium)
-        : format_etc(*format_etc),
-          medium(medium),
-          owns_medium(true) {
-    }
+    StoredDataInfo(const FORMATETC& format_etc, STGMEDIUM* medium)
+        : format_etc(format_etc), medium(medium), owns_medium(true) {}
 
     ~StoredDataInfo() {
       if (owns_medium) {
@@ -123,7 +112,7 @@ class DataObjectImpl : public DownloadFileObserver,
     }
   };
 
-  typedef std::vector<StoredDataInfo*> StoredData;
+  typedef ScopedVector<StoredDataInfo> StoredData;
   StoredData contents_;
 
   base::win::ScopedComPtr<IDataObject> source_object_;
@@ -163,7 +152,7 @@ class UI_EXPORT OSExchangeDataProviderWin : public OSExchangeData::Provider {
   virtual void SetFilename(const base::FilePath& path);
   virtual void SetFilenames(
       const std::vector<OSExchangeData::FileInfo>& filenames);
-  virtual void SetPickledData(OSExchangeData::CustomFormat format,
+  virtual void SetPickledData(const OSExchangeData::CustomFormat& format,
                               const Pickle& data);
   virtual void SetFileContents(const base::FilePath& filename,
                                const std::string& file_contents);
@@ -174,7 +163,7 @@ class UI_EXPORT OSExchangeDataProviderWin : public OSExchangeData::Provider {
   virtual bool GetFilename(base::FilePath* path) const;
   virtual bool GetFilenames(
       std::vector<OSExchangeData::FileInfo>* filenames) const;
-  virtual bool GetPickledData(OSExchangeData::CustomFormat format,
+  virtual bool GetPickledData(const OSExchangeData::CustomFormat& format,
                               Pickle* data) const;
   virtual bool GetFileContents(base::FilePath* filename,
                                std::string* file_contents) const;
@@ -184,7 +173,8 @@ class UI_EXPORT OSExchangeDataProviderWin : public OSExchangeData::Provider {
   virtual bool HasFile() const;
   virtual bool HasFileContents() const;
   virtual bool HasHtml() const;
-  virtual bool HasCustomFormat(OSExchangeData::CustomFormat format) const;
+  virtual bool HasCustomFormat(
+      const OSExchangeData::CustomFormat& format) const;
   virtual void SetDownloadFileInfo(
       const OSExchangeData::DownloadFileInfo& download_info);
   virtual void SetInDragLoop(bool in_drag_loop) OVERRIDE;

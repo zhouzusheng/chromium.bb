@@ -19,6 +19,7 @@
 #include "SkPath.h"
 #include "SkStream.h"
 #include "SkString.h"
+#include "SkTemplates.h"
 #include "SkThread.h"
 #include "SkTypeface_win.h"
 #include "SkTypefaceCache.h"
@@ -46,17 +47,10 @@ static void call_ensure_accessible(const LOGFONT& lf) {
 // always packed xxRRGGBB
 typedef uint32_t SkGdiRGB;
 
-template <typename T> T* SkTAddByteOffset(T* ptr, size_t byteOffset) {
-    return (T*)((char*)ptr + byteOffset);
-}
-
 // define this in your Makefile or .gyp to enforce AA requests
 // which GDI ignores at small sizes. This flag guarantees AA
 // for rotated text, regardless of GDI's notions.
 //#define SK_ENFORCE_ROTATED_TEXT_AA_ON_WINDOWS
-
-// client3d has to undefine this for now
-#define CAN_USE_LOGFONT_NAME
 
 static bool isLCD(const SkScalerContext::Rec& rec) {
     return SkMask::kLCD16_Format == rec.fMaskFormat ||
@@ -91,16 +85,16 @@ static bool needToRenderWithSkia(const SkScalerContext::Rec& rec) {
 
 using namespace skia_advanced_typeface_metrics_utils;
 
-static const uint16_t BUFFERSIZE = (16384 - 32);
-static uint8_t glyphbuf[BUFFERSIZE];
-
 /**
  *  Since LOGFONT wants its textsize as an int, and we support fractional sizes,
  *  and since we have a cache of LOGFONTs for our tyepfaces, we always set the
  *  lfHeight to a canonical size, and then we use the 2x2 matrix to achieve the
  *  actual requested size.
+ *
+ *  Not critical to match the font's upem, but we want it big enough to avoid
+ *  precision loss for GDI calls that return ints (e.g. GetOutlineFontMetrics).
  */
-static const int gCanonicalTextSize = 64;
+static const int gCanonicalTextSize = 2048;
 
 static void tchar_to_skstring(const TCHAR t[], SkString* s) {
 #ifdef UNICODE
@@ -551,8 +545,6 @@ static FIXED float2FIXED(float x) {
     return SkFixedToFIXED(SkFloatToFixed(x));
 }
 
-SK_DECLARE_STATIC_MUTEX(gFTMutex);
-
 #define HIRES_TEXTSIZE  2048
 #define HIRES_SHIFT     11
 static inline SkFixed HiResToFixed(int value) {
@@ -586,9 +578,8 @@ SkScalerContext_Windows::SkScalerContext_Windows(SkTypeface* rawTypeface,
         , fFont(0)
         , fSavefont(0)
         , fSC(0)
-        , fGlyphCount(-1) {
-    SkAutoMutexAcquire  ac(gFTMutex);
-
+        , fGlyphCount(-1)
+{
     LogFontTypeface* typeface = reinterpret_cast<LogFontTypeface*>(rawTypeface);
 
     fDDC = ::CreateCompatibleDC(NULL);
@@ -835,21 +826,28 @@ void SkScalerContext_Windows::generateMetrics(SkGlyph* glyph) {
 }
 
 void SkScalerContext_Windows::generateFontMetrics(SkPaint::FontMetrics* mx, SkPaint::FontMetrics* my) {
-// Note: This code was borrowed from generateLineHeight, which has a note
-// stating that it may be incorrect.
-    if (!(mx || my))
+    if (!(mx || my)) {
       return;
+    }
+
+    if (mx) {
+        sk_bzero(mx, sizeof(*mx));
+    }
+    if (my) {
+        sk_bzero(my, sizeof(*my));
+    }
 
     SkASSERT(fDDC);
 
+#ifndef SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS
     if (fType == SkScalerContext_Windows::kBitmap_Type) {
+#endif
         if (mx) {
             mx->fTop = SkIntToScalar(-fTM.tmAscent);
             mx->fAscent = SkIntToScalar(-fTM.tmAscent);
             mx->fDescent = -SkIntToScalar(fTM.tmDescent);
             mx->fBottom = SkIntToScalar(fTM.tmDescent);
-            mx->fLeading = SkIntToScalar(fTM.tmInternalLeading
-                                         + fTM.tmExternalLeading);
+            mx->fLeading = SkIntToScalar(fTM.tmExternalLeading);
         }
 
         if (my) {
@@ -857,11 +855,17 @@ void SkScalerContext_Windows::generateFontMetrics(SkPaint::FontMetrics* mx, SkPa
             my->fAscent = SkIntToScalar(-fTM.tmAscent);
             my->fDescent = SkIntToScalar(-fTM.tmDescent);
             my->fBottom = SkIntToScalar(fTM.tmDescent);
-            my->fLeading = SkIntToScalar(fTM.tmInternalLeading
-                                         + fTM.tmExternalLeading);
+            my->fLeading = SkIntToScalar(fTM.tmExternalLeading);
+            my->fAvgCharWidth = SkIntToScalar(fTM.tmAveCharWidth);
+            my->fMaxCharWidth = SkIntToScalar(fTM.tmMaxCharWidth);
+            my->fXMin = 0;
+            my->fXMax = my->fMaxCharWidth;
+            //my->fXHeight = 0;
         }
+#ifndef SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS
         return;
     }
+#endif
 
     OUTLINETEXTMETRIC otm;
 
@@ -875,21 +879,26 @@ void SkScalerContext_Windows::generateFontMetrics(SkPaint::FontMetrics* mx, SkPa
     }
 
     if (mx) {
-        mx->fTop = -fScale * otm.otmTextMetrics.tmAscent;
+        mx->fTop = -fScale * otm.otmrcFontBox.left;
         mx->fAscent = -fScale * otm.otmAscent;
         mx->fDescent = -fScale * otm.otmDescent;
-        mx->fBottom = fScale * otm.otmTextMetrics.tmDescent;
-        mx->fLeading = fScale * (otm.otmTextMetrics.tmInternalLeading
-                                 + otm.otmTextMetrics.tmExternalLeading);
+        mx->fBottom = fScale * otm.otmrcFontBox.right;
+        mx->fLeading = fScale * otm.otmLineGap;
     }
 
     if (my) {
-        my->fTop = -fScale * otm.otmTextMetrics.tmAscent;
+#ifndef SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS
+        my->fTop = -fScale * otm.otmrcFontBox.top;
         my->fAscent = -fScale * otm.otmAscent;
         my->fDescent = -fScale * otm.otmDescent;
-        my->fBottom = fScale * otm.otmTextMetrics.tmDescent;
-        my->fLeading = fScale * (otm.otmTextMetrics.tmInternalLeading
-                                 + otm.otmTextMetrics.tmExternalLeading);
+        my->fBottom = -fScale * otm.otmrcFontBox.bottom;
+        my->fLeading = fScale * otm.otmLineGap;
+        my->fAvgCharWidth = fScale * otm.otmTextMetrics.tmAveCharWidth;
+        my->fMaxCharWidth = fScale * otm.otmTextMetrics.tmMaxCharWidth;
+        my->fXMin = fScale * otm.otmrcFontBox.left;
+        my->fXMax = fScale * otm.otmrcFontBox.right;
+#endif
+        my->fXHeight = fScale * otm.otmsXHeight;
     }
 }
 
@@ -916,10 +925,22 @@ static void build_power_table(uint8_t table[], float ee) {
  *  that shifting into other color spaces is imprecise.
  */
 static const uint8_t* getInverseGammaTableGDI() {
-    static bool gInited;
+    // Since build_power_table is idempotent, many threads can build gTableGdi
+    // simultaneously.
+
+    // Microsoft Specific:
+    // Making gInited volatile provides read-aquire and write-release in vc++.
+    // In VS2012, see compiler option /volatile:(ms|iso).
+    // Replace with C++11 atomics when possible.
+    static volatile bool gInited;
     static uint8_t gTableGdi[256];
-    if (!gInited) {
+    if (gInited) {
+        // Need a L/L (read) barrier (full acquire not needed). If gInited is observed
+        // true then gTableGdi is observable, but it must be requested.
+    } else {
         build_power_table(gTableGdi, 2.3f);
+        // Need a S/S (write) barrier (full release not needed) here so that this
+        // write to gInited becomes observable after gTableGdi.
         gInited = true;
     }
     return gTableGdi;
@@ -933,15 +954,27 @@ static const uint8_t* getInverseGammaTableGDI() {
  *  If this value is not specified, the default is a gamma of 1.4.
  */
 static const uint8_t* getInverseGammaTableClearType() {
-    static bool gInited;
+    // We don't expect SPI_GETFONTSMOOTHINGCONTRAST to ever change, so building
+    // gTableClearType with build_power_table is effectively idempotent.
+
+    // Microsoft Specific:
+    // Making gInited volatile provides read-aquire and write-release in vc++.
+    // In VS2012, see compiler option /volatile:(ms|iso).
+    // Replace with C++11 atomics when possible.
+    static volatile bool gInited;
     static uint8_t gTableClearType[256];
-    if (!gInited) {
+    if (gInited) {
+        // Need a L/L (read) barrier (acquire not needed). If gInited is observed
+        // true then gTableClearType is observable, but it must be requested.
+    } else {
         UINT level = 0;
         if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGCONTRAST, 0, &level, 0) || !level) {
             // can't get the data, so use a default
             level = 1400;
         }
         build_power_table(gTableClearType, level / 1000.0f);
+        // Need a S/S (write) barrier (release not needed) here so that this
+        // write to gInited becomes observable after gTableClearType.
         gInited = true;
     }
     return gTableClearType;
@@ -997,7 +1030,7 @@ static bool is_rgb_really_bw(const SkGdiRGB* src, int width, int height, int src
                 return false;
             }
         }
-        src = SkTAddByteOffset(src, srcRB);
+        src = SkTAddOffset<const SkGdiRGB>(src, srcRB);
     }
     return true;
 }
@@ -1042,7 +1075,7 @@ static void rgb_to_bw(const SkGdiRGB* SK_RESTRICT src, size_t srcRB,
             }
             dst[byteCount] = byte;
         }
-        src = SkTAddByteOffset(src, srcRB);
+        src = SkTAddOffset<const SkGdiRGB>(src, srcRB);
         dst -= dstRB;
     }
 }
@@ -1058,7 +1091,7 @@ static void rgb_to_a8(const SkGdiRGB* SK_RESTRICT src, size_t srcRB,
         for (int i = 0; i < width; i++) {
             dst[i] = rgb_to_a8<APPLY_PREBLEND>(src[i], table8);
         }
-        src = SkTAddByteOffset(src, srcRB);
+        src = SkTAddOffset<const SkGdiRGB>(src, srcRB);
         dst -= dstRB;
     }
 }
@@ -1074,7 +1107,7 @@ static void rgb_to_lcd16(const SkGdiRGB* SK_RESTRICT src, size_t srcRB, const Sk
         for (int i = 0; i < width; i++) {
             dst[i] = rgb_to_lcd16<APPLY_PREBLEND>(src[i], tableR, tableG, tableB);
         }
-        src = SkTAddByteOffset(src, srcRB);
+        src = SkTAddOffset<const SkGdiRGB>(src, srcRB);
         dst = (uint16_t*)((char*)dst - dstRB);
     }
 }
@@ -1090,7 +1123,7 @@ static void rgb_to_lcd32(const SkGdiRGB* SK_RESTRICT src, size_t srcRB, const Sk
         for (int i = 0; i < width; i++) {
             dst[i] = rgb_to_lcd32<APPLY_PREBLEND>(src[i], tableR, tableG, tableB);
         }
-        src = SkTAddByteOffset(src, srcRB);
+        src = SkTAddOffset<const SkGdiRGB>(src, srcRB);
         dst = (uint32_t*)((char*)dst - dstRB);
     }
 }
@@ -1101,7 +1134,6 @@ static inline unsigned clamp255(unsigned x) {
 }
 
 void SkScalerContext_Windows::generateImage(const SkGlyph& glyph) {
-    SkAutoMutexAcquire ac(gFTMutex);
     SkASSERT(fDDC);
 
     const bool isBW = SkMask::kBW_Format == fRec.fMaskFormat;
@@ -1140,7 +1172,7 @@ void SkScalerContext_Windows::generateImage(const SkGlyph& glyph) {
                 int b = (addr[x] >>  0) & 0xFF;
                 addr[x] = (table[r] << 16) | (table[g] << 8) | table[b];
             }
-            addr = SkTAddByteOffset(addr, srcRB);
+            addr = SkTAddOffset<SkGdiRGB>(addr, srcRB);
         }
     }
 
@@ -1192,22 +1224,50 @@ void SkScalerContext_Windows::generateImage(const SkGlyph& glyph) {
 }
 
 void SkScalerContext_Windows::generatePath(const SkGlyph& glyph, SkPath* path) {
-
-    SkAutoMutexAcquire ac(gFTMutex);
-
     SkASSERT(&glyph && path);
     SkASSERT(fDDC);
 
     path->reset();
 
     GLYPHMETRICS gm;
-    uint32_t total_size = GetGlyphOutlineW(fDDC, glyph.fID, GGO_NATIVE | GGO_GLYPH_INDEX, &gm, BUFFERSIZE, glyphbuf, &fMat22);
-    if (GDI_ERROR == total_size) {
-        LogFontTypeface::EnsureAccessible(this->getTypeface());
-        total_size = GetGlyphOutlineW(fDDC, glyph.fID, GGO_NATIVE | GGO_GLYPH_INDEX, &gm, BUFFERSIZE, glyphbuf, &fMat22);
+
+    // Out of all the fonts on a typical Windows box,
+    // 25% of glyphs require more than 2KB.
+    // 1% of glyphs require more than 4KB.
+    // 0.01% of glyphs require more than 8KB.
+    // 8KB is less than 1% of the normal 1MB stack on Windows.
+    // Note that some web fonts glyphs require more than 20KB.
+    static const DWORD BUFFERSIZE = (1 << 13);
+    SkAutoSTMalloc<BUFFERSIZE, uint8_t> glyphbuf(BUFFERSIZE);
+
+    const UINT flags = GGO_NATIVE | GGO_GLYPH_INDEX;
+    DWORD total_size = GetGlyphOutlineW(fDDC, glyph.fID, flags, &gm, BUFFERSIZE, glyphbuf, &fMat22);
+    // Sometimes GetGlyphOutlineW returns a number larger than BUFFERSIZE even if BUFFERSIZE > 0.
+    // It has been verified that this does not involve a buffer overrun.
+    if (GDI_ERROR == total_size || total_size > BUFFERSIZE) {
+        // GDI_ERROR because the BUFFERSIZE was too small, or because the data was not accessible.
+        // When the data is not accessable GetGlyphOutlineW fails rather quickly,
+        // so just try to get the size. If that fails then ensure the data is accessible.
+        total_size = GetGlyphOutlineW(fDDC, glyph.fID, flags, &gm, 0, NULL, &fMat22);
         if (GDI_ERROR == total_size) {
-            SkASSERT(false);
-            return;
+            LogFontTypeface::EnsureAccessible(this->getTypeface());
+            total_size = GetGlyphOutlineW(fDDC, glyph.fID, flags, &gm, 0, NULL, &fMat22);
+            if (GDI_ERROR == total_size) {
+                SkASSERT(false);
+                return;
+            }
+        }
+
+        glyphbuf.reset(total_size);
+
+        DWORD ret = GetGlyphOutlineW(fDDC, glyph.fID, flags, &gm, total_size, glyphbuf, &fMat22);
+        if (GDI_ERROR == ret) {
+            LogFontTypeface::EnsureAccessible(this->getTypeface());
+            ret = GetGlyphOutlineW(fDDC, glyph.fID, flags, &gm, total_size, glyphbuf, &fMat22);
+            if (GDI_ERROR == ret) {
+                SkASSERT(false);
+                return;
+            }
         }
     }
 
@@ -1639,6 +1699,13 @@ SkTypeface* SkFontHost::CreateTypefaceFromFile(const char path[]) {
 }
 
 void LogFontTypeface::onFilterRec(SkScalerContextRec* rec) const {
+    if (rec->fFlags & SkScalerContext::kLCD_BGROrder_Flag ||
+        rec->fFlags & SkScalerContext::kLCD_Vertical_Flag)
+    {
+        rec->fMaskFormat = SkMask::kA8_Format;
+        rec->fFlags |= SkScalerContext::kGenA8FromLCD_Flag;
+    }
+
     unsigned flagsWeDontSupport = SkScalerContext::kDevKernText_Flag |
                                   SkScalerContext::kAutohinting_Flag |
                                   SkScalerContext::kEmbeddedBitmapText_Flag |

@@ -20,21 +20,18 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "core/dom/Clipboard.h"
 
 #include "core/fileapi/FileList.h"
-#include "core/loader/FrameLoader.h"
 #include "core/loader/cache/CachedImage.h"
-#include "core/page/Frame.h"
-#include "core/platform/graphics/Image.h"
 
 namespace WebCore {
 
-Clipboard::Clipboard(ClipboardAccessPolicy policy, ClipboardType clipboardType) 
+Clipboard::Clipboard(ClipboardAccessPolicy policy, ClipboardType clipboardType)
     : m_policy(policy)
     , m_dropEffect("uninitialized")
     , m_effectAllowed("uninitialized")
@@ -42,8 +39,9 @@ Clipboard::Clipboard(ClipboardAccessPolicy policy, ClipboardType clipboardType)
     , m_clipboardType(clipboardType)
     , m_dragImage(0)
 {
+    ScriptWrappable::init(this);
 }
-    
+
 void Clipboard::setAccessPolicy(ClipboardAccessPolicy policy)
 {
     // once you go numb, can never go back
@@ -101,7 +99,7 @@ static DragOperation dragOpFromIEOp(const String& op)
 static String IEOpFromDragOp(DragOperation op)
 {
     bool moveSet = !!((DragOperationGeneric | DragOperationMove) & op);
-    
+
     if ((moveSet && (op & DragOperationCopy) && (op & DragOperationLink))
         || (op == DragOperationEvery))
         return "all";
@@ -150,11 +148,11 @@ bool Clipboard::hasFileOfType(const String& type) const
 {
     if (!canReadTypes())
         return false;
-    
+
     RefPtr<FileList> fileList = files();
     if (fileList->isEmpty())
         return false;
-    
+
     for (unsigned int f = 0; f < fileList->length(); f++) {
         if (equalIgnoringCase(fileList->item(f)->type(), type))
             return true;
@@ -166,16 +164,16 @@ bool Clipboard::hasStringOfType(const String& type) const
 {
     if (!canReadTypes())
         return false;
-    
-    return types().contains(type); 
+
+    return types().contains(type);
 }
-    
+
 void Clipboard::setDropEffect(const String &effect)
 {
     if (!isForDragAndDrop())
         return;
 
-    // The attribute must ignore any attempts to set it to a value other than none, copy, link, and move. 
+    // The attribute must ignore any attempts to set it to a value other than none, copy, link, and move.
     if (effect != "none" && effect != "copy"  && effect != "link" && effect != "move")
         return;
 
@@ -195,7 +193,7 @@ void Clipboard::setEffectAllowed(const String &effect)
         // we are passed isn't a valid effectAllowed, so we should ignore it,
         // and not set m_effectAllowed.
 
-        // The attribute must ignore any attempts to set it to a value other than 
+        // The attribute must ignore any attempts to set it to a value other than
         // none, copy, copyLink, copyMove, link, linkMove, move, all, and uninitialized.
         return;
     }
@@ -204,7 +202,7 @@ void Clipboard::setEffectAllowed(const String &effect)
     if (canWriteData())
         m_effectAllowed = effect;
 }
-    
+
 DragOperation convertDropZoneOperationToDragOperation(const String& dragOperation)
 {
     if (dragOperation == "copy")

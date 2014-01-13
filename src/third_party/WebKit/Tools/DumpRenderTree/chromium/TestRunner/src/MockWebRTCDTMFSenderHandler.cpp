@@ -23,14 +23,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "MockWebRTCDTMFSenderHandler.h"
 
 #include "WebTestDelegate.h"
 #include <assert.h>
-#include <public/WebMediaStreamSource.h>
-#include <public/WebRTCDTMFSenderHandlerClient.h>
+#include "public/platform/WebMediaStreamSource.h"
+#include "public/platform/WebRTCDTMFSenderHandlerClient.h"
 
 using namespace WebKit;
 

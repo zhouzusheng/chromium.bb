@@ -23,13 +23,11 @@
 
 #include "HTMLNames.h"
 #include "core/dom/KeyboardEvent.h"
-#include "core/dom/MouseEvent.h"
 #include "core/dom/NodeRenderingContext.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDetailsElement.h"
 #include "core/html/shadow/DetailsMarkerControl.h"
 #include "core/html/shadow/HTMLContentElement.h"
-#include "core/platform/PlatformMouseEvent.h"
 #include "core/rendering/RenderBlock.h"
 
 namespace WebCore {
@@ -49,9 +47,9 @@ HTMLSummaryElement::HTMLSummaryElement(const QualifiedName& tagName, Document* d
     ASSERT(hasTagName(summaryTag));
 }
 
-RenderObject* HTMLSummaryElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* HTMLSummaryElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderBlock(this);
+    return new (document()->renderArena()) RenderBlock(this);
 }
 
 bool HTMLSummaryElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const

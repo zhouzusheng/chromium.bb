@@ -120,8 +120,6 @@ virtual void Finish() OVERRIDE;
 
 virtual void Flush() OVERRIDE;
 
-virtual void ShallowFlushCHROMIUM() OVERRIDE;
-
 virtual void FramebufferRenderbuffer(
     GLenum target, GLenum attachment, GLenum renderbuffertarget,
     GLuint renderbuffer) OVERRIDE;
@@ -255,6 +253,10 @@ virtual void ShaderBinary(
 virtual void ShaderSource(
     GLuint shader, GLsizei count, const GLchar* const* str,
     const GLint* length) OVERRIDE;
+
+virtual void ShallowFinishCHROMIUM() OVERRIDE;
+
+virtual void ShallowFlushCHROMIUM() OVERRIDE;
 
 virtual void StencilFunc(GLenum func, GLint ref, GLuint mask) OVERRIDE;
 
@@ -438,6 +440,10 @@ virtual void* MapBufferCHROMIUM(GLuint target, GLenum access) OVERRIDE;
 
 virtual GLboolean UnmapBufferCHROMIUM(GLuint target) OVERRIDE;
 
+virtual void* MapImageCHROMIUM(GLuint image_id, GLenum access) OVERRIDE;
+
+virtual void UnmapImageCHROMIUM(GLuint image_id) OVERRIDE;
+
 virtual void* MapBufferSubDataCHROMIUM(
     GLuint target, GLintptr offset, GLsizeiptr size, GLenum access) OVERRIDE;
 
@@ -449,7 +455,8 @@ virtual void* MapTexSubImage2DCHROMIUM(
 
 virtual void UnmapTexSubImage2DCHROMIUM(const void* mem) OVERRIDE;
 
-virtual void ResizeCHROMIUM(GLuint width, GLuint height) OVERRIDE;
+virtual void ResizeCHROMIUM(
+    GLuint width, GLuint height, GLfloat scale_factor) OVERRIDE;
 
 virtual const GLchar* GetRequestableExtensionsCHROMIUM() OVERRIDE;
 
@@ -467,6 +474,14 @@ virtual void GetProgramInfoCHROMIUM(
 virtual GLuint CreateStreamTextureCHROMIUM(GLuint texture) OVERRIDE;
 
 virtual void DestroyStreamTextureCHROMIUM(GLuint texture) OVERRIDE;
+
+virtual GLuint CreateImageCHROMIUM(
+    GLsizei width, GLsizei height, GLenum internalformat) OVERRIDE;
+
+virtual void DestroyImageCHROMIUM(GLuint image_id) OVERRIDE;
+
+virtual void GetImageParameterivCHROMIUM(
+    GLuint image_id, GLenum pname, GLint* params) OVERRIDE;
 
 virtual void GetTranslatedShaderSourceANGLE(
     GLuint shader, GLsizei bufsize, GLsizei* length, char* source) OVERRIDE;

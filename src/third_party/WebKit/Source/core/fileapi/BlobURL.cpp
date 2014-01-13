@@ -32,10 +32,10 @@
 
 #include "core/fileapi/BlobURL.h"
 
-#include "core/page/SecurityOrigin.h"
-#include "core/platform/KURL.h"
 #include "core/platform/UUID.h"
-#include <wtf/text/WTFString.h>
+#include "weborigin/KURL.h"
+#include "weborigin/SecurityOrigin.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -73,7 +73,7 @@ KURL BlobURL::createBlobURL(const String& originString)
 {
     ASSERT(!originString.isEmpty());
     String urlString = "blob:" + encodeWithURLEscapeSequences(originString) + '/' + createCanonicalUUIDString();
-    return KURL(ParsedURLString, urlString);
+    return KURL::createIsolated(ParsedURLString, urlString);
 }
 
 } // namespace WebCore

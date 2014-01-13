@@ -11,8 +11,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "ppapi/thunk/ppb_scrollbar_api.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginScrollbarClient.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/web/WebPluginScrollbarClient.h"
 #include "ui/gfx/rect.h"
 #include "webkit/plugins/ppapi/ppb_widget_impl.h"
 

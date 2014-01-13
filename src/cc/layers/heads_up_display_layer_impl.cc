@@ -7,8 +7,8 @@
 #include <algorithm>
 #include <vector>
 
-#include "base/stringprintf.h"
 #include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/debug/debug_rect_history.h"
 #include "cc/debug/frame_rate_counter.h"
@@ -81,8 +81,10 @@ scoped_ptr<LayerImpl> HeadsUpDisplayLayerImpl::CreateLayerImpl(
   return HeadsUpDisplayLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
 }
 
-void HeadsUpDisplayLayerImpl::WillDraw(ResourceProvider* resource_provider) {
-  LayerImpl::WillDraw(resource_provider);
+bool HeadsUpDisplayLayerImpl::WillDraw(DrawMode draw_mode,
+                                       ResourceProvider* resource_provider) {
+  if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE)
+    return false;
 
   if (!hud_resource_)
     hud_resource_ = ScopedResource::create(resource_provider);
@@ -100,6 +102,8 @@ void HeadsUpDisplayLayerImpl::WillDraw(ResourceProvider* resource_provider) {
     hud_resource_->Allocate(
         bounds(), GL_RGBA, ResourceProvider::TextureUsageAny);
   }
+
+  return LayerImpl::WillDraw(draw_mode, resource_provider);
 }
 
 void HeadsUpDisplayLayerImpl::AppendQuads(QuadSink* quad_sink,
@@ -165,18 +169,6 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
                                gfx::Vector2d());
 }
 
-void HeadsUpDisplayLayerImpl::DidDraw(ResourceProvider* resource_provider) {
-  LayerImpl::DidDraw(resource_provider);
-
-  if (!hud_resource_->id())
-    return;
-
-  // FIXME: the following assert will not be true when sending resources to a
-  // parent compositor. We will probably need to hold on to hud_resource_ for
-  // longer, and have several HUD textures in the pipeline.
-  DCHECK(!resource_provider->InUseByConsumer(hud_resource_->id()));
-}
-
 void HeadsUpDisplayLayerImpl::DidLoseOutputSurface() { hud_resource_.reset(); }
 
 bool HeadsUpDisplayLayerImpl::LayerIsAlwaysDamaged() const { return true; }
@@ -227,9 +219,6 @@ void HeadsUpDisplayLayerImpl::DrawHudContents(SkCanvas* canvas) const {
 
   if (debug_state.ShowHudRects())
     DrawDebugRects(canvas, layer_tree_impl()->debug_rect_history());
-
-  if (debug_state.show_platform_layer_tree)
-    DrawPlatformLayerTree(canvas);
 
   SkRect area = SkRect::MakeEmpty();
   if (debug_state.continuous_painting) {
@@ -307,33 +296,6 @@ void HeadsUpDisplayLayerImpl::DrawGraphLines(SkCanvas* canvas,
                    bounds.top() + indicator_top,
                    *paint);
   paint->setXfermode(NULL);
-}
-
-void HeadsUpDisplayLayerImpl::DrawPlatformLayerTree(SkCanvas* canvas) const {
-  const int kFontHeight = 14;
-  SkPaint paint = CreatePaint();
-  DrawGraphBackground(
-      canvas,
-      &paint,
-      SkRect::MakeXYWH(0, 0, bounds().width(), bounds().height()));
-
-  std::string layer_tree = layer_tree_impl()->layer_tree_as_text();
-  std::vector<std::string> lines;
-  base::SplitString(layer_tree, '\n', &lines);
-
-  paint.setColor(DebugColors::PlatformLayerTreeTextColor());
-  for (size_t i = 0;
-       i < lines.size() &&
-           static_cast<int>(2 + i * kFontHeight) < bounds().height();
-       ++i) {
-    DrawText(canvas,
-             &paint,
-             lines[i],
-             SkPaint::kLeft_Align,
-             kFontHeight,
-             2,
-             2 + (i + 1) * kFontHeight);
-  }
 }
 
 SkRect HeadsUpDisplayLayerImpl::DrawFPSDisplay(
@@ -688,7 +650,7 @@ void HeadsUpDisplayLayerImpl::DrawDebugRects(
 }
 
 const char* HeadsUpDisplayLayerImpl::LayerTypeAsString() const {
-  return "HeadsUpDisplayLayer";
+  return "cc::HeadsUpDisplayLayerImpl";
 }
 
 }  // namespace cc

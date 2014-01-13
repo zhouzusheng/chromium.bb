@@ -22,11 +22,8 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
-#include "core/css/CSSInheritedValue.h"
-#include "core/css/CSSInitialValue.h"
 #include "core/css/CSSParser.h"
 #include "core/css/CSSValueList.h"
 #include "core/rendering/RenderTheme.h"
@@ -36,13 +33,18 @@ using namespace std;
 
 namespace WebCore {
 
+static bool isSystemColor(int id)
+{
+    return (id >= CSSValueActiveborder && id <= CSSValueWindowtext) || id == CSSValueMenu;
+}
+
 bool CSSParser::parseSVGValue(CSSPropertyID propId, bool important)
 {
     CSSParserValue* value = m_valueList->current();
     if (!value)
         return false;
 
-    int id = value->id;
+    CSSValueID id = value->id;
 
     bool valid_primitive = false;
     RefPtr<CSSValue> parsedValue;
@@ -185,7 +187,7 @@ bool CSSParser::parseSVGValue(CSSPropertyID propId, bool important)
                 parsedValue = SVGPaint::createNone();
             else if (id == CSSValueCurrentcolor)
                 parsedValue = SVGPaint::createCurrentColor();
-            else if ((id >= CSSValueActiveborder && id <= CSSValueWindowtext) || id == CSSValueMenu)
+            else if (isSystemColor(id))
                 parsedValue = SVGPaint::createColor(RenderTheme::defaultTheme()->systemColor(id));
             else if (value->unit == CSSPrimitiveValue::CSS_URI) {
                 RGBA32 c = Color::transparent;
@@ -208,8 +210,10 @@ bool CSSParser::parseSVGValue(CSSPropertyID propId, bool important)
     case CSSPropertyStopColor: // TODO : icccolor
     case CSSPropertyFloodColor:
     case CSSPropertyLightingColor:
-        if ((id >= CSSValueAqua && id <= CSSValueWindowtext) ||
-           (id >= CSSValueAliceblue && id <= CSSValueYellowgreen))
+        if (isSystemColor(id))
+            parsedValue = SVGColor::createFromColor(RenderTheme::defaultTheme()->systemColor(id));
+        else if ((id >= CSSValueAqua && id <= CSSValueTransparent) ||
+                (id >= CSSValueAliceblue && id <= CSSValueYellowgreen) || id == CSSValueGrey)
             parsedValue = SVGColor::createFromString(value->string);
         else if (id == CSSValueCurrentcolor)
             parsedValue = SVGColor::createCurrentColor();
@@ -365,5 +369,3 @@ PassRefPtr<CSSValue> CSSParser::parseSVGColor()
 }
 
 }
-
-#endif // ENABLE(SVG)

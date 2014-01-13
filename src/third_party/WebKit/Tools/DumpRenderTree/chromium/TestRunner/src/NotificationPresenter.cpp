@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #if ENABLE_NOTIFICATIONS
 #include "NotificationPresenter.h"
 
@@ -38,10 +36,10 @@
 #include "WebNotificationPermissionCallback.h"
 #include "WebSecurityOrigin.h"
 #include "WebTestDelegate.h"
-#include "googleurl/src/gurl.h"
-#include <public/Platform.h>
-#include <public/WebString.h>
-#include <public/WebURL.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
+#include <url/gurl.h>
 
 using namespace WebKit;
 using namespace std;

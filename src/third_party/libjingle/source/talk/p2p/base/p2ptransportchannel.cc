@@ -164,6 +164,7 @@ P2PTransportChannel::P2PTransportChannel(const std::string& content_name,
     waiting_for_signaling_(false),
     error_(0),
     best_connection_(NULL),
+    pending_best_connection_(NULL),
     sort_dirty_(false),
     was_writable_(false),
     protocol_type_(ICEPROTO_GOOGLE),
@@ -196,8 +197,22 @@ void P2PTransportChannel::AddAllocatorSession(PortAllocatorSession* session) {
       this, &P2PTransportChannel::OnCandidatesReady);
   session->SignalCandidatesAllocationDone.connect(
       this, &P2PTransportChannel::OnCandidatesAllocationDone);
-  session->GetInitialPorts();
-  session->StartGetAllPorts();
+  session->StartGettingPorts();
+}
+
+void P2PTransportChannel::AddConnection(Connection* connection) {
+  connections_.push_back(connection);
+  connection->set_remote_ice_mode(remote_ice_mode_);
+  connection->SignalReadPacket.connect(
+      this, &P2PTransportChannel::OnReadPacket);
+  connection->SignalReadyToSend.connect(
+      this, &P2PTransportChannel::OnReadyToSend);
+  connection->SignalStateChange.connect(
+      this, &P2PTransportChannel::OnConnectionStateChange);
+  connection->SignalDestroyed.connect(
+      this, &P2PTransportChannel::OnConnectionDestroyed);
+  connection->SignalUseCandidate.connect(
+      this, &P2PTransportChannel::OnUseCandidate);
 }
 
 void P2PTransportChannel::SetRole(TransportRole role) {
@@ -256,7 +271,8 @@ void P2PTransportChannel::SetRemoteIceCredentials(const std::string& ice_ufrag,
   ASSERT(worker_thread_ == talk_base::Thread::Current());
   bool ice_restart = false;
   if (!remote_ice_ufrag_.empty() && !remote_ice_pwd_.empty()) {
-    ice_restart = (remote_ice_ufrag_ != ice_ufrag) || (remote_ice_pwd_!= ice_pwd);
+    ice_restart = (remote_ice_ufrag_ != ice_ufrag) ||
+                  (remote_ice_pwd_!= ice_pwd);
   }
 
   remote_ice_ufrag_ = ice_ufrag;
@@ -450,21 +466,21 @@ void P2PTransportChannel::OnUnknownAddress(
   } else {
     // Create a new candidate with this address.
 
-    // Unless the binding request came from a relay port, we use the port
-    // type as the candidate type. If the binding request comes from a relay
-    // port we always set type to STUN_PORT_TYPE.
-    // TODO: Fix this by adding a new type as peer-reflexive
-    // candidate. So that all the new candidates created here will be the
-    // peer-reflexive candidate.
-    std::string type = port->Type();
-    if (type == RELAY_PORT_TYPE || port->SharedSocket()) {
-      type = STUN_PORT_TYPE;
+    std::string type;
+    if (protocol_type_ == ICEPROTO_RFC5245) {
+      type = PRFLX_PORT_TYPE;
+    } else {
+      // G-ICE doesn't support prflx candidate.
+      // We set candidate type to STUN_PORT_TYPE if the binding request comes
+      // from a relay port or the shared socket is used. Otherwise we use the
+      // port's type as the candidate type.
+      if (port->Type() == RELAY_PORT_TYPE || port->SharedSocket()) {
+        type = STUN_PORT_TYPE;
+      } else {
+        type = port->Type();
+      }
     }
 
-    // TODO: Change the preference to the preference of
-    // the peer-reflexive candidate when it's ready.
-    // For now just default to a STUN preference.
-    // TODO(ronghuawu): Use Port::ComputeFoundation to calculate foundation.
     std::string id = talk_base::CreateRandomString(8);
     new_remote_candidate = Candidate(
         id, component(), ProtoToString(proto), address,
@@ -475,10 +491,48 @@ void P2PTransportChannel::OnUnknownAddress(
         new_remote_candidate.GetPriority(ICE_TYPE_PREFERENCE_SRFLX));
   }
 
-  // Check for connectivity to this address. Create connections
-  // to this address across all local ports. First, add this as a new remote
-  // address
-  if (CreateConnections(new_remote_candidate, port, true)) {
+  if (protocol_type_ == ICEPROTO_RFC5245) {
+    // RFC 5245
+    // If the source transport address of the request does not match any
+    // existing remote candidates, it represents a new peer reflexive remote
+    // candidate.
+
+    // The priority of the candidate is set to the PRIORITY attribute
+    // from the request.
+    const StunUInt32Attribute* priority_attr =
+        stun_msg->GetUInt32(STUN_ATTR_PRIORITY);
+    if (!priority_attr) {
+      LOG(LS_WARNING) << "P2PTransportChannel::OnUnknownAddress - "
+                      << "No STUN_ATTR_PRIORITY found in the "
+                      << "stun request message";
+      port->SendBindingErrorResponse(stun_msg, address,
+                                     STUN_ERROR_BAD_REQUEST,
+                                     STUN_ERROR_REASON_BAD_REQUEST);
+      return;
+    }
+    new_remote_candidate.set_priority(priority_attr->value());
+
+    // RFC5245, the agent constructs a pair whose local candidate is equal to
+    // the transport address on which the STUN request was received, and a
+    // remote candidate equal to the source transport address where the
+    // request came from.
+
+    // There shouldn't be an existing connection with this remote address.
+    ASSERT(port->GetConnection(new_remote_candidate.address()) == NULL);
+
+    Connection* connection = port->CreateConnection(
+        new_remote_candidate, cricket::PortInterface::ORIGIN_THIS_PORT);
+    if (!connection) {
+      ASSERT(false);
+      port->SendBindingErrorResponse(stun_msg, address,
+                                     STUN_ERROR_SERVER_ERROR,
+                                     STUN_ERROR_REASON_SERVER_ERROR);
+      return;
+    }
+
+    AddConnection(connection);
+    connection->ReceivedPing();
+
     // Send the pinger a successful stun response.
     port->SendBindingResponse(stun_msg, address);
 
@@ -487,15 +541,29 @@ void P2PTransportChannel::OnUnknownAddress(
     // connection in question.
     SortConnections();
   } else {
-    // Hopefully this won't occur, because changing a destination address
-    // shouldn't cause a new connection to fail
-    ASSERT(false);
-    port->SendBindingErrorResponse(stun_msg, address, STUN_ERROR_SERVER_ERROR,
-        STUN_ERROR_REASON_SERVER_ERROR);
+    // Check for connectivity to this address. Create connections
+    // to this address across all local ports. First, add this as a new remote
+    // address
+    if (!CreateConnections(new_remote_candidate, port, true)) {
+      // Hopefully this won't occur, because changing a destination address
+      // shouldn't cause a new connection to fail
+      ASSERT(false);
+      port->SendBindingErrorResponse(stun_msg, address, STUN_ERROR_SERVER_ERROR,
+          STUN_ERROR_REASON_SERVER_ERROR);
+      return;
+    }
+
+    // Send the pinger a successful stun response.
+    port->SendBindingResponse(stun_msg, address);
+
+    // Update the list of connections since we just added another.  We do this
+    // after sending the response since it could (in principle) delete the
+    // connection in question.
+    SortConnections();
   }
 }
 
-void P2PTransportChannel::OnRoleConflict() {
+void P2PTransportChannel::OnRoleConflict(PortInterface* port) {
   SignalRoleConflict(this);  // STUN ping will be sent when SetRole is called
                              // from Transport.
 }
@@ -511,9 +579,19 @@ void P2PTransportChannel::OnSignalingReady() {
 }
 
 void P2PTransportChannel::OnUseCandidate(Connection* conn) {
+  ASSERT(worker_thread_ == talk_base::Thread::Current());
   ASSERT(role_ == ROLE_CONTROLLED);
-  if (conn->state() == Connection::STATE_SUCCEEDED) {
-    SwitchBestConnectionTo(conn);
+  ASSERT(protocol_type_ == ICEPROTO_RFC5245);
+  if (conn->write_state() == Connection::STATE_WRITABLE) {
+    if (best_connection_ != conn) {
+      pending_best_connection_ = NULL;
+      SwitchBestConnectionTo(conn);
+      // Now we have selected the best connection, time to prune other existing
+      // connections and update the read/write state of the channel.
+      RequestSort();
+    }
+  } else {
+    pending_best_connection_ = conn;
   }
 }
 
@@ -606,24 +684,7 @@ bool P2PTransportChannel::CreateConnection(PortInterface* port,
     if (!connection)
       return false;
 
-    connections_.push_back(connection);
-    connection->set_remote_ice_mode(remote_ice_mode_);
-    // Aggressive nomination if remote is ICEMODE_FULL.
-    // In aggressive mode USE_CANDIDATE_ATTR will be part of every ping.
-    // Regular nomination if remote is ICEMODE_LITE. In this mode
-    // USE_CANDIDATE_ATTR will be set only after we selected the |connection|
-    // for transport.
-    connection->set_use_candidate_attr(remote_ice_mode_ == ICEMODE_FULL);
-    connection->SignalReadPacket.connect(
-        this, &P2PTransportChannel::OnReadPacket);
-    connection->SignalReadyToSend.connect(
-        this, &P2PTransportChannel::OnReadyToSend);
-    connection->SignalStateChange.connect(
-        this, &P2PTransportChannel::OnConnectionStateChange);
-    connection->SignalDestroyed.connect(
-        this, &P2PTransportChannel::OnConnectionDestroyed);
-    connection->SignalUseCandidate.connect(
-        this, &P2PTransportChannel::OnUseCandidate);
+    AddConnection(connection);
 
     LOG_J(LS_INFO, this) << "Created connection with origin=" << origin << ", ("
                          << connections_.size() << " total)";
@@ -667,7 +728,7 @@ void P2PTransportChannel::RememberRemoteCandidate(
   while (i < remote_candidates_.size()) {
     if (remote_candidates_[i].generation() < remote_candidate.generation()) {
       LOG(INFO) << "Pruning candidate from old generation: "
-                << remote_candidates_[i].address().ToString();
+                << remote_candidates_[i].address().ToSensitiveString();
       remote_candidates_.erase(remote_candidates_.begin() + i);
     } else {
       i += 1;
@@ -678,7 +739,7 @@ void P2PTransportChannel::RememberRemoteCandidate(
   for (uint32 i = 0; i < remote_candidates_.size(); ++i) {
     if (remote_candidates_[i].IsEquivalent(remote_candidate)) {
       LOG(INFO) << "Duplicate candidate: "
-                << remote_candidate.address().ToString();
+                << remote_candidate.address().ToSensitiveString();
       return;
     }
   }
@@ -789,8 +850,7 @@ void P2PTransportChannel::RequestSort() {
 }
 
 // Sort the available connections to find the best one.  We also monitor
-// the number of available connections and the current state so that we
-// can possibly kick off more allocators (for more connections).
+// the number of available connections and the current state.
 void P2PTransportChannel::SortConnections() {
   ASSERT(worker_thread_ == talk_base::Thread::Current());
 
@@ -822,13 +882,19 @@ void P2PTransportChannel::SortConnections() {
   if (connections_.size() > 0)
     top_connection = connections_[0];
 
+  // We don't want to pick the best connections if channel is using RFC5245
+  // and it's mode is CONTROLLED, as connections will be selected by the
+  // CONTROLLING agent.
+
   // If necessary, switch to the new choice.
-  if (ShouldSwitch(best_connection_, top_connection))
-    SwitchBestConnectionTo(top_connection);
+  if (protocol_type_ != ICEPROTO_RFC5245 || role_ == ROLE_CONTROLLING) {
+    if (ShouldSwitch(best_connection_, top_connection))
+      SwitchBestConnectionTo(top_connection);
+  }
 
   // We can prune any connection for which there is a writable connection on
-  // the same network with better or equal prefences.  We leave those with
-  // better preference just in case they become writable later (at which point,
+  // the same network with better or equal priority.  We leave those with
+  // better priority just in case they become writable later (at which point,
   // we would prune out the current best connection).  We leave connections on
   // other networks because they may not be using the same resources and they
   // may represent very distinct paths over which we can switch.
@@ -847,33 +913,23 @@ void P2PTransportChannel::SortConnections() {
     }
   }
 
-  // Count the number of connections in the various states.
-  int writable = 0;
-  int not_writable = 0;
-
+  // Check if all connections are timedout.
+  bool all_connections_timedout = true;
   for (uint32 i = 0; i < connections_.size(); ++i) {
-    switch (connections_[i]->write_state()) {
-    case Connection::STATE_WRITABLE:
-      ++writable;
+    if (connections_[i]->write_state() != Connection::STATE_WRITE_TIMEOUT) {
+      all_connections_timedout = false;
       break;
-    case Connection::STATE_WRITE_UNRELIABLE:
-    case Connection::STATE_WRITE_INIT:
-      ++not_writable;
-      break;
-    case Connection::STATE_WRITE_TIMEOUT:
-      // Don't need to count these.
-      break;
-    default:
-      ASSERT(false);
     }
   }
 
-  if (writable > 0) {
+  // Now update the writable state of the channel with the information we have
+  // so far.
+  if (best_connection_ && best_connection_->writable()) {
     HandleWritable();
-  } else if (not_writable > 0) {
-    HandleNotWritable();
-  } else {
+  } else if (all_connections_timedout) {
     HandleAllTimedOut();
+  } else {
+    HandleNotWritable();
   }
 
   // Update the state of this channel.  This method is called whenever the
@@ -881,11 +937,11 @@ void P2PTransportChannel::SortConnections() {
   UpdateChannelState();
 }
 
+
 // Track the best connection, and let listeners know
 void P2PTransportChannel::SwitchBestConnectionTo(Connection* conn) {
   // Note: if conn is NULL, the previous best_connection_ has been destroyed,
   // so don't use it.
-  // use it.
   Connection* old_best_connection = best_connection_;
   best_connection_ = conn;
   if (best_connection_) {
@@ -896,20 +952,6 @@ void P2PTransportChannel::SwitchBestConnectionTo(Connection* conn) {
     LOG_J(LS_INFO, this) << "New best connection: "
                          << best_connection_->ToString();
     SignalRouteChange(this, best_connection_->remote_candidate());
-    // When we are trying to establish connection with ice-lite endpoint,
-    // USE_CANDIDATE_ATTR must be set only after we selected the
-    // connection(aka candidate-pair) for transporting the data.
-    // Since |best_connection_| is the connection which we want to use it
-    // for transmitting data, we must send a followup ping message
-    // with USE_CANDIDATE attribute.
-    // We might switch to other writable connection which is better then
-    // current |best_connection| in that case also we must send a ping
-    // message with USE_CANDIDATE attribute. This will allow ice-lite
-    // endpoint to make a new candidate pair with this connection.
-    if (best_connection_->remote_ice_mode() == ICEMODE_LITE) {
-      best_connection_->set_use_candidate_attr(true);
-      best_connection_->Ping(talk_base::Time());
-    }
   } else {
     LOG_J(LS_INFO, this) << "No best connection";
   }
@@ -939,8 +981,8 @@ void P2PTransportChannel::HandleWritable() {
   ASSERT(worker_thread_ == talk_base::Thread::Current());
   if (!writable()) {
     for (uint32 i = 0; i < allocator_sessions_.size(); ++i) {
-      if (allocator_sessions_[i]->IsGettingAllPorts()) {
-        allocator_sessions_[i]->StopGetAllPorts();
+      if (allocator_sessions_[i]->IsGettingPorts()) {
+        allocator_sessions_[i]->StopGettingPorts();
       }
     }
   }
@@ -1010,7 +1052,7 @@ void P2PTransportChannel::OnPing() {
   // Find the oldest pingable connection and have it do a ping.
   Connection* conn = FindNextPingableConnection();
   if (conn)
-    conn->Ping(talk_base::Time());
+    PingConnection(conn);
 
   // Post ourselves a message to perform the next ping.
   uint32 delay = writable() ? WRITABLE_DELAY : UNWRITABLE_DELAY;
@@ -1064,20 +1106,47 @@ Connection* P2PTransportChannel::FindNextPingableConnection() {
   return oldest_conn;
 }
 
-// return the number of "pingable" connections
-int P2PTransportChannel::NumPingableConnections() {
-  int count = 0;
-  for (size_t i = 0; i < connections_.size(); ++i) {
-    if (IsPingable(connections_[i]))
-      ++count;
+// Apart from sending ping from |conn| this method also updates
+// |use_candidate_attr| flag. The criteria to update this flag is
+// explained below.
+// Set USE-CANDIDATE if doing ICE AND this channel is in CONTROLLING AND
+//    a) Channel is in FULL ICE AND
+//      a.1) |conn| is the best connection OR
+//      a.2) there is no best connection OR
+//      a.3) the best connection is unwritable OR
+//      a.4) |conn| has higher priority than best_connection.
+//    b) we're doing LITE ICE AND
+//      b.1) |conn| is the best_connection AND
+//      b.2) |conn| is writable.
+void P2PTransportChannel::PingConnection(Connection* conn) {
+  bool use_candidate = false;
+  if (protocol_type_ == ICEPROTO_RFC5245) {
+    if (remote_ice_mode_ == ICEMODE_FULL && role_ == ROLE_CONTROLLING) {
+      use_candidate = (conn == best_connection_) ||
+                      (best_connection_ == NULL) ||
+                      (!best_connection_->writable()) ||
+                      (conn->priority() > best_connection_->priority());
+    } else if (remote_ice_mode_ == ICEMODE_LITE && conn == best_connection_) {
+      use_candidate = best_connection_->writable();
+    }
   }
-  return count;
+  conn->set_use_candidate_attr(use_candidate);
+  conn->Ping(talk_base::Time());
 }
 
 // When a connection's state changes, we need to figure out who to use as
 // the best connection again.  It could have become usable, or become unusable.
-void P2PTransportChannel::OnConnectionStateChange(Connection *connection) {
+void P2PTransportChannel::OnConnectionStateChange(Connection* connection) {
   ASSERT(worker_thread_ == talk_base::Thread::Current());
+
+  // Update the best connection if the state change is from pending best
+  // connection and role is controlled.
+  if (protocol_type_ == ICEPROTO_RFC5245 && role_ == ROLE_CONTROLLED) {
+    if (connection == pending_best_connection_ && connection->writable()) {
+      pending_best_connection_ = NULL;
+      SwitchBestConnectionTo(connection);
+    }
+  }
 
   // We have to unroll the stack before doing this because we may be changing
   // the state of connections while sorting.
@@ -1086,7 +1155,7 @@ void P2PTransportChannel::OnConnectionStateChange(Connection *connection) {
 
 // When a connection is removed, edit it out, and then update our best
 // connection.
-void P2PTransportChannel::OnConnectionDestroyed(Connection *connection) {
+void P2PTransportChannel::OnConnectionDestroyed(Connection* connection) {
   ASSERT(worker_thread_ == talk_base::Thread::Current());
 
   // Note: the previous best_connection_ may be destroyed by now, so don't
@@ -1100,6 +1169,10 @@ void P2PTransportChannel::OnConnectionDestroyed(Connection *connection) {
 
   LOG_J(LS_INFO, this) << "Removed connection ("
     << static_cast<int>(connections_.size()) << " remaining)";
+
+  if (pending_best_connection_ == connection) {
+    pending_best_connection_ = NULL;
+  }
 
   // If this is currently the best connection, then we need to pick a new one.
   // The call to SortConnections will pick a new one.  It looks at the current

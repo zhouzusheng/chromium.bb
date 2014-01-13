@@ -21,18 +21,14 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFEImageElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attr.h"
 #include "core/dom/Document.h"
 #include "core/loader/cache/CachedImage.h"
 #include "core/loader/cache/CachedResourceLoader.h"
 #include "core/loader/cache/CachedResourceRequest.h"
-#include "core/platform/graphics/ColorSpace.h"
 #include "core/platform/graphics/Image.h"
-#include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGPreserveAspectRatio.h"
@@ -82,8 +78,7 @@ void SVGFEImageElement::clearResourceReferences()
 
 void SVGFEImageElement::requestImageResource()
 {
-    CachedResourceRequest request(ResourceRequest(ownerDocument()->completeURL(href())));
-    request.setInitiator(this);
+    CachedResourceRequest request(ResourceRequest(ownerDocument()->completeURL(href())), localName());
     m_cachedImage = document()->cachedResourceLoader()->requestImage(request);
 
     if (m_cachedImage)
@@ -123,7 +118,7 @@ bool SVGFEImageElement::isSupportedAttribute(const QualifiedName& attrName)
         SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::preserveAspectRatioAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFEImageElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -200,7 +195,7 @@ void SVGFEImageElement::notifyFinished(CachedResource*)
     if (!parent->hasTagName(SVGNames::filterTag) || !parent->renderer())
         return;
 
-    RenderSVGResource::markForLayoutAndParentResourceInvalidation(parent->renderer());
+    RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer());
 }
 
 PassRefPtr<FilterEffect> SVGFEImageElement::build(SVGFilterBuilder*, Filter* filter)
@@ -218,5 +213,3 @@ void SVGFEImageElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) con
 }
 
 }
-
-#endif // ENABLE(SVG)

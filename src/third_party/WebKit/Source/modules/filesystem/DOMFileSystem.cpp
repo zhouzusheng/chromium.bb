@@ -33,7 +33,6 @@
 
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/fileapi/File.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/platform/AsyncFileSystem.h"
 #include "core/platform/FileMetadata.h"
 #include "modules/filesystem/DOMFilePath.h"
@@ -46,6 +45,8 @@
 #include "modules/filesystem/FileWriterBaseCallback.h"
 #include "modules/filesystem/FileWriterCallback.h"
 #include "modules/filesystem/MetadataCallback.h"
+#include "weborigin/DatabaseIdentifier.h"
+#include "weborigin/SecurityOrigin.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
@@ -66,7 +67,7 @@ PassRefPtr<DOMFileSystem> DOMFileSystem::createIsolatedFileSystem(ScriptExecutio
         return 0;
 
     StringBuilder filesystemName;
-    filesystemName.append(context->securityOrigin()->databaseIdentifier());
+    filesystemName.append(createDatabaseIdentifierFromSecurityOrigin(context->securityOrigin()));
     filesystemName.append(":Isolated_");
     filesystemName.append(filesystemId);
 
@@ -88,6 +89,7 @@ DOMFileSystem::DOMFileSystem(ScriptExecutionContext* context, const String& name
     : DOMFileSystemBase(context, name, type, rootURL, asyncFileSystem)
     , ActiveDOMObject(context)
 {
+    ScriptWrappable::init(this);
 }
 
 PassRefPtr<DirectoryEntry> DOMFileSystem::root()

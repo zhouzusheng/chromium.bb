@@ -35,7 +35,6 @@
 #include "InspectorFrontend.h"
 #include "core/dom/DeviceOrientationData.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include "core/page/Frame.h"
 #include "modules/geolocation/GeolocationPosition.h"
 #include <wtf/HashMap.h>
 #include <wtf/RefCounted.h>
@@ -48,22 +47,17 @@ class CachedResource;
 class DOMWrapperWorld;
 class DocumentLoader;
 class Frame;
-class Frontend;
 class GraphicsContext;
 class InjectedScriptManager;
-class InspectorAgent;
-class InspectorArray;
 class InspectorClient;
-class InspectorObject;
 class InspectorOverlay;
-class InspectorState;
 class InstrumentingAgents;
+class IntSize;
 class KURL;
+class LayoutRect;
 class Page;
 class RenderObject;
-class RegularExpression;
 class SharedBuffer;
-class TextResourceDecoder;
 
 typedef String ErrorString;
 
@@ -81,7 +75,7 @@ public:
         OtherResource
     };
 
-    static PassOwnPtr<InspectorPageAgent> create(InstrumentingAgents*, Page*, InspectorAgent*, InspectorCompositeState*, InjectedScriptManager*, InspectorClient*, InspectorOverlay*);
+    static PassOwnPtr<InspectorPageAgent> create(InstrumentingAgents*, Page*, InspectorCompositeState*, InjectedScriptManager*, InspectorClient*, InspectorOverlay*);
 
     static bool cachedResourceContent(CachedResource*, String* result, bool* base64Encoded);
     static bool sharedBufferContent(PassRefPtr<SharedBuffer>, const String& textEncodingName, bool withBase64Encode, String* result);
@@ -110,9 +104,7 @@ public:
     virtual void setDeviceMetricsOverride(ErrorString*, int width, int height, double fontScaleFactor, bool fitWindow);
     virtual void setShowPaintRects(ErrorString*, bool show);
     virtual void setShowDebugBorders(ErrorString*, bool show);
-    virtual void canShowFPSCounter(ErrorString*, bool*);
     virtual void setShowFPSCounter(ErrorString*, bool show);
-    virtual void canContinuouslyPaint(ErrorString*, bool*);
     virtual void setContinuousPaintingEnabled(ErrorString*, bool enabled);
     virtual void getScriptExecutionStatus(ErrorString*, PageCommandHandler::Result::Enum*);
     virtual void setScriptExecutionDisabled(ErrorString*, bool);
@@ -122,10 +114,12 @@ public:
     virtual void clearDeviceOrientationOverride(ErrorString*);
     virtual void setTouchEmulationEnabled(ErrorString*, bool);
     virtual void setEmulatedMedia(ErrorString*, const String&);
+    virtual void setForceCompositingMode(ErrorString*, bool force);
     virtual void getCompositingBordersVisible(ErrorString*, bool* out_param);
     virtual void setCompositingBordersVisible(ErrorString*, bool);
     virtual void captureScreenshot(ErrorString*, String* data);
     virtual void handleJavaScriptDialog(ErrorString*, bool accept, const String* promptText);
+    virtual void setShowViewportSizeOnResize(ErrorString*, bool show, const bool* showGrid);
 
     // Geolocation override helpers.
     GeolocationPosition* overrideGeolocationPosition(GeolocationPosition*);
@@ -135,9 +129,9 @@ public:
 
     // InspectorInstrumentation API
     void didClearWindowObjectInWorld(Frame*, DOMWrapperWorld*);
-    void domContentEventFired();
-    void loadEventFired();
-    void frameNavigated(DocumentLoader*);
+    void domContentLoadedEventFired(Frame*);
+    void loadEventFired(Frame*);
+    void didCommitLoad(Frame*, DocumentLoader*);
     void frameDetachedFromParent(Frame*);
     void loaderDetachedFromFrame(DocumentLoader*);
     void frameStartedLoading(Frame*);
@@ -147,7 +141,9 @@ public:
     void willRunJavaScriptDialog(const String& message);
     void didRunJavaScriptDialog();
     void applyScreenWidthOverride(long*);
+    bool shouldApplyScreenWidthOverride();
     void applyScreenHeightOverride(long*);
+    bool shouldApplyScreenHeightOverride();
     void applyEmulatedMedia(String*);
     void didPaint(RenderObject*, GraphicsContext*, const LayoutRect&);
     void didLayout(RenderObject*);
@@ -174,21 +170,20 @@ public:
     Frame* findFrameWithSecurityOrigin(const String& originRawString);
     Frame* assertFrame(ErrorString*, const String& frameId);
     String scriptPreprocessor() { return m_scriptPreprocessor; }
+    String resourceSourceMapURL(const String& url);
     static DocumentLoader* assertDocumentLoader(ErrorString*, Frame*);
 
 private:
-    InspectorPageAgent(InstrumentingAgents*, Page*, InspectorAgent*, InspectorCompositeState*, InjectedScriptManager*, InspectorClient*, InspectorOverlay*);
+    InspectorPageAgent(InstrumentingAgents*, Page*, InspectorCompositeState*, InjectedScriptManager*, InspectorClient*, InspectorOverlay*);
     bool deviceMetricsChanged(int width, int height, double fontScaleFactor, bool fitWindow);
     void updateViewMetrics(int, int, double, bool);
     void updateTouchEventEmulationInPage(bool);
 
-    static bool mainResourceContent(Frame*, bool withBase64Encode, String* result);
     static bool dataContent(const char* data, unsigned size, const String& textEncodingName, bool withBase64Encode, String* result);
 
     PassRefPtr<TypeBuilder::Page::Frame> buildObjectForFrame(Frame*);
     PassRefPtr<TypeBuilder::Page::FrameResourceTree> buildObjectForFrameTree(Frame*);
     Page* m_page;
-    InspectorAgent* m_inspectorAgent;
     InjectedScriptManager* m_injectedScriptManager;
     InspectorClient* m_client;
     InspectorFrontend::Page* m_frontend;
@@ -205,6 +200,7 @@ private:
     bool m_isFirstLayoutAfterOnLoad;
     bool m_geolocationOverridden;
     bool m_ignoreScriptsEnabledNotification;
+    bool m_didForceCompositingMode;
     RefPtr<GeolocationPosition> m_geolocationPosition;
     RefPtr<GeolocationPosition> m_platformGeolocationPosition;
     RefPtr<DeviceOrientationData> m_deviceOrientation;

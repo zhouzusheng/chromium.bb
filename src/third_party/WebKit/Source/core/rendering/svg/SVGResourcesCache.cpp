@@ -20,13 +20,11 @@
 #include "config.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 
-#if ENABLE(SVG)
 #include "HTMLNames.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCycleSolver.h"
 #include "core/svg/SVGDocumentExtensions.h"
-#include "core/svg/SVGStyledElement.h"
 
 namespace WebCore {
 
@@ -36,7 +34,6 @@ SVGResourcesCache::SVGResourcesCache()
 
 SVGResourcesCache::~SVGResourcesCache()
 {
-    deleteAllValues(m_cache);
 }
 
 void SVGResourcesCache::addResourcesFromRenderObject(RenderObject* object, const RenderStyle* style)
@@ -49,14 +46,12 @@ void SVGResourcesCache::addResourcesFromRenderObject(RenderObject* object, const
     ASSERT(svgStyle);
 
     // Build a list of all resources associated with the passed RenderObject
-    SVGResources* resources = new SVGResources;
-    if (!resources->buildCachedResources(object, svgStyle)) {
-        delete resources;
+    OwnPtr<SVGResources> newResources = adoptPtr(new SVGResources);
+    if (!newResources->buildCachedResources(object, svgStyle))
         return;
-    }
 
     // Put object in cache.
-    m_cache.set(object, resources);
+    SVGResources* resources = m_cache.set(object, newResources.release()).iterator->value.get();
 
     // Run cycle-detection _afterwards_, so self-references can be caught as well.
     SVGResourcesCycleSolver solver(object, resources);
@@ -76,7 +71,7 @@ void SVGResourcesCache::removeResourcesFromRenderObject(RenderObject* object)
     if (!m_cache.contains(object))
         return;
 
-    SVGResources* resources = m_cache.get(object);
+    OwnPtr<SVGResources> resources = m_cache.take(object);
 
     // Walk resources and register the render object at each resources.
     HashSet<RenderSVGResourceContainer*> resourceSet;
@@ -85,8 +80,6 @@ void SVGResourcesCache::removeResourcesFromRenderObject(RenderObject* object)
     HashSet<RenderSVGResourceContainer*>::iterator end = resourceSet.end();
     for (HashSet<RenderSVGResourceContainer*>::iterator it = resourceSet.begin(); it != end; ++it)
         (*it)->removeClient(object);
-
-    delete m_cache.take(object);
 }
 
 static inline SVGResourcesCache* resourcesCacheFromRenderObject(const RenderObject* renderer)
@@ -106,11 +99,7 @@ static inline SVGResourcesCache* resourcesCacheFromRenderObject(const RenderObje
 SVGResources* SVGResourcesCache::cachedResourcesForRenderObject(const RenderObject* renderer)
 {
     ASSERT(renderer);
-    SVGResourcesCache* cache = resourcesCacheFromRenderObject(renderer);
-    if (!cache->m_cache.contains(renderer))
-        return 0;
-
-    return cache->m_cache.get(renderer);
+    return resourcesCacheFromRenderObject(renderer)->m_cache.get(renderer);
 }
 
 void SVGResourcesCache::clientLayoutChanged(RenderObject* object)
@@ -121,7 +110,7 @@ void SVGResourcesCache::clientLayoutChanged(RenderObject* object)
 
     // Invalidate the resources if either the RenderObject itself changed,
     // or we have filter resources, which could depend on the layout of children.
-    if (object->selfNeedsLayout())
+    if (object->selfNeedsLayout() || resources->filter())
         resources->removeClientFromCache(object);
 }
 
@@ -138,7 +127,7 @@ void SVGResourcesCache::clientStyleChanged(RenderObject* renderer, StyleDifferen
         return;
 
     // In this case the proper SVGFE*Element will decide whether the modified CSS properties require a relayout or repaint.
-    if (renderer->isSVGResourceFilterPrimitive() && diff == StyleDifferenceRepaint)
+    if (renderer->isSVGResourceFilterPrimitive() && (diff == StyleDifferenceRepaint || diff == StyleDifferenceRepaintIfText))
         return;
 
     // Dynamic changes of CSS properties like 'clip-path' may require us to recompute the associated resources for a renderer.
@@ -200,8 +189,8 @@ void SVGResourcesCache::resourceDestroyed(RenderSVGResourceContainer* resource)
     // The resource itself may have clients, that need to be notified.
     cache->removeResourcesFromRenderObject(resource);
 
-    HashMap<const RenderObject*, SVGResources*>::iterator end = cache->m_cache.end();
-    for (HashMap<const RenderObject*, SVGResources*>::iterator it = cache->m_cache.begin(); it != end; ++it) {
+        CacheMap::iterator end = cache->m_cache.end();
+        for (CacheMap::iterator it = cache->m_cache.begin(); it != end; ++it) {
         it->value->resourceDestroyed(resource);
 
         // Mark users of destroyed resources as pending resolution based on the id of the old resource.
@@ -214,5 +203,3 @@ void SVGResourcesCache::resourceDestroyed(RenderSVGResourceContainer* resource)
 }
 
 }
-
-#endif

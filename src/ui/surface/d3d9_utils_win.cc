@@ -27,10 +27,10 @@ bool LoadD3D9(base::ScopedNativeLibrary* storage) {
 }
 
 bool CreateDevice(const base::ScopedNativeLibrary& d3d_module,
+                  uint64 adapter_luid,
                   D3DDEVTYPE device_type,
                   uint32 presentation_interval,
                   IDirect3DDevice9Ex** device) {
-
   Direct3DCreate9ExFunc create_func = reinterpret_cast<Direct3DCreate9ExFunc>(
       d3d_module.GetFunctionPointer(kCreate3D9DeviceExName));
   if (!create_func)
@@ -41,9 +41,27 @@ bool CreateDevice(const base::ScopedNativeLibrary& d3d_module,
   if (FAILED(hr))
     return false;
 
+  UINT adapter = D3DADAPTER_DEFAULT;
+
+  if (adapter_luid) {
+    UINT adapter_count = d3d->GetAdapterCount();
+    for (adapter = 0; adapter < adapter_count; ++adapter) {
+      LUID luid;
+      HRESULT hr = d3d->GetAdapterLUID(adapter, &luid);
+      if (FAILED(hr))
+        return false;
+
+      if (memcmp(&luid, &adapter_luid, sizeof(adapter_luid)) == 0)
+        break;
+    }
+
+    if (adapter == adapter_count)
+      return false;
+  }
+
   // Any old window will do to create the device. In practice the window to
   // present to is an argument to IDirect3DDevice9::Present.
-  HWND window = GetShellWindow();
+  HWND window = GetDesktopWindow();
 
   D3DPRESENT_PARAMETERS parameters = { 0 };
   parameters.BackBufferWidth = 1;
@@ -57,7 +75,7 @@ bool CreateDevice(const base::ScopedNativeLibrary& d3d_module,
   parameters.SwapEffect = D3DSWAPEFFECT_COPY;
 
   hr = d3d->CreateDeviceEx(
-      D3DADAPTER_DEFAULT,
+      adapter,
       device_type,
       window,
       D3DCREATE_FPU_PRESERVE | D3DCREATE_SOFTWARE_VERTEXPROCESSING |

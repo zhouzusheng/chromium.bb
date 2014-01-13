@@ -9,9 +9,9 @@
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "webkit/database/database_tracker.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/quota/quota_manager.h"
+#include "webkit/browser/database/database_tracker.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/quota/quota_manager.h"
 
 namespace content {
 
@@ -45,13 +45,14 @@ const WorkerStoragePartition& WorkerStoragePartition::operator=(
 
 bool WorkerStoragePartition::Equals(
     const WorkerStoragePartition& other) const {
-  return url_request_context_ == other.url_request_context_ &&
-         media_url_request_context_ == other.media_url_request_context_ &&
-         appcache_service_ == other.appcache_service_ &&
-         quota_manager_ == other.quota_manager_ &&
-         filesystem_context_ == other.filesystem_context_ &&
-         database_tracker_ == other.database_tracker_ &&
-         indexed_db_context_ == other.indexed_db_context_;
+  return url_request_context_.get() == other.url_request_context_.get() &&
+         media_url_request_context_.get() ==
+             other.media_url_request_context_.get() &&
+         appcache_service_.get() == other.appcache_service_.get() &&
+         quota_manager_.get() == other.quota_manager_.get() &&
+         filesystem_context_.get() == other.filesystem_context_.get() &&
+         database_tracker_.get() == other.database_tracker_.get() &&
+         indexed_db_context_.get() == other.indexed_db_context_.get();
 }
 
 WorkerStoragePartition::~WorkerStoragePartition() {

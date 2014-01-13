@@ -8,25 +8,25 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "net/base/net_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
+#include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/npapi/bindings/npruntime.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
+#include "webkit/common/user_agent/user_agent.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/plugin_lib.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/plugins/npapi/plugin_stream_url.h"
 #include "webkit/plugins/npapi/webplugin_delegate.h"
 #include "webkit/plugins/webplugininfo.h"
-#include "webkit/user_agent/user_agent.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -90,7 +90,7 @@ PluginHost *PluginHost::Singleton() {
   }
 
   DCHECK(singleton.get() != NULL);
-  return singleton;
+  return singleton.get();
 }
 
 void PluginHost::InitializeHostFuncs() {
@@ -920,13 +920,13 @@ void* NPN_GetJavaPeer(NPP) {
 
 void NPN_PushPopupsEnabledState(NPP id, NPBool enabled) {
   scoped_refptr<PluginInstance> plugin(FindInstance(id));
-  if (plugin)
+  if (plugin.get())
     plugin->PushPopupsEnabledState(enabled ? true : false);
 }
 
 void NPN_PopPopupsEnabledState(NPP id) {
   scoped_refptr<PluginInstance> plugin(FindInstance(id));
-  if (plugin)
+  if (plugin.get())
     plugin->PopPopupsEnabledState();
 }
 
@@ -934,7 +934,7 @@ void NPN_PluginThreadAsyncCall(NPP id,
                                void (*func)(void*),
                                void* user_data) {
   scoped_refptr<PluginInstance> plugin(FindInstance(id));
-  if (plugin)
+  if (plugin.get())
     plugin->PluginThreadAsyncCall(func, user_data);
 }
 
@@ -956,7 +956,7 @@ NPError NPN_GetValueForURL(NPP id,
     case NPNURLVProxy: {
       result = "DIRECT";
       scoped_refptr<PluginInstance> plugin(FindInstance(id));
-      if (!plugin)
+      if (!plugin.get())
         return NPERR_GENERIC_ERROR;
 
       WebPlugin* webplugin = plugin->webplugin();
@@ -969,7 +969,7 @@ NPError NPN_GetValueForURL(NPP id,
     }
     case NPNURLVCookie: {
       scoped_refptr<PluginInstance> plugin(FindInstance(id));
-      if (!plugin)
+      if (!plugin.get())
         return NPERR_GENERIC_ERROR;
 
       WebPlugin* webplugin = plugin->webplugin();
@@ -1009,7 +1009,7 @@ NPError NPN_SetValueForURL(NPP id,
   switch (variable) {
     case NPNURLVCookie: {
       scoped_refptr<PluginInstance> plugin(FindInstance(id));
-      if (!plugin)
+      if (!plugin.get())
         return NPERR_GENERIC_ERROR;
 
       WebPlugin* webplugin = plugin->webplugin();
@@ -1055,7 +1055,7 @@ uint32_t NPN_ScheduleTimer(NPP id,
                            NPBool repeat,
                            void (*func)(NPP id, uint32_t timer_id)) {
   scoped_refptr<PluginInstance> plugin(FindInstance(id));
-  if (!plugin)
+  if (!plugin.get())
     return 0;
 
   return plugin->ScheduleTimer(interval, repeat, func);
@@ -1063,7 +1063,7 @@ uint32_t NPN_ScheduleTimer(NPP id,
 
 void NPN_UnscheduleTimer(NPP id, uint32_t timer_id) {
   scoped_refptr<PluginInstance> plugin(FindInstance(id));
-  if (plugin)
+  if (plugin.get())
     plugin->UnscheduleTimer(timer_id);
 }
 
@@ -1085,8 +1085,8 @@ NPBool NPN_ConvertPoint(NPP id, double sourceX, double sourceY,
                         NPCoordinateSpace destSpace) {
   scoped_refptr<PluginInstance> plugin(FindInstance(id));
   if (plugin.get()) {
-    return plugin->ConvertPoint(sourceX, sourceY, sourceSpace,
-                                destX, destY, destSpace);
+    return plugin->ConvertPoint(
+        sourceX, sourceY, sourceSpace, destX, destY, destSpace);
   }
   NOTREACHED();
   return false;

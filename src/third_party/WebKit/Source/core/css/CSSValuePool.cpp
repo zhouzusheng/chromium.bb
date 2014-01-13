@@ -28,7 +28,6 @@
 
 #include "CSSValueKeywords.h"
 #include "core/css/CSSParser.h"
-#include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSValueList.h"
 
 namespace WebCore {
@@ -49,14 +48,19 @@ CSSValuePool::CSSValuePool()
 {
 }
 
-PassRefPtr<CSSPrimitiveValue> CSSValuePool::createIdentifierValue(int ident)
+PassRefPtr<CSSPrimitiveValue> CSSValuePool::createIdentifierValue(CSSValueID ident)
 {
-    if (ident <= 0 || ident >= numCSSValueKeywords)
+    if (ident <= 0)
         return CSSPrimitiveValue::createIdentifier(ident);
 
     if (!m_identifierValueCache[ident])
         m_identifierValueCache[ident] = CSSPrimitiveValue::createIdentifier(ident);
     return m_identifierValueCache[ident];
+}
+
+PassRefPtr<CSSPrimitiveValue> CSSValuePool::createIdentifierValue(CSSPropertyID ident)
+{
+    return CSSPrimitiveValue::createIdentifier(ident);
 }
 
 PassRefPtr<CSSPrimitiveValue> CSSValuePool::createColorValue(unsigned rgbValue)
@@ -130,22 +134,6 @@ PassRefPtr<CSSValueList> CSSValuePool::createFontFaceValue(const AtomicString& s
     if (!value)
         value = CSSParser::parseFontFaceValue(string);
     return value;
-}
-
-void CSSValuePool::drain()
-{
-    m_colorValueCache.clear();
-    m_fontFaceValueCache.clear();
-    m_fontFamilyValueCache.clear();
-
-    for (int i = 0; i < numCSSValueKeywords; ++i)
-        m_identifierValueCache[i] = 0;
-
-    for (int i = 0; i < maximumCacheableIntegerValue; ++i) {
-        m_pixelValueCache[i] = 0;
-        m_percentValueCache[i] = 0;
-        m_numberValueCache[i] = 0;
-    }
 }
 
 }

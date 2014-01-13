@@ -16,7 +16,7 @@
 #include "base/message_loop.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/task_runner_util.h"
 #include "base/time.h"
 #include "media/base/audio_decoder_config.h"
@@ -54,12 +54,12 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
   switch (stream->codec->codec_type) {
     case AVMEDIA_TYPE_AUDIO:
       type_ = AUDIO;
-      AVStreamToAudioDecoderConfig(stream, &audio_config_);
+      AVStreamToAudioDecoderConfig(stream, &audio_config_, true);
       is_encrypted = audio_config_.is_encrypted();
       break;
     case AVMEDIA_TYPE_VIDEO:
       type_ = VIDEO;
-      AVStreamToVideoDecoderConfig(stream, &video_config_);
+      AVStreamToVideoDecoderConfig(stream, &video_config_, true);
       is_encrypted = video_config_.is_encrypted();
       break;
     default:
@@ -215,13 +215,13 @@ void FFmpegDemuxerStream::EnableBitstreamConverter() {
   bitstream_converter_enabled_ = true;
 }
 
-const AudioDecoderConfig& FFmpegDemuxerStream::audio_decoder_config() {
+AudioDecoderConfig FFmpegDemuxerStream::audio_decoder_config() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   CHECK_EQ(type_, AUDIO);
   return audio_config_;
 }
 
-const VideoDecoderConfig& FFmpegDemuxerStream::video_decoder_config() {
+VideoDecoderConfig FFmpegDemuxerStream::video_decoder_config() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   CHECK_EQ(type_, VIDEO);
   return video_config_;
@@ -300,7 +300,7 @@ FFmpegDemuxer::FFmpegDemuxer(
       url_protocol_(data_source, BindToLoop(message_loop_, base::Bind(
           &FFmpegDemuxer::OnDataSourceError, base::Unretained(this)))),
       need_key_cb_(need_key_cb) {
-  DCHECK(message_loop_);
+  DCHECK(message_loop_.get());
   DCHECK(data_source_);
 }
 
@@ -336,9 +336,13 @@ void FFmpegDemuxer::Seek(base::TimeDelta time, const PipelineStatusCB& cb) {
   // the lowest-index audio stream.
   pending_seek_ = true;
   base::PostTaskAndReplyWithResult(
-      blocking_thread_.message_loop_proxy(), FROM_HERE,
-      base::Bind(&av_seek_frame, glue_->format_context(), -1,
-                 time.InMicroseconds(), flags),
+      blocking_thread_.message_loop_proxy().get(),
+      FROM_HERE,
+      base::Bind(&av_seek_frame,
+                 glue_->format_context(),
+                 -1,
+                 time.InMicroseconds(),
+                 flags),
       base::Bind(&FFmpegDemuxer::OnSeekFrameDone, weak_this_, cb));
 }
 
@@ -379,7 +383,8 @@ void FFmpegDemuxer::Initialize(DemuxerHost* host,
   // Open the AVFormatContext using our glue layer.
   CHECK(blocking_thread_.Start());
   base::PostTaskAndReplyWithResult(
-      blocking_thread_.message_loop_proxy(), FROM_HERE,
+      blocking_thread_.message_loop_proxy().get(),
+      FROM_HERE,
       base::Bind(&FFmpegGlue::OpenContext, base::Unretained(glue_.get())),
       base::Bind(&FFmpegDemuxer::OnOpenContextDone, weak_this_, status_cb));
 }
@@ -456,8 +461,10 @@ void FFmpegDemuxer::OnOpenContextDone(const PipelineStatusCB& status_cb,
 
   // Fully initialize AVFormatContext by parsing the stream a little.
   base::PostTaskAndReplyWithResult(
-      blocking_thread_.message_loop_proxy(), FROM_HERE,
-      base::Bind(&avformat_find_stream_info, glue_->format_context(),
+      blocking_thread_.message_loop_proxy().get(),
+      FROM_HERE,
+      base::Bind(&avformat_find_stream_info,
+                 glue_->format_context(),
                  static_cast<AVDictionary**>(NULL)),
       base::Bind(&FFmpegDemuxer::OnFindStreamInfoDone, weak_this_, status_cb));
 }
@@ -475,7 +482,10 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
     return;
   }
 
-  // Create demuxer stream entries for each possible AVStream.
+  // Create demuxer stream entries for each possible AVStream. Each stream
+  // is examined to determine if it is supported or not (is the codec enabled
+  // for it in this release?). Unsupported streams are skipped, allowing for
+  // partial playback. At least one audio or video stream must be playable.
   AVFormatContext* format_context = glue_->format_context();
   streams_.resize(format_context->nb_streams);
   bool found_audio_stream = false;
@@ -483,7 +493,8 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
 
   base::TimeDelta max_duration;
   for (size_t i = 0; i < format_context->nb_streams; ++i) {
-    AVCodecContext* codec_context = format_context->streams[i]->codec;
+    AVStream* stream = format_context->streams[i];
+    AVCodecContext* codec_context = stream->codec;
     AVMediaType codec_type = codec_context->codec_type;
 
     if (codec_type == AVMEDIA_TYPE_AUDIO) {
@@ -492,8 +503,11 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
       // Log the codec detected, whether it is supported or not.
       UMA_HISTOGRAM_SPARSE_SLOWLY("Media.DetectedAudioCodec",
                                   codec_context->codec_id);
-      // Ensure the codec is supported.
-      if (CodecIDToAudioCodec(codec_context->codec_id) == kUnknownAudioCodec)
+      // Ensure the codec is supported. IsValidConfig() also checks that the
+      // channel layout and sample format are valid.
+      AudioDecoderConfig audio_config;
+      AVStreamToAudioDecoderConfig(stream, &audio_config, false);
+      if (!audio_config.IsValidConfig())
         continue;
       found_audio_stream = true;
     } else if (codec_type == AVMEDIA_TYPE_VIDEO) {
@@ -502,15 +516,17 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
       // Log the codec detected, whether it is supported or not.
       UMA_HISTOGRAM_SPARSE_SLOWLY("Media.DetectedVideoCodec",
                                   codec_context->codec_id);
-      // Ensure the codec is supported.
-      if (CodecIDToVideoCodec(codec_context->codec_id) == kUnknownVideoCodec)
+      // Ensure the codec is supported. IsValidConfig() also checks that the
+      // frame size and visible size are valid.
+      VideoDecoderConfig video_config;
+      AVStreamToVideoDecoderConfig(stream, &video_config, false);
+      if (!video_config.IsValidConfig())
         continue;
       found_video_stream = true;
     } else {
       continue;
     }
 
-    AVStream* stream = format_context->streams[i];
     streams_[i] = new FFmpegDemuxerStream(this, stream);
     max_duration = std::max(max_duration, streams_[i]->duration());
 
@@ -611,10 +627,11 @@ void FFmpegDemuxer::ReadFrameIfNeeded() {
 
   pending_read_ = true;
   base::PostTaskAndReplyWithResult(
-      blocking_thread_.message_loop_proxy(), FROM_HERE,
+      blocking_thread_.message_loop_proxy().get(),
+      FROM_HERE,
       base::Bind(&av_read_frame, glue_->format_context(), packet_ptr),
-      base::Bind(&FFmpegDemuxer::OnReadFrameDone, weak_this_,
-                 base::Passed(&packet)));
+      base::Bind(
+          &FFmpegDemuxer::OnReadFrameDone, weak_this_, base::Passed(&packet)));
 }
 
 void FFmpegDemuxer::OnReadFrameDone(ScopedAVPacket packet, int result) {

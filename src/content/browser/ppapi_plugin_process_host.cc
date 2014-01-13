@@ -10,7 +10,7 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/process_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_child_process_host_impl.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/renderer_host/render_message_filter.h"
@@ -218,11 +218,11 @@ PpapiPluginProcessHost::PpapiPluginProcessHost(
   filter_ = new PepperMessageFilter(permissions_, host_resolver);
 
   host_impl_.reset(new BrowserPpapiHostImpl(this, permissions_, info.name,
-                                            profile_data_directory,
+                                            info.path, profile_data_directory,
                                             false));
 
   process_->GetHost()->AddFilter(filter_.get());
-  process_->GetHost()->AddFilter(host_impl_->message_filter());
+  process_->GetHost()->AddFilter(host_impl_->message_filter().get());
 
   GetContentClient()->browser()->DidCreatePpapiPlugin(host_impl_.get());
 
@@ -237,12 +237,11 @@ PpapiPluginProcessHost::PpapiPluginProcessHost()
       PROCESS_TYPE_PPAPI_BROKER, this));
 
   ppapi::PpapiPermissions permissions;  // No permissions.
-  // The plugin name and profile data directory shouldn't be needed for the
-  // broker.
-  std::string plugin_name;
-  base::FilePath profile_data_directory;
-  host_impl_.reset(new BrowserPpapiHostImpl(this, permissions, plugin_name,
-                                            profile_data_directory,
+  // The plugin name, path and profile data directory shouldn't be needed for
+  // the broker.
+  host_impl_.reset(new BrowserPpapiHostImpl(this, permissions,
+                                            std::string(), base::FilePath(),
+                                            base::FilePath(),
                                             false));
 }
 

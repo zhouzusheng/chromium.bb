@@ -31,7 +31,7 @@
 #define InjectedScriptHost_h
 
 #include "bindings/v8/ScriptState.h"
-#include "core/inspector/InspectorAgent.h"
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/page/ConsoleTypes.h"
 #include <wtf/RefCounted.h>
 #include <wtf/Vector.h>
@@ -40,42 +40,29 @@ namespace WebCore {
 
 class Database;
 class InjectedScript;
-class InspectorAgent;
-class InspectorConsoleAgent;
-class InspectorDOMAgent;
-class InspectorDOMStorageAgent;
-class InspectorDatabaseAgent;
-class InspectorDebuggerAgent;
-class InspectorFrontend;
-class InspectorObject;
-class InspectorValue;
+class InstrumentingAgents;
+class JSONValue;
 class Node;
 class ScriptDebugServer;
-class ScriptObject;
 class ScriptValue;
 class Storage;
 
 struct EventListenerInfo;
 
-class InjectedScriptHost : public RefCounted<InjectedScriptHost> {
+// SECURITY NOTE: Although the InjectedScriptHost is intended for use solely by the inspector,
+// a reference to the InjectedScriptHost may be leaked to the page being inspected. Thus, the
+// InjectedScriptHost must never implemment methods that have more power over the page than the
+// page already has itself (e.g. origin restriction bypasses).
+
+class InjectedScriptHost : public RefCounted<InjectedScriptHost>, public ScriptWrappable {
 public:
     static PassRefPtr<InjectedScriptHost> create();
     ~InjectedScriptHost();
 
-    void init(InspectorAgent* inspectorAgent
-            , InspectorConsoleAgent* consoleAgent
-            , InspectorDatabaseAgent* databaseAgent
-            , InspectorDOMStorageAgent* domStorageAgent
-            , InspectorDOMAgent* domAgent
-            , InspectorDebuggerAgent* debuggerAgent
-        )
+    void init(InstrumentingAgents* instrumentingAgents, ScriptDebugServer* scriptDebugServer)
     {
-        m_inspectorAgent = inspectorAgent;
-        m_consoleAgent = consoleAgent;
-        m_databaseAgent = databaseAgent;
-        m_domStorageAgent = domStorageAgent;
-        m_domAgent = domAgent;
-        m_debuggerAgent = debuggerAgent;
+        m_instrumentingAgents = instrumentingAgents;
+        m_scriptDebugServer = scriptDebugServer;
     }
 
     static Node* scriptValueAsNode(ScriptValue);
@@ -93,25 +80,25 @@ public:
     void clearInspectedObjects();
     InspectableObject* inspectedObject(unsigned int num);
 
-    void inspectImpl(PassRefPtr<InspectorValue> objectToInspect, PassRefPtr<InspectorValue> hints);
+    void inspectImpl(PassRefPtr<JSONValue> objectToInspect, PassRefPtr<JSONValue> hints);
     void getEventListenersImpl(Node*, Vector<EventListenerInfo>& listenersArray);
 
     void clearConsoleMessages();
     void copyText(const String& text);
     String databaseIdImpl(Database*);
     String storageIdImpl(Storage*);
+    void debugFunction(const String& scriptId, int lineNumber, int columnNumber);
+    void undebugFunction(const String& scriptId, int lineNumber, int columnNumber);
+    void monitorFunction(const String& scriptId, int lineNumber, int columnNumber, const String& functionName);
+    void unmonitorFunction(const String& scriptId, int lineNumber, int columnNumber);
 
-    ScriptDebugServer& scriptDebugServer();
+    ScriptDebugServer& scriptDebugServer() { return *m_scriptDebugServer; }
 
 private:
     InjectedScriptHost();
 
-    InspectorAgent* m_inspectorAgent;
-    InspectorConsoleAgent* m_consoleAgent;
-    InspectorDatabaseAgent* m_databaseAgent;
-    InspectorDOMStorageAgent* m_domStorageAgent;
-    InspectorDOMAgent* m_domAgent;
-    InspectorDebuggerAgent* m_debuggerAgent;
+    InstrumentingAgents* m_instrumentingAgents;
+    ScriptDebugServer* m_scriptDebugServer;
     Vector<OwnPtr<InspectableObject> > m_inspectedObjects;
     OwnPtr<InspectableObject> m_defaultInspectableObject;
 };

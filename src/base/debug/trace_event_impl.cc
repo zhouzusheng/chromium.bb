@@ -14,10 +14,11 @@
 #include "base/memory/singleton.h"
 #include "base/process_util.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/cancellation_flag.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/sys_info.h"
@@ -26,7 +27,6 @@
 #include "base/threading/thread_id_name_manager.h"
 #include "base/threading/thread_local.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 
 #if defined(OS_WIN)
 #include "base/debug/trace_event_win.h"
@@ -40,10 +40,13 @@ class DeleteTraceLogForTesting {
   }
 };
 
+// Not supported in split-dll build. http://crbug.com/237249
+#if !defined(CHROME_SPLIT_DLL)
 // The thread buckets for the sampling profiler.
 BASE_EXPORT TRACE_EVENT_API_ATOMIC_WORD g_trace_state0;
 BASE_EXPORT TRACE_EVENT_API_ATOMIC_WORD g_trace_state1;
 BASE_EXPORT TRACE_EVENT_API_ATOMIC_WORD g_trace_state2;
+#endif
 
 namespace base {
 namespace debug {
@@ -86,6 +89,7 @@ LazyInstance<ThreadLocalPointer<const char> >::Leaky
 
 const char kRecordUntilFull[] = "record-until-full";
 const char kRecordContinuously[] = "record-continuously";
+const char kEnableSampling[] = "enable-sampling";
 
 size_t NextIndex(size_t index) {
   index++;
@@ -758,6 +762,8 @@ TraceLog::Options TraceLog::TraceOptionsFromString(const std::string& options) {
       ret |= RECORD_UNTIL_FULL;
     } else if (*iter == kRecordContinuously) {
       ret |= RECORD_CONTINUOUSLY;
+    } else if (*iter == kEnableSampling) {
+      ret |= ENABLE_SAMPLING;
     } else {
       NOTREACHED();  // Unknown option provided.
     }
@@ -770,7 +776,7 @@ TraceLog::Options TraceLog::TraceOptionsFromString(const std::string& options) {
 
 TraceLog::TraceLog()
     : enable_count_(0),
-      logged_events_(NULL),
+      num_traces_recorded_(0),
       dispatching_to_observer_list_(false),
       watch_category_(NULL),
       trace_options_(RECORD_UNTIL_FULL),
@@ -829,8 +835,22 @@ const char* TraceLog::GetCategoryGroupName(
 void TraceLog::EnableIncludedCategoryGroup(int category_index) {
   bool is_enabled = category_filter_.IsCategoryGroupEnabled(
       g_category_groups[category_index]);
-  g_category_group_enabled[category_index] =
-      is_enabled ? TraceLog::CATEGORY_ENABLED : 0;
+  SetCategoryGroupEnabled(category_index, is_enabled);
+}
+
+void TraceLog::SetCategoryGroupEnabled(int category_index, bool is_enabled) {
+  g_category_group_enabled[category_index] = is_enabled ? CATEGORY_ENABLED : 0;
+
+#if defined(OS_ANDROID)
+  ApplyATraceEnabledFlag(&g_category_group_enabled[category_index]);
+#endif
+}
+
+bool TraceLog::IsCategoryGroupEnabled(
+    const unsigned char* category_group_enabled) {
+  // On Android, ATrace and normal trace can be enabled independently.
+  // This function checks if the normal trace is enabled.
+  return *category_group_enabled & CATEGORY_ENABLED;
 }
 
 void TraceLog::EnableIncludedCategoryGroups() {
@@ -872,7 +892,7 @@ const unsigned char* TraceLog::GetCategoryGroupEnabledInternal(
         // thereby enabling this category group.
         EnableIncludedCategoryGroup(new_index);
       } else {
-        g_category_group_enabled[new_index] = 0;
+        SetCategoryGroupEnabled(new_index, false);
       }
       category_group_enabled = &g_category_group_enabled[new_index];
     } else {
@@ -880,9 +900,6 @@ const unsigned char* TraceLog::GetCategoryGroupEnabledInternal(
           &g_category_group_enabled[g_category_categories_exhausted];
     }
   }
-#if defined(OS_ANDROID)
-  ApplyATraceEnabledFlag(category_group_enabled);
-#endif
   return category_group_enabled;
 }
 
@@ -895,64 +912,70 @@ void TraceLog::GetKnownCategoryGroups(
 
 void TraceLog::SetEnabled(const CategoryFilter& category_filter,
                           Options options) {
-  AutoLock lock(lock_);
+  std::vector<EnabledStateObserver*> observer_list;
+  {
+    AutoLock lock(lock_);
 
-  if (enable_count_++ > 0) {
-    if (options != trace_options_) {
-      DLOG(ERROR) << "Attemting to re-enable tracing with a different "
-                  << "set of options.";
-    }
+    if (enable_count_++ > 0) {
+      if (options != trace_options_) {
+        DLOG(ERROR) << "Attemting to re-enable tracing with a different "
+                    << "set of options.";
+      }
 
-    // Tracing is already enabled, so just merge in enabled categories.
-    // We only expand the set of enabled categories upon nested SetEnable().
-    if (category_filter_.HasIncludedPatterns() &&
-        category_filter.HasIncludedPatterns()) {
       category_filter_.Merge(category_filter);
-    } else {
-      // If either old or new included categories are empty, allow all events.
-      category_filter_.Clear();
+      EnableIncludedCategoryGroups();
+      return;
     }
+
+    if (options != trace_options_) {
+      trace_options_ = options;
+      logged_events_.reset(GetTraceBuffer());
+    }
+
+    if (dispatching_to_observer_list_) {
+      DLOG(ERROR) <<
+          "Cannot manipulate TraceLog::Enabled state from an observer.";
+      return;
+    }
+
+    num_traces_recorded_++;
+
+    category_filter_ = CategoryFilter(category_filter);
     EnableIncludedCategoryGroups();
-    return;
-  }
 
-  if (options != trace_options_) {
-    trace_options_ = options;
-    logged_events_.reset(GetTraceBuffer());
-  }
-
-  if (dispatching_to_observer_list_) {
-    DLOG(ERROR) <<
-        "Cannot manipulate TraceLog::Enabled state from an observer.";
-    return;
-  }
-
-  dispatching_to_observer_list_ = true;
-  FOR_EACH_OBSERVER(EnabledStateChangedObserver, enabled_state_observer_list_,
-                    OnTraceLogWillEnable());
-  dispatching_to_observer_list_ = false;
-
-  category_filter_ = CategoryFilter(category_filter);
-  EnableIncludedCategoryGroups();
-
-  if (options & ENABLE_SAMPLING) {
-    sampling_thread_.reset(new TraceSamplingThread);
-    sampling_thread_->RegisterSampleBucket(
-        &g_trace_state0,
-        "bucket0",
-        Bind(&TraceSamplingThread::DefaultSampleCallback));
-    sampling_thread_->RegisterSampleBucket(
-        &g_trace_state1,
-        "bucket1",
-        Bind(&TraceSamplingThread::DefaultSampleCallback));
-    sampling_thread_->RegisterSampleBucket(
-        &g_trace_state2,
-        "bucket2",
-        Bind(&TraceSamplingThread::DefaultSampleCallback));
-    if (!PlatformThread::Create(
-          0, sampling_thread_.get(), &sampling_thread_handle_)) {
-      DCHECK(false) << "failed to create thread";
+    // Not supported in split-dll build. http://crbug.com/237249
+  #if !defined(CHROME_SPLIT_DLL)
+    if (options & ENABLE_SAMPLING) {
+      sampling_thread_.reset(new TraceSamplingThread);
+      sampling_thread_->RegisterSampleBucket(
+          &g_trace_state0,
+          "bucket0",
+          Bind(&TraceSamplingThread::DefaultSampleCallback));
+      sampling_thread_->RegisterSampleBucket(
+          &g_trace_state1,
+          "bucket1",
+          Bind(&TraceSamplingThread::DefaultSampleCallback));
+      sampling_thread_->RegisterSampleBucket(
+          &g_trace_state2,
+          "bucket2",
+          Bind(&TraceSamplingThread::DefaultSampleCallback));
+      if (!PlatformThread::Create(
+            0, sampling_thread_.get(), &sampling_thread_handle_)) {
+        DCHECK(false) << "failed to create thread";
+      }
     }
+  #endif
+
+    dispatching_to_observer_list_ = true;
+    observer_list = enabled_state_observer_list_;
+  }
+  // Notify observers outside the lock in case they trigger trace events.
+  for (size_t i = 0; i < observer_list.size(); ++i)
+    observer_list[i]->OnTraceLogEnabled();
+
+  {
+    AutoLock lock(lock_);
+    dispatching_to_observer_list_ = false;
   }
 }
 
@@ -963,48 +986,69 @@ const CategoryFilter& TraceLog::GetCurrentCategoryFilter() {
 }
 
 void TraceLog::SetDisabled() {
+  std::vector<EnabledStateObserver*> observer_list;
+  {
+    AutoLock lock(lock_);
+    DCHECK(enable_count_ > 0);
+    if (--enable_count_ != 0)
+      return;
+
+    if (dispatching_to_observer_list_) {
+      DLOG(ERROR)
+          << "Cannot manipulate TraceLog::Enabled state from an observer.";
+      return;
+    }
+
+    if (sampling_thread_.get()) {
+      // Stop the sampling thread.
+      sampling_thread_->Stop();
+      lock_.Release();
+      PlatformThread::Join(sampling_thread_handle_);
+      lock_.Acquire();
+      sampling_thread_handle_ = PlatformThreadHandle();
+      sampling_thread_.reset();
+    }
+
+    category_filter_.Clear();
+    watch_category_ = NULL;
+    watch_event_name_ = "";
+    for (int i = 0; i < g_category_index; i++)
+      SetCategoryGroupEnabled(i, false);
+    AddThreadNameMetadataEvents();
+
+    dispatching_to_observer_list_ = true;
+    observer_list = enabled_state_observer_list_;
+  }
+
+  // Dispatch to observers outside the lock in case the observer triggers a
+  // trace event.
+  for (size_t i = 0; i < observer_list.size(); ++i)
+    observer_list[i]->OnTraceLogDisabled();
+
+  {
+    AutoLock lock(lock_);
+    dispatching_to_observer_list_ = false;
+  }
+}
+
+int TraceLog::GetNumTracesRecorded() {
   AutoLock lock(lock_);
-  DCHECK(enable_count_ > 0);
-  if (--enable_count_ != 0)
-    return;
-
-  if (dispatching_to_observer_list_) {
-    DLOG(ERROR)
-        << "Cannot manipulate TraceLog::Enabled state from an observer.";
-    return;
-  }
-
-  if (sampling_thread_.get()) {
-    // Stop the sampling thread.
-    sampling_thread_->Stop();
-    lock_.Release();
-    PlatformThread::Join(sampling_thread_handle_);
-    lock_.Acquire();
-    sampling_thread_handle_ = 0;
-    sampling_thread_.reset();
-  }
-
-  dispatching_to_observer_list_ = true;
-  FOR_EACH_OBSERVER(EnabledStateChangedObserver,
-                    enabled_state_observer_list_,
-                    OnTraceLogWillDisable());
-  dispatching_to_observer_list_ = false;
-
-  category_filter_.Clear();
-  watch_category_ = NULL;
-  watch_event_name_ = "";
-  for (int i = 0; i < g_category_index; i++)
-    g_category_group_enabled[i] = 0;
-  AddThreadNameMetadataEvents();
+  if (enable_count_ == 0)
+    return -1;
+  return num_traces_recorded_;
 }
 
-void TraceLog::AddEnabledStateObserver(EnabledStateChangedObserver* listener) {
-  enabled_state_observer_list_.AddObserver(listener);
+void TraceLog::AddEnabledStateObserver(EnabledStateObserver* listener) {
+  enabled_state_observer_list_.push_back(listener);
 }
 
-void TraceLog::RemoveEnabledStateObserver(
-    EnabledStateChangedObserver* listener) {
-  enabled_state_observer_list_.RemoveObserver(listener);
+void TraceLog::RemoveEnabledStateObserver(EnabledStateObserver* listener) {
+  std::vector<EnabledStateObserver*>::iterator it =
+      std::find(enabled_state_observer_list_.begin(),
+                enabled_state_observer_list_.end(),
+                listener);
+  if (it != enabled_state_observer_list_.end())
+    enabled_state_observer_list_.erase(it);
 }
 
 float TraceLog::GetBufferPercentFull() const {
@@ -1102,7 +1146,8 @@ void TraceLog::AddTraceEventWithThreadIdAndTimestamp(
 
 #if defined(OS_ANDROID)
   SendToATrace(phase, GetCategoryGroupName(category_group_enabled), name, id,
-               num_args, arg_names, arg_types, arg_values, flags);
+               num_args, arg_names, arg_types, arg_values, convertable_values,
+               flags);
 #endif
 
   TimeTicks now = timestamp - time_offset_;
@@ -1112,7 +1157,7 @@ void TraceLog::AddTraceEventWithThreadIdAndTimestamp(
 
   do {
     AutoLock lock(lock_);
-    if (*category_group_enabled != CATEGORY_ENABLED)
+    if (!IsCategoryGroupEnabled(category_group_enabled))
       return;
 
     event_callback_copy = event_callback_;
@@ -1300,6 +1345,10 @@ void TraceLog::SetTimeOffset(TimeDelta offset) {
   time_offset_ = offset;
 }
 
+size_t TraceLog::GetObserverCountForTest() const {
+  return enabled_state_observer_list_.size();
+}
+
 bool CategoryFilter::IsEmptyOrContainsLeadingOrTrailingWhitespace(
     const std::string& str) {
   return  str.empty() ||
@@ -1307,8 +1356,9 @@ bool CategoryFilter::IsEmptyOrContainsLeadingOrTrailingWhitespace(
           str.at(str.length() - 1) == ' ';
 }
 
-static bool DoesCategoryGroupContainCategory(const char* category_group,
-                                             const char* category) {
+bool CategoryFilter::DoesCategoryGroupContainCategory(
+    const char* category_group,
+    const char* category) const {
   DCHECK(category);
   CStringTokenizer category_group_tokens(category_group,
                           category_group + strlen(category_group), ",");
@@ -1324,9 +1374,6 @@ static bool DoesCategoryGroupContainCategory(const char* category_group,
   return false;
 }
 
-// Enable everything but debug and test categories by default.
-const char* CategoryFilter::kDefaultCategoryFilterString = "-*Debug,-*Test";
-
 CategoryFilter::CategoryFilter(const std::string& filter_string) {
   if (!filter_string.empty())
     Initialize(filter_string);
@@ -1336,6 +1383,7 @@ CategoryFilter::CategoryFilter(const std::string& filter_string) {
 
 CategoryFilter::CategoryFilter(const CategoryFilter& cf)
     : included_(cf.included_),
+      disabled_(cf.disabled_),
       excluded_(cf.excluded_) {
 }
 
@@ -1347,6 +1395,7 @@ CategoryFilter& CategoryFilter::operator=(const CategoryFilter& rhs) {
     return *this;
 
   included_ = rhs.included_;
+  disabled_ = rhs.disabled_;
   excluded_ = rhs.excluded_;
   return *this;
 }
@@ -1365,29 +1414,23 @@ void CategoryFilter::Initialize(const std::string& filter_string) {
       // Remove '-' from category string.
       category = category.substr(1);
       excluded_.push_back(category);
+    } else if (category.compare(0, strlen(TRACE_DISABLED_BY_DEFAULT("")),
+                                TRACE_DISABLED_BY_DEFAULT("")) == 0) {
+      disabled_.push_back(category);
     } else {
       included_.push_back(category);
     }
   }
 }
 
-void CategoryFilter::WriteString(std::string* out,
+void CategoryFilter::WriteString(const StringList& values,
+                                 std::string* out,
                                  bool included) const {
-  std::vector<std::string>::const_iterator ci;
-  std::vector<std::string>::const_iterator end;
-  if (included) {
-    ci = included_.begin();
-    end = included_.end();
-  } else {
-    ci = excluded_.begin();
-    end = excluded_.end();
-  }
-
-  // Prepend commas for all excluded categories IF we have included categories.
-  bool prepend_comma_for_first_excluded = !included && !included_.empty();
+  bool prepend_comma = !out->empty();
   int token_cnt = 0;
-  for (; ci != end; ++ci) {
-    if (token_cnt > 0 || prepend_comma_for_first_excluded)
+  for (StringList::const_iterator ci = values.begin();
+       ci != values.end(); ++ci) {
+    if (token_cnt > 0 || prepend_comma)
       StringAppendF(out, ",");
     StringAppendF(out, "%s%s", (included ? "" : "-"), ci->c_str());
     ++token_cnt;
@@ -1396,9 +1439,9 @@ void CategoryFilter::WriteString(std::string* out,
 
 std::string CategoryFilter::ToString() const {
   std::string filter_string;
-  WriteString(&filter_string, true);
-  WriteString(&filter_string, false);
-
+  WriteString(included_, &filter_string, true);
+  WriteString(disabled_, &filter_string, true);
+  WriteString(excluded_, &filter_string, false);
   return filter_string;
 }
 
@@ -1406,13 +1449,24 @@ bool CategoryFilter::IsCategoryGroupEnabled(
     const char* category_group_name) const {
   // TraceLog should call this method only as  part of enabling/disabling
   // categories.
-  std::vector<std::string>::const_iterator ci = included_.begin();
-  for (; ci != included_.end(); ++ci) {
+  StringList::const_iterator ci;
+
+  // Check the disabled- filters and the disabled-* wildcard first so that a
+  // "*" filter does not include the disabled.
+  for (ci = disabled_.begin(); ci != disabled_.end(); ++ci) {
     if (DoesCategoryGroupContainCategory(category_group_name, ci->c_str()))
       return true;
   }
-  ci = excluded_.begin();
-  for (; ci != excluded_.end(); ++ci) {
+  if (DoesCategoryGroupContainCategory(category_group_name,
+                                       TRACE_DISABLED_BY_DEFAULT("*")))
+    return false;
+
+  for (ci = included_.begin(); ci != included_.end(); ++ci) {
+    if (DoesCategoryGroupContainCategory(category_group_name, ci->c_str()))
+      return true;
+  }
+
+  for (ci = excluded_.begin(); ci != excluded_.end(); ++ci) {
     if (DoesCategoryGroupContainCategory(category_group_name, ci->c_str()))
       return false;
   }
@@ -1421,21 +1475,33 @@ bool CategoryFilter::IsCategoryGroupEnabled(
   return included_.empty();
 }
 
+bool CategoryFilter::HasIncludedPatterns() const {
+  return !included_.empty();
+}
+
 void CategoryFilter::Merge(const CategoryFilter& nested_filter) {
-  included_.insert(included_.end(),
-                   nested_filter.included_.begin(),
-                   nested_filter.included_.end());
+  // Keep included patterns only if both filters have an included entry.
+  // Otherwise, one of the filter was specifying "*" and we want to honour the
+  // broadest filter.
+  if (HasIncludedPatterns() && nested_filter.HasIncludedPatterns()) {
+    included_.insert(included_.end(),
+                     nested_filter.included_.begin(),
+                     nested_filter.included_.end());
+  } else {
+    included_.clear();
+  }
+
+  disabled_.insert(disabled_.end(),
+                   nested_filter.disabled_.begin(),
+                   nested_filter.disabled_.end());
   excluded_.insert(excluded_.end(),
                    nested_filter.excluded_.begin(),
                    nested_filter.excluded_.end());
 }
 
-bool CategoryFilter::HasIncludedPatterns() const {
-  return !included_.empty();
-}
-
 void CategoryFilter::Clear() {
   included_.clear();
+  disabled_.clear();
   excluded_.clear();
 }
 
@@ -1490,4 +1556,3 @@ ScopedTrace::~ScopedTrace() {
 }
 
 }  // namespace trace_event_internal
-

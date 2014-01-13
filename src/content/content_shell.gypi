@@ -38,22 +38,23 @@
         'content_utility',
         'content_worker',
         'content_resources.gyp:content_resources',
+        '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../ipc/ipc.gyp:ipc',
         '../media/media.gyp:media',
         '../net/net.gyp:net',
         '../net/net.gyp:net_resources',
         '../skia/skia.gyp:skia',
+        '../third_party/WebKit/public/blink.gyp:blink',
+        '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit_test_support',
+        '../third_party/WebKit/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.gyp:TestRunner',
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:ui',
+        '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
         '../webkit/support/webkit_support.gyp:webkit_resources',
         '../webkit/support/webkit_support.gyp:webkit_support',
-        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
-        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit_test_support',
-        '<(webkit_src_dir)/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.gyp:TestRunner',
       ],
       'include_dirs': [
         '..',
@@ -63,6 +64,18 @@
         'shell/android/shell_jni_registrar.h',
         'shell/android/shell_manager.cc',
         'shell/android/shell_manager.h',
+        'shell/app/shell_main_delegate.cc',
+        'shell/app/shell_main_delegate.h',
+        'shell/common/shell_content_client.cc',
+        'shell/common/shell_content_client.h',
+        'shell/common/shell_messages.cc',
+        'shell/common/shell_messages.h',
+        'shell/common/shell_switches.cc',
+        'shell/common/shell_switches.h',
+        'shell/common/shell_test_configuration.cc',
+        'shell/common/shell_test_configuration.h',
+        'shell/common/webkit_test_helpers.cc',
+        'shell/common/webkit_test_helpers.h',
         'shell/geolocation/shell_access_token_store.cc',
         'shell/geolocation/shell_access_token_store.h',
         'shell/minimal_ash.cc',
@@ -73,6 +86,8 @@
         'shell/paths_mac.mm',
         'shell/renderer/shell_content_renderer_client.cc',
         'shell/renderer/shell_content_renderer_client.h',
+        'shell/renderer/shell_media_stream_client.cc',
+        'shell/renderer/shell_media_stream_client.h',
         'shell/renderer/shell_render_process_observer.cc',
         'shell/renderer/shell_render_process_observer.h',
         'shell/renderer/webkit_test_runner.cc',
@@ -95,8 +110,6 @@
         'shell/shell_browser_main_parts_mac.mm',
         'shell/shell_content_browser_client.cc',
         'shell/shell_content_browser_client.h',
-        'shell/shell_content_client.cc',
-        'shell/shell_content_client.h',
         'shell/shell_devtools_delegate.cc',
         'shell/shell_devtools_delegate.h',
         'shell/shell_devtools_frontend.cc',
@@ -109,26 +122,22 @@
         'shell/shell_javascript_dialog_mac.mm',
         'shell/shell_javascript_dialog_win.cc',
         'shell/shell_javascript_dialog.h',
+        'shell/shell_layout_tests_android.cc',
+        'shell/shell_layout_tests_android.h',
         'shell/shell_login_dialog_gtk.cc',
         'shell/shell_login_dialog_mac.mm',
         'shell/shell_login_dialog.cc',
         'shell/shell_login_dialog.h',
-        'shell/shell_main_delegate.cc',
-        'shell/shell_main_delegate.h',
         'shell/shell_message_filter.cc',
         'shell/shell_message_filter.h',
-        'shell/shell_messages.cc',
-        'shell/shell_messages.h',
         'shell/shell_network_delegate.cc',
         'shell/shell_network_delegate.h',
+        'shell/shell_plugin_service_filter.cc',
+        'shell/shell_plugin_service_filter.h',
         'shell/shell_quota_permission_context.cc',
         'shell/shell_quota_permission_context.h',
         'shell/shell_resource_dispatcher_host_delegate.cc',
         'shell/shell_resource_dispatcher_host_delegate.h',
-        'shell/shell_switches.cc',
-        'shell/shell_switches.h',
-        'shell/shell_test_configuration.cc',
-        'shell/shell_test_configuration.h',
         'shell/shell_url_request_context_getter.cc',
         'shell/shell_url_request_context_getter.h',
         'shell/shell_web_contents_view_delegate_android.cc',
@@ -139,8 +148,6 @@
         'shell/shell_web_contents_view_delegate.h',
         'shell/webkit_test_controller.cc',
         'shell/webkit_test_controller.h',
-        'shell/webkit_test_helpers.cc',
-        'shell/webkit_test_helpers.h',
         'shell/webkit_test_platform_support.h',
         'shell/webkit_test_platform_support_android.cc',
         'shell/webkit_test_platform_support_linux.cc',
@@ -193,7 +200,7 @@
             '../webkit/support/webkit_support.gyp:webkit_support',
           ],
         }],  # OS=="android"
-        ['os_posix==1 and use_aura==1 and linux_use_tcmalloc==1', {
+        ['(os_posix==1 and use_aura==1 and linux_use_tcmalloc==1) or (android_use_tcmalloc==1)', {
           'dependencies': [
             # This is needed by content/app/content_main_runner.cc
             '../base/allocator/allocator.gyp:allocator',
@@ -201,11 +208,7 @@
         }],
         ['use_aura==1', {
           'dependencies': [
-            '../ui/aura/aura.gyp:aura',
             '../ui/base/strings/ui_strings.gyp:ui_strings',
-            '../ui/views/controls/webview/webview.gyp:webview',
-            '../ui/views/views.gyp:views',
-            '../ui/views/views.gyp:views_test_support',
             '../ui/ui.gyp:ui_resources',
           ],
           'sources/': [
@@ -215,15 +218,25 @@
         }],  # use_aura==1
         ['chromeos==1', {
           'dependencies': [
-            '../ash/ash.gyp:ash',
             '../chromeos/chromeos.gyp:chromeos',
            ],
         }], # chromeos==1
+        ['use_ash==1', {
+          'dependencies': [
+            '../ash/ash.gyp:ash',
+           ],
+        }],
         ['use_custom_freetype==1', {
           'dependencies': [
              '../third_party/freetype2/freetype2.gyp:freetype2',
           ],
         }],
+        ['enable_plugins==0', {
+          'sources/': [
+            ['exclude', 'shell/shell_plugin_service_filter.cc'],
+            ['exclude', 'shell/shell_plugin_service_filter.h'],
+          ],
+        }]
       ],
     },
     {
@@ -268,8 +281,13 @@
       'type': 'none',
       'dependencies': [
         'browser/devtools/devtools_resources.gyp:devtools_resources',
+        'content_resources.gyp:content_resources',
         'content_shell_resources',
+        '<(DEPTH)/net/net.gyp:net_resources',
+        '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
         '<(DEPTH)/ui/ui.gyp:ui_resources',
+        '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_resources',
+        '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_strings',
       ],
       'variables': {
         'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
@@ -330,24 +348,27 @@
       ],
       'sources': [
         'app/startup_helper_win.cc',
-        'shell/shell_main.cc',
+        'shell/app/shell_main.cc',
       ],
       'mac_bundle_resources': [
-        'shell/mac/app.icns',
-        'shell/mac/app-Info.plist',
+        'shell/app/app.icns',
+        'shell/app/app-Info.plist',
       ],
       # TODO(mark): Come up with a fancier way to do this.  It should only
       # be necessary to list app-Info.plist once, not the three times it is
       # listed here.
       'mac_bundle_resources!': [
-        'shell/mac/app-Info.plist',
+        'shell/app/app-Info.plist',
       ],
       'xcode_settings': {
-        'INFOPLIST_FILE': 'shell/mac/app-Info.plist',
+        'INFOPLIST_FILE': 'shell/app/app-Info.plist',
       },
       'msvs_settings': {
         'VCLinkerTool': {
           'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
+        },
+        'VCManifestTool': {
+          'AdditionalManifestFiles': 'shell/app/shell.exe.manifest',
         },
       },
       'conditions': [
@@ -358,7 +379,7 @@
         }],
         ['OS=="win"', {
           'sources': [
-            'shell/shell.rc',
+            'shell/app/shell.rc',
           ],
           'configurations': {
             'Debug_Base': {
@@ -370,11 +391,11 @@
             },
           },
         }],  # OS=="win"
-        ['OS == "win" or (toolkit_uses_gtk == 1 and selinux == 0)', {
+        ['OS == "win" or toolkit_uses_gtk == 1', {
           'dependencies': [
             '../sandbox/sandbox.gyp:sandbox',
           ],
-        }],  # OS=="win" or (toolkit_uses_gtk == 1 and selinux == 0)
+        }],  # OS=="win" or toolkit_uses_gtk == 1
         ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:gtk',
@@ -468,8 +489,8 @@
           'product_name': '<(content_shell_product_name) Framework',
           'mac_bundle': 1,
           'mac_bundle_resources': [
-            'shell/mac/English.lproj/HttpAuth.xib',
-            'shell/mac/English.lproj/MainMenu.xib',
+            'shell/app/English.lproj/HttpAuth.xib',
+            'shell/app/English.lproj/MainMenu.xib',
             '<(PRODUCT_DIR)/content_shell.pak'
           ],
           'dependencies': [
@@ -519,14 +540,14 @@
             'content_shell_framework',
           ],
           'sources': [
-            'shell/shell_main.cc',
-            'shell/mac/helper-Info.plist',
+            'shell/app/shell_main.cc',
+            'shell/app/helper-Info.plist',
           ],
           # TODO(mark): Come up with a fancier way to do this.  It should only
           # be necessary to list helper-Info.plist once, not the three times it
           # is listed here.
           'mac_bundle_resources!': [
-            'shell/mac/helper-Info.plist',
+            'shell/app/helper-Info.plist',
           ],
           # TODO(mark): For now, don't put any resources into this app.  Its
           # resources directory will be a symbolic link to the browser app's
@@ -535,7 +556,7 @@
             ['exclude', '.*'],
           ],
           'xcode_settings': {
-            'INFOPLIST_FILE': 'shell/mac/helper-Info.plist',
+            'INFOPLIST_FILE': 'shell/app/helper-Info.plist',
           },
           'postbuilds': [
             {
@@ -596,8 +617,8 @@
           'target_name': 'content_shell_jni_headers',
           'type': 'none',
           'sources': [
-            'shell/android/browsertests_apk/src/org/chromium/content_browsertests_apk/BrowserTestSystemMessageHandler.java',
             'shell/android/browsertests_apk/src/org/chromium/content_browsertests_apk/ContentBrowserTestsActivity.java',
+            'shell/android/java/src/org/chromium/content_shell/ShellLayoutTestUtils.java',
             'shell/android/java/src/org/chromium/content_shell/ShellManager.java',
             'shell/android/java/src/org/chromium/content_shell/Shell.java',
           ],
@@ -667,6 +688,7 @@
           'type': 'none',
           'dependencies': [
             'content_java',
+            'content_java_test_support',
             'content_shell_java',
             'libcontent_shell_content_view',
             '../base/base.gyp:base_java',

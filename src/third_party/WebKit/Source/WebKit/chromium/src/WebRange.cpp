@@ -36,13 +36,13 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Range.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/TextIterator.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
-#include <public/WebFloatQuad.h>
-#include <public/WebString.h>
+#include "public/platform/WebFloatQuad.h"
+#include "public/platform/WebString.h"
 #include <wtf/PassRefPtr.h>
 
 using namespace WebCore;

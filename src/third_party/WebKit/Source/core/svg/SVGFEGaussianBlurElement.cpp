@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFEGaussianBlurElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGParserUtilities.h"
@@ -83,7 +81,7 @@ bool SVGFEGaussianBlurElement::isSupportedAttribute(const QualifiedName& attrNam
         supportedAttributes.add(SVGNames::inAttr);
         supportedAttributes.add(SVGNames::stdDeviationAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFEGaussianBlurElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -143,5 +141,3 @@ PassRefPtr<FilterEffect> SVGFEGaussianBlurElement::build(SVGFilterBuilder* filte
 }
 
 }
-
-#endif // ENABLE(SVG)

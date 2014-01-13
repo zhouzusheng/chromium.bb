@@ -27,16 +27,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGResourceFilterPrimitive.h"
 
-#include "SVGNames.h"
-#include "core/rendering/svg/RenderSVGResource.h"
-#include "core/svg/graphics/filters/SVGFEImage.h"
-#include "core/svg/graphics/filters/SVGFilter.h"
-
 namespace WebCore {
-
 
 void RenderSVGResourceFilterPrimitive::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
@@ -74,11 +67,11 @@ FloatRect RenderSVGResourceFilterPrimitive::determineFilterPrimitiveSubregion(Fi
         for (unsigned i = 1; i < numberOfInputEffects; ++i)
             subregion.unite(determineFilterPrimitiveSubregion(effect->inputEffect(i)));
     } else
-        subregion = filter->filterRegionInUserSpace();
+        subregion = filter->filterRegion();
 
     // After calling determineFilterPrimitiveSubregion on the target effect, reset the subregion again for <feTile>.
     if (effect->filterEffectType() == FilterEffectTypeTile)
-        subregion = filter->filterRegionInUserSpace();
+        subregion = filter->filterRegion();
 
     FloatRect effectBoundaries = effect->effectBoundaries();
     if (effect->hasX())
@@ -97,7 +90,7 @@ FloatRect RenderSVGResourceFilterPrimitive::determineFilterPrimitiveSubregion(Fi
     absoluteSubregion.scale(filterResolution.width(), filterResolution.height());
 
     // Clip every filter effect to the filter region.
-    FloatRect absoluteScaledFilterRegion = filter->filterRegion();
+    FloatRect absoluteScaledFilterRegion = filter->absoluteFilterRegion();
     absoluteScaledFilterRegion.scale(filterResolution.width(), filterResolution.height());
     absoluteSubregion.intersect(absoluteScaledFilterRegion);
 
@@ -106,5 +99,3 @@ FloatRect RenderSVGResourceFilterPrimitive::determineFilterPrimitiveSubregion(Fi
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(SVG)

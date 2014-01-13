@@ -26,9 +26,7 @@
 #include "config.h"
 #include "core/platform/graphics/chromium/ImageDecodingStore.h"
 
-#include "core/platform/SharedBuffer.h"
 #include "core/platform/chromium/TraceEvent.h"
-#include "core/platform/graphics/chromium/ImageFrameGenerator.h"
 #include "core/platform/graphics/chromium/ScaledImageFragment.h"
 
 namespace WebCore {
@@ -156,6 +154,16 @@ const ScaledImageFragment* ImageDecodingStore::insertAndLockCache(const ImageFra
     return cachedImage;
 }
 
+bool ImageDecodingStore::isCached(const ImageFrameGenerator* generator, const SkISize& scaledSize)
+{
+    MutexLocker lock(m_mutex);
+    CacheMap::iterator iter = m_cacheMap.find(std::make_pair(generator, scaledSize));
+    if (iter == m_cacheMap.end())
+        return false;
+    return true;
+}
+
+
 const ScaledImageFragment* ImageDecodingStore::overwriteAndLockCache(const ImageFrameGenerator* generator, const ScaledImageFragment* cachedImage, PassOwnPtr<ScaledImageFragment> newImage)
 {
     OwnPtr<ImageDecoder> trash;
@@ -210,6 +218,23 @@ void ImageDecodingStore::removeCacheIndexedByGenerator(const ImageFrameGenerator
 
         // Remove from cache list as well.
         removeFromCacheListInternal(cacheEntriesToDelete);
+    }
+}
+
+void ImageDecodingStore::clear()
+{
+    size_t cacheLimitInBytes;
+    {
+        MutexLocker lock(m_mutex);
+        cacheLimitInBytes = m_cacheLimitInBytes;
+        m_cacheLimitInBytes = 0;
+    }
+
+    prune();
+
+    {
+        MutexLocker lock(m_mutex);
+        m_cacheLimitInBytes = cacheLimitInBytes;
     }
 }
 

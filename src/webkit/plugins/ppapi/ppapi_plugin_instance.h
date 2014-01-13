@@ -14,7 +14,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "cc/layers/texture_layer_client.h"
 #include "googleurl/src/gurl.h"
 #include "ppapi/c/dev/pp_cursor_type_dev.h"
@@ -44,11 +44,14 @@
 #include "ppapi/shared_impl/tracked_callback.h"
 #include "ppapi/thunk/ppb_gamepad_api.h"
 #include "ppapi/thunk/resource_creation_api.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCanvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPlugin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebUserGestureToken.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
+#include "skia/ext/refptr.h"
+#include "third_party/WebKit/public/platform/WebCanvas.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/public/web/WebPlugin.h"
+#include "third_party/WebKit/public/web/WebUserGestureToken.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/rect.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
@@ -56,6 +59,7 @@
 #include "webkit/plugins/webkit_plugins_export.h"
 
 struct PP_Point;
+struct _NPP;
 
 class SkBitmap;
 class TransportDIB;
@@ -105,8 +109,7 @@ class PPB_URLLoader_Impl;
 class WEBKIT_PLUGINS_EXPORT PluginInstance :
     public base::RefCounted<PluginInstance>,
     public base::SupportsWeakPtr<PluginInstance>,
-    public ::ppapi::PPB_Instance_Shared,
-    public NON_EXPORTED_BASE(cc::TextureLayerClient) {
+    public ::ppapi::PPB_Instance_Shared {
  public:
   // Create and return a PluginInstance object which supports the most recent
   // version of PPP_Instance possible by querying the given get_plugin_interface
@@ -156,10 +159,6 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // full-frame plugins, as otherwise there could be other elements on top.  The
   // slow path can also be triggered if there is an overlapping frame.
   void ScrollRect(int dx, int dy, const gfx::Rect& rect);
-
-  // If the plugin instance is backed by a texture, return its texture ID in the
-  // compositor's namespace. Otherwise return 0. Returns 0 by default.
-  unsigned GetBackingTextureId();
 
   // Commit the backing texture to the screen once the side effects some
   // rendering up to an offscreen SwapBuffers are visible.
@@ -463,11 +462,6 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
                               PP_Resource audio_frames,
                               const PP_DecryptedBlockInfo* block_info) OVERRIDE;
 
-  // TextureLayerClient implementation.
-  virtual unsigned PrepareTexture(cc::ResourceUpdateQueue* queue) OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
-  virtual bool PrepareTextureMailbox(cc::TextureMailbox* mailbox) OVERRIDE;
-
   // Reset this instance as proxied. Assigns the instance a new module, resets
   // cached interfaces to point to the out-of-process proxy and re-sends
   // DidCreate, DidChangeView, and HandleDocumentLoad (if necessary).
@@ -481,6 +475,10 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // method fixes that be checking that either module_ or original_module_ match
   // the given module.
   bool IsValidInstanceOf(PluginModule* module);
+
+  // Returns the plugin NPP identifier that this plugin will use to identify
+  // itself when making NPObject scripting calls to WebBindings.
+  struct _NPP* instanceNPP();
 
  private:
   friend class PpapiUnittest;
@@ -688,7 +686,7 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // to generate the entire PDF given the variables below:
   //
   // The most recently used WebCanvas, guaranteed to be valid.
-  SkRefPtr<WebKit::WebCanvas> canvas_;
+  skia::RefPtr<WebKit::WebCanvas> canvas_;
   // An array of page ranges.
   std::vector<PP_PrintPageNumberRange_Dev> ranges_;
 
@@ -785,6 +783,10 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // The ContentDecryptorDelegate forwards PPP_ContentDecryptor_Private
   // calls and handles PPB_ContentDecryptor_Private calls.
   scoped_ptr<ContentDecryptorDelegate> content_decryptor_delegate_;
+
+  // Dummy NPP value used when calling in to WebBindings, to allow the bindings
+  // to correctly track NPObjects belonging to this plugin instance.
+  scoped_ptr<struct _NPP> npp_;
 
   friend class PpapiPluginInstanceTest;
   DISALLOW_COPY_AND_ASSIGN(PluginInstance);

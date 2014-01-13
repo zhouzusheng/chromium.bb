@@ -37,7 +37,7 @@
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8ObjectConstructor.h"
-#include "bindings/v8/V8RecursionScope.h"
+#include "bindings/v8/V8ScriptRunner.h"
 #include "bindings/v8/V8Utilities.h"
 
 #include <v8.h>
@@ -117,7 +117,7 @@ ScriptValue ScriptFunctionCall::call(bool& hadException, bool reportExceptions)
 {
     ScriptScope scope(m_scriptState, reportExceptions);
 
-    v8::Local<v8::Object> thisObject = m_thisObject.v8Object();
+    v8::Handle<v8::Object> thisObject = m_thisObject.v8Object();
     v8::Local<v8::Value> value = thisObject->Get(v8String(m_name, m_scriptState->isolate()));
     if (!scope.success()) {
         hadException = true;
@@ -126,16 +126,12 @@ ScriptValue ScriptFunctionCall::call(bool& hadException, bool reportExceptions)
 
     ASSERT(value->IsFunction());
 
-    v8::Local<v8::Function> function(v8::Function::Cast(*value));
+    v8::Local<v8::Function> function = v8::Local<v8::Function>::Cast(value);
     OwnArrayPtr<v8::Handle<v8::Value> > args = adoptArrayPtr(new v8::Handle<v8::Value>[m_arguments.size()]);
     for (size_t i = 0; i < m_arguments.size(); ++i)
         args[i] = m_arguments[i].v8Value();
 
-    v8::Local<v8::Value> result;
-    {
-        V8RecursionScope innerScope(getScriptExecutionContext());
-        result = function->Call(thisObject, m_arguments.size(), args.get());
-    }
+    v8::Local<v8::Value> result = V8ScriptRunner::callFunction(function, getScriptExecutionContext(), thisObject, m_arguments.size(), args.get());
     if (!scope.success()) {
         hadException = true;
         return ScriptValue();
@@ -154,7 +150,7 @@ ScriptObject ScriptFunctionCall::construct(bool& hadException, bool reportExcept
 {
     ScriptScope scope(m_scriptState, reportExceptions);
 
-    v8::Local<v8::Object> thisObject = m_thisObject.v8Object();
+    v8::Handle<v8::Object> thisObject = m_thisObject.v8Object();
     v8::Local<v8::Value> value = thisObject->Get(v8String(m_name, m_scriptState->isolate()));
     if (!scope.success()) {
         hadException = true;
@@ -163,7 +159,7 @@ ScriptObject ScriptFunctionCall::construct(bool& hadException, bool reportExcept
 
     ASSERT(value->IsFunction());
 
-    v8::Local<v8::Function> constructor(v8::Function::Cast(*value));
+    v8::Local<v8::Function> constructor = v8::Local<v8::Function>::Cast(value);
     OwnArrayPtr<v8::Handle<v8::Value> > args = adoptArrayPtr(new v8::Handle<v8::Value>[m_arguments.size()]);
     for (size_t i = 0; i < m_arguments.size(); ++i)
         args[i] = m_arguments[i].v8Value();

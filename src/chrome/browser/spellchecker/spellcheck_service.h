@@ -10,9 +10,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/spellchecker/feedback_sender.h"
 #include "chrome/browser/spellchecker/spellcheck_custom_dictionary.h"
 #include "chrome/browser/spellchecker/spellcheck_hunspell_dictionary.h"
-#include "chrome/browser/spellchecker/spelling_service_feedback.h"
 #include "chrome/common/spellcheck_common.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
@@ -95,7 +95,7 @@ class SpellcheckService : public BrowserContextKeyedService,
   SpellcheckHunspellDictionary* GetHunspellDictionary();
 
   // Returns the instance of the spelling service feedback sender.
-  SpellingServiceFeedback* GetFeedbackSender();
+  spellcheck::FeedbackSender* GetFeedbackSender();
 
   // Load a dictionary from a given path. Format specifies how the dictionary
   // is stored. Return value is true if successful.
@@ -159,7 +159,7 @@ class SpellcheckService : public BrowserContextKeyedService,
 
   scoped_ptr<SpellcheckHunspellDictionary> hunspell_dictionary_;
 
-  SpellingServiceFeedback feedback_sender_;
+  scoped_ptr<spellcheck::FeedbackSender> feedback_sender_;
 
   base::WeakPtrFactory<SpellcheckService> weak_ptr_factory_;
 

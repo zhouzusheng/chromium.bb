@@ -24,13 +24,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-[
-    Conditional=SVG
-] interface SVGFilterElement : SVGStyledElement,
-                                               SVGURIReference,
-                                               SVGLangSpace,
-                                               SVGExternalResourcesRequired
-                                            /* SVGUnitTypes */ {  
+interface SVGFilterElement : SVGStyledElement,
+                             SVGLangSpace {
     readonly attribute SVGAnimatedEnumeration filterUnits;
     readonly attribute SVGAnimatedEnumeration primitiveUnits;
     readonly attribute SVGAnimatedLength      x;
@@ -43,4 +38,7 @@
     void setFilterRes([Default=Undefined] optional unsigned long filterResX, 
                       [Default=Undefined] optional unsigned long filterResY);
 };
+
+SVGFilterElement implements SVGExternalResourcesRequired;
+SVGFilterElement implements SVGURIReference;
 

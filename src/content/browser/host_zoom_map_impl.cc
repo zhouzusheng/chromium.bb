@@ -7,7 +7,7 @@
 #include <cmath>
 
 #include "base/strings/string_piece.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -18,11 +18,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/common/page_zoom.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-
-using WebKit::WebView;
 
 static const char* kHostZoomMapKeyName = "content_host_zoom_map";
 

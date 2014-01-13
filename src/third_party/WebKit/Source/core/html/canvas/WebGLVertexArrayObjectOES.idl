@@ -24,6 +24,6 @@
  */
 
 [
-    Conditional=WEBGL
+    NoInterfaceObject
 ] interface WebGLVertexArrayObjectOES {
 };

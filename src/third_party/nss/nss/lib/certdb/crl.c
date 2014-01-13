@@ -4,8 +4,6 @@
 
 /*
  * Moved from secpkcs7.c
- *
- * $Id$
  */
  
 #include "cert.h"
@@ -306,12 +304,12 @@ SECStatus cert_check_crl_version (CERTCrl *crl)
  * DER crl.
  */
 SECStatus
-CERT_KeyFromDERCrl(PRArenaPool *arena, SECItem *derCrl, SECItem *key)
+CERT_KeyFromDERCrl(PLArenaPool *arena, SECItem *derCrl, SECItem *key)
 {
     SECStatus rv;
     CERTSignedData sd;
     CERTCrlKey crlkey;
-    PRArenaPool* myArena;
+    PLArenaPool* myArena;
 
     if (!arena) {
         /* arena needed for QuickDER */
@@ -394,10 +392,10 @@ SECStatus CERT_CompleteCRLDecodeEntries(CERTSignedCrl* crl)
  * allow reusing the input DER without making a copy
  */
 CERTSignedCrl *
-CERT_DecodeDERCrlWithFlags(PRArenaPool *narena, SECItem *derSignedCrl,
+CERT_DecodeDERCrlWithFlags(PLArenaPool *narena, SECItem *derSignedCrl,
                           int type, PRInt32 options)
 {
-    PRArenaPool *arena;
+    PLArenaPool *arena;
     CERTSignedCrl *crl;
     SECStatus rv;
     OpaqueCRLFields* extended = NULL;
@@ -534,7 +532,7 @@ loser:
  * take a DER CRL and decode it into a CRL structure
  */
 CERTSignedCrl *
-CERT_DecodeDERCrl(PRArenaPool *narena, SECItem *derSignedCrl, int type)
+CERT_DecodeDERCrl(PLArenaPool *narena, SECItem *derSignedCrl, int type)
 {
     return CERT_DecodeDERCrlWithFlags(narena, derSignedCrl, type,
                                       CRL_DECODE_DEFAULT_OPTIONS);
@@ -722,7 +720,7 @@ SEC_NewCrl(CERTCertDBHandle *handle, char *url, SECItem *derCrl, int type)
 CERTSignedCrl *
 SEC_FindCrlByDERCert(CERTCertDBHandle *handle, SECItem *derCrl, int type)
 {
-    PRArenaPool *arena;
+    PLArenaPool *arena;
     SECItem crlKey;
     SECStatus rv;
     CERTSignedCrl *crl = NULL;
@@ -783,7 +781,7 @@ SECStatus
 SEC_LookupCrls(CERTCertDBHandle *handle, CERTCrlHeadNode **nodes, int type)
 {
     CERTCrlHeadNode *head;
-    PRArenaPool *arena = NULL;
+    PLArenaPool *arena = NULL;
     SECStatus rv;
 
     *nodes = NULL;
@@ -961,7 +959,7 @@ void PreAllocator_Destroy(PreAllocator* PreAllocator)
 /* constructor for PreAllocator object */
 PreAllocator* PreAllocator_Create(PRSize size)
 {
-    PRArenaPool* arena = NULL;
+    PLArenaPool* arena = NULL;
     PreAllocator* prebuffer = NULL;
     arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
     if (!arena)

@@ -226,6 +226,9 @@ class NET_EXPORT_PRIVATE SpdyFramerVisitorInterface {
   virtual void OnSynStreamCompressed(
       size_t uncompressed_size,
       size_t compressed_size) = 0;
+
+  // Called when a BLOCKED frame has been parsed.
+  virtual void OnBlocked(SpdyStreamId stream_id) {}
 };
 
 // Optionally, and in addition to SpdyFramerVisitorInterface, a class supporting
@@ -238,20 +241,21 @@ class SpdyFramerDebugVisitorInterface {
  public:
   virtual ~SpdyFramerDebugVisitorInterface() {}
 
-  // Called after compressing header blocks.
-  // Provides uncompressed and compressed sizes.
-  virtual void OnCompressedHeaderBlock(size_t uncompressed_len,
-                                       size_t compressed_len) {}
+  // Called after compressing a frame with a payload of
+  // a list of name-value pairs.
+  // |payload_len| is the uncompressed payload size.
+  // |frame_len| is the compressed frame size.
+  virtual void OnSendCompressedFrame(SpdyStreamId stream_id,
+                                     SpdyFrameType type,
+                                     size_t payload_len,
+                                     size_t frame_len) {}
 
-  // Called when decompressing header blocks.
-  // Provides uncompressed and compressed sizes.
-  // Called once per incremental decompression. That is to say, if a header
-  // block is decompressed in four chunks, this will result in four calls to
-  // OnDecompressedHeaderBlock() interleaved with four calls to
-  // OnControlFrameHeaderData(). Note that uncompressed_len may be 0 in some
-  // valid cases, even though compressed_len is nonzero.
-  virtual void OnDecompressedHeaderBlock(size_t uncompressed_len,
-                                         size_t compressed_len) {}
+  // Called when a frame containing a compressed payload of
+  // name-value pairs is received.
+  // |frame_len| is the compressed frame size.
+  virtual void OnReceiveCompressedFrame(SpdyStreamId stream_id,
+                                        SpdyFrameType type,
+                                        size_t frame_len) {}
 };
 
 class NET_EXPORT_PRIVATE SpdyFramer {
@@ -289,12 +293,6 @@ class NET_EXPORT_PRIVATE SpdyFramer {
     LAST_ERROR,  // Must be the last entry in the enum.
   };
 
-  // The minimum supported SPDY version that SpdyFramer can speak.
-  static const int kMinSpdyVersion;
-
-  // The maximum supported SPDY version that SpdyFramer can speak.
-  static const int kMaxSpdyVersion;
-
   // Constant for invalid (or unknown) stream IDs.
   static const SpdyStreamId kInvalidStream;
 
@@ -314,7 +312,7 @@ class NET_EXPORT_PRIVATE SpdyFramer {
                                     const SpdyHeaderBlock* headers);
 
   // Create a new Framer, provided a SPDY version.
-  explicit SpdyFramer(int version);
+  explicit SpdyFramer(SpdyMajorVersion version);
   virtual ~SpdyFramer();
 
   // Set callbacks to be called from the framer.  A visitor must be set, or
@@ -432,6 +430,12 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   SpdySerializedFrame* SerializeCredential(
       const SpdyCredentialIR& credential) const;
 
+  // Serializes a BLOCKED frame. The BLOCKED frame is used to indicate to the
+  // remote endpoint that this endpoint believes itself to be flow-control
+  // blocked but otherwise ready to send data. The BLOCKED frame is purely
+  // advisory and optional.
+  SpdySerializedFrame* SerializeBlocked(const SpdyBlockedIR& blocked) const;
+
   // Given a CREDENTIAL frame's payload, extract the credential.
   // Returns true on successful parse, false otherwise.
   // TODO(hkhalil): Implement CREDENTIAL frame parsing in SpdyFramer
@@ -491,6 +495,7 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   size_t GetHeadersMinimumSize() const;
   size_t GetWindowUpdateSize() const;
   size_t GetCredentialMinimumSize() const;
+  size_t GetBlockedSize() const;
 
   // Returns the minimum size a frame can be (data or control).
   size_t GetFrameMinimumSize() const;
@@ -507,7 +512,7 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   static const char* StatusCodeToString(int status_code);
   static const char* FrameTypeToString(SpdyFrameType type);
 
-  int protocol_version() const { return spdy_version_; }
+  SpdyMajorVersion protocol_version() const { return spdy_version_; }
 
   bool probable_http_response() const { return probable_http_response_; }
 
@@ -616,10 +621,10 @@ class NET_EXPORT_PRIVATE SpdyFramer {
     // The theoretical maximum for SPDY3 and earlier is (2^24 - 1) +
     // 8, since the length field does not count the size of the
     // header.
-    if (spdy_version_ == kSpdyVersion2) {
+    if (spdy_version_ == SPDY2) {
       return 64 * 1024;
     }
-    if (spdy_version_ == kSpdyVersion3) {
+    if (spdy_version_ == SPDY3) {
       return 16 * 1024 * 1024;
     }
     // The theoretical maximum for SPDY4 is 2^16 - 1, as the length
@@ -674,11 +679,8 @@ class NET_EXPORT_PRIVATE SpdyFramer {
 
   std::string display_protocol_;
 
-  // The SPDY version to be spoken/understood by this framer. We support only
-  // integer versions here, as major version numbers indicate framer-layer
-  // incompatibility and minor version numbers indicate application-layer
-  // incompatibility.
-  const int spdy_version_;
+  // The major SPDY version to be spoken/understood by this framer.
+  const SpdyMajorVersion spdy_version_;
 
   // Tracks if we've ever gotten far enough in framing to see a control frame of
   // type SYN_STREAM or SYN_REPLY.

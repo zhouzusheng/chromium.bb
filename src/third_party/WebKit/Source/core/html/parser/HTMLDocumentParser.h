@@ -26,7 +26,7 @@
 #ifndef HTMLDocumentParser_h
 #define HTMLDocumentParser_h
 
-#include "core/dom/FragmentScriptingPermission.h"
+#include "core/dom/ParserContentPolicy.h"
 #include "core/dom/ScriptableDocumentParser.h"
 #include "core/html/parser/BackgroundHTMLInputStream.h"
 #include "core/html/parser/CompactHTMLToken.h"
@@ -41,12 +41,11 @@
 #include "core/html/parser/XSSAuditor.h"
 #include "core/html/parser/XSSAuditorDelegate.h"
 #include "core/loader/cache/CachedResourceClient.h"
-#include "core/platform/Timer.h"
 #include "core/platform/text/SegmentedString.h"
-#include <wtf/Deque.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/text/TextPosition.h>
-#include <wtf/WeakPtr.h>
+#include "wtf/Deque.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/WeakPtr.h"
+#include "wtf/text/TextPosition.h"
 
 namespace WebCore {
 
@@ -67,7 +66,7 @@ class PumpSession;
 class HTMLDocumentParser :  public ScriptableDocumentParser, HTMLScriptRunnerHost, CachedResourceClient {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassRefPtr<HTMLDocumentParser> create(HTMLDocument* document, bool reportErrors)
+    static PassRefPtr<HTMLDocumentParser> create(Document* document, bool reportErrors)
     {
         return adoptRef(new HTMLDocumentParser(document, reportErrors));
     }
@@ -102,7 +101,7 @@ protected:
     virtual void append(PassRefPtr<StringImpl>) OVERRIDE;
     virtual void finish() OVERRIDE;
 
-    HTMLDocumentParser(HTMLDocument*, bool reportErrors);
+    HTMLDocumentParser(Document*, bool reportErrors);
     HTMLDocumentParser(DocumentFragment*, Element* contextElement, ParserContentPolicy);
 
     HTMLTreeBuilder* treeBuilder() const { return m_treeBuilder.get(); }
@@ -124,7 +123,7 @@ private:
     virtual void stopParsing() OVERRIDE;
     virtual bool isWaitingForScripts() const OVERRIDE;
     virtual bool isExecutingScript() const OVERRIDE;
-    virtual void executeScriptsWaitingForStylesheets() OVERRIDE;
+    virtual void executeScriptsWaitingForResources() OVERRIDE;
 
     // HTMLScriptRunnerHost
     virtual void watchForLoad(CachedResource*) OVERRIDE;
@@ -170,7 +169,7 @@ private:
     bool inPumpSession() const { return m_pumpSessionNestingLevel > 0; }
     bool shouldDelayEnd() const { return inPumpSession() || isWaitingForScripts() || isScheduledForResume() || isExecutingScript(); }
 
-    HTMLToken& token() { return *m_token.get(); }
+    HTMLToken& token() { return *m_token; }
 
     HTMLParserOptions m_options;
     HTMLInputStream m_input;

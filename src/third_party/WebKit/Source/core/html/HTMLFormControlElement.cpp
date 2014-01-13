@@ -25,9 +25,6 @@
 #include "config.h"
 #include "core/html/HTMLFormControlElement.h"
 
-#include "bindings/v8/ScriptEventListener.h"
-#include "core/dom/Attribute.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
 #include "core/html/HTMLFieldSetElement.h"
@@ -36,8 +33,6 @@
 #include "core/html/HTMLLegendElement.h"
 #include "core/html/ValidationMessage.h"
 #include "core/html/ValidityState.h"
-#include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
 #include "core/page/UseCounter.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderTheme.h"
@@ -189,7 +184,7 @@ static bool shouldAutofocus(HTMLFormControlElement* element)
     // FIXME: Should this set of hasTagName checks be replaced by a
     // virtual member function?
     if (element->hasTagName(inputTag))
-        return !static_cast<HTMLInputElement*>(element)->isInputTypeHidden();
+        return !toHTMLInputElement(element)->isInputTypeHidden();
     if (element->hasTagName(selectTag))
         return true;
     if (element->hasTagName(keygenTag))
@@ -202,17 +197,17 @@ static bool shouldAutofocus(HTMLFormControlElement* element)
     return false;
 }
 
-static void focusPostAttach(Node* element, unsigned)
+static void focusPostAttach(Node* element)
 { 
     toElement(element)->focus(); 
     element->deref(); 
 }
 
-void HTMLFormControlElement::attach()
+void HTMLFormControlElement::attach(const AttachContext& context)
 {
     PostAttachCallbackDisabler disabler(this);
 
-    HTMLElement::attach();
+    HTMLElement::attach(context);
 
     // The call to updateFromElement() needs to go after the call through
     // to the base class's attach() because that can sometimes do a close
@@ -281,9 +276,7 @@ bool HTMLFormControlElement::isDisabledFormControl() const
 
     if (m_ancestorDisabledState == AncestorDisabledStateUnknown)
         updateAncestorDisabledState();
-    if (m_ancestorDisabledState == AncestorDisabledStateDisabled)
-        return true;
-    return HTMLElement::isDisabledFormControl();
+    return m_ancestorDisabledState == AncestorDisabledStateDisabled;
 }
 
 bool HTMLFormControlElement::isRequired() const
@@ -291,7 +284,7 @@ bool HTMLFormControlElement::isRequired() const
     return m_isRequired;
 }
 
-static void updateFromElementCallback(Node* node, unsigned)
+static void updateFromElementCallback(Node* node)
 {
     ASSERT_ARG(node, node->isElementNode());
     ASSERT_ARG(node, toElement(node)->isFormControlElement());
@@ -312,15 +305,13 @@ bool HTMLFormControlElement::supportsFocus() const
     return !isDisabledFormControl();
 }
 
-bool HTMLFormControlElement::isFocusable() const
+bool HTMLFormControlElement::rendererIsFocusable() const
 {
     // If there's a renderer, make sure the size isn't empty, but if there's no renderer,
-    // it might still be focusable if it's in a canvas subtree (handled in Node::isFocusable).
+    // it might still be focusable if it's in a canvas subtree (handled in Element::rendererIsFocusable).
     if (renderer() && (!renderer()->isBox() || toRenderBox(renderer())->size().isEmpty()))
         return false;
-    // HTMLElement::isFocusable handles visibility and calls suportsFocus which
-    // will cover the disabled case.
-    return HTMLElement::isFocusable();
+    return HTMLElement::rendererIsFocusable();
 }
 
 bool HTMLFormControlElement::isKeyboardFocusable(KeyboardEvent*) const
@@ -405,10 +396,12 @@ void HTMLFormControlElement::hideVisibleValidationMessage()
         m_validationMessage->requestToHideMessage();
 }
 
-bool HTMLFormControlElement::checkValidity(Vector<RefPtr<FormAssociatedElement> >* unhandledInvalidControls)
+bool HTMLFormControlElement::checkValidity(Vector<RefPtr<FormAssociatedElement> >* unhandledInvalidControls, CheckValidityDispatchEvents dispatchEvents)
 {
     if (!willValidate() || isValidFormControlElement())
         return true;
+    if (dispatchEvents == CheckValidityDispatchEventsNone)
+        return false;
     // An event handler can deref this object.
     RefPtr<HTMLFormControlElement> protector(this);
     RefPtr<Document> originalDocument(document());
@@ -449,11 +442,6 @@ void HTMLFormControlElement::setCustomValidity(const String& error)
     setNeedsValidityCheck();
 }
 
-bool HTMLFormControlElement::validationMessageShadowTreeContains(Node* node) const
-{
-    return m_validationMessage && m_validationMessage->shadowTreeContains(node);
-}
-
 void HTMLFormControlElement::dispatchBlurEvent(PassRefPtr<Node> newFocusedNode)
 {
     HTMLElement::dispatchBlurEvent(newFocusedNode);
@@ -474,7 +462,7 @@ HTMLFormControlElement* HTMLFormControlElement::enclosingFormControlElement(Node
 {
     for (; node; node = node->parentNode()) {
         if (node->isElementNode() && toElement(node)->isFormControlElement())
-            return static_cast<HTMLFormControlElement*>(node);
+            return toHTMLFormControlElement(node);
     }
     return 0;
 }

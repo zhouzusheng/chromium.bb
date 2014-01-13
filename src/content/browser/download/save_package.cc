@@ -16,8 +16,8 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
-#include "base/utf_string_conversions.h"
 #include "content/browser/download/download_item_impl.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/download_stats.h"
@@ -43,7 +43,7 @@
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
 #include "net/url_request/url_request_context.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPageSerializerClient.h"
+#include "third_party/WebKit/public/web/WebPageSerializerClient.h"
 
 using base::Time;
 using WebKit::WebPageSerializerClient;
@@ -363,9 +363,9 @@ void SavePackage::OnMHTMLGenerated(const base::FilePath& path, int64 size) {
   // Hack to avoid touching download_ after user cancel.
   // TODO(rdsmith/benjhayden): Integrate canceling on DownloadItem
   // with SavePackage flow.
-  if (download_->IsInProgress()) {
+  if (download_->GetState() == DownloadItem::IN_PROGRESS) {
     download_->SetTotalBytes(size);
-    download_->UpdateProgress(size, 0, std::string());
+    download_->DestinationUpdate(size, 0, std::string());
     // Must call OnAllDataSaved here in order for
     // GDataDownloadObserver::ShouldUpload() to return true.
     // ShouldCompleteDownload() may depend on the gdata uploader to finish.
@@ -790,9 +790,9 @@ void SavePackage::Finish() {
     // Hack to avoid touching download_ after user cancel.
     // TODO(rdsmith/benjhayden): Integrate canceling on DownloadItem
     // with SavePackage flow.
-    if (download_->IsInProgress()) {
+    if (download_->GetState() == DownloadItem::IN_PROGRESS) {
       if (save_type_ != SAVE_PAGE_TYPE_AS_MHTML) {
-        download_->UpdateProgress(
+        download_->DestinationUpdate(
             all_save_items_count_, CurrentSpeed(), std::string());
         download_->OnAllDataSaved(DownloadItem::kEmptyFileHash);
       }
@@ -822,8 +822,10 @@ void SavePackage::SaveFinished(int32 save_id, int64 size, bool is_success) {
   // Hack to avoid touching download_ after user cancel.
   // TODO(rdsmith/benjhayden): Integrate canceling on DownloadItem
   // with SavePackage flow.
-  if (download_ && download_->IsInProgress())
-    download_->UpdateProgress(completed_count(), CurrentSpeed(), std::string());
+  if (download_ && (download_->GetState() == DownloadItem::IN_PROGRESS)) {
+    download_->DestinationUpdate(
+        completed_count(), CurrentSpeed(), std::string());
+  }
 
   if (save_item->save_source() == SaveFileCreateInfo::SAVE_FILE_FROM_DOM &&
       save_item->url() == page_url_ && !save_item->received_bytes()) {
@@ -867,8 +869,10 @@ void SavePackage::SaveFailed(const GURL& save_url) {
   // Hack to avoid touching download_ after user cancel.
   // TODO(rdsmith/benjhayden): Integrate canceling on DownloadItem
   // with SavePackage flow.
-  if (download_ && download_->IsInProgress())
-    download_->UpdateProgress(completed_count(), CurrentSpeed(), std::string());
+  if (download_ && (download_->GetState() == DownloadItem::IN_PROGRESS)) {
+    download_->DestinationUpdate(
+        completed_count(), CurrentSpeed(), std::string());
+  }
 
   if ((save_type_ == SAVE_PAGE_TYPE_AS_ONLY_HTML) ||
       (save_type_ == SAVE_PAGE_TYPE_AS_MHTML) ||
@@ -1160,7 +1164,7 @@ void SavePackage::OnReceivedSavableResourceLinksForCurrentPage(
   // Hack to avoid touching download_ after user cancel.
   // TODO(rdsmith/benjhayden): Integrate canceling on DownloadItem
   // with SavePackage flow.
-  if (download_ && download_->IsInProgress())
+  if (download_ && (download_->GetState() == DownloadItem::IN_PROGRESS))
     download_->SetTotalBytes(all_save_items_count_);
 
   if (all_save_items_count_) {

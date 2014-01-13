@@ -28,7 +28,7 @@
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/swiftshader/include',
-        '<(DEPTH)/third_party/mesa/MesaLib/include',
+        '<(DEPTH)/third_party/mesa/src/include',
         '<(gl_binding_output_dir)',
       ],
       'direct_dependent_settings': {
@@ -48,18 +48,6 @@
         'android/surface_texture_bridge.h',
         'android/surface_texture_listener.cc',
         'android/surface_texture_listener.h',
-        'async_pixel_transfer_delegate.cc',
-        'async_pixel_transfer_delegate.h',
-        'async_pixel_transfer_delegate_android.cc',
-        'async_pixel_transfer_delegate_idle.cc',
-        'async_pixel_transfer_delegate_idle.h',
-        'async_pixel_transfer_delegate_linux.cc',
-        'async_pixel_transfer_delegate_mac.cc',
-        'async_pixel_transfer_delegate_stub.cc',
-        'async_pixel_transfer_delegate_stub.h',
-        'async_pixel_transfer_delegate_sync.cc',
-        'async_pixel_transfer_delegate_sync.h',
-        'async_pixel_transfer_delegate_win.cc',
         'gl_bindings.h',
         'gl_bindings_skia_in_process.cc',
         'gl_bindings_skia_in_process.h',
@@ -67,6 +55,7 @@
         'gl_context.h',
         'gl_context_android.cc',
         'gl_context_mac.mm',
+        'gl_context_ozone.cc',
         'gl_context_osmesa.cc',
         'gl_context_osmesa.h',
         'gl_context_stub.cc',
@@ -82,6 +71,7 @@
         'gl_image.h',
         'gl_image_android.cc',
         'gl_image_mac.cc',
+        'gl_image_ozone.cc',
         'gl_image_stub.cc',
         'gl_image_stub.h',
         'gl_image_win.cc',
@@ -89,6 +79,7 @@
         'gl_implementation.cc',
         'gl_implementation.h',
         'gl_implementation_android.cc',
+        'gl_implementation_ozone.cc',
         'gl_implementation_mac.cc',
         'gl_implementation_win.cc',
         'gl_implementation_x11.cc',
@@ -102,7 +93,6 @@
         'gl_state_restorer.h',
         'gl_surface.cc',
         'gl_surface.h',
-        'gl_surface_android.cc',
         'gl_surface_mac.cc',
         'gl_surface_stub.cc',
         'gl_surface_stub.h',
@@ -114,12 +104,12 @@
         'gl_switches.h',
         'gpu_switching_manager.cc',
         'gpu_switching_manager.h',
-        'safe_shared_memory_pool.h',
-        'safe_shared_memory_pool.cc',
+        'io_surface_support_mac.cc',
+        'io_surface_support_mac.h',
+        'scoped_binders.cc',
+        'scoped_binders.h',
         'scoped_make_current.cc',
         'scoped_make_current.h',
-        'gl_state_restorer.cc',
-        'gl_state_restorer.h',
         'vsync_provider.cc',
         'vsync_provider.h',
         '<(gl_binding_output_dir)/gl_bindings_autogen_gl.cc',
@@ -141,7 +131,7 @@
             'generator_path': 'generate_bindings.py',
             'conditions': [
               ['use_system_mesa==0', {
-                'header_paths': '../../third_party/mesa/MesaLib/include:../../third_party/khronos',
+                'header_paths': '../../third_party/mesa/src/include:../../third_party/khronos',
               }, { # use_system_mesa==1
                 'header_paths': '/usr/include',
               }],
@@ -188,10 +178,8 @@
         },
       ],
       'conditions': [
-        ['OS in ("win", "android") or (OS == "linux" and use_x11 == 1)', {
+        ['OS in ("win", "android", "linux")', {
           'sources': [
-            'async_pixel_transfer_delegate_egl.cc',
-            'async_pixel_transfer_delegate_egl.h',
             'egl_util.cc',
             'egl_util.h',
             'gl_context_egl.cc',
@@ -204,8 +192,8 @@
             '<(gl_binding_output_dir)/gl_bindings_autogen_egl.h',
           ],
           'include_dirs': [
-            '<(DEPTH)/third_party/angle/include',
-          ],
+            '<(DEPTH)/third_party/khronos',
+        ],
         }],
         ['use_x11 == 1', {
           'sources': [
@@ -317,6 +305,8 @@
         ],
       },
       'sources': [
+        'gl_image_mock.cc',
+        'gl_image_mock.h',
         'gl_mock.h',
         'gl_mock.cc',
         '<(gl_binding_output_dir)/gl_mock_autogen_gl.h',

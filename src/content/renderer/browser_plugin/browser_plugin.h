@@ -5,7 +5,7 @@
 #ifndef  CONTENT_RENDERER_BROWSER_PLUGIN_BROWSER_PLUGIN_H_
 #define  CONTENT_RENDERER_BROWSER_PLUGIN_BROWSER_PLUGIN_H_
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPlugin.h"
+#include "third_party/WebKit/public/web/WebPlugin.h"
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -20,7 +20,7 @@
 #include "content/renderer/browser_plugin/browser_plugin_bindings.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragStatus.h"
+#include "third_party/WebKit/public/web/WebDragStatus.h"
 
 struct BrowserPluginHostMsg_AutoSize_Params;
 struct BrowserPluginHostMsg_ResizeGuest_Params;
@@ -40,6 +40,7 @@ class CONTENT_EXPORT BrowserPlugin :
  public:
   RenderViewImpl* render_view() const { return render_view_.get(); }
   int render_view_routing_id() const { return render_view_routing_id_; }
+  int guest_instance_id() const { return guest_instance_id_; }
   int instance_id() const { return instance_id_; }
 
   static BrowserPlugin* FromContainer(WebKit::WebPluginContainer* container);
@@ -65,6 +66,8 @@ class CONTENT_EXPORT BrowserPlugin :
   std::string GetSrcAttribute() const;
   // Parse the src attribute value of the BrowserPlugin instance.
   bool ParseSrcAttribute(std::string* error_message);
+  // Get the Api attribute value.
+  std::string GetApiAttribute() const;
   // Get the autosize attribute value.
   bool GetAutoSizeAttribute() const;
   // Parses the autosize attribute value.
@@ -93,13 +96,12 @@ class CONTENT_EXPORT BrowserPlugin :
   // Get the guest's DOMWindow proxy.
   NPObject* GetContentWindow() const;
 
-  // Returns Chrome's process ID for the current guest.
-  int guest_process_id() const { return guest_process_id_; }
-  // Returns Chrome's route ID for the current guest.
-  int guest_route_id() const { return guest_route_id_; }
   // Returns whether the guest process has crashed.
   bool guest_crashed() const { return guest_crashed_; }
-  bool HasGuest() const;
+  // Returns whether this BrowserPlugin has requested an instance ID.
+  bool HasNavigated() const;
+  // Returns whether this BrowserPlugin has allocated an instance ID.
+  bool HasGuestInstanceID() const;
 
   // Attaches the window identified by |window_id| to the the given node
   // encapsulating a BrowserPlugin.
@@ -174,7 +176,9 @@ class CONTENT_EXPORT BrowserPlugin :
   virtual bool initialize(WebKit::WebPluginContainer* container) OVERRIDE;
   virtual void destroy() OVERRIDE;
   virtual NPObject* scriptableObject() OVERRIDE;
+  virtual struct _NPP* pluginNPP() OVERRIDE;
   virtual bool supportsKeyboardFocus() const OVERRIDE;
+  virtual bool supportsEditCommands() const OVERRIDE;
   virtual bool canProcessDrag() const OVERRIDE;
   virtual void paint(
       WebKit::WebCanvas* canvas,
@@ -208,6 +212,8 @@ class CONTENT_EXPORT BrowserPlugin :
       void* notify_data,
       const WebKit::WebURLError& error) OVERRIDE;
   virtual bool executeEditCommand(const WebKit::WebString& name) OVERRIDE;
+  virtual bool executeEditCommand(const WebKit::WebString& name,
+                                  const WebKit::WebString& value) OVERRIDE;
 
   // MouseLockDispatcher::LockTarget implementation.
   virtual void OnLockMouseACK(bool succeeded) OVERRIDE;
@@ -226,19 +232,22 @@ class CONTENT_EXPORT BrowserPlugin :
 
   // A BrowserPlugin object is a controller that represents an instance of a
   // browser plugin within the embedder renderer process. Each BrowserPlugin
-  // within a process has a unique instance_id that is used to route messages
-  // to it. It takes in a RenderViewImpl that it's associated with along
-  // with the frame within which it lives and the initial attributes assigned
-  // to it on creation.
+  // within a RenderView has a unique instance_id that is used to track per-
+  // BrowserPlugin state in the browser process. Once a BrowserPlugin does
+  // an initial navigation or is attached to a newly created guest, it acquires
+  // a guest_instance_id as well. The guest instance ID uniquely identifies a
+  // guest WebContents that's hosted by this BrowserPlugin.
   BrowserPlugin(
       RenderViewImpl* render_view,
       WebKit::WebFrame* frame,
-      const WebKit::WebPluginParams& params);
+      const WebKit::WebPluginParams& params,
+      int instance_id);
 
   virtual ~BrowserPlugin();
 
   int width() const { return plugin_rect_.width(); }
   int height() const { return plugin_rect_.height(); }
+  gfx::Rect plugin_rect() { return plugin_rect_; }
   // Gets the Max Height value used for auto size.
   int GetAdjustedMaxHeight() const;
   // Gets the Max Width value used for auto size.
@@ -248,7 +257,7 @@ class CONTENT_EXPORT BrowserPlugin :
   // Gets the Min Width value used for auto size.
   int GetAdjustedMinWidth() const;
   BrowserPluginManager* browser_plugin_manager() const {
-    return browser_plugin_manager_;
+    return browser_plugin_manager_.get();
   }
 
   // Virtual to allow for mocking in tests.
@@ -274,7 +283,7 @@ class CONTENT_EXPORT BrowserPlugin :
   // allocates a new |pending_damage_buffer_| if in software rendering mode.
   void PopulateResizeGuestParameters(
       BrowserPluginHostMsg_ResizeGuest_Params* params,
-      const gfx::Size& view_size);
+      const gfx::Rect& view_size);
 
   // Populates BrowserPluginHostMsg_AutoSize_Params object with autosize state.
   void PopulateAutoSizeParameters(
@@ -323,7 +332,7 @@ class CONTENT_EXPORT BrowserPlugin :
   void OnRequestObjectGarbageCollected(int request_id);
   // V8 garbage collection callback for |object|.
   static void WeakCallbackForPersistObject(v8::Isolate* isolate,
-                                           v8::Persistent<v8::Value> object,
+                                           v8::Persistent<v8::Value>* object,
                                            void* param);
 
   // IPC message handlers.
@@ -352,6 +361,7 @@ class CONTENT_EXPORT BrowserPlugin :
                    const std::string& type);
   void OnLoadCommit(int instance_id,
                     const BrowserPluginMsg_LoadCommit_Params& params);
+  void OnLoadHandlerCalled(int instance_id);
   void OnLoadRedirect(int instance_id,
                       const GURL& old_url,
                       const GURL& new_url,
@@ -370,6 +380,11 @@ class CONTENT_EXPORT BrowserPlugin :
   void OnUpdateRect(int instance_id,
                     const BrowserPluginMsg_UpdateRect_Params& params);
 
+  // This is the browser-process-allocated instance ID that uniquely identifies
+  // a guest WebContents.
+  int guest_instance_id_;
+  // This is a render-process-allocated instance ID that uniquely identifies a
+  // BrowserPlugin.
   int instance_id_;
   base::WeakPtr<RenderViewImpl> render_view_;
   // We cache the |render_view_|'s routing ID because we need it on destruction.
@@ -390,8 +405,6 @@ class CONTENT_EXPORT BrowserPlugin :
   bool guest_crashed_;
   scoped_ptr<BrowserPluginHostMsg_ResizeGuest_Params> pending_resize_params_;
   bool auto_size_ack_pending_;
-  int guest_process_id_;
-  int guest_route_id_;
   std::string storage_partition_id_;
   bool persist_storage_;
   bool valid_partition_id_;
@@ -439,9 +452,14 @@ class CONTENT_EXPORT BrowserPlugin :
   bool compositing_enabled_;
   scoped_refptr<BrowserPluginCompositingHelper> compositing_helper_;
 
+  // Used to identify the plugin to WebBindings.
+  scoped_ptr<struct _NPP> npp_;
+
   // Weak factory used in v8 |MakeWeak| callback, since the v8 callback might
   // get called after BrowserPlugin has been destroyed.
   base::WeakPtrFactory<BrowserPlugin> weak_ptr_factory_;
+
+  std::vector<EditCommand> edit_commands_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPlugin);
 };

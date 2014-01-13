@@ -23,19 +23,17 @@
 
 #include <math.h>
 #include "HTMLNames.h"
-#include "core/dom/ElementShadow.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ElementShadow.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/fileapi/FileList.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/platform/LocalizedStrings.h"
 #include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/Icon.h"
 #include "core/platform/graphics/TextRun.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderButton.h"
-#include "core/rendering/RenderText.h"
 #include "core/rendering/RenderTheme.h"
 
 using namespace std;
@@ -68,7 +66,7 @@ bool RenderFileUploadControl::canBeReplacedWithInlineRunIn() const
 
 void RenderFileUploadControl::updateFromElement()
 {
-    HTMLInputElement* input = static_cast<HTMLInputElement*>(node());
+    HTMLInputElement* input = toHTMLInputElement(node());
     ASSERT(input->isFileUpload());
 
     if (HTMLInputElement* button = uploadButton()) {
@@ -94,7 +92,7 @@ static int nodeWidth(Node* node)
 
 int RenderFileUploadControl::maxFilenameWidth() const
 {
-    HTMLInputElement* input = static_cast<HTMLInputElement*>(node());
+    HTMLInputElement* input = toHTMLInputElement(node());
     return max(0, contentBoxRect().pixelSnappedWidth() - nodeWidth(uploadButton()) - afterButtonSpacing
         - (input->icon() ? iconWidth + iconFilenameSpacing : 0));
 }
@@ -127,15 +125,16 @@ void RenderFileUploadControl::paintObject(PaintInfo& paintInfo, const LayoutPoin
         if (!button)
             return;
 
-        HTMLInputElement* input = static_cast<HTMLInputElement*>(node());
+        HTMLInputElement* input = toHTMLInputElement(node());
         LayoutUnit buttonWidth = nodeWidth(button);
         LayoutUnit buttonAndIconWidth = buttonWidth + afterButtonSpacing
             + (input->icon() ? iconWidth + iconFilenameSpacing : 0);
+        float textWidth = font.width(textRun);
         LayoutUnit textX;
         if (style()->isLeftToRightDirection())
             textX = contentLeft + buttonAndIconWidth;
         else
-            textX = contentLeft + contentWidth() - buttonAndIconWidth - font.width(textRun);
+            textX = contentLeft + contentWidth() - buttonAndIconWidth - textWidth;
 
         LayoutUnit textY = 0;
         // We want to match the button's baseline
@@ -144,12 +143,17 @@ void RenderFileUploadControl::paintObject(PaintInfo& paintInfo, const LayoutPoin
             textY = paintOffset.y() + borderTop() + paddingTop() + buttonRenderer->baselinePosition(AlphabeticBaseline, true, HorizontalLine, PositionOnContainingLine);
         else
             textY = baselinePosition(AlphabeticBaseline, true, HorizontalLine, PositionOnContainingLine);
+        TextRunPaintInfo textRunPaintInfo(textRun);
+        textRunPaintInfo.bounds = FloatRect(textX,
+                                            textY - style()->fontMetrics().ascent(),
+                                            textWidth,
+                                            style()->fontMetrics().height());
 
-        paintInfo.context->setFillColor(style()->visitedDependentColor(CSSPropertyColor), style()->colorSpace());
-        
+        paintInfo.context->setFillColor(style()->visitedDependentColor(CSSPropertyColor));
+
         // Draw the filename
-        paintInfo.context->drawBidiText(font, textRun, IntPoint(roundToInt(textX), roundToInt(textY)));
-        
+        paintInfo.context->drawBidiText(font, textRunPaintInfo, IntPoint(roundToInt(textX), roundToInt(textY)));
+
         if (input->icon()) {
             // Determine where the icon should be placed
             LayoutUnit iconY = paintOffset.y() + borderTop() + paddingTop() + (contentHeight() - iconHeight) / 2;
@@ -179,7 +183,7 @@ void RenderFileUploadControl::computeIntrinsicLogicalWidths(LayoutUnit& minLogic
     RenderFileUploadControl* renderer = const_cast<RenderFileUploadControl*>(this);
     float minDefaultLabelWidth = defaultWidthNumChars * font.width(constructTextRun(renderer, font, characterAsString, style(), TextRun::AllowTrailingExpansion));
 
-    const String label = theme()->fileListDefaultLabel(node()->toInputElement()->multiple());
+    const String label = theme()->fileListDefaultLabel(toHTMLInputElement(node())->multiple());
     float defaultLabelWidth = font.width(constructTextRun(renderer, font, label, style(), TextRun::AllowTrailingExpansion));
     if (HTMLInputElement* button = uploadButton())
         if (RenderObject* buttonRenderer = button->renderer())
@@ -226,12 +230,12 @@ VisiblePosition RenderFileUploadControl::positionForPoint(const LayoutPoint&)
 
 HTMLInputElement* RenderFileUploadControl::uploadButton() const
 {
-    HTMLInputElement* input = static_cast<HTMLInputElement*>(node());
+    HTMLInputElement* input = toHTMLInputElement(node());
 
     ASSERT(input->shadow());
 
     Node* buttonNode = input->shadow()->oldestShadowRoot()->firstChild();
-    return buttonNode && buttonNode->isHTMLElement() && buttonNode->hasTagName(inputTag) ? static_cast<HTMLInputElement*>(buttonNode) : 0;
+    return buttonNode && buttonNode->isHTMLElement() && buttonNode->hasTagName(inputTag) ? toHTMLInputElement(buttonNode) : 0;
 }
 
 String RenderFileUploadControl::buttonValue()
@@ -244,7 +248,7 @@ String RenderFileUploadControl::buttonValue()
 
 String RenderFileUploadControl::fileTextValue() const
 {
-    HTMLInputElement* input = static_cast<HTMLInputElement*>(node());
+    HTMLInputElement* input = toHTMLInputElement(node());
     ASSERT(input->files());
     return theme()->fileListNameForWidth(input->files(), style()->font(), maxFilenameWidth(), input->multiple());
 }

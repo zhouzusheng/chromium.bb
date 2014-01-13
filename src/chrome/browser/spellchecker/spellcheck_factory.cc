@@ -53,7 +53,7 @@ BrowserContextKeyedService* SpellcheckServiceFactory::BuildServiceInstanceFor(
   // Many variables are initialized from the |context| in the SpellcheckService.
   SpellcheckService* spellcheck = new SpellcheckService(context);
 
-  PrefService* prefs = components::UserPrefs::Get(context);
+  PrefService* prefs = user_prefs::UserPrefs::Get(context);
   DCHECK(prefs);
 
   // Instantiates Metrics object for spellchecking for use.

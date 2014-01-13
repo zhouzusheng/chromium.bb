@@ -91,7 +91,7 @@ public:
 
 // When getting properties on CSSStyleDeclarations, the name used from
 // Javascript and the actual name of the property are not the same, so
-// we have to do the following translation.  The translation turns upper
+// we have to do the following translation. The translation turns upper
 // case characters into lower case characters and inserts dashes to
 // separate words.
 //
@@ -136,8 +136,10 @@ static CSSPropertyInfo* cssPropertyInfo(v8::Handle<v8::String> v8PropertyName)
             UChar c = propertyName[i];
             if (!isASCIIUpper(c))
                 builder.append(c);
-            else
-                builder.append(makeString('-', toASCIILower(c)));
+            else {
+                builder.append('-');
+                builder.append(toASCIILower(c));
+            }
         }
 
         String propName = builder.toString();
@@ -152,7 +154,7 @@ static CSSPropertyInfo* cssPropertyInfo(v8::Handle<v8::String> v8PropertyName)
     return propInfo;
 }
 
-v8::Handle<v8::Array> V8CSSStyleDeclaration::namedPropertyEnumerator(const v8::AccessorInfo& info)
+void V8CSSStyleDeclaration::namedPropertyEnumeratorCustom(const v8::PropertyCallbackInfo<v8::Array>& info)
 {
     typedef Vector<String, numCSSProperties - 1> PreAllocatedPropertyVector;
     DEFINE_STATIC_LOCAL(PreAllocatedPropertyVector, propertyNames, ());
@@ -172,59 +174,61 @@ v8::Handle<v8::Array> V8CSSStyleDeclaration::namedPropertyEnumerator(const v8::A
     for (unsigned i = 0; i < propertyNamesLength; ++i) {
         String key = propertyNames.at(i);
         ASSERT(!key.isNull());
-        properties->Set(v8Integer(i, info.GetIsolate()), v8String(key, info.GetIsolate()));
+        properties->Set(v8::Integer::New(i, info.GetIsolate()), v8String(key, info.GetIsolate()));
     }
 
-    return properties;
+    v8SetReturnValue(info, properties);
 }
 
-v8::Handle<v8::Integer> V8CSSStyleDeclaration::namedPropertyQuery(v8::Local<v8::String> v8Name, const v8::AccessorInfo& info)
+void V8CSSStyleDeclaration::namedPropertyQueryCustom(v8::Local<v8::String> v8Name, const v8::PropertyCallbackInfo<v8::Integer>& info)
 {
     // NOTE: cssPropertyInfo lookups incur several mallocs.
     // Successful lookups have the same cost the first time, but are cached.
-    if (cssPropertyInfo(v8Name))
-        return v8Integer(0, info.GetIsolate());
-
-    return v8::Handle<v8::Integer>();
+    if (cssPropertyInfo(v8Name)) {
+        v8SetReturnValueInt(info, 0);
+        return;
+    }
 }
 
-v8::Handle<v8::Value> V8CSSStyleDeclaration::namedPropertyGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
+void V8CSSStyleDeclaration::namedPropertyGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     // First look for API defined attributes on the style declaration object.
     if (info.Holder()->HasRealNamedCallbackProperty(name))
-        return v8Undefined();
+        return;
 
     // Search the style declaration.
     CSSPropertyInfo* propInfo = cssPropertyInfo(name);
 
     // Do not handle non-property names.
     if (!propInfo)
-        return v8Undefined();
+        return;
 
     CSSStyleDeclaration* imp = V8CSSStyleDeclaration::toNative(info.Holder());
     RefPtr<CSSValue> cssValue = imp->getPropertyCSSValueInternal(static_cast<CSSPropertyID>(propInfo->propID));
     if (cssValue) {
-        if (propInfo->hadPixelOrPosPrefix &&
-            cssValue->isPrimitiveValue()) {
-            return v8::Number::New(static_cast<CSSPrimitiveValue*>(
+        if (propInfo->hadPixelOrPosPrefix
+            && cssValue->isPrimitiveValue()) {
+            v8SetReturnValue(info, static_cast<CSSPrimitiveValue*>(
                 cssValue.get())->getFloatValue(CSSPrimitiveValue::CSS_PX));
+            return;
         }
-        return v8StringOrNull(cssValue->cssText(), info.GetIsolate());
+        v8SetReturnValue(info, v8StringOrNull(cssValue->cssText(), info.GetIsolate()));
+        return;
     }
 
     String result = imp->getPropertyValueInternal(static_cast<CSSPropertyID>(propInfo->propID));
     if (result.isNull())
-        result = "";  // convert null to empty string.
+        result = ""; // convert null to empty string.
 
-    return v8String(result, info.GetIsolate());
+    v8SetReturnValue(info, v8String(result, info.GetIsolate()));
 }
 
-v8::Handle<v8::Value> V8CSSStyleDeclaration::namedPropertySetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
+void V8CSSStyleDeclaration::namedPropertySetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     CSSStyleDeclaration* imp = V8CSSStyleDeclaration::toNative(info.Holder());
     CSSPropertyInfo* propInfo = cssPropertyInfo(name);
     if (!propInfo)
-        return v8Undefined();
+        return;
 
     String propertyValue = toWebCoreStringWithNullCheck(value);
     if (propInfo->hadPixelOrPosPrefix)
@@ -233,10 +237,12 @@ v8::Handle<v8::Value> V8CSSStyleDeclaration::namedPropertySetter(v8::Local<v8::S
     ExceptionCode ec = 0;
     imp->setPropertyInternal(static_cast<CSSPropertyID>(propInfo->propID), propertyValue, false, ec);
 
-    if (ec)
+    if (ec) {
         setDOMException(ec, info.GetIsolate());
+        return;
+    }
 
-    return value;
+    v8SetReturnValue(info, value);
 }
 
 } // namespace WebCore

@@ -40,11 +40,8 @@
 
 namespace WebCore {
 
-#if !USE(UNIFIED_TEXT_CHECKING)
 static void findBadGrammars(TextCheckerClient* client, const UChar* text, int start, int length, Vector<TextCheckingResult>& results)
 {
-    ASSERT(WTF_USE_GRAMMAR_CHECKING);
-
     int checkLocation = start;
     int checkLength = length;
 
@@ -97,7 +94,6 @@ static void findMisspellings(TextCheckerClient* client, const UChar* text, int s
         wordStart = wordEnd;
     }
 }
-#endif
 
 static PassRefPtr<Range> expandToParagraphBoundary(PassRefPtr<Range> range)
 {
@@ -415,7 +411,6 @@ String TextCheckingHelper::findFirstMisspellingOrBadGrammar(bool checkGrammar, b
 
 int TextCheckingHelper::findFirstGrammarDetail(const Vector<GrammarDetail>& grammarDetails, int badGrammarPhraseLocation, int /*badGrammarPhraseLength*/, int startOffset, int endOffset, bool markAll)
 {
-#if USE(GRAMMAR_CHECKING)
     // Found some bad grammar. Find the earliest detail range that starts in our search range (if any).
     // Optionally add a DocumentMarker for each detail in the range.
     int earliestDetailLocationSoFar = -1;
@@ -447,20 +442,10 @@ int TextCheckingHelper::findFirstGrammarDetail(const Vector<GrammarDetail>& gram
     }
     
     return earliestDetailIndex;
-#else
-    ASSERT_NOT_REACHED();
-    UNUSED_PARAM(grammarDetails);
-    UNUSED_PARAM(badGrammarPhraseLocation);
-    UNUSED_PARAM(startOffset);
-    UNUSED_PARAM(endOffset);
-    UNUSED_PARAM(markAll);
-    return 0;
-#endif
 }
 
 String TextCheckingHelper::findFirstBadGrammar(GrammarDetail& outGrammarDetail, int& outGrammarPhraseOffset, bool markAll)
 {
-    ASSERT(WTF_USE_GRAMMAR_CHECKING);
     // Initialize out parameters; these will be updated if we find something to return.
     outGrammarDetail.location = -1;
     outGrammarDetail.length = 0;
@@ -518,110 +503,6 @@ String TextCheckingHelper::findFirstBadGrammar(GrammarDetail& outGrammarDetail, 
     return firstBadGrammarPhrase;
 }
 
-
-bool TextCheckingHelper::isUngrammatical(Vector<String>& guessesVector) const
-{
-    ASSERT(WTF_USE_GRAMMAR_CHECKING);
-    if (!m_client)
-        return false;
-
-    if (!m_range || m_range->collapsed(IGNORE_EXCEPTION))
-        return false;
-    
-    // Returns true only if the passed range exactly corresponds to a bad grammar detail range. This is analogous
-    // to isSelectionMisspelled. It's not good enough for there to be some bad grammar somewhere in the range,
-    // or overlapping the range; the ranges must exactly match.
-    guessesVector.clear();
-    int grammarPhraseOffset;
-    
-    GrammarDetail grammarDetail;
-    String badGrammarPhrase = const_cast<TextCheckingHelper*>(this)->findFirstBadGrammar(grammarDetail, grammarPhraseOffset, false);    
-    
-    // No bad grammar in these parts at all.
-    if (badGrammarPhrase.isEmpty())
-        return false;
-    
-    // Bad grammar, but phrase (e.g. sentence) starts beyond start of range.
-    if (grammarPhraseOffset > 0)
-        return false;
-    
-    ASSERT(grammarDetail.location >= 0 && grammarDetail.length > 0);
-    
-    // Bad grammar, but start of detail (e.g. ungrammatical word) doesn't match start of range
-    if (grammarDetail.location + grammarPhraseOffset)
-        return false;
-    
-    // Bad grammar at start of range, but end of bad grammar is before or after end of range
-    if (grammarDetail.length != TextIterator::rangeLength(m_range.get()))
-        return false;
-    
-    // Update the spelling panel to be displaying this error (whether or not the spelling panel is on screen).
-    // This is necessary to make a subsequent call to [NSSpellChecker ignoreWord:inSpellDocumentWithTag:] work
-    // correctly; that call behaves differently based on whether the spelling panel is displaying a misspelling
-    // or a grammar error.
-    m_client->updateSpellingUIWithGrammarString(badGrammarPhrase, grammarDetail);
-    
-    return true;
-}
-
-Vector<String> TextCheckingHelper::guessesForMisspelledOrUngrammaticalRange(bool checkGrammar, bool& misspelled, bool& ungrammatical) const
-{
-    if (!unifiedTextCheckerEnabled())
-        return Vector<String>();
-
-    Vector<String> guesses;
-    misspelled = false;
-    ungrammatical = false;
-    
-    if (!m_client || !m_range || m_range->collapsed(IGNORE_EXCEPTION))
-        return guesses;
-
-    // Expand the range to encompass entire paragraphs, since text checking needs that much context.
-    TextCheckingParagraph paragraph(m_range);
-    if (paragraph.isEmpty())
-        return guesses;
-
-    Vector<TextCheckingResult> results;
-    TextCheckingTypeMask checkingTypes = checkGrammar ? (TextCheckingTypeSpelling | TextCheckingTypeGrammar) : TextCheckingTypeSpelling;
-    checkTextOfParagraph(m_client->textChecker(), paragraph.textCharacters(), paragraph.textLength(), checkingTypes, results);
-    
-    for (unsigned i = 0; i < results.size(); i++) {
-        const TextCheckingResult* result = &results[i];
-        if (result->type == TextCheckingTypeSpelling && paragraph.checkingRangeMatches(result->location, result->length)) {
-            String misspelledWord = paragraph.checkingSubstring();
-            ASSERT(misspelledWord.length());
-            m_client->textChecker()->getGuessesForWord(misspelledWord, String(), guesses);
-            m_client->updateSpellingUIWithMisspelledWord(misspelledWord);
-            misspelled = true;
-            return guesses;
-        }
-    }
-    
-    if (!checkGrammar)
-        return guesses;
-        
-    for (unsigned i = 0; i < results.size(); i++) {
-        const TextCheckingResult* result = &results[i];
-        if (result->type == TextCheckingTypeGrammar && paragraph.isCheckingRangeCoveredBy(result->location, result->length)) {
-            for (unsigned j = 0; j < result->details.size(); j++) {
-                const GrammarDetail* detail = &result->details[j];
-                ASSERT(detail->length > 0 && detail->location >= 0);
-                if (paragraph.checkingRangeMatches(result->location + detail->location, detail->length)) {
-                    String badGrammarPhrase = paragraph.textSubstring(result->location, result->length);
-                    ASSERT(badGrammarPhrase.length());
-                    for (unsigned k = 0; k < detail->guesses.size(); k++)
-                        guesses.append(detail->guesses[k]);
-                    m_client->updateSpellingUIWithGrammarString(badGrammarPhrase, *detail);
-                    ungrammatical = true;
-                    return guesses;
-                }
-            }
-        }
-    }
-    return guesses;
-}
-
-
 void TextCheckingHelper::markAllMisspellings(RefPtr<Range>& firstMisspellingRange)
 {
     // Use the "markAll" feature of findFirstMisspelling. Ignore the return value and the "out parameter";
@@ -632,7 +513,6 @@ void TextCheckingHelper::markAllMisspellings(RefPtr<Range>& firstMisspellingRang
 
 void TextCheckingHelper::markAllBadGrammar()
 {
-    ASSERT(WTF_USE_GRAMMAR_CHECKING);
     // Use the "markAll" feature of ofindFirstBadGrammar. Ignore the return value and "out parameters"; all we need to
     // do is mark every instance.
     GrammarDetail ignoredGrammarDetail;
@@ -655,9 +535,6 @@ bool TextCheckingHelper::unifiedTextCheckerEnabled() const
 void checkTextOfParagraph(TextCheckerClient* client, const UChar* text, int length,
                           TextCheckingTypeMask checkingTypes, Vector<TextCheckingResult>& results)
 {
-#if USE(UNIFIED_TEXT_CHECKING)
-    client->checkTextOfParagraph(text, length, checkingTypes, results);
-#else
     Vector<TextCheckingResult> spellingResult;
     if (checkingTypes & TextCheckingTypeSpelling)
         findMisspellings(client, text, 0, length, spellingResult);
@@ -683,7 +560,6 @@ void checkTextOfParagraph(TextCheckerClient* client, const UChar* text, int leng
         else
             results.append(spellingResult);
     }
-#endif
 }
 
 bool unifiedTextCheckerEnabled(const Frame* frame)

@@ -6,7 +6,6 @@
 #define CC_LAYERS_LAYER_H_
 
 #include <string>
-#include <vector>
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
@@ -15,6 +14,8 @@
 #include "cc/animation/layer_animation_value_observer.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
+#include "cc/base/scoped_ptr_vector.h"
+#include "cc/layers/compositing_reasons.h"
 #include "cc/layers/draw_properties.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/layers/layer_position_constraint.h"
@@ -22,7 +23,7 @@
 #include "cc/layers/render_surface.h"
 #include "cc/trees/occlusion_tracker.h"
 #include "skia/ext/refptr.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperations.h"
+#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/rect.h"
@@ -38,6 +39,7 @@ namespace cc {
 
 class Animation;
 struct AnimationEvent;
+class CopyOutputRequest;
 class LayerAnimationDelegate;
 class LayerAnimationEventObserver;
 class LayerImpl;
@@ -56,7 +58,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
                         public LayerAnimationValueObserver {
  public:
   enum LayerIdLabels {
-    PINCH_ZOOM_ROOT_SCROLL_LAYER_ID = -2,
     INVALID_ID = -1,
   };
 
@@ -77,16 +78,12 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   const LayerList& children() const { return children_; }
   Layer* child_at(size_t index) { return children_[index].get(); }
 
-  typedef base::Callback<void(scoped_ptr<SkBitmap>)>
-      RequestCopyAsBitmapCallback;
-
-  // This requests the layer and its subtree be rendered into an SkBitmap and
-  // call the given callback when the SkBitmap has been produced. If the copy
-  // is unable to be produced (the layer is destroyed first), then the callback
-  // is called with a NULL bitmap.
-  void RequestCopyAsBitmap(RequestCopyAsBitmapCallback callback);
-  bool HasRequestCopyCallback() const {
-    return !request_copy_callbacks_.empty();
+  // This requests the layer and its subtree be rendered and given to the
+  // callback. If the copy is unable to be produced (the layer is destroyed
+  // first), then the callback is called with a NULL/empty result.
+  void RequestCopyOfOutput(scoped_ptr<CopyOutputRequest> request);
+  bool HasCopyRequest() const {
+    return !copy_requests_.empty();
   }
 
   void SetAnchorPoint(gfx::PointF anchor_point);
@@ -97,6 +94,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   virtual void SetBackgroundColor(SkColor background_color);
   SkColor background_color() const { return background_color_; }
+  // If contents_opaque(), return an opaque color else return a
+  // non-opaque color.  Tries to return background_color(), if possible.
+  SkColor SafeOpaqueBackgroundColor() const;
 
   // A layer's bounds are in logical, non-page-scaled pixels (however, the
   // root layer's bounds are in physical pixels).
@@ -208,6 +208,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetScrollOffset(gfx::Vector2d scroll_offset);
   gfx::Vector2d scroll_offset() const { return scroll_offset_; }
+  void SetScrollOffsetFromImplSide(gfx::Vector2d scroll_offset);
 
   void SetMaxScrollOffset(gfx::Vector2d max_scroll_offset);
   gfx::Vector2d max_scroll_offset() const { return max_scroll_offset_; }
@@ -267,14 +268,18 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetIsDrawable(bool is_drawable);
 
+  void SetHideLayerAndSubtree(bool hide);
+  bool hide_layer_and_subtree() const { return hide_layer_and_subtree_; }
+
   void SetReplicaLayer(Layer* layer);
   Layer* replica_layer() { return replica_layer_.get(); }
   const Layer* replica_layer() const { return replica_layer_.get(); }
 
-  bool has_mask() const { return !!mask_layer_; }
-  bool has_replica() const { return !!replica_layer_; }
+  bool has_mask() const { return !!mask_layer_.get(); }
+  bool has_replica() const { return !!replica_layer_.get(); }
   bool replica_has_mask() const {
-    return replica_layer_ && (mask_layer_ || replica_layer_->mask_layer_);
+    return replica_layer_.get() &&
+           (mask_layer_.get() || replica_layer_->mask_layer_.get());
   }
 
   // These methods typically need to be overwritten by derived classes.
@@ -288,6 +293,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual void ReduceMemoryUsage() {}
 
   void SetDebugName(const std::string& debug_name);
+  void SetCompositingReasons(CompositingReasons reasons);
 
   virtual void PushPropertiesTo(LayerImpl* layer);
 
@@ -303,25 +309,12 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   gfx::Size content_bounds() const { return draw_properties_.content_bounds; }
 
   virtual void CalculateContentsScale(float ideal_contents_scale,
+                                      float device_scale_factor,
+                                      float page_scale_factor,
                                       bool animating_transform_to_screen,
                                       float* contents_scale_x,
                                       float* contents_scale_y,
                                       gfx::Size* content_bounds);
-
-  // The scale at which contents should be rastered, to match the scale at
-  // which they will drawn to the screen. This scale is a component of the
-  // contentsScale() but does not include page/device scale factors.
-  void SetRasterScale(float scale);
-  float raster_scale() const { return raster_scale_; }
-
-  // When true, the RasterScale() will be set by the compositor. If false, it
-  // will use whatever value is given to it by the embedder.
-  bool automatically_compute_raster_scale() {
-    return automatically_compute_raster_scale_;
-  }
-  void SetAutomaticallyComputeRasterScale(bool automatic);
-
-  void ForceAutomaticRasterScaleToBeRecomputed();
 
   LayerTreeHost* layer_tree_host() const { return layer_tree_host_; }
 
@@ -331,8 +324,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool AddAnimation(scoped_ptr<Animation> animation);
   void PauseAnimation(int animation_id, double time_offset);
   void RemoveAnimation(int animation_id);
-
-  void TransferAnimationsTo(Layer* layer);
 
   void SuspendAnimations(double monotonic_time);
   void ResumeAnimations(double monotonic_time);
@@ -381,6 +372,16 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     return paint_properties_;
   }
 
+  // The scale at which contents should be rastered, to match the scale at
+  // which they will drawn to the screen. This scale is a component of the
+  // contents scale but does not include page/device scale factors.
+  // TODO(danakj): This goes away when TiledLayer goes away.
+  void set_raster_scale(float scale) { raster_scale_ = scale; }
+  float raster_scale() const { return raster_scale_; }
+  bool raster_scale_is_unknown() const { return raster_scale_ == 0.f; }
+
+  virtual bool SupportsLCDText() const;
+
  protected:
   friend class LayerImpl;
   friend class TreeSynchronizer;
@@ -391,6 +392,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetNeedsCommit();
   void SetNeedsFullTreeSync();
   bool IsPropertyChangeAllowed() const;
+
+  void reset_raster_scale_to_unknown() { raster_scale_ = 0.f; }
 
   // This flag is set when layer need repainting/updating.
   bool needs_display_;
@@ -456,6 +459,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   gfx::PointF anchor_point_;
   SkColor background_color_;
   std::string debug_name_;
+  CompositingReasons compositing_reasons_;
   float opacity_;
   skia::RefPtr<SkImageFilter> filter_;
   WebKit::WebFilterOperations filters_;
@@ -464,6 +468,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool is_container_for_fixed_position_layers_;
   LayerPositionConstraint position_constraint_;
   bool is_drawable_;
+  bool hide_layer_and_subtree_;
   bool masks_to_bounds_;
   bool contents_opaque_;
   bool double_sided_;
@@ -480,9 +485,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   // Transient properties.
   float raster_scale_;
-  bool automatically_compute_raster_scale_;
 
-  std::vector<RequestCopyAsBitmapCallback> request_copy_callbacks_;
+  ScopedPtrVector<CopyOutputRequest> copy_requests_;
 
   WebKit::WebLayerScrollClient* layer_scroll_client_;
 

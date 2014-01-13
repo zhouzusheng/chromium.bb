@@ -5,8 +5,8 @@
 #include "chrome/renderer/spellchecker/spellcheck.h"
 
 #include "base/bind.h"
-#include "base/message_loop_proxy.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_messages.h"
@@ -16,9 +16,9 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingCompletion.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingResult.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebTextCheckingCompletion.h"
+#include "third_party/WebKit/public/web/WebTextCheckingResult.h"
+#include "third_party/WebKit/public/web/WebView.h"
 
 using WebKit::WebVector;
 using WebKit::WebTextCheckingResult;
@@ -130,7 +130,7 @@ bool SpellCheck::OnControlMessageReceived(const IPC::Message& message) {
 }
 
 void SpellCheck::OnInit(IPC::PlatformFileForTransit bdict_file,
-                        const std::vector<std::string>& custom_words,
+                        const std::set<std::string>& custom_words,
                         const std::string& language,
                         bool auto_spell_correct) {
   Init(IPC::PlatformFileForTransitToPlatformFile(bdict_file),
@@ -167,7 +167,7 @@ void SpellCheck::OnRequestDocumentMarkers() {
 // TODO(groby): Make sure we always have a spelling engine, even before Init()
 // is called.
 void SpellCheck::Init(base::PlatformFile file,
-                      const std::vector<std::string>& custom_words,
+                      const std::set<std::string>& custom_words,
                       const std::string& language) {
   spellcheck_.Init(file, language);
   custom_dictionary_.Init(custom_words);
@@ -223,7 +223,7 @@ bool SpellCheck::SpellCheckParagraph(
     }
 
     if (!custom_dictionary_.SpellCheckWord(
-            &text[offset], misspelling_start, misspelling_length)) {
+            text, misspelling_start + offset, misspelling_length)) {
       string16 replacement;
       textcheck_results.push_back(WebTextCheckingResult(
           WebKit::WebTextCheckingTypeSpelling,
@@ -368,12 +368,14 @@ void SpellCheck::CreateTextCheckingResults(
         type = WebKit::WebTextCheckingTypeGrammar;
       }
     }
-    if (!custom_dictionary_.SpellCheckWord(text, word_location, word_length)) {
+    if (!custom_dictionary_.SpellCheckWord(
+            line_text, word_location, word_length)) {
       list.push_back(WebTextCheckingResult(
           type,
           word_location + line_offset,
           word_length,
-          spellcheck_results[i].replacement));
+          spellcheck_results[i].replacement,
+          spellcheck_results[i].hash));
     }
   }
   textcheck_results->assign(list);

@@ -44,6 +44,10 @@ class Context;
 template<class T> class Handle;
 }
 
+namespace WebKit {
+class WebCookieJar;
+}
+
 namespace WebCore {
 
     class CachedResourceRequest;
@@ -171,7 +175,6 @@ namespace WebCore {
 
         virtual bool shouldFallBack(const ResourceError&) = 0;
 
-        virtual bool canHandleRequest(const ResourceRequest&) const = 0;
         virtual bool canShowMIMEType(const String& MIMEType) const = 0;
         virtual String generatedMIMETypeForURLScheme(const String& URLScheme) const = 0;
 
@@ -220,7 +223,7 @@ namespace WebCore {
         // This callback is similar, but for plugins.
         virtual void didNotAllowPlugins() { }
 
-        virtual PassRefPtr<FrameNetworkingContext> createNetworkingContext() = 0;
+        virtual WebKit::WebCookieJar* cookieJar() const = 0;
 
         // Returns true if the embedder intercepted the postMessage call
         virtual bool willCheckAndDispatchMessageEvent(SecurityOrigin* /*target*/, MessageEvent*) const { return false; }

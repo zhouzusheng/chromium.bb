@@ -7,9 +7,10 @@
 #include <UIAutomationClient.h>
 #include <UIAutomationCoreApi.h>
 
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/enum_variant.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/windows_version.h"
@@ -491,6 +492,10 @@ STDMETHODIMP BrowserAccessibilityWin::get_accParent(IDispatch** disp_parent) {
     // This happens if we're the root of the tree;
     // return the IAccessible for the window.
     parent = manager_->ToBrowserAccessibilityManagerWin()->parent_iaccessible();
+    // |parent| can only be NULL if the manager was created before the parent
+    // IAccessible was known and it wasn't subsequently set before a client
+    // requested it. Crash hard if this happens so that we get crash reports.
+    CHECK(parent);
   }
 
   parent->AddRef();
@@ -863,8 +868,14 @@ STDMETHODIMP BrowserAccessibilityWin::get_appName(BSTR* app_name) {
   if (!app_name)
     return E_INVALIDARG;
 
-  std::string product_name = "Chrome";  // Hardcoded for Chrome 28.
-  *app_name = SysAllocString(UTF8ToUTF16(product_name).c_str());
+  // GetProduct() returns a string like "Chrome/aa.bb.cc.dd", split out
+  // the part before the "/".
+  std::vector<std::string> product_components;
+  base::SplitString(GetContentClient()->GetProduct(), '/', &product_components);
+  DCHECK_EQ(2U, product_components.size());
+  if (product_components.size() != 2)
+    return E_FAIL;
+  *app_name = SysAllocString(UTF8ToUTF16(product_components[0]).c_str());
   DCHECK(*app_name);
   return *app_name ? S_OK : E_FAIL;
 }
@@ -876,8 +887,14 @@ STDMETHODIMP BrowserAccessibilityWin::get_appVersion(BSTR* app_version) {
   if (!app_version)
     return E_INVALIDARG;
 
-  std::string user_agent = GetContentClient()->GetUserAgent();
-  *app_version = SysAllocString(UTF8ToUTF16(user_agent).c_str());
+  // GetProduct() returns a string like "Chrome/aa.bb.cc.dd", split out
+  // the part after the "/".
+  std::vector<std::string> product_components;
+  base::SplitString(GetContentClient()->GetProduct(), '/', &product_components);
+  DCHECK_EQ(2U, product_components.size());
+  if (product_components.size() != 2)
+    return E_FAIL;
+  *app_version = SysAllocString(UTF8ToUTF16(product_components[1]).c_str());
   DCHECK(*app_version);
   return *app_version ? S_OK : E_FAIL;
 }
@@ -2941,10 +2958,11 @@ void BrowserAccessibilityWin::PostInitialize() {
     previous_text_ = text;
   }
 
-  HWND hwnd = manager_->ToBrowserAccessibilityManagerWin()->parent_hwnd();
-
   // Fire events if the state has changed.
   if (!first_time_ && ia_state_ != old_ia_state_) {
+    BrowserAccessibilityManagerWin* manager =
+        manager_->ToBrowserAccessibilityManagerWin();
+
     // Normally focus events are handled elsewhere, however
     // focus for managed descendants is platform-specific.
     // Fire a focus event if the focused descendant in a multi-select
@@ -2954,18 +2972,17 @@ void BrowserAccessibilityWin::PostInitialize() {
         (ia_state_ & STATE_SYSTEM_SELECTABLE) &&
         (ia_state_ & STATE_SYSTEM_FOCUSED) &&
         !(old_ia_state_ & STATE_SYSTEM_FOCUSED)) {
-      ::NotifyWinEvent(EVENT_OBJECT_FOCUS, hwnd,
-                       OBJID_CLIENT, unique_id_win());
+      manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_FOCUS, unique_id_win());
     }
 
     if ((ia_state_ & STATE_SYSTEM_SELECTED) &&
         !(old_ia_state_ & STATE_SYSTEM_SELECTED)) {
-      ::NotifyWinEvent(EVENT_OBJECT_SELECTIONADD, hwnd,
-                       OBJID_CLIENT, unique_id_win());
+      manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_SELECTIONADD,
+                                       unique_id_win());
     } else if (!(ia_state_ & STATE_SYSTEM_SELECTED) &&
                (old_ia_state_ & STATE_SYSTEM_SELECTED)) {
-      ::NotifyWinEvent(EVENT_OBJECT_SELECTIONREMOVE, hwnd,
-                       OBJID_CLIENT, unique_id_win());
+      manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_SELECTIONREMOVE,
+                                       unique_id_win());
     }
 
     old_ia_state_ = ia_state_;
@@ -2988,9 +3005,8 @@ bool BrowserAccessibilityWin::IsNative() const {
 
 void BrowserAccessibilityWin::SetLocation(const gfx::Rect& new_location) {
   BrowserAccessibility::SetLocation(new_location);
-  HWND hwnd = manager_->ToBrowserAccessibilityManagerWin()->parent_hwnd();
-  ::NotifyWinEvent(EVENT_OBJECT_LOCATIONCHANGE, hwnd,
-                   OBJID_CLIENT, unique_id_win());
+  manager_->ToBrowserAccessibilityManagerWin()->MaybeCallNotifyWinEvent(
+      EVENT_OBJECT_LOCATIONCHANGE, unique_id_win());
 }
 
 BrowserAccessibilityWin* BrowserAccessibilityWin::NewReference() {

@@ -36,7 +36,7 @@
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/inspector/InspectorOverlay.h"
-#include "core/inspector/InspectorValues.h"
+#include "core/platform/JSONValues.h"
 #include "core/platform/Timer.h"
 #include "core/rendering/RenderLayer.h"
 
@@ -138,35 +138,36 @@ public:
     virtual void discardSearchResults(ErrorString*, const String& searchId);
     virtual void resolveNode(ErrorString*, int nodeId, const String* objectGroup, RefPtr<TypeBuilder::Runtime::RemoteObject>& result);
     virtual void getAttributes(ErrorString*, int nodeId, RefPtr<TypeBuilder::Array<String> >& result);
-    virtual void setInspectModeEnabled(ErrorString*, bool enabled, const RefPtr<InspectorObject>* highlightConfig);
+    virtual void setInspectModeEnabled(ErrorString*, bool enabled, const bool* inspectShadowDOM, const RefPtr<JSONObject>* highlightConfig);
     virtual void requestNode(ErrorString*, const String& objectId, int* nodeId);
     virtual void pushNodeByPathToFrontend(ErrorString*, const String& path, int* nodeId);
     virtual void pushNodeByBackendIdToFrontend(ErrorString*, BackendNodeId, int* nodeId);
     virtual void releaseBackendNodeIds(ErrorString*, const String& nodeGroup);
     virtual void hideHighlight(ErrorString*);
-    virtual void highlightRect(ErrorString*, int x, int y, int width, int height, const RefPtr<InspectorObject>* color, const RefPtr<InspectorObject>* outlineColor);
-    virtual void highlightQuad(ErrorString*, const RefPtr<InspectorArray>& quad, const RefPtr<InspectorObject>* color, const RefPtr<InspectorObject>* outlineColor);
-    virtual void highlightNode(ErrorString*, const RefPtr<InspectorObject>& highlightConfig, const int* nodeId, const String* objectId);
-    virtual void highlightFrame(ErrorString*, const String& frameId, const RefPtr<InspectorObject>* color, const RefPtr<InspectorObject>* outlineColor);
+    virtual void highlightRect(ErrorString*, int x, int y, int width, int height, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor);
+    virtual void highlightQuad(ErrorString*, const RefPtr<JSONArray>& quad, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor);
+    virtual void highlightNode(ErrorString*, const RefPtr<JSONObject>& highlightConfig, const int* nodeId, const String* objectId);
+    virtual void highlightFrame(ErrorString*, const String& frameId, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor);
 
     virtual void moveTo(ErrorString*, int nodeId, int targetNodeId, const int* anchorNodeId, int* newNodeId);
     virtual void undo(ErrorString*);
     virtual void redo(ErrorString*);
     virtual void markUndoableState(ErrorString*);
     virtual void focus(ErrorString*, int nodeId);
-    virtual void setFileInputFiles(ErrorString*, int nodeId, const RefPtr<InspectorArray>& files);
+    virtual void setFileInputFiles(ErrorString*, int nodeId, const RefPtr<JSONArray>& files);
 
-    void getEventListeners(Node*, Vector<EventListenerInfo>& listenersArray, bool includeAncestors);
+    static void getEventListeners(Node*, Vector<EventListenerInfo>& listenersArray, bool includeAncestors);
 
     // Methods called from the InspectorInstrumentation.
     void setDocument(Document*);
     void releaseDanglingNodes();
 
-    void mainFrameDOMContentLoaded();
-    void loadEventFired(Document*);
+    void domContentLoadedEventFired(Frame*);
+    void loadEventFired(Frame*);
+    void didCommitLoad(Frame*, DocumentLoader*);
 
     void didInsertDOMNode(Node*);
-    void didRemoveDOMNode(Node*);
+    void willRemoveDOMNode(Node*);
     void willModifyDOMAttr(Element*, const AtomicString& oldValue, const AtomicString& newValue);
     void didModifyDOMAttr(Element*, const AtomicString& name, const AtomicString& value);
     void didRemoveDOMAttr(Element*, const AtomicString& name);
@@ -209,10 +210,12 @@ public:
     InspectorPageAgent* pageAgent() { return m_pageAgent; }
 
 private:
+    enum SearchMode { NotSearching, SearchingForNormal, SearchingForShadow };
+
     InspectorDOMAgent(InstrumentingAgents*, InspectorPageAgent*, InspectorCompositeState*, InjectedScriptManager*, InspectorOverlay*, InspectorClient*);
 
-    void setSearchingForNode(ErrorString*, bool enabled, InspectorObject* highlightConfig);
-    PassOwnPtr<HighlightConfig> highlightConfigFromInspectorObject(ErrorString*, InspectorObject* highlightInspectorObject);
+    void setSearchingForNode(ErrorString*, SearchMode, JSONObject* highlightConfig);
+    PassOwnPtr<HighlightConfig> highlightConfigFromInspectorObject(ErrorString*, JSONObject* highlightInspectorObject);
 
     // Node-related methods.
     typedef HashMap<RefPtr<Node>, int> NodeToIdMap;
@@ -229,7 +232,7 @@ private:
 
     bool hasBreakpoint(Node*, int type);
     void updateSubtreeBreakpoints(Node* root, uint32_t rootMask, bool value);
-    void descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, PassRefPtr<InspectorObject> description);
+    void descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, PassRefPtr<JSONObject> description);
 
     PassRefPtr<TypeBuilder::DOM::Node> buildObjectForNode(Node*, int depth, NodeToIdMap*);
     PassRefPtr<TypeBuilder::Array<String> > buildArrayForElementAttributes(Element*);
@@ -238,9 +241,10 @@ private:
 
     Node* nodeForPath(const String& path);
 
-    void discardBindings();
+    void discardBackendBindings();
+    void discardFrontendBindings();
 
-    void innerHighlightQuad(PassOwnPtr<FloatQuad>, const RefPtr<InspectorObject>* color, const RefPtr<InspectorObject>* outlineColor);
+    void innerHighlightQuad(PassOwnPtr<FloatQuad>, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor);
 
     InspectorPageAgent* m_pageAgent;
     InjectedScriptManager* m_injectedScriptManager;
@@ -263,7 +267,7 @@ private:
     typedef HashMap<String, Vector<RefPtr<Node> > > SearchResults;
     SearchResults m_searchResults;
     OwnPtr<RevalidateStyleAttributeTask> m_revalidateStyleAttrTask;
-    bool m_searchingForNode;
+    SearchMode m_searchingForNode;
     OwnPtr<HighlightConfig> m_inspectModeHighlightConfig;
     OwnPtr<InspectorHistory> m_history;
     OwnPtr<DOMEditor> m_domEditor;

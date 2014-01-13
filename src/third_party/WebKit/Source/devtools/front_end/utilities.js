@@ -36,11 +36,11 @@ Object.isEmpty = function(obj)
 
 Object.values = function(obj)
 {
-    var keys = Object.keys(obj);
-    var result = [];
+    var result = Object.keys(obj);
+    var length = result.length;
 
-    for (var i = 0; i < keys.length; ++i)
-        result.push(obj[keys[i]]);
+    for (var i = 0; i < length; ++i)
+        result[i] = obj[result[i]];
     return result;
 }
 
@@ -190,6 +190,18 @@ Number.constrain = function(num, min, max)
     else if (num > max)
         num = max;
     return num;
+}
+
+/**
+ * @param {string} value
+ * @return {string}
+ */
+Number.toFixedIfFloating = function(value)
+{
+    if (!value || isNaN(value))
+        return value;
+    var number = Number(value);
+    return number % 1 ? number.toFixed(3) : String(number);
 }
 
 Date.prototype.toISO8601Compact = function()
@@ -448,19 +460,26 @@ Object.defineProperty(Array.prototype, "peekLast",
  * @param {*} anObject
  * @param {Array.<*>} aList
  * @param {function(*, *)} aFunction
+ * @param {boolean=} insertionIndexAfter
  */
-function insertionIndexForObjectInListSortedByFunction(anObject, aList, aFunction)
+function insertionIndexForObjectInListSortedByFunction(anObject, aList, aFunction, insertionIndexAfter)
 {
     var index = binarySearch(anObject, aList, aFunction);
-    if (index < 0)
+    if (index < 0) {
         // See binarySearch implementation.
         return -index - 1;
-    else {
+    }
+
+    if (!insertionIndexAfter) {
         // Return the first occurance of an item in the list.
         while (index > 0 && aFunction(anObject, aList[index - 1]) === 0)
             index--;
         return index;
     }
+    // Return the last occurance of an item in the list.
+    while (index < aList.length && aFunction(anObject, aList[index]) === 0)
+        index++;
+    return index;
 }
 
 /**
@@ -746,13 +765,16 @@ Set.prototype = {
     
     /**
      * @param {!Object} item
+     * @return {boolean}
      */
     remove: function(item)
     {
         if (this._set[item.__identifier]) {
             --this._size;
             delete this._set[item.__identifier];
+            return true;
         }
+        return false;
     },
 
     /**
@@ -769,11 +791,11 @@ Set.prototype = {
 
     /**
      * @param {!Object} item
-     * @return {?Object}
+     * @return {boolean}
      */
     hasItem: function(item)
     {
-        return this._set[item.__identifier];
+        return !!this._set[item.__identifier];
     },
 
     /**
@@ -838,6 +860,9 @@ Map.prototype = {
         return this._list(0);
     },
 
+    /**
+     * @return {Array.<*>}
+     */
     values: function()
     {
         return this._list(1);
@@ -845,6 +870,7 @@ Map.prototype = {
 
     /**
      * @param {number} index
+     * @return {Array.<Array>}
      */
     _list: function(index)
     {
@@ -866,6 +892,7 @@ Map.prototype = {
 
     /**
      * @param {Object} key
+     * @return {boolean}
      */
     contains: function(key)
     {
@@ -873,6 +900,9 @@ Map.prototype = {
         return !!entry;
     },
 
+    /**
+     * @return {number}
+     */
     size: function()
     {
         return this._size;
@@ -884,6 +914,122 @@ Map.prototype = {
         this._size = 0;
     }
 }
+
+/**
+ * @constructor
+ */
+var StringMap = function()
+{
+    this._map = {};
+    this._size = 0;
+}
+
+StringMap.prototype = {
+    /**
+     * @param {string} key
+     * @param {*=} value
+     */
+    put: function(key, value)
+    {
+        if (key === "__proto__") {
+            if (!this._hasProtoKey) {
+                ++this._size;
+                this._hasProtoKey = true;
+            }
+            this._protoValue = value;
+            return;
+        }
+        if (!Object.prototype.hasOwnProperty.call(this._map, key))
+            ++this._size;
+        this._map[key] = value;
+    },
+
+    /**
+     * @param {string} key
+     */
+    remove: function(key)
+    {
+        var result;
+        if (key === "__proto__") {
+            if (!this._hasProtoKey)
+                return undefined;
+            --this._size;
+            delete this._hasProtoKey;
+            result = this._protoValue;
+            delete this._protoValue;
+            return result;
+        }
+        if (!Object.prototype.hasOwnProperty.call(this._map, key))
+            return undefined;
+        --this._size;
+        result = this._map[key];
+        delete this._map[key];
+        return result;
+    },
+
+    /**
+     * @return {Array.<string>}
+     */
+    keys: function()
+    {
+        var result = Object.keys(this._map);
+        if (this._hasProtoKey)
+            result.push("__proto__");
+        return result;
+    },
+
+    /**
+     * @return {Array.<*>}
+     */
+    values: function()
+    {
+        var result = Object.values(this._map);
+        if (this._hasProtoKey)
+            result.push(this._protoValue);
+        return result;
+    },
+
+    /**
+     * @param {string} key
+     */
+    get: function(key)
+    {
+        if (key === "__proto__")
+            return this._protoValue;
+        if (!Object.prototype.hasOwnProperty.call(this._map, key))
+            return undefined;
+        return this._map[key];
+    },
+
+    /**
+     * @param {string} key
+     * @return {boolean}
+     */
+    contains: function(key)
+    {
+        var result;
+        if (key === "__proto__")
+            return this._hasProtoKey;
+        return Object.prototype.hasOwnProperty.call(this._map, key);
+    },
+
+    /**
+     * @return {number}
+     */
+    size: function()
+    {
+        return this._size;
+    },
+
+    clear: function()
+    {
+        this._map = {};
+        this._size = 0;
+        delete this._hasProtoKey;
+        delete this._protoValue;
+    }
+}
+
 /**
  * @param {string} url
  * @param {boolean=} async
@@ -1001,7 +1147,51 @@ function importScript(scriptName)
     if (!xhr.responseText)
         throw "empty response arrived for script '" + scriptName + "'";
     var sourceURL = WebInspector.ParsedURL.completeURL(window.location.href, scriptName); 
-    window.eval(xhr.responseText + "\n//@ sourceURL=" + sourceURL);
+    window.eval(xhr.responseText + "\n//# sourceURL=" + sourceURL);
 }
 
 var loadScript = importScript;
+
+/**
+ * @constructor
+ */
+function CallbackBarrier()
+{
+    this._pendingIncomingCallbacksCount = 0;
+}
+
+CallbackBarrier.prototype = {
+    /**
+     * @param {*} userCallback
+     * @return {function()}
+     */
+    createCallback: function(userCallback)
+    {
+        console.assert(!this._outgoingCallback, "CallbackBarrier.createCallback() is called after CallbackBarrier.callWhenDone()");
+        ++this._pendingIncomingCallbacksCount;
+        return this._incomingCallback.bind(this, userCallback);
+    },
+
+    /**
+     * @param {function()} callback
+     */
+    callWhenDone: function(callback)
+    {
+        console.assert(!this._outgoingCallback, "CallbackBarrier.callWhenDone() is called multiple times");
+        this._outgoingCallback = callback;
+        if (!this._pendingIncomingCallbacksCount)
+            this._outgoingCallback();
+    },
+
+    _incomingCallback: function(userCallback)
+    {
+        console.assert(this._pendingIncomingCallbacksCount > 0);
+        if (userCallback) {
+            var args = Array.prototype.slice.call(arguments, 1);
+            userCallback.apply(null, args);
+        }
+        if (!--this._pendingIncomingCallbacksCount && this._outgoingCallback)
+            this._outgoingCallback();
+    }
+}
+

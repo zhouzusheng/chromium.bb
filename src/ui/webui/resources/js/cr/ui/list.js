@@ -515,13 +515,15 @@ cr.define('cr.ui', function() {
       // When the blur event happens we do not know who is getting focus so we
       // delay this a bit until we know if the new focus node is outside the
       // list.
+      // We need 51 msec delay because InlineEditableList sets focus after
+      // 50 msec.
       var list = this;
       var doc = e.target.ownerDocument;
       window.setTimeout(function() {
         var activeElement = doc.activeElement;
         if (!list.contains(activeElement))
           list.hasElementFocus = false;
-      });
+      }, 51);
     },
 
     /**
@@ -1258,6 +1260,38 @@ cr.define('cr.ui', function() {
         this.insertBefore(item, this.afterFiller_);
       this.redraw();
       return item;
+    },
+
+    /**
+     * Starts drag selection by reacting 'dragstart' event.
+     * @param {Event} event Event of dragstart.
+     */
+    startDragSelection: function(event) {
+      event.preventDefault();
+      var border = document.createElement('div');
+      border.className = 'drag-selection-border';
+      var rect = this.getBoundingClientRect();
+      var startX = event.clientX - rect.left + this.scrollLeft;
+      var startY = event.clientY - rect.top + this.scrollTop;
+      border.style.left = startX + 'px';
+      border.style.top = startY + 'px';
+      var onMouseMove = function(event) {
+        var inRect = this.getBoundingClientRect();
+        var x = event.clientX - inRect.left + this.scrollLeft;
+        var y = event.clientY - inRect.top + this.scrollTop;
+        border.style.left = Math.min(startX, x) + 'px';
+        border.style.top = Math.min(startY, y) + 'px';
+        border.style.width = Math.abs(startX - x) + 'px';
+        border.style.height = Math.abs(startY - y) + 'px';
+      }.bind(this);
+      var onMouseUp = function() {
+        this.removeChild(border);
+        document.removeEventListener('mousemove', onMouseMove, true);
+        document.removeEventListener('mouseup', onMouseUp, true);
+      }.bind(this);
+      document.addEventListener('mousemove', onMouseMove, true);
+      document.addEventListener('mouseup', onMouseUp, true);
+      this.appendChild(border);
     },
   };
 

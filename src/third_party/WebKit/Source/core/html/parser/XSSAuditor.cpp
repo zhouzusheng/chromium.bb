@@ -28,38 +28,24 @@
 #include "core/html/parser/XSSAuditor.h"
 
 #include "HTMLNames.h"
+#include "SVGNames.h"
 #include "XLinkNames.h"
 #include "core/dom/Document.h"
-#include "core/html/FormDataList.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/html/parser/HTMLDocumentParser.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/html/parser/HTMLTokenizer.h"
 #include "core/html/parser/XSSAuditorDelegate.h"
-#include "core/inspector/InspectorInstrumentation.h"
-#include "core/inspector/InspectorValues.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/loader/FrameLoaderClient.h"
-#include "core/loader/PingLoader.h"
 #include "core/loader/TextResourceDecoder.h"
-#include "core/page/Console.h"
 #include "core/page/ContentSecurityPolicy.h"
-#include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/page/Settings.h"
-#include "core/platform/KURL.h"
+#include "core/platform/JSONValues.h"
 #include "core/platform/network/FormData.h"
 #include "core/platform/text/DecodeEscapeSequences.h"
-#include "core/platform/text/TextEncoding.h"
-
-#if ENABLE(SVG)
-#include "SVGNames.h"
-#endif
-
-#include <wtf/Functional.h>
-#include <wtf/MainThread.h>
-#include <wtf/text/CString.h>
+#include "weborigin/KURL.h"
+#include "wtf/MainThread.h"
+#include "wtf/text/TextEncoding.h"
 
 namespace WebCore {
 
@@ -164,14 +150,14 @@ static inline String decode16BitUnicodeEscapeSequences(const String& string)
     return decodeEscapeSequences<Unicode16BitEscapeSequence>(string, UTF8Encoding());
 }
 
-static inline String decodeStandardURLEscapeSequences(const String& string, const TextEncoding& encoding)
+static inline String decodeStandardURLEscapeSequences(const String& string, const WTF::TextEncoding& encoding)
 {
-    // We use decodeEscapeSequences() instead of decodeURLEscapeSequences() (declared in core/platform/KURL.h) to
+    // We use decodeEscapeSequences() instead of decodeURLEscapeSequences() (declared in weborigin/KURL.h) to
     // avoid platform-specific URL decoding differences (e.g. KURLGoogle).
     return decodeEscapeSequences<URLEscapeSequence>(string, encoding);
 }
 
-static String fullyDecodeString(const String& string, const TextEncoding& encoding)
+static String fullyDecodeString(const String& string, const WTF::TextEncoding& encoding)
 {
     size_t oldWorkingStringLength;
     String workingString = string;
@@ -196,11 +182,7 @@ static ContentSecurityPolicy::ReflectedXSSDisposition combineXSSProtectionHeader
 
 static bool isSemicolonSeparatedAttribute(const HTMLToken::Attribute& attribute)
 {
-#if ENABLE(SVG)
     return threadSafeMatch(attribute.name, SVGNames::valuesAttr);
-#else
-    return false;
-#endif
 }
 
 static bool semicolonSeparatedValueContainsJavaScriptURL(const String& value)

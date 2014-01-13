@@ -65,12 +65,14 @@ ProgressInnerElement::ProgressInnerElement(Document* document)
 
 PassRefPtr<ProgressInnerElement> ProgressInnerElement::create(Document* document)
 {
-    return adoptRef(new ProgressInnerElement(document));
+    RefPtr<ProgressInnerElement> element = adoptRef(new ProgressInnerElement(document));
+    element->setPseudo(AtomicString("-webkit-progress-inner-element", AtomicString::ConstructFromLiteral));
+    return element.release();
 }
 
-RenderObject* ProgressInnerElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* ProgressInnerElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderProgress(this);
+    return new (document()->renderArena()) RenderProgress(this);
 }
 
 bool ProgressInnerElement::rendererIsNeeded(const NodeRenderingContext& context)

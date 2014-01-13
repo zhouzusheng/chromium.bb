@@ -16,6 +16,7 @@
 #include "base/process.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
+#include "content/browser/web_contents/frame_tree_node.h"
 #include "content/browser/web_contents/navigation_controller_impl.h"
 #include "content/browser/web_contents/render_view_host_manager.h"
 #include "content/common/content_export.h"
@@ -25,9 +26,10 @@
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/three_d_api_types.h"
 #include "net/base/load_states.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
+#include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/vector2d.h"
 #include "webkit/glue/resource_type.h"
 
 struct BrowserPluginHostMsg_ResizeGuest_Params;
@@ -144,7 +146,7 @@ class CONTENT_EXPORT WebContentsImpl
   // Unsets the currently showing interstitial.
   void DetachInterstitialPage();
 
-#if defined(ENABLE_JAVA_BRIDGE)
+#if defined(OS_ANDROID)
   JavaBridgeDispatcherHostManager* java_bridge_dispatcher_host_manager() const {
     return java_bridge_dispatcher_host_manager_.get();
   }
@@ -184,6 +186,10 @@ class CONTENT_EXPORT WebContentsImpl
   void DragSourceMovedTo(int client_x, int client_y,
                          int screen_x, int screen_y);
 
+  FrameTreeNode* GetFrameTreeRootForTesting() {
+    return frame_tree_root_.get();
+  }
+
   // WebContents ------------------------------------------------------
   virtual WebContentsDelegate* GetDelegate() OVERRIDE;
   virtual void SetDelegate(WebContentsDelegate* delegate) OVERRIDE;
@@ -222,6 +228,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual const string16& GetLoadStateHost() const OVERRIDE;
   virtual uint64 GetUploadSize() const OVERRIDE;
   virtual uint64 GetUploadPosition() const OVERRIDE;
+  virtual std::set<GURL> GetSitesInTab() const OVERRIDE;
   virtual const std::string& GetEncoding() const OVERRIDE;
   virtual bool DisplayedInsecureContent() const OVERRIDE;
   virtual void IncrementCapturerCount() OVERRIDE;
@@ -257,10 +264,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void SetOverrideEncoding(const std::string& encoding) OVERRIDE;
   virtual void ResetOverrideEncoding() OVERRIDE;
   virtual RendererPreferences* GetMutableRendererPrefs() OVERRIDE;
-  virtual void SetNewTabStartTime(const base::TimeTicks& time) OVERRIDE;
-  virtual base::TimeTicks GetNewTabStartTime() const OVERRIDE;
   virtual void Close() OVERRIDE;
-  virtual void OnCloseStarted() OVERRIDE;
   virtual void SystemDragEnded() OVERRIDE;
   virtual void UserGestureDone() OVERRIDE;
   virtual void SetClosedByUserGesture(bool value) OVERRIDE;
@@ -270,19 +274,19 @@ class CONTENT_EXPORT WebContentsImpl
                              bool* enable_decrement) const OVERRIDE;
   virtual void ViewSource() OVERRIDE;
   virtual void ViewFrameSource(const GURL& url,
-                               const std::string& content_state) OVERRIDE;
+                               const PageState& page_state) OVERRIDE;
   virtual int GetMinimumZoomPercent() const OVERRIDE;
   virtual int GetMaximumZoomPercent() const OVERRIDE;
   virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual int GetContentRestrictions() const OVERRIDE;
   virtual bool GotResponseToLockMouseRequest(bool allowed) OVERRIDE;
   virtual bool HasOpener() const OVERRIDE;
-  virtual void DidChooseColorInColorChooser(int color_chooser_id,
-                                            SkColor color) OVERRIDE;
-  virtual void DidEndColorChooser(int color_chooser_id) OVERRIDE;
+  virtual void DidChooseColorInColorChooser(SkColor color) OVERRIDE;
+  virtual void DidEndColorChooser() OVERRIDE;
   virtual int DownloadImage(const GURL& url,
                             bool is_favicon,
-                            int image_size,
+                            uint32_t preferred_image_size,
+                            uint32_t max_image_size,
                             const ImageDownloadCallback& callback) OVERRIDE;
 
   // Implementation of PageNavigator.
@@ -299,6 +303,8 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool OnMessageReceived(RenderViewHost* render_view_host,
                                  const IPC::Message& message) OVERRIDE;
   virtual const GURL& GetURL() const OVERRIDE;
+  virtual const GURL& GetActiveURL() const OVERRIDE;
+  virtual const GURL& GetLastCommittedURL() const OVERRIDE;
   virtual WebContents* GetAsWebContents() OVERRIDE;
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
   virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE;
@@ -327,7 +333,7 @@ class CONTENT_EXPORT WebContentsImpl
       const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
   virtual void UpdateState(RenderViewHost* render_view_host,
                            int32 page_id,
-                           const std::string& state) OVERRIDE;
+                           const PageState& page_state) OVERRIDE;
   virtual void UpdateTitle(RenderViewHost* render_view_host,
                            int32 page_id,
                            const string16& title,
@@ -343,6 +349,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void DidCancelLoading() OVERRIDE;
   virtual void DidChangeLoadProgress(double progress) OVERRIDE;
   virtual void DidDisownOpener(RenderViewHost* rvh) OVERRIDE;
+  virtual void DidAccessInitialDocument() OVERRIDE;
   virtual void DocumentAvailableInMainFrame(
       RenderViewHost* render_view_host) OVERRIDE;
   virtual void DocumentOnLoadCompletedInMainFrame(
@@ -413,6 +420,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void LostMouseLock() OVERRIDE;
   virtual void CreateNewWindow(
       int route_id,
+      int main_frame_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
       SessionStorageNamespace* session_storage_namespace) OVERRIDE;
   virtual void CreateNewWidget(int route_id,
@@ -425,9 +433,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void ShowCreatedWidget(int route_id,
                                  const gfx::Rect& initial_pos) OVERRIDE;
   virtual void ShowCreatedFullscreenWidget(int route_id) OVERRIDE;
-  virtual void ShowContextMenu(
-      const ContextMenuParams& params,
-      ContextMenuSourceType type) OVERRIDE;
+  virtual void ShowContextMenu(const ContextMenuParams& params) OVERRIDE;
   virtual void RequestMediaAccessPermission(
       const MediaStreamRequest& request,
       const MediaResponseCallback& callback) OVERRIDE;
@@ -443,6 +449,7 @@ class CONTENT_EXPORT WebContentsImpl
       const NativeWebKeyboardEvent& event) OVERRIDE;
   virtual bool PreHandleWheelEvent(
       const WebKit::WebMouseWheelEvent& event) OVERRIDE;
+  virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) OVERRIDE;
 #if defined(OS_WIN) && defined(USE_AURA)
   virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() OVERRIDE;
 #endif
@@ -488,6 +495,7 @@ class CONTENT_EXPORT WebContentsImpl
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest,
                            CrossSiteCantPreemptAfterUnload);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, PendingContents);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, FrameTreeShape);
   FRIEND_TEST_ALL_PREFIXES(FormStructureBrowserTest, HTMLFiles);
   FRIEND_TEST_ALL_PREFIXES(NavigationControllerTest, HistoryNavigate);
   FRIEND_TEST_ALL_PREFIXES(RenderViewHostManagerTest, PageDoesBackAndReload);
@@ -497,6 +505,8 @@ class CONTENT_EXPORT WebContentsImpl
 
   // TODO(brettw) TestWebContents shouldn't exist!
   friend class TestWebContents;
+
+  class DestructionObserver;
 
   // See WebContents::Create for a description of these parameters.
   WebContentsImpl(BrowserContext* browser_context,
@@ -510,7 +520,15 @@ class CONTENT_EXPORT WebContentsImpl
   void RemoveObserver(WebContentsObserver* observer);
 
   // Clears this tab's opener if it has been closed.
-  void OnWebContentsDestroyed(WebContents* web_contents);
+  void OnWebContentsDestroyed(WebContentsImpl* web_contents);
+
+  // Creates and adds to the map a destruction observer watching |web_contents|.
+  // No-op if such an observer already exists.
+  void AddDestructionObserver(WebContentsImpl* web_contents);
+
+  // Deletes and removes from the map a destruction observer
+  // watching |web_contents|. No-op if there is no such observer.
+  void RemoveDestructionObserver(WebContentsImpl* web_contents);
 
   // Callback function when showing JS dialogs.
   void OnDialogClosed(RenderViewHost* rvh,
@@ -558,6 +576,7 @@ class CONTENT_EXPORT WebContentsImpl
                    const gfx::Rect& selection_rect,
                    int active_match_ordinal,
                    bool final_update);
+  void OnDidProgrammaticallyScroll(const gfx::Vector2d& scroll_point);
 #if defined(OS_ANDROID)
   void OnFindMatchRectsReply(int version,
                              const std::vector<gfx::RectF>& rects,
@@ -583,12 +602,16 @@ class CONTENT_EXPORT WebContentsImpl
                                       const base::FilePath& plugin_path);
   void OnBrowserPluginMessage(const IPC::Message& message);
   void OnDidDownloadImage(int id,
+                          int http_status_code,
                           const GURL& image_url,
                           int requested_size,
                           const std::vector<SkBitmap>& bitmaps);
   void OnUpdateFaviconURL(int32 page_id,
                           const std::vector<FaviconURL>& candidates);
-  void OnFrameDetached(int64 frame_id);
+  void OnFrameAttached(int64 parent_frame_id,
+                       int64 frame_id,
+                       const std::string& frame_name);
+  void OnFrameDetached(int64 parent_frame_id, int64 frame_id);
 
   // Changes the IsLoading state and notifies delegate as needed
   // |details| is used to provide details on the load that just finished
@@ -616,6 +639,10 @@ class CONTENT_EXPORT WebContentsImpl
       RenderViewHost* render_view_host,
       const LoadCommittedDetails& details,
       const ViewHostMsg_FrameNavigate_Params& params);
+
+  // Specifies whether the passed in URL should be assigned as the site of the
+  // current SiteInstance, if it does not yet have a site.
+  bool ShouldAssignSiteForURL(const GURL& url);
 
   // If our controller was restored, update the max page ID associated with the
   // given RenderViewHost to be larger than the number of restored entries.
@@ -687,6 +714,7 @@ class CONTENT_EXPORT WebContentsImpl
   void NotifySwapped(RenderViewHost* old_render_view_host);
   void NotifyConnected();
   void NotifyDisconnected();
+  void NotifyNavigationEntryCommitted(const LoadCommittedDetails& load_details);
 
   void SetEncoding(const std::string& encoding);
 
@@ -696,6 +724,8 @@ class CONTENT_EXPORT WebContentsImpl
                bool is_main_frame);
 
   RenderViewHostImpl* GetRenderViewHostImpl();
+
+  FrameTreeNode* FindFrameTreeNodeByID(int64 frame_id);
 
   // Removes browser plugin embedder if there is one.
   void RemoveBrowserPluginEmbedder();
@@ -726,6 +756,9 @@ class CONTENT_EXPORT WebContentsImpl
   typedef std::map<int, RenderWidgetHostView*> PendingWidgetViews;
   PendingWidgetViews pending_widget_views_;
 
+  typedef std::map<WebContentsImpl*, DestructionObserver*> DestructionObservers;
+  DestructionObservers destruction_observers_;
+
   // A list of observers notified when page state changes. Weak references.
   // This MUST be listed above render_manager_ since at destruction time the
   // latter might cause RenderViewHost's destructor to call us and we might use
@@ -745,7 +778,7 @@ class CONTENT_EXPORT WebContentsImpl
   // Manages creation and swapping of render views.
   RenderViewHostManager render_manager_;
 
-#if defined(ENABLE_JAVA_BRIDGE)
+#if defined(OS_ANDROID)
   // Manages injecting Java objects into all RenderViewHosts associated with
   // this WebContentsImpl.
   scoped_ptr<JavaBridgeDispatcherHostManager>
@@ -800,6 +833,9 @@ class CONTENT_EXPORT WebContentsImpl
   // True if this is a secure page which displayed insecure content.
   bool displayed_insecure_content_;
 
+  // The frame tree structure of the current page.
+  scoped_ptr<FrameTreeNode> frame_tree_root_;
+
   // Data for misc internal state ----------------------------------------------
 
   // When > 0, the WebContents is currently being captured (e.g., for
@@ -831,15 +867,6 @@ class CONTENT_EXPORT WebContentsImpl
   // Settings that get passed to the renderer process.
   RendererPreferences renderer_preferences_;
 
-  // The time that we started to create the new tab page.
-  base::TimeTicks new_tab_start_time_;
-
-  // The time that we started to close this WebContents.
-  base::TimeTicks close_start_time_;
-
-  // The time when onbeforeunload ended.
-  base::TimeTicks before_unload_end_time_;
-
   // The time that this tab was last selected.
   base::TimeTicks last_selected_time_;
 
@@ -868,7 +895,16 @@ class CONTENT_EXPORT WebContentsImpl
 #endif
 
   // Color chooser that was opened by this tab.
-  ColorChooser* color_chooser_;
+  scoped_ptr<ColorChooser> color_chooser_;
+
+  // A unique identifier for the current color chooser.  Identifiers are unique
+  // across a renderer process.  This avoids race conditions in synchronizing
+  // the browser and renderer processes.  For example, if a renderer closes one
+  // chooser and opens another, and simultaneously the user picks a color in the
+  // first chooser, the IDs can be used to drop the "chose a color" message
+  // rather than erroneously tell the renderer that the user picked a color in
+  // the second chooser.
+  int color_chooser_identifier_;
 
   // Manages the embedder state for browser plugins, if this WebContents is an
   // embedder; NULL otherwise.

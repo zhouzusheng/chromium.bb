@@ -29,11 +29,11 @@
  */
 
 #include "config.h"
-#include <public/WebURLError.h>
+#include "public/platform/WebURLError.h"
 
-#include "core/platform/KURL.h"
 #include "core/platform/network/ResourceError.h"
-#include <wtf/text/CString.h>
+#include "weborigin/KURL.h"
+#include "wtf/text/CString.h"
 
 using namespace WebCore;
 

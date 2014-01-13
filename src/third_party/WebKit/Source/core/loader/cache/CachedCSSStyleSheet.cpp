@@ -27,7 +27,6 @@
 #include "config.h"
 #include "core/loader/cache/CachedCSSStyleSheet.h"
 
-#include "core/css/CSSStyleSheet.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/loader/TextResourceDecoder.h"
@@ -45,9 +44,11 @@ CachedCSSStyleSheet::CachedCSSStyleSheet(const ResourceRequest& resourceRequest,
     : CachedResource(resourceRequest, CSSStyleSheet)
     , m_decoder(TextResourceDecoder::create("text/css", charset))
 {
+    DEFINE_STATIC_LOCAL(const AtomicString, acceptCSS, ("text/css,*/*;q=0.1", AtomicString::ConstructFromLiteral));
+
     // Prefer text/css but accept any type (dell.com serves a stylesheet
     // as text/html; see <http://bugs.webkit.org/show_bug.cgi?id=11451>).
-    setAccept("text/css,*/*;q=0.1");
+    setAccept(acceptCSS);
 }
 
 CachedCSSStyleSheet::~CachedCSSStyleSheet()
@@ -143,7 +144,7 @@ void CachedCSSStyleSheet::destroyDecodedData()
 
     setDecodedSize(0);
 
-    if (!MemoryCache::shouldMakeResourcePurgeableOnEviction() && isSafeToMakePurgeable())
+    if (isSafeToMakePurgeable())
         makePurgeable(true);
 }
 

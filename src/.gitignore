@@ -13,6 +13,7 @@
 *.sdf
 *.opensdf
 ipch/
+_Resharper.*/
 
 # Generated python
 *.pyc
@@ -24,5 +25,7 @@ ipch/
 
 # Special cases
 /build/util/LASTCHANGE
+/build/util/LASTCHANGE.blink
 /third_party/WebKit/Source/bindings/idl_files_list.tmp
+/third_party/ffmpeg/libavcodec/flac.c_preprocessed.c
 

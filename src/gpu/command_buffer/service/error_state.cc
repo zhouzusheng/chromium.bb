@@ -6,7 +6,7 @@
 
 #include <string>
 
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/logger.h"
 #include "ui/gl/gl_bindings.h"
@@ -113,7 +113,7 @@ void ErrorStateImpl::SetGLError(
     last_error_ = msg;
     logger_->LogMessage(
         filename, line,
-        logger_->GetLogPrefix() + ": " + std::string("GL ERROR :") +
+        std::string("GL ERROR :") +
         GLES2Util::GetStringEnum(error) + " : " +
         function_name + ": " + msg);
   }
@@ -170,7 +170,7 @@ void ErrorStateImpl::ClearRealGLErrors(
       // GL_OUT_OF_MEMORY can legally happen on lost device.
       logger_->LogMessage(
           filename, line,
-          logger_->GetLogPrefix() + ": " + std::string("GL ERROR :") +
+          std::string("GL ERROR :") +
           GLES2Util::GetStringEnum(error) + " : " +
           function_name + ": was unhandled");
       NOTREACHED() << "GL error " << error << " was unhandled.";

@@ -27,7 +27,6 @@
 
 #include "core/html/canvas/WebGLRenderbuffer.h"
 
-#include "core/html/canvas/WebGLContextGroup.h"
 #include "core/html/canvas/WebGLRenderingContext.h"
 
 namespace WebCore {
@@ -48,15 +47,24 @@ WebGLRenderbuffer::WebGLRenderbuffer(WebGLRenderingContext* ctx)
     , m_initialized(false)
     , m_width(0)
     , m_height(0)
-    , m_isValid(true)
     , m_hasEverBeenBound(false)
 {
+    ScriptWrappable::init(this);
     setObject(ctx->graphicsContext3D()->createRenderbuffer());
 }
 
 void WebGLRenderbuffer::deleteObjectImpl(GraphicsContext3D* context3d, Platform3DObject object)
 {
     context3d->deleteRenderbuffer(object);
+    deleteEmulatedStencilBuffer(context3d);
+}
+
+void WebGLRenderbuffer::deleteEmulatedStencilBuffer(GraphicsContext3D* context3d)
+{
+    if (!m_emulatedStencilBuffer)
+        return;
+    m_emulatedStencilBuffer->deleteObject(context3d);
+    m_emulatedStencilBuffer.clear();
 }
 
 }

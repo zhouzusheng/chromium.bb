@@ -21,7 +21,6 @@
 #ifndef SVGGElement_h
 #define SVGGElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGLangSpace.h"
@@ -40,7 +39,7 @@ public:
 protected:
     SVGGElement(const QualifiedName&, Document*, ConstructionType = CreateSVGElement);
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
 
 private:
     virtual bool isValid() const { return SVGTests::isValid(); }
@@ -64,5 +63,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

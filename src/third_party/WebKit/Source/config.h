@@ -36,7 +36,7 @@
 
 #ifdef __cplusplus
 
-// These undefs match up with defines in WebCorePrefix.h for Mac OS X.
+// These undefs match up with defines in WebCorePrefixMac.h for Mac OS X.
 // Helps us catch if anyone uses new or delete by accident in code and doesn't include "config.h".
 #undef new
 #undef delete
@@ -50,4 +50,8 @@
 #define SKIP_STATIC_CONSTRUCTORS_ON_MSVC 1
 #else
 #define SKIP_STATIC_CONSTRUCTORS_ON_GCC 1
+#endif
+
+#ifndef __STDC_FORMAT_MACROS
+#define __STDC_FORMAT_MACROS 1
 #endif

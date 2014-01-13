@@ -5,7 +5,7 @@
 #include "content/public/renderer/password_form_conversion_utils.h"
 
 #include "content/public/common/password_form.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPasswordFormData.h"
+#include "third_party/WebKit/public/web/WebPasswordFormData.h"
 
 using WebKit::WebFormElement;
 using WebKit::WebPasswordFormData;
@@ -22,8 +22,8 @@ scoped_ptr<PasswordForm> InitPasswordFormFromWebPasswordForm(
   password_form->submit_element = web_password_form.submitElement;
   password_form->username_element = web_password_form.userNameElement;
   password_form->username_value = web_password_form.userNameValue;
-  password_form->possible_usernames.insert(
-      password_form->possible_usernames.begin(),
+  password_form->other_possible_usernames.insert(
+      password_form->other_possible_usernames.begin(),
       web_password_form.possibleUserNames.data(),
       web_password_form.possibleUserNames.data() +
       web_password_form.possibleUserNames.size());

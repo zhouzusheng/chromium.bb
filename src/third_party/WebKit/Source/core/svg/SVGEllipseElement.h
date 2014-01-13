@@ -21,7 +21,6 @@
 #ifndef SVGEllipseElement_h
 #define SVGEllipseElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
@@ -50,7 +49,7 @@ private:
 
     virtual bool selfHasRelativeLengths() const;
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGEllipseElement)
         DECLARE_ANIMATED_LENGTH(Cx, cx)
@@ -68,5 +67,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

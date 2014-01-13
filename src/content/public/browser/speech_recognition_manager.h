@@ -5,8 +5,8 @@
 #ifndef CONTENT_PUBLIC_BROWSER_SPEECH_RECOGNITION_MANAGER_H_
 #define CONTENT_PUBLIC_BROWSER_SPEECH_RECOGNITION_MANAGER_H_
 
-#include "base/string16.h"
 #include "base/callback.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/public/common/speech_recognition_result.h"
 
@@ -77,9 +77,6 @@ class SpeechRecognitionManager {
 
   // Returns true if the OS reports existence of audio recording devices.
   virtual bool HasAudioInputDevices() = 0;
-
-  // Used to determine if something else is currently making use of audio input.
-  virtual bool IsCapturingAudio() = 0;
 
   // Returns a human readable string for the model/make of the active audio
   // input device for this computer.

@@ -40,7 +40,7 @@ public:
     static PassRefPtr<TextControlInnerContainer> create(Document*);
 protected:
     TextControlInnerContainer(Document*);
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
 };
 
 class TextControlInnerElement FINAL : public HTMLDivElement {
@@ -63,20 +63,20 @@ public:
 
 private:
     TextControlInnerTextElement(Document*);
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
     virtual bool isMouseFocusable() const { return false; }
 };
 
-class SearchFieldResultsButtonElement FINAL : public HTMLDivElement {
+class SearchFieldDecorationElement FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<SearchFieldResultsButtonElement> create(Document*);
+    static PassRefPtr<SearchFieldDecorationElement> create(Document*);
 
     virtual void defaultEventHandler(Event*);
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
 private:
-    SearchFieldResultsButtonElement(Document*);
+    SearchFieldDecorationElement(Document*);
     virtual const AtomicString& shadowPseudoId() const;
     virtual bool isMouseFocusable() const { return false; }
 };
@@ -90,8 +90,7 @@ public:
 
 private:
     SearchFieldCancelButtonElement(Document*);
-    virtual const AtomicString& shadowPseudoId() const;
-    virtual void detach();
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual bool isMouseFocusable() const { return false; }
 
     bool m_capturing;
@@ -112,7 +111,7 @@ public:
     static PassRefPtr<InputFieldSpeechButtonElement> create(Document*);
     virtual ~InputFieldSpeechButtonElement();
 
-    virtual void detach();
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual void defaultEventHandler(Event*);
     virtual bool willRespondToMouseClickEvents();
     virtual bool isInputFieldSpeechButtonElement() const { return true; }
@@ -129,9 +128,8 @@ private:
     InputFieldSpeechButtonElement(Document*);
     SpeechInput* speechInput();
     void setState(SpeechInputState state);
-    virtual const AtomicString& shadowPseudoId() const;
     virtual bool isMouseFocusable() const { return false; }
-    virtual void attach();
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
 
     bool m_capturing;
     SpeechInputState m_state;

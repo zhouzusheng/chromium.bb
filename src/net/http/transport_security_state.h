@@ -93,8 +93,6 @@ class NET_EXPORT TransportSecurityState
     // hard-fail behavior (e.g. if HSTS is set for the domain)
     bool ShouldSSLErrorsBeFatal() const;
 
-    bool Equals(const DomainState& other) const;
-
     UpgradeMode upgrade_mode;
 
     // The absolute time (UTC) when this DomainState was first created.
@@ -106,12 +104,13 @@ class NET_EXPORT TransportSecurityState
     // UPGRADE_ALWAYS, downgrades to UPGRADE_NEVER.
     base::Time upgrade_expiry;
 
-    // Are subdomains subject to this DomainState?
-    //
-    // TODO(palmer): We need to have separate |pin_subdomains| and
-    // |upgrade_subdomains|. Trevor Perrin is working on a new storage model
-    // that will enable this.
-    bool include_subdomains;
+    // Are subdomains subject to this DomainState, for the purposes of
+    // upgrading to HTTPS?
+    bool sts_include_subdomains;
+
+    // Are subdomains subject to this DomainState, for the purposes of
+    // Pin Validation?
+    bool pkp_include_subdomains;
 
     // Optional; hashes of static pinned SubjectPublicKeyInfos. Unless both
     // are empty, at least one of |static_spki_hashes| and
@@ -178,14 +177,6 @@ class NET_EXPORT TransportSecurityState
   // TransportSecurityState.
   void AddOrUpdateEnabledHosts(const std::string& hashed_host,
                                const DomainState& state);
-
-  // Inserts |state| into |forced_hosts_| under the key |hashed_host|.
-  // |hashed_host| is already in the internal representation
-  // HashHost(CanonicalizeHost(host)).
-  // Note: This is only used for serializing/deserializing the
-  // TransportSecurityState.
-  void AddOrUpdateForcedHosts(const std::string& hashed_host,
-                              const DomainState& state);
 
   // Deletes all dynamic data (e.g. HSTS or HPKP data) created since a given
   // time.
@@ -309,10 +300,6 @@ class NET_EXPORT TransportSecurityState
 
   // The set of hosts that have enabled TransportSecurity.
   DomainStateMap enabled_hosts_;
-
-  // Extra entries, provided by the user at run-time, to treat as if they
-  // were static.
-  DomainStateMap forced_hosts_;
 
   Delegate* delegate_;
 

@@ -39,14 +39,11 @@
 #include "V8CSSPageRule.h"
 #include "V8CSSStyleRule.h"
 #include "V8CSSSupportsRule.h"
+#include "V8CSSViewportRule.h"
 #include "V8WebKitCSSFilterRule.h"
 #include "V8WebKitCSSKeyframeRule.h"
 #include "V8WebKitCSSKeyframesRule.h"
 #include "V8WebKitCSSRegionRule.h"
-
-#if ENABLE(CSS_DEVICE_ADAPTATION)
-#include "V8WebKitCSSViewportRule.h"
-#endif
 
 namespace WebCore {
 
@@ -72,21 +69,19 @@ v8::Handle<v8::Object> wrap(CSSRule* impl, v8::Handle<v8::Object> creationContex
     case CSSRule::PAGE_RULE:
         return wrap(static_cast<CSSPageRule*>(impl), creationContext, isolate);
     case CSSRule::WEBKIT_KEYFRAME_RULE:
-        return wrap(static_cast<WebKitCSSKeyframeRule*>(impl), creationContext, isolate);
+        return wrap(static_cast<CSSKeyframeRule*>(impl), creationContext, isolate);
     case CSSRule::WEBKIT_KEYFRAMES_RULE:
-        return wrap(static_cast<WebKitCSSKeyframesRule*>(impl), creationContext, isolate);
+        return wrap(static_cast<CSSKeyframesRule*>(impl), creationContext, isolate);
     case CSSRule::SUPPORTS_RULE:
         return wrap(static_cast<CSSSupportsRule*>(impl), creationContext, isolate);
-#if ENABLE(CSS_DEVICE_ADAPTATION)
-    case CSSRule::WEBKIT_VIEWPORT_RULE:
-        return wrap(static_cast<WebKitCSSViewportRule*>(impl), creationContext, isolate);
-#endif
+    case CSSRule::VIEWPORT_RULE:
+        return wrap(static_cast<CSSViewportRule*>(impl), creationContext, isolate);
     case CSSRule::WEBKIT_REGION_RULE:
-        return wrap(static_cast<WebKitCSSRegionRule*>(impl), creationContext, isolate);
+        return wrap(static_cast<CSSRegionRule*>(impl), creationContext, isolate);
     case CSSRule::HOST_RULE:
         return wrap(static_cast<CSSHostRule*>(impl), creationContext, isolate);
     case CSSRule::WEBKIT_FILTER_RULE:
-        return wrap(static_cast<WebKitCSSFilterRule*>(impl), creationContext, isolate);
+        return wrap(static_cast<CSSFilterRule*>(impl), creationContext, isolate);
     }
     return V8CSSRule::createWrapper(impl, creationContext, isolate);
 }

@@ -31,9 +31,9 @@
 namespace WebCore {
 
 class CSSStyleDeclaration;
-class StylePropertySet;
+class MutableStylePropertySet;
 
-// Attr can have Text and EntityReference children
+// Attr can have Text children
 // therefore it has to be a fullblown Node. The plan
 // is to dynamically allocate a textchild and store the
 // resulting nodevalue in the attribute upon
@@ -73,9 +73,9 @@ private:
     virtual String nodeName() const OVERRIDE { return name(); }
     virtual NodeType nodeType() const OVERRIDE { return ATTRIBUTE_NODE; }
 
-    const AtomicString& localName() const { return m_name.localName(); }
-    const AtomicString& namespaceURI() const { return m_name.namespaceURI(); }
-    const AtomicString& prefix() const { return m_name.prefix(); }
+    virtual const AtomicString& localName() const OVERRIDE { return m_name.localName(); }
+    virtual const AtomicString& namespaceURI() const OVERRIDE { return m_name.namespaceURI(); }
+    virtual const AtomicString& prefix() const OVERRIDE { return m_name.prefix(); }
 
     virtual void setPrefix(const AtomicString&, ExceptionCode&);
 
@@ -88,10 +88,6 @@ private:
 
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
-    virtual const AtomicString& virtualPrefix() const { return prefix(); }
-    virtual const AtomicString& virtualLocalName() const { return localName(); }
-    virtual const AtomicString& virtualNamespaceURI() const { return namespaceURI(); }
-
     Attribute& elementAttribute();
 
     // Attr wraps either an element/name, or a name/value pair (when it's a standalone Node.)
@@ -100,7 +96,6 @@ private:
     QualifiedName m_name;
     AtomicString m_standaloneValue;
 
-    RefPtr<StylePropertySet> m_style;
     unsigned m_ignoreChildrenChanged : 31;
     bool m_specified : 1;
 };

@@ -33,10 +33,11 @@
 namespace WebCore {
 
 class FloatPoint;
-    
-typedef void (*NodeCallback)(Node*, unsigned);
+class HTMLCollection;
 
-namespace Private { 
+typedef void (*NodeCallback)(Node*);
+
+namespace Private {
     template<class GenericNode, class GenericNodeContainer>
     void addChildNodesToDeletionQueue(GenericNode*& head, GenericNode*& tail, GenericNodeContainer*);
 };
@@ -86,6 +87,12 @@ public:
     Node* lastChild() const { return m_lastChild; }
     bool hasChildNodes() const { return m_firstChild; }
 
+    // ParentNode interface API
+    PassRefPtr<HTMLCollection> children();
+    Element* firstElementChild() const;
+    Element* lastElementChild() const;
+    unsigned childElementCount() const;
+
     unsigned childNodeCount() const;
     Node* childNode(unsigned index) const;
 
@@ -106,12 +113,12 @@ public:
 
     void cloneChildNodes(ContainerNode* clone);
 
-    virtual void attach() OVERRIDE;
-    virtual void detach() OVERRIDE;
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
+    virtual LayoutRect boundingBox() const OVERRIDE;
     virtual void setFocus(bool) OVERRIDE;
     virtual void setActive(bool active = true, bool pause = false) OVERRIDE;
     virtual void setHovered(bool = true) OVERRIDE;
-    virtual void scheduleSetNeedsStyleRecalc(StyleChangeType = FullStyleChange) OVERRIDE FINAL;
 
     // -----------------------------------------------------------------------------
     // Notification of document structure changes (see core/dom/Node.h for more notification methods)
@@ -120,11 +127,6 @@ public:
     // node that is of the type CDATA_SECTION_NODE, TEXT_NODE or COMMENT_NODE has changed its value.
     virtual void childrenChanged(bool createdByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
-    void attachChildren();
-    void attachChildrenLazily();
-    void detachChildren();
-    void detachChildrenIfNeeded();
-
     void disconnectDescendantFrames();
 
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const { return true; }
@@ -132,9 +134,9 @@ public:
     virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
 protected:
-    ContainerNode(Document*, ConstructionType = CreateContainer);
+    ContainerNode(TreeScope*, ConstructionType = CreateContainer);
 
-    static void queuePostAttachCallback(NodeCallback, Node*, unsigned = 0);
+    static void queuePostAttachCallback(NodeCallback, Node*);
     static bool postAttachCallbacksAreSuspended();
 
     template<class GenericNode, class GenericNodeContainer>
@@ -151,9 +153,16 @@ private:
     void removeBetween(Node* previousChild, Node* nextChild, Node* oldChild);
     void insertBeforeCommon(Node* nextChild, Node* oldChild);
 
+    void attachChildren(const AttachContext& = AttachContext());
+    void detachChildren(const AttachContext& = AttachContext());
+
     static void dispatchPostAttachCallbacks();
+
     void suspendPostAttachCallbacks();
     void resumePostAttachCallbacks();
+
+    bool getUpperLeftCorner(FloatPoint&) const;
+    bool getLowerRightCorner(FloatPoint&) const;
 
     Node* m_firstChild;
     Node* m_lastChild;
@@ -178,41 +187,32 @@ inline const ContainerNode* toContainerNode(const Node* node)
 // This will catch anyone doing an unnecessary cast.
 void toContainerNode(const ContainerNode*);
 
-inline ContainerNode::ContainerNode(Document* document, ConstructionType type)
-    : Node(document, type)
+inline ContainerNode::ContainerNode(TreeScope* treeScope, ConstructionType type)
+    : Node(treeScope, type)
     , m_firstChild(0)
     , m_lastChild(0)
 {
 }
 
-inline void ContainerNode::attachChildren()
+inline void ContainerNode::attachChildren(const AttachContext& context)
 {
+    AttachContext childrenContext(context);
+    childrenContext.resolvedStyle = 0;
+
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
         ASSERT(!child->attached() || childAttachedAllowedWhenAttachingChildren(this));
         if (!child->attached())
-            child->attach();
+            child->attach(childrenContext);
     }
 }
 
-inline void ContainerNode::attachChildrenLazily()
+inline void ContainerNode::detachChildren(const AttachContext& context)
 {
-    for (Node* child = firstChild(); child; child = child->nextSibling())
-        if (!child->attached())
-            child->lazyAttach();
-}
+    AttachContext childrenContext(context);
+    childrenContext.resolvedStyle = 0;
 
-inline void ContainerNode::detachChildrenIfNeeded()
-{
-    for (Node* child = firstChild(); child; child = child->nextSibling()) {
-        if (child->attached())
-            child->detach();
-    }
-}
-
-inline void ContainerNode::detachChildren()
-{
     for (Node* child = firstChild(); child; child = child->nextSibling())
-        child->detach();
+        child->detach(childrenContext);
 }
 
 inline unsigned Node::childNodeCount() const
@@ -250,14 +250,6 @@ inline Node* Node::highestAncestor() const
     for (; node; node = node->parentNode())
         highest = node;
     return highest;
-}
-
-inline bool Node::needsShadowTreeWalker() const
-{
-    if (getFlag(NeedsShadowTreeWalkerFlag))
-        return true;
-    ContainerNode* parent = parentOrShadowHostNode();
-    return parent && parent->getFlag(NeedsShadowTreeWalkerFlag);
 }
 
 // This constant controls how much buffer is initially allocated

@@ -4,19 +4,19 @@
 
 #include "net/url_request/url_request_netlog_params.h"
 
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "googleurl/src/gurl.h"
 
 namespace net {
 
-Value* NetLogURLRequestStartCallback(const GURL* url,
-                                     const std::string* method,
-                                     int load_flags,
-                                     RequestPriority priority,
-                                     int64 upload_id,
-                                     NetLog::LogLevel /* log_level */) {
-  DictionaryValue* dict = new DictionaryValue();
+base::Value* NetLogURLRequestStartCallback(const GURL* url,
+                                           const std::string* method,
+                                           int load_flags,
+                                           RequestPriority priority,
+                                           int64 upload_id,
+                                           NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("url", url->possibly_invalid_spec());
   dict->SetString("method", *method);
   dict->SetInteger("load_flags", load_flags);
@@ -26,9 +26,9 @@ Value* NetLogURLRequestStartCallback(const GURL* url,
   return dict;
 }
 
-bool StartEventLoadFlagsFromEventParams(const Value* event_params,
+bool StartEventLoadFlagsFromEventParams(const base::Value* event_params,
                                         int* load_flags) {
-  const DictionaryValue* dict;
+  const base::DictionaryValue* dict;
   if (!event_params->GetAsDictionary(&dict) ||
       !dict->GetInteger("load_flags", load_flags)) {
     *load_flags = 0;

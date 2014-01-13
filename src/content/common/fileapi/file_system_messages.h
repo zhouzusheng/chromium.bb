@@ -5,16 +5,16 @@
 // IPC messages for the file system.
 // Multiply-included message file, hence no include guard.
 
-#include "base/files/file_util_proxy.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
-#include "webkit/fileapi/file_system_types.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/common/fileapi/directory_entry.h"
+#include "webkit/common/fileapi/file_system_types.h"
+#include "webkit/common/quota/quota_types.h"
 
 #define IPC_MESSAGE_START FileSystemMsgStart
 
-IPC_STRUCT_TRAITS_BEGIN(base::FileUtilProxy::Entry)
+IPC_STRUCT_TRAITS_BEGIN(fileapi::DirectoryEntry)
   IPC_STRUCT_TRAITS_MEMBER(name)
   IPC_STRUCT_TRAITS_MEMBER(is_directory)
 IPC_STRUCT_TRAITS_END()
@@ -33,17 +33,16 @@ IPC_MESSAGE_CONTROL3(FileSystemMsg_DidOpenFileSystem,
 // WebFileSystem response messages.
 IPC_MESSAGE_CONTROL1(FileSystemMsg_DidSucceed,
                      int /* request_id */)
-IPC_MESSAGE_CONTROL3(FileSystemMsg_DidReadMetadata,
+IPC_MESSAGE_CONTROL2(FileSystemMsg_DidReadMetadata,
                      int /* request_id */,
-                     base::PlatformFileInfo,
-                     base::FilePath /* true platform path, where possible */)
+                     base::PlatformFileInfo)
 IPC_MESSAGE_CONTROL3(FileSystemMsg_DidCreateSnapshotFile,
                      int /* request_id */,
                      base::PlatformFileInfo,
                      base::FilePath /* true platform path */)
 IPC_MESSAGE_CONTROL3(FileSystemMsg_DidReadDirectory,
                      int /* request_id */,
-                     std::vector<base::FileUtilProxy::Entry> /* entries */,
+                     std::vector<fileapi::DirectoryEntry> /* entries */,
                      bool /* has_more */)
 IPC_MESSAGE_CONTROL3(FileSystemMsg_DidWrite,
                      int /* request_id */,

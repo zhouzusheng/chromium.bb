@@ -7,6 +7,7 @@
  * userland.
  */
 base.require('tracing.importer.linux_perf.parser');
+
 base.exportTo('tracing.importer.linux_perf', function() {
 
   var Parser = tracing.importer.linux_perf.Parser;
@@ -30,51 +31,51 @@ base.exportTo('tracing.importer.linux_perf', function() {
 
     traceMarkWriteBusEvent: function(eventName, cpuNumber, pid, ts,
                                   eventBase, threadName) {
-        var re = new RegExp('bus=(\\S+) rw_bytes=(\\d+) r_bytes=(\\d+) ' +
+      var re = new RegExp('bus=(\\S+) rw_bytes=(\\d+) r_bytes=(\\d+) ' +
                             'w_bytes=(\\d+) cycles=(\\d+) ns=(\\d+)');
-        var event = re.exec(eventBase.details);
+      var event = re.exec(eventBase.details);
 
-        var name = event[1];
-        var rw_bytes = parseInt(event[2]);
-        var r_bytes = parseInt(event[3]);
-        var w_bytes = parseInt(event[4]);
-        var cycles = parseInt(event[5]);
-        var ns = parseInt(event[6]);
+      var name = event[1];
+      var rw_bytes = parseInt(event[2]);
+      var r_bytes = parseInt(event[3]);
+      var w_bytes = parseInt(event[4]);
+      var cycles = parseInt(event[5]);
+      var ns = parseInt(event[6]);
 
-        // BW in MB/s
-        var r_bw = r_bytes * 1000000000 / ns;
-        r_bw /= 1024 * 1024;
-        var w_bw = w_bytes * 1000000000 / ns;
-        w_bw /= 1024 * 1024;
+      // BW in MB/s
+      var r_bw = r_bytes * 1000000000 / ns;
+      r_bw /= 1024 * 1024;
+      var w_bw = w_bytes * 1000000000 / ns;
+      w_bw /= 1024 * 1024;
 
-        var ctr = this.model_.getOrCreateProcess(0)
+      var ctr = this.model_.getOrCreateProcess(0)
               .getOrCreateCounter(null, 'bus ' + name + ' read');
-        // Initialize the counter's series fields if needed.
-        if (ctr.numSeries == 0) {
-            ctr.seriesNames.push('value');
-            ctr.seriesColors.push(
-                tracing.getStringColorId(ctr.name + '.' + 'value'));
-        }
+      // Initialize the counter's series fields if needed.
+      if (ctr.numSeries == 0) {
+        ctr.seriesNames.push('value');
+        ctr.seriesColors.push(
+            tracing.getStringColorId(ctr.name + '.' + 'value'));
+      }
 
-        // Add the sample value.
-        ctr.timestamps.push(ts);
-        ctr.samples.push(r_bw);
+      // Add the sample value.
+      ctr.timestamps.push(ts);
+      ctr.samples.push(r_bw);
 
-        ctr = this.model_.getOrCreateProcess(0)
+      ctr = this.model_.getOrCreateProcess(0)
               .getOrCreateCounter(null, 'bus ' + name + ' write');
-        // Initialize the counter's series fields if needed.
-        if (ctr.numSeries == 0) {
-            ctr.seriesNames.push('value');
-            ctr.seriesColors.push(
-                tracing.getStringColorId(ctr.name + '.' + 'value'));
-        }
+      // Initialize the counter's series fields if needed.
+      if (ctr.numSeries == 0) {
+        ctr.seriesNames.push('value');
+        ctr.seriesColors.push(
+            tracing.getStringColorId(ctr.name + '.' + 'value'));
+      }
 
-        // Add the sample value.
-        ctr.timestamps.push(ts);
-        ctr.samples.push(w_bw);
+      // Add the sample value.
+      ctr.timestamps.push(ts);
+      ctr.samples.push(w_bw);
 
-        return true;
-    },
+      return true;
+    }
   };
 
   Parser.registerSubtype(BusParser);

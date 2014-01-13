@@ -48,13 +48,11 @@ namespace WebCore {
     // NOTE: Keep in sync with WebKit/mac/WebView/WebFramePrivate.h and WebKit/win/Interfaces/IWebFramePrivate.idl
     enum FrameLoadType {
         FrameLoadTypeStandard,
-        FrameLoadTypeBack,
-        FrameLoadTypeForward,
-        FrameLoadTypeIndexedBackForward, // a multi-item hop in the backforward list
+        FrameLoadTypeBackForward,
         FrameLoadTypeReload,
-        // Skipped value: 'FrameLoadTypeReloadAllowingStaleData', still present in mac/win public API. Ready to be reused
-        FrameLoadTypeSame = FrameLoadTypeReload + 2, // user loads same URL again (but not reload button)
-        FrameLoadTypeRedirectWithLockedBackForwardList, // FIXME: Merge "lockBackForwardList", "lockHistory", "quickRedirect" and "clientRedirect" into a single concept of redirect.
+        FrameLoadTypeSame, // user loads same URL again (but not reload button)
+        FrameLoadTypeRedirectWithLockedBackForwardList,
+        FrameLoadTypeInitialInChildFrame,
         FrameLoadTypeReplace,
         FrameLoadTypeReloadFromOrigin,
     };
@@ -90,15 +88,6 @@ namespace WebCore {
     enum ShouldSendReferrer {
         MaybeSendReferrer,
         NeverSendReferrer
-    };
-
-    // Passed to FrameLoader::urlSelected() and ScriptController::executeIfJavaScriptURL()
-    // to control whether, in the case of a JavaScript URL, executeIfJavaScriptURL() should
-    // replace the document.  It is a FIXME to eliminate this extra parameter from
-    // executeIfJavaScriptURL(), in which case this enum can go away.
-    enum ShouldReplaceDocumentIfJavaScriptURL {
-        ReplaceDocumentIfJavaScriptURL,
-        DoNotReplaceDocumentIfJavaScriptURL
     };
 
     enum ReasonForCallingAllowPlugins {

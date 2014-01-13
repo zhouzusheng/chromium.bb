@@ -38,8 +38,17 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
     : context_(context),
       weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  PrefService* prefs = components::UserPrefs::Get(context);
+  PrefService* prefs = user_prefs::UserPrefs::Get(context);
   pref_change_registrar_.Init(prefs);
+
+  std::string language_code;
+  std::string country_code;
+  chrome::spellcheck_common::GetISOLanguageCountryCodeFromLocale(
+      prefs->GetString(prefs::kSpellCheckDictionary),
+      &language_code,
+      &country_code);
+  feedback_sender_.reset(new spellcheck::FeedbackSender(
+      context->GetRequestContext(), language_code, country_code));
 
   pref_change_registrar_.Add(
       prefs::kEnableAutoSpellCorrect,
@@ -64,7 +73,7 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
   custom_dictionary_->AddObserver(this);
   custom_dictionary_->Load();
 
-  registrar_.Add(weak_ptr_factory_.GetWeakPtr(),
+  registrar_.Add(this,
                  content::NOTIFICATION_RENDERER_PROCESS_CREATED,
                  content::NotificationService::AllSources());
 }
@@ -78,7 +87,7 @@ SpellcheckService::~SpellcheckService() {
 int SpellcheckService::GetSpellCheckLanguages(
     content::BrowserContext* context,
     std::vector<std::string>* languages) {
-  PrefService* prefs = components::UserPrefs::Get(context);
+  PrefService* prefs = user_prefs::UserPrefs::Get(context);
   StringPrefMember accept_languages_pref;
   StringPrefMember dictionary_language_pref;
   accept_languages_pref.Init(prefs::kAcceptLanguages, prefs);
@@ -153,7 +162,7 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
   if (SpellcheckServiceFactory::GetForContext(context) != this)
     return;
 
-  PrefService* prefs = components::UserPrefs::Get(context);
+  PrefService* prefs = user_prefs::UserPrefs::Get(context);
   IPC::PlatformFileForTransit file = IPC::InvalidPlatformFileForTransit();
 
   if (hunspell_dictionary_->GetDictionaryFile() !=
@@ -194,8 +203,8 @@ SpellcheckHunspellDictionary* SpellcheckService::GetHunspellDictionary() {
   return hunspell_dictionary_.get();
 }
 
-SpellingServiceFeedback* SpellcheckService::GetFeedbackSender() {
-  return &feedback_sender_;
+spellcheck::FeedbackSender* SpellcheckService::GetFeedbackSender() {
+  return feedback_sender_.get();
 }
 
 bool SpellcheckService::LoadExternalDictionary(std::string language,
@@ -284,7 +293,7 @@ void SpellcheckService::OnEnableAutoSpellCorrectChanged() {
 void SpellcheckService::OnSpellCheckDictionaryChanged() {
   if (hunspell_dictionary_.get())
     hunspell_dictionary_->RemoveObserver(this);
-  PrefService* prefs = components::UserPrefs::Get(context_);
+  PrefService* prefs = user_prefs::UserPrefs::Get(context_);
   DCHECK(prefs);
 
   std::string dictionary =
@@ -293,6 +302,11 @@ void SpellcheckService::OnSpellCheckDictionaryChanged() {
       dictionary, context_->GetRequestContext(), this));
   hunspell_dictionary_->AddObserver(this);
   hunspell_dictionary_->Load();
+  std::string language_code;
+  std::string country_code;
+  chrome::spellcheck_common::GetISOLanguageCountryCodeFromLocale(
+      dictionary, &language_code, &country_code);
+  feedback_sender_->OnLanguageCountryChange(language_code, country_code);
 }
 
 void SpellcheckService::OnUseSpellingServiceChanged() {

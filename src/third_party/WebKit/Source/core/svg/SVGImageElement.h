@@ -21,7 +21,6 @@
 #ifndef SVGImageElement_h
 #define SVGImageElement_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGAnimatedPreserveAspectRatio.h"
@@ -54,10 +53,10 @@ private:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
 
-    virtual void attach();
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
 
     virtual const AtomicString& imageSourceURL() const OVERRIDE;
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
@@ -87,5 +86,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

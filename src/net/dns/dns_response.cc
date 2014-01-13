@@ -4,7 +4,7 @@
 
 #include "net/dns/dns_response.h"
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/sys_byteorder.h"
 #include "net/base/address_list.h"
 #include "net/base/big_endian.h"
@@ -162,6 +162,7 @@ DnsResponse::~DnsResponse() {
 }
 
 bool DnsResponse::InitParse(int nbytes, const DnsQuery& query) {
+  DCHECK_GE(nbytes, 0);
   // Response includes query, it should be at least that size.
   if (nbytes < query.io_buffer()->size() || nbytes >= io_buffer_->size())
     return false;
@@ -190,10 +191,13 @@ bool DnsResponse::InitParse(int nbytes, const DnsQuery& query) {
 }
 
 bool DnsResponse::InitParseWithoutQuery(int nbytes) {
-  if (nbytes >= io_buffer_->size())
-    return false;
+  DCHECK_GE(nbytes, 0);
 
   size_t hdr_size = sizeof(dns_protocol::Header);
+
+  if (nbytes < static_cast<int>(hdr_size) || nbytes >= io_buffer_->size())
+    return false;
+
   parser_ = DnsRecordParser(
       io_buffer_->data(), nbytes, hdr_size);
 
@@ -225,6 +229,11 @@ uint8 DnsResponse::rcode() const {
 unsigned DnsResponse::answer_count() const {
   DCHECK(parser_.IsValid());
   return base::NetToHost16(header()->ancount);
+}
+
+unsigned DnsResponse::additional_answer_count() const {
+  DCHECK(parser_.IsValid());
+  return base::NetToHost16(header()->arcount);
 }
 
 base::StringPiece DnsResponse::qname() const {

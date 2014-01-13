@@ -62,10 +62,9 @@ int URLFetcherFileWriter::Initialize(const CompletionCallback& callback) {
   if (file_path_.empty()) {
     base::FilePath* temp_file_path = new base::FilePath;
     base::PostTaskAndReplyWithResult(
-        file_task_runner_,
+        file_task_runner_.get(),
         FROM_HERE,
-        base::Bind(&file_util::CreateTemporaryFile,
-                   temp_file_path),
+        base::Bind(&file_util::CreateTemporaryFile, temp_file_path),
         base::Bind(&URLFetcherFileWriter::DidCreateTempFile,
                    weak_factory_.GetWeakPtr(),
                    callback,
@@ -91,8 +90,15 @@ int URLFetcherFileWriter::Write(IOBuffer* buffer,
   DCHECK(file_stream_);
   DCHECK(owns_file_);
 
-  ContinueWrite(new DrainableIOBuffer(buffer, num_bytes), callback, OK);
-  return ERR_IO_PENDING;
+  int result = file_stream_->Write(buffer, num_bytes,
+                                   base::Bind(&URLFetcherFileWriter::DidWrite,
+                                              weak_factory_.GetWeakPtr(),
+                                              callback));
+  if (result < 0 && result != ERR_IO_PENDING) {
+    error_code_ = result;
+    CloseAndDeleteFile();
+  }
+  return result;
 }
 
 int URLFetcherFileWriter::Finish(const CompletionCallback& callback) {
@@ -100,33 +106,13 @@ int URLFetcherFileWriter::Finish(const CompletionCallback& callback) {
   return OK;
 }
 
-void URLFetcherFileWriter::ContinueWrite(
-    scoped_refptr<DrainableIOBuffer> buffer,
-    const CompletionCallback& callback,
-    int result) {
-  // |file_stream_| should be alive when write is in progress.
-  DCHECK(file_stream_);
-
+void URLFetcherFileWriter::DidWrite(const CompletionCallback& callback,
+                                    int result) {
   if (result < 0) {
     error_code_ = result;
     CloseAndDeleteFile();
-    callback.Run(result);
-    return;
   }
-
-  total_bytes_written_ += result;
-  buffer->DidConsume(result);
-
-  if (buffer->BytesRemaining() > 0) {
-    file_stream_->Write(buffer, buffer->BytesRemaining(),
-                        base::Bind(&URLFetcherFileWriter::ContinueWrite,
-                                   weak_factory_.GetWeakPtr(),
-                                   buffer,
-                                   callback));
-  } else {
-    // Finished writing buffer to the file.
-    callback.Run(buffer->size());
-  }
+  callback.Run(result);
 }
 
 void URLFetcherFileWriter::DisownFile() {

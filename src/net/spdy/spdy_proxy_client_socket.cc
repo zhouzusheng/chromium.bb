@@ -8,8 +8,9 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/logging.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/auth.h"
@@ -18,12 +19,13 @@
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/proxy_connect_redirect_http_stream.h"
 #include "net/spdy/spdy_http_utils.h"
 
 namespace net {
 
 SpdyProxyClientSocket::SpdyProxyClientSocket(
-    SpdyStream* spdy_stream,
+    const base::WeakPtr<SpdyStream>& spdy_stream,
     const std::string& user_agent,
     const HostPortPair& endpoint,
     const GURL& url,
@@ -41,7 +43,8 @@ SpdyProxyClientSocket::SpdyProxyClientSocket(
                                  auth_handler_factory)),
       user_buffer_len_(0),
       write_buffer_len_(0),
-      write_bytes_outstanding_(0),
+      was_ever_used_(false),
+      redirect_has_load_timing_info_(false),
       weak_factory_(this),
       net_log_(BoundNetLog::Make(spdy_stream->net_log().net_log(),
                                  NetLog::SOURCE_PROXY_CLIENT_SOCKET)) {
@@ -67,7 +70,7 @@ SpdyProxyClientSocket::~SpdyProxyClientSocket() {
 }
 
 const HttpResponseInfo* SpdyProxyClientSocket::GetConnectResponseInfo() const {
-  return response_.headers ? &response_ : NULL;
+  return response_.headers.get() ? &response_ : NULL;
 }
 
 const scoped_refptr<HttpAuthController>&
@@ -98,8 +101,8 @@ NextProto SpdyProxyClientSocket::GetProtocolNegotiated() const {
 }
 
 HttpStream* SpdyProxyClientSocket::CreateConnectResponseStream() {
-  DCHECK(response_stream_.get());
-  return response_stream_.release();
+  return new ProxyConnectRedirectHttpStream(
+      redirect_has_load_timing_info_ ? &redirect_load_timing_info_ : NULL);
 }
 
 // Sends a SYN_STREAM frame to the proxy with a CONNECT request
@@ -133,12 +136,11 @@ void SpdyProxyClientSocket::Disconnect() {
   read_callback_.Reset();
 
   write_buffer_len_ = 0;
-  write_bytes_outstanding_ = 0;
   write_callback_.Reset();
 
   next_state_ = STATE_DISCONNECTED;
 
-  if (spdy_stream_) {
+  if (spdy_stream_.get()) {
     // This will cause OnClose to be invoked, which takes care of
     // cleaning up all the internal state.
     spdy_stream_->Cancel();
@@ -152,7 +154,7 @@ bool SpdyProxyClientSocket::IsConnected() const {
 
 bool SpdyProxyClientSocket::IsConnectedAndIdle() const {
   return IsConnected() && read_buffer_queue_.IsEmpty() &&
-      spdy_stream_->is_idle();
+      spdy_stream_->IsIdle();
 }
 
 const BoundNetLog& SpdyProxyClientSocket::NetLog() const {
@@ -168,7 +170,7 @@ void SpdyProxyClientSocket::SetOmniboxSpeculation() {
 }
 
 bool SpdyProxyClientSocket::WasEverUsed() const {
-  return was_ever_used_ || (spdy_stream_ && spdy_stream_->WasEverUsed());
+  return was_ever_used_ || (spdy_stream_.get() && spdy_stream_->WasEverUsed());
 }
 
 bool SpdyProxyClientSocket::UsingTCPFastOpen() const {
@@ -193,7 +195,7 @@ bool SpdyProxyClientSocket::GetSSLInfo(SSLInfo* ssl_info) {
 int SpdyProxyClientSocket::Read(IOBuffer* buf, int buf_len,
                                 const CompletionCallback& callback) {
   DCHECK(read_callback_.is_null());
-  DCHECK(!user_buffer_);
+  DCHECK(!user_buffer_.get());
 
   if (next_state_ == STATE_DISCONNECTED)
     return ERR_SOCKET_NOT_CONNECTED;
@@ -226,34 +228,13 @@ int SpdyProxyClientSocket::Write(IOBuffer* buf, int buf_len,
   if (next_state_ != STATE_OPEN)
     return ERR_SOCKET_NOT_CONNECTED;
 
-  DCHECK(spdy_stream_);
-  write_bytes_outstanding_= buf_len;
-  if (buf_len <= kMaxSpdyFrameChunkSize) {
-    spdy_stream_->QueueStreamData(buf, buf_len, DATA_FLAG_NONE);
-    net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT,
-                                  buf_len, buf->data());
-    write_callback_ = callback;
-    write_buffer_len_ = buf_len;
-    return ERR_IO_PENDING;
-  }
-
-  // Since a SPDY Data frame can only include kMaxSpdyFrameChunkSize bytes
-  // we need to send multiple data frames
-  for (int i = 0; i < buf_len; i += kMaxSpdyFrameChunkSize) {
-    int len = std::min(kMaxSpdyFrameChunkSize, buf_len - i);
-    scoped_refptr<DrainableIOBuffer> iobuf(new DrainableIOBuffer(buf, i + len));
-    iobuf->SetOffset(i);
-    spdy_stream_->QueueStreamData(iobuf, len, DATA_FLAG_NONE);
-    net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT,
-                                  len, buf->data());
-  }
-  if (write_bytes_outstanding_ > 0) {
-    write_callback_ = callback;
-    write_buffer_len_ = buf_len;
-    return ERR_IO_PENDING;
-  } else {
-    return buf_len;
-  }
+  DCHECK(spdy_stream_.get());
+  spdy_stream_->SendData(buf, buf_len, MORE_DATA_TO_SEND);
+  net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT,
+                                buf_len, buf->data());
+  write_callback_ = callback;
+  write_buffer_len_ = buf_len;
+  return ERR_IO_PENDING;
 }
 
 bool SpdyProxyClientSocket::SetReceiveBufferSize(int32 size) {
@@ -390,9 +371,8 @@ int SpdyProxyClientSocket::DoSendRequest() {
     (*headers)["url"] = endpoint_.ToString();
     headers->erase("scheme");
   }
-  spdy_stream_->set_spdy_headers(headers.Pass());
 
-  return spdy_stream_->SendRequest(true);
+  return spdy_stream_->SendRequestHeaders(headers.Pass(), MORE_DATA_TO_SEND);
 }
 
 int SpdyProxyClientSocket::DoSendRequestComplete(int result) {
@@ -428,14 +408,9 @@ int SpdyProxyClientSocket::DoReadReplyComplete(int result) {
       // Try to return a sanitized response so we can follow auth redirects.
       // If we can't, fail the tunnel connection.
       if (SanitizeProxyRedirect(&response_, request_.url)) {
-        // Immediately hand off our SpdyStream to a newly created
-        // SpdyHttpStream so that any subsequent SpdyFrames are processed in
-        // the context of the HttpStream, not the socket.
-        DCHECK(spdy_stream_);
-        SpdyStream* stream = spdy_stream_;
-        spdy_stream_ = NULL;
-        response_stream_.reset(new SpdyHttpStream(NULL, false));
-        response_stream_->InitializeWithExistingStream(stream);
+        redirect_has_load_timing_info_ =
+            spdy_stream_->GetLoadTimingInfo(&redirect_load_timing_info_);
+        spdy_stream_->DetachDelegate();
         next_state_ = STATE_DISCONNECTED;
         return ERR_HTTPS_PROXY_TUNNEL_RESPONSE;
       } else {
@@ -445,7 +420,7 @@ int SpdyProxyClientSocket::DoReadReplyComplete(int result) {
 
     case 407:  // Proxy Authentication Required
       next_state_ = STATE_OPEN;
-      return HandleProxyAuthChallenge(auth_, &response_, net_log_);
+      return HandleProxyAuthChallenge(auth_.get(), &response_, net_log_);
 
     default:
       // Ignore response to avoid letting the proxy impersonate the target
@@ -458,57 +433,31 @@ int SpdyProxyClientSocket::DoReadReplyComplete(int result) {
 // SpdyStream::Delegate methods:
 // Called when SYN frame has been sent.
 // Returns true if no more data to be sent after SYN frame.
-SpdySendStatus SpdyProxyClientSocket::OnSendHeadersComplete() {
+void SpdyProxyClientSocket::OnRequestHeadersSent() {
   DCHECK_EQ(next_state_, STATE_SEND_REQUEST_COMPLETE);
 
   OnIOComplete(OK);
-
-  // We return true here so that we send |spdy_stream_| into
-  // STATE_OPEN (ala WebSockets).
-  return NO_MORE_DATA_TO_SEND;
 }
 
-int SpdyProxyClientSocket::OnSendBody() {
-  // Because we use |spdy_stream_| via STATE_OPEN (ala WebSockets)
-  // OnSendBody() should never be called.
-  NOTREACHED();
-  return ERR_UNEXPECTED;
-}
-
-SpdySendStatus SpdyProxyClientSocket::OnSendBodyComplete(
-    size_t /*bytes_sent*/) {
-  // Because we use |spdy_stream_| via STATE_OPEN (ala WebSockets)
-  // OnSendBodyComplete() should never be called.
-  NOTREACHED();
-  return NO_MORE_DATA_TO_SEND;
-}
-
-int SpdyProxyClientSocket::OnResponseReceived(
-    const SpdyHeaderBlock& response,
-    base::Time response_time,
-    int status) {
+SpdyResponseHeadersStatus SpdyProxyClientSocket::OnResponseHeadersUpdated(
+    const SpdyHeaderBlock& response_headers) {
   // If we've already received the reply, existing headers are too late.
   // TODO(mbelshe): figure out a way to make HEADERS frames useful after the
   //                initial response.
   if (next_state_ != STATE_READ_REPLY_COMPLETE)
-    return OK;
+    return RESPONSE_HEADERS_ARE_COMPLETE;
 
   // Save the response
   if (!SpdyHeadersToHttpResponse(
-          response, spdy_stream_->GetProtocolVersion(), &response_))
-      return ERR_INCOMPLETE_SPDY_HEADERS;
+          response_headers, spdy_stream_->GetProtocolVersion(), &response_))
+    return RESPONSE_HEADERS_ARE_INCOMPLETE;
 
-  OnIOComplete(status);
-  return OK;
-}
-
-void SpdyProxyClientSocket::OnHeadersSent() {
-  // Proxy client sockets don't send any HEADERS frame.
-  NOTREACHED();
+  OnIOComplete(OK);
+  return RESPONSE_HEADERS_ARE_COMPLETE;
 }
 
 // Called when data is received or on EOF (if |buffer| is NULL).
-int SpdyProxyClientSocket::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
+void SpdyProxyClientSocket::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   if (buffer) {
     net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_RECEIVED,
                                   buffer->GetRemainingSize(),
@@ -526,29 +475,19 @@ int SpdyProxyClientSocket::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
     user_buffer_len_ = 0;
     c.Run(rv);
   }
-  return OK;
 }
 
-void SpdyProxyClientSocket::OnDataSent(size_t bytes_sent)  {
+void SpdyProxyClientSocket::OnDataSent()  {
   DCHECK(!write_callback_.is_null());
 
-  DCHECK_LE(static_cast<int>(bytes_sent), write_bytes_outstanding_);
-  write_bytes_outstanding_ -= static_cast<int>(bytes_sent);
-
-  if (write_bytes_outstanding_ == 0) {
-    int rv = write_buffer_len_;
-    write_buffer_len_ = 0;
-    write_bytes_outstanding_ = 0;
-    CompletionCallback c = write_callback_;
-    write_callback_.Reset();
-    c.Run(rv);
-  }
+  int rv = write_buffer_len_;
+  write_buffer_len_ = 0;
+  ResetAndReturn(&write_callback_).Run(rv);
 }
 
 void SpdyProxyClientSocket::OnClose(int status)  {
-  DCHECK(spdy_stream_);
   was_ever_used_ = spdy_stream_->WasEverUsed();
-  spdy_stream_ = NULL;
+  spdy_stream_.reset();
 
   bool connecting = next_state_ != STATE_DISCONNECTED &&
       next_state_ < STATE_OPEN;
@@ -561,7 +500,6 @@ void SpdyProxyClientSocket::OnClose(int status)  {
   CompletionCallback write_callback = write_callback_;
   write_callback_.Reset();
   write_buffer_len_ = 0;
-  write_bytes_outstanding_ = 0;
 
   // If we're in the middle of connecting, we need to make sure
   // we invoke the connect callback.
@@ -575,7 +513,7 @@ void SpdyProxyClientSocket::OnClose(int status)  {
     OnDataReceived(scoped_ptr<SpdyBuffer>());
   }
   // This may have been deleted by read_callback_, so check first.
-  if (weak_ptr && !write_callback.is_null())
+  if (weak_ptr.get() && !write_callback.is_null())
     write_callback.Run(ERR_CONNECTION_CLOSED);
 }
 

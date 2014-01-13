@@ -10,11 +10,11 @@
 #include <windows.h>
 #endif
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 
 #if defined(OS_WIN)
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #endif
 
 namespace {

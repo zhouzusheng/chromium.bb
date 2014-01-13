@@ -21,7 +21,6 @@
 #ifndef SVGPathSegLinetoVertical_h
 #define SVGPathSegLinetoVertical_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGPathSegWithContext.h"
 
 namespace WebCore {
@@ -56,6 +55,7 @@ private:
     SVGPathSegLinetoVerticalAbs(SVGPathElement* element, SVGPathSegRole role, float y)
         : SVGPathSegLinetoVertical(element, role, y)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_LINETO_VERTICAL_ABS; }
@@ -73,6 +73,7 @@ private:
     SVGPathSegLinetoVerticalRel(SVGPathElement* element, SVGPathSegRole role, float y)
         : SVGPathSegLinetoVertical(element, role, y)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_LINETO_VERTICAL_REL; }
@@ -81,5 +82,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

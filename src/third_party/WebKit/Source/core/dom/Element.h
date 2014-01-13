@@ -28,12 +28,14 @@
 #include "HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/FragmentScriptingPermission.h"
 #include "core/dom/SpaceSplitString.h"
 #include "core/html/CollectionType.h"
 #include "core/platform/ScrollTypes.h"
+#include "core/rendering/RegionOversetState.h"
 
 namespace WebCore {
+
+class Animation;
 
 class Attr;
 class ClientRect;
@@ -43,14 +45,15 @@ class DOMTokenList;
 class Element;
 class ElementRareData;
 class ElementShadow;
-class ShareableElementData;
+class InputMethodContext;
 class IntSize;
 class Locale;
-class UniqueElementData;
 class PseudoElement;
 class RenderRegion;
 class ShadowRoot;
+class ShareableElementData;
 class StylePropertySet;
+class UniqueElementData;
 
 class ElementData : public RefCounted<ElementData> {
     WTF_MAKE_FAST_ALLOCATED;
@@ -97,9 +100,7 @@ protected:
     unsigned m_arraySize : 28;
     mutable unsigned m_presentationAttributeStyleIsDirty : 1;
     mutable unsigned m_styleAttributeIsDirty : 1;
-#if ENABLE(SVG)
     mutable unsigned m_animatedSVGAttributesAreDirty : 1;
-#endif
 
     mutable RefPtr<StylePropertySet> m_inlineStyle;
     mutable SpaceSplitString m_classNames;
@@ -110,9 +111,7 @@ private:
     friend class StyledElement;
     friend class ShareableElementData;
     friend class UniqueElementData;
-#if ENABLE(SVG)
     friend class SVGElement;
-#endif
 
     const Attribute* attributeBase() const;
     const Attribute* getAttributeItem(const AtomicString& name, bool shouldIgnoreAttributeCase) const;
@@ -356,9 +355,9 @@ public:
     bool hasLocalName(const AtomicString& other) const { return m_tagName.localName() == other; }
     bool hasLocalName(const QualifiedName& other) const { return m_tagName.localName() == other.localName(); }
 
-    const AtomicString& localName() const { return m_tagName.localName(); }
-    const AtomicString& prefix() const { return m_tagName.prefix(); }
-    const AtomicString& namespaceURI() const { return m_tagName.namespaceURI(); }
+    virtual const AtomicString& localName() const OVERRIDE { return m_tagName.localName(); }
+    virtual const AtomicString& prefix() const OVERRIDE { return m_tagName.prefix(); }
+    virtual const AtomicString& namespaceURI() const OVERRIDE { return m_tagName.namespaceURI(); }
 
     virtual KURL baseURI() const OVERRIDE FINAL;
 
@@ -366,6 +365,8 @@ public:
 
     PassRefPtr<Element> cloneElementWithChildren();
     PassRefPtr<Element> cloneElementWithoutChildren();
+
+    void scheduleSyntheticStyleChange();
 
     void normalizeAttributes();
     String nodeNamePreservingCase() const;
@@ -405,9 +406,9 @@ public:
 
     virtual void copyNonAttributePropertiesFromElement(const Element&) { }
 
-    virtual void attach();
-    virtual void detach();
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual bool rendererIsNeeded(const NodeRenderingContext&);
     void recalcStyle(StyleChange = NoChange);
     void didAffectSelector(AffectedSelectorMask);
@@ -416,6 +417,7 @@ public:
     ElementShadow* ensureShadow();
     PassRefPtr<ShadowRoot> createShadowRoot(ExceptionCode&);
     ShadowRoot* shadowRoot() const;
+    void ensureDistribution();
 
     bool hasAuthorShadowRoot() const { return shadowRoot(); }
 
@@ -457,6 +459,9 @@ public:
 
     bool isUnresolvedCustomElement();
 
+    void setRegionOversetState(RegionOversetState);
+    RegionOversetState regionOversetState() const;
+
     AtomicString computeInheritedLanguage() const;
     Locale& locale() const;
 
@@ -478,6 +483,8 @@ public:
     String innerText();
     String outerText();
  
+    String textFromChildren();
+
     virtual String title() const;
 
     const AtomicString& pseudo() const;
@@ -489,24 +496,12 @@ public:
     virtual void didBecomeFullscreenElement() { }
     virtual void willStopBeingFullscreenElement() { }
 
-    virtual void captionPreferencesChanged() { }
-
     bool isFinishedParsingChildren() const { return isParsingChildrenFinished(); }
     virtual void finishParsingChildren();
     virtual void beginParsingChildren() OVERRIDE FINAL;
 
-    bool hasPseudoElements() const;
     PseudoElement* pseudoElement(PseudoId) const;
     RenderObject* pseudoElementRenderer(PseudoId) const;
-    bool childNeedsShadowWalker() const;
-    void didShadowTreeAwareChildrenChange();
-
-    // ElementTraversal API
-    Element* firstElementChild() const;
-    Element* lastElementChild() const;
-    Element* previousElementSibling() const;
-    Element* nextElementSibling() const;
-    unsigned childElementCount() const;
 
     virtual bool matchesReadOnlyPseudoClass() const;
     virtual bool matchesReadWritePseudoClass() const;
@@ -524,7 +519,9 @@ public:
     virtual bool isInputFieldSpeechButtonElement() const { return false; }
 #endif
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+    virtual bool isDateTimeEditElement() const;
     virtual bool isDateTimeFieldElement() const;
+    virtual bool isPickerIndicatorElement() const;
 #endif
 
     virtual bool isFormControlElement() const { return false; }
@@ -539,6 +536,7 @@ public:
     virtual bool isOutOfRange() const { return false; }
     virtual bool isFrameElementBase() const { return false; }
     virtual bool isTextFieldDecoration() const { return false; }
+    virtual bool isClearButtonElement() const;
 
     virtual bool canContainRangeEndPoint() const { return true; }
 
@@ -550,17 +548,16 @@ public:
 
     // Used for disabled form elements; if true, prevents mouse events from being dispatched
     // to event listeners, and prevents DOMActivate events from being sent at all.
-    virtual bool isDisabledFormControl() const;
+    virtual bool isDisabledFormControl() const { return false; }
 
     bool isInert() const;
+    virtual bool shouldBeReparentedUnderRenderView(const RenderStyle*) const { return isInTopLayer(); }
 
-#if ENABLE(SVG)
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
     bool hasPendingResources() const;
     void setHasPendingResources();
     void clearHasPendingResources();
     virtual void buildPendingResource() { };
-#endif
 
     enum {
         ALLOW_KEYBOARD_INPUT = 1 << 0,
@@ -583,6 +580,7 @@ public:
     bool isSpellCheckingEnabled() const;
 
     PassRefPtr<RenderStyle> styleForRenderer();
+    PassRefPtr<RenderStyle> originalStyleForRenderer();
 
     RenderRegion* renderRegion() const;
     const AtomicString& webkitRegionOverset() const;
@@ -596,6 +594,13 @@ public:
     void setSavedLayerScrollOffset(const IntSize&);
 
     virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+
+    void addActiveAnimation(Animation*);
+    void removeActiveAnimation(Animation*);
+    bool hasActiveAnimations() const;
+    Vector<Animation*>* activeAnimations() const;
+
+    InputMethodContext* getInputContext();
 
 protected:
     Element(const QualifiedName& tagName, Document* document, ConstructionType type)
@@ -621,6 +626,7 @@ protected:
     void setTabIndexExplicitly(short);
     virtual bool supportsFocus() const OVERRIDE;
     virtual short tabIndex() const OVERRIDE;
+    virtual bool rendererIsFocusable() const OVERRIDE;
 
     PassRefPtr<HTMLCollection> ensureCachedHTMLCollection(CollectionType);
     HTMLCollection* cachedHTMLCollection(CollectionType);
@@ -633,7 +639,6 @@ protected:
 private:
     void updatePseudoElement(PseudoId, StyleChange);
     void createPseudoElementIfNeeded(PseudoId);
-    void setPseudoElement(PseudoId, PassRefPtr<PseudoElement>);
 
     virtual bool areAuthorShadowsAllowed() const { return true; }
     virtual void didAddUserAgentShadowRoot(ShadowRoot*) { }
@@ -676,9 +681,6 @@ private:
 
     void cancelFocusAppearanceUpdate();
 
-    virtual const AtomicString& virtualPrefix() const OVERRIDE FINAL { return prefix(); }
-    virtual const AtomicString& virtualLocalName() const OVERRIDE FINAL { return localName(); }
-    virtual const AtomicString& virtualNamespaceURI() const OVERRIDE FINAL { return namespaceURI(); }
     virtual RenderStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) { return computedStyle(pseudoElementSpecifier); }
     
     // cloneNode is private so that non-virtual cloneElementWithChildren and cloneElementWithoutChildren
@@ -716,7 +718,7 @@ private:
     void detachAttrNodeFromElementWithValue(Attr*, const AtomicString& value);
     void detachAttrNodeAtIndex(Attr*, size_t index);
 
-    void createRendererIfNeeded();
+    void createRendererIfNeeded(const AttachContext&);
 
     bool isJavaScriptURLAttribute(const Attribute&) const;
 
@@ -769,20 +771,20 @@ inline Element* Node::parentElement() const
     return parent && parent->isElementNode() ? toElement(parent) : 0;
 }
 
-inline Element* Element::previousElementSibling() const
+inline Element* Node::previousElementSibling() const
 {
     Node* n = previousSibling();
     while (n && !n->isElementNode())
         n = n->previousSibling();
-    return static_cast<Element*>(n);
+    return toElement(n);
 }
 
-inline Element* Element::nextElementSibling() const
+inline Element* Node::nextElementSibling() const
 {
     Node* n = nextSibling();
     while (n && !n->isElementNode())
         n = n->nextSibling();
-    return static_cast<Element*>(n);
+    return toElement(n);
 }
 
 inline bool Element::fastHasAttribute(const QualifiedName& name) const
@@ -835,10 +837,8 @@ inline const AtomicString& Element::getClassAttribute() const
 {
     if (!hasClass())
         return nullAtom;
-#if ENABLE(SVG)
     if (isSVGElement())
         return getAttribute(HTMLNames::classAttr);
-#endif
     return fastGetAttribute(HTMLNames::classAttr);
 }
 

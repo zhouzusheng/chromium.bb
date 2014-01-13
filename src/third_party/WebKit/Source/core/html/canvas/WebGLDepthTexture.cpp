@@ -34,6 +34,7 @@ namespace WebCore {
 WebGLDepthTexture::WebGLDepthTexture(WebGLRenderingContext* context)
     : WebGLExtension(context)
 {
+    ScriptWrappable::init(this);
     context->graphicsContext3D()->getExtensions()->ensureEnabled("GL_CHROMIUM_depth_texture");
 }
 
@@ -46,14 +47,19 @@ WebGLExtension::ExtensionName WebGLDepthTexture::getName() const
     return WebGLDepthTextureName;
 }
 
-PassOwnPtr<WebGLDepthTexture> WebGLDepthTexture::create(WebGLRenderingContext* context)
+PassRefPtr<WebGLDepthTexture> WebGLDepthTexture::create(WebGLRenderingContext* context)
 {
-    return adoptPtr(new WebGLDepthTexture(context));
+    return adoptRef(new WebGLDepthTexture(context));
 }
 
 bool WebGLDepthTexture::supported(WebGLRenderingContext* context)
 {
     Extensions3D* extensions = context->graphicsContext3D()->getExtensions();
+    // Emulating the UNSIGNED_INT_24_8_WEBGL texture internal format in terms
+    // of two separate texture objects is too difficult, so disable depth
+    // textures unless a packed depth/stencil format is available.
+    if (!extensions->supports("GL_OES_packed_depth_stencil"))
+        return false;
     return extensions->supports("GL_CHROMIUM_depth_texture")
         || extensions->supports("GL_OES_depth_texture")
         || extensions->supports("GL_ARB_depth_texture");

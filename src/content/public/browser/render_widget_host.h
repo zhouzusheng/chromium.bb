@@ -11,8 +11,8 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_sender.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "ui/gfx/size.h"
 #include "ui/surface/transport_dib.h"
 
@@ -112,6 +112,19 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // Returns the size of all the backing stores used for rendering
   static size_t BackingStoreMemorySize();
 
+  // Adds/removes a callback called on creation of each new RenderWidgetHost.
+  typedef base::Callback<void(RenderWidgetHost*)> CreatedCallback;
+  static void AddCreatedCallback(const CreatedCallback& callback);
+  static void RemoveCreatedCallback(const CreatedCallback& callback);
+
+  // Returns the RenderWidgetHost given its ID and the ID of its render process.
+  // Returns NULL if the IDs do not correspond to a live RenderWidgetHost.
+  static RenderWidgetHost* FromID(int32 process_id, int32 routing_id);
+
+  typedef std::vector<RenderWidgetHost*> List;
+  // Returns the global list of render widget hosts.
+  static RenderWidgetHost::List GetRenderWidgetHosts();
+
   virtual ~RenderWidgetHost() {}
 
   // Edit operations.
@@ -124,6 +137,7 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   virtual void PasteAndMatchStyle() = 0;
   virtual void Delete() = 0;
   virtual void SelectAll() = 0;
+  virtual void Unselect() = 0;
 
   // Update the text direction of the focused input element and notify it to a
   // renderer process.

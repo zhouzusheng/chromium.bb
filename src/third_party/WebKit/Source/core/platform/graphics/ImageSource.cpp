@@ -2,7 +2,6 @@
  * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  * Copyright (C) 2007 Alp Toker <alp.toker@collabora.co.uk>
  * Copyright (C) 2008, Google Inc. All rights reserved.
- * Copyright (C) 2007-2009 Torch Mobile, Inc
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,19 +28,13 @@
 #include "config.h"
 #include "core/platform/graphics/ImageSource.h"
 
-#include "core/platform/image-decoders/ImageDecoder.h"
-
-#include "core/platform/NotImplemented.h"
 #include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/graphics/ImageOrientation.h"
-
 #include "core/platform/graphics/chromium/DeferredImageDecoder.h"
+#include "core/platform/image-decoders/ImageDecoder.h"
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
-
-#if ENABLE(IMAGE_DECODER_DOWN_SAMPLING)
-unsigned ImageSource::s_maxPixelsPerDecodedImage = 1024 * 1024;
-#endif
 
 ImageSource::ImageSource(ImageSource::AlphaOption alphaOption, ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption)
     : m_alphaOption(alphaOption)
@@ -51,20 +44,11 @@ ImageSource::ImageSource(ImageSource::AlphaOption alphaOption, ImageSource::Gamm
 
 ImageSource::~ImageSource()
 {
-    clear(true);
 }
 
-void ImageSource::clear(bool destroyAll, size_t clearBeforeFrame, SharedBuffer* data, bool allDataReceived)
+size_t ImageSource::clearCacheExceptFrame(size_t clearExceptFrame)
 {
-    if (!destroyAll) {
-        if (m_decoder)
-            m_decoder->clearFrameBufferCache(clearBeforeFrame);
-        return;
-    }
-
-    m_decoder.clear();
-    if (data)
-        setData(data, allDataReceived);
+    return m_decoder ? m_decoder->clearCacheExceptFrame(clearExceptFrame) : 0;
 }
 
 bool ImageSource::initialized() const
@@ -78,13 +62,8 @@ void ImageSource::setData(SharedBuffer* data, bool allDataReceived)
     // This method will examine the data and instantiate an instance of the appropriate decoder plugin.
     // If insufficient bytes are available to determine the image type, no decoder plugin will be
     // made.
-    if (!m_decoder) {
-        m_decoder = NativeImageDecoder::create(*data, m_alphaOption, m_gammaAndColorProfileOption);
-#if ENABLE(IMAGE_DECODER_DOWN_SAMPLING)
-        if (m_decoder && s_maxPixelsPerDecodedImage)
-            m_decoder->setMaxNumPixels(s_maxPixelsPerDecodedImage);
-#endif
-    }
+    if (!m_decoder)
+        m_decoder = DeferredImageDecoder::create(*data, m_alphaOption, m_gammaAndColorProfileOption);
 
     if (m_decoder)
         m_decoder->setData(data, allDataReceived);
@@ -137,7 +116,7 @@ size_t ImageSource::frameCount() const
     return m_decoder ? m_decoder->frameCount() : 0;
 }
 
-PassNativeImagePtr ImageSource::createFrameAtIndex(size_t index)
+PassRefPtr<NativeImageSkia> ImageSource::createFrameAtIndex(size_t index)
 {
     if (!m_decoder)
         return 0;

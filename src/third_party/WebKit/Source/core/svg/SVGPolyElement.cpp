@@ -20,14 +20,10 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGPolyElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/platform/graphics/FloatPoint.h"
-#include "core/rendering/svg/RenderSVGPath.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGAnimatedPointList.h"
 #include "core/svg/SVGElementInstance.h"
@@ -75,7 +71,7 @@ bool SVGPolyElement::isSupportedAttribute(const QualifiedName& attrName)
         SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::pointsAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGPolyElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -167,5 +163,3 @@ SVGListPropertyTearOff<SVGPointList>* SVGPolyElement::animatedPoints()
 }
 
 }
-
-#endif // ENABLE(SVG)

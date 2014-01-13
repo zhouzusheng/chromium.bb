@@ -53,6 +53,14 @@ enum AnimatedPropertyID {
     AnimatedPropertyWebkitFilter
 };
 
+enum {
+    LayerTreeNormal = 0,
+    LayerTreeIncludesDebugInfo = 1 << 0, // Dump extra debugging info like layer addresses.
+    LayerTreeIncludesRepaintRects = 1 << 1,
+    LayerTreeIncludesPaintingPhases = 1 << 2
+};
+typedef unsigned LayerTreeFlags;
+
 class GraphicsLayerClient {
 public:
     virtual ~GraphicsLayerClient() {}
@@ -66,11 +74,6 @@ public:
     // Provides current transform (taking transform-origin and animations into account). Input matrix has been
     // initialized to identity already. Returns false if the layer has no transform.
     virtual bool getCurrentTransform(const GraphicsLayer*, TransformationMatrix&) const { return false; }
-
-    // Multiplier for backing store size, related to high DPI.
-    virtual float deviceScaleFactor() const { return 1; }
-    // Page scale factor.
-    virtual float pageScaleFactor() const { return 1; }
 
     virtual bool isTrackingRepaints() const { return false; }
 

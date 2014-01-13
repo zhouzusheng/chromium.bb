@@ -33,7 +33,6 @@
 
 #include "core/inspector/DOMEditor.h"
 
-#include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Node.h"
@@ -265,15 +264,15 @@ public:
         return redo(ec);
     }
 
-    virtual bool undo(ExceptionCode& ec)
+    virtual bool undo(ExceptionCode&)
     {
-        m_textNode->replaceWholeText(m_oldText, ec);
+        m_textNode->replaceWholeText(m_oldText);
         return true;
     }
 
-    virtual bool redo(ExceptionCode& ec)
+    virtual bool redo(ExceptionCode&)
     {
-        m_textNode->replaceWholeText(m_text, ec);
+        m_textNode->replaceWholeText(m_text);
         return true;
     }
 

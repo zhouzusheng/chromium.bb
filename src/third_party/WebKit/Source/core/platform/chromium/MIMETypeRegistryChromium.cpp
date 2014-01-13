@@ -31,11 +31,10 @@
 #include "config.h"
 #include "core/platform/MIMETypeRegistry.h"
 
-#include "core/platform/graphics/MediaPlayer.h"
 #include "core/plugins/PluginData.h"
 
-#include <public/Platform.h>
-#include <public/WebMimeRegistry.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebMimeRegistry.h"
 #include <wtf/text/CString.h>
 
 // NOTE: Unlike other ports, we don't use the shared implementation in
@@ -117,13 +116,6 @@ bool MIMETypeRegistry::isSupportedNonImageMIMEType(const String& mimeType)
 {
     return WebKit::Platform::current()->mimeRegistry()->supportsNonImageMIMEType(mimeType)
         != WebKit::WebMimeRegistry::IsNotSupported;
-}
-
-bool MIMETypeRegistry::isSupportedMediaMIMEType(const String& mimeType)
-{
-    HashSet<String> supportedMediaMIMETypes;
-    MediaPlayer::getSupportedTypes(supportedMediaMIMETypes);
-    return !mimeType.isEmpty() && supportedMediaMIMETypes.contains(mimeType);
 }
 
 bool MIMETypeRegistry::isSupportedMediaSourceMIMEType(const String& mimeType, const String& codecs)

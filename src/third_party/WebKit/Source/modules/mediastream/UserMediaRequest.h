@@ -50,7 +50,7 @@ class MediaConstraintsImpl;
 class MediaStreamDescriptor;
 class UserMediaController;
 
-class UserMediaRequest : public MediaStreamSourcesQueryClient, public ContextDestructionObserver {
+class UserMediaRequest : public MediaStreamSourcesQueryClient, public ContextLifecycleObserver {
 public:
     static PassRefPtr<UserMediaRequest> create(ScriptExecutionContext*, UserMediaController*, const Dictionary& options, PassRefPtr<NavigatorUserMediaSuccessCallback>, PassRefPtr<NavigatorUserMediaErrorCallback>, ExceptionCode&);
     ~UserMediaRequest();
@@ -62,7 +62,8 @@ public:
     void start();
 
     void succeed(PassRefPtr<MediaStreamDescriptor>);
-    void fail();
+    void fail(const String& description);
+    void failConstraint(const String& constraintName, const String& description);
 
     MediaConstraints* audioConstraints() const;
     MediaConstraints* videoConstraints() const;
@@ -70,9 +71,9 @@ public:
     // MediaStreamSourcesQueryClient
     virtual bool audio() const;
     virtual bool video() const;
-    virtual void didCompleteQuery(const MediaStreamSourceVector& audioSources, const MediaStreamSourceVector& videoSources);
+    virtual void didCompleteQuery(const MediaStreamSourceVector& audioSources, const MediaStreamSourceVector& videoSources) { }
 
-    // ContextDestructionObserver
+    // ContextLifecycleObserver
     virtual void contextDestroyed();
 
 private:

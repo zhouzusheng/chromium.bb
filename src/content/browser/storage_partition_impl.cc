@@ -4,7 +4,7 @@
 
 #include "content/browser/storage_partition_impl.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/fileapi/browser_file_system_helper.h"
 #include "content/browser/gpu/shader_disk_cache.h"
 #include "content/public/browser/browser_context.h"
@@ -14,11 +14,11 @@
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
 #include "net/cookies/cookie_monster.h"
-#include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_context.h"
-#include "webkit/database/database_tracker.h"
-#include "webkit/dom_storage/dom_storage_types.h"
-#include "webkit/quota/quota_manager.h"
+#include "net/url_request/url_request_context_getter.h"
+#include "webkit/browser/database/database_tracker.h"
+#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/common/dom_storage/dom_storage_types.h"
 
 namespace content {
 
@@ -196,12 +196,12 @@ StoragePartitionImpl* StoragePartitionImpl::Create(
   // QuotaManager prior to the QuotaManger being used. We do them
   // all together here prior to handing out a reference to anything
   // that utilizes the QuotaManager.
-  scoped_refptr<quota::QuotaManager> quota_manager =
-      new quota::QuotaManager(
-          in_memory, partition_path,
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB),
-          context->GetSpecialStoragePolicy());
+  scoped_refptr<quota::QuotaManager> quota_manager = new quota::QuotaManager(
+      in_memory,
+      partition_path,
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get(),
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB).get(),
+      context->GetSpecialStoragePolicy());
 
   // Each consumer is responsible for registering its QuotaClient during
   // its construction.
@@ -213,30 +213,34 @@ StoragePartitionImpl* StoragePartitionImpl::Create(
 
   scoped_refptr<webkit_database::DatabaseTracker> database_tracker =
       new webkit_database::DatabaseTracker(
-          partition_path, in_memory,
-          context->GetSpecialStoragePolicy(), quota_manager->proxy(),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
+          partition_path,
+          in_memory,
+          context->GetSpecialStoragePolicy(),
+          quota_manager->proxy(),
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
+              .get());
 
   base::FilePath path = in_memory ? base::FilePath() : partition_path;
   scoped_refptr<DOMStorageContextImpl> dom_storage_context =
       new DOMStorageContextImpl(path, context->GetSpecialStoragePolicy());
 
   scoped_refptr<IndexedDBContextImpl> indexed_db_context =
-      new IndexedDBContextImpl(path, context->GetSpecialStoragePolicy(),
+      new IndexedDBContextImpl(path,
+                               context->GetSpecialStoragePolicy(),
                                quota_manager->proxy(),
                                BrowserThread::GetMessageLoopProxyForThread(
-                                   BrowserThread::WEBKIT_DEPRECATED));
+                                   BrowserThread::WEBKIT_DEPRECATED).get());
 
   scoped_refptr<ChromeAppCacheService> appcache_service =
       new ChromeAppCacheService(quota_manager->proxy());
 
   return new StoragePartitionImpl(partition_path,
-                                  quota_manager,
-                                  appcache_service,
-                                  filesystem_context,
-                                  database_tracker,
-                                  dom_storage_context,
-                                  indexed_db_context);
+                                  quota_manager.get(),
+                                  appcache_service.get(),
+                                  filesystem_context.get(),
+                                  database_tracker.get(),
+                                  dom_storage_context.get(),
+                                  indexed_db_context.get());
 }
 
 base::FilePath StoragePartitionImpl::GetPath() {
@@ -244,36 +248,36 @@ base::FilePath StoragePartitionImpl::GetPath() {
 }
 
 net::URLRequestContextGetter* StoragePartitionImpl::GetURLRequestContext() {
-  return url_request_context_;
+  return url_request_context_.get();
 }
 
 net::URLRequestContextGetter*
 StoragePartitionImpl::GetMediaURLRequestContext() {
-  return media_url_request_context_;
+  return media_url_request_context_.get();
 }
 
 quota::QuotaManager* StoragePartitionImpl::GetQuotaManager() {
-  return quota_manager_;
+  return quota_manager_.get();
 }
 
 ChromeAppCacheService* StoragePartitionImpl::GetAppCacheService() {
-  return appcache_service_;
+  return appcache_service_.get();
 }
 
 fileapi::FileSystemContext* StoragePartitionImpl::GetFileSystemContext() {
-  return filesystem_context_;
+  return filesystem_context_.get();
 }
 
 webkit_database::DatabaseTracker* StoragePartitionImpl::GetDatabaseTracker() {
-  return database_tracker_;
+  return database_tracker_.get();
 }
 
 DOMStorageContextImpl* StoragePartitionImpl::GetDOMStorageContext() {
-  return dom_storage_context_;
+  return dom_storage_context_.get();
 }
 
 IndexedDBContextImpl* StoragePartitionImpl::GetIndexedDBContext() {
-  return indexed_db_context_;
+  return indexed_db_context_.get();
 }
 
 void StoragePartitionImpl::AsyncClearDataForOrigin(

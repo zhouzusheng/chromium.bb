@@ -4,8 +4,8 @@
 
 #include "net/server/http_connection.h"
 
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "net/server/http_server.h"
 #include "net/server/web_socket.h"
 #include "net/socket/stream_listen_socket.h"
@@ -15,13 +15,13 @@ namespace net {
 int HttpConnection::last_id_ = 0;
 
 void HttpConnection::Send(const std::string& data) {
-  if (!socket_)
+  if (!socket_.get())
     return;
   socket_->Send(data);
 }
 
 void HttpConnection::Send(const char* bytes, int len) {
-  if (!socket_)
+  if (!socket_.get())
     return;
   socket_->Send(bytes, len);
 }
@@ -29,7 +29,7 @@ void HttpConnection::Send(const char* bytes, int len) {
 void HttpConnection::Send(HttpStatusCode status_code,
                           const std::string& data,
                           const std::string& content_type) {
-  if (!socket_)
+  if (!socket_.get())
     return;
 
   std::string status_message;

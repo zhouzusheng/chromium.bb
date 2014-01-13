@@ -47,6 +47,7 @@ class AudioParameters;
 }
 
 namespace content {
+class AudioMirroringManager;
 class MediaStreamManager;
 
 class CONTENT_EXPORT AudioInputRendererHost
@@ -56,7 +57,8 @@ class CONTENT_EXPORT AudioInputRendererHost
   // Called from UI thread from the owner of this object.
   AudioInputRendererHost(
       media::AudioManager* audio_manager,
-      MediaStreamManager* media_stream_manager);
+      MediaStreamManager* media_stream_manager,
+      AudioMirroringManager* audio_mirroring_manager);
 
   // BrowserMessageFilter implementation.
   virtual void OnChannelClosing() OVERRIDE;
@@ -89,8 +91,7 @@ class CONTENT_EXPORT AudioInputRendererHost
   // Creates an audio input stream with the specified format whose data is
   // consumed by an entity in the render view referenced by |render_view_id|.
   // |session_id| is used to find out which device to be used for the stream.
-  // When it is AudioInputDeviceManager::kFakeOpenSessionId, it uses the the
-  // default device.  Upon success/failure, the peer is notified via the
+  // Upon success/failure, the peer is notified via the
   // NotifyStreamCreated message.
   void OnCreateStream(int stream_id,
                       int render_view_id,
@@ -147,6 +148,8 @@ class CONTENT_EXPORT AudioInputRendererHost
 
   // Used to access to AudioInputDeviceManager.
   MediaStreamManager* media_stream_manager_;
+
+  AudioMirroringManager* audio_mirroring_manager_;
 
   // A map of stream IDs to audio sources.
   AudioEntryMap audio_entries_;

@@ -26,7 +26,7 @@
 #include "core/dom/DOMImplementation.h"
 
 #include "HTMLNames.h"
-#include "XMLNames.h"
+#include "SVGNames.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaList.h"
 #include "core/css/StyleSheetContents.h"
@@ -35,28 +35,23 @@
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLDocument.h"
+#include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLViewSourceDocument.h"
 #include "core/html/ImageDocument.h"
 #include "core/html/MediaDocument.h"
 #include "core/html/PluginDocument.h"
 #include "core/html/TextDocument.h"
 #include "core/loader/FrameLoader.h"
-#include "core/loader/FrameLoaderClient.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/SecurityOrigin.h"
-#include "core/page/Settings.h"
 #include "core/platform/ContentType.h"
 #include "core/platform/MIMETypeRegistry.h"
 #include "core/platform/graphics/Image.h"
 #include "core/platform/graphics/MediaPlayer.h"
 #include "core/plugins/PluginData.h"
-#include <wtf/StdLibExtras.h>
-
-#if ENABLE(SVG)
-#include "SVGNames.h"
 #include "core/svg/SVGDocument.h"
-#endif
+#include "weborigin/SecurityOrigin.h"
+#include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
@@ -66,24 +61,6 @@ static void addString(FeatureSet& set, const char* string)
 {
     set.add(string);
 }
-
-class DOMImplementationSupportsTypeClient : public MediaPlayerSupportsTypeClient {
-public:
-    DOMImplementationSupportsTypeClient(bool needsHacks, const String& host)
-        : m_needsHacks(needsHacks)
-        , m_host(host)
-    {
-    }
-
-private:
-    virtual bool mediaPlayerNeedsSiteSpecificHacks() const OVERRIDE { return m_needsHacks; }
-    virtual String mediaPlayerDocumentHost() const OVERRIDE { return m_host; }
-
-    bool m_needsHacks;
-    String m_host;
-};
-
-#if ENABLE(SVG)
 
 static bool isSVG10Feature(const String &feature, const String &version)
 {
@@ -180,7 +157,6 @@ static bool isSVG11Feature(const String &feature, const String &version)
     return feature.startsWith("http://www.w3.org/tr/svg11/feature#", false)
         && svgFeatures.contains(feature.right(feature.length() - 35));
 }
-#endif
 
 static bool isEvents2Feature(const String &feature, const String &version)
 {
@@ -251,12 +227,10 @@ bool DOMImplementation::hasFeature(const String& feature, const String& version)
     if (isEvents3Feature(feature, version))
         return true;
 
-#if ENABLE(SVG)
     if (isSVG11Feature(feature, version))
         return true;
     if (isSVG10Feature(feature, version))
         return true;
-#endif
 
     return false;
 }
@@ -280,12 +254,9 @@ PassRefPtr<Document> DOMImplementation::createDocument(const String& namespaceUR
     const String& qualifiedName, DocumentType* doctype, ExceptionCode& ec)
 {
     RefPtr<Document> doc;
-#if ENABLE(SVG)
     if (namespaceURI == SVGNames::svgNamespaceURI)
         doc = SVGDocument::create(0, KURL());
-    else
-#endif
-    if (namespaceURI == HTMLNames::xhtmlNamespaceURI)
+    else if (namespaceURI == HTMLNames::xhtmlNamespaceURI)
         doc = Document::createXHTML(0, KURL());
     else
         doc = Document::create(0, KURL());
@@ -318,12 +289,12 @@ PassRefPtr<Document> DOMImplementation::createDocument(const String& namespaceUR
     return doc.release();
 }
 
-PassRefPtr<CSSStyleSheet> DOMImplementation::createCSSStyleSheet(const String&, const String& media, ExceptionCode&)
+PassRefPtr<CSSStyleSheet> DOMImplementation::createCSSStyleSheet(const String&, const String& media)
 {
     // FIXME: Title should be set.
     // FIXME: Media could have wrong syntax, in which case we should generate an exception.
     RefPtr<CSSStyleSheet> sheet = CSSStyleSheet::create(StyleSheetContents::create());
-    sheet->setMediaQueries(MediaQuerySet::createAllowingDescriptionSyntax(media));
+    sheet->setMediaQueries(MediaQuerySet::create(media));
     return sheet;
 }
 
@@ -433,11 +404,9 @@ PassRefPtr<Document> DOMImplementation::createDocument(const String& type, Frame
     if (Image::supportsType(type))
         return ImageDocument::create(frame, url);
 
-     // Check to see if the type can be played by our MediaPlayer, if so create a MediaDocument
-    // Key system is not applicable here.
-    DOMImplementationSupportsTypeClient client(frame && frame->settings() && frame->settings()->needsSiteSpecificQuirks(), url.host());
-    if (MediaPlayer::supportsType(ContentType(type), String(), url, &client))
-         return MediaDocument::create(frame, url);
+    // Check to see if the type can be played by our MediaPlayer, if so create a MediaDocument
+    if (HTMLMediaElement::supportsType(ContentType(type)))
+        return MediaDocument::create(frame, url);
 
     // Everything else except text/plain can be overridden by plugins. In particular, Adobe SVG Viewer should be used for SVG, if installed.
     // Disallowing plug-ins to use text/plain prevents plug-ins from hijacking a fundamental type that the browser is expected to handle,
@@ -446,11 +415,8 @@ PassRefPtr<Document> DOMImplementation::createDocument(const String& type, Frame
         return PluginDocument::create(frame, url);
     if (isTextMIMEType(type))
         return TextDocument::create(frame, url);
-
-#if ENABLE(SVG)
     if (type == "image/svg+xml")
         return SVGDocument::create(frame, url);
-#endif
     if (isXMLMIMEType(type))
         return Document::create(frame, url);
 

@@ -51,6 +51,7 @@ class Timing;
 
 namespace cricket {
 
+class AudioRenderer;
 struct RtpHeader;
 class ScreencastId;
 struct VideoFormat;
@@ -163,6 +164,8 @@ struct AudioOptions {
     conference_mode.SetFrom(change.conference_mode);
     adjust_agc_delta.SetFrom(change.adjust_agc_delta);
     experimental_agc.SetFrom(change.experimental_agc);
+    experimental_aec.SetFrom(change.experimental_aec);
+    aec_dump.SetFrom(change.aec_dump);
   }
 
   bool operator==(const AudioOptions& o) const {
@@ -174,7 +177,9 @@ struct AudioOptions {
         typing_detection == o.typing_detection &&
         conference_mode == o.conference_mode &&
         experimental_agc == o.experimental_agc &&
-        adjust_agc_delta == o.adjust_agc_delta;
+        experimental_aec == o.experimental_aec &&
+        adjust_agc_delta == o.adjust_agc_delta &&
+        aec_dump == o.aec_dump;
   }
 
   std::string ToString() const {
@@ -189,6 +194,8 @@ struct AudioOptions {
     ost << ToStringIfSet("conference", conference_mode);
     ost << ToStringIfSet("agc_delta", adjust_agc_delta);
     ost << ToStringIfSet("experimental_agc", experimental_agc);
+    ost << ToStringIfSet("experimental_aec", experimental_aec);
+    ost << ToStringIfSet("aec_dump", aec_dump);
     ost << "}";
     return ost.str();
   }
@@ -209,6 +216,8 @@ struct AudioOptions {
   Settable<bool> conference_mode;
   Settable<int> adjust_agc_delta;
   Settable<bool> experimental_agc;
+  Settable<bool> experimental_aec;
+  Settable<bool> aec_dump;
 };
 
 // Options that can be applied to a VideoMediaChannel or a VideoMediaEngine.
@@ -464,6 +473,7 @@ struct VoiceSenderInfo {
         rtt_ms(0),
         jitter_ms(0),
         audio_level(0),
+        aec_quality_min(0.0),
         echo_delay_median_ms(0),
         echo_delay_std_ms(0),
         echo_return_loss(0),
@@ -480,6 +490,7 @@ struct VoiceSenderInfo {
   int rtt_ms;
   int jitter_ms;
   int audio_level;
+  float aec_quality_min;
   int echo_delay_median_ms;
   int echo_delay_std_ms;
   int echo_return_loss;
@@ -702,6 +713,8 @@ class VoiceMediaChannel : public MediaChannel {
   virtual bool SetPlayout(bool playout) = 0;
   // Starts or stops sending (and potentially capture) of local audio.
   virtual bool SetSend(SendFlags flag) = 0;
+  // Sets the renderer object to be used for the specified audio stream.
+  virtual bool SetRenderer(uint32 ssrc, AudioRenderer* renderer) = 0;
   // Gets current energy levels for all incoming streams.
   virtual bool GetActiveStreams(AudioInfo::StreamList* actives) = 0;
   // Get the current energy level of the stream sent to the speaker.

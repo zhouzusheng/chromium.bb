@@ -31,13 +31,12 @@
 #include "core/html/canvas/WebGLShader.h"
 #include "core/platform/graphics/Extensions3D.h"
 
-#include <wtf/OwnArrayPtr.h>
-
 namespace WebCore {
 
 WebGLDebugShaders::WebGLDebugShaders(WebGLRenderingContext* context)
     : WebGLExtension(context)
 {
+    ScriptWrappable::init(this);
 }
 
 WebGLDebugShaders::~WebGLDebugShaders()
@@ -49,15 +48,15 @@ WebGLExtension::ExtensionName WebGLDebugShaders::getName() const
     return WebGLDebugShadersName;
 }
 
-PassOwnPtr<WebGLDebugShaders> WebGLDebugShaders::create(WebGLRenderingContext* context)
+PassRefPtr<WebGLDebugShaders> WebGLDebugShaders::create(WebGLRenderingContext* context)
 {
-    return adoptPtr(new WebGLDebugShaders(context));
+    return adoptRef(new WebGLDebugShaders(context));
 }
 
 String WebGLDebugShaders::getTranslatedShaderSource(WebGLShader* shader, ExceptionCode& ec)
 {
     UNUSED_PARAM(ec);
-    if (m_context->isContextLost())
+    if (isLost())
         return String();
     if (!m_context->validateWebGLObject("getTranslatedShaderSource", shader))
         return "";

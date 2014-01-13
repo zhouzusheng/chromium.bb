@@ -27,42 +27,38 @@
 #include "config.h"
 #include "core/css/CSSValue.h"
 
+#include "core/css/CSSArrayFunctionValue.h"
 #include "core/css/CSSAspectRatioValue.h"
 #include "core/css/CSSBorderImageSliceValue.h"
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSCanvasValue.h"
 #include "core/css/CSSCrossfadeValue.h"
 #include "core/css/CSSCursorImageValue.h"
+#include "core/css/CSSFilterValue.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSFunctionValue.h"
 #include "core/css/CSSGradientValue.h"
-#include "core/css/CSSImageGeneratorValue.h"
 #include "core/css/CSSImageSetValue.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSInheritedValue.h"
 #include "core/css/CSSInitialValue.h"
 #include "core/css/CSSLineBoxContainValue.h"
+#include "core/css/CSSMixFunctionValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSReflectValue.h"
+#include "core/css/CSSSVGDocumentValue.h"
+#include "core/css/CSSShaderValue.h"
 #include "core/css/CSSTimingFunctionValue.h"
+#include "core/css/CSSTransformValue.h"
 #include "core/css/CSSUnicodeRangeValue.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/CSSVariableValue.h"
 #include "core/css/FontFeatureValue.h"
 #include "core/css/FontValue.h"
 #include "core/css/ShadowValue.h"
-#include "core/css/WebKitCSSArrayFunctionValue.h"
-#include "core/css/WebKitCSSFilterValue.h"
-#include "core/css/WebKitCSSMixFunctionValue.h"
-#include "core/css/WebKitCSSShaderValue.h"
-#include "core/css/WebKitCSSTransformValue.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/svg/SVGColor.h"
 #include "core/svg/SVGPaint.h"
-
-#if ENABLE(SVG)
-#include "core/css/WebKitCSSSVGDocumentValue.h"
-#endif
 
 namespace WebCore {
 
@@ -119,9 +115,9 @@ void CSSValue::addSubresourceStyleURLs(ListHashSet<KURL>& urls, const StyleSheet
     ASSERT(!isCSSOMSafe());
 
     if (isPrimitiveValue())
-        static_cast<const CSSPrimitiveValue*>(this)->addSubresourceStyleURLs(urls, styleSheet);
+        toCSSPrimitiveValue(this)->addSubresourceStyleURLs(urls, styleSheet);
     else if (isValueList())
-        static_cast<const CSSValueList*>(this)->addSubresourceStyleURLs(urls, styleSheet);
+        toCSSValueList(this)->addSubresourceStyleURLs(urls, styleSheet);
     else if (classType() == FontFaceSrcClass)
         static_cast<const CSSFontFaceSrcValue*>(this)->addSubresourceStyleURLs(urls, styleSheet);
     else if (classType() == ReflectClass)
@@ -134,11 +130,11 @@ bool CSSValue::hasFailedOrCanceledSubresources() const
     ASSERT(!isCSSOMSafe());
 
     if (isValueList())
-        return static_cast<const CSSValueList*>(this)->hasFailedOrCanceledSubresources();
+        return toCSSValueList(this)->hasFailedOrCanceledSubresources();
     if (classType() == FontFaceSrcClass)
         return static_cast<const CSSFontFaceSrcValue*>(this)->hasFailedOrCanceledSubresources();
     if (classType() == ImageClass)
-        return static_cast<const CSSImageValue*>(this)->hasFailedOrCanceledSubresources();
+        return toCSSImageValue(this)->hasFailedOrCanceledSubresources();
     if (classType() == CrossfadeClass)
         return static_cast<const CSSCrossfadeValue*>(this)->hasFailedOrCanceledSubresources();
     if (classType() == ImageSetClass)
@@ -158,10 +154,10 @@ void CSSValue::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     ASSERT(!isCSSOMSafe() || isSubtypeExposedToCSSOM());
     switch (classType()) {
     case PrimitiveClass:
-        static_cast<const CSSPrimitiveValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        toCSSPrimitiveValue(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
     case ImageClass:
-        static_cast<const CSSImageValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        toCSSImageValue(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
     case CursorImageClass:
         static_cast<const CSSCursorImageValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
@@ -226,40 +222,38 @@ void CSSValue::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     case CalculationClass:
         static_cast<const CSSCalcValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
-    case WebKitCSSArrayFunctionValueClass:
-        static_cast<const WebKitCSSArrayFunctionValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+    case CSSArrayFunctionValueClass:
+        static_cast<const CSSArrayFunctionValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
-    case WebKitCSSMixFunctionValueClass:
-        static_cast<const WebKitCSSMixFunctionValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+    case CSSMixFunctionValueClass:
+        static_cast<const CSSMixFunctionValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
-    case WebKitCSSShaderClass:
-        static_cast<const WebKitCSSShaderValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+    case CSSShaderClass:
+        static_cast<const CSSShaderValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
     case VariableClass:
         static_cast<const CSSVariableValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
-#if ENABLE(SVG)
     case SVGColorClass:
         static_cast<const SVGColor*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
     case SVGPaintClass:
         static_cast<const SVGPaint*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
-    case WebKitCSSSVGDocumentClass:
-        static_cast<const WebKitCSSSVGDocumentValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+    case CSSSVGDocumentClass:
+        static_cast<const CSSSVGDocumentValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
-#endif
     case ValueListClass:
-        static_cast<const CSSValueList*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        toCSSValueList(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
     case ImageSetClass:
         static_cast<const CSSImageSetValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
-    case WebKitCSSFilterClass:
-        static_cast<const WebKitCSSFilterValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+    case CSSFilterClass:
+        static_cast<const CSSFilterValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
-    case WebKitCSSTransformClass:
-        static_cast<const WebKitCSSTransformValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+    case CSSTransformClass:
+        static_cast<const CSSTransformValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
     }
     ASSERT_NOT_REACHED();
@@ -324,38 +318,36 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSUnicodeRangeValue>(*this, other);
         case ValueListClass:
             return compareCSSValues<CSSValueList>(*this, other);
-        case WebKitCSSTransformClass:
-            return compareCSSValues<WebKitCSSTransformValue>(*this, other);
+        case CSSTransformClass:
+            return compareCSSValues<CSSTransformValue>(*this, other);
         case LineBoxContainClass:
             return compareCSSValues<CSSLineBoxContainValue>(*this, other);
         case CalculationClass:
             return compareCSSValues<CSSCalcValue>(*this, other);
         case ImageSetClass:
             return compareCSSValues<CSSImageSetValue>(*this, other);
-        case WebKitCSSFilterClass:
-            return compareCSSValues<WebKitCSSFilterValue>(*this, other);
-        case WebKitCSSArrayFunctionValueClass:
-            return compareCSSValues<WebKitCSSArrayFunctionValue>(*this, other);
-        case WebKitCSSMixFunctionValueClass:
-            return compareCSSValues<WebKitCSSMixFunctionValue>(*this, other);
-        case WebKitCSSShaderClass:
-            return compareCSSValues<WebKitCSSShaderValue>(*this, other);
+        case CSSFilterClass:
+            return compareCSSValues<CSSFilterValue>(*this, other);
+        case CSSArrayFunctionValueClass:
+            return compareCSSValues<CSSArrayFunctionValue>(*this, other);
+        case CSSMixFunctionValueClass:
+            return compareCSSValues<CSSMixFunctionValue>(*this, other);
+        case CSSShaderClass:
+            return compareCSSValues<CSSShaderValue>(*this, other);
         case VariableClass:
             return compareCSSValues<CSSVariableValue>(*this, other);
-#if ENABLE(SVG)
         case SVGColorClass:
             return compareCSSValues<SVGColor>(*this, other);
         case SVGPaintClass:
             return compareCSSValues<SVGPaint>(*this, other);
-        case WebKitCSSSVGDocumentClass:
-            return compareCSSValues<WebKitCSSSVGDocumentValue>(*this, other);
-#endif
+        case CSSSVGDocumentClass:
+            return compareCSSValues<CSSSVGDocumentValue>(*this, other);
         default:
             ASSERT_NOT_REACHED();
             return false;
         }
     } else if (m_classType == ValueListClass && other.m_classType != ValueListClass)
-        return static_cast<const CSSValueList*>(this)->equals(other);
+        return toCSSValueList(this)->equals(other);
     else if (m_classType != ValueListClass && other.m_classType == ValueListClass)
         return static_cast<const CSSValueList&>(other).equals(*this);
     return false;
@@ -393,13 +385,13 @@ String CSSValue::cssText() const
     case CrossfadeClass:
         return static_cast<const CSSCrossfadeValue*>(this)->customCssText();
     case ImageClass:
-        return static_cast<const CSSImageValue*>(this)->customCssText();
+        return toCSSImageValue(this)->customCssText();
     case InheritedClass:
         return static_cast<const CSSInheritedValue*>(this)->customCssText();
     case InitialClass:
         return static_cast<const CSSInitialValue*>(this)->customCssText();
     case PrimitiveClass:
-        return static_cast<const CSSPrimitiveValue*>(this)->customCssText();
+        return toCSSPrimitiveValue(this)->customCssText();
     case ReflectClass:
         return static_cast<const CSSReflectValue*>(this)->customCssText();
     case ShadowClass:
@@ -413,33 +405,31 @@ String CSSValue::cssText() const
     case UnicodeRangeClass:
         return static_cast<const CSSUnicodeRangeValue*>(this)->customCssText();
     case ValueListClass:
-        return static_cast<const CSSValueList*>(this)->customCssText();
-    case WebKitCSSTransformClass:
-        return static_cast<const WebKitCSSTransformValue*>(this)->customCssText();
+        return toCSSValueList(this)->customCssText();
+    case CSSTransformClass:
+        return static_cast<const CSSTransformValue*>(this)->customCssText();
     case LineBoxContainClass:
         return static_cast<const CSSLineBoxContainValue*>(this)->customCssText();
     case CalculationClass:
         return static_cast<const CSSCalcValue*>(this)->customCssText();
     case ImageSetClass:
         return static_cast<const CSSImageSetValue*>(this)->customCssText();
-    case WebKitCSSFilterClass:
-        return static_cast<const WebKitCSSFilterValue*>(this)->customCssText();
-    case WebKitCSSArrayFunctionValueClass:
-        return static_cast<const WebKitCSSArrayFunctionValue*>(this)->customCssText();
-    case WebKitCSSMixFunctionValueClass:
-        return static_cast<const WebKitCSSMixFunctionValue*>(this)->customCssText();
-    case WebKitCSSShaderClass:
-        return static_cast<const WebKitCSSShaderValue*>(this)->customCssText();
+    case CSSFilterClass:
+        return static_cast<const CSSFilterValue*>(this)->customCssText();
+    case CSSArrayFunctionValueClass:
+        return static_cast<const CSSArrayFunctionValue*>(this)->customCssText();
+    case CSSMixFunctionValueClass:
+        return static_cast<const CSSMixFunctionValue*>(this)->customCssText();
+    case CSSShaderClass:
+        return static_cast<const CSSShaderValue*>(this)->customCssText();
     case VariableClass:
         return static_cast<const CSSVariableValue*>(this)->value();
-#if ENABLE(SVG)
     case SVGColorClass:
         return static_cast<const SVGColor*>(this)->customCssText();
     case SVGPaintClass:
         return static_cast<const SVGPaint*>(this)->customCssText();
-    case WebKitCSSSVGDocumentClass:
-        return static_cast<const WebKitCSSSVGDocumentValue*>(this)->customCssText();
-#endif
+    case CSSSVGDocumentClass:
+        return static_cast<const CSSSVGDocumentValue*>(this)->customCssText();
     }
     ASSERT_NOT_REACHED();
     return String();
@@ -449,13 +439,13 @@ String CSSValue::serializeResolvingVariables(const HashMap<AtomicString, String>
 {
     switch (classType()) {
     case PrimitiveClass:
-        return static_cast<const CSSPrimitiveValue*>(this)->customSerializeResolvingVariables(variables);
+        return toCSSPrimitiveValue(this)->customSerializeResolvingVariables(variables);
     case ReflectClass:
         return static_cast<const CSSReflectValue*>(this)->customSerializeResolvingVariables(variables);
     case ValueListClass:
-        return static_cast<const CSSValueList*>(this)->customSerializeResolvingVariables(variables);
-    case WebKitCSSTransformClass:
-        return static_cast<const WebKitCSSTransformValue*>(this)->customSerializeResolvingVariables(variables);
+        return toCSSValueList(this)->customSerializeResolvingVariables(variables);
+    case CSSTransformClass:
+        return static_cast<const CSSTransformValue*>(this)->customSerializeResolvingVariables(variables);
     default:
         return cssText();
     }
@@ -505,7 +495,7 @@ void CSSValue::destroy()
         delete static_cast<CSSCrossfadeValue*>(this);
         return;
     case ImageClass:
-        delete static_cast<CSSImageValue*>(this);
+        delete toCSSImageValue(this);
         return;
     case InheritedClass:
         delete static_cast<CSSInheritedValue*>(this);
@@ -514,7 +504,7 @@ void CSSValue::destroy()
         delete static_cast<CSSInitialValue*>(this);
         return;
     case PrimitiveClass:
-        delete static_cast<CSSPrimitiveValue*>(this);
+        delete toCSSPrimitiveValue(this);
         return;
     case ReflectClass:
         delete static_cast<CSSReflectValue*>(this);
@@ -535,10 +525,10 @@ void CSSValue::destroy()
         delete static_cast<CSSUnicodeRangeValue*>(this);
         return;
     case ValueListClass:
-        delete static_cast<CSSValueList*>(this);
+        delete toCSSValueList(this);
         return;
-    case WebKitCSSTransformClass:
-        delete static_cast<WebKitCSSTransformValue*>(this);
+    case CSSTransformClass:
+        delete static_cast<CSSTransformValue*>(this);
         return;
     case LineBoxContainClass:
         delete static_cast<CSSLineBoxContainValue*>(this);
@@ -549,32 +539,30 @@ void CSSValue::destroy()
     case ImageSetClass:
         delete static_cast<CSSImageSetValue*>(this);
         return;
-    case WebKitCSSFilterClass:
-        delete static_cast<WebKitCSSFilterValue*>(this);
+    case CSSFilterClass:
+        delete static_cast<CSSFilterValue*>(this);
         return;
-    case WebKitCSSArrayFunctionValueClass:
-        delete static_cast<WebKitCSSArrayFunctionValue*>(this);
+    case CSSArrayFunctionValueClass:
+        delete static_cast<CSSArrayFunctionValue*>(this);
         return;
-    case WebKitCSSMixFunctionValueClass:
-        delete static_cast<WebKitCSSMixFunctionValue*>(this);
+    case CSSMixFunctionValueClass:
+        delete static_cast<CSSMixFunctionValue*>(this);
         return;
-    case WebKitCSSShaderClass:
-        delete static_cast<WebKitCSSShaderValue*>(this);
+    case CSSShaderClass:
+        delete static_cast<CSSShaderValue*>(this);
         return;
     case VariableClass:
         delete static_cast<CSSVariableValue*>(this);
         return;
-#if ENABLE(SVG)
     case SVGColorClass:
         delete static_cast<SVGColor*>(this);
         return;
     case SVGPaintClass:
         delete static_cast<SVGPaint*>(this);
         return;
-    case WebKitCSSSVGDocumentClass:
-        delete static_cast<WebKitCSSSVGDocumentValue*>(this);
+    case CSSSVGDocumentClass:
+        delete static_cast<CSSSVGDocumentValue*>(this);
         return;
-#endif
     }
     ASSERT_NOT_REACHED();
 }
@@ -583,28 +571,26 @@ PassRefPtr<CSSValue> CSSValue::cloneForCSSOM() const
 {
     switch (classType()) {
     case PrimitiveClass:
-        return static_cast<const CSSPrimitiveValue*>(this)->cloneForCSSOM();
+        return toCSSPrimitiveValue(this)->cloneForCSSOM();
     case ValueListClass:
-        return static_cast<const CSSValueList*>(this)->cloneForCSSOM();
+        return toCSSValueList(this)->cloneForCSSOM();
     case ImageClass:
     case CursorImageClass:
-        return static_cast<const CSSImageValue*>(this)->cloneForCSSOM();
-    case WebKitCSSFilterClass:
-        return static_cast<const WebKitCSSFilterValue*>(this)->cloneForCSSOM();
-    case WebKitCSSArrayFunctionValueClass:
-        return static_cast<const WebKitCSSArrayFunctionValue*>(this)->cloneForCSSOM();
-    case WebKitCSSMixFunctionValueClass:
-        return static_cast<const WebKitCSSMixFunctionValue*>(this)->cloneForCSSOM();
-    case WebKitCSSTransformClass:
-        return static_cast<const WebKitCSSTransformValue*>(this)->cloneForCSSOM();
+        return toCSSImageValue(this)->cloneForCSSOM();
+    case CSSFilterClass:
+        return static_cast<const CSSFilterValue*>(this)->cloneForCSSOM();
+    case CSSArrayFunctionValueClass:
+        return static_cast<const CSSArrayFunctionValue*>(this)->cloneForCSSOM();
+    case CSSMixFunctionValueClass:
+        return static_cast<const CSSMixFunctionValue*>(this)->cloneForCSSOM();
+    case CSSTransformClass:
+        return static_cast<const CSSTransformValue*>(this)->cloneForCSSOM();
     case ImageSetClass:
         return static_cast<const CSSImageSetValue*>(this)->cloneForCSSOM();
-#if ENABLE(SVG)
     case SVGColorClass:
         return static_cast<const SVGColor*>(this)->cloneForCSSOM();
     case SVGPaintClass:
         return static_cast<const SVGPaint*>(this)->cloneForCSSOM();
-#endif
     default:
         ASSERT(!isSubtypeExposedToCSSOM());
         return TextCloneCSSValue::create(classType(), cssText());

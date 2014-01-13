@@ -28,11 +28,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "MockSpellCheck.h"
 
 #include "TestCommon.h"
-#include <public/WebCString.h>
+#include "public/platform/WebCString.h"
 
 using namespace WebKit;
 using namespace std;

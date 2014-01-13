@@ -49,16 +49,16 @@
       'target_name': 'widevinecdmadapter',
       'type': 'none',
       'conditions': [
-        [ 'branding == "Chrome" and OS != "android" and OS != "ios"', {
+        [ 'branding == "Chrome" and enable_pepper_cdms==1', {
           'dependencies': [
             '<(DEPTH)/ppapi/ppapi.gyp:ppapi_cpp',
             'widevine_cdm_version_h',
             'widevine_cdm_binaries',
           ],
           'sources': [
-            '<(DEPTH)/webkit/media/crypto/ppapi/cdm_wrapper.cc',
-            '<(DEPTH)/webkit/media/crypto/ppapi/cdm/content_decryption_module.h',
-            '<(DEPTH)/webkit/media/crypto/ppapi/linked_ptr.h',
+            '<(DEPTH)/webkit/renderer/media/crypto/ppapi/cdm_wrapper.cc',
+            '<(DEPTH)/webkit/renderer/media/crypto/ppapi/cdm/content_decryption_module.h',
+            '<(DEPTH)/webkit/renderer/media/crypto/ppapi/linked_ptr.h',
           ],
           'conditions': [
             [ 'os_posix == 1 and OS != "mac"', {
@@ -80,13 +80,12 @@
                 '<(PRODUCT_DIR)/widevinecdm.dll.lib',
               ],
             }],
-            [ 'OS == "mac"', {
+            [ 'OS == "mac" and target_arch == "ia32"', {
               'type': 'loadable_module',
               'product_extension': 'plugin',
               'libraries': [
                 # Copied by widevine_cdm_binaries.
-                # See http://crbug.com/237636.
-                #'<(PRODUCT_DIR)/libwidevinecdm.dylib',
+                '<(PRODUCT_DIR)/libwidevinecdm.dylib',
               ],
               'xcode_settings': {
                 'OTHER_LDFLAGS': [
@@ -94,8 +93,6 @@
                   '-Wl,-exported_symbol,_PPP_GetInterface',
                   '-Wl,-exported_symbol,_PPP_InitializeModule',
                   '-Wl,-exported_symbol,_PPP_ShutdownModule',
-                  # See http://crbug.com/237636.
-                  '-Wl,-undefined,dynamic_lookup',
                 ],
                 'DYLIB_INSTALL_NAME_BASE': '@loader_path',
               },
@@ -115,6 +112,13 @@
     {
       'target_name': 'widevine_cdm_binaries',
       'type': 'none',
+      'conditions': [
+        [ 'OS=="mac"', {
+          'xcode_settings': {
+            'COPY_PHASE_STRIP': 'NO',
+          }
+        }],
+      ],
       'copies': [{
         # TODO(ddorwin): Do we need a sub-directory? We either need a
         # sub-directory or to rename manifest.json before we can copy it.

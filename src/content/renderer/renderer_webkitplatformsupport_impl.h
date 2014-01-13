@@ -8,18 +8,15 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
+#include "content/child/webkitplatformsupport_impl.h"
 #include "content/common/content_export.h"
-#include "content/common/webkitplatformsupport_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBFactory.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorkerRepository.h"
+#include "third_party/WebKit/public/web/WebSharedWorkerRepository.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebIDBFactory.h"
+#include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 
 namespace cc {
 class ContextProvider;
-}
-
-namespace webkit_glue {
-class WebClipboardImpl;
 }
 
 namespace WebKit {
@@ -30,6 +27,7 @@ namespace content {
 class GamepadSharedMemoryReader;
 class RendererClipboardClient;
 class ThreadSafeSender;
+class WebClipboardImpl;
 class WebFileSystemImpl;
 class WebSharedWorkerRepositoryImpl;
 
@@ -58,6 +56,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual bool isLinkVisited(unsigned long long linkHash);
   virtual WebKit::WebMessagePortChannel* createMessagePortChannel();
   virtual void prefetchHostName(const WebKit::WebString&);
+  virtual WebKit::WebPrescientNetworking* prescientNetworking();
   virtual void cacheMetadata(
       const WebKit::WebURL&, double, const char*, size_t);
   virtual WebKit::WebString defaultLocale();
@@ -102,6 +101,15 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       double sample_rate, WebKit::WebAudioDevice::RenderCallback* callback,
       const WebKit::WebString& input_device_id);
 
+  virtual bool loadAudioResource(
+      WebKit::WebAudioBus* destination_bus, const char* audio_file_data,
+      size_t data_size, double sample_rate);
+
+  virtual WebKit::WebContentDecryptionModule* createContentDecryptionModule(
+      const WebKit::WebString& key_system);
+  virtual WebKit::WebMIDIAccessor*
+      createMIDIAccessor(WebKit::WebMIDIAccessorClient* client);
+
   virtual WebKit::WebBlobRegistry* blobRegistry();
   virtual void sampleGamepads(WebKit::WebGamepads&);
   virtual WebKit::WebString userAgent(const WebKit::WebURL& url);
@@ -115,10 +123,11 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       size_t* private_bytes, size_t* shared_bytes);
   virtual WebKit::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
       const WebKit::WebGraphicsContext3D::Attributes& attributes);
-  virtual WebKit::WebGraphicsContext3D* sharedOffscreenGraphicsContext3D();
-  virtual GrContext* sharedOffscreenGrContext();
   virtual WebKit::WebGraphicsContext3DProvider*
       createSharedOffscreenGraphicsContext3DProvider();
+  virtual WebKit::WebCompositorSupport* compositorSupport();
+  virtual WebKit::WebString convertIDNToUnicode(
+      const WebKit::WebString& host, const WebKit::WebString& languages);
 
   // Disables the WebSandboxSupport implementation for testing.
   // Tests that do not set up a full sandbox environment should call
@@ -136,7 +145,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   bool CheckPreparsedJsCachingEnabled() const;
 
   scoped_ptr<RendererClipboardClient> clipboard_client_;
-  scoped_ptr<webkit_glue::WebClipboardImpl> clipboard_;
+  scoped_ptr<WebClipboardImpl> clipboard_;
 
   class FileUtilities;
   scoped_ptr<FileUtilities> file_utilities_;
@@ -174,6 +183,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
 
   scoped_refptr<cc::ContextProvider> shared_offscreen_context_;
+
+  webkit::WebCompositorSupportImpl compositor_support_;
 };
 
 }  // namespace content

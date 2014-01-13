@@ -23,9 +23,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/graphics/filters/SVGFEImage.h"
 
+#include "SkBitmapSource.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/graphics/transforms/AffineTransform.h"
@@ -139,7 +139,7 @@ void FEImage::applySoftware()
         return;
     }
 
-    resultImage->context()->drawImage(m_image.get(), ColorSpaceDeviceRGB, destRect, srcRect);
+    resultImage->context()->drawImage(m_image.get(), destRect, srcRect);
 }
 
 TextStream& FEImage::externalRepresentation(TextStream& ts, int indent) const
@@ -157,6 +157,15 @@ TextStream& FEImage::externalRepresentation(TextStream& ts, int indent) const
     return ts;
 }
 
-} // namespace WebCore
+SkImageFilter* FEImage::createImageFilter(SkiaImageFilterBuilder* builder)
+{
+    if (!m_image)
+        return 0;
 
-#endif // ENABLE(SVG)
+    if (!m_image->nativeImageForCurrentFrame())
+        return 0;
+
+    return new SkBitmapSource(m_image->nativeImageForCurrentFrame()->bitmap());
+}
+
+} // namespace WebCore

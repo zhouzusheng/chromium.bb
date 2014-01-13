@@ -32,15 +32,12 @@
 #include "core/html/BaseDateAndTimeInputType.h"
 
 #include <limits>
-#include "HTMLNames.h"
-#include "core/dom/KeyboardEvent.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/platform/text/PlatformLocale.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/DateMath.h>
-#include <wtf/MathExtras.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/CurrentTime.h"
+#include "wtf/DateMath.h"
+#include "wtf/MathExtras.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 

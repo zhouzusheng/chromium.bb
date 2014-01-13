@@ -3,7 +3,6 @@
 
 defaultTextEncodingName type=String
 editableLinkBehavior type=EditableLinkBehavior, initial=EditableLinkDefaultBehavior
-textDirectionSubmenuInclusionBehavior type=TextDirectionSubmenuInclusionBehavior, initial=TextDirectionSubmenuAutomaticallyIncluded
 passwordEchoDurationInSeconds type=double, initial=1
 
 # Sets the magnification value for validation message timer.  If the
@@ -54,7 +53,6 @@ usesEncodingDetector initial=false
 allowScriptsToCloseWindows initial=false
 acceleratedFiltersEnabled initial=false
 regionBasedColumnsEnabled initial=false
-cssGridLayoutEnabled initial=false
 
 # FIXME: This should really be disabled by default as it makes platforms that don't support the feature download files
 # they can't use by. Leaving enabled for now to not change existing behavior.
@@ -67,8 +65,10 @@ acceleratedCompositingForVideoEnabled initial=true
 acceleratedCompositingForPluginsEnabled initial=true
 acceleratedCompositingForCanvasEnabled initial=true
 acceleratedCompositingForAnimationEnabled initial=true
+acceleratedCompositingForFiltersEnabled initial=false
 acceleratedCompositingForFixedPositionEnabled initial=false
 acceleratedCompositingForOverflowScrollEnabled initial=false
+acceleratedCompositingForTransitionEnabled initial=false
 
 # Works only in conjunction with forceCompositingMode.
 acceleratedCompositingForScrollableFramesEnabled initial=false
@@ -76,7 +76,6 @@ compositedScrollingForFramesEnabled initial=false
 
 webGLEnabled initial=false
 webGLErrorsToConsoleEnabled initial=true
-openGLMultisamplingEnabled initial=true
 privilegedWebGLExtensionsEnabled initial=false
 accelerated2dCanvasEnabled initial=false
 antialiased2dCanvasEnabled initial=true
@@ -84,9 +83,6 @@ webAudioEnabled initial=false
 fullScreenEnabled initial=false
 asynchronousSpellCheckingEnabled initial=false
 memoryInfoEnabled initial=false
-
-# This feature requires an implementation of ValidationMessageClient.
-interactiveFormValidationEnabled initial=false
 
 hyperlinkAuditingEnabled initial=false
 forceCompositingMode initial=false
@@ -117,7 +113,6 @@ threadedHTMLParser initial=false
 useThreadedHTMLParserForDataURLs initial=false
 
 applyPageScaleFactorInCompositor initial=false
-frameFlatteningEnabled initial=false
 
 allowCustomScrollbarInMainFrame initial=true
 webSecurityEnabled initial=true
@@ -139,3 +134,6 @@ selectionIncludesAltImageText initial=false
 
 # This setting enables touch based text selection and editing.
 touchEditingEnabled initial=false
+
+experimentalWebSocketEnabled initial=false
+pinchVirtualViewportEnabled initial=false

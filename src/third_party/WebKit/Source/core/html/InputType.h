@@ -36,11 +36,10 @@
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/StepRange.h"
 #include "core/page/UseCounter.h"
-#include <wtf/FastAllocBase.h>
-#include <wtf/Forward.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/RefPtr.h>
-#include <wtf/Vector.h>
+#include "wtf/FastAllocBase.h"
+#include "wtf/Forward.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -59,7 +58,6 @@ class Icon;
 class KeyboardEvent;
 class MouseEvent;
 class Node;
-class RenderArena;
 class RenderObject;
 class RenderStyle;
 class TouchEvent;
@@ -101,12 +99,9 @@ public:
     // inflexible because it's harder to add new input types if there is
     // scattered code with special cases for various types.
 
-#if ENABLE(INPUT_TYPE_COLOR)
-    virtual bool isColorControl() const;
-#endif
     virtual bool isCheckbox() const;
+    virtual bool isColorControl() const;
     virtual bool isDateField() const;
-    virtual bool isDateTimeField() const;
     virtual bool isDateTimeLocalField() const;
     virtual bool isEmailField() const;
     virtual bool isFileUpload() const;
@@ -215,12 +210,13 @@ public:
 
     virtual void createShadowSubtree();
     virtual void destroyShadowSubtree();
+    Element* elementById(const AtomicString& id) const;
 
     virtual HTMLElement* containerElement() const { return 0; }
     virtual HTMLElement* innerBlockElement() const { return 0; }
     virtual HTMLElement* innerTextElement() const { return 0; }
     virtual HTMLElement* innerSpinButtonElement() const { return 0; }
-    virtual HTMLElement* resultsButtonElement() const { return 0; }
+    virtual HTMLElement* searchDecorationElement() const { return 0; }
     virtual HTMLElement* cancelButtonElement() const { return 0; }
 #if ENABLE(INPUT_SPEECH)
     virtual HTMLElement* speechButtonElement() const { return 0; }
@@ -232,9 +228,8 @@ public:
     // Miscellaneous functions
 
     virtual bool rendererIsNeeded();
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) const;
+    virtual RenderObject* createRenderer(RenderStyle*) const;
     virtual PassRefPtr<RenderStyle> customStyleForRenderer(PassRefPtr<RenderStyle>);
-    virtual void addSearchResult();
     virtual void attach();
     virtual void detach();
     virtual void minOrMaxAttributeChanged();
@@ -272,10 +267,8 @@ public:
     virtual void requiredAttributeChanged();
     virtual void valueAttributeChanged();
     virtual String defaultToolTip() const;
-#if ENABLE(DATALIST_ELEMENT)
     virtual void listAttributeTargetChanged();
     virtual Decimal findClosestTickMarkValue(const Decimal&);
-#endif
     virtual void updateClearButtonVisibility();
 
     // Parses the specified string for the type, and return

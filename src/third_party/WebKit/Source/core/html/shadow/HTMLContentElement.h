@@ -32,8 +32,7 @@
 #define HTMLContentElement_h
 
 #include "core/css/CSSSelectorList.h"
-#include "core/html/shadow/InsertionPoint.h"
-#include <wtf/Forward.h>
+#include "core/dom/shadow/InsertionPoint.h"
 
 namespace WebCore {
 

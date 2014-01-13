@@ -32,14 +32,11 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/NamedNodeMap.h"
-#include "core/dom/Range.h"
 #include "core/dom/StringCallback.h"
 #include "core/editing/Editor.h"
 #include "core/editing/markup.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileList.h"
-#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/cache/CachedImage.h"
 #include "core/page/Frame.h"
 #include "core/platform/DragData.h"
@@ -326,19 +323,18 @@ void ClipboardChromium::setDragImageElement(Node* node, const IntPoint& loc)
     setDragImage(0, node, loc);
 }
 
-DragImageRef ClipboardChromium::createDragImage(IntPoint& loc) const
+PassOwnPtr<DragImage> ClipboardChromium::createDragImage(IntPoint& loc) const
 {
-    DragImageRef result = 0;
     if (m_dragImageElement) {
         if (m_frame) {
-            result = m_frame->nodeImage(m_dragImageElement.get());
             loc = m_dragLoc;
+            return m_frame->nodeImage(m_dragImageElement.get());
         }
     } else if (m_dragImage) {
-        result = createDragImageFromImage(m_dragImage->image());
         loc = m_dragLoc;
+        return DragImage::create(m_dragImage->image());
     }
-    return result;
+    return nullptr;
 }
 
 static CachedImage* getCachedImage(Element* element)

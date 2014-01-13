@@ -33,7 +33,6 @@
 
 #include "bindings/v8/ScriptInstance.h"
 #include "bindings/v8/ScriptValue.h"
-#include "core/loader/FrameLoaderTypes.h"
 
 #include <v8.h>
 #include "wtf/Forward.h"
@@ -55,7 +54,7 @@ class KURL;
 class ScriptSourceCode;
 class ScriptState;
 class SecurityOrigin;
-class V8DOMWindowShell;
+class V8WindowShell;
 class Widget;
 
 typedef WTF::Vector<v8::Extension*> V8Extensions;
@@ -71,31 +70,14 @@ public:
     ~ScriptController();
 
     bool initializeMainWorld();
-    V8DOMWindowShell* windowShell(DOMWrapperWorld*);
-    V8DOMWindowShell* existingWindowShell(DOMWrapperWorld*);
+    V8WindowShell* windowShell(DOMWrapperWorld*);
+    V8WindowShell* existingWindowShell(DOMWrapperWorld*);
 
     ScriptValue executeScript(const ScriptSourceCode&);
     ScriptValue executeScript(const String& script, bool forceUserGesture = false);
 
-    // Call the function with the given receiver and arguments.
-    v8::Local<v8::Value> callFunction(v8::Handle<v8::Function>, v8::Handle<v8::Object>, int argc, v8::Handle<v8::Value> argv[]);
-
-    // Call the function with the given receiver and arguments and report times to DevTools.
-    static v8::Local<v8::Value> callFunctionWithInstrumentation(ScriptExecutionContext*, v8::Handle<v8::Function>, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> args[]);
-
-    ScriptValue callFunctionEvenIfScriptDisabled(v8::Handle<v8::Function>, v8::Handle<v8::Object>, int argc, v8::Handle<v8::Value> argv[]);
-
-    // Returns true if argument is a JavaScript URL.
-    bool executeIfJavaScriptURL(const KURL&, ShouldReplaceDocumentIfJavaScriptURL shouldReplaceDocumentIfJavaScriptURL = ReplaceDocumentIfJavaScriptURL);
-
-    // This function must be called from the main thread. It is safe to call it repeatedly.
-    static void initializeThreading();
-
-    v8::Local<v8::Value> compileAndRunScript(const ScriptSourceCode&);
-
     // Evaluate JavaScript in the main world.
-    // The caller must hold an execution context.
-    ScriptValue evaluate(const ScriptSourceCode&);
+    ScriptValue executeScriptInMainWorld(const ScriptSourceCode&);
 
     // Executes JavaScript in an isolated world. The script gets its own global scope,
     // its own prototypes for intrinsic JavaScript objects (String, Array, and so-on),
@@ -105,7 +87,16 @@ public:
     // Otherwise, a new world is created.
     //
     // FIXME: Get rid of extensionGroup here.
-    void evaluateInIsolatedWorld(int worldID, const Vector<ScriptSourceCode>& sources, int extensionGroup, Vector<ScriptValue>* results);
+    void executeScriptInIsolatedWorld(int worldID, const Vector<ScriptSourceCode>& sources, int extensionGroup, Vector<ScriptValue>* results);
+
+    // Returns true if argument is a JavaScript URL.
+    bool executeScriptIfJavaScriptURL(const KURL&);
+
+    v8::Local<v8::Value> compileAndRunScript(const ScriptSourceCode&);
+
+    v8::Local<v8::Value> callFunction(v8::Handle<v8::Function>, v8::Handle<v8::Object>, int argc, v8::Handle<v8::Value> argv[]);
+    ScriptValue callFunctionEvenIfScriptDisabled(v8::Handle<v8::Function>, v8::Handle<v8::Object>, int argc, v8::Handle<v8::Value> argv[]);
+    static v8::Local<v8::Value> callFunctionWithInstrumentation(ScriptExecutionContext*, v8::Handle<v8::Function>, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> args[]);
 
     // Returns true if the current world is isolated, and has its own Content
     // Security Policy. In this case, the policy of the main world should be
@@ -168,7 +159,7 @@ public:
     static int contextDebugId(v8::Handle<v8::Context>);
 
 private:
-    typedef HashMap<int, OwnPtr<V8DOMWindowShell> > IsolatedWorldMap;
+    typedef HashMap<int, OwnPtr<V8WindowShell> > IsolatedWorldMap;
 
     void clearForClose(bool destroyGlobal);
 
@@ -176,7 +167,7 @@ private:
     const String* m_sourceURL;
     v8::Isolate* m_isolate;
 
-    OwnPtr<V8DOMWindowShell> m_windowShell;
+    OwnPtr<V8WindowShell> m_windowShell;
     IsolatedWorldMap m_isolatedWorlds;
 
     bool m_paused;

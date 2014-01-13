@@ -17,9 +17,9 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "third_party/skia/include/utils/SkNullCanvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebViewBenchmarkSupport.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
+#include "third_party/WebKit/public/web/WebViewBenchmarkSupport.h"
 
 using base::TimeDelta;
 using base::TimeTicks;

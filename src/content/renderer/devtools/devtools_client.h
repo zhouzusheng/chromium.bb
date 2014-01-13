@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/public/renderer/render_view_observer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsFrontendClient.h"
+#include "third_party/WebKit/public/web/WebDevToolsFrontendClient.h"
 
 namespace WebKit {
 class WebDevToolsFrontend;
@@ -34,7 +34,6 @@ class CONTENT_EXPORT DevToolsClient
   explicit DevToolsClient(RenderViewImpl* render_view);
   virtual ~DevToolsClient();
 
-  static void EnableDevToolsFrontendTesting();
  private:
   // RenderView::Observer implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;

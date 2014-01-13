@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFECompositeElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
@@ -77,7 +75,7 @@ bool SVGFECompositeElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::k3Attr);
         supportedAttributes.add(SVGNames::k4Attr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFECompositeElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -189,5 +187,3 @@ PassRefPtr<FilterEffect> SVGFECompositeElement::build(SVGFilterBuilder* filterBu
 }
 
 }
-
-#endif // ENABLE(SVG)

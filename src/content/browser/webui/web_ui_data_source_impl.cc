@@ -8,7 +8,7 @@
 
 #include "base/bind.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/public/common/content_client.h"
 #include "ui/webui/jstemplate_builder.h"
 #include "ui/webui/web_ui_util.h"
@@ -104,7 +104,7 @@ void WebUIDataSourceImpl::AddLocalizedString(const std::string& name,
 }
 
 void WebUIDataSourceImpl::AddLocalizedStrings(
-    const DictionaryValue& localized_strings) {
+    const base::DictionaryValue& localized_strings) {
   localized_strings_.MergeDictionary(&localized_strings);
 }
 
@@ -213,7 +213,7 @@ void WebUIDataSourceImpl::SendFromResourceBundle(
     const URLDataSource::GotDataCallback& callback, int idr) {
   scoped_refptr<base::RefCountedStaticMemory> response(
       GetContentClient()->GetDataResourceBytes(idr));
-  callback.Run(response);
+  callback.Run(response.get());
 }
 
 }  // namespace content

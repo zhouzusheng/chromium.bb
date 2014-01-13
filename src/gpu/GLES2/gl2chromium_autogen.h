@@ -57,7 +57,6 @@
 #define glEnableVertexAttribArray GLES2_GET_FUN(EnableVertexAttribArray)
 #define glFinish GLES2_GET_FUN(Finish)
 #define glFlush GLES2_GET_FUN(Flush)
-#define glShallowFlushCHROMIUM GLES2_GET_FUN(ShallowFlushCHROMIUM)
 #define glFramebufferRenderbuffer GLES2_GET_FUN(FramebufferRenderbuffer)
 #define glFramebufferTexture2D GLES2_GET_FUN(FramebufferTexture2D)
 #define glFrontFace GLES2_GET_FUN(FrontFace)
@@ -112,6 +111,8 @@
 #define glScissor GLES2_GET_FUN(Scissor)
 #define glShaderBinary GLES2_GET_FUN(ShaderBinary)
 #define glShaderSource GLES2_GET_FUN(ShaderSource)
+#define glShallowFinishCHROMIUM GLES2_GET_FUN(ShallowFinishCHROMIUM)
+#define glShallowFlushCHROMIUM GLES2_GET_FUN(ShallowFlushCHROMIUM)
 #define glStencilFunc GLES2_GET_FUN(StencilFunc)
 #define glStencilFuncSeparate GLES2_GET_FUN(StencilFuncSeparate)
 #define glStencilMask GLES2_GET_FUN(StencilMask)
@@ -182,6 +183,8 @@
 #define glEnableFeatureCHROMIUM GLES2_GET_FUN(EnableFeatureCHROMIUM)
 #define glMapBufferCHROMIUM GLES2_GET_FUN(MapBufferCHROMIUM)
 #define glUnmapBufferCHROMIUM GLES2_GET_FUN(UnmapBufferCHROMIUM)
+#define glMapImageCHROMIUM GLES2_GET_FUN(MapImageCHROMIUM)
+#define glUnmapImageCHROMIUM GLES2_GET_FUN(UnmapImageCHROMIUM)
 #define glMapBufferSubDataCHROMIUM GLES2_GET_FUN(MapBufferSubDataCHROMIUM)
 #define glUnmapBufferSubDataCHROMIUM GLES2_GET_FUN(UnmapBufferSubDataCHROMIUM)
 #define glMapTexSubImage2DCHROMIUM GLES2_GET_FUN(MapTexSubImage2DCHROMIUM)
@@ -199,6 +202,10 @@
     CreateStreamTextureCHROMIUM)
 #define glDestroyStreamTextureCHROMIUM GLES2_GET_FUN( \
     DestroyStreamTextureCHROMIUM)
+#define glCreateImageCHROMIUM GLES2_GET_FUN(CreateImageCHROMIUM)
+#define glDestroyImageCHROMIUM GLES2_GET_FUN(DestroyImageCHROMIUM)
+#define glGetImageParameterivCHROMIUM GLES2_GET_FUN( \
+    GetImageParameterivCHROMIUM)
 #define glGetTranslatedShaderSourceANGLE GLES2_GET_FUN( \
     GetTranslatedShaderSourceANGLE)
 #define glPostSubBufferCHROMIUM GLES2_GET_FUN(PostSubBufferCHROMIUM)

@@ -28,7 +28,7 @@
 
 #include "core/platform/Timer.h"
 #include "core/platform/graphics/GeneratedImage.h"
-#include "core/platform/graphics/Generator.h"
+#include "core/platform/graphics/Gradient.h"
 #include "core/platform/graphics/Image.h"
 #include "core/platform/graphics/ImageBuffer.h"
 #include "core/platform/graphics/IntSize.h"
@@ -40,7 +40,7 @@ static const int generatedImageCacheClearDelay = 1;
 
 class GeneratorGeneratedImage : public GeneratedImage {
 public:
-    static PassRefPtr<GeneratorGeneratedImage> create(PassRefPtr<Generator> generator, const IntSize& size)
+    static PassRefPtr<GeneratorGeneratedImage> create(PassRefPtr<Gradient> generator, const IntSize& size)
     {
         return adoptRef(new GeneratorGeneratedImage(generator, size));
     }
@@ -53,20 +53,22 @@ public:
     virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
 protected:
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, BlendMode);
-    virtual void drawPattern(GraphicsContext*, const FloatRect& srcRect, const AffineTransform& patternTransform,
-        const FloatPoint& phase, ColorSpace styleColorSpace, CompositeOperator, const FloatRect& destRect, BlendMode);
+    virtual void draw(GraphicsContext*, const FloatRect&, const FloatRect&,
+        CompositeOperator, BlendMode) OVERRIDE;
+    virtual void drawPattern(GraphicsContext*, const FloatRect&,
+        const FloatSize&, const FloatPoint&, CompositeOperator,
+        const FloatRect&, BlendMode) OVERRIDE;
 
     void invalidateCacheTimerFired(DeferrableOneShotTimer<GeneratorGeneratedImage>*);
 
-    GeneratorGeneratedImage(PassRefPtr<Generator> generator, const IntSize& size)
-        : m_generator(generator)
+    GeneratorGeneratedImage(PassRefPtr<Gradient> generator, const IntSize& size)
+        : m_gradient(generator)
         , m_cacheTimer(this, &GeneratorGeneratedImage::invalidateCacheTimerFired, generatedImageCacheClearDelay)
     {
         m_size = size;
     }
 
-    RefPtr<Generator> m_generator;
+    RefPtr<Gradient> m_gradient;
 
     OwnPtr<ImageBuffer> m_cachedImageBuffer;
     DeferrableOneShotTimer<GeneratorGeneratedImage> m_cacheTimer;

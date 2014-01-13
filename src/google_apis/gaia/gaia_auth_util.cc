@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "googleurl/src/gurl.h"
 
@@ -69,7 +69,7 @@ bool IsGaiaSignonRealm(const GURL& url) {
   if (!url.SchemeIsSecure())
     return false;
 
-  return url == GURL(GaiaUrls::GetInstance()->gaia_origin_url());
+  return url == GaiaUrls::GetInstance()->gaia_url();
 }
 
 }  // namespace gaia

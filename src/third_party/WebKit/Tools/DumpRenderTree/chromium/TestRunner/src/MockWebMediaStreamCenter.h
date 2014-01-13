@@ -32,7 +32,7 @@
 #define MockWebMediaStreamCenter_h
 
 #include "TestCommon.h"
-#include <public/WebMediaStreamCenter.h>
+#include "public/platform/WebMediaStreamCenter.h"
 
 namespace WebKit {
 class WebMediaStreamCenterClient;
@@ -44,7 +44,7 @@ class MockWebMediaStreamCenter : public WebKit::WebMediaStreamCenter {
 public:
     explicit MockWebMediaStreamCenter(WebKit::WebMediaStreamCenterClient*);
 
-    virtual void queryMediaStreamSources(const WebKit::WebMediaStreamSourcesRequest&) OVERRIDE;
+    virtual bool getMediaStreamTrackSources(const WebKit::WebMediaStreamTrackSourcesRequest&) OVERRIDE;
     virtual void didEnableMediaStreamTrack(const WebKit::WebMediaStream&, const WebKit::WebMediaStreamTrack&) OVERRIDE;
     virtual void didDisableMediaStreamTrack(const WebKit::WebMediaStream&, const WebKit::WebMediaStreamTrack&) OVERRIDE;
     virtual bool didAddMediaStreamTrack(const WebKit::WebMediaStream&, const WebKit::WebMediaStreamTrack&) OVERRIDE;

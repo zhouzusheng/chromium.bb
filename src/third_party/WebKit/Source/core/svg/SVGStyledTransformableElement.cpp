@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGStyledTransformableElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/svg/RenderSVGPath.h"
 #include "core/rendering/svg/RenderSVGResource.h"
@@ -95,7 +93,7 @@ bool SVGStyledTransformableElement::isSupportedAttribute(const QualifiedName& at
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty())
         supportedAttributes.add(SVGNames::transformAttr);
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGStyledTransformableElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -153,10 +151,10 @@ FloatRect SVGStyledTransformableElement::getBBox(StyleUpdateStrategy styleUpdate
     return SVGTransformable::getBBox(this, styleUpdateStrategy);
 }
 
-RenderObject* SVGStyledTransformableElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGStyledTransformableElement::createRenderer(RenderStyle*)
 {
     // By default, any subclass is expected to do path-based drawing
-    return new (arena) RenderSVGPath(this);
+    return new (document()->renderArena()) RenderSVGPath(this);
 }
 
 void SVGStyledTransformableElement::toClipPath(Path& path)
@@ -167,5 +165,3 @@ void SVGStyledTransformableElement::toClipPath(Path& path)
 }
 
 }
-
-#endif // ENABLE(SVG)

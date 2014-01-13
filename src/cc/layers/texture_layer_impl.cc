@@ -4,7 +4,7 @@
 
 #include "cc/layers/texture_layer_impl.h"
 
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "cc/layers/quad_sink.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/texture_draw_quad.h"
@@ -34,7 +34,6 @@ TextureLayerImpl::~TextureLayerImpl() { FreeTextureMailbox(); }
 
 void TextureLayerImpl::SetTextureMailbox(const TextureMailbox& mailbox) {
   DCHECK(uses_mailbox_);
-  DCHECK(mailbox.IsEmpty() || !mailbox.Equals(texture_mailbox_));
   FreeTextureMailbox();
   texture_mailbox_ = mailbox;
   own_mailbox_ = true;
@@ -63,20 +62,25 @@ void TextureLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   }
 }
 
-void TextureLayerImpl::WillDraw(ResourceProvider* resource_provider) {
-  if (uses_mailbox_ || !texture_id_)
-    return;
-  DCHECK(!external_texture_resource_);
-  external_texture_resource_ =
-      resource_provider->CreateResourceFromExternalTexture(
-          GL_TEXTURE_2D,
-          texture_id_);
+bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
+                                ResourceProvider* resource_provider) {
+  if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE)
+    return false;
+
+  if (!uses_mailbox_ && texture_id_) {
+    DCHECK(!external_texture_resource_);
+    external_texture_resource_ =
+        resource_provider->CreateResourceFromExternalTexture(
+            GL_TEXTURE_2D,
+            texture_id_);
+  }
+  return external_texture_resource_ &&
+         LayerImpl::WillDraw(draw_mode, resource_provider);
 }
 
 void TextureLayerImpl::AppendQuads(QuadSink* quad_sink,
                                    AppendQuadsData* append_quads_data) {
-  if (!external_texture_resource_)
-    return;
+  DCHECK(external_texture_resource_);
 
   SharedQuadState* shared_quad_state =
       quad_sink->UseSharedQuadState(CreateSharedQuadState());
@@ -103,6 +107,7 @@ void TextureLayerImpl::AppendQuads(QuadSink* quad_sink,
 }
 
 void TextureLayerImpl::DidDraw(ResourceProvider* resource_provider) {
+  LayerImpl::DidDraw(resource_provider);
   if (uses_mailbox_ || !external_texture_resource_)
     return;
   // FIXME: the following assert will not be true when sending resources to a
@@ -113,22 +118,18 @@ void TextureLayerImpl::DidDraw(ResourceProvider* resource_provider) {
   external_texture_resource_ = 0;
 }
 
-void TextureLayerImpl::DumpLayerProperties(std::string* str, int indent) const {
-  str->append(IndentString(indent));
-  base::StringAppendF(str,
-                      "texture layer texture id: %u premultiplied: %d\n",
-                      texture_id_,
-                      premultiplied_alpha_);
-  LayerImpl::DumpLayerProperties(str, indent);
-}
-
 void TextureLayerImpl::DidLoseOutputSurface() {
+  if (external_texture_resource_ && !uses_mailbox_) {
+    ResourceProvider* resource_provider =
+        layer_tree_impl()->resource_provider();
+    resource_provider->DeleteResource(external_texture_resource_);
+  }
   texture_id_ = 0;
   external_texture_resource_ = 0;
 }
 
 const char* TextureLayerImpl::LayerTypeAsString() const {
-  return "TextureLayer";
+  return "cc::TextureLayerImpl";
 }
 
 bool TextureLayerImpl::CanClipSelf() const {
@@ -140,7 +141,7 @@ void TextureLayerImpl::DidBecomeActive() {
     return;
   DCHECK(!external_texture_resource_);
   ResourceProvider* resource_provider = layer_tree_impl()->resource_provider();
-  if (!texture_mailbox_.IsEmpty()) {
+  if (texture_mailbox_.IsValid()) {
     external_texture_resource_ =
         resource_provider->CreateResourceFromTextureMailbox(texture_mailbox_);
   }

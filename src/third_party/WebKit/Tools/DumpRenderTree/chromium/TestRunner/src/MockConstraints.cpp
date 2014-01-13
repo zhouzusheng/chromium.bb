@@ -28,11 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "MockConstraints.h"
 
-#include <public/WebMediaConstraints.h>
+#include "public/platform/WebMediaConstraints.h"
 
 using namespace WebKit;
 

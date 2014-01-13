@@ -21,12 +21,11 @@
 #ifndef SVGPathSegCurvetoQuadratic_h
 #define SVGPathSegCurvetoQuadratic_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGPathSegWithContext.h"
 
 namespace WebCore {
 
-class SVGPathSegCurvetoQuadratic : public SVGPathSegWithContext { 
+class SVGPathSegCurvetoQuadratic : public SVGPathSegWithContext {
 public:
     SVGPathSegCurvetoQuadratic(SVGPathElement* element, SVGPathSegRole role, float x, float y, float x1, float y1)
         : SVGPathSegWithContext(element, role)
@@ -83,6 +82,7 @@ private:
     SVGPathSegCurvetoQuadraticAbs(SVGPathElement* element, SVGPathSegRole role, float x, float y, float x1, float y1)
         : SVGPathSegCurvetoQuadratic(element, role, x, y, x1, y1)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_CURVETO_QUADRATIC_ABS; }
@@ -100,6 +100,7 @@ private:
     SVGPathSegCurvetoQuadraticRel(SVGPathElement* element, SVGPathSegRole role, float x, float y, float x1, float y1)
         : SVGPathSegCurvetoQuadratic(element, role, x, y, x1, y1)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_CURVETO_QUADRATIC_REL; }
@@ -108,5 +109,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

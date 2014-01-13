@@ -13,10 +13,10 @@
 #include "base/file_util.h"
 #include "base/json/string_escape.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -89,7 +89,8 @@ class TracingMessageHandler
   void OnGetKnownCategories(const base::ListValue* list);
 
   // Callbacks.
-  void LoadTraceFileComplete(string16* file_contents);
+  void LoadTraceFileComplete(string16* file_contents,
+                             const base::FilePath &path);
   void SaveTraceFileComplete();
 
  private:
@@ -121,14 +122,15 @@ class TaskProxy : public base::RefCountedThreadSafe<TaskProxy> {
  public:
   explicit TaskProxy(const base::WeakPtr<TracingMessageHandler>& handler)
       : handler_(handler) {}
-  void LoadTraceFileCompleteProxy(string16* file_contents) {
-    if (handler_)
-      handler_->LoadTraceFileComplete(file_contents);
+  void LoadTraceFileCompleteProxy(string16* file_contents,
+                                  const base::FilePath& path) {
+    if (handler_.get())
+      handler_->LoadTraceFileComplete(file_contents, path);
     delete file_contents;
   }
 
   void SaveTraceFileCompleteProxy() {
-    if (handler_)
+    if (handler_.get())
       handler_->SaveTraceFileComplete();
   }
 
@@ -155,7 +157,7 @@ TracingMessageHandler::TracingMessageHandler()
 }
 
 TracingMessageHandler::~TracingMessageHandler() {
-  if (select_trace_file_dialog_)
+  if (select_trace_file_dialog_.get())
     select_trace_file_dialog_->ListenerDestroyed();
 
   // If we are the current subscriber, this will result in ending tracing.
@@ -258,7 +260,8 @@ void ReadTraceFileCallback(TaskProxy* proxy, const base::FilePath& path) {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&TaskProxy::LoadTraceFileCompleteProxy, proxy,
-                 contents16.release()));
+                 contents16.release(),
+                 path));
 }
 
 // A callback used for asynchronously writing a file from a string. Calls the
@@ -307,7 +310,7 @@ void TracingMessageHandler::FileSelectionCanceled(void* params) {
 
 void TracingMessageHandler::OnLoadTraceFile(const base::ListValue* list) {
   // Only allow a single dialog at a time.
-  if (select_trace_file_dialog_)
+  if (select_trace_file_dialog_.get())
     return;
   select_trace_file_dialog_type_ = ui::SelectFileDialog::SELECT_OPEN_FILE;
   select_trace_file_dialog_ = ui::SelectFileDialog::Create(
@@ -325,7 +328,8 @@ void TracingMessageHandler::OnLoadTraceFile(const base::ListValue* list) {
       NULL);
 }
 
-void TracingMessageHandler::LoadTraceFileComplete(string16* contents) {
+void TracingMessageHandler::LoadTraceFileComplete(string16* contents,
+                                                  const base::FilePath& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // We need to pass contents to tracingController.onLoadTraceFileComplete, but
@@ -345,14 +349,18 @@ void TracingMessageHandler::LoadTraceFileComplete(string16* contents) {
     javascript += contents->substr(i, kMaxSize) + suffix;
     rvh->ExecuteJavascriptInWebFrame(string16(), javascript);
   }
+
+  // The CallJavascriptFunction is not used because we need to pass
+  // the first param |window.traceData| through as an un-quoted string.
   rvh->ExecuteJavascriptInWebFrame(string16(), UTF8ToUTF16(
-      "tracingController.onLoadTraceFileComplete(window.traceData);"
+      "tracingController.onLoadTraceFileComplete(window.traceData," +
+      base::GetDoubleQuotedJson(path.value()) + ");" +
       "delete window.traceData;"));
 }
 
 void TracingMessageHandler::OnSaveTraceFile(const base::ListValue* list) {
   // Only allow a single dialog at a time.
-  if (select_trace_file_dialog_)
+  if (select_trace_file_dialog_.get())
     return;
 
   DCHECK(list->GetSize() == 1);
@@ -522,7 +530,7 @@ void TracingMessageHandler::OnKnownCategoriesCollected(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   scoped_ptr<base::ListValue> categories(new base::ListValue());
-  for (std::set<std::string>::iterator iter = known_categories.begin();
+  for (std::set<std::string>::const_iterator iter = known_categories.begin();
        iter != known_categories.end();
        ++iter) {
     categories->AppendString(*iter);

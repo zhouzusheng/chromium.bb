@@ -29,13 +29,11 @@
 
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/workers/WorkerContext.h"
-#include "core/workers/WorkerThread.h"
 
 namespace WebCore {
 
 ActiveDOMObject::ActiveDOMObject(ScriptExecutionContext* scriptExecutionContext)
-    : ContextDestructionObserver(scriptExecutionContext)
+    : ContextLifecycleObserver(scriptExecutionContext, ActiveDOMObjectType)
     , m_pendingActivityCount(0)
 #if !ASSERT_DISABLED
     , m_suspendIfNeededCalled(false)
@@ -45,26 +43,22 @@ ActiveDOMObject::ActiveDOMObject(ScriptExecutionContext* scriptExecutionContext)
         return;
 
     ASSERT(m_scriptExecutionContext->isContextThread());
-    m_scriptExecutionContext->didCreateActiveDOMObject(this);
 }
 
 ActiveDOMObject::~ActiveDOMObject()
 {
+    // ActiveDOMObject may be inherited by a sub-class whose life-cycle
+    // exceeds that of the associated ScriptExecutionContext. In those cases,
+    // m_scriptExecutionContext would/should have been nullified by
+    // ContextLifecycleObserver::contextDestroyed() (which we implement /
+    // inherit). Hence, we should ensure that this is not 0 before use it
+    // here.
     if (!m_scriptExecutionContext)
         return;
 
     ASSERT(m_suspendIfNeededCalled);
-
-    // ActiveDOMObject may be inherited by a sub-class whose life-cycle
-    // exceeds that of the associated ScriptExecutionContext. In those cases,
-    // m_scriptExecutionContext would/should have been nullified by
-    // ContextDestructionObserver::contextDestroyed() (which we implement /
-    // inherit). Hence, we should ensure that this is not 0 before use it
-    // here.
-    if (m_scriptExecutionContext) {
-        ASSERT(m_scriptExecutionContext->isContextThread());
-        m_scriptExecutionContext->willDestroyActiveDOMObject(this);
-    }
+    ASSERT(m_scriptExecutionContext->isContextThread());
+    observeContext(0, ActiveDOMObjectType);
 }
 
 void ActiveDOMObject::suspendIfNeeded()

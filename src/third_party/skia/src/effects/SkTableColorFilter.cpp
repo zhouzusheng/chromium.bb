@@ -4,6 +4,7 @@
 #include "SkColorPriv.h"
 #include "SkFlattenableBuffers.h"
 #include "SkUnPreMultiply.h"
+#include "SkString.h"
 
 class SkTable_ColorFilter : public SkColorFilter {
 public:
@@ -46,6 +47,8 @@ public:
 
     virtual void filterSpan(const SkPMColor src[], int count,
                             SkPMColor dst[]) const SK_OVERRIDE;
+
+    SkDEVCODE(virtual void toString(SkString* str) const SK_OVERRIDE;)
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkTable_ColorFilter)
 
@@ -147,6 +150,12 @@ void SkTable_ColorFilter::filterSpan(const SkPMColor src[], int count,
                                          tableG[g], tableB[b]);
     }
 }
+
+#ifdef SK_DEVELOPER
+void SkTable_ColorFilter::toString(SkString* str) const {
+    str->append("SkTable_ColorFilter");
+}
+#endif
 
 static const uint8_t gCountNibBits[] = {
     0, 1, 1, 2,
@@ -377,15 +386,18 @@ GrEffectRef* ColorTableEffect::TestCreate(SkMWCRandom* random,
 
 GrEffectRef* SkTable_ColorFilter::asNewEffect(GrContext* context) const {
     SkBitmap bitmap;
+    GrEffectRef* effect = NULL;
     this->asComponentTable(&bitmap);
     // passing NULL because this effect does no tiling or filtering.
     GrTexture* texture = GrLockAndRefCachedBitmapTexture(context, bitmap, NULL);
-    GrEffectRef* effect = ColorTableEffect::Create(texture, fFlags);
+    if (NULL != texture) {
+        effect = ColorTableEffect::Create(texture, fFlags);
 
-    // Unlock immediately, this is not great, but we don't have a way of
-    // knowing when else to unlock it currently. TODO: Remove this when
-    // unref becomes the unlock replacement for all types of textures.
-    GrUnlockAndUnrefCachedBitmapTexture(texture);
+        // Unlock immediately, this is not great, but we don't have a way of
+        // knowing when else to unlock it currently. TODO: Remove this when
+        // unref becomes the unlock replacement for all types of textures.
+        GrUnlockAndUnrefCachedBitmapTexture(texture);
+    }
     return effect;
 }
 

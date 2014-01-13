@@ -33,8 +33,8 @@
 
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
-#include "core/inspector/InspectorValues.h"
-#include <wtf/PassRefPtr.h>
+#include "core/platform/JSONValues.h"
+#include "wtf/PassRefPtr.h"
 
 
 #include "bindings/v8/ScriptDebugServer.h"
@@ -46,11 +46,11 @@ static bool asBool(const bool* const b)
     return b ? *b : false;
 }
 
-InspectorRuntimeAgent::InspectorRuntimeAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager)
+InspectorRuntimeAgent::InspectorRuntimeAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer)
     : InspectorBaseAgent<InspectorRuntimeAgent>("Runtime", instrumentingAgents, state)
     , m_enabled(false)
     , m_injectedScriptManager(injectedScriptManager)
-    , m_scriptDebugServer(0)
+    , m_scriptDebugServer(scriptDebugServer)
 {
 }
 
@@ -86,7 +86,7 @@ void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& exp
     }
 }
 
-void InspectorRuntimeAgent::callFunctionOn(ErrorString* errorString, const String& objectId, const String& expression, const RefPtr<InspectorArray>* const optionalArguments, const bool* const doNotPauseOnExceptionsAndMuteConsole, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown)
+void InspectorRuntimeAgent::callFunctionOn(ErrorString* errorString, const String& objectId, const String& expression, const RefPtr<JSONArray>* const optionalArguments, const bool* const doNotPauseOnExceptionsAndMuteConsole, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown)
 {
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
     if (injectedScript.hasNoValue()) {
@@ -111,7 +111,7 @@ void InspectorRuntimeAgent::callFunctionOn(ErrorString* errorString, const Strin
     }
 }
 
-void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String& objectId, const bool* const ownProperties, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor> >& internalProperties)
+void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor> >& internalProperties)
 {
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
     if (injectedScript.hasNoValue()) {
@@ -122,8 +122,11 @@ void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String
     ScriptDebugServer::PauseOnExceptionsState previousPauseOnExceptionsState = setPauseOnExceptionsState(m_scriptDebugServer, ScriptDebugServer::DontPauseOnExceptions);
     muteConsole();
 
-    injectedScript.getProperties(errorString, objectId, ownProperties ? *ownProperties : false, &result);
-    injectedScript.getInternalProperties(errorString, objectId, &internalProperties);
+    bool accessorPropertiesOnlyValue = accessorPropertiesOnly && *accessorPropertiesOnly;
+    injectedScript.getProperties(errorString, objectId, ownProperties && *ownProperties, accessorPropertiesOnlyValue, &result);
+
+    if (!accessorPropertiesOnlyValue)
+        injectedScript.getInternalProperties(errorString, objectId, &internalProperties);
 
     unmuteConsole();
     setPauseOnExceptionsState(m_scriptDebugServer, previousPauseOnExceptionsState);
@@ -143,11 +146,6 @@ void InspectorRuntimeAgent::releaseObjectGroup(ErrorString*, const String& objec
 
 void InspectorRuntimeAgent::run(ErrorString*)
 {
-}
-
-void InspectorRuntimeAgent::setScriptDebugServer(ScriptDebugServer* scriptDebugServer)
-{
-    m_scriptDebugServer = scriptDebugServer;
 }
 
 } // namespace WebCore

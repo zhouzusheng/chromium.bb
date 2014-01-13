@@ -100,15 +100,17 @@ public:
     virtual void invalidateRect(const WebRect&);
     virtual void scrollRect(int dx, int dy, const WebRect&);
     virtual void reportGeometry();
+    virtual void allowScriptObjects();
     virtual void clearScriptObjects();
     virtual NPObject* scriptableObjectForElement();
     virtual WebString executeScriptURL(const WebURL&, bool popupsAllowed);
     virtual void loadFrameRequest(const WebURLRequest&, const WebString& target, bool notifyNeeded, void* notifyData);
-    virtual void zoomLevelChanged(double zoomLevel);    
+    virtual void zoomLevelChanged(double zoomLevel);
     virtual bool isRectTopmost(const WebRect&);
     virtual void requestTouchEventType(TouchEventRequestType);
     virtual void setWantsWheelEvents(bool);
     virtual WebPoint windowToLocalPoint(const WebPoint&);
+    virtual WebPoint localToWindowPoint(const WebPoint&);
 
     // This cannot be null.
     WebPlugin* plugin() { return m_webPlugin; }
@@ -140,6 +142,7 @@ public:
 
     // Pass the edit command to the plugin.
     bool executeEditCommand(const WebString& name);
+    bool executeEditCommand(const WebString& name, const WebString& value);
 
     // Resource load events for the plugin's source data:
     void didReceiveResponse(const WebCore::ResourceResponse&);

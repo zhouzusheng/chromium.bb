@@ -63,17 +63,17 @@
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/platform/ContextMenu.h"
-#include "core/platform/KURL.h"
 #include "core/platform/Widget.h"
 #include "core/platform/text/TextBreakIterator.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderWidget.h"
-#include <public/WebPoint.h>
-#include <public/WebString.h>
-#include <public/WebURL.h>
-#include <public/WebURLResponse.h>
-#include <public/WebVector.h>
-#include <wtf/text/WTFString.h>
+#include "public/platform/WebPoint.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
+#include "public/platform/WebURLResponse.h"
+#include "public/platform/WebVector.h"
+#include "weborigin/KURL.h"
+#include "wtf/text/WTFString.h"
 
 using namespace WebCore;
 
@@ -106,7 +106,7 @@ static bool isASingleWord(const String& text)
 // is to be invoked. This function also sets the word on which context menu
 // has been invoked to be the selected word, as required. This function changes
 // the selection only when there were no selected characters on OS X.
-static String selectMisspelledWord(const ContextMenu* defaultMenu, Frame* selectedFrame)
+static String selectMisspelledWord(Frame* selectedFrame)
 {
     // First select from selectedText to check for multiple word selection.
     String misspelledWord = selectedFrame->editor()->selectedText().stripWhiteSpace();
@@ -121,7 +121,7 @@ static String selectMisspelledWord(const ContextMenu* defaultMenu, Frame* select
 
     // Selection is empty, so change the selection to the word under the cursor.
     HitTestResult hitTestResult = selectedFrame->eventHandler()->
-        hitTestResultAtPoint(selectedFrame->page()->contextMenuController()->hitTestResult().pointInInnerNodeFrame(), HitTestRequest::ReadOnly | HitTestRequest::Active);
+        hitTestResultAtPoint(selectedFrame->page()->contextMenuController()->hitTestResult().pointInInnerNodeFrame());
     Node* innerNode = hitTestResult.innerNode();
     VisiblePosition pos(innerNode->renderer()->positionForPoint(
         hitTestResult.localPoint()));
@@ -166,11 +166,6 @@ static String selectMisspellingAsync(Frame* selectedFrame, DocumentMarker& marke
     RefPtr<Range> markerRange = selectionRange->cloneRange(ASSERT_NO_EXCEPTION);
     markerRange->setStart(markerRange->startContainer(), marker.startOffset());
     markerRange->setEnd(markerRange->endContainer(), marker.endOffset());
-    if (selection.isCaret()) {
-        selection = VisibleSelection(markerRange.get());
-        selectedFrame->selection()->setSelection(selection, WordGranularity);
-        selectionRange = selection.toNormalizedRange();
-    }
 
     if (markerRange->text().stripWhiteSpace(&IsWhiteSpaceOrPunctuation) != selectionRange->text().stripWhiteSpace(&IsWhiteSpaceOrPunctuation))
         return String();
@@ -178,7 +173,7 @@ static String selectMisspellingAsync(Frame* selectedFrame, DocumentMarker& marke
     return markerRange->text();
 }
 
-PassOwnPtr<WebCore::ContextMenu> ContextMenuClientImpl::customizeMenu(PassOwnPtr<WebCore::ContextMenu> defaultMenu)
+void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultMenu)
 {
     // Displaying the context menu in this function is a big hack as we don't
     // have context, i.e. whether this is being invoked via a script or in
@@ -186,7 +181,7 @@ PassOwnPtr<WebCore::ContextMenu> ContextMenuClientImpl::customizeMenu(PassOwnPtr
     // Keyboard events KeyVK_APPS, Shift+F10). Check if this is being invoked
     // in response to the above input events before popping up the context menu.
     if (!m_webView->contextMenuAllowed())
-        return defaultMenu;
+        return;
 
     HitTestResult r = m_webView->page()->contextMenuController()->hitTestResult();
     Frame* selectedFrame = r.innerNodeFrame();
@@ -294,17 +289,15 @@ PassOwnPtr<WebCore::ContextMenu> ContextMenuClientImpl::customizeMenu(PassOwnPtr
     }
 
     if (r.isSelected()) {
-        if (!r.innerNonSharedNode()->hasTagName(HTMLNames::inputTag) || !static_cast<HTMLInputElement*>(r.innerNonSharedNode())->isPasswordField())
+        if (!r.innerNonSharedNode()->hasTagName(HTMLNames::inputTag) || !toHTMLInputElement(r.innerNonSharedNode())->isPasswordField())
             data.selectedText = selectedFrame->editor()->selectedText().stripWhiteSpace();
     }
 
     if (r.isContentEditable()) {
         data.isEditable = true;
 #if ENABLE(INPUT_SPEECH)
-        if (r.innerNonSharedNode()->hasTagName(HTMLNames::inputTag)) {
-            data.isSpeechInputEnabled = 
-                static_cast<HTMLInputElement*>(r.innerNonSharedNode())->isSpeechEnabled();
-        }  
+        if (r.innerNonSharedNode()->hasTagName(HTMLNames::inputTag))
+            data.isSpeechInputEnabled = toHTMLInputElement(r.innerNonSharedNode())->isSpeechEnabled();
 #endif
         // When Chrome enables asynchronous spellchecking, its spellchecker adds spelling markers to misspelled
         // words and attaches suggestions to these markers in the background. Therefore, when a user right-clicks
@@ -326,7 +319,7 @@ PassOwnPtr<WebCore::ContextMenu> ContextMenuClientImpl::customizeMenu(PassOwnPtr
                 m_webView->focusedWebCoreFrame()->editor()->isContinuousSpellCheckingEnabled();
             // Spellchecking might be enabled for the field, but could be disabled on the node.
             if (m_webView->focusedWebCoreFrame()->editor()->isSpellCheckingEnabledInFocusedNode()) {
-                data.misspelledWord = selectMisspelledWord(defaultMenu.get(), selectedFrame);
+                data.misspelledWord = selectMisspelledWord(selectedFrame);
                 if (m_webView->spellCheckClient()) {
                     int misspelledOffset, misspelledLength;
                     m_webView->spellCheckClient()->spellCheck(
@@ -339,7 +332,7 @@ PassOwnPtr<WebCore::ContextMenu> ContextMenuClientImpl::customizeMenu(PassOwnPtr
         }
         HTMLFormElement* form = selectedFrame->selection()->currentForm();
         if (form && r.innerNonSharedNode()->hasTagName(HTMLNames::inputTag)) {
-            HTMLInputElement* selectedElement = static_cast<HTMLInputElement*>(r.innerNonSharedNode());
+            HTMLInputElement* selectedElement = toHTMLInputElement(r.innerNonSharedNode());
             if (selectedElement) {
                 WebSearchableFormData ws = WebSearchableFormData(WebFormElement(form), WebInputElement(selectedElement));
                 if (ws.url().isValid())
@@ -364,15 +357,13 @@ PassOwnPtr<WebCore::ContextMenu> ContextMenuClientImpl::customizeMenu(PassOwnPtr
     data.referrerPolicy = static_cast<WebReferrerPolicy>(selectedFrame->document()->referrerPolicy());
 
     // Filter out custom menu elements and add them into the data.
-    populateCustomMenuItems(defaultMenu.get(), &data);
+    populateCustomMenuItems(defaultMenu, &data);
 
     data.node = r.innerNonSharedNode();
 
     WebFrame* selected_web_frame = WebFrameImpl::fromFrame(selectedFrame);
     if (m_webView->client())
         m_webView->client()->showContextMenu(selected_web_frame, data);
-
-    return defaultMenu;
 }
 
 static void populateSubMenuItems(const Vector<ContextMenuItem>& inputMenu, WebVector<WebMenuItemInfo>& subMenuItems)
@@ -412,7 +403,7 @@ static void populateSubMenuItems(const Vector<ContextMenuItem>& inputMenu, WebVe
     subMenuItems.swap(outputItems);
 }
 
-void ContextMenuClientImpl::populateCustomMenuItems(WebCore::ContextMenu* defaultMenu, WebContextMenuData* data)
+void ContextMenuClientImpl::populateCustomMenuItems(const WebCore::ContextMenu* defaultMenu, WebContextMenuData* data)
 {
     populateSubMenuItems(defaultMenu->items(), data->customItems);
 }

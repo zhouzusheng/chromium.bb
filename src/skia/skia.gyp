@@ -14,12 +14,6 @@
           }, {
             'skia_support_gpu': 1,
           }],
-
-          ['inside_chromium_build==0', {
-            'webkit_src_dir': '<(DEPTH)/../../..',
-          },{
-            'webkit_src_dir': '<(DEPTH)/third_party/WebKit',
-          }],
         ],
 
         'optimize': 'max',
@@ -37,7 +31,12 @@
       'sources': [
         # this should likely be moved into src/utils in skia
         '../third_party/skia/src/core/SkFlate.cpp',
+        # We don't want to add this to Skia's core.gypi since it is
+        # Android only. Include it here and remove it for everyone
+        # but Android later.
+        '../third_party/skia/src/core/SkPaintOptionsAndroid.cpp',
 
+        '../third_party/skia/src/ports/SkImageDecoder_empty.cpp',
         #'../third_party/skia/src/images/bmpdecoderhelper.cpp',
         #'../third_party/skia/src/images/bmpdecoderhelper.h',
         #'../third_party/skia/src/images/SkFDStream.cpp',
@@ -94,12 +93,12 @@
         #'../third_party/skia/src/ports/SkPurgeableMemoryBlock_mac.cpp',
         '../third_party/skia/src/ports/SkPurgeableMemoryBlock_none.cpp',
 
-        '../third_party/skia/src/ports/FontHostConfiguration_android.cpp',
+        '../third_party/skia/src/ports/SkFontConfigInterface_android.cpp',
         #'../third_party/skia/src/ports/SkFontHost_FONTPATH.cpp',
         '../third_party/skia/src/ports/SkFontHost_FreeType.cpp',
         '../third_party/skia/src/ports/SkFontHost_FreeType_common.cpp',
         '../third_party/skia/src/ports/SkFontHost_FreeType_common.h',
-        '../third_party/skia/src/ports/SkFontHost_android.cpp',
+        '../third_party/skia/src/ports/SkFontConfigParser_android.cpp',
         #'../third_party/skia/src/ports/SkFontHost_ascender.cpp',
         #'../third_party/skia/src/ports/SkFontHost_linux.cpp',
         '../third_party/skia/src/ports/SkFontHost_mac.cpp',
@@ -112,7 +111,9 @@
         #'../third_party/skia/src/ports/SkImageRef_ashmem.h',
         #'../third_party/skia/src/ports/SkOSEvent_android.cpp',
         #'../third_party/skia/src/ports/SkOSEvent_dummy.cpp',
+        '../third_party/skia/src/ports/SkOSFile_posix.cpp',
         '../third_party/skia/src/ports/SkOSFile_stdio.cpp',
+        '../third_party/skia/src/ports/SkOSFile_win.cpp', 
         #'../third_party/skia/src/ports/SkThread_none.cpp',
         '../third_party/skia/src/ports/SkThread_pthread.cpp',
         '../third_party/skia/src/ports/SkThread_win.cpp',
@@ -174,6 +175,8 @@
         'ext/image_operations.h',
         'ext/lazy_pixel_ref.cc',
         'ext/lazy_pixel_ref.h',
+        'ext/lazy_pixel_ref_utils.cc',
+        'ext/lazy_pixel_ref_utils.h',
         'ext/SkThread_chrome.cc',
         'ext/paint_simplifier.cc',
         'ext/paint_simplifier.h',
@@ -184,6 +187,8 @@
         'ext/platform_device_linux.cc',
         'ext/platform_device_mac.cc',
         'ext/platform_device_win.cc',
+        'ext/recursive_gaussian_convolution.cc',
+        'ext/recursive_gaussian_convolution.h',
         'ext/refptr.h',
         'ext/SkMemory_new_handler.cpp',
         'ext/skia_trace_shim.h',
@@ -256,8 +261,7 @@
             '../third_party/skia/gyp/gpu.gypi',
           ],
           'sources': [
-            '<@(gr_sources)',
-            '<@(skgr_sources)',
+            '<@(skgpu_sources)',
           ],
           'include_dirs': [
             '../third_party/skia/include/gpu',
@@ -325,6 +329,9 @@
           'sources/': [
             ['exclude', '_android\\.(cc|cpp)$'],
           ],
+          'sources!': [
+            '../third_party/skia/src/core/SkPaintOptionsAndroid.cpp',
+          ],
           'defines': [
             'SK_DEFAULT_FONT_CACHE_LIMIT=(20*1024*1024)',
           ],
@@ -334,7 +341,7 @@
             ['exclude', '_ios\\.(cc|cpp|mm?)$'],
           ],
           'dependencies': [
-            '<(webkit_src_dir)/Source/WebKit/chromium/skia_webkit.gyp:skia_webkit',
+            '<(DEPTH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.gyp:skia_webkit',
           ],
         }],
         [ 'OS != "mac"', {
@@ -349,6 +356,19 @@
         [ 'target_arch == "arm" and arm_version >= 7 and arm_neon == 1', {
           'defines': [
             '__ARM_HAVE_NEON',
+          ],
+        }],
+        [ 'target_arch == "arm" and arm_version >= 7 and arm_neon_optional == 1', {
+          'defines': [
+            '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
+          ],
+        }],
+        [ 'OS == "android" and target_arch == "arm"', {
+          'sources': [
+            '../third_party/skia/src/core/SkUtilsArm.cpp',
+          ],
+          'includes': [
+            '../build/android/cpufeatures.gypi',
           ],
         }],
         [ 'target_arch == "arm" or target_arch == "mipsel"', {
@@ -368,6 +388,7 @@
             '-Wno-unused-function',
           ],
           'sources': [
+            '../third_party/skia/src/fonts/SkFontMgr_fontconfig.cpp',
             '../third_party/skia/src/ports/SkFontHost_fontconfig.cpp',
             '../third_party/skia/src/ports/SkFontConfigInterface_direct.cpp',
           ],
@@ -390,6 +411,9 @@
           'sources/': [ ['exclude', '_gtk\\.(cc|cpp)$'] ],
         }],
         [ 'OS == "android"', {
+          'sources': [
+            '../third_party/skia/src/ports/SkFontHost_fontconfig.cpp',
+          ],
           'sources/': [
             ['exclude', '_linux\\.(cc|cpp)$'],
           ],
@@ -398,7 +422,7 @@
               'defines': [
                 'HAVE_PTHREADS',
                 'OS_ANDROID',
-                'SK_BUILD_FOR_ANDROID_NDK',
+                'SK_BUILD_FOR_ANDROID',
                 # Android devices are typically more memory constrained, so
                 # use a smaller glyph cache.
                 'SK_DEFAULT_FONT_CACHE_LIMIT=(8*1024*1024)',
@@ -493,7 +517,7 @@
         }],
         [ 'OS == "win"', {
           'sources!': [
-            '../third_party/skia/src/core/SkMMapStream.cpp',
+            '../third_party/skia/src/ports/SkOSFile_posix.cpp',
             '../third_party/skia/src/ports/SkThread_pthread.cpp',
             '../third_party/skia/src/ports/SkTime_Unix.cpp',
             'ext/SkThread_chrome.cc',
@@ -577,7 +601,7 @@
             ],
             'defines': [
               # Don't use non-NDK available stuff.
-              'SK_BUILD_FOR_ANDROID_NDK',
+              'SK_BUILD_FOR_ANDROID',
             ],
             'conditions': [
               [ '_toolset == "target" and android_webview_build == 0', {
@@ -652,7 +676,7 @@
         }],
         [ 'OS == "android"', {
           'defines': [
-            'SK_BUILD_FOR_ANDROID_NDK',
+            'SK_BUILD_FOR_ANDROID',
           ],
         }],
         [ 'target_arch != "arm" and target_arch != "mipsel"', {
@@ -678,6 +702,13 @@
               'defines': [
                 '__ARM_HAVE_NEON',
               ],
+            }],
+            [ 'arm_version >= 7 and arm_neon_optional == 1', {
+              'defines': [
+                '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
+              ],
+            }],
+            [ 'arm_version >= 7 and (arm_neon == 1 or arm_neon_optional == 1)', {
               'cflags': [
                 # The neon assembly contains conditional instructions which
                 # aren't enclosed in an IT block. The assembler complains
@@ -685,6 +716,9 @@
                 # See #86592.
                 '-Wa,-mimplicit-it=always',
               ],
+              'dependencies': [
+                'skia_opts_neon',
+              ]
            }],
           ],
           # The assembly uses the frame pointer register (r7 in Thumb/r11 in
@@ -703,20 +737,9 @@
             '../third_party/skia/src/opts/SkBitmapProcState_opts_arm.cpp',
           ],
         }],
-        [ 'target_arch == "arm" and (arm_version < 7 or arm_neon == 0)', {
+        [ 'target_arch == "arm" and (arm_version < 7 or (arm_neon == 0 and arm_neon_optional == 1))', {
           'sources': [
             '../third_party/skia/src/opts/memset.arm.S',
-        ],
-        }],
-        [ 'target_arch == "arm" and arm_version >= 7 and arm_neon == 1', {
-          'sources': [
-            '../third_party/skia/src/opts/memset16_neon.S',
-            '../third_party/skia/src/opts/memset32_neon.S',
-            '../third_party/skia/src/opts/SkBitmapProcState_arm_neon.cpp',
-            '../third_party/skia/src/opts/SkBitmapProcState_matrixProcs_neon.cpp',
-            '../third_party/skia/src/opts/SkBitmapProcState_matrix_clamp_neon.h',
-            '../third_party/skia/src/opts/SkBitmapProcState_matrix_repeat_neon.h',
-            '../third_party/skia/src/opts/SkBlitRow_opts_arm_neon.cpp',
           ],
         }],
         [ 'target_arch == "arm" and arm_version < 6', {
@@ -740,6 +763,7 @@
             '../third_party/skia/src/opts/SkBitmapProcState_opts_none.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_none.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
+            'ext/convolver_mips_dspr2.cc',
           ],
         }],
       ],
@@ -783,9 +807,62 @@
             ],
           },
         }],
-        [ 'target_arch != "arm"', {
+        [ 'target_arch != "arm" and target_arch != "mipsel"', {
           'sources': [
             '../third_party/skia/src/opts/SkBitmapProcState_opts_SSSE3.cpp',
+          ],
+        }],
+      ],
+    },
+    # NEON code must be compiled with -mfpu=neon which also affects scalar
+    # code. To support dynamic NEON code paths, we need to build all
+    # NEON-specific sources in a separate static library. The situation
+    # is very similar to the SSSE3 one.
+    {
+      'target_name': 'skia_opts_neon',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+        'config',
+        '../third_party/skia/include/config',
+        '../third_party/skia/include/core',
+        '../third_party/skia/src/core',
+        '../third_party/skia/src/opts',
+      ],
+      'cflags!': [
+        '-fno-omit-frame-pointer',
+        '-mfpu=vfp',  # remove them all, just in case.
+        '-mfpu=vfpv3',
+        '-mfpu=vfpv3-d16',
+      ],
+      'cflags': [
+        '-mfpu=neon',
+        '-fomit-frame-pointer',
+      ],
+      'ldflags': [
+        '-march=armv7-a',
+        '-Wl,--fix-cortex-a8',
+      ],
+      'conditions': [
+        ['arm_neon == 1', {
+          'defines': [
+            '__ARM_HAVE_NEON',
+          ],
+        }],
+        ['arm_neon_optional == 1', {
+          'defines': [
+            '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
+          ],
+        }],
+        ['target_arch == "arm" and (arm_neon == 1 or arm_neon_optional == 1)', {
+          'sources': [
+            '../third_party/skia/src/opts/memset16_neon.S',
+            '../third_party/skia/src/opts/memset32_neon.S',
+            '../third_party/skia/src/opts/SkBitmapProcState_arm_neon.cpp',
+            '../third_party/skia/src/opts/SkBitmapProcState_matrixProcs_neon.cpp',
+            '../third_party/skia/src/opts/SkBitmapProcState_matrix_clamp_neon.h',
+            '../third_party/skia/src/opts/SkBitmapProcState_matrix_repeat_neon.h',
+            '../third_party/skia/src/opts/SkBlitRow_opts_arm_neon.cpp',
           ],
         }],
       ],

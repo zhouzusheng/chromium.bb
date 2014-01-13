@@ -20,11 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGTests.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/DOMImplementation.h"
 #include "core/platform/Language.h"
 #include "core/svg/SVGElement.h"
@@ -157,10 +155,9 @@ bool SVGTests::handleAttributeChange(SVGElement* targetElement, const QualifiedN
         return true;
 
     bool valid = targetElement->isValid();
-    bool attached = targetElement->attached();
-    if (valid && !attached && targetElement->parentNode()->attached())
-        targetElement->attach();
-    else if (!valid && attached)
+    if (valid && !targetElement->attached() && targetElement->parentNode()->attached())
+        targetElement->lazyAttach();
+    else if (!valid && targetElement->attached())
         targetElement->detach();
 
     return true;
@@ -219,5 +216,3 @@ SVGStringList& SVGTests::systemLanguage()
 }
 
 }
-
-#endif // ENABLE(SVG)

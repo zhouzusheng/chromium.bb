@@ -5,7 +5,7 @@
 #ifndef UI_BASE_MODELS_COMBOBOX_MODEL_H_
 #define UI_BASE_MODELS_COMBOBOX_MODEL_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/base/ui_export.h"
 
 namespace ui {
@@ -17,7 +17,7 @@ class UI_EXPORT ComboboxModel {
   virtual int GetItemCount() const = 0;
 
   // Returns the string at the specified index.
-  virtual string16 GetItemAt(int index) = 0;
+  virtual base::string16 GetItemAt(int index) = 0;
 
   // Should return true if the item at |index| is a non-selectable separator
   // item.

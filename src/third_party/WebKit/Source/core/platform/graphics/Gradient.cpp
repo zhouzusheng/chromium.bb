@@ -28,16 +28,15 @@
 #include "config.h"
 #include "core/platform/graphics/Gradient.h"
 
-#include "SkColorShader.h"
-#include "SkGradientShader.h"
-#include "core/css/CSSParser.h"
 #include "core/platform/graphics/Color.h"
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/skia/SkiaUtils.h"
-#include <wtf/HashFunctions.h>
-#include <wtf/StringHasher.h>
-#include <wtf/UnusedParam.h>
+#include "third_party/skia/include/core/SkColorShader.h"
+#include "third_party/skia/include/core/SkShader.h"
+#include "third_party/skia/include/effects/SkGradientShader.h"
+#include "wtf/HashFunctions.h"
+#include "wtf/StringHasher.h"
 
 using WTF::pairIntHash;
 
@@ -51,9 +50,9 @@ Gradient::Gradient(const FloatPoint& p0, const FloatPoint& p1)
     , m_r1(0)
     , m_aspectRatio(1)
     , m_stopsSorted(false)
-    , m_lastStop(0)
     , m_spreadMethod(SpreadMethodPad)
     , m_cachedHash(0)
+    , m_drawInPMColorSpace(false)
     , m_gradient(0)
 {
 }
@@ -66,9 +65,9 @@ Gradient::Gradient(const FloatPoint& p0, float r0, const FloatPoint& p1, float r
     , m_r1(r1)
     , m_aspectRatio(aspectRatio)
     , m_stopsSorted(false)
-    , m_lastStop(0)
     , m_spreadMethod(SpreadMethodPad)
     , m_cachedHash(0)
+    , m_drawInPMColorSpace(false)
     , m_gradient(0)
 {
 }
@@ -151,73 +150,6 @@ void Gradient::sortStopsIfNecessary()
     invalidateHash();
 }
 
-void Gradient::getColor(float value, float* r, float* g, float* b, float* a) const
-{
-    ASSERT(value >= 0);
-    ASSERT(value <= 1);
-
-    if (m_stops.isEmpty()) {
-        *r = 0;
-        *g = 0;
-        *b = 0;
-        *a = 0;
-        return;
-    }
-    if (!m_stopsSorted) {
-        if (m_stops.size())
-            std::stable_sort(m_stops.begin(), m_stops.end(), compareStops);
-        m_stopsSorted = true;
-    }
-    if (value <= 0 || value <= m_stops.first().stop) {
-        *r = m_stops.first().red;
-        *g = m_stops.first().green;
-        *b = m_stops.first().blue;
-        *a = m_stops.first().alpha;
-        return;
-    }
-    if (value >= 1 || value >= m_stops.last().stop) {
-        *r = m_stops.last().red;
-        *g = m_stops.last().green;
-        *b = m_stops.last().blue;
-        *a = m_stops.last().alpha;
-        return;
-    }
-
-    // Find stop before and stop after and interpolate.
-    int stop = findStop(value);
-    const ColorStop& lastStop = m_stops[stop];    
-    const ColorStop& nextStop = m_stops[stop + 1];
-    float stopFraction = (value - lastStop.stop) / (nextStop.stop - lastStop.stop);
-    *r = lastStop.red + (nextStop.red - lastStop.red) * stopFraction;
-    *g = lastStop.green + (nextStop.green - lastStop.green) * stopFraction;
-    *b = lastStop.blue + (nextStop.blue - lastStop.blue) * stopFraction;
-    *a = lastStop.alpha + (nextStop.alpha - lastStop.alpha) * stopFraction;
-}
-
-int Gradient::findStop(float value) const
-{
-    ASSERT(value >= 0);
-    ASSERT(value <= 1);
-    ASSERT(m_stopsSorted);
-
-    int numStops = m_stops.size();
-    ASSERT(numStops >= 2);
-    ASSERT(m_lastStop < numStops - 1);
-
-    int i = m_lastStop;
-    if (value < m_stops[i].stop)
-        i = 1;
-    else
-        i = m_lastStop + 1;
-
-    for (; i < numStops - 1; ++i)
-        if (value < m_stops[i].stop)
-            break;
-
-    m_lastStop = i - 1;
-    return m_lastStop;
-}
-
 bool Gradient::hasAlpha() const
 {
     for (size_t i = 0; i < m_stops.size(); i++) {
@@ -237,6 +169,19 @@ void Gradient::setSpreadMethod(GradientSpreadMethod spreadMethod)
         return;
 
     m_spreadMethod = spreadMethod;
+
+    invalidateHash();
+}
+
+void Gradient::setDrawsInPMColorSpace(bool drawInPMColorSpace)
+{
+    if (drawInPMColorSpace == m_drawInPMColorSpace)
+        return;
+
+    m_drawInPMColorSpace = drawInPMColorSpace;
+
+    if (m_gradient)
+        destroyShader();
 
     invalidateHash();
 }
@@ -265,9 +210,9 @@ unsigned Gradient::hash() const
         float r0;
         float r1;
         float aspectRatio;
-        int lastStop;
         GradientSpreadMethod spreadMethod;
         bool radial;
+        bool drawInPMColorSpace;
     } parameters;
 
     // StringHasher requires that the memory it hashes be a multiple of two in size.
@@ -283,9 +228,9 @@ unsigned Gradient::hash() const
     parameters.r0 = m_r0;
     parameters.r1 = m_r1;
     parameters.aspectRatio = m_aspectRatio;
-    parameters.lastStop = m_lastStop;
     parameters.spreadMethod = m_spreadMethod;
     parameters.radial = m_radial;
+    parameters.drawInPMColorSpace = m_drawInPMColorSpace;
 
     unsigned parametersHash = StringHasher::hashMemory(&parameters, sizeof(parameters));
     unsigned stopHash = StringHasher::hashMemory(m_stops.data(), m_stops.size() * sizeof(ColorStop));
@@ -391,17 +336,18 @@ SkShader* Gradient::shader()
         break;
     }
 
+    uint32_t shouldDrawInPMColorSpace = m_drawInPMColorSpace ? SkGradientShader::kInterpolateColorsInPremul_Flag : 0;
     if (m_radial) {
         // Since the two-point radial gradient is slower than the plain radial,
         // only use it if we have to.
         if (m_p0 == m_p1 && m_r0 <= 0.0f)
-            m_gradient = SkGradientShader::CreateRadial(m_p1, m_r1, colors, pos, static_cast<int>(countUsed), tile);
+            m_gradient = SkGradientShader::CreateRadial(m_p1, m_r1, colors, pos, static_cast<int>(countUsed), tile, 0, shouldDrawInPMColorSpace);
         else {
             // The radii we give to Skia must be positive. If we're given a
             // negative radius, ask for zero instead.
             SkScalar radius0 = m_r0 >= 0.0f ? WebCoreFloatToSkScalar(m_r0) : 0;
             SkScalar radius1 = m_r1 >= 0.0f ? WebCoreFloatToSkScalar(m_r1) : 0;
-            m_gradient = SkGradientShader::CreateTwoPointConical(m_p0, radius0, m_p1, radius1, colors, pos, static_cast<int>(countUsed), tile);
+            m_gradient = SkGradientShader::CreateTwoPointConical(m_p0, radius0, m_p1, radius1, colors, pos, static_cast<int>(countUsed), tile, 0, shouldDrawInPMColorSpace);
         }
 
         if (aspectRatio() != 1) {
@@ -414,7 +360,7 @@ SkShader* Gradient::shader()
         }
     } else {
         SkPoint pts[2] = { m_p0, m_p1 };
-        m_gradient = SkGradientShader::CreateLinear(pts, colors, pos, static_cast<int>(countUsed), tile);
+        m_gradient = SkGradientShader::CreateLinear(pts, colors, pos, static_cast<int>(countUsed), tile, 0, shouldDrawInPMColorSpace);
     }
 
     if (!m_gradient)
@@ -423,12 +369,6 @@ SkShader* Gradient::shader()
     else
         m_gradient->setLocalMatrix(m_gradientSpaceTransformation);
     return m_gradient;
-}
-
-void Gradient::fill(GraphicsContext* context, const FloatRect& rect)
-{
-    context->setFillGradient(this);
-    context->fillRect(rect);
 }
 
 } //namespace

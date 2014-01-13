@@ -33,17 +33,12 @@
 #include <algorithm>
 #include "CSSPropertyNames.h"
 #include "core/css/CSSCrossfadeValue.h"
-#include "core/css/CSSImageGeneratorValue.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/StylePropertyShorthand.h"
-#include "core/css/StyleResolver.h"
 #include "core/loader/cache/CachedImage.h"
 #include "core/page/animation/AnimationBase.h"
 #include "core/platform/FloatConversion.h"
-#include "core/platform/graphics/transforms/IdentityTransformOperation.h"
-#include "core/platform/graphics/transforms/Matrix3DTransformOperation.h"
-#include "core/platform/graphics/transforms/MatrixTransformOperation.h"
 #include "core/rendering/ClipPathOperation.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/style/RenderStyle.h"
@@ -117,7 +112,6 @@ static inline PassOwnPtr<ShadowData> blendFunc(const AnimationBase* anim, const 
                                    blend(from->blur(), to->blur(), progress),
                                    blend(from->spread(), to->spread(), progress),
                                    blendFunc(anim, from->style(), to->style(), progress),
-                                   from->isWebkitBoxShadow(),
                                    blend(from->color(), to->color(), progress)));
 }
 
@@ -143,10 +137,10 @@ static inline PassRefPtr<ClipPathOperation> blendFunc(const AnimationBase*, Clip
     return ShapeClipPathOperation::create(toShape->blend(fromShape, progress));
 }
 
-static inline PassRefPtr<ExclusionShapeValue> blendFunc(const AnimationBase*, ExclusionShapeValue* from, ExclusionShapeValue* to, double progress)
+static inline PassRefPtr<ShapeValue> blendFunc(const AnimationBase*, ShapeValue* from, ShapeValue* to, double progress)
 {
     // FIXME Bug 102723: Shape-inside should be able to animate a value of 'outside-shape' when shape-outside is set to a BasicShape
-    if (from->type() != ExclusionShapeValue::SHAPE || to->type() != ExclusionShapeValue::SHAPE)
+    if (from->type() != ShapeValue::Shape || to->type() != ShapeValue::Shape)
         return to;
 
     const BasicShape* fromShape = from->shape();
@@ -155,7 +149,7 @@ static inline PassRefPtr<ExclusionShapeValue> blendFunc(const AnimationBase*, Ex
     if (!fromShape->canBlend(toShape))
         return to;
 
-    return ExclusionShapeValue::createShapeValue(toShape->blend(fromShape, progress));
+    return ShapeValue::createShapeValue(toShape->blend(fromShape, progress));
 }
 
 static inline PassRefPtr<FilterOperation> blendFunc(const AnimationBase* anim, FilterOperation* fromOp, FilterOperation* toOp, double progress, bool blendToPassthrough = false)
@@ -228,12 +222,10 @@ static inline LengthBox blendFunc(const AnimationBase* anim, const LengthBox& fr
     return result;
 }
 
-#if ENABLE(SVG)
 static inline SVGLength blendFunc(const AnimationBase*, const SVGLength& from, const SVGLength& to, double progress)
 {
     return to.blend(from, narrowPrecisionToFloat(progress));
 }
-#endif
 
 static inline PassRefPtr<StyleImage> crossfadeBlend(const AnimationBase*, StyleCachedImage* fromStyleImage, StyleCachedImage* toStyleImage, double progress)
 {
@@ -405,10 +397,10 @@ public:
     }
 };
 
-class PropertyWrapperExclusionShape : public RefCountedPropertyWrapper<ExclusionShapeValue> {
+class PropertyWrapperShape : public RefCountedPropertyWrapper<ShapeValue> {
 public:
-    PropertyWrapperExclusionShape(CSSPropertyID prop, ExclusionShapeValue* (RenderStyle::*getter)() const, void (RenderStyle::*setter)(PassRefPtr<ExclusionShapeValue>))
-        : RefCountedPropertyWrapper<ExclusionShapeValue>(prop, getter, setter)
+    PropertyWrapperShape(CSSPropertyID prop, ShapeValue* (RenderStyle::*getter)() const, void (RenderStyle::*setter)(PassRefPtr<ShapeValue>))
+        : RefCountedPropertyWrapper<ShapeValue>(prop, getter, setter)
     {
     }
 };
@@ -510,19 +502,16 @@ static inline size_t shadowListLength(const ShadowData* shadow)
 
 static inline const ShadowData* shadowForBlending(const ShadowData* srcShadow, const ShadowData* otherShadow)
 {
-    DEFINE_STATIC_LOCAL(ShadowData, defaultShadowData, (IntPoint(), 0, 0, Normal, false, Color::transparent));
-    DEFINE_STATIC_LOCAL(ShadowData, defaultInsetShadowData, (IntPoint(), 0, 0, Inset, false, Color::transparent));
-
-    DEFINE_STATIC_LOCAL(ShadowData, defaultWebKitBoxShadowData, (IntPoint(), 0, 0, Normal, true, Color::transparent));
-    DEFINE_STATIC_LOCAL(ShadowData, defaultInsetWebKitBoxShadowData, (IntPoint(), 0, 0, Inset, true, Color::transparent));
+    DEFINE_STATIC_LOCAL(ShadowData, defaultShadowData, (IntPoint(), 0, 0, Normal, Color::transparent));
+    DEFINE_STATIC_LOCAL(ShadowData, defaultInsetShadowData, (IntPoint(), 0, 0, Inset, Color::transparent));
 
     if (srcShadow)
         return srcShadow;
 
     if (otherShadow->style() == Inset)
-        return otherShadow->isWebkitBoxShadow() ? &defaultInsetWebKitBoxShadowData : &defaultInsetShadowData;
+        return &defaultInsetShadowData;
 
-    return otherShadow->isWebkitBoxShadow() ? &defaultWebKitBoxShadowData : &defaultShadowData;
+    return &defaultShadowData;
 }
 
 class PropertyWrapperShadow : public AnimationPropertyWrapperBase {
@@ -922,7 +911,8 @@ private:
 
 class PropertyWrapperFlex : public AnimationPropertyWrapperBase {
 public:
-    PropertyWrapperFlex() : AnimationPropertyWrapperBase(CSSPropertyWebkitFlex)
+    PropertyWrapperFlex()
+        : AnimationPropertyWrapperBase(CSSPropertyFlex)
     {
     }
 
@@ -946,7 +936,6 @@ public:
     }
 };
 
-#if ENABLE(SVG)
 class PropertyWrapperSVGPaint : public AnimationPropertyWrapperBase {
 public:
     PropertyWrapperSVGPaint(CSSPropertyID prop, const SVGPaint::SVGPaintType& (RenderStyle::*paintTypeGetter)() const, Color (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&))
@@ -1006,7 +995,6 @@ private:
     Color (RenderStyle::*m_getter)() const;
     void (RenderStyle::*m_setter)(const Color&);
 };
-#endif
 
 static void addShorthandProperties()
 {
@@ -1146,7 +1134,7 @@ void CSSPropertyAnimation::ensurePropertyMap()
 
     gPropertyWrappers->append(new PropertyWrapperClipPath(CSSPropertyWebkitClipPath, &RenderStyle::clipPath, &RenderStyle::setClipPath));
 
-    gPropertyWrappers->append(new PropertyWrapperExclusionShape(CSSPropertyWebkitShapeInside, &RenderStyle::shapeInside, &RenderStyle::setShapeInside));
+    gPropertyWrappers->append(new PropertyWrapperShape(CSSPropertyWebkitShapeInside, &RenderStyle::shapeInside, &RenderStyle::setShapeInside));
 
     gPropertyWrappers->append(new PropertyWrapperVisitedAffectedColor(CSSPropertyWebkitColumnRuleColor, MaybeInvalidColor, &RenderStyle::columnRuleColor, &RenderStyle::setColumnRuleColor, &RenderStyle::visitedLinkColumnRuleColor, &RenderStyle::setVisitedLinkColumnRuleColor));
     gPropertyWrappers->append(new PropertyWrapperVisitedAffectedColor(CSSPropertyWebkitTextStrokeColor, MaybeInvalidColor, &RenderStyle::textStrokeColor, &RenderStyle::setTextStrokeColor, &RenderStyle::visitedLinkTextStrokeColor, &RenderStyle::setVisitedLinkTextStrokeColor));
@@ -1161,7 +1149,6 @@ void CSSPropertyAnimation::ensurePropertyMap()
     gPropertyWrappers->append(new PropertyWrapperShadow(CSSPropertyWebkitBoxShadow, &RenderStyle::boxShadow, &RenderStyle::setBoxShadow));
     gPropertyWrappers->append(new PropertyWrapperShadow(CSSPropertyTextShadow, &RenderStyle::textShadow, &RenderStyle::setTextShadow));
 
-#if ENABLE(SVG)
     gPropertyWrappers->append(new PropertyWrapperSVGPaint(CSSPropertyFill, &RenderStyle::fillPaintType, &RenderStyle::fillPaintColor, &RenderStyle::setFillPaintColor));
     gPropertyWrappers->append(new PropertyWrapper<float>(CSSPropertyFillOpacity, &RenderStyle::fillOpacity, &RenderStyle::setFillOpacity));
 
@@ -1181,7 +1168,6 @@ void CSSPropertyAnimation::ensurePropertyMap()
 
     gPropertyWrappers->append(new PropertyWrapper<SVGLength>(CSSPropertyBaselineShift, &RenderStyle::baselineShiftValue, &RenderStyle::setBaselineShiftValue));
     gPropertyWrappers->append(new PropertyWrapper<SVGLength>(CSSPropertyKerning, &RenderStyle::kerning, &RenderStyle::setKerning));
-#endif
 
     // TODO:
     //
@@ -1208,27 +1194,6 @@ void CSSPropertyAnimation::ensurePropertyMap()
     addShorthandProperties();
 }
 
-static bool gatherEnclosingShorthandProperties(CSSPropertyID property, AnimationPropertyWrapperBase* wrapper, HashSet<CSSPropertyID>& propertySet)
-{
-    if (!wrapper->isShorthandWrapper())
-        return false;
-
-    ShorthandPropertyWrapper* shorthandWrapper = static_cast<ShorthandPropertyWrapper*>(wrapper);
-
-    bool contained = false;
-    for (size_t i = 0; i < shorthandWrapper->propertyWrappers().size(); ++i) {
-        AnimationPropertyWrapperBase* currWrapper = shorthandWrapper->propertyWrappers()[i];
-
-        if (gatherEnclosingShorthandProperties(property, currWrapper, propertySet) || currWrapper->property() == property)
-            contained = true;
-    }
-
-    if (contained)
-        propertySet.add(wrapper->property());
-
-    return contained;
-}
-
 // Returns true if we need to start animation timers
 bool CSSPropertyAnimation::blendProperties(const AnimationBase* anim, CSSPropertyID prop, RenderStyle* dst, const RenderStyle* a, const RenderStyle* b, double progress)
 {
@@ -1250,18 +1215,6 @@ bool CSSPropertyAnimation::animationOfPropertyIsAccelerated(CSSPropertyID prop)
     ensurePropertyMap();
     AnimationPropertyWrapperBase* wrapper = wrapperForProperty(prop);
     return wrapper ? wrapper->animationIsAccelerated() : false;
-}
-
-// Note: this is inefficient. It's only called from pauseTransitionAtTime().
-HashSet<CSSPropertyID> CSSPropertyAnimation::animatableShorthandsAffectingProperty(CSSPropertyID property)
-{
-    ensurePropertyMap();
-
-    HashSet<CSSPropertyID> foundProperties;
-    for (int i = 0; i < getNumProperties(); ++i)
-        gatherEnclosingShorthandProperties(property, (*gPropertyWrappers)[i], foundProperties);
-
-    return foundProperties;
 }
 
 bool CSSPropertyAnimation::propertiesEqual(CSSPropertyID prop, const RenderStyle* a, const RenderStyle* b)

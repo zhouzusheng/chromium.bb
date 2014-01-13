@@ -8,12 +8,14 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/browser_message_filter.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebStorageArea.h"
-#include "webkit/dom_storage/dom_storage_context.h"
-#include "webkit/dom_storage/dom_storage_types.h"
+#include "webkit/browser/dom_storage/dom_storage_context.h"
+#include "webkit/common/dom_storage/dom_storage_types.h"
 
 class GURL;
+
+namespace base {
 class NullableString16;
+}
 
 namespace dom_storage {
 class DomStorageArea;
@@ -64,7 +66,7 @@ class DOMStorageMessageFilter
       const dom_storage::DomStorageArea* area,
       const string16& key,
       const string16& new_value,
-      const NullableString16& old_value,
+      const base::NullableString16& old_value,
       const GURL& page_url) OVERRIDE;
   virtual void OnDomStorageItemRemoved(
       const dom_storage::DomStorageArea* area,
@@ -78,9 +80,9 @@ class DOMStorageMessageFilter
   void SendDomStorageEvent(
       const dom_storage::DomStorageArea* area,
       const GURL& page_url,
-      const NullableString16& key,
-      const NullableString16& new_value,
-      const NullableString16& old_value);
+      const base::NullableString16& key,
+      const base::NullableString16& new_value,
+      const base::NullableString16& old_value);
 
   scoped_refptr<dom_storage::DomStorageContext> context_;
   scoped_ptr<dom_storage::DomStorageHost> host_;

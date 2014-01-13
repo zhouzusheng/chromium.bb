@@ -18,8 +18,11 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/media_stream_request.h"
 #include "media/video/capture/fake_video_capture_device.h"
-#include "media/video/capture/screen/screen_capture_device.h"
 #include "media/video/capture/video_capture_device.h"
+
+#if defined(ENABLE_SCREEN_CAPTURE)
+#include "content/browser/renderer_host/media/screen_capture_device.h"
+#endif
 
 namespace content {
 
@@ -58,7 +61,7 @@ void VideoCaptureManager::Register(MediaStreamProviderListener* listener,
                                    base::MessageLoopProxy* device_thread_loop) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(!listener_);
-  DCHECK(!device_loop_);
+  DCHECK(!device_loop_.get());
   listener_ = listener;
   device_loop_ = device_thread_loop;
 }
@@ -180,14 +183,13 @@ void VideoCaptureManager::OnOpen(int capture_session_id,
         break;
       }
       case MEDIA_SCREEN_VIDEO_CAPTURE: {
-#if (defined(OS_LINUX) && defined(USE_X11)) || \
-    defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(ENABLE_SCREEN_CAPTURE)
         scoped_refptr<base::SequencedWorkerPool> blocking_pool =
             BrowserThread::GetBlockingPool();
-        video_capture_device = new media::ScreenCaptureDevice(
+        video_capture_device = new ScreenCaptureDevice(
             blocking_pool->GetSequencedTaskRunner(
                 blocking_pool->GetSequenceToken()));
-#endif  // defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_WIN)
+#endif  // defined(ENABLE_SCREEN_CAPTURE)
         break;
       }
       default: {
@@ -483,13 +485,14 @@ void VideoCaptureManager::DoAddControllerOnDeviceThread(
     Controllers::iterator cit = controllers_.find(video_capture_device);
     if (cit == controllers_.end()) {
       controller = new VideoCaptureController(this);
-      controllers_[video_capture_device] = new Controller(controller, handler);
+      controllers_[video_capture_device] =
+          new Controller(controller.get(), handler);
     } else {
       controllers_[video_capture_device]->handlers.push_front(handler);
       controller = controllers_[video_capture_device]->controller;
     }
   }
-  added_cb.Run(controller);
+  added_cb.Run(controller.get());
 }
 
 void VideoCaptureManager::RemoveController(
@@ -509,7 +512,7 @@ void VideoCaptureManager::DoRemoveControllerOnDeviceThread(
 
   for (Controllers::iterator cit = controllers_.begin();
        cit != controllers_.end(); ++cit) {
-    if (controller == cit->second->controller) {
+    if (controller == cit->second->controller.get()) {
       Handlers& handlers = cit->second->handlers;
       for (Handlers::iterator hit = handlers.begin();
            hit != handlers.end(); ++hit) {

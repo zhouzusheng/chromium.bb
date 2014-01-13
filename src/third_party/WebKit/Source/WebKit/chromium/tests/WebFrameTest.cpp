@@ -55,9 +55,13 @@
 #include "WebTextCheckingResult.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
+#include "core/dom/Clipboard.h"
 #include "core/dom/DocumentMarkerController.h"
+#include "core/dom/MouseEvent.h"
 #include "core/dom/Range.h"
+#include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/SpellChecker.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
@@ -68,12 +72,13 @@
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/TextAutosizer.h"
 #include "v8.h"
-#include <public/Platform.h>
-#include <public/WebFloatRect.h>
-#include <public/WebThread.h>
-#include <public/WebUnitTestSupport.h>
-#include <public/WebURLResponse.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebFloatRect.h"
+#include "public/platform/WebThread.h"
+#include "public/platform/WebUnitTestSupport.h"
+#include "public/platform/WebURLResponse.h"
 #include <wtf/dtoa/utils.h>
 #include <wtf/Forward.h>
 
@@ -82,6 +87,7 @@ using WebCore::Document;
 using WebCore::DocumentMarker;
 using WebCore::Element;
 using WebCore::FloatRect;
+using WebCore::HitTestRequest;
 using WebCore::Range;
 using WebKit::URLTestHelpers::toKURL;
 using WebKit::FrameTestHelpers::runPendingTasks;
@@ -326,6 +332,55 @@ TEST_F(WebFrameTest, FrameViewNeedsLayoutOnFixedLayoutResize)
     webViewImpl->layout();
 }
 
+TEST_F(WebFrameTest, ChangeInFixedLayoutTriggersTextAutosizingRecalculate)
+{
+    registerMockedHttpURLLoad("fixed_layout.html");
+
+    FixedLayoutTestWebViewClient client;
+    int viewportWidth = 640;
+    int viewportHeight = 480;
+
+    // Make sure we initialize to minimum scale, even if the window size
+    // only becomes available after the load begins.
+    m_webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "fixed_layout.html", true, 0, &client);
+    m_webView->enableFixedLayoutMode(true);
+    m_webView->settings()->setViewportEnabled(true);
+    WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(m_webView);
+
+    WebCore::Document* document = webViewImpl->page()->mainFrame()->document();
+    document->settings()->setTextAutosizingEnabled(true);
+    EXPECT_TRUE(document->settings()->textAutosizingEnabled());
+    webViewImpl->resize(WebSize(viewportWidth, viewportHeight));
+    webViewImpl->layout();
+
+    WebCore::RenderObject* renderer = document->renderer();
+    bool multiplierSetAtLeastOnce = false;
+    while (renderer) {
+        if (renderer->style()) {
+            renderer->style()->setTextAutosizingMultiplier(2);
+            EXPECT_EQ(2, renderer->style()->textAutosizingMultiplier());
+            multiplierSetAtLeastOnce = true;
+        }
+        renderer = renderer->nextInPreOrder();
+    }
+    EXPECT_TRUE(multiplierSetAtLeastOnce);
+
+    WebCore::ViewportArguments arguments = document->viewportArguments();
+    arguments.width += 10;
+    webViewImpl->updatePageDefinedPageScaleConstraints(arguments);
+
+    bool multiplierCheckedAtLeastOnce = false;
+    renderer = document->renderer();
+    while (renderer) {
+        if (renderer->style()) {
+            EXPECT_EQ(1, renderer->style()->textAutosizingMultiplier());
+            multiplierCheckedAtLeastOnce = true;
+        }
+        renderer = renderer->nextInPreOrder();
+    }
+    EXPECT_TRUE(multiplierCheckedAtLeastOnce);
+}
+
 TEST_F(WebFrameTest, DeviceScaleFactorUsesDefaultWithoutViewportTag)
 {
     registerMockedHttpURLLoad("no_viewport_tag.html");
@@ -355,8 +410,11 @@ TEST_F(WebFrameTest, DeviceScaleFactorUsesDefaultWithoutViewportTag)
     m_webView->mainFrame()->contentAsText(1024).utf8();
 }
 
-TEST_F(WebFrameTest, FixedLayoutInitializeAtMinimumPageScale)
+TEST_F(WebFrameTest, FixedLayoutInitializeAtMinimumScale)
 {
+    WebCore::Settings::setMockScrollbarsEnabled(true);
+    WebCore::Settings::setUsesOverlayScrollbars(true);
+
     registerMockedHttpURLLoad("fixed_layout.html");
 
     FixedLayoutTestWebViewClient client;
@@ -374,6 +432,7 @@ TEST_F(WebFrameTest, FixedLayoutInitializeAtMinimumPageScale)
     int defaultFixedLayoutWidth = 980;
     float minimumPageScaleFactor = viewportWidth / (float) defaultFixedLayoutWidth;
     EXPECT_EQ(minimumPageScaleFactor, m_webView->pageScaleFactor());
+    EXPECT_EQ(minimumPageScaleFactor, m_webView->minimumPageScaleFactor());
 
     // Assume the user has pinch zoomed to page scale factor 2.
     float userPinchPageScaleFactor = 2;
@@ -392,7 +451,48 @@ TEST_F(WebFrameTest, FixedLayoutInitializeAtMinimumPageScale)
     EXPECT_EQ(userPinchPageScaleFactor, m_webView->pageScaleFactor());
 }
 
-TEST_F(WebFrameTest, setInitializeAtMinimumPageScaleToFalse)
+TEST_F(WebFrameTest, WideDocumentInitializeAtMinimumScale)
+{
+    WebCore::Settings::setMockScrollbarsEnabled(true);
+    WebCore::Settings::setUsesOverlayScrollbars(true);
+
+    registerMockedHttpURLLoad("wide_document.html");
+
+    FixedLayoutTestWebViewClient client;
+    client.m_screenInfo.deviceScaleFactor = 1;
+    int viewportWidth = 640;
+    int viewportHeight = 480;
+
+    // Make sure we initialize to minimum scale, even if the window size
+    // only becomes available after the load begins.
+    m_webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "wide_document.html", true, 0, &client);
+    m_webView->enableFixedLayoutMode(true);
+    m_webView->settings()->setViewportEnabled(true);
+    m_webView->resize(WebSize(viewportWidth, viewportHeight));
+
+    int wideDocumentWidth = 1500;
+    float minimumPageScaleFactor = viewportWidth / (float) wideDocumentWidth;
+    EXPECT_EQ(minimumPageScaleFactor, m_webView->pageScaleFactor());
+    EXPECT_EQ(minimumPageScaleFactor, m_webView->minimumPageScaleFactor());
+
+    // Assume the user has pinch zoomed to page scale factor 2.
+    float userPinchPageScaleFactor = 2;
+    m_webView->setPageScaleFactorPreservingScrollOffset(userPinchPageScaleFactor);
+    m_webView->layout();
+
+    // Make sure we don't reset to initial scale if the page continues to load.
+    bool isNewNavigation;
+    WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(m_webView);
+    webViewImpl ->didCommitLoad(&isNewNavigation, false);
+    webViewImpl ->didChangeContentsSize();
+    EXPECT_EQ(userPinchPageScaleFactor, m_webView->pageScaleFactor());
+
+    // Make sure we don't reset to initial scale if the viewport size changes.
+    m_webView->resize(WebSize(viewportWidth, viewportHeight + 100));
+    EXPECT_EQ(userPinchPageScaleFactor, m_webView->pageScaleFactor());
+}
+
+TEST_F(WebFrameTest, setLoadWithOverviewModeToFalse)
 {
     registerMockedHttpURLLoad("viewport-auto-initial-scale.html");
 
@@ -404,14 +504,15 @@ TEST_F(WebFrameTest, setInitializeAtMinimumPageScaleToFalse)
     m_webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "viewport-auto-initial-scale.html", true, 0, &client);
     m_webView->enableFixedLayoutMode(true);
     m_webView->settings()->setViewportEnabled(true);
-    m_webView->settings()->setInitializeAtMinimumPageScale(false);
+    m_webView->settings()->setLoadWithOverviewMode(false);
+    m_webView->settings()->setSupportDeprecatedTargetDensityDPI(true);
     m_webView->resize(WebSize(viewportWidth, viewportHeight));
 
     // The page must be displayed at 100% zoom.
     EXPECT_EQ(1.0f, m_webView->pageScaleFactor());
 }
 
-TEST_F(WebFrameTest, SetInitializeAtMinimumPageScaleToFalseAndNoWideViewport)
+TEST_F(WebFrameTest, SetLoadWithOverviewModeToFalseAndNoWideViewport)
 {
     registerMockedHttpURLLoad("large-div.html");
 
@@ -423,8 +524,9 @@ TEST_F(WebFrameTest, SetInitializeAtMinimumPageScaleToFalseAndNoWideViewport)
     m_webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "large-div.html", true, 0, &client);
     m_webView->enableFixedLayoutMode(true);
     m_webView->settings()->setViewportEnabled(true);
-    m_webView->settings()->setInitializeAtMinimumPageScale(false);
+    m_webView->settings()->setLoadWithOverviewMode(false);
     m_webView->settings()->setUseWideViewport(false);
+    m_webView->settings()->setSupportDeprecatedTargetDensityDPI(true);
     m_webView->resize(WebSize(viewportWidth, viewportHeight));
 
     // The page must be displayed at 100% zoom, despite that it hosts a wide div element.
@@ -450,6 +552,7 @@ TEST_F(WebFrameTest, NoWideViewportIgnoresPageViewportWidth)
     // The page sets viewport width to 3000, but with UseWideViewport == false is must be ignored.
     WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(m_webView);
     EXPECT_EQ(viewportWidth, webViewImpl->mainFrameImpl()->frameView()->contentsSize().width());
+    EXPECT_EQ(viewportHeight, webViewImpl->mainFrameImpl()->frameView()->contentsSize().height());
 }
 
 TEST_F(WebFrameTest, NoWideViewportIgnoresPageViewportWidthButAccountsScale)
@@ -472,6 +575,7 @@ TEST_F(WebFrameTest, NoWideViewportIgnoresPageViewportWidthButAccountsScale)
     // While the initial scale specified by the page must be accounted.
     WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(m_webView);
     EXPECT_EQ(viewportWidth / 2, webViewImpl->mainFrameImpl()->frameView()->contentsSize().width());
+    EXPECT_EQ(viewportHeight / 2, webViewImpl->mainFrameImpl()->frameView()->contentsSize().height());
 }
 
 TEST_F(WebFrameTest, WideViewportSetsTo980WithAutoWidth)
@@ -484,18 +588,18 @@ TEST_F(WebFrameTest, WideViewportSetsTo980WithAutoWidth)
     int viewportHeight = 480;
 
     m_webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "viewport-2x-initial-scale.html", true, 0, &client);
-    m_webView->enableFixedLayoutMode(true);
-    m_webView->settings()->setViewportEnabled(true);
-    // This behavior is for compatibility with Android WebView, so it is only
-    // activated when support for target-densityDpi is enabled.
     m_webView->settings()->setSupportDeprecatedTargetDensityDPI(true);
+    m_webView->enableFixedLayoutMode(true);
+    m_webView->settings()->setUseWideViewport(true);
+    m_webView->settings()->setViewportEnabled(true);
     m_webView->resize(WebSize(viewportWidth, viewportHeight));
 
     WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(m_webView);
     EXPECT_EQ(980, webViewImpl->mainFrameImpl()->frameView()->contentsSize().width());
+    EXPECT_EQ(980.0 / viewportWidth * viewportHeight, webViewImpl->mainFrameImpl()->frameView()->contentsSize().height());
 }
 
-TEST_F(WebFrameTest, PageViewportInitialScaleOverridesInitializeAtMinimumScale)
+TEST_F(WebFrameTest, PageViewportInitialScaleOverridesLoadWithOverviewMode)
 {
     registerMockedHttpURLLoad("viewport-wide-2x-initial-scale.html");
 
@@ -506,8 +610,9 @@ TEST_F(WebFrameTest, PageViewportInitialScaleOverridesInitializeAtMinimumScale)
 
     m_webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "viewport-wide-2x-initial-scale.html", true, 0, &client);
     m_webView->enableFixedLayoutMode(true);
+    m_webView->settings()->setSupportDeprecatedTargetDensityDPI(true);
     m_webView->settings()->setViewportEnabled(true);
-    m_webView->settings()->setInitializeAtMinimumPageScale(false);
+    m_webView->settings()->setLoadWithOverviewMode(false);
     m_webView->resize(WebSize(viewportWidth, viewportHeight));
 
     // The page must be displayed at 200% zoom, as specified in its viewport meta tag.
@@ -516,38 +621,38 @@ TEST_F(WebFrameTest, PageViewportInitialScaleOverridesInitializeAtMinimumScale)
 
 TEST_F(WebFrameTest, setInitialPageScaleFactorPermanently)
 {
+    WebCore::Settings::setMockScrollbarsEnabled(true);
+    WebCore::Settings::setUsesOverlayScrollbars(true);
+
     registerMockedHttpURLLoad("fixed_layout.html");
 
     FixedLayoutTestWebViewClient client;
     client.m_screenInfo.deviceScaleFactor = 1;
-    float enforcedPageScalePactor = 2.0f;
+    float enforcedPageScaleFactor = 2.0f;
 
     m_webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "fixed_layout.html", true, 0, &client);
-    m_webView->setInitialPageScaleOverride(enforcedPageScalePactor);
+    m_webView->settings()->setSupportDeprecatedTargetDensityDPI(true);
+    m_webView->settings()->setLoadWithOverviewMode(false);
+    m_webView->setInitialPageScaleOverride(enforcedPageScaleFactor);
+    m_webView->enableFixedLayoutMode(true);
+    m_webView->settings()->setViewportEnabled(true);
+    m_webView->layout();
 
-    EXPECT_EQ(enforcedPageScalePactor, m_webView->pageScaleFactor());
+    EXPECT_EQ(enforcedPageScaleFactor, m_webView->pageScaleFactor());
 
     int viewportWidth = 640;
     int viewportHeight = 480;
-    m_webView->enableFixedLayoutMode(true);
-    m_webView->settings()->setViewportEnabled(true);
     m_webView->resize(WebSize(viewportWidth, viewportHeight));
     m_webView->layout();
 
-    EXPECT_EQ(enforcedPageScalePactor, m_webView->pageScaleFactor());
-
-    m_webView->enableFixedLayoutMode(false);
-    m_webView->settings()->setViewportEnabled(false);
-    m_webView->layout();
-
-    EXPECT_EQ(enforcedPageScalePactor, m_webView->pageScaleFactor());
+    EXPECT_EQ(enforcedPageScaleFactor, m_webView->pageScaleFactor());
 
     m_webView->setInitialPageScaleOverride(-1);
     m_webView->layout();
-    EXPECT_EQ(1.0f, m_webView->pageScaleFactor());
+    EXPECT_EQ(1.0, m_webView->pageScaleFactor());
 }
 
-TEST_F(WebFrameTest, PermanentInitialPageScaleFactorOverridesInitializeAtMinimumScale)
+TEST_F(WebFrameTest, PermanentInitialPageScaleFactorOverridesLoadWithOverviewMode)
 {
     registerMockedHttpURLLoad("viewport-auto-initial-scale.html");
 
@@ -559,8 +664,9 @@ TEST_F(WebFrameTest, PermanentInitialPageScaleFactorOverridesInitializeAtMinimum
 
     m_webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "viewport-auto-initial-scale.html", true, 0, &client);
     m_webView->enableFixedLayoutMode(true);
+    m_webView->settings()->setSupportDeprecatedTargetDensityDPI(true);
     m_webView->settings()->setViewportEnabled(true);
-    m_webView->settings()->setInitializeAtMinimumPageScale(false);
+    m_webView->settings()->setLoadWithOverviewMode(false);
     m_webView->setInitialPageScaleOverride(enforcedPageScalePactor);
     m_webView->resize(WebSize(viewportWidth, viewportHeight));
 
@@ -750,6 +856,8 @@ TEST_F(WebFrameTest, pageScaleFactorDoesNotApplyCssTransform)
 
 TEST_F(WebFrameTest, targetDensityDpiHigh)
 {
+    WebCore::Settings::setMockScrollbarsEnabled(true);
+    WebCore::Settings::setUsesOverlayScrollbars(true);
     registerMockedHttpURLLoad("viewport-target-densitydpi-high.html");
 
     FixedLayoutTestWebViewClient client;
@@ -771,6 +879,8 @@ TEST_F(WebFrameTest, targetDensityDpiHigh)
 
 TEST_F(WebFrameTest, targetDensityDpiDevice)
 {
+    WebCore::Settings::setMockScrollbarsEnabled(true);
+    WebCore::Settings::setUsesOverlayScrollbars(true);
     registerMockedHttpURLLoad("viewport-target-densitydpi-device.html");
 
     float deviceScaleFactors[] = { 1.0f, 4.0f / 3.0f, 2.0f };
@@ -853,7 +963,7 @@ protected:
             webViewImpl->mainFrame()->setScrollOffset(scrollOffset);
 
             WebCore::IntPoint anchorPoint = WebCore::IntPoint(scrollOffset) + WebCore::IntPoint(viewportSize.width / 2, 0);
-            RefPtr<WebCore::Node> anchorNode = webViewImpl->mainFrameImpl()->frame()->eventHandler()->hitTestResultAtPoint(anchorPoint).innerNode();
+            RefPtr<WebCore::Node> anchorNode = webViewImpl->mainFrameImpl()->frame()->eventHandler()->hitTestResultAtPoint(anchorPoint, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent).innerNode();
             ASSERT(anchorNode);
 
             pageScaleFactor = webViewImpl->pageScaleFactor();
@@ -975,8 +1085,11 @@ TEST_F(WebFrameTest, pageScaleFactorUpdatesScrollbars)
     EXPECT_EQ(view->scrollSize(WebCore::VerticalScrollbar), view->contentsSize().height() - view->visibleContentRect().height());
 }
 
-TEST_F(WebFrameTest, CanOverrideMaximumScaleFactor)
+TEST_F(WebFrameTest, CanOverrideScaleLimits)
 {
+    WebCore::Settings::setMockScrollbarsEnabled(true);
+    WebCore::Settings::setUsesOverlayScrollbars(true);
+
     registerMockedHttpURLLoad("no_scale_for_you.html");
 
     FixedLayoutTestWebViewClient client;
@@ -989,12 +1102,20 @@ TEST_F(WebFrameTest, CanOverrideMaximumScaleFactor)
     m_webView->settings()->setViewportEnabled(true);
     m_webView->resize(WebSize(viewportWidth, viewportHeight));
 
-    EXPECT_EQ(1.0f, m_webView->maximumPageScaleFactor());
+    EXPECT_EQ(2.0f, m_webView->minimumPageScaleFactor());
+    EXPECT_EQ(2.0f, m_webView->maximumPageScaleFactor());
 
-    m_webView->setIgnoreViewportTagMaximumScale(true);
+    m_webView->setIgnoreViewportTagScaleLimits(true);
     m_webView->layout();
 
-    EXPECT_EQ(4.0f, m_webView->maximumPageScaleFactor());
+    EXPECT_EQ(1.0f, m_webView->minimumPageScaleFactor());
+    EXPECT_EQ(5.0f, m_webView->maximumPageScaleFactor());
+
+    m_webView->setIgnoreViewportTagScaleLimits(false);
+    m_webView->layout();
+
+    EXPECT_EQ(2.0f, m_webView->minimumPageScaleFactor());
+    EXPECT_EQ(2.0f, m_webView->maximumPageScaleFactor());
 }
 
 TEST_F(WebFrameTest, updateOverlayScrollbarLayers)
@@ -1441,6 +1562,40 @@ TEST_F(WebFrameTest, ReloadWithOverrideURLPreservesState)
     ASSERT_EQ(previousScale, webViewImpl->pageScaleFactor());
 }
 
+class TestReloadWhileProvisionalFrameClient : public WebFrameClient {
+public:
+    virtual WebURLError cancelledError(WebFrame*, const WebURLRequest& request)
+    {
+        // Return a dummy error so the DocumentLoader doesn't assert when
+        // the reload cancels it.
+        WebURLError webURLError;
+        webURLError.domain = "";
+        webURLError.reason = 1;
+        webURLError.isCancellation = true;
+        webURLError.unreachableURL = WebURL();
+        return webURLError;
+    }
+};
+
+TEST_F(WebFrameTest, ReloadWhileProvisional)
+{
+    // Test that reloading while the previous load is still pending does not cause the initial
+    // request to get lost.
+    registerMockedHttpURLLoad("fixed_layout.html");
+
+    TestReloadWhileProvisionalFrameClient webFrameClient;
+    m_webView = FrameTestHelpers::createWebView(false, &webFrameClient);
+    FrameTestHelpers::loadFrame(m_webView->mainFrame(), m_baseURL + "fixed_layout.html");
+    // start reload before first request is delivered.
+    m_webView->mainFrame()->reload(true);
+    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    ASSERT_EQ(WebURL(toKURL(m_baseURL + "fixed_layout.html")),
+        m_webView->mainFrame()->dataSource()->request().url());
+
+    m_webView->close();
+    m_webView = 0;
+}
+
 TEST_F(WebFrameTest, IframeRedirect)
 {
     registerMockedHttpURLLoad("iframe_redirect.html");
@@ -1489,7 +1644,7 @@ public:
 
         ~Notification()
         {
-            context.Dispose(context->GetIsolate());
+            context.Dispose();
         }
 
         bool Equals(Notification* other)
@@ -1616,7 +1771,8 @@ TEST_F(WebFrameTest, ContextNotificationsReload)
 
 TEST_F(WebFrameTest, ContextNotificationsIsolatedWorlds)
 {
-    v8::HandleScope handleScope;
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::HandleScope handleScope(isolate);
 
     registerMockedHttpURLLoad("context_notifications_test.html");
     registerMockedHttpURLLoad("context_notifications_test_frame.html");
@@ -1640,7 +1796,7 @@ TEST_F(WebFrameTest, ContextNotificationsIsolatedWorlds)
     ASSERT_EQ(m_webView->mainFrame(), notification->frame);
 
     // We don't have an API to enumarate isolated worlds for a frame, but we can at least assert that the context we got is *not* the main world's context.
-    ASSERT_NE(m_webView->mainFrame()->mainWorldScriptContext(), notification->context);
+    ASSERT_NE(m_webView->mainFrame()->mainWorldScriptContext(), v8::Local<v8::Context>::New(isolate, notification->context));
 
     m_webView->close();
     m_webView = 0;
@@ -2199,8 +2355,6 @@ TEST_F(WebFrameTest, SelectRange)
 
     registerMockedHttpURLLoad("select_range_basic.html");
     registerMockedHttpURLLoad("select_range_scroll.html");
-    registerMockedHttpURLLoad("select_range_iframe.html");
-    registerMockedHttpURLLoad("select_range_editable.html");
 
     m_webView = createWebViewForTextSelection(m_baseURL + "select_range_basic.html");
     frame = m_webView->mainFrame();
@@ -2223,6 +2377,16 @@ TEST_F(WebFrameTest, SelectRange)
     EXPECT_EQ("Some offscreen test text for testing.", selectionAsString(frame));
     m_webView->close();
     m_webView = 0;
+}
+
+TEST_F(WebFrameTest, SelectRangeInIframe)
+{
+    WebFrame* frame;
+    WebRect startWebRect;
+    WebRect endWebRect;
+
+    registerMockedHttpURLLoad("select_range_iframe.html");
+    registerMockedHttpURLLoad("select_range_basic.html");
 
     m_webView = createWebViewForTextSelection(m_baseURL + "select_range_iframe.html");
     frame = m_webView->mainFrame();
@@ -2235,21 +2399,75 @@ TEST_F(WebFrameTest, SelectRange)
     EXPECT_EQ("Some test text for testing.", selectionAsString(subframe));
     m_webView->close();
     m_webView = 0;
+}
+
+TEST_F(WebFrameTest, SelectRangeDivContentEditable)
+{
+    WebFrame* frame;
+    WebRect startWebRect;
+    WebRect endWebRect;
+
+    registerMockedHttpURLLoad("select_range_div_editable.html");
 
     // Select the middle of an editable element, then try to extend the selection to the top of the document.
     // The selection range should be clipped to the bounds of the editable element.
-    m_webView = createWebViewForTextSelection(m_baseURL + "select_range_editable.html");
+    m_webView = createWebViewForTextSelection(m_baseURL + "select_range_div_editable.html");
     frame = m_webView->mainFrame();
     EXPECT_EQ("This text is initially selected.", selectionAsString(frame));
     m_webView->selectionBounds(startWebRect, endWebRect);
+
     frame->selectRange(bottomRightMinusOne(endWebRect), WebPoint(0, 0));
     EXPECT_EQ("16-char header. This text is initially selected.", selectionAsString(frame));
     m_webView->close();
     m_webView = 0;
 
     // As above, but extending the selection to the bottom of the document.
-    m_webView = createWebViewForTextSelection(m_baseURL + "select_range_editable.html");
+    m_webView = createWebViewForTextSelection(m_baseURL + "select_range_div_editable.html");
     frame = m_webView->mainFrame();
+
+    m_webView->selectionBounds(startWebRect, endWebRect);
+    frame->selectRange(topLeft(startWebRect), bottomRightMinusOne(endWebRect));
+    EXPECT_EQ("This text is initially selected.", selectionAsString(frame));
+    m_webView->selectionBounds(startWebRect, endWebRect);
+
+    m_webView->selectionBounds(startWebRect, endWebRect);
+    frame->selectRange(topLeft(startWebRect), WebPoint(640, 480));
+    EXPECT_EQ("This text is initially selected. 16-char footer.", selectionAsString(frame));
+    m_webView->close();
+    m_webView = 0;
+}
+
+// positionForPoint returns the wrong values for contenteditable spans. See
+// http://crbug.com/238334.
+TEST_F(WebFrameTest, DISABLED_SelectRangeSpanContentEditable)
+{
+    WebFrame* frame;
+    WebRect startWebRect;
+    WebRect endWebRect;
+
+    registerMockedHttpURLLoad("select_range_span_editable.html");
+
+    // Select the middle of an editable element, then try to extend the selection to the top of the document.
+    // The selection range should be clipped to the bounds of the editable element.
+    m_webView = createWebViewForTextSelection(m_baseURL + "select_range_span_editable.html");
+    frame = m_webView->mainFrame();
+    EXPECT_EQ("This text is initially selected.", selectionAsString(frame));
+    m_webView->selectionBounds(startWebRect, endWebRect);
+
+    frame->selectRange(bottomRightMinusOne(endWebRect), WebPoint(0, 0));
+    EXPECT_EQ("16-char header. This text is initially selected.", selectionAsString(frame));
+    m_webView->close();
+    m_webView = 0;
+
+    // As above, but extending the selection to the bottom of the document.
+    m_webView = createWebViewForTextSelection(m_baseURL + "select_range_span_editable.html");
+    frame = m_webView->mainFrame();
+
+    m_webView->selectionBounds(startWebRect, endWebRect);
+    frame->selectRange(topLeft(startWebRect), bottomRightMinusOne(endWebRect));
+    EXPECT_EQ("This text is initially selected.", selectionAsString(frame));
+    m_webView->selectionBounds(startWebRect, endWebRect);
+
     EXPECT_EQ("This text is initially selected.", selectionAsString(frame));
     m_webView->selectionBounds(startWebRect, endWebRect);
     frame->selectRange(topLeft(startWebRect), WebPoint(640, 480));
@@ -2300,7 +2518,9 @@ TEST_F(WebFrameTest, SelectRangeCanMoveSelectionStart)
     frame->executeScript(WebScriptSource("selectElement('editable_2');"));
     EXPECT_EQ("Editable 2.", selectionAsString(frame));
     frame->selectRange(bottomRightMinusOne(elementBounds(frame, "editable_2")), topLeft(elementBounds(frame, "header_2")));
-    EXPECT_EQ("[ Editable 1. Editable 2.", selectionAsString(frame));
+    // positionForPoint returns the wrong values for contenteditable spans. See
+    // http://crbug.com/238334.
+    // EXPECT_EQ("[ Editable 1. Editable 2.", selectionAsString(frame));
 }
 
 TEST_F(WebFrameTest, SelectRangeCanMoveSelectionEnd)
@@ -2345,10 +2565,75 @@ TEST_F(WebFrameTest, SelectRangeCanMoveSelectionEnd)
     frame->executeScript(WebScriptSource("selectElement('editable_1');"));
     EXPECT_EQ("Editable 1.", selectionAsString(frame));
     frame->selectRange(topLeft(elementBounds(frame, "editable_1")), bottomRightMinusOne(elementBounds(frame, "footer_1")));
-    EXPECT_EQ("Editable 1. Editable 2. ]", selectionAsString(frame));
+    // positionForPoint returns the wrong values for contenteditable spans. See
+    // http://crbug.com/238334.
+    // EXPECT_EQ("Editable 1. Editable 2. ]", selectionAsString(frame));
+}
+
+// positionForPoint returns the wrong values for contenteditable spans. See
+// http://crbug.com/238334.
+TEST_F(WebFrameTest, DISABLED_PositionForPointTest)
+{
+    registerMockedHttpURLLoad("select_range_span_editable.html");
+    m_webView = createWebViewForTextSelection(m_baseURL + "select_range_span_editable.html");
+    WebFrameImpl* mainFrame = static_cast<WebFrameImpl*>(m_webView->mainFrame());
+    WebCore::RenderObject* renderer = mainFrame->frame()->selection()->rootEditableElement()->renderer();
+    EXPECT_EQ(0, renderer->positionForPoint(WebCore::LayoutPoint(-1, -1)).deepEquivalent().computeOffsetInContainerNode());
+    EXPECT_EQ(64, renderer->positionForPoint(WebCore::LayoutPoint(1000, 1000)).deepEquivalent().computeOffsetInContainerNode());
+
+    registerMockedHttpURLLoad("select_range_div_editable.html");
+    m_webView = createWebViewForTextSelection(m_baseURL + "select_range_div_editable.html");
+    mainFrame = static_cast<WebFrameImpl*>(m_webView->mainFrame());
+    renderer = mainFrame->frame()->selection()->rootEditableElement()->renderer();
+    EXPECT_EQ(0, renderer->positionForPoint(WebCore::LayoutPoint(-1, -1)).deepEquivalent().computeOffsetInContainerNode());
+    EXPECT_EQ(64, renderer->positionForPoint(WebCore::LayoutPoint(1000, 1000)).deepEquivalent().computeOffsetInContainerNode());
 }
 
 #if OS(ANDROID)
+TEST_F(WebFrameTest, SelectRangeStaysHorizontallyAlignedWhenMoved)
+{
+    WebFrameImpl* frame;
+    registerMockedHttpURLLoad("move_caret.html");
+
+    m_webView = createWebViewForTextSelection(m_baseURL + "move_caret.html");
+    frame = (WebFrameImpl*)m_webView->mainFrame();
+
+    WebRect initialStartRect;
+    WebRect initialEndRect;
+    WebRect startRect;
+    WebRect endRect;
+
+    frame->executeScript(WebScriptSource("selectRange();"));
+    m_webView->selectionBounds(initialStartRect, initialEndRect);
+    WebPoint movedStart(topLeft(initialStartRect));
+
+    movedStart.y += 40;
+    frame->selectRange(movedStart, bottomRightMinusOne(initialEndRect));
+    m_webView->selectionBounds(startRect, endRect);
+    EXPECT_EQ(startRect, initialStartRect);
+    EXPECT_EQ(endRect, initialEndRect);
+
+    movedStart.y -= 80;
+    frame->selectRange(movedStart, bottomRightMinusOne(initialEndRect));
+    m_webView->selectionBounds(startRect, endRect);
+    EXPECT_EQ(startRect, initialStartRect);
+    EXPECT_EQ(endRect, initialEndRect);
+
+    WebPoint movedEnd(bottomRightMinusOne(initialEndRect));
+
+    movedEnd.y += 40;
+    frame->selectRange(topLeft(initialStartRect), movedEnd);
+    m_webView->selectionBounds(startRect, endRect);
+    EXPECT_EQ(startRect, initialStartRect);
+    EXPECT_EQ(endRect, initialEndRect);
+
+    movedEnd.y -= 80;
+    frame->selectRange(topLeft(initialStartRect), movedEnd);
+    m_webView->selectionBounds(startRect, endRect);
+    EXPECT_EQ(startRect, initialStartRect);
+    EXPECT_EQ(endRect, initialEndRect);
+}
+
 TEST_F(WebFrameTest, MoveCaretStaysHorizontallyAlignedWhenMoved)
 {
     WebFrameImpl* frame;
@@ -2362,7 +2647,7 @@ TEST_F(WebFrameTest, MoveCaretStaysHorizontallyAlignedWhenMoved)
     WebRect startRect;
     WebRect endRect;
 
-    frame->executeScript(WebScriptSource("select();"));
+    frame->executeScript(WebScriptSource("selectCaret();"));
     m_webView->selectionBounds(initialStartRect, initialEndRect);
     WebPoint moveTo(topLeft(initialStartRect));
 
@@ -2815,6 +3100,92 @@ TEST_F(WebFrameTest, MarkerHashIdentifiers) {
     m_webView = 0;
 }
 
+class StubbornSpellCheckClient : public WebSpellCheckClient {
+public:
+    StubbornSpellCheckClient() : m_completion(0) { }
+    virtual ~StubbornSpellCheckClient() { }
+
+    virtual void requestCheckingOfText(
+        const WebKit::WebString&,
+        const WebKit::WebVector<uint32_t>&,
+        const WebKit::WebVector<unsigned>&,
+        WebKit::WebTextCheckingCompletion* completion) OVERRIDE
+    {
+        m_completion = completion;
+    }
+
+    void kick()
+    {
+        if (!m_completion)
+            return;
+        Vector<WebTextCheckingResult> results;
+        const int misspellingStartOffset = 1;
+        const int misspellingLength = 8;
+        results.append(WebTextCheckingResult(WebTextCheckingTypeSpelling, misspellingStartOffset, misspellingLength));
+        m_completion->didFinishCheckingText(results);
+        m_completion = 0;
+    }
+
+private:
+    WebKit::WebTextCheckingCompletion* m_completion;
+};
+
+TEST_F(WebFrameTest, SlowSpellcheckMarkerPosition)
+{
+    registerMockedHttpURLLoad("spell.html");
+    m_webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "spell.html");
+
+    StubbornSpellCheckClient spellcheck;
+    m_webView->setSpellCheckClient(&spellcheck);
+
+    WebFrameImpl* frame = static_cast<WebFrameImpl*>(m_webView->mainFrame());
+    WebInputElement webInputElement = frame->document().getElementById("data").to<WebInputElement>();
+    Document* document = frame->frame()->document();
+    Element* element = document->getElementById("data");
+
+    m_webView->settings()->setAsynchronousSpellCheckingEnabled(true);
+    m_webView->settings()->setUnifiedTextCheckerEnabled(true);
+    m_webView->settings()->setEditingBehavior(WebSettings::EditingBehaviorWin);
+
+    element->focus();
+    document->execCommand("InsertText", false, "wellcome ");
+    webInputElement.setSelectionRange(0, 0);
+    document->execCommand("InsertText", false, "he");
+
+    spellcheck.kick();
+
+    WebVector<uint32_t> documentMarkers;
+    m_webView->spellingMarkers(&documentMarkers);
+    EXPECT_EQ(0U, documentMarkers.size());
+
+    m_webView->close();
+    m_webView = 0;
+}
+
+// This test verifies that cancelling spelling request does not cause a
+// write-after-free when there's no spellcheck client set.
+TEST_F(WebFrameTest, CancelSpellingRequestCrash)
+{
+    registerMockedHttpURLLoad("spell.html");
+    m_webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "spell.html");
+    m_webView->setSpellCheckClient(0);
+
+    WebFrameImpl* frame = static_cast<WebFrameImpl*>(m_webView->mainFrame());
+    Document* document = frame->frame()->document();
+    Element* element = document->getElementById("data");
+
+    m_webView->settings()->setAsynchronousSpellCheckingEnabled(true);
+    m_webView->settings()->setUnifiedTextCheckerEnabled(true);
+    m_webView->settings()->setEditingBehavior(WebSettings::EditingBehaviorWin);
+
+    element->focus();
+    frame->frame()->editor()->replaceSelectionWithText("A", false, false);
+    frame->frame()->editor()->spellChecker()->cancelCheck();
+
+    m_webView->close();
+    m_webView = 0;
+}
+
 class TestAccessInitialDocumentWebFrameClient : public WebFrameClient {
 public:
     TestAccessInitialDocumentWebFrameClient() : m_didAccessInitialDocument(false)
@@ -2992,6 +3363,73 @@ TEST_F(WebFrameTest, CompositorScrollIsUserScrollShortPage)
     EXPECT_FALSE(client.wasProgrammaticScroll());
     EXPECT_TRUE(client.wasUserScroll());
     client.reset();
+
+    m_webView->close();
+    m_webView = 0;
+}
+
+
+class TestNavigationPolicyWebFrameClient : public WebFrameClient {
+public:
+
+    virtual void didChangeLocationWithinPage(WebFrame*)
+    {
+        EXPECT_TRUE(false);
+    }
+
+    virtual WebURLError cancelledError(WebFrame*, const WebURLRequest& request)
+    {
+        // Return a dummy error so the DocumentLoader doesn't assert when
+        // the reload cancels it.
+        WebURLError webURLError;
+        webURLError.domain = "";
+        webURLError.reason = 1;
+        webURLError.isCancellation = true;
+        webURLError.unreachableURL = WebURL();
+        return webURLError;
+    }
+};
+
+TEST_F(WebFrameTest, SimulateFragmentAnchorMiddleClick)
+{
+    registerMockedHttpURLLoad("fragment_middle_click.html");
+    TestNavigationPolicyWebFrameClient client;
+    m_webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "fragment_middle_click.html", true, &client);
+    WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(m_webView);
+
+    WebCore::Document* document = webViewImpl->page()->mainFrame()->document();
+    WebCore::KURL destination = document->url();
+    destination.setFragmentIdentifier("test");
+
+    RefPtr<WebCore::Event> event = WebCore::MouseEvent::create(WebCore::eventNames().clickEvent, false, false,
+        document->defaultView(), 0, 0, 0, 0, 0, 0, 0, false, false, false, false, 1, 0, 0);
+    webViewImpl->page()->mainFrame()->loader()->urlSelected(destination, "", event.release(), false, WebCore::MaybeSendReferrer);
+
+    m_webView->close();
+    m_webView = 0;
+}
+
+TEST_F(WebFrameTest, BackToReload)
+{
+    registerMockedHttpURLLoad("fragment_middle_click.html");
+    m_webView = FrameTestHelpers::createWebViewAndLoad(m_baseURL + "fragment_middle_click.html", true);
+    WebFrame* frame = m_webView->mainFrame();
+    WebHistoryItem firstItem = frame->currentHistoryItem();
+    EXPECT_FALSE(firstItem.isNull());
+
+    registerMockedHttpURLLoad("white-1x1.png");
+    FrameTestHelpers::loadFrame(frame, m_baseURL + "white-1x1.png");
+    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    EXPECT_FALSE(frame->previousHistoryItem().isNull());
+    EXPECT_EQ(firstItem.urlString(), frame->previousHistoryItem().urlString());
+
+    frame->loadHistoryItem(frame->previousHistoryItem());
+    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    EXPECT_EQ(firstItem.urlString(), frame->currentHistoryItem().urlString());
+
+    frame->reload();
+    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    EXPECT_EQ(WebURLRequest::ReloadIgnoringCacheData, frame->dataSource()->request().cachePolicy());
 
     m_webView->close();
     m_webView = 0;

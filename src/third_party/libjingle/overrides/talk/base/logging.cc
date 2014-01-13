@@ -10,20 +10,33 @@
 
 #include <iomanip>
 
-#include "base/string_util.h"
+#include "base/atomicops.h"
+#include "base/strings/string_util.h"
+#include "base/threading/platform_thread.h"
+#include "third_party/libjingle/source/talk/base/ipaddress.h"
 #include "third_party/libjingle/source/talk/base/stream.h"
 #include "third_party/libjingle/source/talk/base/stringencode.h"
 #include "third_party/libjingle/source/talk/base/stringutils.h"
+#include "third_party/libjingle/source/talk/base/timeutils.h"
 
-// LOG_E can't call VLOG directly like LOG_V can since VLOG expands into usage
-// of the __FILE__ macro (for filtering) and the actual VLOG call from LOG_E
-// happens inside LogEHelper. Note that the second parameter to the LAZY_STREAM
-// macro is true since the filter check is already done for LOG_E.
-#define LOG_E_BASE(file_name, line_number, sev) \
+// From this file we can't use VLOG since it expands into usage of the __FILE__
+// macro (for correct filtering). The actual logging call from LOG_E is in
+// ~LogEHelper, and from DIAGNOSTIC_LOG in ~DiagnosticLogMessage. Note that the
+// second parameter to the LAZY_STREAM macro is true since the filter check has
+// already been done for LOG_E and DIAGNOSTIC_LOG.
+#define LOG_LAZY_STREAM_DIRECT(file_name, line_number, sev) \
   LAZY_STREAM(logging::LogMessage(file_name, line_number, \
                                   -sev).stream(), true)
+#define LOG_E_BASE LOG_LAZY_STREAM_DIRECT
 
 namespace talk_base {
+
+void (*g_logging_delegate_function)(const std::string&) = NULL;
+#ifndef NDEBUG
+COMPILE_ASSERT(sizeof(base::subtle::Atomic32) == sizeof(base::PlatformThreadId),
+               atomic32_not_same_size_as_platformthreadid);
+base::subtle::Atomic32 g_init_logging_delegate_thread_id = 0;
+#endif
 
 /////////////////////////////////////////////////////////////////////////////
 // Constant Labels
@@ -123,6 +136,38 @@ LogEHelper::~LogEHelper() {
   print_stream_ << extra_;
   const std::string& str = print_stream_.str();
   LOG_E_BASE(file_name_.c_str(), line_, severity_) << str;
+}
+
+DiagnosticLogMessage::DiagnosticLogMessage(const char* file,
+                                           int line,
+                                           LoggingSeverity severity,
+                                           bool log_to_chrome)
+    : file_name_(file),
+      line_(line),
+      severity_(severity),
+      log_to_chrome_(log_to_chrome) {
+#if !defined(ANDROID)
+  uint32 time = talk_base::TimeSince(LogStartTime());
+  print_stream_with_timestamp_ << "[" << std::setfill('0')
+                               << std::setw(3) << (time / 1000)
+                               << ":" << std::setw(3) << (time % 1000)
+                               << std::setfill(' ') << "] ";
+#endif
+}
+
+DiagnosticLogMessage::~DiagnosticLogMessage() {
+  const std::string& str = print_stream_.str();
+  if (log_to_chrome_)
+    LOG_LAZY_STREAM_DIRECT(file_name_, line_, severity_) << str;
+  if (g_logging_delegate_function && severity_ <= LS_INFO) {
+    print_stream_with_timestamp_ << str;
+    g_logging_delegate_function(print_stream_with_timestamp_.str());
+  }
+}
+
+uint32 DiagnosticLogMessage::LogStartTime() {
+  static const uint32 g_start = talk_base::Time();
+  return g_start;
 }
 
 // Note: this function is a copy from the overriden libjingle implementation.
@@ -241,6 +286,28 @@ void LogMultiline(LoggingSeverity level, const char* label, bool input,
   if (state) {
     state->unprintable_count_[input] = consecutive_unprintable;
   }
+}
+
+void InitDiagnosticLoggingDelegateFunction(
+    void (*delegate)(const std::string&)) {
+#ifndef NDEBUG
+  // Ensure that this function is always called from the same thread.
+  base::subtle::NoBarrier_CompareAndSwap(&g_init_logging_delegate_thread_id, 0,
+      static_cast<base::subtle::Atomic32>(base::PlatformThread::CurrentId()));
+  DCHECK_EQ(g_init_logging_delegate_thread_id,
+            base::PlatformThread::CurrentId());
+#endif
+  CHECK(delegate);
+  // This function may be called with the same argument several times if the
+  // page is reloaded or there are several PeerConnections on one page with
+  // logging enabled. This is OK, we simply don't have to do anything.
+  if (delegate == g_logging_delegate_function)
+    return;
+  CHECK(!g_logging_delegate_function);
+#ifdef NDEBUG
+  IPAddress::set_strip_sensitive(true);
+#endif
+  g_logging_delegate_function = delegate;
 }
 
 }  // namespace talk_base

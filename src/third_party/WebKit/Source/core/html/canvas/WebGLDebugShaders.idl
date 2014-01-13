@@ -24,7 +24,7 @@
  */
 
 [
-    Conditional=WEBGL,
+    NoInterfaceObject
 ] interface WebGLDebugShaders {
     [StrictTypeChecking, TreatReturnedNullStringAs=Null, RaisesException] DOMString getTranslatedShaderSource(WebGLShader shader);
 };

@@ -27,22 +27,23 @@
 #ifndef WTFThreadData_h
 #define WTFThreadData_h
 
-#include <wtf/HashMap.h>
-#include <wtf/HashSet.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/StackBounds.h>
-#include <wtf/StackStats.h>
-#include <wtf/text/StringHash.h>
-#include <wtf/ThreadSpecific.h>
-#include <wtf/Threading.h>
+#include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/StackStats.h"
+#include "wtf/ThreadSpecific.h"
+#include "wtf/Threading.h"
+#include "wtf/WTFExport.h"
+#include "wtf/text/StringHash.h"
 
 namespace WTF {
 
 class AtomicStringTable;
+struct ICUConverterWrapper;
 
 typedef void (*AtomicStringTableDestructor)(AtomicStringTable*);
 
-class WTFThreadData {
+class WTF_EXPORT WTFThreadData {
     WTF_MAKE_NONCOPYABLE(WTFThreadData);
 public:
     WTFThreadData();
@@ -53,11 +54,14 @@ public:
         return m_atomicStringTable;
     }
 
+    ICUConverterWrapper& cachedConverterICU() { return *m_cachedConverterICU; }
+
     void* m_apiData;
 
 private:
     AtomicStringTable* m_atomicStringTable;
     AtomicStringTableDestructor m_atomicStringTableDestructor;
+    OwnPtr<ICUConverterWrapper> m_cachedConverterICU;
 
     static ThreadSpecific<WTFThreadData>* staticData;
     friend WTFThreadData& wtfThreadData();

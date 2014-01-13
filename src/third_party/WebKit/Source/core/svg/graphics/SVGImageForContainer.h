@@ -26,12 +26,9 @@
 #ifndef SVGImageForContainer_h
 #define SVGImageForContainer_h
 
-#if ENABLE(SVG)
-
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/Image.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/svg/graphics/SVGImage.h"
 
 namespace WebCore {
@@ -55,14 +52,14 @@ public:
         m_image->computeIntrinsicDimensions(intrinsicWidth, intrinsicHeight, intrinsicRatio);
     }
 
-    virtual void draw(GraphicsContext*, const FloatRect&, const FloatRect&, ColorSpace, CompositeOperator, BlendMode) OVERRIDE;
+    virtual void draw(GraphicsContext*, const FloatRect&, const FloatRect&, CompositeOperator, BlendMode) OVERRIDE;
 
-    virtual void drawPattern(GraphicsContext*, const FloatRect&, const AffineTransform&, const FloatPoint&, ColorSpace, CompositeOperator, const FloatRect&, BlendMode) OVERRIDE;
+    virtual void drawPattern(GraphicsContext*, const FloatRect&, const FloatSize&, const FloatPoint&, CompositeOperator, const FloatRect&, BlendMode) OVERRIDE;
 
     // FIXME: Implement this to be less conservative.
     virtual bool currentFrameKnownToBeOpaque() OVERRIDE { return false; }
 
-    virtual PassNativeImagePtr nativeImageForCurrentFrame() OVERRIDE;
+    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() OVERRIDE;
 
 private:
     SVGImageForContainer(SVGImage* image, const FloatSize& containerSize, float zoom)
@@ -72,8 +69,8 @@ private:
     {
     }
 
-    virtual void destroyDecodedData(bool /*destroyAll*/ = true) { }
-    virtual unsigned decodedSize() const { return 0; }
+    virtual void destroyDecodedData() OVERRIDE { }
+    virtual unsigned decodedSize() const OVERRIDE { return 0; }
 
     SVGImage* m_image;
     const FloatSize m_containerSize;
@@ -81,5 +78,4 @@ private:
 };
 }
 
-#endif // ENABLE(SVG)
 #endif // SVGImageForContainer_h

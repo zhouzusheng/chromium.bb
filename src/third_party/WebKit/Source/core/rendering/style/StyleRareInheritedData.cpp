@@ -71,7 +71,6 @@ StyleRareInheritedData::StyleRareInheritedData()
     , lineBreak(LineBreakAuto)
     , resize(RenderStyle::initialResize())
     , userSelect(RenderStyle::initialUserSelect())
-    , colorSpace(ColorSpaceDeviceRGB)
     , speak(SpeakNormal)
     , hyphens(HyphensManual)
     , textEmphasisFill(TextEmphasisFillFilled)
@@ -85,9 +84,6 @@ StyleRareInheritedData::StyleRareInheritedData()
     , m_imageRendering(RenderStyle::initialImageRendering())
     , m_lineSnap(RenderStyle::initialLineSnap())
     , m_lineAlign(RenderStyle::initialLineAlign())
-#if ENABLE(ACCELERATED_OVERFLOW_SCROLLING)
-    , useTouchOverflowScrolling(RenderStyle::initialUseTouchOverflowScrolling())
-#endif
 #if ENABLE(CSS3_TEXT)
     , m_textAlignLast(RenderStyle::initialTextAlignLast())
     , m_textUnderlinePosition(RenderStyle::initialTextUnderlinePosition())
@@ -129,7 +125,6 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , lineBreak(o.lineBreak)
     , resize(o.resize)
     , userSelect(o.userSelect)
-    , colorSpace(o.colorSpace)
     , speak(o.speak)
     , hyphens(o.hyphens)
     , textEmphasisFill(o.textEmphasisFill)
@@ -143,9 +138,6 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , m_imageRendering(o.m_imageRendering)
     , m_lineSnap(o.m_lineSnap)
     , m_lineAlign(o.m_lineAlign)
-#if ENABLE(ACCELERATED_OVERFLOW_SCROLLING)
-    , useTouchOverflowScrolling(o.useTouchOverflowScrolling)
-#endif
 #if ENABLE(CSS3_TEXT)
     , m_textAlignLast(o.m_textAlignLast)
     , m_textUnderlinePosition(o.m_textUnderlinePosition)
@@ -201,12 +193,8 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && wordBreak == o.wordBreak
         && overflowWrap == o.overflowWrap
         && lineBreak == o.lineBreak
-#if ENABLE(ACCELERATED_OVERFLOW_SCROLLING)
-        && useTouchOverflowScrolling == o.useTouchOverflowScrolling
-#endif
         && resize == o.resize
         && userSelect == o.userSelect
-        && colorSpace == o.colorSpace
         && speak == o.speak
         && hyphens == o.hyphens
         && hyphenationLimitBefore == o.hyphenationLimitBefore

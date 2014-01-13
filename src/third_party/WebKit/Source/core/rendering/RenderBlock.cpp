@@ -29,43 +29,39 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/OverflowEvent.h"
-#include "core/dom/ShadowRoot.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
-#include "core/html/HTMLFormElement.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/platform/PODFreeListArena.h"
 #include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/transforms/TransformState.h"
 #include "core/rendering/ColumnInfo.h"
-#include "core/rendering/exclusions/ExclusionShapeInsideInfo.h"
-#include "core/rendering/exclusions/ExclusionShapeOutsideInfo.h"
 #include "core/rendering/HitTestLocation.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/InlineIterator.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderBoxRegionInfo.h"
 #include "core/rendering/RenderCombineText.h"
 #include "core/rendering/RenderDeprecatedFlexibleBox.h"
 #include "core/rendering/RenderFlexibleBox.h"
-#include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderMarquee.h"
 #include "core/rendering/RenderNamedFlowThread.h"
 #include "core/rendering/RenderRegion.h"
-#include "core/rendering/RenderReplica.h"
 #include "core/rendering/RenderTableCell.h"
 #include "core/rendering/RenderTextFragment.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/shapes/ShapeInsideInfo.h"
+#include "core/rendering/shapes/ShapeOutsideInfo.h"
 #include "core/rendering/svg/SVGTextRunRenderingContext.h"
 #include <wtf/StdLibExtras.h>
 #include <wtf/MemoryInstrumentationHashMap.h>
@@ -357,9 +353,7 @@ void RenderBlock::styleDidChange(StyleDifference diff, const RenderStyle* oldSty
     
     RenderStyle* newStyle = style();
 
-    // FIXME: Bug 89993: Style changes should affect the ExclusionShapeInsideInfos for other render blocks that
-    // share the same ExclusionShapeInsideInfo
-    updateExclusionShapeInsideInfoAfterStyleChange(newStyle->resolvedShapeInside(), oldStyle ? oldStyle->resolvedShapeInside() : 0);
+    updateShapeInsideInfoAfterStyleChange(newStyle->resolvedShapeInside(), oldStyle ? oldStyle->resolvedShapeInside() : 0);
 
     if (!isAnonymousBlock()) {
         // Ensure that all of our continuation blocks pick up the new style.
@@ -576,7 +570,7 @@ RenderBlock* RenderBlock::clone() const
         cloneBlock->setChildrenInline(childrenInline());
     }
     else {
-        RenderObject* cloneRenderer = toElement(node())->createRenderer(renderArena(), style());
+        RenderObject* cloneRenderer = toElement(node())->createRenderer(style());
         cloneBlock = toRenderBlock(cloneRenderer);
         cloneBlock->setStyle(style());
 
@@ -1431,33 +1425,35 @@ void RenderBlock::layout()
     invalidateBackgroundObscurationStatus();
 }
 
-void RenderBlock::updateExclusionShapeInsideInfoAfterStyleChange(const ExclusionShapeValue* shapeInside, const ExclusionShapeValue* oldShapeInside)
+void RenderBlock::updateShapeInsideInfoAfterStyleChange(const ShapeValue* shapeInside, const ShapeValue* oldShapeInside)
 {
     // FIXME: A future optimization would do a deep comparison for equality.
     if (shapeInside == oldShapeInside)
         return;
 
     if (shapeInside) {
-        ExclusionShapeInsideInfo* exclusionShapeInsideInfo = ensureExclusionShapeInsideInfo();
-        exclusionShapeInsideInfo->dirtyShapeSize();
-    } else
-        setExclusionShapeInsideInfo(nullptr);
+        ShapeInsideInfo* shapeInsideInfo = ensureShapeInsideInfo();
+        shapeInsideInfo->dirtyShapeSize();
+    } else {
+        setShapeInsideInfo(nullptr);
+        markShapeInsideDescendantsForLayout();
+    }
 }
 
-static inline bool exclusionInfoRequiresRelayout(const RenderBlock* block)
+static inline bool shapeInfoRequiresRelayout(const RenderBlock* block)
 {
-    ExclusionShapeInsideInfo* info = block->exclusionShapeInsideInfo();
+    ShapeInsideInfo* info = block->shapeInsideInfo();
     if (info)
         info->setNeedsLayout(info->shapeSizeDirty());
     else
-        info = block->layoutExclusionShapeInsideInfo();
+        info = block->layoutShapeInsideInfo();
     return info && info->needsLayout();
 }
 
-bool RenderBlock::updateRegionsAndExclusionsLogicalSize(RenderFlowThread* flowThread)
+bool RenderBlock::updateRegionsAndShapesLogicalSize(RenderFlowThread* flowThread)
 {
-    if (!flowThread && !exclusionShapeInsideInfo())
-        return exclusionInfoRequiresRelayout(this);
+    if (!flowThread && !shapeInsideInfo())
+        return shapeInfoRequiresRelayout(this);
 
     LayoutUnit oldHeight = logicalHeight();
     LayoutUnit oldTop = logicalTop();
@@ -1467,7 +1463,7 @@ bool RenderBlock::updateRegionsAndExclusionsLogicalSize(RenderFlowThread* flowTh
     setLogicalHeight(LayoutUnit::max() / 2);
     updateLogicalHeight();
 
-    computeExclusionShapeSize();
+    computeShapeSize();
 
     // Set our start and end regions. No regions above or below us will be considered by our children. They are
     // effectively clamped to our region range.
@@ -1476,16 +1472,26 @@ bool RenderBlock::updateRegionsAndExclusionsLogicalSize(RenderFlowThread* flowTh
     setLogicalHeight(oldHeight);
     setLogicalTop(oldTop);
     
-    return exclusionInfoRequiresRelayout(this);
+    return shapeInfoRequiresRelayout(this);
 }
 
-void RenderBlock::computeExclusionShapeSize()
+void RenderBlock::computeShapeSize()
 {
-    ExclusionShapeInsideInfo* exclusionShapeInsideInfo = this->exclusionShapeInsideInfo();
-    if (exclusionShapeInsideInfo) {
+    ShapeInsideInfo* shapeInsideInfo = this->shapeInsideInfo();
+    if (shapeInsideInfo) {
         bool percentageLogicalHeightResolvable = percentageLogicalHeightIsResolvableFromBlock(this, false);
-        exclusionShapeInsideInfo->setShapeSize(logicalWidth(), percentageLogicalHeightResolvable ? logicalHeight() : LayoutUnit());
+        shapeInsideInfo->setShapeSize(logicalWidth(), percentageLogicalHeightResolvable ? logicalHeight() : LayoutUnit());
     }
+}
+
+void RenderBlock::updateRegionsAndShapesAfterChildLayout(RenderFlowThread* flowThread, bool heightChanged)
+{
+    // A previous sibling has changed dimension, so we need to relayout the shape with the content
+    ShapeInsideInfo* shapeInsideInfo = layoutShapeInsideInfo();
+    if (heightChanged && shapeInsideInfo)
+        shapeInsideInfo->dirtyShapeSize();
+
+    computeRegionRangeForBlock(flowThread);
 }
 
 void RenderBlock::computeRegionRangeForBlock(RenderFlowThread* flowThread)
@@ -1572,7 +1578,7 @@ void RenderBlock::layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeigh
     RenderFlowThread* flowThread = flowThreadContainingBlock();
     if (logicalWidthChangedInRegions(flowThread))
         relayoutChildren = true;
-    if (updateRegionsAndExclusionsLogicalSize(flowThread))
+    if (updateRegionsAndShapesLogicalSize(flowThread))
         relayoutChildren = true;
 
     // We use four values, maxTopPos, maxTopNeg, maxBottomPos, and maxBottomNeg, to track
@@ -1636,12 +1642,13 @@ void RenderBlock::layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeigh
         }
     }
 
-    if (previousHeight != newHeight)
+    bool heightChanged = (previousHeight != newHeight);
+    if (heightChanged)
         relayoutChildren = true;
 
     layoutPositionedObjects(relayoutChildren || isRoot());
 
-    computeRegionRangeForBlock(flowThread);
+    updateRegionsAndShapesAfterChildLayout(flowThread, heightChanged);
 
     // Add overflow from children (unless we're multi-column, since in that case all our child overflow is clipped anyway).
     computeOverflow(oldClientAfterEdge);
@@ -1766,7 +1773,7 @@ void RenderBlock::computeOverflow(LayoutUnit oldClientAfterEdge, bool recomputeF
     addVisualOverflowFromTheme();
 
     if (isRenderFlowThread())
-        toRenderFlowThread(this)->computeOverflowStateForRegions(oldClientAfterEdge);
+        toRenderFlowThread(this)->computeOversetStateForRegions(oldClientAfterEdge);
 }
 
 void RenderBlock::addOverflowFromBlockChildren()
@@ -2451,7 +2458,7 @@ void RenderBlock::updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, R
 {
     // FIXME: Technically percentage height objects only need a relayout if their percentage isn't going to be turned into
     // an auto value. Add a method to determine this, so that we can avoid the relayout.
-    if (relayoutChildren || (child->hasRelativeLogicalHeight() && !isRenderView()) || child->hasViewportPercentageLogicalHeight())
+    if (relayoutChildren || (child->hasRelativeLogicalHeight() && !isRenderView()))
         child->setChildNeedsLayout(true, MarkOnlyThis);
 
     // If relayoutChildren is set and the child has percentage padding or an embedded content box, we also need to invalidate the childs pref widths.
@@ -2891,6 +2898,8 @@ void RenderBlock::repaintOverhangingFloats(bool paintAllDescendants)
  
 void RenderBlock::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
+    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
+
     LayoutPoint adjustedPaintOffset = paintOffset + location();
     
     PaintPhase phase = paintInfo.phase;
@@ -3083,59 +3092,21 @@ void RenderBlock::paintContents(PaintInfo& paintInfo, const LayoutPoint& paintOf
         PaintInfo paintInfoForChild(paintInfo);
         paintInfoForChild.phase = newPhase;
         paintInfoForChild.updatePaintingRootForChildren(this);
-
-        // FIXME: Paint-time pagination is obsolete and is now only used by embedded WebViews inside AppKit
-        // NSViews. Do not add any more code for this.
-        bool usePrintRect = !view()->printRect().isEmpty();
-        paintChildren(paintInfo, paintOffset, paintInfoForChild, usePrintRect);
+        paintChildren(paintInfoForChild, paintOffset);
     }
 }
 
-void RenderBlock::paintChildren(PaintInfo& paintInfo, const LayoutPoint& paintOffset, PaintInfo& paintInfoForChild, bool usePrintRect)
+void RenderBlock::paintChildren(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    for (RenderBox* child = firstChildBox(); child; child = child->nextSiblingBox()) {
-        if (!paintChild(child, paintInfo, paintOffset, paintInfoForChild, usePrintRect))
-            return;
-    }
+    for (RenderBox* child = firstChildBox(); child; child = child->nextSiblingBox())
+        paintChild(child, paintInfo, paintOffset);
 }
 
-bool RenderBlock::paintChild(RenderBox* child, PaintInfo& paintInfo, const LayoutPoint& paintOffset, PaintInfo& paintInfoForChild, bool usePrintRect)
+void RenderBlock::paintChild(RenderBox* child, PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    // Check for page-break-before: always, and if it's set, break and bail.
-    bool checkBeforeAlways = !childrenInline() && (usePrintRect && child->style()->pageBreakBefore() == PBALWAYS);
-    LayoutUnit absoluteChildY = paintOffset.y() + child->y();
-    if (checkBeforeAlways
-        && absoluteChildY > paintInfo.rect.y()
-        && absoluteChildY < paintInfo.rect.maxY()) {
-        view()->setBestTruncatedAt(absoluteChildY, this, true);
-        return false;
-    }
-
-    RenderView* renderView = view();
-    if (!child->isFloating() && child->isReplaced() && usePrintRect && child->height() <= renderView->printRect().height()) {
-        // Paginate block-level replaced elements.
-        if (absoluteChildY + child->height() > renderView->printRect().maxY()) {
-            if (absoluteChildY < renderView->truncatedAt())
-                renderView->setBestTruncatedAt(absoluteChildY, child);
-            // If we were able to truncate, don't paint.
-            if (absoluteChildY >= renderView->truncatedAt())
-                return false;
-        }
-    }
-
     LayoutPoint childPoint = flipForWritingModeForChild(child, paintOffset);
     if (!child->hasSelfPaintingLayer() && !child->isFloating())
-        child->paint(paintInfoForChild, childPoint);
-
-    // Check for page-break-after: always, and if it's set, break and bail.
-    bool checkAfterAlways = !childrenInline() && (usePrintRect && child->style()->pageBreakAfter() == PBALWAYS);
-    if (checkAfterAlways
-        && (absoluteChildY + child->height()) > paintInfo.rect.y()
-        && (absoluteChildY + child->height()) < paintInfo.rect.maxY()) {
-        view()->setBestTruncatedAt(absoluteChildY + child->height() + max<LayoutUnit>(0, child->collapsedMarginAfter()), this, true);
-        return false;
-    }
-    return true;
+        child->paint(paintInfo, childPoint);
 }
 
 
@@ -3666,7 +3637,7 @@ LayoutRect RenderBlock::blockSelectionGap(RenderBlock* rootBlock, const LayoutPo
 
     LayoutRect gapRect = rootBlock->logicalRectToPhysicalRect(rootBlockPhysicalPosition, LayoutRect(logicalLeft, logicalTop, logicalWidth, logicalHeight));
     if (paintInfo)
-        paintInfo->context->fillRect(pixelSnappedIntRect(gapRect), selectionBackgroundColor(), style()->colorSpace());
+        paintInfo->context->fillRect(pixelSnappedIntRect(gapRect), selectionBackgroundColor());
     return gapRect;
 }
 
@@ -3682,7 +3653,7 @@ LayoutRect RenderBlock::logicalLeftSelectionGap(RenderBlock* rootBlock, const La
 
     LayoutRect gapRect = rootBlock->logicalRectToPhysicalRect(rootBlockPhysicalPosition, LayoutRect(rootBlockLogicalLeft, rootBlockLogicalTop, rootBlockLogicalWidth, logicalHeight));
     if (paintInfo)
-        paintInfo->context->fillRect(pixelSnappedIntRect(gapRect), selObj->selectionBackgroundColor(), selObj->style()->colorSpace());
+        paintInfo->context->fillRect(pixelSnappedIntRect(gapRect), selObj->selectionBackgroundColor());
     return gapRect;
 }
 
@@ -3698,7 +3669,7 @@ LayoutRect RenderBlock::logicalRightSelectionGap(RenderBlock* rootBlock, const L
 
     LayoutRect gapRect = rootBlock->logicalRectToPhysicalRect(rootBlockPhysicalPosition, LayoutRect(rootBlockLogicalLeft, rootBlockLogicalTop, rootBlockLogicalWidth, logicalHeight));
     if (paintInfo)
-        paintInfo->context->fillRect(pixelSnappedIntRect(gapRect), selObj->selectionBackgroundColor(), selObj->style()->colorSpace());
+        paintInfo->context->fillRect(pixelSnappedIntRect(gapRect), selObj->selectionBackgroundColor());
     return gapRect;
 }
 
@@ -3937,10 +3908,10 @@ RenderBlock::FloatingObject* RenderBlock::insertFloatingObject(RenderBox* o)
         o->computeAndSetBlockDirectionMargins(this);
     }
 
-    ExclusionShapeOutsideInfo* shapeOutside = o->exclusionShapeOutsideInfo();
+    ShapeOutsideInfo* shapeOutside = o->shapeOutsideInfo();
     if (shapeOutside) {
         shapeOutside->setShapeSize(o->logicalWidth(), o->logicalHeight());
-        // The CSS Exclusions specification says that the margins are ignored
+        // The CSS Shapes specification says that the margins are ignored
         // when a float has a shape outside.
         setLogicalWidthForFloat(newObj, shapeOutside->shapeLogicalWidth());
     } else
@@ -4016,7 +3987,7 @@ LayoutPoint RenderBlock::computeLogicalLocationForFloat(const FloatingObject* fl
     LayoutUnit logicalLeftOffset = logicalLeftOffsetForContent(logicalTopOffset); // Constant part of left offset.
     LayoutUnit logicalRightOffset; // Constant part of right offset.
     // FIXME Bug 102948: This only works for shape outside directly set on this block.
-    ExclusionShapeInsideInfo* shapeInsideInfo = exclusionShapeInsideInfo();
+    ShapeInsideInfo* shapeInsideInfo = this->shapeInsideInfo();
     // FIXME Bug 102846: Take into account the height of the content. The offset should be
     // equal to the maximum segment length.
     if (shapeInsideInfo && shapeInsideInfo->hasSegments() && shapeInsideInfo->segments().size() == 1) {
@@ -4169,8 +4140,8 @@ bool RenderBlock::positionNewFloats()
         }
 
         setLogicalTopForFloat(floatingObject, floatLogicalLocation.y());
-        if (childBox->exclusionShapeOutsideInfo())
-            setLogicalHeightForFloat(floatingObject, childBox->exclusionShapeOutsideInfo()->shapeLogicalHeight());
+        if (childBox->shapeOutsideInfo())
+            setLogicalHeightForFloat(floatingObject, childBox->shapeOutsideInfo()->shapeLogicalHeight());
         else
             setLogicalHeightForFloat(floatingObject, logicalHeightForChild(childBox) + marginBeforeForChild(childBox) + marginAfterForChild(childBox));
 
@@ -4351,7 +4322,7 @@ LayoutUnit RenderBlock::logicalLeftOffsetForLine(LayoutUnit logicalTop, LayoutUn
         m_floatingObjects->placedFloatsTree().allOverlapsWithAdapter(adapter);
 
         if (const FloatingObject* lastFloat = adapter.lastFloat()) {
-            if (ExclusionShapeOutsideInfo* shapeOutside = lastFloat->renderer()->exclusionShapeOutsideInfo()) {
+            if (ShapeOutsideInfo* shapeOutside = lastFloat->renderer()->shapeOutsideInfo()) {
                 shapeOutside->computeSegmentsForLine(logicalTop - logicalTopForFloat(lastFloat) + shapeOutside->shapeLogicalTop(), logicalHeight);
                 left += shapeOutside->rightSegmentShapeBoundingBoxDelta();
             }
@@ -4404,7 +4375,7 @@ LayoutUnit RenderBlock::logicalRightOffsetForLine(LayoutUnit logicalTop, LayoutU
         m_floatingObjects->placedFloatsTree().allOverlapsWithAdapter(adapter);
 
         if (const FloatingObject* lastFloat = adapter.lastFloat()) {
-            if (ExclusionShapeOutsideInfo* shapeOutside = lastFloat->renderer()->exclusionShapeOutsideInfo()) {
+            if (ShapeOutsideInfo* shapeOutside = lastFloat->renderer()->shapeOutsideInfo()) {
                 shapeOutside->computeSegmentsForLine(logicalTop - logicalTopForFloat(lastFloat) + shapeOutside->shapeLogicalTop(), logicalHeight);
                 rightFloatOffset += shapeOutside->leftSegmentShapeBoundingBoxDelta();
             }
@@ -4774,9 +4745,25 @@ bool RenderBlock::containsFloat(RenderBox* renderer) const
     return m_floatingObjects && m_floatingObjects->set().contains<RenderBox*, FloatingObjectHashTranslator>(renderer);
 }
 
-void RenderBlock::markAllDescendantsWithFloatsForLayout(RenderBox* floatToRemove, bool inLayout)
+void RenderBlock::markShapeInsideDescendantsForLayout()
 {
     if (!everHadLayout())
+        return;
+    if (childrenInline()) {
+        setNeedsLayout(true);
+        return;
+    }
+    for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
+        if (!child->isRenderBlock())
+            continue;
+        RenderBlock* childBlock = toRenderBlock(child);
+        childBlock->markShapeInsideDescendantsForLayout();
+    }
+}
+
+void RenderBlock::markAllDescendantsWithFloatsForLayout(RenderBox* floatToRemove, bool inLayout)
+{
+    if (!everHadLayout() && !containsFloats())
         return;
 
     MarkingBehavior markParents = inLayout ? MarkOnlyThis : MarkContainingBlockChain;
@@ -5102,6 +5089,9 @@ void RenderBlock::adjustForColumnRect(LayoutSize& offset, const LayoutPoint& loc
 
 bool RenderBlock::hitTestContents(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
 {
+    if (isRenderRegion())
+        return toRenderRegion(this)->hitTestFlowThreadContents(request, result, locationInContainer, accumulatedOffset, hitTestAction);
+
     if (childrenInline() && !isTable()) {
         // We have to hit-test our line boxes.
         if (m_lineBoxes.hitTest(this, request, result, locationInContainer, accumulatedOffset, hitTestAction))
@@ -5781,12 +5771,9 @@ void RenderBlock::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, Lay
 
     maxLogicalWidth = max(minLogicalWidth, maxLogicalWidth);
 
-    if (!style()->autoWrap() && childrenInline()) {
-        minLogicalWidth = maxLogicalWidth;
-        // A horizontal marquee with inline children has no minimum width.
-        if (layer() && layer()->marquee() && layer()->marquee()->isHorizontal())
-            minLogicalWidth = 0;
-    }
+    // A horizontal marquee with inline children has no minimum width.
+    if (childrenInline() && isMarquee() && toRenderMarquee(this)->isHorizontal())
+        minLogicalWidth = 0;
 
     if (isTableCell()) {
         Length tableCellWidth = toRenderTableCell(this)->styleOrColLogicalWidth();
@@ -5938,7 +5925,7 @@ static inline void stripTrailingSpace(float& inlineMax, float& inlineMin,
 
 static inline void updatePreferredWidth(LayoutUnit& preferredWidth, float& result)
 {
-    LayoutUnit snappedResult = ceiledLayoutUnit(result);
+    LayoutUnit snappedResult = LayoutUnit::fromFloatCeil(result);
     preferredWidth = max(snappedResult, preferredWidth);
 }
 
@@ -5948,7 +5935,7 @@ static inline void updatePreferredWidth(LayoutUnit& preferredWidth, float& resul
 // pure float accumulation.
 static inline LayoutUnit adjustFloatForSubPixelLayout(float value)
 {
-    return ceiledLayoutUnit(value);
+    return LayoutUnit::fromFloatCeil(value);
 }
 
 
@@ -6085,11 +6072,10 @@ void RenderBlock::computeInlinePreferredLogicalWidths(LayoutUnit& minLogicalWidt
                 }
 
                 // Add in text-indent.  This is added in only once.
-                LayoutUnit ti = 0;
                 if (!addedTextIndent && !child->isFloating()) {
-                    ti = textIndent;
-                    childMin += ti.ceilToFloat();
-                    childMax += ti.ceilToFloat();
+                    float ceiledTextIndent = textIndent.ceilToFloat();
+                    childMin += ceiledTextIndent;
+                    childMax += ceiledTextIndent;
 
                     if (childMin < 0)
                         textIndent = adjustFloatForSubPixelLayout(childMin);
@@ -6143,16 +6129,17 @@ void RenderBlock::computeInlinePreferredLogicalWidths(LayoutUnit& minLogicalWidt
                 // then they shouldn't be considered in the breakable char
                 // check.
                 bool hasBreakableChar, hasBreak;
-                float beginMin, endMin;
-                bool beginWS, endWS;
-                float beginMax, endMax;
-                t->trimmedPrefWidths(inlineMax, beginMin, beginWS, endMin, endWS,
-                                     hasBreakableChar, hasBreak, beginMax, endMax,
-                                     childMin, childMax, stripFrontSpaces);
+                float firstLineMinWidth, lastLineMinWidth;
+                bool hasBreakableStart, hasBreakableEnd;
+                float firstLineMaxWidth, lastLineMaxWidth;
+                t->trimmedPrefWidths(inlineMax,
+                    firstLineMinWidth, hasBreakableStart, lastLineMinWidth, hasBreakableEnd,
+                    hasBreakableChar, hasBreak, firstLineMaxWidth, lastLineMaxWidth,
+                    childMin, childMax, stripFrontSpaces);
 
                 // This text object will not be rendered, but it may still provide a breaking opportunity.
                 if (!hasBreak && childMax == 0) {
-                    if (autoWrap && (beginWS || endWS)) {
+                    if (autoWrap && (hasBreakableStart || hasBreakableEnd)) {
                         updatePreferredWidth(minLogicalWidth, inlineMin);
                         inlineMin = 0;
                     }
@@ -6169,14 +6156,14 @@ void RenderBlock::computeInlinePreferredLogicalWidths(LayoutUnit& minLogicalWidt
                 if (!addedTextIndent || hasRemainingNegativeTextIndent) {
                     ti = textIndent.ceilToFloat();
                     childMin += ti;
-                    beginMin += ti;
+                    firstLineMinWidth += ti;
                     
                     // It the text indent negative and larger than the child minimum, we re-use the remainder
                     // in future minimum calculations, but using the negative value again on the maximum
                     // will lead to under-counting the max pref width.
                     if (!addedTextIndent) {
                         childMax += ti;
-                        beginMax += ti;
+                        firstLineMaxWidth += ti;
                         addedTextIndent = true;
                     }
                     
@@ -6192,40 +6179,36 @@ void RenderBlock::computeInlinePreferredLogicalWidths(LayoutUnit& minLogicalWidt
                 if (!hasBreakableChar) {
                     inlineMin += childMin;
                 } else {
-                    // We have a breakable character.  Now we need to know if
-                    // we start and end with whitespace.
-                    if (beginWS)
-                        // Go ahead and end the current line.
+                    if (hasBreakableStart) {
                         updatePreferredWidth(minLogicalWidth, inlineMin);
-                    else {
-                        inlineMin += beginMin;
+                    } else {
+                        inlineMin += firstLineMinWidth;
                         updatePreferredWidth(minLogicalWidth, inlineMin);
                         childMin -= ti;
                     }
 
                     inlineMin = childMin;
 
-                    if (endWS) {
-                        // We end in whitespace, which means we can go ahead
-                        // and end our current line.
+                    if (hasBreakableEnd) {
                         updatePreferredWidth(minLogicalWidth, inlineMin);
                         inlineMin = 0;
                         shouldBreakLineAfterText = false;
                     } else {
                         updatePreferredWidth(minLogicalWidth, inlineMin);
-                        inlineMin = endMin;
+                        inlineMin = lastLineMinWidth;
                         shouldBreakLineAfterText = true;
                     }
                 }
 
                 if (hasBreak) {
-                    inlineMax += beginMax;
+                    inlineMax += firstLineMaxWidth;
                     updatePreferredWidth(maxLogicalWidth, inlineMax);
                     updatePreferredWidth(maxLogicalWidth, childMax);
-                    inlineMax = endMax;
+                    inlineMax = lastLineMaxWidth;
                     addedTextIndent = true;
-                } else
+                } else {
                     inlineMax += max<float>(0, childMax);
+                }
             }
 
             // Ignore spaces after a list marker.
@@ -6408,7 +6391,7 @@ int RenderBlock::baselinePosition(FontBaseline baselineType, bool firstLine, Lin
         // We also give up on finding a baseline if we have a vertical scrollbar, or if we are scrolled
         // vertically (e.g., an overflow:hidden block that has had scrollTop moved) or if the baseline is outside
         // of our content box.
-        bool ignoreBaseline = (layer() && (layer()->marquee() || (direction == HorizontalLine ? (layer()->verticalScrollbar() || layer()->scrollYOffset() != 0)
+        bool ignoreBaseline = (layer() && (isMarquee() || (direction == HorizontalLine ? (layer()->verticalScrollbar() || layer()->scrollYOffset())
             : (layer()->horizontalScrollbar() || layer()->scrollXOffset() != 0)))) || (isWritingModeRoot() && !isRubyRun());
         
         int baselinePos = ignoreBaseline ? -1 : inlineBlockBaseline(direction);
@@ -6491,17 +6474,6 @@ int RenderBlock::lastLineBoxBaseline(LineDirectionMode lineDirection) const
     }
 
     return -1;
-}
-
-bool RenderBlock::containsNonZeroBidiLevel() const
-{
-    for (RootInlineBox* root = firstRootBox(); root; root = root->nextRootBox()) {
-        for (InlineBox* box = root->firstLeafChild(); box; box = box->nextLeafChild()) {
-            if (box->bidiLevel())
-                return true;
-        }
-    }
-    return false;
 }
 
 RenderBlock* RenderBlock::firstLineBlock() const
@@ -7270,7 +7242,7 @@ bool RenderBlock::hasNextPage(LayoutUnit logicalOffset, PageBoundaryRule pageBou
     if (!region)
         return false;
     if (region->isLastRegion())
-        return region->isRenderRegionSet() || region->style()->regionOverflow() == BreakRegionOverflow
+        return region->isRenderRegionSet() || region->style()->regionFragment() == BreakRegionFragment
             || (pageBoundaryRule == IncludePageBoundary && pageOffset == region->logicalTopForFlowThreadContent());
     return true;
 }

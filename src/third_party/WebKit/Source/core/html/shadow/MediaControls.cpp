@@ -29,7 +29,6 @@
 #include "core/html/shadow/MediaControls.h"
 
 #include "core/dom/ExceptionCodePlaceholder.h"
-#include "core/page/Settings.h"
 
 namespace WebCore {
 
@@ -226,6 +225,8 @@ void MediaControls::changedVolume()
 {
     if (m_volumeSlider)
         m_volumeSlider->setVolume(m_mediaController->volume());
+    if (m_panelMuteButton && m_panelMuteButton->renderer())
+        m_panelMuteButton->renderer()->repaint();
 }
 
 void MediaControls::changedClosedCaptionsVisibility()
@@ -254,10 +255,6 @@ void MediaControls::enteredFullscreen()
 {
     m_isFullscreen = true;
     m_fullScreenButton->setIsFullscreen(true);
-
-    if (Page* page = document()->page())
-        page->chrome()->setCursorHiddenUntilMouseMoves(true);
-
     startHideFullscreenControlsTimer();
 }
 
@@ -315,9 +312,6 @@ void MediaControls::hideFullscreenControlsTimerFired(Timer<MediaControls>*)
     if (!shouldHideControls())
         return;
 
-    if (Page* page = document()->page())
-        page->chrome()->setCursorHiddenUntilMouseMoves(true);
-
     makeTransparent();
 }
 
@@ -348,7 +342,7 @@ bool MediaControls::containsRelatedTarget(Event* event)
 {
     if (!event->isMouseEvent())
         return false;
-    EventTarget* relatedTarget = static_cast<MouseEvent*>(event)->relatedTarget();
+    EventTarget* relatedTarget = toMouseEvent(event)->relatedTarget();
     if (!relatedTarget)
         return false;
     return contains(relatedTarget->toNode());
@@ -389,13 +383,6 @@ void MediaControls::updateTextTrackDisplay()
         createTextTrackDisplay();
 
     m_textDisplayContainer->updateDisplay();
-}
-    
-void MediaControls::textTrackPreferencesChanged()
-{
-    if (m_textDisplayContainer)
-        m_textDisplayContainer->updateSizes(true);
-    closedCaptionTracksChanged();
 }
 
 }

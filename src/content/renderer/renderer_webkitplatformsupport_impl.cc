@@ -5,66 +5,73 @@
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
 #include "base/platform_file.h"
 #include "base/shared_memory.h"
-#include "base/utf_string_conversions.h"
-#include "content/common/database_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "content/child/database_util.h"
+#include "content/child/fileapi/webfilesystem_impl.h"
+#include "content/child/indexed_db/proxy_webidbfactory_impl.h"
+#include "content/child/npobject_util.h"
+#include "content/child/thread_safe_sender.h"
+#include "content/child/webblobregistry_impl.h"
+#include "content/child/webmessageportchannel_impl.h"
 #include "content/common/file_utilities_messages.h"
-#include "content/common/fileapi/webblobregistry_impl.h"
-#include "content/common/fileapi/webfilesystem_impl.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
-#include "content/common/indexed_db/proxy_webidbfactory_impl.h"
 #include "content/common/mime_registry_messages.h"
-#include "content/common/npobject_util.h"
-#include "content/common/thread_safe_sender.h"
 #include "content/common/view_messages.h"
-#include "content/common/webmessageportchannel_impl.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/gpu_info.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/hyphenator/hyphenator.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/renderer_webaudiodevice_impl.h"
+#include "content/renderer/media/renderer_webmidiaccessor_impl.h"
+#include "content/renderer/media/webcontentdecryptionmodule_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_clipboard_client.h"
+#include "content/renderer/webclipboard_impl.h"
 #include "content/renderer/websharedworkerrepository_impl.h"
 #include "googleurl/src/gurl.h"
+#include "gpu/config/gpu_info.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "media/audio/audio_output_device.h"
 #include "media/base/audio_hardware_config.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebBlobRegistry.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileInfo.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHyphenator.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamCenter.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamCenterClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
+#include "media/filters/stream_parser_factory.h"
+#include "net/base/mime_util.h"
+#include "net/base/net_util.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
+#include "third_party/WebKit/public/platform/WebBlobRegistry.h"
+#include "third_party/WebKit/public/platform/WebFileInfo.h"
+#include "third_party/WebKit/public/platform/WebGamepads.h"
+#include "third_party/WebKit/public/platform/WebHyphenator.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamCenterClient.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
 #include "webkit/base/file_path_string_conversions.h"
+#include "webkit/common/gpu/webgraphicscontext3d_provider_impl.h"
 #include "webkit/glue/simple_webmimeregistry_impl.h"
-#include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/gpu/webgraphicscontext3d_provider_impl.h"
+#include "webkit/renderer/media/audio_decoder.h"
+#include "webkit/renderer/media/crypto/key_systems.h"
 
 #if defined(OS_WIN)
 #include "content/common/child_process_messages.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/win/WebSandboxSupport.h"
+#include "third_party/WebKit/public/platform/win/WebSandboxSupport.h"
 #endif
 
 #if defined(OS_MACOSX)
 #include "content/common/mac/font_descriptor.h"
 #include "content/common/mac/font_loader.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/mac/WebSandboxSupport.h"
+#include "third_party/WebKit/public/platform/mac/WebSandboxSupport.h"
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
@@ -73,12 +80,16 @@
 
 #include "base/synchronization/lock.h"
 #include "content/common/child_process_sandbox_support_impl_linux.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/linux/WebFontFamily.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/linux/WebSandboxSupport.h"
+#include "third_party/WebKit/public/platform/linux/WebFontFamily.h"
+#include "third_party/WebKit/public/platform/linux/WebSandboxSupport.h"
 #endif
 
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include "content/renderer/media/android/audio_decoder_android.h"
 #endif
 
 using WebKit::WebAudioDevice;
@@ -88,9 +99,11 @@ using WebKit::WebFileSystem;
 using WebKit::WebFrame;
 using WebKit::WebGamepads;
 using WebKit::WebIDBFactory;
+using WebKit::WebMIDIAccessor;
 using WebKit::Platform;
 using WebKit::WebMediaStreamCenter;
 using WebKit::WebMediaStreamCenterClient;
+using WebKit::WebMimeRegistry;
 using WebKit::WebRTCPeerConnectionHandler;
 using WebKit::WebRTCPeerConnectionHandlerClient;
 using WebKit::WebStorageNamespace;
@@ -109,10 +122,22 @@ base::LazyInstance<WebGamepads>::Leaky g_test_gamepads =
 class RendererWebKitPlatformSupportImpl::MimeRegistry
     : public webkit_glue::SimpleWebMimeRegistryImpl {
  public:
-  virtual WebKit::WebString mimeTypeForExtension(const WebKit::WebString&);
-  virtual WebKit::WebString mimeTypeFromFile(const WebKit::WebString&);
+  // TODO(ddorwin): Remove after http://webk.it/82983 lands.
+  virtual WebKit::WebMimeRegistry::SupportsType supportsMediaMIMEType(
+      const WebKit::WebString& mime_type,
+      const WebKit::WebString& codecs);
+  virtual WebKit::WebMimeRegistry::SupportsType supportsMediaMIMEType(
+      const WebKit::WebString& mime_type,
+      const WebKit::WebString& codecs,
+      const WebKit::WebString& key_system);
+  virtual bool supportsMediaSourceMIMEType(const WebKit::WebString& mime_type,
+                                           const WebKit::WebString& codecs);
+  virtual WebKit::WebString mimeTypeForExtension(
+      const WebKit::WebString& file_extension);
+  virtual WebKit::WebString mimeTypeFromFile(
+      const WebKit::WebString& file_path);
   virtual WebKit::WebString preferredExtensionForMIMEType(
-      const WebKit::WebString&);
+      const WebKit::WebString& mime_type);
 };
 
 class RendererWebKitPlatformSupportImpl::FileUtilities
@@ -188,7 +213,7 @@ class RendererWebKitPlatformSupportImpl::SandboxSupport
 
 RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
     : clipboard_client_(new RendererClipboardClient),
-      clipboard_(new webkit_glue::WebClipboardImpl(clipboard_client_.get())),
+      clipboard_(new WebClipboardImpl(clipboard_client_.get())),
       mime_registry_(new RendererWebKitPlatformSupportImpl::MimeRegistry),
       hyphenator_(new RendererWebKitPlatformSupportImpl::Hyphenator),
       sudden_termination_disables_(0),
@@ -220,17 +245,13 @@ WebKit::WebClipboard* RendererWebKitPlatformSupportImpl::clipboard() {
 }
 
 WebKit::WebMimeRegistry* RendererWebKitPlatformSupportImpl::mimeRegistry() {
-  WebKit::WebMimeRegistry* mime_registry =
-      GetContentClient()->renderer()->OverrideWebMimeRegistry();
-  if (mime_registry)
-    return mime_registry;
   return mime_registry_.get();
 }
 
 WebKit::WebFileUtilities*
 RendererWebKitPlatformSupportImpl::fileUtilities() {
   if (!file_utilities_) {
-    file_utilities_.reset(new FileUtilities(thread_safe_sender_));
+    file_utilities_.reset(new FileUtilities(thread_safe_sender_.get()));
     file_utilities_->set_sandbox_enabled(sandboxEnabled());
   }
   return file_utilities_.get();
@@ -290,10 +311,14 @@ void RendererWebKitPlatformSupportImpl::prefetchHostName(
   if (hostname.isEmpty())
     return;
 
-  std::string hostname_utf8;
-  UTF16ToUTF8(hostname.data(), hostname.length(), &hostname_utf8);
+  std::string hostname_utf8 = UTF16ToUTF8(hostname);
   GetContentClient()->renderer()->PrefetchHostName(
       hostname_utf8.data(), hostname_utf8.length());
+}
+
+WebKit::WebPrescientNetworking*
+RendererWebKitPlatformSupportImpl::prescientNetworking() {
+  return GetContentClient()->renderer()->GetPrescientNetworking();
 }
 
 bool
@@ -358,12 +383,8 @@ RendererWebKitPlatformSupportImpl::createLocalStorageNamespace(
 //------------------------------------------------------------------------------
 
 WebIDBFactory* RendererWebKitPlatformSupportImpl::idbFactory() {
-  if (!web_idb_factory_) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
-      web_idb_factory_.reset(WebIDBFactory::create());
-    else
-      web_idb_factory_.reset(new RendererWebIDBFactoryImpl());
-  }
+  if (!web_idb_factory_)
+    web_idb_factory_.reset(new RendererWebIDBFactoryImpl());
   return web_idb_factory_.get();
 }
 
@@ -376,6 +397,80 @@ WebFileSystem* RendererWebKitPlatformSupportImpl::fileSystem() {
 }
 
 //------------------------------------------------------------------------------
+
+WebMimeRegistry::SupportsType
+RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
+    const WebString& mime_type,
+    const WebString& codecs) {
+  return supportsMediaMIMEType(mime_type, codecs, WebString());
+}
+
+WebMimeRegistry::SupportsType
+RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
+    const WebString& mime_type,
+    const WebString& codecs,
+    const WebString& key_system) {
+  const std::string mime_type_ascii = ToASCIIOrEmpty(mime_type);
+  // Not supporting the container is a flat-out no.
+  if (!net::IsSupportedMediaMimeType(mime_type_ascii))
+    return IsNotSupported;
+
+  if (!key_system.isEmpty()) {
+    // Check whether the key system is supported with the mime_type and codecs.
+
+    // Not supporting the key system is a flat-out no.
+    if (!webkit_media::IsSupportedKeySystem(key_system))
+      return IsNotSupported;
+
+    std::vector<std::string> strict_codecs;
+    bool strip_suffix = !net::IsStrictMediaMimeType(mime_type_ascii);
+    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, strip_suffix);
+
+    if (!webkit_media::IsSupportedKeySystemWithMediaMimeType(
+            mime_type_ascii, strict_codecs, ToASCIIOrEmpty(key_system)))
+      return IsNotSupported;
+
+    // Continue processing the mime_type and codecs.
+  }
+
+  // Check list of strict codecs to see if it is supported.
+  if (net::IsStrictMediaMimeType(mime_type_ascii)) {
+    // We support the container, but no codecs were specified.
+    if (codecs.isNull())
+      return MayBeSupported;
+
+    // Check if the codecs are a perfect match.
+    std::vector<std::string> strict_codecs;
+    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, false);
+    if (!net::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs))
+      return IsNotSupported;
+
+    // Good to go!
+    return IsSupported;
+  }
+
+  // If we don't recognize the codec, it's possible we support it.
+  std::vector<std::string> parsed_codecs;
+  net::ParseCodecString(ToASCIIOrEmpty(codecs), &parsed_codecs, true);
+  if (!net::AreSupportedMediaCodecs(parsed_codecs))
+    return MayBeSupported;
+
+  // Otherwise we have a perfect match.
+  return IsSupported;
+}
+
+bool
+RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaSourceMIMEType(
+    const WebKit::WebString& mime_type,
+    const WebString& codecs) {
+  const std::string mime_type_ascii = ToASCIIOrEmpty(mime_type);
+  std::vector<std::string> parsed_codec_ids;
+  net::ParseCodecString(ToASCIIOrEmpty(codecs), &parsed_codec_ids, false);
+  if (mime_type_ascii.empty() || parsed_codec_ids.size() == 0)
+    return false;
+  return media::StreamParserFactory::IsTypeSupported(
+      mime_type_ascii, parsed_codec_ids);
+}
 
 WebString
 RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeForExtension(
@@ -620,7 +715,7 @@ bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {
   if (!host)
     return false;
 
-  const GPUInfo& gpu_info = host->gpu_info();
+  const gpu::GPUInfo& gpu_info = host->gpu_info();
   if (gpu_info.can_lose_context || gpu_info.software_rendering)
     return false;
 
@@ -628,7 +723,7 @@ bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {
 }
 
 bool RendererWebKitPlatformSupportImpl::isThreadedCompositingEnabled() {
-  return !!RenderThreadImpl::current()->compositor_message_loop_proxy();
+  return !!RenderThreadImpl::current()->compositor_message_loop_proxy().get();
 }
 
 double RendererWebKitPlatformSupportImpl::audioHardwareSampleRate() {
@@ -677,16 +772,6 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
     double sample_rate,
     WebAudioDevice::RenderCallback* callback,
     const WebKit::WebString& input_device_id) {
-  if (input_device_id != "default") {
-    // Only allow audio input if we know for sure that WebKit is giving us the
-    // "default" input device.
-    // TODO(crogers): add support for non-default audio input devices when
-    // using synchronized audio I/O in WebAudio.
-    if (input_channels > 0)
-      DLOG(WARNING) << "createAudioDevice(): request for audio input ignored";
-    input_channels = 0;
-  }
-
   // The |channels| does not exactly identify the channel layout of the
   // device. The switch statement below assigns a best guess to the channel
   // layout based on number of channels.
@@ -722,12 +807,58 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
       layout = media::CHANNEL_LAYOUT_STEREO;
   }
 
+  int session_id = 0;
+  if (input_device_id.isNull() ||
+      !base::StringToInt(UTF16ToUTF8(input_device_id), &session_id)) {
+    if (input_channels > 0)
+      DLOG(WARNING) << "createAudioDevice(): request for audio input ignored";
+
+    input_channels = 0;
+  }
+
   media::AudioParameters params(
       media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
       layout, input_channels,
       static_cast<int>(sample_rate), 16, buffer_size);
 
-  return new RendererWebAudioDeviceImpl(params, callback);
+  return new RendererWebAudioDeviceImpl(params, callback, session_id);
+}
+
+#if defined(OS_ANDROID)
+bool RendererWebKitPlatformSupportImpl::loadAudioResource(
+    WebKit::WebAudioBus* destination_bus, const char* audio_file_data,
+    size_t data_size, double sample_rate) {
+  return DecodeAudioFileData(destination_bus,
+                             audio_file_data,
+                             data_size,
+                             sample_rate,
+                             thread_safe_sender_);
+}
+#else
+bool RendererWebKitPlatformSupportImpl::loadAudioResource(
+    WebKit::WebAudioBus* destination_bus, const char* audio_file_data,
+    size_t data_size, double sample_rate) {
+  return webkit_media::DecodeAudioFileData(destination_bus,
+                                           audio_file_data,
+                                           data_size,
+                                           sample_rate);
+}
+#endif  // defined(OS_ANDROID)
+
+//------------------------------------------------------------------------------
+
+WebKit::WebContentDecryptionModule*
+RendererWebKitPlatformSupportImpl::createContentDecryptionModule(
+    const WebKit::WebString& key_system) {
+  return WebContentDecryptionModuleImpl::Create(key_system);
+}
+
+//------------------------------------------------------------------------------
+
+WebKit::WebMIDIAccessor*
+RendererWebKitPlatformSupportImpl::createMIDIAccessor(
+    WebKit::WebMIDIAccessorClient* client) {
+  return new RendererWebMIDIAccessorImpl(client);
 }
 
 //------------------------------------------------------------------------------
@@ -760,8 +891,8 @@ void RendererWebKitPlatformSupportImpl::screenColorProfile(
 
 WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
   // thread_safe_sender_ can be NULL when running some tests.
-  if (!blob_registry_.get() && thread_safe_sender_)
-    blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_));
+  if (!blob_registry_.get() && thread_safe_sender_.get())
+    blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_.get()));
   return blob_registry_.get();
 }
 
@@ -884,39 +1015,32 @@ RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
 
 //------------------------------------------------------------------------------
 
-WebKit::WebGraphicsContext3D* RendererWebKitPlatformSupportImpl::
-    sharedOffscreenGraphicsContext3D() {
-  if (!shared_offscreen_context_ ||
-      shared_offscreen_context_->DestroyedOnMainThread()) {
-    shared_offscreen_context_ =
-        RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
-  }
-  if (!shared_offscreen_context_)
-    return NULL;
-  return shared_offscreen_context_->Context3d();
-}
-
-//------------------------------------------------------------------------------
-
-GrContext* RendererWebKitPlatformSupportImpl::sharedOffscreenGrContext() {
-  if (!shared_offscreen_context_)
-    return NULL;
-  return shared_offscreen_context_->GrContext();
-}
-
-//------------------------------------------------------------------------------
-
 WebKit::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
     createSharedOffscreenGraphicsContext3DProvider() {
-  if (!shared_offscreen_context_ ||
+  if (!shared_offscreen_context_.get() ||
       shared_offscreen_context_->DestroyedOnMainThread()) {
     shared_offscreen_context_ =
         RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
   }
-  if (!shared_offscreen_context_)
+  if (!shared_offscreen_context_.get())
     return NULL;
   return new webkit::gpu::WebGraphicsContext3DProviderImpl(
       shared_offscreen_context_);
+}
+
+//------------------------------------------------------------------------------
+
+WebKit::WebCompositorSupport*
+RendererWebKitPlatformSupportImpl::compositorSupport() {
+  return &compositor_support_;
+}
+
+//------------------------------------------------------------------------------
+
+WebKit::WebString RendererWebKitPlatformSupportImpl::convertIDNToUnicode(
+    const WebKit::WebString& host,
+    const WebKit::WebString& languages) {
+  return net::IDNToUnicode(host.utf8(), languages.utf8());
 }
 
 }  // namespace content

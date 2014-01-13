@@ -30,18 +30,18 @@
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorStyleSheet.h"
-#include "core/inspector/InspectorValues.h"
 #include "core/page/ContentSecurityPolicy.h"
-
-#include <wtf/HashMap.h>
-#include <wtf/HashSet.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "core/platform/JSONValues.h"
+#include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
+struct CSSParserString;
 class CSSRule;
 class CSSRuleList;
 class CSSStyleDeclaration;
@@ -53,6 +53,7 @@ class Element;
 class InspectorCSSOMWrappers;
 class InspectorFrontend;
 class InstrumentingAgents;
+class MediaList;
 class NameNodeMap;
 class Node;
 class NodeList;
@@ -61,8 +62,10 @@ class StyleResolver;
 class StyleRule;
 class StyleSheetVisitor;
 class UpdateRegionLayoutTask;
+class UpdateActiveStylesheetsTask;
 
 typedef HashMap<CSSStyleSheet*, RefPtr<InspectorStyleSheet> > CSSStyleSheetToInspectorStyleSheet;
+typedef Vector<RefPtr<StyleSheet> > StyleSheetVector;
 
 class InspectorCSSAgent
     : public InspectorBaseAgent<InspectorCSSAgent>
@@ -71,6 +74,13 @@ class InspectorCSSAgent
     , public InspectorStyleSheet::Listener {
     WTF_MAKE_NONCOPYABLE(InspectorCSSAgent);
 public:
+    enum MediaListSource {
+        MediaListSourceLinkedSheet,
+        MediaListSourceInlineSheet,
+        MediaListSourceMediaRule,
+        MediaListSourceImportRule
+    };
+
     class InlineStyleOverrideScope {
     public:
         InlineStyleOverrideScope(SecurityContext* context)
@@ -89,10 +99,11 @@ public:
     };
 
     static CSSStyleRule* asCSSStyleRule(CSSRule*);
+    static bool cssErrorFilter(const CSSParserString& content, int propertyId, int errorType);
 
-    static PassOwnPtr<InspectorCSSAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InspectorDOMAgent* domAgent)
+    static PassOwnPtr<InspectorCSSAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InspectorDOMAgent* domAgent, InspectorPageAgent* pageAgent)
     {
-        return adoptPtr(new InspectorCSSAgent(instrumentingAgents, state, domAgent));
+        return adoptPtr(new InspectorCSSAgent(instrumentingAgents, state, domAgent, pageAgent));
     }
     ~InspectorCSSAgent();
 
@@ -104,12 +115,13 @@ public:
     virtual void enable(ErrorString*);
     virtual void disable(ErrorString*);
     void reset();
+    void didCommitLoad(Frame*, DocumentLoader*);
     void mediaQueryResultChanged();
     void didCreateNamedFlow(Document*, NamedFlow*);
     void willRemoveNamedFlow(Document*, NamedFlow*);
     void didUpdateRegionLayout(Document*, NamedFlow*);
     void regionLayoutUpdated(NamedFlow*, int documentNodeId);
-    void activeStyleSheetsUpdated(Document*, const Vector<RefPtr<StyleSheet> >& newSheets);
+    void activeStyleSheetsUpdated(Document*, const StyleSheetVector& newSheets);
     void frameDetachedFromParent(Frame*);
 
     virtual void getComputedStyleForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSComputedStyleProperty> >&);
@@ -119,13 +131,13 @@ public:
     virtual void getStyleSheet(ErrorString*, const String& styleSheetId, RefPtr<TypeBuilder::CSS::CSSStyleSheetBody>& result);
     virtual void getStyleSheetText(ErrorString*, const String& styleSheetId, String* result);
     virtual void setStyleSheetText(ErrorString*, const String& styleSheetId, const String& text);
-    virtual void setStyleText(ErrorString*, const RefPtr<InspectorObject>& styleId, const String& text, RefPtr<TypeBuilder::CSS::CSSStyle>& result);
-    virtual void setPropertyText(ErrorString*, const RefPtr<InspectorObject>& styleId, int propertyIndex, const String& text, bool overwrite, RefPtr<TypeBuilder::CSS::CSSStyle>& result);
-    virtual void toggleProperty(ErrorString*, const RefPtr<InspectorObject>& styleId, int propertyIndex, bool disable, RefPtr<TypeBuilder::CSS::CSSStyle>& result);
-    virtual void setRuleSelector(ErrorString*, const RefPtr<InspectorObject>& ruleId, const String& selector, RefPtr<TypeBuilder::CSS::CSSRule>& result);
+    virtual void setStyleText(ErrorString*, const RefPtr<JSONObject>& styleId, const String& text, RefPtr<TypeBuilder::CSS::CSSStyle>& result);
+    virtual void setPropertyText(ErrorString*, const RefPtr<JSONObject>& styleId, int propertyIndex, const String& text, bool overwrite, RefPtr<TypeBuilder::CSS::CSSStyle>& result);
+    virtual void toggleProperty(ErrorString*, const RefPtr<JSONObject>& styleId, int propertyIndex, bool disable, RefPtr<TypeBuilder::CSS::CSSStyle>& result);
+    virtual void setRuleSelector(ErrorString*, const RefPtr<JSONObject>& ruleId, const String& selector, RefPtr<TypeBuilder::CSS::CSSRule>& result);
     virtual void addRule(ErrorString*, int contextNodeId, const String& selector, RefPtr<TypeBuilder::CSS::CSSRule>& result);
     virtual void getSupportedCSSProperties(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSPropertyInfo> >& result);
-    virtual void forcePseudoState(ErrorString*, int nodeId, const RefPtr<InspectorArray>& forcedPseudoClasses);
+    virtual void forcePseudoState(ErrorString*, int nodeId, const RefPtr<JSONArray>& forcedPseudoClasses);
     virtual void getNamedFlowCollection(ErrorString*, int documentNodeId, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::NamedFlow> >& result);
 
     virtual void startSelectorProfiler(ErrorString*);
@@ -136,6 +148,8 @@ public:
     void didMatchRule(bool);
     void willProcessRule(StyleRule*, StyleResolver*);
     void didProcessRule();
+    PassRefPtr<TypeBuilder::CSS::CSSMedia> buildMediaObject(const MediaList*, MediaListSource, const String&);
+    PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> > buildMediaListChain(CSSRule*);
 
 private:
     class StyleSheetAction;
@@ -146,7 +160,7 @@ private:
     class SetRuleSelectorAction;
     class AddRuleAction;
 
-    InspectorCSSAgent(InstrumentingAgents*, InspectorCompositeState*, InspectorDOMAgent*);
+    InspectorCSSAgent(InstrumentingAgents*, InspectorCompositeState*, InspectorDOMAgent*, InspectorPageAgent*);
 
     typedef HashMap<String, RefPtr<InspectorStyleSheet> > IdToInspectorStyleSheet;
     typedef HashMap<Node*, RefPtr<InspectorStyleSheetForInlineStyle> > NodeToInspectorStyleSheet; // bogus "stylesheets" with elements' inline styles
@@ -179,12 +193,15 @@ private:
     virtual void didModifyDOMAttr(Element*);
 
     // InspectorCSSAgent::Listener implementation
-    virtual void styleSheetChanged(InspectorStyleSheet*);
+    virtual void styleSheetChanged(InspectorStyleSheet*) OVERRIDE;
+    virtual void willReparseStyleSheet() OVERRIDE;
+    virtual void didReparseStyleSheet() OVERRIDE;
 
     void resetPseudoStates();
 
     InspectorFrontend::CSS* m_frontend;
     InspectorDOMAgent* m_domAgent;
+    InspectorPageAgent* m_pageAgent;
 
     IdToInspectorStyleSheet m_idToInspectorStyleSheet;
     CSSStyleSheetToInspectorStyleSheet m_cssStyleSheetToInspectorStyleSheet;
@@ -196,6 +213,7 @@ private:
 
     int m_lastStyleSheetId;
     bool m_creatingViaInspectorStyleSheet;
+    bool m_isSettingStyleSheetText;
 
     OwnPtr<SelectorProfile> m_currentSelectorProfile;
 

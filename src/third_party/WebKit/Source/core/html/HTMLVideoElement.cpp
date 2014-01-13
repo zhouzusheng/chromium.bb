@@ -34,10 +34,6 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
-#include "core/page/Frame.h"
-#include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderVideo.h"
@@ -67,14 +63,14 @@ bool HTMLVideoElement::rendererIsNeeded(const NodeRenderingContext& context)
     return HTMLElement::rendererIsNeeded(context); 
 }
 
-RenderObject* HTMLVideoElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* HTMLVideoElement::createRenderer(RenderStyle*)
 {
-    return new (arena) RenderVideo(this);
+    return new (document()->renderArena()) RenderVideo(this);
 }
 
-void HTMLVideoElement::attach()
+void HTMLVideoElement::attach(const AttachContext& context)
 {
-    HTMLMediaElement::attach();
+    HTMLMediaElement::attach(context);
 
     updateDisplayState();
     if (shouldDisplayPosterImage()) {
@@ -182,27 +178,11 @@ void HTMLVideoElement::setDisplayMode(DisplayMode mode)
     if (!poster.isEmpty()) {
         // We have a poster path, but only show it until the user triggers display by playing or seeking and the
         // media engine has something to display.
-        if (mode == Video) {
-            if (oldMode != Video && player())
-                player()->prepareForRendering();
-            if (!hasAvailableVideoFrame())
-                mode = PosterWaitingForVideo;
-        }
-    } else if (oldMode != Video && player())
-        player()->prepareForRendering();
+        if (mode == Video && !hasAvailableVideoFrame())
+            mode = PosterWaitingForVideo;
+    }
 
     HTMLMediaElement::setDisplayMode(mode);
-
-    if (player() && player()->canLoadPoster()) {
-        bool canLoad = true;
-        if (!poster.isEmpty()) {
-            Frame* frame = document()->frame();
-            FrameLoader* loader = frame ? frame->loader() : 0;
-            canLoad = loader && loader->willLoadMediaElementURL(poster);
-        }
-        if (canLoad)
-            player()->setPoster(poster);
-    }
 
     if (renderer() && displayMode() != oldMode)
         renderer()->updateFromElement();
@@ -221,8 +201,6 @@ void HTMLVideoElement::paintCurrentFrameInContext(GraphicsContext* context, cons
     MediaPlayer* player = HTMLMediaElement::player();
     if (!player)
         return;
-    
-    player->setVisible(true); // Make player visible or it won't draw.
     player->paintCurrentFrameInContext(context, destRect);
 }
 
@@ -238,7 +216,7 @@ bool HTMLVideoElement::hasAvailableVideoFrame() const
     if (!player())
         return false;
     
-    return player()->hasVideo() && player()->hasAvailableVideoFrame();
+    return player()->hasVideo() && player()->readyState() >= MediaPlayer::HaveCurrentData;
 }
 
 void HTMLVideoElement::webkitEnterFullscreen(ExceptionCode& ec)

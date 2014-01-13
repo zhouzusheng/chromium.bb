@@ -41,32 +41,24 @@
 #include "V8NodeList.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Collection.h"
-#include "bindings/v8/custom/V8NamedNodesCollection.h"
 
 namespace WebCore {
 
-v8::Handle<v8::Value> V8HTMLSelectElement::indexedPropertySetter(uint32_t index, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
-{
-    HTMLSelectElement* select = V8HTMLSelectElement::toNative(info.Holder());
-    return toOptionsCollectionSetter(index, value, select, info.GetIsolate());
-}
-
-v8::Handle<v8::Value> V8HTMLSelectElement::removeMethodCustom(const v8::Arguments& args)
+void V8HTMLSelectElement::removeMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     HTMLSelectElement* imp = V8HTMLSelectElement::toNative(args.Holder());
-    return removeElement(imp, args);
+    removeElement(imp, args);
 }
 
-v8::Handle<v8::Value> removeElement(HTMLSelectElement* imp, const v8::Arguments& args) 
+void removeElement(HTMLSelectElement* imp, const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     if (V8HTMLOptionElement::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate()))) {
         HTMLOptionElement* element = V8HTMLOptionElement::toNative(v8::Handle<v8::Object>::Cast(args[0]));
         imp->remove(element->index());
-        return v8::Undefined();
+        return;
     }
 
     imp->remove(toInt32(args[0]));
-    return v8::Undefined();
 }
 
 } // namespace WebCore

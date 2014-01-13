@@ -99,6 +99,11 @@ function isValidLanguageTag(locale) {
     return false;
   }
 
+  // Just return if it's a x- form. It's all private.
+  if (locale.indexOf('x-') === 0) {
+    return true;
+  }
+    
   // Check if there are any duplicate variants or singletons (extensions).
  
   // Remove private use section.

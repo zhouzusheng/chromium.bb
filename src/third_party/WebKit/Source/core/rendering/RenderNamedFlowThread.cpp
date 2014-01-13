@@ -29,6 +29,7 @@
 #include "RuntimeEnabledFeatures.h"
 #include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/NamedFlow.h"
+#include "core/dom/NodeRenderingContext.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Position.h"
 #include "core/dom/Range.h"
@@ -54,6 +55,7 @@ RenderNamedFlowThread* RenderNamedFlowThread::createAnonymous(Document* document
 RenderNamedFlowThread::RenderNamedFlowThread(PassRefPtr<NamedFlow> namedFlow)
     : m_namedFlow(namedFlow)
     , m_regionLayoutUpdateEventTimer(this, &RenderNamedFlowThread::regionLayoutUpdateEventTimerFired)
+    , m_regionOversetChangeEventTimer(this, &RenderNamedFlowThread::regionOversetChangeEventTimerFired)
 {
 }
 
@@ -402,6 +404,19 @@ const AtomicString& RenderNamedFlowThread::flowThreadName() const
     return m_namedFlow->name();
 }
 
+bool RenderNamedFlowThread::isChildAllowed(RenderObject* child, RenderStyle* style) const
+{
+    ASSERT(child);
+    ASSERT(style);
+
+    if (!child->node())
+        return true;
+
+    ASSERT(child->node()->isElementNode());
+    RenderObject* parentRenderer = NodeRenderingContext(child->node()).parentRenderer();
+    return parentRenderer->isChildAllowed(child, style);
+}
+
 void RenderNamedFlowThread::dispatchRegionLayoutUpdateEvent()
 {
     RenderFlowThread::dispatchRegionLayoutUpdateEvent();
@@ -411,11 +426,26 @@ void RenderNamedFlowThread::dispatchRegionLayoutUpdateEvent()
         m_regionLayoutUpdateEventTimer.startOneShot(0);
 }
 
+void RenderNamedFlowThread::dispatchRegionOversetChangeEvent()
+{
+    RenderFlowThread::dispatchRegionOversetChangeEvent();
+
+    if (!m_regionOversetChangeEventTimer.isActive() && m_namedFlow->hasEventListeners())
+        m_regionOversetChangeEventTimer.startOneShot(0);
+}
+
 void RenderNamedFlowThread::regionLayoutUpdateEventTimerFired(Timer<RenderNamedFlowThread>*)
 {
     ASSERT(m_namedFlow);
 
     m_namedFlow->dispatchRegionLayoutUpdateEvent();
+}
+
+void RenderNamedFlowThread::regionOversetChangeEventTimerFired(Timer<RenderNamedFlowThread>*)
+{
+    ASSERT(m_namedFlow);
+
+    m_namedFlow->dispatchRegionOversetChangeEvent();
 }
 
 void RenderNamedFlowThread::setMarkForDestruction()

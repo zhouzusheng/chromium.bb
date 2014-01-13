@@ -20,7 +20,6 @@
 #ifndef SVGAnimatedEnumeration_h
 #define SVGAnimatedEnumeration_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/properties/SVGAnimatedEnumerationPropertyTearOff.h"
 #include "core/svg/properties/SVGAnimatedPropertyMacros.h"
@@ -34,7 +33,7 @@ typedef SVGAnimatedStaticPropertyTearOff<unsigned> SVGAnimatedEnumeration;
 DECLARE_ANIMATED_PROPERTY(SVGAnimatedEnumerationPropertyTearOff<EnumType>, EnumType, UpperProperty, LowerProperty)
 
 #define DEFINE_ANIMATED_ENUMERATION(OwnerType, DOMAttribute, UpperProperty, LowerProperty, EnumType) \
-DEFINE_ANIMATED_PROPERTY(AnimatedEnumeration, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty)
+DEFINE_ANIMATED_PROPERTY(AnimatedEnumeration, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty, SVGAnimatedEnumerationPropertyTearOff<EnumType>, EnumType)
 
 class SVGAnimatedEnumerationAnimator : public SVGAnimatedTypeAnimator {
 public:
@@ -55,5 +54,4 @@ public:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

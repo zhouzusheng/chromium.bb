@@ -21,10 +21,12 @@
 #ifndef CSSParserValues_h
 #define CSSParserValues_h
 
+#include "CSSValueKeywords.h"
+#include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSValueList.h"
-#include <wtf/text/AtomicString.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -32,14 +34,14 @@ class CSSValue;
 class QualifiedName;
 
 struct CSSParserString {
-    void init(LChar* characters, unsigned length)
+    void init(const LChar* characters, unsigned length)
     {
         m_data.characters8 = characters;
         m_length = length;
         m_is8Bit = true;
     }
 
-    void init(UChar* characters, unsigned length)
+    void init(const UChar* characters, unsigned length)
     {
         m_data.characters16 = characters;
         m_length = length;
@@ -48,12 +50,17 @@ struct CSSParserString {
 
     void init(const String& string)
     {
-        m_length = string.length();
+        init(string, 0, string.length());
+    }
+
+    void init(const String& string, unsigned startOffset, unsigned length)
+    {
+        m_length = length;
         if (m_length && string.is8Bit()) {
-            m_data.characters8 = const_cast<LChar*>(string.characters8());
+            m_data.characters8 = const_cast<LChar*>(string.characters8()) + startOffset;
             m_is8Bit = true;
         } else {
-            m_data.characters16 = const_cast<UChar*>(string.characters());
+            m_data.characters16 = const_cast<UChar*>(string.characters()) + startOffset;
             m_is8Bit = false;
         }
     }
@@ -65,16 +72,16 @@ struct CSSParserString {
         m_is8Bit = false;
     }
 
+    void trimTrailingWhitespace();
+
     bool is8Bit() const { return m_is8Bit; }
-    LChar* characters8() const { ASSERT(is8Bit()); return m_data.characters8; }
-    UChar* characters16() const { ASSERT(!is8Bit()); return m_data.characters16; }
+    const LChar* characters8() const { ASSERT(is8Bit()); return m_data.characters8; }
+    const UChar* characters16() const { ASSERT(!is8Bit()); return m_data.characters16; }
     template <typename CharacterType>
-    CharacterType* characters() const;
+    const CharacterType* characters() const;
 
     unsigned length() const { return m_length; }
     void setLength(unsigned length) { m_length = length; }
-
-    void lower();
 
     UChar operator[](unsigned i) const
     {
@@ -91,14 +98,27 @@ struct CSSParserString {
         return WTF::equalIgnoringCase(str, characters16(), length());
     }
 
+    template <size_t strLength>
+    bool startsWithIgnoringCase(const char (&str)[strLength]) const
+    {
+        return startsWithIgnoringCase(str, strLength - 1);
+    }
+
+    bool startsWithIgnoringCase(const char* str, size_t strLength) const
+    {
+        if (length() < strLength)
+            return false;
+        return is8Bit() ? WTF::equalIgnoringCase(str, characters8(), strLength) : WTF::equalIgnoringCase(str, characters16(), strLength);
+    }
+
     operator String() const { return is8Bit() ? String(m_data.characters8, m_length) : String(m_data.characters16, m_length); }
     operator AtomicString() const { return is8Bit() ? AtomicString(m_data.characters8, m_length) : AtomicString(m_data.characters16, m_length); }
 
-    AtomicString lowerSubstring(unsigned position, unsigned length) const;
+    AtomicString atomicSubstring(unsigned position, unsigned length) const;
 
     union {
-        LChar* characters8;
-        UChar* characters16;
+        const LChar* characters8;
+        const UChar* characters16;
     } m_data;
     unsigned m_length;
     bool m_is8Bit;
@@ -107,7 +127,7 @@ struct CSSParserString {
 struct CSSParserFunction;
 
 struct CSSParserValue {
-    int id;
+    CSSValueID id;
     bool isInt;
     union {
         double fValue;
@@ -122,6 +142,8 @@ struct CSSParserValue {
     };
     int unit;
 
+    inline void setFromNumber(double value, int unit = CSSPrimitiveValue::CSS_NUMBER);
+    inline void setFromFunction(CSSParserFunction*);
 
     PassRefPtr<CSSValue> createCSSValue();
 };
@@ -169,7 +191,7 @@ public:
 };
 
 class CSSParserSelector {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(CSSParserSelector); WTF_MAKE_FAST_ALLOCATED;
 public:
     CSSParserSelector();
     explicit CSSParserSelector(const QualifiedName&);
@@ -177,12 +199,14 @@ public:
 
     PassOwnPtr<CSSSelector> releaseSelector() { return m_selector.release(); }
 
+    CSSSelector::Relation relation() const { return m_selector->relation(); }
     void setValue(const AtomicString& value) { m_selector->setValue(value); }
     void setAttribute(const QualifiedName& value) { m_selector->setAttribute(value); }
     void setArgument(const AtomicString& value) { m_selector->setArgument(value); }
     void setMatch(CSSSelector::Match value) { m_selector->m_match = value; }
     void setRelation(CSSSelector::Relation value) { m_selector->m_relation = value; }
     void setForPage() { m_selector->setForPage(); }
+    void setRelationIsForShadowDistributed() { m_selector->setRelationIsForShadowDistributed(); }
 
     void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& selectorVector);
 
@@ -195,7 +219,7 @@ public:
     bool isCustomPseudoElement() const { return m_selector->isCustomPseudoElement(); }
 
     bool isSimple() const;
-    bool hasShadowDescendant() const;
+    bool hasShadowPseudo() const;
 
     CSSParserSelector* tagHistory() const { return m_tagHistory.get(); }
     void setTagHistory(PassOwnPtr<CSSParserSelector> selector) { m_tagHistory = selector; }
@@ -210,9 +234,24 @@ private:
     CSSParserSelector* m_functionArgumentSelector;
 };
 
-inline bool CSSParserSelector::hasShadowDescendant() const
+inline bool CSSParserSelector::hasShadowPseudo() const
 {
-    return m_selector->relation() == CSSSelector::ShadowDescendant;
+    return m_selector->relation() == CSSSelector::ShadowPseudo;
+}
+
+inline void CSSParserValue::setFromNumber(double value, int unit)
+{
+    id = CSSValueInvalid;
+    isInt = false;
+    fValue = value;
+    this->unit = unit;
+}
+
+inline void CSSParserValue::setFromFunction(CSSParserFunction* function)
+{
+    id = CSSValueInvalid;
+    this->function = function;
+    unit = Function;
 }
 
 }

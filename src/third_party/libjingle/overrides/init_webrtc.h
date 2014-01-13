@@ -6,12 +6,18 @@
 #define THIRD_PARTY_LIBJINGLE_OVERRIDES_INIT_WEBRTC_H_
 
 #include "allocator_shim/allocator_stub.h"
+#include "base/logging.h"
+
+#if defined(ENABLE_WEBRTC)
+#include "third_party/webrtc/system_wrappers/interface/event_tracer.h"
+#endif
 
 class CommandLine;
 
 namespace cricket {
 class MediaEngineInterface;
 class WebRtcVideoDecoderFactory;
+class WebRtcVideoEncoderFactory;
 }  // namespace cricket
 
 namespace webrtc {
@@ -21,6 +27,7 @@ class AudioDeviceModule;
 typedef cricket::MediaEngineInterface* (*CreateWebRtcMediaEngineFunction)(
     webrtc::AudioDeviceModule* adm,
     webrtc::AudioDeviceModule* adm_sc,
+    cricket::WebRtcVideoEncoderFactory* encoder_factory,
     cricket::WebRtcVideoDecoderFactory* decoder_factory);
 
 typedef void (*DestroyWebRtcMediaEngineFunction)(
@@ -33,18 +40,25 @@ typedef void (*DestroyWebRtcMediaEngineFunction)(
 // to go through GetProcAddress et al and rely on specific name mangling.
 typedef bool (*InitializeModuleFunction)(
     const CommandLine& command_line,
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
     AllocateFunction alloc,
     DellocateFunction dealloc,
+#endif
+    logging::LogMessageHandlerFunction log_handler,
+#if defined(ENABLE_WEBRTC)
+    webrtc::GetCategoryEnabledPtr trace_get_category_enabled,
+    webrtc::AddTraceEventPtr trace_add_trace_event,
 #endif
     CreateWebRtcMediaEngineFunction* create_media_engine,
     DestroyWebRtcMediaEngineFunction* destroy_media_engine);
 
+#if !defined(LIBPEERCONNECTION_IMPLEMENTATION)
 // Load and initialize the shared WebRTC module (libpeerconnection).
 // Call this explicitly to load and initialize the WebRTC module (e.g. before
 // initializing the sandbox in Chrome).
 // If not called explicitly, this function will still be called from the main
 // CreateWebRtcMediaEngine factory function the first time it is called.
 bool InitializeWebRtcModule();
+#endif
 
 #endif // THIRD_PARTY_LIBJINGLE_OVERRIDES_INIT_WEBRTC_H_

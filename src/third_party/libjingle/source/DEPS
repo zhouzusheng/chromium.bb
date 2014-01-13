@@ -10,8 +10,8 @@ vars = {
   "chromium_trunk" : "http://src.chromium.org/svn/trunk",
   "chromium_git": "https://chromium.googlesource.com",
 
-  "chromium_revision": "187216",
-  "webrtc_revision": "3853",
+  "chromium_revision": "205140",
+  "webrtc_revision": "4208",
 }
 
 # NOTE: Prefer revision numbers to tags for svn deps. Use http rather than
@@ -93,6 +93,9 @@ deps = {
   "tools/gyp":
     From("chromium_deps", "src/tools/gyp"),
 
+  "tools/protoc_wrapper":
+    Var("chromium_trunk") + "/src/tools/protoc_wrapper@" + Var("chromium_revision"),
+
   "tools/python":
     Var("chromium_trunk") + "/src/tools/python@" + Var("chromium_revision"),
 
@@ -131,9 +134,18 @@ deps_os = {
       From("chromium_deps", "src/third_party/nss"),
   },
 
+  "ios": {
+    # NSS, for SSLClientSocketNSS.
+    "third_party/nss":
+      From("chromium_deps", "src/third_party/nss"),
+  },
+
   "unix": {
     "third_party/gold":
       From("chromium_deps", "src/third_party/gold"),
+
+    "third_party/openssl":
+      From("chromium_deps", "src/third_party/openssl"),
   },
 
   "android": {

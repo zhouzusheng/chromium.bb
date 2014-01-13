@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Google Inc. All rights reserved.
+ * Copyright (C) 2013 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -33,7 +33,7 @@
     ActiveDOMObject,
     EventTarget,
     Constructor,
-    CallWith=ScriptExecutionContext
+    ConstructorCallWith=ScriptExecutionContext
 ] interface MediaSource {
     // All the source buffers created by this object.
     readonly attribute SourceBufferList sourceBuffers;
@@ -61,4 +61,3 @@
                              optional boolean useCapture);
     [RaisesException] boolean dispatchEvent(Event event);
 };
-

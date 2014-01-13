@@ -37,10 +37,10 @@
 #include "core/loader/cache/CachedImage.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/graphics/BitmapImage.h"
 #include "core/platform/graphics/Font.h"
 #include "core/platform/graphics/FontCache.h"
 #include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderView.h"
@@ -300,8 +300,8 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
 
             // Draw an outline rect where the image should be.
             context->setStrokeStyle(SolidStroke);
-            context->setStrokeColor(Color::lightGray, style()->colorSpace());
-            context->setFillColor(Color::transparent, style()->colorSpace());
+            context->setStrokeColor(Color::lightGray);
+            context->setFillColor(Color::transparent);
             context->drawRect(pixelSnappedIntRect(LayoutRect(paintOffset.x() + leftBorder + leftPad, paintOffset.y() + topBorder + topPad, cWidth, cHeight)));
 
             bool errorPictureDrawn = false;
@@ -328,28 +328,31 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
                 if (centerY < 0)
                     centerY = 0;
                 imageOffset = LayoutSize(leftBorder + leftPad + centerX + borderWidth, topBorder + topPad + centerY + borderWidth);
-                context->drawImage(image.get(), style()->colorSpace(), pixelSnappedIntRect(LayoutRect(paintOffset + imageOffset, imageSize)), CompositeSourceOver, shouldRespectImageOrientation());
+                context->drawImage(image.get(), pixelSnappedIntRect(LayoutRect(paintOffset + imageOffset, imageSize)), CompositeSourceOver, shouldRespectImageOrientation());
                 errorPictureDrawn = true;
             }
 
             if (!m_altText.isEmpty()) {
                 String text = document()->displayStringModifiedByEncoding(m_altText);
-                context->setFillColor(style()->visitedDependentColor(CSSPropertyColor), style()->colorSpace());
                 const Font& font = style()->font();
                 const FontMetrics& fontMetrics = font.fontMetrics();
                 LayoutUnit ascent = fontMetrics.ascent();
-                LayoutPoint altTextOffset = paintOffset;
-                altTextOffset.move(leftBorder + leftPad + (paddingWidth / 2) - borderWidth, topBorder + topPad + ascent + (paddingHeight / 2) - borderWidth);
+                LayoutPoint textRectOrigin = paintOffset;
+                textRectOrigin.move(leftBorder + leftPad + (paddingWidth / 2) - borderWidth, topBorder + topPad + (paddingHeight / 2) - borderWidth);
+                LayoutPoint textOrigin(textRectOrigin.x(), textRectOrigin.y() + ascent);
 
                 // Only draw the alt text if it'll fit within the content box,
                 // and only if it fits above the error image.
                 TextRun textRun = RenderBlock::constructTextRun(this, font, text, style());
                 LayoutUnit textWidth = font.width(textRun);
+                TextRunPaintInfo textRunPaintInfo(textRun);
+                textRunPaintInfo.bounds = FloatRect(textRectOrigin, FloatSize(textWidth, fontMetrics.height()));
+                context->setFillColor(style()->visitedDependentColor(CSSPropertyColor));
                 if (errorPictureDrawn) {
                     if (usableWidth >= textWidth && fontMetrics.height() <= imageOffset.height())
-                        context->drawText(font, textRun, altTextOffset);
+                        context->drawText(font, textRunPaintInfo, textOrigin);
                 } else if (usableWidth >= textWidth && usableHeight >= fontMetrics.height())
-                    context->drawText(font, textRun, altTextOffset);
+                    context->drawText(font, textRunPaintInfo, textOrigin);
             }
         }
     } else if (m_imageResource->hasImage() && cWidth > 0 && cHeight > 0) {
@@ -379,7 +382,7 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
 void RenderImage::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     RenderReplaced::paint(paintInfo, paintOffset);
-    
+
     if (paintInfo.phase == PaintPhaseOutline)
         paintAreaElementFocusRing(paintInfo);
 }
@@ -409,26 +412,36 @@ void RenderImage::paintAreaElementFocusRing(PaintInfo& paintInfo)
     if (path.isEmpty())
         return;
 
-    // FIXME: Do we need additional code to clip the path to the image's bounding box?
-
     RenderStyle* areaElementStyle = areaElement->computedStyle();
     unsigned short outlineWidth = areaElementStyle->outlineWidth();
     if (!outlineWidth)
         return;
 
+    // FIXME: Clip path instead of context when Skia pathops is ready.
+    // https://crbug.com/251206
+    GraphicsContextStateSaver savedContext(*paintInfo.context);
+    paintInfo.context->clip(absoluteContentBox());
     paintInfo.context->drawFocusRing(path, outlineWidth,
         areaElementStyle->outlineOffset(),
         areaElementStyle->visitedDependentColor(CSSPropertyOutlineColor));
 }
 
-void RenderImage::areaElementFocusChanged(HTMLAreaElement* element)
+void RenderImage::areaElementFocusChanged(HTMLAreaElement* areaElement)
 {
-    ASSERT_UNUSED(element, element->imageElement() == node());
+    ASSERT(areaElement->imageElement() == node());
 
-    // It would be more efficient to only repaint the focus ring rectangle
-    // for the passed-in area element. That would require adding functions
-    // to the area element class.
-    repaint();
+    Path path = areaElement->computePath(this);
+    if (path.isEmpty())
+        return;
+
+    RenderStyle* areaElementStyle = areaElement->computedStyle();
+    unsigned short outlineWidth = areaElementStyle->outlineWidth();
+
+    IntRect repaintRect = enclosingIntRect(path.boundingRect());
+    repaintRect.moveBy(-absoluteContentBox().location());
+    repaintRect.inflate(outlineWidth);
+
+    repaintRectangle(repaintRect);
 }
 
 void RenderImage::paintIntoRect(GraphicsContext* context, const LayoutRect& rect)
@@ -441,11 +454,11 @@ void RenderImage::paintIntoRect(GraphicsContext* context, const LayoutRect& rect
     if (!img || img->isNull())
         return;
 
-    HTMLImageElement* imageElt = (node() && node()->hasTagName(imgTag)) ? static_cast<HTMLImageElement*>(node()) : 0;
+    HTMLImageElement* imageElt = (node() && node()->hasTagName(imgTag)) ? toHTMLImageElement(node()) : 0;
     CompositeOperator compositeOperator = imageElt ? imageElt->compositeOperator() : CompositeSourceOver;
     Image* image = m_imageResource->image().get();
     bool useLowQualityScaling = shouldPaintAtLowQuality(context, image, image, alignedRect.size());
-    context->drawImage(m_imageResource->image(alignedRect.width(), alignedRect.height()).get(), style()->colorSpace(), alignedRect, compositeOperator, shouldRespectImageOrientation(), useLowQualityScaling);
+    context->drawImage(m_imageResource->image(alignedRect.width(), alignedRect.height()).get(), alignedRect, compositeOperator, shouldRespectImageOrientation(), useLowQualityScaling);
 }
 
 bool RenderImage::boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance bleedAvoidance, InlineFlowBox*) const
@@ -490,7 +503,7 @@ LayoutUnit RenderImage::minimumReplacedHeight() const
 
 HTMLMapElement* RenderImage::imageMap() const
 {
-    HTMLImageElement* i = node() && node()->hasTagName(imgTag) ? static_cast<HTMLImageElement*>(node()) : 0;
+    HTMLImageElement* i = node() && node()->hasTagName(imgTag) ? toHTMLImageElement(node()) : 0;
     return i ? i->treeScope()->getImageMap(i->fastGetAttribute(usemapAttr)) : 0;
 }
 
@@ -524,9 +537,9 @@ void RenderImage::updateAltText()
         return;
 
     if (node()->hasTagName(inputTag))
-        m_altText = static_cast<HTMLInputElement*>(node())->altText();
+        m_altText = toHTMLInputElement(node())->altText();
     else if (node()->hasTagName(imgTag))
-        m_altText = static_cast<HTMLImageElement*>(node())->altText();
+        m_altText = toHTMLImageElement(node())->altText();
 }
 
 void RenderImage::layout()
@@ -572,11 +585,9 @@ RenderBox* RenderImage::embeddedContentBox() const
     if (!m_imageResource)
         return 0;
 
-#if ENABLE(SVG)
     CachedImage* cachedImage = m_imageResource->cachedImage();
     if (cachedImage && cachedImage->image() && cachedImage->image()->isSVGImage())
         return static_cast<SVGImage*>(cachedImage->image())->embeddedContentBox();
-#endif
 
     return 0;
 }

@@ -22,11 +22,13 @@
 #ifndef CSSPrimitiveValue_h
 #define CSSPrimitiveValue_h
 
+#include "CSSPropertyNames.h"
+#include "CSSValueKeywords.h"
 #include "core/css/CSSValue.h"
 #include "core/platform/graphics/Color.h"
-#include <wtf/Forward.h>
-#include <wtf/MathExtras.h>
-#include <wtf/PassRefPtr.h>
+#include "wtf/Forward.h"
+#include "wtf/MathExtras.h"
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
@@ -118,7 +120,7 @@ public:
         // This is used internally for counter names (as opposed to counter values)
         CSS_COUNTER_NAME = 110,
 
-        // This is used by the CSS Exclusions draft
+        // This is used by the CSS Shapes draft
         CSS_SHAPE = 111,
 
         // Used by border images.
@@ -128,6 +130,9 @@ public:
         CSS_CALC_PERCENTAGE_WITH_NUMBER = 114,
         CSS_CALC_PERCENTAGE_WITH_LENGTH = 115,
         CSS_VARIABLE_NAME = 116,
+
+        CSS_PROPERTY_ID = 117,
+        CSS_VALUE_ID = 118
     };
 
     // This enum follows the CSSParser::Units enum augmented with UNIT_FREQUENCY for frequencies.
@@ -139,11 +144,10 @@ public:
         UTime,
         UFrequency,
         UViewportPercentageLength,
-#if ENABLE(RESOLUTION_MEDIA_QUERY)
         UResolution,
-#endif
         UOther
     };
+    static UnitCategory unitCategory(CSSPrimitiveValue::UnitTypes);
 
     bool isAngle() const
     {
@@ -162,7 +166,6 @@ public:
             || m_primitiveUnitType == CSS_REMS
             || m_primitiveUnitType == CSS_CHS;
     }
-    bool isIdent() const { return m_primitiveUnitType == CSS_IDENT; }
     bool isLength() const
     {
         unsigned short type = primitiveType();
@@ -183,11 +186,19 @@ public:
     bool isDotsPerInch() const { return primitiveType() == CSS_DPI; }
     bool isDotsPerPixel() const { return primitiveType() == CSS_DPPX; }
     bool isDotsPerCentimeter() const { return primitiveType() == CSS_DPCM; }
+    bool isResolution() const
+    {
+        unsigned short type = primitiveType();
+        return type >= CSS_DPPX && type <= CSS_DPCM;
+    }
     bool isVariableName() const { return primitiveType() == CSS_VARIABLE_NAME; }
     bool isViewportPercentageLength() const { return m_primitiveUnitType >= CSS_VW && m_primitiveUnitType <= CSS_VMAX; }
     bool isFlex() const { return primitiveType() == CSS_FR; }
+    bool isValueID() const { return m_primitiveUnitType == CSS_VALUE_ID; }
 
-    static PassRefPtr<CSSPrimitiveValue> createIdentifier(int identifier) { return adoptRef(new CSSPrimitiveValue(identifier)); }
+    static PassRefPtr<CSSPrimitiveValue> createIdentifier(CSSValueID valueID) { return adoptRef(new CSSPrimitiveValue(valueID)); }
+    static PassRefPtr<CSSPrimitiveValue> createIdentifier(CSSPropertyID propertyID) { return adoptRef(new CSSPrimitiveValue(propertyID)); }
+    static PassRefPtr<CSSPrimitiveValue> createParserOperator(int parserOperator) { return adoptRef(new CSSPrimitiveValue(parserOperator)); }
     static PassRefPtr<CSSPrimitiveValue> createColor(unsigned rgbValue) { return adoptRef(new CSSPrimitiveValue(rgbValue)); }
     static PassRefPtr<CSSPrimitiveValue> create(double value, UnitTypes type) { return adoptRef(new CSSPrimitiveValue(value, type)); }
     static PassRefPtr<CSSPrimitiveValue> create(const String& value, UnitTypes type) { return adoptRef(new CSSPrimitiveValue(value, type)); }
@@ -289,7 +300,8 @@ public:
     
     CSSCalcValue* cssCalcValue() const { return m_primitiveUnitType != CSS_CALC ? 0 : m_value.calc; }
 
-    int getIdent() const { return m_primitiveUnitType == CSS_IDENT ? m_value.ident : 0; }
+    CSSPropertyID getPropertyID() const { return m_primitiveUnitType == CSS_PROPERTY_ID ? m_value.propertyID : CSSPropertyInvalid; }
+    CSSValueID getValueID() const { return m_primitiveUnitType == CSS_VALUE_ID ? m_value.valueID : CSSValueInvalid; }
 
     template<typename T> inline operator T() const; // Defined in CSSPrimitiveValueMappings.h
 
@@ -310,9 +322,14 @@ public:
 
     void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
+    static UnitTypes canonicalUnitTypeForCategory(UnitCategory);
+    static double conversionToCanonicalUnitsScaleFactor(unsigned short unitType);
+
 private:
-    // FIXME: int vs. unsigned overloading is too subtle to distinguish the color and identifier cases.
-    CSSPrimitiveValue(int ident);
+    CSSPrimitiveValue(CSSValueID);
+    CSSPrimitiveValue(CSSPropertyID);
+    // FIXME: int vs. unsigned overloading is too subtle to distinguish the color and operator cases.
+    CSSPrimitiveValue(int parserOperator);
     CSSPrimitiveValue(unsigned color); // RGB value
     CSSPrimitiveValue(const Length&);
     CSSPrimitiveValue(const String&, UnitTypes);
@@ -335,8 +352,6 @@ private:
     static void create(unsigned); // compile-time guard
     template<typename T> operator T*(); // compile-time guard
 
-    static UnitTypes canonicalUnitTypeForCategory(UnitCategory category);
-
     void init(PassRefPtr<Counter>);
     void init(PassRefPtr<Rect>);
     void init(PassRefPtr<Pair>);
@@ -348,7 +363,9 @@ private:
     double computeLengthDouble(RenderStyle* currentStyle, RenderStyle* rootStyle, float multiplier, bool computingFontSize);
 
     union {
-        int ident;
+        CSSPropertyID propertyID;
+        CSSValueID valueID;
+        int parserOperator;
         double num;
         StringImpl* string;
         Counter* counter;
@@ -360,6 +377,21 @@ private:
         CSSCalcValue* calc;
     } m_value;
 };
+
+inline CSSPrimitiveValue* toCSSPrimitiveValue(CSSValue* value)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!value || value->isPrimitiveValue());
+    return static_cast<CSSPrimitiveValue*>(value);
+}
+
+inline const CSSPrimitiveValue* toCSSPrimitiveValue(const CSSValue* value)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!value || value->isPrimitiveValue());
+    return static_cast<const CSSPrimitiveValue*>(value);
+}
+
+// Catch unneeded cast.
+void toCSSPrimitiveValue(const CSSPrimitiveValue*);
 
 } // namespace WebCore
 

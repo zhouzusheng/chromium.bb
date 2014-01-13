@@ -32,7 +32,6 @@
 #include "core/inspector/ScriptProfile.h"
 
 #include "bindings/v8/V8Binding.h"
-#include "core/inspector/InspectorValues.h"
 #include <v8-profiler.h>
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -53,11 +52,6 @@ String ScriptProfile::title() const
 unsigned int ScriptProfile::uid() const
 {
     return m_profile->GetUid();
-}
-
-PassRefPtr<ScriptProfileNode> ScriptProfile::head() const
-{
-    return ScriptProfileNode::create(m_profile->GetTopDownRoot());
 }
 
 double ScriptProfile::idleTime() const

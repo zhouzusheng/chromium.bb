@@ -20,7 +20,6 @@
 #ifndef SVGAnimatedBoolean_h
 #define SVGAnimatedBoolean_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/properties/SVGAnimatedStaticPropertyTearOff.h"
 
@@ -33,7 +32,7 @@ typedef SVGAnimatedStaticPropertyTearOff<bool> SVGAnimatedBoolean;
 DECLARE_ANIMATED_PROPERTY(SVGAnimatedBoolean, bool, UpperProperty, LowerProperty)
 
 #define DEFINE_ANIMATED_BOOLEAN(OwnerType, DOMAttribute, UpperProperty, LowerProperty) \
-DEFINE_ANIMATED_PROPERTY(AnimatedBoolean, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty)
+DEFINE_ANIMATED_PROPERTY(AnimatedBoolean, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty, SVGAnimatedBoolean, bool)
 
 class SVGAnimationElement;
 
@@ -56,5 +55,4 @@ public:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

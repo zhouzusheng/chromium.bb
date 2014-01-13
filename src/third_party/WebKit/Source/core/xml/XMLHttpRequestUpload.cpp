@@ -27,7 +27,6 @@
 #include "core/xml/XMLHttpRequestUpload.h"
 
 #include "core/dom/Event.h"
-#include "core/dom/EventException.h"
 #include "core/dom/EventNames.h"
 #include "core/xml/XMLHttpRequest.h"
 #include "core/xml/XMLHttpRequestProgressEvent.h"
@@ -39,6 +38,7 @@ namespace WebCore {
 XMLHttpRequestUpload::XMLHttpRequestUpload(XMLHttpRequest* xmlHttpRequest)
     : m_xmlHttpRequest(xmlHttpRequest)
 {
+    ScriptWrappable::init(this);
 }
 
 const AtomicString& XMLHttpRequestUpload::interfaceName() const

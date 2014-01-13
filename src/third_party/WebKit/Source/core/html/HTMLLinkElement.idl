@@ -27,11 +27,13 @@ interface HTMLLinkElement : HTMLElement {
     [Reflect] attribute DOMString media;
     [Reflect] attribute DOMString rel;
     [Reflect] attribute DOMString rev;
-    [Custom] attribute DOMSettableTokenList sizes;
+    [CustomSetter] attribute DOMSettableTokenList sizes;
     [Reflect] attribute DOMString target;
     [Reflect] attribute DOMString type;
 
     // DOM Level 2 Style
     readonly attribute StyleSheet sheet;
+
+    [EnabledAtRuntime=htmlImports] readonly attribute Document import;
 };
 

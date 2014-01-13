@@ -42,26 +42,8 @@
 
 namespace WebCore {
 
-v8::Handle<v8::Value> V8NodeList::namedPropertyGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
+void* V8NodeList::opaqueRootForGC(void* object, v8::Isolate* isolate)
 {
-    NodeList* list = V8NodeList::toNative(info.Holder());
-    AtomicString key = toWebCoreAtomicString(name);
-
-    // Length property cannot be overridden.
-    DEFINE_STATIC_LOCAL(const AtomicString, length, ("length", AtomicString::ConstructFromLiteral));
-    if (key == length)
-        return v8Integer(list->length(), info.GetIsolate());
-
-    RefPtr<Node> result = list->namedItem(key);
-    if (!result)
-        return v8Undefined();
-
-    return toV8Fast(result.release(), info, list);
-}
-
-void* V8NodeList::opaqueRootForGC(void* object, v8::Persistent<v8::Object> wrapper, v8::Isolate* isolate)
-{
-    ASSERT(V8NodeList::HasInstanceInAnyWorld(wrapper, isolate));
     NodeList* impl = static_cast<NodeList*>(object);
     if (!impl->isLiveNodeList())
         return object;

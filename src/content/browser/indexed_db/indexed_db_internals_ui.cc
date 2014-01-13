@@ -23,12 +23,10 @@
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/url_constants.h"
 #include "grit/content_resources.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/zlib/google/zip.h"
 #include "webkit/base/file_path_string_conversions.h"
-#include "webkit/database/database_util.h"
-
-using webkit_database::DatabaseUtil;
+#include "webkit/common/database/database_identifier.h"
 
 namespace content {
 
@@ -106,7 +104,7 @@ void IndexedDBInternalsUI::GetAllOriginsOnWebkitThread(
   for (ContextList::const_iterator iter = contexts->begin();
        iter != contexts->end();
        ++iter, ++path_iter) {
-    IndexedDBContext* context = *iter;
+    IndexedDBContext* context = iter->get();
     const base::FilePath& context_path = *path_iter;
 
     scoped_ptr<std::vector<IndexedDBInfo> > info_list(
@@ -129,7 +127,7 @@ void IndexedDBInternalsUI::OnOriginsReady(
   for (std::vector<IndexedDBInfo>::const_iterator iter = origins->begin();
        iter != origins->end();
        ++iter) {
-    base::DictionaryValue* info = new DictionaryValue;
+    base::DictionaryValue* info = new base::DictionaryValue;
     info->SetString("url", iter->origin_.spec());
     info->SetDouble("size", iter->size_);
     info->SetDouble("last_modified", iter->last_modified_.ToJsTime());
@@ -176,7 +174,7 @@ void IndexedDBInternalsUI::DownloadOriginData(const base::ListValue* args) {
       &FindContext, partition_path, &result_partition, &result_context);
   BrowserContext::ForEachStoragePartition(browser_context, cb);
   DCHECK(result_partition);
-  DCHECK(result_context);
+  DCHECK(result_context.get());
 
   BrowserThread::PostTask(
       BrowserThread::WEBKIT_DEPRECATED,
@@ -207,11 +205,10 @@ void IndexedDBInternalsUI::DownloadOriginDataOnWebkitThread(
   // has completed.
   base::FilePath temp_path = temp_dir.Take();
 
-  base::string16 origin_id = DatabaseUtil::GetOriginIdentifier(origin_url);
-  base::FilePath::StringType zip_name =
-      webkit_base::WebStringToFilePathString(origin_id);
+  std::string origin_id =
+      webkit_database::GetIdentifierFromOrigin(origin_url);
   base::FilePath zip_path =
-      temp_path.Append(zip_name).AddExtension(FILE_PATH_LITERAL("zip"));
+      temp_path.AppendASCII(origin_id).AddExtension(FILE_PATH_LITERAL("zip"));
 
   // This happens on the "webkit" thread (which is really just the IndexedDB
   // thread) as a simple way to avoid another script reopening the origin
@@ -302,8 +299,8 @@ void IndexedDBInternalsUI::OnDownloadStarted(
     net::Error error) {
 
   if (error != net::OK) {
-    LOG(ERROR) << "Error downloading database dump: "
-               << net::ErrorToString(error);
+    LOG(ERROR)
+        << "Error downloading database dump: " << net::ErrorToString(error);
     return;
   }
 

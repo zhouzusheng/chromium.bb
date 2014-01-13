@@ -32,15 +32,13 @@
 #include "V8HTMLDocument.h"
 
 #include "HTMLNames.h"
-#include "V8DOMWindow.h"
 #include "V8HTMLAllCollection.h"
 #include "V8HTMLCollection.h"
 #include "V8Node.h"
-#include "bindings/v8/BindingState.h"
+#include "V8Window.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8DOMWindowShell.h"
-#include "bindings/v8/V8RecursionScope.h"
+#include "bindings/v8/V8WindowShell.h"
 #include "core/html/HTMLAllCollection.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLDocument.h"
@@ -53,45 +51,13 @@
 
 namespace WebCore {
 
-v8::Local<v8::Object> V8HTMLDocument::wrapInShadowObject(v8::Local<v8::Object> wrapper, Node* impl, v8::Isolate* isolate)
-{
-    // This is only for getting a unique pointer which we can pass to privateTemplate.
-    static const char* shadowTemplateUniqueKey = "wrapInShadowObjectShadowTemplate";
-    WrapperWorldType currentWorldType = worldType(isolate);
-    v8::Persistent<v8::FunctionTemplate> shadowTemplate;
-    if (!V8PerIsolateData::from(isolate)->hasPrivateTemplate(currentWorldType, &shadowTemplateUniqueKey)) {
-        shadowTemplate = v8::Persistent<v8::FunctionTemplate>::New(isolate, v8::FunctionTemplate::New());
-        if (shadowTemplate.IsEmpty())
-            return v8::Local<v8::Object>();
-        shadowTemplate->SetClassName(v8::String::NewSymbol("HTMLDocument"));
-        shadowTemplate->Inherit(V8HTMLDocument::GetTemplate(isolate, currentWorldType));
-        shadowTemplate->InstanceTemplate()->SetInternalFieldCount(V8HTMLDocument::internalFieldCount);
-    } else {
-        shadowTemplate = V8PerIsolateData::from(isolate)->privateTemplate(currentWorldType, &shadowTemplateUniqueKey, 0, v8::Handle<v8::Value>(), v8::Handle<v8::Signature>());
-    }
-    v8::Local<v8::Function> shadowConstructor = shadowTemplate->GetFunction();
-    if (shadowConstructor.IsEmpty())
-        return v8::Local<v8::Object>();
-
-    v8::Local<v8::Object> shadow;
-    {
-        V8RecursionScope::MicrotaskSuppression scope;
-        shadow = shadowConstructor->NewInstance();
-    }
-    if (shadow.IsEmpty())
-        return v8::Local<v8::Object>();
-    shadow->SetPrototype(wrapper);
-    V8DOMWrapper::setNativeInfo(wrapper, &V8HTMLDocument::info, impl);
-    return shadow;
-}
-
 // HTMLDocument ----------------------------------------------------------------
 
 // Concatenates "args" to a string. If args is empty, returns empty string.
 // Firefox/Safari/IE support non-standard arguments to document.write, ex:
 //   document.write("a", "b", "c") --> document.write("abc")
 //   document.write() --> document.write("")
-static String writeHelperGetString(const v8::Arguments& args)
+static String writeHelperGetString(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     StringBuilder builder;
     for (int i = 0; i < args.Length(); ++i)
@@ -99,21 +65,19 @@ static String writeHelperGetString(const v8::Arguments& args)
     return builder.toString();
 }
 
-v8::Handle<v8::Value> V8HTMLDocument::writeMethodCustom(const v8::Arguments& args)
+void V8HTMLDocument::writeMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     HTMLDocument* htmlDocument = V8HTMLDocument::toNative(args.Holder());
-    htmlDocument->write(writeHelperGetString(args), activeDOMWindow(BindingState::instance())->document());
-    return v8::Undefined();
+    htmlDocument->write(writeHelperGetString(args), activeDOMWindow()->document());
 }
 
-v8::Handle<v8::Value> V8HTMLDocument::writelnMethodCustom(const v8::Arguments& args)
+void V8HTMLDocument::writelnMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     HTMLDocument* htmlDocument = V8HTMLDocument::toNative(args.Holder());
-    htmlDocument->writeln(writeHelperGetString(args), activeDOMWindow(BindingState::instance())->document());
-    return v8::Undefined();
+    htmlDocument->writeln(writeHelperGetString(args), activeDOMWindow()->document());
 }
 
-v8::Handle<v8::Value> V8HTMLDocument::openMethodCustom(const v8::Arguments& args)
+void V8HTMLDocument::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     HTMLDocument* htmlDocument = V8HTMLDocument::toNative(args.Holder());
 
@@ -123,24 +87,27 @@ v8::Handle<v8::Value> V8HTMLDocument::openMethodCustom(const v8::Arguments& args
             v8::Local<v8::Context> context = frame->script()->currentWorldContext();
             // Bail out if we cannot get the context.
             if (context.IsEmpty())
-                return v8::Undefined();
+                return;
             v8::Local<v8::Object> global = context->Global();
             // Get the open property of the global object.
             v8::Local<v8::Value> function = global->Get(v8::String::NewSymbol("open"));
             // If the open property is not a function throw a type error.
-            if (!function->IsFunction())
-                return throwTypeError("open is not a function", args.GetIsolate());
+            if (!function->IsFunction()) {
+                throwTypeError("open is not a function", args.GetIsolate());
+                return;
+            }
             // Wrap up the arguments and call the function.
             OwnArrayPtr<v8::Local<v8::Value> > params = adoptArrayPtr(new v8::Local<v8::Value>[args.Length()]);
             for (int i = 0; i < args.Length(); i++)
                 params[i] = args[i];
 
-            return frame->script()->callFunction(v8::Local<v8::Function>::Cast(function), global, args.Length(), params.get());
+            v8SetReturnValue(args, frame->script()->callFunction(v8::Local<v8::Function>::Cast(function), global, args.Length(), params.get()));
+            return;
         }
     }
 
-    htmlDocument->open(activeDOMWindow(BindingState::instance())->document());
-    return args.Holder();
+    htmlDocument->open(activeDOMWindow()->document());
+    v8SetReturnValue(args, args.Holder());
 }
 
 v8::Handle<v8::Object> wrap(HTMLDocument* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)

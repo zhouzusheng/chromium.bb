@@ -153,7 +153,7 @@ var WebInspector = {
     _removeDrawerView: function()
     {
         if (this._drawerStatusBarHeader) {
-            this._drawerStatusBarHeader.removeSelf();
+            this._drawerStatusBarHeader.remove();
             if (this._drawerStatusBarHeader.onclose)
                 this._drawerStatusBarHeader.onclose();
             delete this._drawerStatusBarHeader;
@@ -369,6 +369,8 @@ WebInspector.suggestReload = function()
 
 WebInspector.reload = function()
 {
+    InspectorAgent.reset();
+
     var queryParams = window.location.search;
     var url = window.location.href;
     url = url.substring(0, url.length - queryParams.length);
@@ -380,8 +382,6 @@ WebInspector.reload = function()
     var names = Object.keys(queryParamsObject);
     for (var i = 0; i < names.length; ++i)
         url += (i ? "&" : "?") + names[i] + "=" + queryParamsObject[names[i]];
-
-    InspectorBackend.disconnect();
     document.location = url;
 }
 
@@ -441,8 +441,6 @@ WebInspector.doLoadedDone = function()
 
     WebInspector.WorkerManager.loaded();
 
-    PageAgent.canShowFPSCounter(WebInspector._initializeCapability.bind(WebInspector, "canShowFPSCounter", null));
-    PageAgent.canContinuouslyPaint(WebInspector._initializeCapability.bind(WebInspector, "canContinuouslyPaint", null));
     WorkerAgent.canInspectWorkers(WebInspector._initializeCapability.bind(WebInspector, "canInspectWorkers", WebInspector._doLoadedDoneWithCapabilities.bind(WebInspector)));
 }
 
@@ -485,8 +483,7 @@ WebInspector._doLoadedDoneWithCapabilities = function()
 
     this.isolatedFileSystemManager = new WebInspector.IsolatedFileSystemManager();
     this.isolatedFileSystemDispatcher = new WebInspector.IsolatedFileSystemDispatcher(this.isolatedFileSystemManager);
-    this.fileMapping = new WebInspector.FileMapping();
-    this.workspace = new WebInspector.Workspace(this.fileMapping, this.isolatedFileSystemManager.mapping());
+    this.workspace = new WebInspector.Workspace(this.isolatedFileSystemManager.mapping());
 
     this.cssModel = new WebInspector.CSSStyleModel(this.workspace);
     this.timelineManager = new WebInspector.TimelineManager();
@@ -524,10 +521,7 @@ WebInspector._doLoadedDoneWithCapabilities = function()
     new WebInspector.DebuggerScriptMapping(this.workspace, this.networkWorkspaceProvider);
     this.liveEditSupport = new WebInspector.LiveEditSupport(this.workspace);
     this.styleContentBinding = new WebInspector.StyleContentBinding(this.cssModel, this.workspace);
-    new WebInspector.StylesSourceMapping(this.cssModel, this.workspace);
-    if (WebInspector.experimentsSettings.sass.isEnabled())
-        new WebInspector.SASSSourceMapping(this.cssModel, this.workspace, this.networkWorkspaceProvider);
-
+    new WebInspector.CSSStyleSheetMapping(this.cssModel, this.workspace, this.networkWorkspaceProvider);
     new WebInspector.PresentationConsoleMessageHelper(this.workspace);
 
     this._createGlobalStatusBarItems();
@@ -562,19 +556,18 @@ WebInspector._doLoadedDoneWithCapabilities = function()
 
     ProfilerAgent.enable();
 
-    if (WebInspector.settings.showPaintRects.get())
-        PageAgent.setShowPaintRects(true);
+    WebInspector.settings.forceCompositingMode = WebInspector.settings.createBackendSetting("forceCompositingMode", false, PageAgent.setForceCompositingMode.bind(PageAgent));
+    WebInspector.settings.showPaintRects = WebInspector.settings.createBackendSetting("showPaintRects", false, PageAgent.setShowPaintRects.bind(PageAgent));
+    WebInspector.settings.showDebugBorders = WebInspector.settings.createBackendSetting("showDebugBorders", false, PageAgent.setShowDebugBorders.bind(PageAgent));
+    WebInspector.settings.continuousPainting = WebInspector.settings.createBackendSetting("continuousPainting", false, PageAgent.setContinuousPaintingEnabled.bind(PageAgent));
+    WebInspector.settings.showFPSCounter = WebInspector.settings.createBackendSetting("showFPSCounter", false, PageAgent.setShowFPSCounter.bind(PageAgent));
 
-    if (WebInspector.settings.showDebugBorders.get())
-        PageAgent.setShowDebugBorders(true);
-
-    if (WebInspector.settings.continuousPainting.get())
-        PageAgent.setContinuousPaintingEnabled(true);
-
-    if (WebInspector.settings.showFPSCounter.get())
-        PageAgent.setShowFPSCounter(true);
-
-    this.domAgent._emulateTouchEventsChanged();
+    WebInspector.settings.showMetricsRulers.addChangeListener(showRulersChanged);
+    function showRulersChanged()
+    {
+        PageAgent.setShowViewportSizeOnResize(true, WebInspector.settings.showMetricsRulers.get());
+    }
+    showRulersChanged();
 
     WebInspector.WorkerManager.loadCompleted();
     InspectorFrontendAPI.loadCompleted();
@@ -651,7 +644,11 @@ WebInspector.documentClick = function(event)
 
     function followLink()
     {
-        if (WebInspector.isBeingEdited(event.target) || WebInspector._showAnchorLocation(anchor))
+        if (WebInspector.isBeingEdited(event.target))
+            return;
+        if (WebInspector.openAnchorLocationRegistry.dispatch({ url: anchor.href, lineNumber: anchor.lineNumber}))
+            return;
+        if (WebInspector.showAnchorLocation(anchor))
             return;
 
         const profileMatch = WebInspector.ProfilesPanelDescriptor.ProfileURLRegExp.exec(anchor.href);
@@ -739,7 +736,7 @@ WebInspector._registerShortcuts = function()
         shortcut.Keys.F1,
         shortcut.makeDescriptor("?")
     ];
-    section.addAlternateKeys(keys, WebInspector.UIString("Show keyboard shortcuts"));
+    section.addAlternateKeys(keys, WebInspector.UIString("Show general settings"));
 }
 
 /**
@@ -781,6 +778,7 @@ WebInspector.documentKeyDown = function(event)
 
     switch (event.keyIdentifier) {
         case "U+004F": // O key
+        case "U+0050": // P key
             if (!event.shiftKey && !event.altKey && WebInspector.KeyboardShortcut.eventHasCtrlOrMeta(event)) {
                 WebInspector.showPanel("scripts").showGoToSourceDialog();
                 event.consume(true);
@@ -1014,10 +1012,8 @@ WebInspector._updateFocusedNode = function(nodeId)
     WebInspector.showPanel("elements").revealAndSelectNode(nodeId);
 }
 
-WebInspector._showAnchorLocation = function(anchor)
+WebInspector.showAnchorLocation = function(anchor)
 {
-    if (WebInspector.openAnchorLocationRegistry.dispatch({ url: anchor.href, lineNumber: anchor.lineNumber}))
-        return true;
     var preferredPanel = this.panels[anchor.preferredPanel];
     if (preferredPanel && WebInspector._showAnchorLocationInPanel(anchor, preferredPanel))
         return true;

@@ -19,11 +19,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFEMorphologyElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGParserUtilities.h"
@@ -86,7 +84,7 @@ bool SVGFEMorphologyElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::operatorAttr);
         supportedAttributes.add(SVGNames::radiusAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFEMorphologyElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -176,5 +174,3 @@ PassRefPtr<FilterEffect> SVGFEMorphologyElement::build(SVGFilterBuilder* filterB
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(SVG)

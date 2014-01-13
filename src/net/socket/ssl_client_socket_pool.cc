@@ -123,7 +123,7 @@ LoadState SSLConnectJob::GetLoadState() const {
 void SSLConnectJob::GetAdditionalErrorState(ClientSocketHandle* handle) {
   // Headers in |error_response_info_| indicate a proxy tunnel setup
   // problem. See DoTunnelConnectComplete.
-  if (error_response_info_.headers) {
+  if (error_response_info_.headers.get()) {
     handle->set_pending_http_proxy_connection(
         transport_socket_handle_.release());
   }
@@ -383,7 +383,8 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
     set_socket(ssl_socket_.release());
   } else if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED) {
     error_response_info_.cert_request_info = new SSLCertRequestInfo;
-    ssl_socket_->GetSSLCertRequestInfo(error_response_info_.cert_request_info);
+    ssl_socket_->GetSSLCertRequestInfo(
+        error_response_info_.cert_request_info.get());
   }
 
   return result;
@@ -475,7 +476,7 @@ SSLClientSocketPool::SSLClientSocketPool(
                                          ssl_session_cache_shard),
                                      net_log)),
       ssl_config_service_(ssl_config_service) {
-  if (ssl_config_service_)
+  if (ssl_config_service_.get())
     ssl_config_service_->AddObserver(this);
   if (transport_pool_)
     transport_pool_->AddLayeredPool(this);
@@ -492,7 +493,7 @@ SSLClientSocketPool::~SSLClientSocketPool() {
     socks_pool_->RemoveLayeredPool(this);
   if (transport_pool_)
     transport_pool_->RemoveLayeredPool(this);
-  if (ssl_config_service_)
+  if (ssl_config_service_.get())
     ssl_config_service_->RemoveObserver(this);
 }
 
@@ -582,13 +583,13 @@ void SSLClientSocketPool::RemoveLayeredPool(LayeredPool* layered_pool) {
   base_.RemoveLayeredPool(layered_pool);
 }
 
-DictionaryValue* SSLClientSocketPool::GetInfoAsValue(
+base::DictionaryValue* SSLClientSocketPool::GetInfoAsValue(
     const std::string& name,
     const std::string& type,
     bool include_nested_pools) const {
-  DictionaryValue* dict = base_.GetInfoAsValue(name, type);
+  base::DictionaryValue* dict = base_.GetInfoAsValue(name, type);
   if (include_nested_pools) {
-    ListValue* list = new ListValue();
+    base::ListValue* list = new base::ListValue();
     if (transport_pool_) {
       list->Append(transport_pool_->GetInfoAsValue("transport_socket_pool",
                                                    "transport_socket_pool",

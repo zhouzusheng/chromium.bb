@@ -29,7 +29,6 @@
 #include "config.h"
 #include "core/css/PageRuleCollector.h"
 
-#include "core/css/CSSDefaultStyleSheets.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 
@@ -61,7 +60,7 @@ String PageRuleCollector::pageName(int /* pageIndex */) const
     return "";
 }
 
-PageRuleCollector::PageRuleCollector(const StyleResolver::State& state, int pageIndex)
+PageRuleCollector::PageRuleCollector(const StyleResolverState& state, int pageIndex)
     : m_state(state)
     , m_isLeftPage(isLeftPage(pageIndex))
     , m_isFirstPage(isFirstPage(pageIndex))
@@ -72,6 +71,7 @@ void PageRuleCollector::matchPageRules(RuleSet* rules)
     if (!rules)
         return;
 
+    rules->compactRulesIfNeeded();
     Vector<StyleRulePage*> matchedPageRules;
     matchPageRulesForList(matchedPageRules, rules->pageRules(), m_isLeftPage, m_isFirstPage, m_pageName);
     if (matchedPageRules.isEmpty())

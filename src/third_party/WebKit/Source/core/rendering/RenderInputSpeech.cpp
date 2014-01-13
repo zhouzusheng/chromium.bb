@@ -32,7 +32,6 @@
 #if ENABLE(INPUT_SPEECH)
 #include "core/rendering/RenderInputSpeech.h"
 
-#include "HTMLNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/PaintInfo.h"
@@ -45,7 +44,7 @@ static const float defaultSpeechButtonSize = 16;
 static const float minSpeechButtonSize = 8;
 static const float maxSpeechButtonSize = 40;
 
-void RenderInputSpeech::adjustInputFieldSpeechButtonStyle(StyleResolver*, RenderStyle* style, Element*)
+void RenderInputSpeech::adjustInputFieldSpeechButtonStyle(RenderStyle* style, Element*)
 {
     // Scale the button size based on the font size.
     float fontScale = style->fontSize() / defaultControlFontPixelSize;
@@ -93,7 +92,7 @@ bool RenderInputSpeech::paintInputFieldSpeechButton(RenderObject* object, const 
         image = imageStateRecording.get();
     else if (speechButton->state() == InputFieldSpeechButtonElement::Recognizing)
         image = imageStateWaiting.get();
-    paintInfo.context->drawImage(image, object->style()->colorSpace(), pixelSnappedIntRect(buttonRect));
+    paintInfo.context->drawImage(image, pixelSnappedIntRect(buttonRect));
 
     return false;
 }

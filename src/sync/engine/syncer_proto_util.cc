@@ -5,12 +5,11 @@
 #include "sync/engine/syncer_proto_util.h"
 
 #include "base/format_macros.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "google_apis/google_api_keys.h"
 #include "sync/engine/net/server_connection_manager.h"
 #include "sync/engine/syncer.h"
 #include "sync/engine/syncer_types.h"
-#include "sync/engine/throttled_data_type_tracker.h"
 #include "sync/engine/traffic_logger.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/protocol/sync_enums.pb.h"
@@ -121,6 +120,8 @@ SyncProtocolErrorType ConvertSyncProtocolErrorTypePBToLocalType(
       return TRANSIENT_ERROR;
     case sync_pb::SyncEnums::MIGRATION_DONE:
       return MIGRATION_DONE;
+    case sync_pb::SyncEnums::DISABLED_BY_ADMIN:
+      return DISABLED_BY_ADMIN;
     case sync_pb::SyncEnums::UNKNOWN:
       return UNKNOWN_ERROR;
     case sync_pb::SyncEnums::USER_NOT_ACTIVATED:
@@ -305,20 +306,6 @@ base::TimeDelta SyncerProtoUtil::GetThrottleDelay(
   return throttle_delay;
 }
 
-void SyncerProtoUtil::HandleThrottleError(
-    const SyncProtocolError& error,
-    const base::TimeTicks& throttled_until,
-    ThrottledDataTypeTracker* tracker,
-    sessions::SyncSession::Delegate* delegate) {
-  DCHECK_EQ(error.error_type, THROTTLED);
-  if (error.error_data_types.Empty()) {
-    // No datatypes indicates the client should be completely throttled.
-    delegate->OnSilencedUntil(throttled_until);
-  } else {
-    tracker->SetUnthrottleTime(error.error_data_types, throttled_until);
-  }
-}
-
 namespace {
 
 // Helper function for an assertion in PostClientToServerMessage.
@@ -340,7 +327,9 @@ SyncProtocolError ConvertLegacyErrorCodeToNewError(
   error.error_type = ConvertSyncProtocolErrorTypePBToLocalType(error_type);
   if (error_type == sync_pb::SyncEnums::CLEAR_PENDING ||
       error_type == sync_pb::SyncEnums::NOT_MY_BIRTHDAY) {
-      error.action = DISABLE_SYNC_ON_CLIENT;
+    error.action = DISABLE_SYNC_ON_CLIENT;
+  } else if (error_type == sync_pb::SyncEnums::DISABLED_BY_ADMIN) {
+    error.action = STOP_SYNC_FOR_DISABLED_ACCOUNT;
   }  // There is no other action we can compute for legacy server.
   return error;
 }
@@ -435,6 +424,11 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
           base::TimeDelta::FromSeconds(
               command.sessions_commit_delay_seconds()));
     }
+
+    if (command.has_client_invalidation_hint_buffer_size()) {
+      session->delegate()->OnReceivedClientInvalidationHintBufferSize(
+          command.client_invalidation_hint_buffer_size());
+    }
   }
 
   // Now do any special handling for the error type and decide on the return
@@ -448,11 +442,15 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
       LogResponseProfilingData(*response);
       return SYNCER_OK;
     case THROTTLED:
-      LOG(WARNING) << "Client silenced by server.";
-      HandleThrottleError(sync_protocol_error,
-                          base::TimeTicks::Now() + GetThrottleDelay(*response),
-                          session->context()->throttled_data_type_tracker(),
-                          session->delegate());
+      if (sync_protocol_error.error_data_types.Empty()) {
+        DLOG(WARNING) << "Client fully throttled by syncer.";
+        session->delegate()->OnThrottled(GetThrottleDelay(*response));
+      } else {
+        DLOG(WARNING) << "Some types throttled by syncer.";
+        session->delegate()->OnTypesThrottled(
+            sync_protocol_error.error_data_types,
+            GetThrottleDelay(*response));
+      }
       return SERVER_RETURN_THROTTLED;
     case TRANSIENT_ERROR:
       return SERVER_RETURN_TRANSIENT_ERROR;
@@ -467,6 +465,8 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
       return SERVER_RETURN_CLEAR_PENDING;
     case NOT_MY_BIRTHDAY:
       return SERVER_RETURN_NOT_MY_BIRTHDAY;
+    case DISABLED_BY_ADMIN:
+      return SERVER_RETURN_DISABLED_BY_ADMIN;
     default:
       NOTREACHED();
       return UNSET;

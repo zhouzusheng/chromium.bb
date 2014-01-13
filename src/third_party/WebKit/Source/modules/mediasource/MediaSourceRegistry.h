@@ -31,6 +31,7 @@
 #ifndef MediaSourceRegistry_h
 #define MediaSourceRegistry_h
 
+#include "core/html/URLRegistry.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/StringHash.h"
@@ -38,21 +39,21 @@
 namespace WebCore {
 
 class KURL;
-class MediaSource;
+class MediaSourceBase;
 
-class MediaSourceRegistry {
+class MediaSourceRegistry : public URLRegistry {
 public:
     // Returns a single instance of MediaSourceRegistry.
     static MediaSourceRegistry& registry();
 
     // Registers a blob URL referring to the specified media source.
-    void registerMediaSourceURL(const KURL&, PassRefPtr<MediaSource>);
-    void unregisterMediaSourceURL(const KURL&);
+    virtual void registerURL(SecurityOrigin*, const KURL&, URLRegistrable*) OVERRIDE;
+    virtual void unregisterURL(const KURL&) OVERRIDE;
 
-    MediaSource* lookupMediaSource(const String& url);
+    MediaSourceBase* lookupMediaSource(const String& url);
 
 private:
-    HashMap<String, RefPtr<MediaSource> > m_mediaSources;
+    HashMap<String, RefPtr<MediaSourceBase> > m_mediaSources;
 };
 
 } // namespace WebCore

@@ -7,6 +7,7 @@
 
 #include <list>
 #include <map>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -85,6 +86,7 @@ class MEDIA_EXPORT GpuVideoDecoder
   virtual void Reset(const base::Closure& closure) OVERRIDE;
   virtual void Stop(const base::Closure& closure) OVERRIDE;
   virtual bool HasAlpha() const OVERRIDE;
+  virtual bool NeedsBitstreamConversion() const OVERRIDE;
   virtual bool HasOutputFrameAvailable() const OVERRIDE;
 
   // VideoDecodeAccelerator::Client implementation.
@@ -168,6 +170,8 @@ class MEDIA_EXPORT GpuVideoDecoder
   // Pointer to the demuxer stream that will feed us compressed buffers.
   DemuxerStream* demuxer_stream_;
 
+  bool needs_bitstream_conversion_;
+
   // Message loop on which to fire callbacks and trampoline calls to this class
   // if they arrive on other loops.
   scoped_refptr<base::MessageLoopProxy> gvd_loop_proxy_;
@@ -214,7 +218,12 @@ class MEDIA_EXPORT GpuVideoDecoder
     scoped_refptr<DecoderBuffer> buffer;
   };
   std::map<int32, BufferPair> bitstream_buffers_in_decoder_;
-  std::map<int32, PictureBuffer> picture_buffers_in_decoder_;
+  std::map<int32, PictureBuffer> assigned_picture_buffers_;
+  std::map<int32, PictureBuffer> dismissed_picture_buffers_;
+  // PictureBuffers given to us by VDA via PictureReady, which we sent forward
+  // as VideoFrames to be rendered via read_cb_, and which will be returned
+  // to us via ReusePictureBuffer.
+  std::set<int32> picture_buffers_at_display_;
 
   // The texture target used for decoded pictures.
   uint32 decoder_texture_target_;

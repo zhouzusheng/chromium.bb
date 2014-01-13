@@ -27,14 +27,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/style/SVGRenderStyle.h"
 
-#include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSValueList.h"
-#include "core/dom/NodeRenderStyle.h"
-#include "core/platform/graphics/IntRect.h"
-#include "core/svg/SVGStyledElement.h"
 
 using namespace std;
 
@@ -191,6 +186,10 @@ StyleDifference SVGRenderStyle::diff(const SVGRenderStyle* other) const
         return StyleDifferenceRepaint;
     }
 
+    // vector-effect changes require a re-layout.
+    if (svg_noninherited_flags.f._vectorEffect != other->svg_noninherited_flags.f._vectorEffect)
+        return StyleDifferenceLayout;
+
     // NOTE: All comparisions below may only return StyleDifferenceRepaint
 
     // Painting related properties only need repaints. 
@@ -219,10 +218,6 @@ StyleDifference SVGRenderStyle::diff(const SVGRenderStyle* other) const
         || svg_inherited_flags._colorInterpolationFilters != other->svg_inherited_flags._colorInterpolationFilters)
         return StyleDifferenceRepaint;
 
-    // FIXME: vector-effect is not taken into account in the layout-phase. Once this is fixed, we should relayout here.
-    if (svg_noninherited_flags.f._vectorEffect != other->svg_noninherited_flags.f._vectorEffect)
-        return StyleDifferenceRepaint;
-
     if (svg_noninherited_flags.f.bufferedRendering != other->svg_noninherited_flags.f.bufferedRendering)
         return StyleDifferenceRepaint;
 
@@ -233,5 +228,3 @@ StyleDifference SVGRenderStyle::diff(const SVGRenderStyle* other) const
 }
 
 }
-
-#endif // ENABLE(SVG)

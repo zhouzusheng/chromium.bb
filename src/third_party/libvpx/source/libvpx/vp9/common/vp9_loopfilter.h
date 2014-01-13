@@ -16,12 +16,6 @@
 #include "vp9/common/vp9_blockd.h"
 
 #define MAX_LOOP_FILTER 63
-
-typedef enum {
-  NORMAL_LOOPFILTER = 0,
-  SIMPLE_LOOPFILTER = 1
-} LOOPFILTERTYPE;
-
 #define SIMD_WIDTH 16
 
 /* Need to align this structure so when it is declared and
@@ -36,8 +30,7 @@ typedef struct {
                   lim[MAX_LOOP_FILTER + 1][SIMD_WIDTH]);
   DECLARE_ALIGNED(SIMD_WIDTH, unsigned char,
                   hev_thr[4][SIMD_WIDTH]);
-  unsigned char lvl[4][4][4];
-  unsigned char hev_thr_lut[2][MAX_LOOP_FILTER + 1];
+  unsigned char lvl[MAX_MB_SEGMENTS][4][4];
   unsigned char mode_lf_lut[MB_MODE_COUNT];
 } loop_filter_info_n;
 
@@ -55,9 +48,6 @@ struct loop_filter_info {
 #define prototype_loopfilter_block(sym) \
   void sym(uint8_t *y, uint8_t *u, uint8_t *v, \
            int ystride, int uv_stride, struct loop_filter_info *lfi)
-
-#define prototype_simple_loopfilter(sym) \
-  void sym(uint8_t *y, int ystride, const unsigned char *blimit)
 
 #if ARCH_X86 || ARCH_X86_64
 #include "x86/vp9_loopfilter_x86.h"
@@ -83,8 +73,7 @@ void vp9_loop_filter_frame_init(struct VP9Common *cm,
 void vp9_loop_filter_frame(struct VP9Common *cm,
                            struct macroblockd *mbd,
                            int filter_level,
-                           int y_only,
-                           int dering);
+                           int y_only);
 
 void vp9_loop_filter_partial_frame(struct VP9Common *cm,
                                    struct macroblockd *mbd,
@@ -93,15 +82,4 @@ void vp9_loop_filter_partial_frame(struct VP9Common *cm,
 void vp9_loop_filter_update_sharpness(loop_filter_info_n *lfi,
                                       int sharpness_lvl);
 
-void vp9_mb_lpf_horizontal_edge_w(unsigned char *s, int p,
-                                  const unsigned char *blimit,
-                                  const unsigned char *limit,
-                                  const unsigned char *thresh,
-                                  int count);
-
-void vp9_mb_lpf_vertical_edge_w(unsigned char *s, int p,
-                                const unsigned char *blimit,
-                                const unsigned char *limit,
-                                const unsigned char *thresh,
-                                int count);
 #endif  // VP9_COMMON_VP9_LOOPFILTER_H_

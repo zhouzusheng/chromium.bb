@@ -31,14 +31,10 @@
 #include "core/html/HTMLFormElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FormState.h"
-#include "core/loader/FrameNetworkingContext.h"
 #include "core/page/Frame.h"
+#include "core/platform/ColorChooser.h"
 #include "core/platform/DateTimeChooser.h"
 #include "core/platform/FileChooser.h"
-
-#if ENABLE(INPUT_TYPE_COLOR)
-#include "core/platform/ColorChooser.h"
-#endif
 
 namespace WebCore {
 
@@ -65,39 +61,21 @@ void fillWithEmptyClients(Page::PageClients& pageClients)
 
 class EmptyPopupMenu : public PopupMenu {
 public:
-    virtual void show(const IntRect&, FrameView*, int) { }
-    virtual void hide() { }
-    virtual void updateFromElement() { }
-    virtual void disconnectClient() { }
+    virtual void show(const FloatQuad&, const IntSize&, int) OVERRIDE { }
+    virtual void hide() OVERRIDE { }
+    virtual void updateFromElement() OVERRIDE { }
+    virtual void disconnectClient() OVERRIDE { }
 };
 
-class EmptySearchPopupMenu : public SearchPopupMenu {
-public:
-    virtual PopupMenu* popupMenu() { return m_popup.get(); }
-    virtual void saveRecentSearches(const AtomicString&, const Vector<String>&) { }
-    virtual void loadRecentSearches(const AtomicString&, Vector<String>&) { }
-    virtual bool enabled() { return false; }
-
-private:
-    RefPtr<EmptyPopupMenu> m_popup;
-};
-
-PassRefPtr<PopupMenu> EmptyChromeClient::createPopupMenu(PopupMenuClient*) const
+PassRefPtr<PopupMenu> EmptyChromeClient::createPopupMenu(Frame&, PopupMenuClient*) const
 {
     return adoptRef(new EmptyPopupMenu());
 }
 
-PassRefPtr<SearchPopupMenu> EmptyChromeClient::createSearchPopupMenu(PopupMenuClient*) const
-{
-    return adoptRef(new EmptySearchPopupMenu());
-}
-
-#if ENABLE(INPUT_TYPE_COLOR)
 PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(ColorChooserClient*, const Color&)
 {
     return nullptr;
 }
-#endif
 
 PassRefPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
 {
@@ -106,6 +84,11 @@ PassRefPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChoos
 
 void EmptyChromeClient::runOpenPanel(Frame*, PassRefPtr<FileChooser>)
 {
+}
+
+String EmptyChromeClient::acceptLanguages()
+{
+    return String();
 }
 
 PolicyAction EmptyFrameLoaderClient::policyForNewWindowAction(const NavigationAction&, const String&)
@@ -146,11 +129,6 @@ PassRefPtr<Widget> EmptyFrameLoaderClient::createJavaAppletWidget(const IntSize&
     return 0;
 }
 
-PassRefPtr<FrameNetworkingContext> EmptyFrameLoaderClient::createNetworkingContext()
-{
-    return PassRefPtr<FrameNetworkingContext>();
-}
-
 void EmptyTextCheckerClient::requestCheckingOfString(PassRefPtr<TextCheckingRequest>)
 {
 }
@@ -161,11 +139,6 @@ void EmptyEditorClient::registerUndoStep(PassRefPtr<UndoStep>)
 
 void EmptyEditorClient::registerRedoStep(PassRefPtr<UndoStep>)
 {
-}
-
-PassOwnPtr<ContextMenu> EmptyContextMenuClient::customizeMenu(PassOwnPtr<ContextMenu>)
-{
-    return nullptr;
 }
 
 void EmptyFrameLoaderClient::didRequestAutocomplete(PassRefPtr<FormState>)

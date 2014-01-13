@@ -12,7 +12,7 @@
 #include <cstring>
 
 #include "base/metrics/histogram.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "ui/base/events/event_utils.h"
 #include "ui/base/keycodes/keyboard_code_conversion.h"
 #include "ui/gfx/point3_f.h"
@@ -34,6 +34,8 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
   *copy = *event;
   return copy;
 #elif defined(OS_WIN)
+  return event;
+#elif defined(USE_OZONE)
   return event;
 #else
   NOTREACHED() <<
@@ -95,6 +97,7 @@ std::string EventTypeName(ui::EventType type) {
     CASE_TYPE(ET_SCROLL_FLING_START);
     CASE_TYPE(ET_SCROLL_FLING_CANCEL);
     CASE_TYPE(ET_CANCEL_MODE);
+    CASE_TYPE(ET_UMA_DATA);
     case ui::ET_LAST: NOTREACHED(); return std::string();
     // Don't include default, so that we get an error when new type is added.
   }
@@ -199,6 +202,7 @@ Event::Event(const base::NativeEvent& native_event,
 Event::Event(const Event& copy)
     : type_(copy.type_),
       time_stamp_(copy.time_stamp_),
+      latency_(copy.latency_),
       flags_(copy.flags_),
       dispatch_to_hidden_targets_(false),
       native_event_(::CopyNativeEvent(copy.native_event_)),
@@ -229,6 +233,16 @@ void Event::Init() {
 
 void Event::InitWithNativeEvent(const base::NativeEvent& native_event) {
   native_event_ = native_event;
+}
+
+void Event::InitLatencyInfo() {
+  latency_.AddLatencyNumberWithTimestamp(INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
+                                         0,
+                                         0,
+                                         base::TimeTicks::FromInternalValue(
+                                             time_stamp_.ToInternalValue()),
+                                         1);
+  latency_.AddLatencyNumber(INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -405,6 +419,12 @@ MouseWheelEvent::MouseWheelEvent(const MouseEvent& mouse_event,
   DCHECK(type() == ET_MOUSEWHEEL);
 }
 
+MouseWheelEvent::MouseWheelEvent(const MouseWheelEvent& mouse_wheel_event)
+    : MouseEvent(mouse_wheel_event),
+      offset_(mouse_wheel_event.offset()) {
+  DCHECK(type() == ET_MOUSEWHEEL);
+}
+
 #if defined(OS_WIN)
 // This value matches windows WHEEL_DELTA.
 // static
@@ -413,6 +433,18 @@ const int MouseWheelEvent::kWheelDelta = 120;
 // This value matches GTK+ wheel scroll amount.
 const int MouseWheelEvent::kWheelDelta = 53;
 #endif
+
+void MouseWheelEvent::UpdateForRootTransform(
+    const gfx::Transform& inverted_root_transform) {
+  LocatedEvent::UpdateForRootTransform(inverted_root_transform);
+  gfx::DecomposedTransform decomp;
+  bool success = gfx::DecomposeTransform(&decomp, inverted_root_transform);
+  DCHECK(success);
+  if (decomp.scale[0])
+    offset_.set_x(offset_.x() * decomp.scale[0]);
+  if (decomp.scale[1])
+    offset_.set_y(offset_.y() * decomp.scale[1]);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // TouchEvent
@@ -424,6 +456,7 @@ TouchEvent::TouchEvent(const base::NativeEvent& native_event)
       radius_y_(GetTouchRadiusY(native_event)),
       rotation_angle_(GetTouchAngle(native_event)),
       force_(GetTouchForce(native_event)) {
+  InitLatencyInfo();
 }
 
 TouchEvent::TouchEvent(EventType type,
@@ -436,6 +469,7 @@ TouchEvent::TouchEvent(EventType type,
       radius_y_(0.0f),
       rotation_angle_(0.0f),
       force_(0.0f) {
+  InitLatencyInfo();
 }
 
 TouchEvent::TouchEvent(EventType type,
@@ -453,6 +487,7 @@ TouchEvent::TouchEvent(EventType type,
       radius_y_(radius_y),
       rotation_angle_(angle),
       force_(force) {
+  InitLatencyInfo();
 }
 
 TouchEvent::~TouchEvent() {
@@ -550,6 +585,9 @@ uint16 KeyEvent::GetUnmodifiedCharacter() const {
   copy.state &= ~kIgnoredModifiers;
   uint16 ch = GetCharacterFromXEvent(reinterpret_cast<XEvent*>(&copy));
   return ch ? ch : GetCharacterFromKeyCode(key_code_, flags() & EF_SHIFT_DOWN);
+#elif defined(USE_OZONE)
+  return is_char() ? key_code_ : GetCharacterFromKeyCode(
+                                     key_code_, flags() & EF_SHIFT_DOWN);
 #else
   NOTIMPLEMENTED();
   return 0;

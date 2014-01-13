@@ -13,7 +13,6 @@
 #include "sync/engine/all_status.h"
 #include "sync/engine/net/server_connection_manager.h"
 #include "sync/engine/sync_engine_event.h"
-#include "sync/engine/throttled_data_type_tracker.h"
 #include "sync/engine/traffic_recorder.h"
 #include "sync/internal_api/change_reorder_buffer.h"
 #include "sync/internal_api/debug_info_event_listener.h"
@@ -21,6 +20,7 @@
 #include "sync/internal_api/js_sync_encryption_handler_observer.h"
 #include "sync/internal_api/js_sync_manager_observer.h"
 #include "sync/internal_api/public/sync_manager.h"
+#include "sync/internal_api/public/user_share.h"
 #include "sync/internal_api/sync_encryption_handler_impl.h"
 #include "sync/js/js_backend.h"
 #include "sync/notifier/invalidation_handler.h"
@@ -82,7 +82,8 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       Encryptor* encryptor,
       UnrecoverableErrorHandler* unrecoverable_error_handler,
       ReportUnrecoverableErrorFunction
-          report_unrecoverable_error_function) OVERRIDE;
+          report_unrecoverable_error_function,
+      bool use_oauth2_token) OVERRIDE;
   virtual void ThrowUnrecoverableError() OVERRIDE;
   virtual ModelTypeSet InitialSyncEndedTypes() OVERRIDE;
   virtual ModelTypeSet GetTypesWithEmptyProgressMarkerToken(
@@ -104,8 +105,10 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       const ModelSafeRoutingInfo& routing_info) OVERRIDE;
   virtual void ConfigureSyncer(
       ConfigureReason reason,
-      ModelTypeSet types_to_config,
-      ModelTypeSet failed_types,
+      ModelTypeSet to_download,
+      ModelTypeSet to_purge,
+      ModelTypeSet to_journal,
+      ModelTypeSet to_unapply,
       const ModelSafeRoutingInfo& new_routing_info,
       const base::Closure& ready_task,
       const base::Closure& retry_task) OVERRIDE;
@@ -199,6 +202,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   FRIEND_TEST_ALL_PREFIXES(SyncManagerTest, OnNotificationStateChange);
   FRIEND_TEST_ALL_PREFIXES(SyncManagerTest, OnIncomingNotification);
   FRIEND_TEST_ALL_PREFIXES(SyncManagerTest, PurgeDisabledTypes);
+  FRIEND_TEST_ALL_PREFIXES(SyncManagerTest, PurgeUnappliedTypes);
 
   struct NotificationInfo {
     NotificationInfo();
@@ -208,7 +212,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
     std::string payload;
 
     // Returned pointer owned by the caller.
-    DictionaryValue* ToValue() const;
+    base::DictionaryValue* ToValue() const;
   };
 
   base::TimeDelta GetNudgeDelayTimeDelta(const ModelType& model_type);
@@ -237,11 +241,13 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   // Open the directory named with |username|.
   bool OpenDirectory(const std::string& username);
 
-  // Purge those types from |previously_enabled_types| that are no longer
-  // enabled in |currently_enabled_types|.
-  bool PurgeDisabledTypes(ModelTypeSet previously_enabled_types,
-                          ModelTypeSet currently_enabled_types,
-                          ModelTypeSet failed_types);
+  // Purge those disabled types as specified by |to_purge|. |to_journal| and
+  // |to_unapply| specify subsets that require special handling. |to_journal|
+  // types are saved into the delete journal, while |to_unapply| have only
+  // their local data deleted, while their server data is preserved.
+  bool PurgeDisabledTypes(ModelTypeSet to_purge,
+                          ModelTypeSet to_journal,
+                          ModelTypeSet to_unapply);
 
   void RequestNudgeForDataTypes(
       const tracked_objects::Location& nudge_location,
@@ -271,7 +277,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
     const std::string& name, UnboundJsMessageHandler unbound_message_handler);
 
   // Returned pointer is owned by the caller.
-  static DictionaryValue* NotificationInfoToValue(
+  static base::DictionaryValue* NotificationInfoToValue(
       const NotificationInfoMap& notification_info);
 
   static std::string NotificationInfoToString(
@@ -365,8 +371,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   JsSyncManagerObserver js_sync_manager_observer_;
   JsMutationEventObserver js_mutation_event_observer_;
   JsSyncEncryptionHandlerObserver js_sync_encryption_handler_observer_;
-
-  ThrottledDataTypeTracker throttled_data_type_tracker_;
 
   // This is for keeping track of client events to send to the server.
   DebugInfoEventListener debug_info_event_listener_;

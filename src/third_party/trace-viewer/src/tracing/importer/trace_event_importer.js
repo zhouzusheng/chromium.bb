@@ -6,13 +6,49 @@
  * @fileoverview TraceEventImporter imports TraceEvent-formatted data
  * into the provided model.
  */
-base.require('tracing.model');
+base.require('base.quad');
+base.require('tracing.trace_model');
 base.require('tracing.color_scheme');
 base.exportTo('tracing.importer', function() {
+
+  function deepCopy(value) {
+    if (!(value instanceof Object)) {
+      if (value === undefined || value === null)
+        return value;
+      if (typeof value == 'string')
+        return value.substring();
+      if (typeof value == 'boolean')
+        return value;
+      if (typeof value == 'number')
+        return value;
+      throw new Error('Unrecognized: ' + typeof value);
+    }
+
+    var object = value;
+    if (object instanceof Array) {
+      var res = new Array(object.length);
+      for (var i = 0; i < object.length; i++)
+        res[i] = deepCopy(object[i]);
+      return res;
+    }
+
+    if (object.__proto__ != Object.prototype)
+      throw new Error('Can only clone simple types');
+    var res = {};
+    for (var key in object) {
+      res[key] = deepCopy(object[key]);
+    }
+    return res;
+  }
 
   function TraceEventImporter(model, eventData) {
     this.importPriority = 1;
     this.model_ = model;
+    this.events_ = undefined;
+    this.systemTraceEvents_ = undefined;
+    this.eventsWereFromString_ = false;
+    this.allAsyncEvents_ = [];
+    this.allObjectEvents_ = [];
 
     if (typeof(eventData) === 'string' || eventData instanceof String) {
       // If the event data begins with a [, then we know it should end with a ].
@@ -20,26 +56,14 @@ base.exportTo('tracing.importer', function() {
       // cannot guarantee that a ']' gets written to the trace file. So, we are
       // forgiving and if this is obviously the case, we fix it up before
       // throwing the string at JSON.parse.
-      if (eventData[0] == '[') {
-        n = eventData.length;
-        if (eventData[n - 1] == '\n') {
-          eventData = eventData.substring(0, n - 1);
-          n--;
-
-          if (eventData[n - 1] == '\r') {
-            eventData = eventData.substring(0, n - 1);
-            n--;
-          }
-        }
-
-        if (eventData[n - 1] == ',')
-          eventData = eventData.substring(0, n - 1);
-        if (eventData[n - 1] != ']')
+      if (eventData[0] === '[') {
+        eventData = eventData.replace(/[\r|\n]*$/, '')
+                             .replace(/\s*,\s*$/, '');
+        if (eventData[eventData.length - 1] !== ']')
           eventData = eventData + ']';
       }
-
       this.events_ = JSON.parse(eventData);
-
+      this.eventsWereFromString_ = true;
     } else {
       this.events_ = eventData;
     }
@@ -50,17 +74,20 @@ base.exportTo('tracing.importer', function() {
     if (this.events_.traceEvents) {
       var container = this.events_;
       this.events_ = this.events_.traceEvents;
+
+      // Some trace_event implementations put linux_perf_importer traces as a
+      // huge string inside container.systemTraceEvents. If we see that, pull it
+      // out. It will be picked up by extractSubtrace later on.
+      this.systemTraceEvents_ = container.systemTraceEvents;
+
+      // Any other fields in the container should be treated as metadata.
       for (fieldName in container) {
-        if (fieldName == 'traceEvents')
+        if (fieldName === 'traceEvents' || fieldName === 'systemTraceEvents')
           continue;
         this.model_.metadata.push({name: fieldName,
           value: container[fieldName]});
       }
     }
-
-    // Some events need to be processed during finalizeEvents
-    this.allAsyncEvents_ = [];
-    this.allObjectEvents_ = [];
   }
 
   /**
@@ -92,11 +119,26 @@ base.exportTo('tracing.importer', function() {
 
     __proto__: Object.prototype,
 
+    extractSubtrace: function() {
+      var tmp = this.systemTraceEvents_;
+      this.systemTraceEvents_ = undefined;
+      return tmp;
+    },
+
+    /**
+     * Deep copying is only needed if the trace was given to us as events.
+     */
+    deepCopyIfNeeded_: function(obj) {
+      if (this.eventsWereFromString_)
+        return obj;
+      return deepCopy(obj);
+    },
+
     /**
      * Helper to process an 'async finish' event, which will close an open slice
      * on a AsyncSliceGroup object.
      */
-    processAsyncEvent: function(index, event) {
+    processAsyncEvent: function(event) {
       var thread = this.model_.getOrCreateProcess(event.pid).
           getOrCreateThread(event.tid);
       this.allAsyncEvents_.push({
@@ -145,7 +187,7 @@ base.exportTo('tracing.importer', function() {
       }
     },
 
-    processObjectEvent: function(eI, event) {
+    processObjectEvent: function(event) {
       var thread = this.model_.getOrCreateProcess(event.pid).
           getOrCreateThread(event.tid);
       this.allObjectEvents_.push({
@@ -153,96 +195,103 @@ base.exportTo('tracing.importer', function() {
         thread: thread});
     },
 
+    processDurationEvent: function(event) {
+      var thread = this.model_.getOrCreateProcess(event.pid)
+        .getOrCreateThread(event.tid);
+      if (!thread.isTimestampValidForBeginOrEnd(event.ts / 1000)) {
+        this.model_.importErrors.push(
+            'Timestamps are moving backward.');
+        return;
+      }
+
+      if (event.ph == 'B') {
+        thread.beginSlice(event.cat, event.name, event.ts / 1000,
+                          this.deepCopyIfNeeded_(event.args));
+      } else {
+        if (!thread.openSliceCount) {
+          this.model_.importErrors.push(
+              'E phase event without a matching B phase event.');
+          return;
+        }
+
+        var slice = thread.endSlice(event.ts / 1000);
+        for (var arg in event.args) {
+          if (slice.args[arg] !== undefined) {
+            this.model_.importErrors.push(
+                'Both the B and E phases of ' + slice.name +
+                'provided values for argument ' + arg + '. ' +
+                'The value of the E phase event will be used.');
+          }
+          slice.args[arg] = this.deepCopyIfNeeded_(event.args[arg]);
+        }
+      }
+    },
+
+    processMetadataEvent: function(event) {
+      if (event.name == 'thread_name') {
+        var thread = this.model_.getOrCreateProcess(event.pid)
+                         .getOrCreateThread(event.tid);
+        thread.name = event.args.name;
+      } else {
+        this.model_.importErrors.push(
+            'Unrecognized metadata name: ' + event.name);
+      }
+    },
+
+    // Treat an Instant event as a duration 0 slice.
+    // SliceTrack's redraw() knows how to handle this.
+    processInstantEvent: function(event) {
+      var thread = this.model_.getOrCreateProcess(event.pid)
+        .getOrCreateThread(event.tid);
+      thread.beginSlice(event.cat, event.name, event.ts / 1000,
+                        this.deepCopyIfNeeded_(event.args));
+      thread.endSlice(event.ts / 1000);
+    },
+
+    processSampleEvent: function(event) {
+      var thread = this.model_.getOrCreateProcess(event.pid)
+        .getOrCreateThread(event.tid);
+      thread.addSample(event.cat, event.name, event.ts / 1000,
+                       this.deepCopyIfNeeded_(event.args));
+    },
+
     /**
      * Walks through the events_ list and outputs the structures discovered to
      * model_.
      */
     importEvents: function() {
-      // Walk through events
       var events = this.events_;
-      // Some events cannot be handled until we have done a first pass over the
-      // data set.  So, accumulate them into a temporary data structure.
-      var second_pass_events = [];
       for (var eI = 0; eI < events.length; eI++) {
         var event = events[eI];
-        if (event.ph == 'B') {
-          var thread = this.model_.getOrCreateProcess(event.pid)
-            .getOrCreateThread(event.tid);
-          if (!thread.isTimestampValidForBeginOrEnd(event.ts / 1000)) {
-            this.model_.importErrors.push(
-                'Timestamps are moving backward.');
-            continue;
-          }
-          thread.beginSlice(event.cat, event.name, event.ts / 1000, event.args);
-        } else if (event.ph == 'E') {
-          var thread = this.model_.getOrCreateProcess(event.pid)
-            .getOrCreateThread(event.tid);
-          if (!thread.isTimestampValidForBeginOrEnd(event.ts / 1000)) {
-            this.model_.importErrors.push(
-                'Timestamps are moving backward.');
-            continue;
-          }
-          if (!thread.openSliceCount) {
-            this.model_.importErrors.push(
-                'E phase event without a matching B phase event.');
-            continue;
-          }
+        if (event.ph === 'B' || event.ph === 'E') {
+          this.processDurationEvent(event);
 
-          var slice = thread.endSlice(event.ts / 1000);
-          for (var arg in event.args) {
-            if (slice.args[arg] !== undefined) {
-              this.model_.importErrors.push(
-                  'Both the B and E phases of ' + slice.name +
-                  'provided values for argument ' + arg + '. ' +
-                  'The value of the E phase event will be used.');
-            }
-            slice.args[arg] = event.args[arg];
-          }
+        } else if (event.ph === 'S' || event.ph === 'F' || event.ph === 'T') {
+          this.processAsyncEvent(event);
 
-        } else if (event.ph == 'S') {
-          this.processAsyncEvent(eI, event);
-        } else if (event.ph == 'F') {
-          this.processAsyncEvent(eI, event);
-        } else if (event.ph == 'T') {
-          this.processAsyncEvent(eI, event);
+        // Note, I is historic. The instant event marker got changed, but we
+        // want to support loading load trace files so we have both I and i.
         } else if (event.ph == 'I' || event.ph == 'i') {
-          // Treat an Instant event as a duration 0 slice.
-          // SliceTrack's redraw() knows how to handle this.
-          var thread = this.model_.getOrCreateProcess(event.pid)
-            .getOrCreateThread(event.tid);
-          thread.beginSlice(event.cat, event.name, event.ts / 1000, event.args);
-          thread.endSlice(event.ts / 1000);
+          this.processInstantEvent(event);
+
         } else if (event.ph == 'P') {
-          var thread = this.model_.getOrCreateProcess(event.pid)
-            .getOrCreateThread(event.tid);
-          thread.addSample(event.cat, event.name, event.ts / 1000, event.args);
+          this.processSampleEvent(event);
+
         } else if (event.ph == 'C') {
           this.processCounterEvent(event);
+
         } else if (event.ph == 'M') {
-          if (event.name == 'thread_name') {
-            var thread = this.model_.getOrCreateProcess(event.pid)
-                             .getOrCreateThread(event.tid);
-            thread.name = event.args.name;
-          } else {
-            this.model_.importErrors.push(
-                'Unrecognized metadata name: ' + event.name);
-          }
-        } else if (event.ph == 's') {
-          // NB: toss until there's proper support
-        } else if (event.ph == 't') {
-          // NB: toss until there's proper support
-        } else if (event.ph == 'f') {
-          // NB: toss until there's proper support
-        } else if (event.ph == 'N') {
-          this.processObjectEvent(eI, event);
-        } else if (event.ph == 'D') {
-          this.processObjectEvent(eI, event);
-        } else if (event.ph == 'O') {
-          this.processObjectEvent(eI, event);
+          this.processMetadataEvent(event);
+
+        } else if (event.ph === 'N' || event.ph === 'D' || event.ph === 'O') {
+          this.processObjectEvent(event);
+
+        } else if (event.ph === 's' || event.ph === 't' || event.ph === 'f') {
+          // NB: toss flow events until there's proper support
+
         } else {
-          this.model_.importErrors.push(
-              'Unrecognized event phase: ' + event.ph +
-              '(' + event.name + ')');
+          this.model_.importErrors.push('Unrecognized event phase: ' +
+              event.ph + ' (' + event.name + ')');
         }
       }
     },
@@ -253,7 +302,16 @@ base.exportTo('tracing.importer', function() {
      */
     finalizeImport: function() {
       this.createAsyncSlices_();
-      this.createObjects_();
+      this.createExplicitObjects_();
+      this.createImplicitObjects_();
+    },
+
+    /**
+     * Called by the model to join references between objects, after final model
+     * bounds have been computed.
+     */
+    joinRefs: function() {
+      this.joinObjectRefs_();
     },
 
     createAsyncSlices_: function() {
@@ -316,7 +374,7 @@ base.exportTo('tracing.importer', function() {
 
           if (event.ph == 'F') {
             // Create a slice from start to end.
-            var slice = new tracing.model.AsyncSlice(
+            var slice = new tracing.trace_model.AsyncSlice(
                 events[0].event.cat,
                 name,
                 tracing.getStringColorId(name),
@@ -327,7 +385,7 @@ base.exportTo('tracing.importer', function() {
             slice.startThread = events[0].thread;
             slice.endThread = asyncEventState.thread;
             slice.id = id;
-            slice.args = events[0].event.args;
+            slice.args = this.deepCopyIfNeeded_(events[0].event.args);
             slice.subSlices = [];
 
             // Create subSlices for each step.
@@ -335,7 +393,7 @@ base.exportTo('tracing.importer', function() {
               var subName = name;
               if (events[j - 1].event.ph == 'T')
                 subName = name + ':' + events[j - 1].event.args.step;
-              var subSlice = new tracing.model.AsyncSlice(
+              var subSlice = new tracing.trace_model.AsyncSlice(
                   events[0].event.cat,
                   subName,
                   tracing.getStringColorId(name + j),
@@ -347,7 +405,7 @@ base.exportTo('tracing.importer', function() {
               subSlice.startThread = events[j - 1].thread;
               subSlice.endThread = events[j].thread;
               subSlice.id = id;
-              subSlice.args = events[j - 1].event.args;
+              subSlice.args = this.deepCopyIfNeeded_(events[j - 1].event.args);
 
               slice.subSlices.push(subSlice);
             }
@@ -355,7 +413,7 @@ base.exportTo('tracing.importer', function() {
             // The args for the finish event go in the last subSlice.
             var lastSlice = slice.subSlices[slice.subSlices.length - 1];
             for (var arg in event.args)
-              lastSlice.args[arg] = event.args[arg];
+              lastSlice.args[arg] = this.deepCopyIfNeeded_(event.args[arg]);
 
             // Add |slice| to the start-thread's asyncSlices.
             slice.startThread.asyncSlices.push(slice);
@@ -365,34 +423,70 @@ base.exportTo('tracing.importer', function() {
       }
     },
 
-    createObjects_: function() {
+    /**
+     * This function creates objects described via the N, D, and O phase
+     * events.
+     */
+    createExplicitObjects_: function() {
       if (this.allObjectEvents_.length == 0)
         return;
 
       function processEvent(objectEventState) {
         var event = objectEventState.event;
         var thread = objectEventState.thread;
-        if (event.name === undefined)
-          throw new Error('Object events require a name parameter.');
+        if (event.name === undefined) {
+          this.model_.importErrors.push(
+              'While processing ' + JSON.stringify(event) + ': ' +
+              'Object events require an name parameter.');
+        }
 
-        if (event.id === undefined)
-          throw new Error('Object events require an id parameter.');
-
+        if (event.id === undefined) {
+          this.model_.importErrors.push(
+              'While processing ' + JSON.stringify(event) + ': ' +
+              'Object events require an id parameter.');
+        }
         var process = thread.parent;
         var ts = event.ts / 1000;
         var instance;
         if (event.ph == 'N') {
-          instance = process.objects.idWasCreated(
-            event.id, event.cat, event.name, ts);
+          try {
+            instance = process.objects.idWasCreated(
+                event.id, event.cat, event.name, ts);
+          } catch (e) {
+            this.model_.importErrors.push(
+                'While processing create of ' +
+                event.id + ' at ts=' + ts + ': ' + e);
+            return;
+          }
         } else if (event.ph == 'O') {
-          if (event.args.snapshot === undefined)
-            throw new Error('Snapshots must have args: {snapshot: ...}');
-          var snapshot = process.objects.addSnapshot(
-            event.id, event.cat, event.name, ts, event.args.snapshot);
+          if (event.args.snapshot === undefined) {
+            this.model_.importErrors.push(
+                'While processing ' + event.id + ' at ts=' + ts + ': ' +
+                'Snapshots must have args: {snapshot: ...}');
+            return;
+          }
+          var snapshot;
+          try {
+            snapshot = process.objects.addSnapshot(
+                event.id, event.cat, event.name, ts,
+                this.deepCopyIfNeeded_(event.args.snapshot));
+          } catch (e) {
+            this.model_.importErrors.push(
+                'While processing snapshot of ' +
+                event.id + ' at ts=' + ts + ': ' + e);
+            return;
+          }
           instance = snapshot.objectInstance;
         } else if (event.ph == 'D') {
-          instance = process.objects.idWasDeleted(
-            event.id, event.cat, event.name, ts);
+          try {
+            instance = process.objects.idWasDeleted(
+                event.id, event.cat, event.name, ts);
+          } catch (e) {
+            this.model_.importErrors.push(
+                'While processing delete of ' +
+                event.id + ' at ts=' + ts + ': ' + e);
+            return;
+          }
         }
 
         if (instance)
@@ -407,15 +501,187 @@ base.exportTo('tracing.importer', function() {
       for (var i = 0; i < allObjectEvents.length; i++) {
         var objectEventState = allObjectEvents[i];
         try {
-          processEvent(objectEventState);
+          processEvent.call(this, objectEventState);
         } catch (e) {
           this.model_.importErrors.push(e.message);
         }
       }
+    },
+
+    createImplicitObjects_: function() {
+      base.iterItems(this.model_.processes, function(pid, process) {
+        this.createImplicitObjectsForProcess_(process);
+      }, this);
+    },
+
+    // Here, we collect all the snapshots that internally contain a
+    // Javascript-level object inside their args list that has an "id" field,
+    // and turn that into a snapshot of the instance referred to by id.
+    createImplicitObjectsForProcess_: function(process) {
+
+      function processField(referencingObject,
+                            referencingObjectFieldName,
+                            referencingObjectFieldValue,
+                            containingSnapshot) {
+        if (!referencingObjectFieldValue)
+          return;
+
+        if (referencingObjectFieldValue.id === undefined)
+          return;
+        if (referencingObjectFieldValue instanceof
+            tracing.trace_model.ObjectSnapshot)
+          return;
+
+        var implicitSnapshot = referencingObjectFieldValue;
+
+        var rawId = implicitSnapshot.id;
+        var m = /(.+)\/(.+)/.exec(rawId);
+        if (!m)
+          throw new Error('Implicit snapshots must have names.');
+        delete implicitSnapshot.id;
+        var name = m[1];
+        var id = m[2];
+        var res;
+        try {
+          res = process.objects.addSnapshot(
+              id, containingSnapshot.objectInstance.category,
+              name, containingSnapshot.ts,
+              implicitSnapshot);
+        } catch (e) {
+          this.model_.importErrors.push(
+              'While processing implicit snapshot of ' +
+              rawId + ' at ts=' + containingSnapshot.ts + ': ' + e);
+          return;
+        }
+        res.objectInstance.hasImplicitSnapshots = true;
+        res.containingSnapshot = containingSnapshot;
+        referencingObject[referencingObjectFieldName] = res;
+        if (!(res instanceof tracing.trace_model.ObjectSnapshot))
+          throw new Error('Created object must be instanceof snapshot');
+        return res.args;
+      }
+
+      function iterObject(object, func, containingSnapshot, thisArg) {
+        if (!(object instanceof Object))
+          return;
+
+        if (object instanceof Array) {
+          for (var i = 0; i < object.length; i++) {
+            var res = func.call(thisArg, object, i, object[i],
+                                containingSnapshot);
+            if (res)
+              iterObject(res, func, containingSnapshot, thisArg);
+            else
+              iterObject(object[i], func, containingSnapshot, thisArg);
+          }
+          return;
+        }
+
+        for (var key in object) {
+          var res = func.call(thisArg, object, key, object[key],
+                              containingSnapshot);
+          if (res)
+            iterObject(res, func, containingSnapshot, thisArg);
+          else
+            iterObject(object[key], func, containingSnapshot, thisArg);
+        }
+      }
+
+      // TODO(nduca): We may need to iterate the instances in sorted order by
+      // creationTs.
+      process.objects.iterObjectInstances(function(instance) {
+        instance.snapshots.forEach(function(snapshot) {
+          if (snapshot.args.id !== undefined)
+            throw new Error('args cannot have an id field inside it');
+          iterObject(snapshot.args, processField, snapshot, this);
+        }, this);
+      }, this);
+    },
+
+    joinObjectRefs_: function() {
+      base.iterItems(this.model_.processes, function(pid, process) {
+        this.joinObjectRefsForProcess_(process);
+      }, this);
+    },
+
+    joinObjectRefsForProcess_: function(process) {
+      // Iterate the world, looking for id_refs
+      var patchupsToApply = [];
+      base.iterItems(process.threads, function(tid, thread) {
+        thread.asyncSlices.slices.forEach(function(item) {
+          this.searchItemForIDRefs_(
+              patchupsToApply, process.objects, 'start', item);
+        }, this);
+        thread.slices.forEach(function(item) {
+          this.searchItemForIDRefs_(
+              patchupsToApply, process.objects, 'start', item);
+        }, this);
+      }, this);
+      process.objects.iterObjectInstances(function(instance) {
+        instance.snapshots.forEach(function(item) {
+          this.searchItemForIDRefs_(
+              patchupsToApply, process.objects, 'ts', item);
+        }, this);
+      }, this);
+
+      // Change all the fields pointing at id_refs to their real values.
+      patchupsToApply.forEach(function(patchup) {
+        patchup.object[patchup.field] = patchup.value;
+      });
+    },
+
+    searchItemForIDRefs_: function(patchupsToApply, objectCollection,
+                                   itemTimestampField, item) {
+      if (!item.args)
+        throw new Error('');
+
+      function handleField(object, fieldName, fieldValue) {
+        if (fieldValue === undefined ||
+            (!fieldValue.id_ref && !fieldValue.idRef))
+          return;
+
+        var id = fieldValue.id_ref || fieldValue.idRef;
+        var ts = item[itemTimestampField];
+        var snapshot = objectCollection.getSnapshotAt(id, ts);
+        if (!snapshot)
+          return;
+
+        // We have to delay the actual change to the new value until after all
+        // refs have been located. Otherwise, we could end up recursing in
+        // ways we definitely didn't intend.
+        patchupsToApply.push({object: object,
+          field: fieldName,
+          value: snapshot});
+      }
+      function iterObjectFieldsRecursively(object) {
+        if (!(object instanceof Object))
+          return;
+
+        if ((object instanceof tracing.trace_model.ObjectSnapshot) ||
+            (object instanceof Float32Array) ||
+            (object instanceof base.Quad))
+          return;
+
+        if (object instanceof Array) {
+          for (var i = 0; i < object.length; i++) {
+            handleField(object, i, object[i]);
+            iterObjectFieldsRecursively(object[i]);
+          }
+          return;
+        }
+
+        for (var key in object) {
+          var value = object[key];
+          handleField(object, key, value);
+          iterObjectFieldsRecursively(value);
+        }
+      }
+
+      iterObjectFieldsRecursively(item.args);
     }
   };
 
-  tracing.Model.registerImporter(TraceEventImporter);
+  tracing.TraceModel.registerImporter(TraceEventImporter);
 
   return {
     TraceEventImporter: TraceEventImporter

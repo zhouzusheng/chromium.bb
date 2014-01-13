@@ -57,6 +57,12 @@ base.exportTo('base', function() {
         return undefined;
       return this.max_;
     },
+
+    get range() {
+      if (this.isEmpty_)
+        return undefined;
+      return this.max_ - this.min_;
+    }
   };
 
   Range.compareByMinTimes = function(a, b) {

@@ -25,11 +25,10 @@
 
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/NodeRenderingContext.h"
 #include "core/dom/Text.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/StyleInheritedData.h"
-#include <wtf/text/StringBuilder.h>
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -103,7 +102,7 @@ void HTMLTitleElement::setText(const String &value)
     int numChildren = childNodeCount();
     
     if (numChildren == 1 && firstChild()->isTextNode())
-        toText(firstChild())->setData(value, IGNORE_EXCEPTION);
+        toText(firstChild())->setData(value);
     else {
         // We make a copy here because entity of "value" argument can be Document::m_title,
         // which goes empty during removeChildren() invocation below,

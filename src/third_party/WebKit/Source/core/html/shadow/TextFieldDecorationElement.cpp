@@ -33,11 +33,10 @@
 
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
-#include "core/css/StyleResolver.h"
-#include "core/dom/ElementShadow.h"
 #include "core/dom/Event.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ElementShadow.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/HTMLShadowElement.h"
 #include "core/rendering/RenderImage.h"
@@ -112,10 +111,10 @@ void TextFieldDecorationElement::decorate(HTMLInputElement* input, bool visible)
     ASSERT(existingRoot);
     RefPtr<HTMLDivElement> box = HTMLDivElement::create(input->document());
     decorationRoot->appendChild(box);
-    box->setInlineStyleProperty(CSSPropertyDisplay, CSSValueWebkitFlex);
-    box->setInlineStyleProperty(CSSPropertyWebkitAlignItems, CSSValueCenter);
+    box->setInlineStyleProperty(CSSPropertyDisplay, CSSValueFlex);
+    box->setInlineStyleProperty(CSSPropertyAlignItems, CSSValueCenter);
     ASSERT(existingRoot->childNodeCount() == 1);
-    toHTMLElement(existingRoot->firstChild())->setInlineStyleProperty(CSSPropertyWebkitFlexGrow, 1.0, CSSPrimitiveValue::CSS_NUMBER);
+    toHTMLElement(existingRoot->firstChild())->setInlineStyleProperty(CSSPropertyFlexGrow, 1.0, CSSPrimitiveValue::CSS_NUMBER);
     box->appendChild(HTMLShadowElement::create(HTMLNames::shadowTag, input->document()));
     setInlineStyleProperty(CSSPropertyDisplay, visible ? CSSValueBlock : CSSValueNone);
     box->appendChild(this);
@@ -125,8 +124,7 @@ inline HTMLInputElement* TextFieldDecorationElement::hostInput()
 {
     // TextFieldDecorationElement is created only by C++ code, and it is always
     // in <input> shadow.
-    ASSERT_WITH_SECURITY_IMPLICATION(!shadowHost() || shadowHost()->hasTagName(inputTag));
-    return static_cast<HTMLInputElement*>(shadowHost());
+    return toHTMLInputElement(shadowHost());
 }
 
 bool TextFieldDecorationElement::isTextFieldDecoration() const
@@ -154,7 +152,7 @@ void TextFieldDecorationElement::updateImage()
 
 PassRefPtr<RenderStyle> TextFieldDecorationElement::customStyleForRenderer()
 {
-    RefPtr<RenderStyle> originalStyle = document()->styleResolver()->styleForElement(this);
+    RefPtr<RenderStyle> originalStyle = originalStyleForRenderer();
     RefPtr<RenderStyle> style = RenderStyle::clone(originalStyle.get());
     RenderStyle* inputStyle = hostInput()->renderStyle();
     ASSERT(inputStyle);
@@ -164,23 +162,23 @@ PassRefPtr<RenderStyle> TextFieldDecorationElement::customStyleForRenderer()
     return style.release();
 }
 
-RenderObject* TextFieldDecorationElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* TextFieldDecorationElement::createRenderer(RenderStyle*)
 {
-    RenderImage* image = new (arena) RenderImage(this);
+    RenderImage* image = new (document()->renderArena()) RenderImage(this);
     image->setImageResource(RenderImageResource::create());
     return image;
 }
 
-void TextFieldDecorationElement::attach()
+void TextFieldDecorationElement::attach(const AttachContext& context)
 {
-    HTMLDivElement::attach();
+    HTMLDivElement::attach(context);
     updateImage();
 }
 
-void TextFieldDecorationElement::detach()
+void TextFieldDecorationElement::detach(const AttachContext& context)
 {
     m_textFieldDecorator->willDetach(hostInput());
-    HTMLDivElement::detach();
+    HTMLDivElement::detach(context);
 }
 
 bool TextFieldDecorationElement::isMouseFocusable() const

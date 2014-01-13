@@ -17,7 +17,7 @@
 #include "third_party/npapi/bindings/npapi.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
-#include "webkit/glue/webcursor.h"
+#include "webkit/common/cursors/webcursor.h"
 #include "webkit/plugins/npapi/webplugin_delegate.h"
 #include "webkit/plugins/webkit_plugins_export.h"
 
@@ -110,8 +110,9 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
   virtual void Paint(WebKit::WebCanvas* canvas, const gfx::Rect& rect) OVERRIDE;
   virtual void SetFocus(bool focused) OVERRIDE;
   virtual bool HandleInputEvent(const WebKit::WebInputEvent& event,
-                                WebKit::WebCursorInfo* cursor_info) OVERRIDE;
+                                WebCursor::CursorInfo* cursor_info) OVERRIDE;
   virtual NPObject* GetPluginScriptableObject() OVERRIDE;
+  virtual NPP GetPluginNPP() OVERRIDE;
   virtual bool GetFormValue(base::string16* value) OVERRIDE;
   virtual void DidFinishLoadWithReason(const GURL& url,
                                        NPReason reason,
@@ -286,7 +287,7 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
   // Does platform-specific event handling. Arguments and return are identical
   // to HandleInputEvent.
   bool PlatformHandleInputEvent(const WebKit::WebInputEvent& event,
-                                WebKit::WebCursorInfo* cursor_info);
+                                WebCursor::CursorInfo* cursor_info);
 
   // Closes down and destroys our plugin instance.
   void DestroyInstance();

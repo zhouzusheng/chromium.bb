@@ -27,10 +27,7 @@
 
 #include "core/html/canvas/WebGLBuffer.h"
 
-#include "core/html/canvas/CheckedInt.h"
-#include "core/html/canvas/WebGLContextGroup.h"
 #include "core/html/canvas/WebGLRenderingContext.h"
-#include <wtf/ArrayBufferView.h>
 
 namespace WebCore {
 
@@ -43,6 +40,7 @@ WebGLBuffer::WebGLBuffer(WebGLRenderingContext* ctx)
     : WebGLSharedObject(ctx)
     , m_target(0)
 {
+    ScriptWrappable::init(this);
     setObject(ctx->graphicsContext3D()->createBuffer());
 }
 

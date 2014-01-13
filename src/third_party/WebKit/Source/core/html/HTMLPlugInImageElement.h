@@ -23,9 +23,9 @@
 
 #include "core/html/HTMLPlugInElement.h"
 
+#include "core/platform/MIMETypeFromURL.h"
 #include "core/rendering/style/RenderStyle.h"
-#include <wtf/OwnPtr.h>
-#include <wtf/RefPtr.h>
+#include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
@@ -87,9 +87,9 @@ protected:
     String m_url;
     KURL m_loadedUrl;
     
-    static void updateWidgetCallback(Node*, unsigned = 0);
-    virtual void attach();
-    virtual void detach();
+    static void updateWidgetCallback(Node*);
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
 
     bool allowedToLoadFrameURL(const String& url);
     bool wouldLoadAsNetscapePlugin(const String& url, const String& serviceType);
@@ -97,7 +97,7 @@ protected:
     virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
 
 private:
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*);
     virtual void willRecalcStyle(StyleChange) OVERRIDE FINAL;
 
     virtual void finishParsingChildren();

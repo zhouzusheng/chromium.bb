@@ -30,8 +30,8 @@
 #include "HTMLNames.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/StylePropertySet.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
+#include "core/dom/NodeRenderingTraversal.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 
@@ -85,9 +85,9 @@ void HTMLTablePartElement::collectStyleForPresentationAttribute(const QualifiedN
 
 HTMLTableElement* HTMLTablePartElement::findParentTable() const
 {
-    ContainerNode* parent = parentNode();
+    ContainerNode* parent = NodeRenderingTraversal::parent(this);
     while (parent && !parent->hasTagName(tableTag))
-        parent = parent->parentNode();
+        parent = NodeRenderingTraversal::parent(parent);
     return static_cast<HTMLTableElement*>(parent);
 }
 

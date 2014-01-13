@@ -39,9 +39,9 @@
 #include "core/platform/graphics/FontDescription.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/TextRun.h"
-#include <public/WebFloatPoint.h>
-#include <public/WebFloatRect.h>
-#include <public/WebRect.h>
+#include "public/platform/WebFloatPoint.h"
+#include "public/platform/WebFloatRect.h"
+#include "public/platform/WebRect.h"
 
 using namespace WebCore;
 
@@ -93,13 +93,19 @@ void WebFontImpl::drawText(WebCanvas* canvas, const WebTextRun& run, const WebFl
                            int from, int to) const
 {
     FontCachePurgePreventer fontCachePurgePreventer;
+    WebCore::FloatRect textClipRect(clip);
+    TextRun textRun(run);
+    TextRunPaintInfo runInfo(textRun);
+    runInfo.from = from;
+    runInfo.to = to == -1 ? textRun.length() : to;
+    runInfo.bounds = textClipRect;
     GraphicsContext gc(canvas);
 
     gc.save();
-    gc.setShouldSmoothFonts(canvasIsOpaque);
-    gc.setFillColor(color, ColorSpaceDeviceRGB);
-    gc.clip(WebCore::FloatRect(clip));
-    m_font.drawText(&gc, run, leftBaseline, from, to);
+    gc.setCertainlyOpaque(canvasIsOpaque);
+    gc.setFillColor(color);
+    gc.clip(textClipRect);
+    m_font.drawText(&gc, runInfo, leftBaseline);
     gc.restore();
 
 #if defined(WIN32)

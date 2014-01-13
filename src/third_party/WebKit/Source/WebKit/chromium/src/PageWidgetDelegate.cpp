@@ -85,7 +85,7 @@ void PageWidgetDelegate::paint(Page* page, PageOverlayList* overlays, WebCanvas*
     if (rect.isEmpty())
         return;
     GraphicsContext gc(canvas);
-    gc.setShouldSmoothFonts(background == Opaque);
+    gc.setCertainlyOpaque(background == Opaque);
     gc.applyDeviceScaleFactor(page->deviceScaleFactor());
     gc.setUseHighResMarkers(page->deviceScaleFactor() > 1.5f);
     IntRect dirtyRect(rect);
@@ -97,8 +97,9 @@ void PageWidgetDelegate::paint(Page* page, PageOverlayList* overlays, WebCanvas*
         view->paint(&gc, dirtyRect);
         if (overlays)
             overlays->paintWebFrame(gc);
-    } else
-        gc.fillRect(dirtyRect, Color::white, ColorSpaceDeviceRGB);
+    } else {
+        gc.fillRect(dirtyRect, Color::white);
+    }
     gc.restore();
 }
 

@@ -28,13 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "MockGrammarCheck.h"
 
-#include "Platform/chromium/public/WebCString.h"
-#include "Platform/chromium/public/WebString.h"
 #include "TestCommon.h"
 #include "WebTextCheckingResult.h"
+#include "public/platform/WebCString.h"
+#include "public/platform/WebString.h"
 #include <algorithm>
 
 using namespace WebKit;

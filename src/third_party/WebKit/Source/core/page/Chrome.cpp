@@ -22,10 +22,13 @@
 #include "config.h"
 #include "core/page/Chrome.h"
 
+#include "public/platform/WebScreenInfo.h"
+#include <wtf/PassRefPtr.h>
+#include <wtf/RefPtr.h>
+#include <wtf/text/StringBuilder.h>
+#include <wtf/Vector.h>
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/fileapi/FileList.h"
-#include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/ChromeClient.h"
@@ -34,29 +37,13 @@
 #include "core/page/Page.h"
 #include "core/page/PageGroupLoadDeferrer.h"
 #include "core/page/PopupOpeningObserver.h"
-#include "core/page/SecurityOrigin.h"
-#include "core/page/Settings.h"
-#include "core/page/WindowFeatures.h"
+#include "core/platform/ColorChooser.h"
 #include "core/platform/DateTimeChooser.h"
 #include "core/platform/FileChooser.h"
-#include "core/platform/FileIconLoader.h"
 #include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/Icon.h"
 #include "core/platform/network/DNS.h"
-#include "core/platform/network/ResourceHandle.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderObject.h"
 #include "core/storage/StorageNamespace.h"
-#include "modules/geolocation/Geolocation.h"
-#include <public/WebScreenInfo.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/Vector.h>
-
-#if ENABLE(INPUT_TYPE_COLOR)
-#include "core/platform/ColorChooser.h"
-#endif
 
 namespace WebCore {
 
@@ -119,11 +106,6 @@ void Chrome::contentsSizeChanged(Frame* frame, const IntSize& size) const
 void Chrome::layoutUpdated(Frame* frame) const
 {
     m_client->layoutUpdated(frame);
-}
-
-void Chrome::scrollbarsModeDidChange() const
-{
-    m_client->scrollbarsModeDidChange();
 }
 
 void Chrome::setWindowRect(const FloatRect& rect) const
@@ -193,7 +175,7 @@ static bool canRunModalIfDuringPageDismissal(Page* page, ChromeClient::DialogTyp
     for (Frame* frame = page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
         FrameLoader::PageDismissalType dismissal = frame->loader()->pageDismissalEventBeingDispatched();
         if (dismissal != FrameLoader::NoDismissal)
-            return page->chrome()->client()->shouldRunModalDialogDuringPageDismissal(dialog, message, dismissal);
+            return page->chrome().client()->shouldRunModalDialogDuringPageDismissal(dialog, message, dismissal);
     }
     return true;
 }
@@ -375,7 +357,7 @@ void Chrome::setToolTip(const HitTestResult& result)
     if (toolTip.isEmpty()) {
         if (Node* node = result.innerNonSharedNode()) {
             if (node->hasTagName(inputTag)) {
-                HTMLInputElement* input = static_cast<HTMLInputElement*>(node);
+                HTMLInputElement* input = toHTMLInputElement(node);
                 toolTip = input->defaultToolTip();
 
                 // FIXME: We should obtain text direction of tooltip from
@@ -402,13 +384,11 @@ void Chrome::enumerateChosenDirectory(FileChooser* fileChooser)
     m_client->enumerateChosenDirectory(fileChooser);
 }
 
-#if ENABLE(INPUT_TYPE_COLOR)
 PassOwnPtr<ColorChooser> Chrome::createColorChooser(ColorChooserClient* client, const Color& initialColor)
 {
     notifyPopupOpeningObservers();
     return m_client->createColorChooser(client, initialColor);
 }
-#endif
 
 PassRefPtr<DateTimeChooser> Chrome::openDateTimeChooser(DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
 {
@@ -437,11 +417,6 @@ void Chrome::setCursor(const Cursor& cursor)
     m_client->setCursor(cursor);
 }
 
-void Chrome::setCursorHiddenUntilMouseMoves(bool hiddenUntilMouseMoves)
-{
-    m_client->setCursorHiddenUntilMouseMoves(hiddenUntilMouseMoves);
-}
-
 void Chrome::scheduleAnimation()
 {
     m_client->scheduleAnimation();
@@ -449,54 +424,15 @@ void Chrome::scheduleAnimation()
 
 // --------
 
-void ChromeClient::annotatedRegionsChanged()
-{
-}
-
-void ChromeClient::populateVisitedLinks()
-{
-}
-
-FloatRect ChromeClient::customHighlightRect(Node*, const AtomicString&, const FloatRect&)
-{
-    return FloatRect();
-}
-
-void ChromeClient::paintCustomHighlight(Node*, const AtomicString&, const FloatRect&, const FloatRect&, bool, bool)
-{
-}
-
-bool ChromeClient::shouldReplaceWithGeneratedFileForUpload(const String&, String&)
-{
-    return false;
-}
-
-String ChromeClient::generateReplacementFile(const String&)
-{
-    ASSERT_NOT_REACHED();
-    return String();
-}
-
-bool ChromeClient::paintCustomOverhangArea(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&)
-{
-    return false;
-}
-
 bool Chrome::hasOpenedPopup() const
 {
     return m_client->hasOpenedPopup();
 }
 
-PassRefPtr<PopupMenu> Chrome::createPopupMenu(PopupMenuClient* client) const
+PassRefPtr<PopupMenu> Chrome::createPopupMenu(Frame& frame, PopupMenuClient* client) const
 {
     notifyPopupOpeningObservers();
-    return m_client->createPopupMenu(client);
-}
-
-PassRefPtr<SearchPopupMenu> Chrome::createSearchPopupMenu(PopupMenuClient* client) const
-{
-    notifyPopupOpeningObservers();
-    return m_client->createSearchPopupMenu(client);
+    return m_client->createPopupMenu(frame, client);
 }
 
 void Chrome::registerPopupOpeningObserver(PopupOpeningObserver* observer)

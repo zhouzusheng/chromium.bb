@@ -24,11 +24,10 @@
  */
 
 [
+    GlobalContext=WindowAndWorker,
     ConstructorTemplate=TypedArray,
     CustomToV8,
-    DoNotCheckConstants,
-    TypedArray=short,
-    ImplementationNamespace=WTF
+    DoNotCheckConstants
 ] interface Int16Array : ArrayBufferView {
     const unsigned long BYTES_PER_ELEMENT = 2;
 

@@ -19,10 +19,10 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/properties/SVGPathSegListPropertyTearOff.h"
 
 #include "SVGNames.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGPathElement.h"
 #include "core/svg/SVGPathSegWithContext.h"
 #include "core/svg/properties/SVGAnimatedPathSegListPropertyTearOff.h"
@@ -63,7 +63,7 @@ SVGPathSegListPropertyTearOff::PassListItemType SVGPathSegListPropertyTearOff::r
 {
     // Not specified, but FF/Opera do it this way, and it's just sane.
     if (!passNewItem) {
-        ec = SVGException::SVG_WRONG_TYPE_ERR;
+        ec = TypeError;
         return 0;
     }
 
@@ -137,5 +137,3 @@ bool SVGPathSegListPropertyTearOff::processIncomingListItemValue(const ListItemT
 }
 
 }
-
-#endif // ENABLE(SVG)

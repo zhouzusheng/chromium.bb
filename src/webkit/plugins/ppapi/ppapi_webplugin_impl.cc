@@ -11,18 +11,19 @@
 #include "googleurl/src/gurl.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/var_tracker.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebPoint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintScalingOption.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/platform/WebPoint.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
+#include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebPluginParams.h"
+#include "third_party/WebKit/public/web/WebPrintParams.h"
+#include "third_party/WebKit/public/web/WebPrintScalingOption.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "webkit/plugins/ppapi/message_channel.h"
 #include "webkit/plugins/ppapi/npobject_var.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
@@ -84,14 +85,16 @@ WebKit::WebPluginContainer* WebPluginImpl::container() const {
 
 bool WebPluginImpl::initialize(WebPluginContainer* container) {
   // The plugin delegate may have gone away.
-  if (!init_data_->delegate)
+  if (!init_data_->delegate.get())
     return false;
 
-  instance_ = init_data_->module->CreateInstance(init_data_->delegate,
-                                                 container,
-                                                 init_data_->url);
-  if (!instance_)
+  instance_ = init_data_->module
+      ->CreateInstance(init_data_->delegate.get(), container, init_data_->url);
+  if (!instance_.get())
     return false;
+
+  // Enable script objects for this plugin.
+  container->allowScriptObjects();
 
   bool success = instance_->Initialize(init_data_->arg_names,
                                        init_data_->arg_values,
@@ -116,14 +119,18 @@ bool WebPluginImpl::initialize(WebPluginContainer* container) {
 }
 
 void WebPluginImpl::destroy() {
-  if (instance_) {
+  // Tell |container_| to clear references to this plugin's script objects.
+  if (container_)
+    container_->clearScriptObjects();
+
+  if (instance_.get()) {
     ::ppapi::PpapiGlobals::Get()->GetVarTracker()->ReleaseVar(instance_object_);
     instance_object_ = PP_MakeUndefined();
     instance_->Delete();
     instance_ = NULL;
   }
 
-  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
 NPObject* WebPluginImpl::scriptableObject() {
@@ -133,19 +140,23 @@ NPObject* WebPluginImpl::scriptableObject() {
     instance_object_ = instance_->GetInstanceObject();
   // GetInstanceObject talked to the plugin which may have removed the instance
   // from the DOM, in which case instance_ would be NULL now.
-  if (!instance_)
+  if (!instance_.get())
     return NULL;
 
   scoped_refptr<NPObjectVar> object(NPObjectVar::FromPPVar(instance_object_));
   // If there's an InstanceObject, tell the Instance's MessageChannel to pass
   // any non-postMessage calls to it.
-  if (object) {
+  if (object.get()) {
     instance_->message_channel().SetPassthroughObject(object->np_object());
   }
   NPObject* message_channel_np_object(instance_->message_channel().np_object());
   // The object is expected to be retained before it is returned.
   WebKit::WebBindings::retainObject(message_channel_np_object);
   return message_channel_np_object;
+}
+
+NPP WebPluginImpl::pluginNPP() {
+  return instance_->instanceNPP();
 }
 
 bool WebPluginImpl::getFormValue(WebString& value) {

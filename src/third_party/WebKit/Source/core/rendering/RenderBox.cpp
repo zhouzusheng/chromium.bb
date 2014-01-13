@@ -4,6 +4,7 @@
  *           (C) 2005 Allan Sandfeld Jensen (kde@carewolf.com)
  *           (C) 2005, 2006 Samuel Weinig (sam.weinig@gmail.com)
  * Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2013 Adobe Systems Incorporated. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -33,20 +34,14 @@
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/loader/cache/CachedImage.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
-#include "core/platform/ScrollbarTheme.h"
 #include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/ImageBuffer.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/transforms/TransformState.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderArena.h"
 #include "core/rendering/RenderBoxRegionInfo.h"
 #include "core/rendering/RenderFlexibleBox.h"
 #include "core/rendering/RenderFlowThread.h"
@@ -54,7 +49,6 @@
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderLayerCompositor.h"
-#include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderRegion.h"
 #include "core/rendering/RenderTableCell.h"
 #include "core/rendering/RenderTheme.h"
@@ -169,7 +163,7 @@ void RenderBox::willBeDestroyed()
 
     RenderBlock::removePercentHeightDescendantIfNeeded(this);
 
-    ExclusionShapeOutsideInfo::removeInfo(this);
+    ShapeOutsideInfo::removeInfo(this);
 
     RenderBoxModelObject::willBeDestroyed();
 }
@@ -277,7 +271,7 @@ void RenderBox::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle
     }
 
     // Our opaqueness might have changed without triggering layout.
-    if (diff == StyleDifferenceRepaint || diff == StyleDifferenceRepaintLayer) {
+    if (diff == StyleDifferenceRepaint || diff == StyleDifferenceRepaintIfText || diff == StyleDifferenceRepaintLayer) {
         RenderObject* parentToInvalidate = parent();
         for (unsigned i = 0; i < backgroundObscurationTestMaxDepth && parentToInvalidate; ++i) {
             parentToInvalidate->invalidateBackgroundObscurationStatus();
@@ -317,20 +311,21 @@ void RenderBox::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle
         frame()->view()->recalculateScrollbarOverlayStyle();
     }
 
-    updateExclusionShapeOutsideInfoAfterStyleChange(style()->shapeOutside(), oldStyle ? oldStyle->shapeOutside() : 0);
+    updateShapeOutsideInfoAfterStyleChange(style()->shapeOutside(), oldStyle ? oldStyle->shapeOutside() : 0);
 }
 
-void RenderBox::updateExclusionShapeOutsideInfoAfterStyleChange(const ExclusionShapeValue* shapeOutside, const ExclusionShapeValue* oldShapeOutside)
+void RenderBox::updateShapeOutsideInfoAfterStyleChange(const ShapeValue* shapeOutside, const ShapeValue* oldShapeOutside)
 {
     // FIXME: A future optimization would do a deep comparison for equality. (bug 100811)
     if (shapeOutside == oldShapeOutside)
         return;
 
     if (shapeOutside) {
-        ExclusionShapeOutsideInfo* exclusionShapeOutsideInfo = ExclusionShapeOutsideInfo::ensureInfo(this);
-        exclusionShapeOutsideInfo->dirtyShapeSize();
-    } else
-        ExclusionShapeOutsideInfo::removeInfo(this);
+        ShapeOutsideInfo* shapeOutsideInfo = ShapeOutsideInfo::ensureInfo(this);
+        shapeOutsideInfo->dirtyShapeSize();
+    } else {
+        ShapeOutsideInfo::removeInfo(this);
+    }
 }
 
 void RenderBox::updateFromStyle()
@@ -719,6 +714,11 @@ void RenderBox::autoscroll(const IntPoint& position)
 {
     if (layer())
         layer()->autoscroll(position);
+}
+
+bool RenderBox::autoscrollInProgress() const
+{
+    return frame() && frame()->page() && frame()->page()->autoscrollInProgress(this);
 }
 
 // There are two kinds of renderer that can autoscroll.
@@ -1345,6 +1345,7 @@ void RenderBox::paintFillLayers(const PaintInfo& paintInfo, const Color& c, cons
 {
     Vector<const FillLayer*, 8> layers;
     const FillLayer* curLayer = fillLayer;
+    bool shouldDrawBackgroundInSeparateBuffer = false;
     while (curLayer) {
         layers.append(curLayer);
         // Stop traversal when an opaque layer is encountered.
@@ -1354,16 +1355,28 @@ void RenderBox::paintFillLayers(const PaintInfo& paintInfo, const Color& c, cons
         // RenderBoxModelObject::paintFillLayerExtended. A more efficient solution might be to move
         // the layer recursion into paintFillLayerExtended, or to compute the layer geometry here
         // and pass it down.
-        
+
+        if (!shouldDrawBackgroundInSeparateBuffer && curLayer->blendMode() != BlendModeNormal)
+            shouldDrawBackgroundInSeparateBuffer = true;
+
         // The clipOccludesNextLayers condition must be evaluated first to avoid short-circuiting.
-        if (curLayer->clipOccludesNextLayers(curLayer == fillLayer) && curLayer->hasOpaqueImage(this) && curLayer->image()->canRender(this, style()->effectiveZoom()) && curLayer->hasRepeatXY())
+        if (curLayer->clipOccludesNextLayers(curLayer == fillLayer) && curLayer->hasOpaqueImage(this) && curLayer->image()->canRender(this, style()->effectiveZoom()) && curLayer->hasRepeatXY() && curLayer->blendMode() == BlendModeNormal)
             break;
         curLayer = curLayer->next();
     }
 
+    GraphicsContext* context = paintInfo.context;
+    if (!context)
+        shouldDrawBackgroundInSeparateBuffer = false;
+    if (shouldDrawBackgroundInSeparateBuffer)
+        context->beginTransparencyLayer(1);
+
     Vector<const FillLayer*>::const_reverse_iterator topLayer = layers.rend();
     for (Vector<const FillLayer*>::const_reverse_iterator it = layers.rbegin(); it != topLayer; ++it)
         paintFillLayer(paintInfo, c, *it, rect, bleedAvoidance, op, backgroundObject);
+
+    if (shouldDrawBackgroundInSeparateBuffer)
+        context->endTransparencyLayer();
 }
 
 void RenderBox::paintFillLayer(const PaintInfo& paintInfo, const Color& c, const FillLayer* fillLayer, const LayoutRect& rect,
@@ -1697,59 +1710,15 @@ void RenderBox::mapLocalToContainer(const RenderLayerModelObject* repaintContain
     }
 
     mode &= ~ApplyContainerFlip;
-    if (o->isRenderFlowThread()) {
-        // Transform from render flow coordinates into region coordinates.
-        RenderRegion* region = toRenderFlowThread(o)->mapFromFlowToRegion(transformState);
-        if (region)
-            region->mapLocalToContainer(region->containerForRepaint(), transformState, mode, wasFixed);
-        return;
-    }
 
     o->mapLocalToContainer(repaintContainer, transformState, mode, wasFixed);
 }
 
-const RenderObject* RenderBox::pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap& geometryMap) const
-{
-    ASSERT(ancestorToStopAt != this);
-
-    bool ancestorSkipped;
-    RenderObject* container = this->container(ancestorToStopAt, &ancestorSkipped);
-    if (!container)
-        return 0;
-
-    bool isFixedPos = style()->position() == FixedPosition;
-    bool hasTransform = hasLayer() && layer()->transform();
-
-    LayoutSize adjustmentForSkippedAncestor;
-    if (ancestorSkipped) {
-        // There can't be a transform between repaintContainer and o, because transforms create containers, so it should be safe
-        // to just subtract the delta between the ancestor and o.
-        adjustmentForSkippedAncestor = -ancestorToStopAt->offsetFromAncestorContainer(container);
-    }
-
-    bool offsetDependsOnPoint = false;
-    LayoutSize containerOffset = offsetFromContainer(container, LayoutPoint(), &offsetDependsOnPoint);
-
-    if (container->isRenderFlowThread())
-        offsetDependsOnPoint = true;
-    
-    bool preserve3D = container->style()->preserves3D() || style()->preserves3D();
-    if (shouldUseTransformFromContainer(container)) {
-        TransformationMatrix t;
-        getTransformFromContainer(container, containerOffset, t);
-        t.translateRight(adjustmentForSkippedAncestor.width(), adjustmentForSkippedAncestor.height());
-        
-        geometryMap.push(this, t, preserve3D, offsetDependsOnPoint, isFixedPos, hasTransform);
-    } else {
-        containerOffset += adjustmentForSkippedAncestor;
-        geometryMap.push(this, containerOffset, preserve3D, offsetDependsOnPoint, isFixedPos, hasTransform);
-    }
-    
-    return ancestorSkipped ? ancestorToStopAt : container;
-}
-
 void RenderBox::mapAbsoluteToLocalPoint(MapCoordinatesFlags mode, TransformState& transformState) const
 {
+    // We don't expect to be called during layout.
+    ASSERT(!view() || !view()->layoutStateEnabled());
+
     bool isFixedPos = style()->position() == FixedPosition;
     bool hasTransform = hasLayer() && layer()->transform();
     if (hasTransform && !isFixedPos) {
@@ -1764,7 +1733,11 @@ void RenderBox::mapAbsoluteToLocalPoint(MapCoordinatesFlags mode, TransformState
 
 LayoutSize RenderBox::offsetFromContainer(RenderObject* o, const LayoutPoint& point, bool* offsetDependsOnPoint) const
 {
-    ASSERT(o == container());
+    // A region "has" boxes inside it without being their container.
+    // FIXME: change container() / containingBlock() to count for boxes being positioned relative to the region, not the
+    // FlowThread. This requires a separate patch as a simple test with such a change in container() causes 129 out of
+    // 337 regions tests to fail.
+    ASSERT(o == container() || o->isRenderRegion());
 
     LayoutSize offset;    
     if (hasPaintOffset())
@@ -1792,6 +1765,9 @@ LayoutSize RenderBox::offsetFromContainer(RenderObject* o, const LayoutPoint& po
 
     if (style()->position() == AbsolutePosition && o->isInFlowPositioned() && o->isRenderInline())
         offset += toRenderInline(o)->offsetForInFlowPositionedInline(this);
+
+    if (offsetDependsOnPoint)
+        *offsetDependsOnPoint |= o->isRenderFlowThread();
 
     return offset;
 }
@@ -1822,7 +1798,7 @@ void RenderBox::positionLineBox(InlineBox* box)
             // our object was inline originally, since otherwise it would have ended up underneath
             // the inlines.
             RootInlineBox* root = box->root();
-            root->block()->setStaticInlinePositionForChild(this, root->lineTopWithLeading(), roundedLayoutUnit(box->logicalLeft()));
+            root->block()->setStaticInlinePositionForChild(this, root->lineTopWithLeading(), LayoutUnit::fromFloatRound(box->logicalLeft()));
             if (style()->hasStaticInlinePosition(box->isHorizontal()))
                 setChildNeedsLayout(true, MarkOnlyThis); // Just go ahead and mark the positioned object as needing layout, so it will update its position properly.
         } else {
@@ -2161,9 +2137,14 @@ LayoutUnit RenderBox::computeLogicalWidthInRegionUsing(SizeType widthType, Lengt
     return logicalWidthResult;
 }
 
-static bool flexItemHasStretchAlignment(const RenderObject* flexitem)
+static bool columnFlexItemHasStretchAlignment(const RenderObject* flexitem)
 {
     RenderObject* parent = flexitem->parent();
+    // auto margins mean we don't stretch. Note that this function will only be used for
+    // widths, so we don't have to check marginBefore/marginAfter.
+    ASSERT(parent->style()->isColumnFlexDirection());
+    if (flexitem->style()->marginStart().isAuto() || flexitem->style()->marginEnd().isAuto())
+        return false;
     return flexitem->style()->alignSelf() == AlignStretch || (flexitem->style()->alignSelf() == AlignAuto && parent->style()->alignItems() == AlignStretch);
 }
 
@@ -2174,7 +2155,7 @@ static bool isStretchingColumnFlexItem(const RenderObject* flexitem)
         return true;
 
     // We don't stretch multiline flexboxes because they need to apply line spacing (align-content) first.
-    if (parent->isFlexibleBox() && parent->style()->flexWrap() == FlexNoWrap && parent->style()->isColumnFlexDirection() && flexItemHasStretchAlignment(flexitem))
+    if (parent->isFlexibleBox() && parent->style()->flexWrap() == FlexNoWrap && parent->style()->isColumnFlexDirection() && columnFlexItemHasStretchAlignment(flexitem))
         return true;
     return false;
 }
@@ -2183,7 +2164,7 @@ bool RenderBox::sizesLogicalWidthToFitContent(SizeType widthType) const
 {
     // Marquees in WinIE are like a mixture of blocks and inline-blocks.  They size as though they're blocks,
     // but they allow text to sit on the same line as the marquee.
-    if (isFloating() || (isInlineBlockOrInlineTable() && !isHTMLMarquee()))
+    if (isFloating() || (isInlineBlockOrInlineTable() && !isMarquee()))
         return true;
 
     // This code may look a bit strange.  Basically width:intrinsic should clamp the size when testing both
@@ -2197,7 +2178,7 @@ bool RenderBox::sizesLogicalWidthToFitContent(SizeType widthType) const
     // FIXME: Think about block-flow here.  Need to find out how marquee direction relates to
     // block-flow (as well as how marquee overflow should relate to block flow).
     // https://bugs.webkit.org/show_bug.cgi?id=46472
-    if (parent()->style()->overflowX() == OMARQUEE) {
+    if (parent()->isMarquee()) {
         EMarqueeDirection dir = parent()->style()->marqueeDirection();
         if (dir == MAUTO || dir == MFORWARD || dir == MBACKWARD || dir == MLEFT || dir == MRIGHT)
             return true;
@@ -2210,7 +2191,7 @@ bool RenderBox::sizesLogicalWidthToFitContent(SizeType widthType) const
         // For multiline columns, we need to apply align-content first, so we can't stretch now.
         if (!parent()->style()->isColumnFlexDirection() || parent()->style()->flexWrap() != FlexNoWrap)
             return true;
-        if (!flexItemHasStretchAlignment(this))
+        if (!columnFlexItemHasStretchAlignment(this))
             return true;
     }
 
@@ -2246,6 +2227,16 @@ void RenderBox::computeInlineDirectionMargins(RenderBlock* containingBlock, Layo
         marginStart = minimumValueForLength(marginStartLength, containerWidth, renderView);
         marginEnd = minimumValueForLength(marginEndLength, containerWidth, renderView);
         return;
+    }
+
+    if (containingBlock->isFlexibleBox()) {
+        // We need to let flexbox handle the margin adjustment - otherwise, flexbox
+        // will think we're wider than we actually are and calculate line sizes wrong.
+        // See also http://dev.w3.org/csswg/css-flexbox/#auto-margins
+        if (marginStartLength.isAuto())
+            marginStartLength.setValue(0);
+        if (marginEndLength.isAuto())
+            marginEndLength.setValue(0);
     }
 
     // Case One: The object is being centered in the containing block's available logical width.
@@ -4053,7 +4044,7 @@ VisiblePosition RenderBox::positionForPoint(const LayoutPoint& point)
 bool RenderBox::shrinkToAvoidFloats() const
 {
     // Floating objects don't shrink.  Objects that don't avoid floats don't shrink.  Marquees don't shrink.
-    if ((isInline() && !isHTMLMarquee()) || !avoidsFloats() || isFloating())
+    if ((isInline() && !isMarquee()) || !avoidsFloats() || isFloating())
         return false;
     
     // Only auto width objects can possibly shrink to avoid floats.
@@ -4495,21 +4486,18 @@ LayoutSize RenderBox::topLeftLocationOffset() const
 
 bool RenderBox::hasRelativeDimensions() const
 {
+    // FIXME: This should probably include viewport percentage heights as well.
     return style()->height().isPercent() || style()->width().isPercent()
-            || style()->maxHeight().isPercent() || style()->maxWidth().isPercent()
-            || style()->minHeight().isPercent() || style()->minWidth().isPercent();
+        || style()->maxHeight().isPercent() || style()->maxWidth().isPercent()
+        || style()->minHeight().isPercent() || style()->minWidth().isPercent();
 }
 
 bool RenderBox::hasRelativeLogicalHeight() const
 {
     return style()->logicalHeight().isPercent()
-            || style()->logicalMinHeight().isPercent()
-            || style()->logicalMaxHeight().isPercent();
-}
-
-bool RenderBox::hasViewportPercentageLogicalHeight() const
-{
-    return style()->logicalHeight().isViewportPercentage()
+        || style()->logicalMinHeight().isPercent()
+        || style()->logicalMaxHeight().isPercent()
+        || style()->logicalHeight().isViewportPercentage()
         || style()->logicalMinHeight().isViewportPercentage()
         || style()->logicalMaxHeight().isViewportPercentage();
 }

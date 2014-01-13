@@ -20,15 +20,12 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGScriptElement.h"
 
 #include "HTMLNames.h"
-#include "SVGNames.h"
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/properties/SVGAnimatedStaticPropertyTearOff.h"
@@ -68,7 +65,7 @@ bool SVGScriptElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::typeAttr);
         supportedAttributes.add(HTMLNames::onerrorAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGScriptElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -213,5 +210,3 @@ PassRefPtr<Element> SVGScriptElement::cloneElementWithoutAttributesAndChildren()
 }
 
 }
-
-#endif // ENABLE(SVG)

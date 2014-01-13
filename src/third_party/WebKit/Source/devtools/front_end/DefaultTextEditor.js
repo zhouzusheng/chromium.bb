@@ -122,6 +122,11 @@ WebInspector.DefaultTextEditor.prototype = {
     },
 
     /**
+     * @param {WebInspector.CompletionDictionary} dictionary
+     */
+    setCompletionDictionary: function(dictionary) { },
+
+    /**
      * @return {boolean}
      */
     isClean: function()
@@ -336,19 +341,22 @@ WebInspector.DefaultTextEditor.prototype = {
 
     /**
      * @param {number} lineNumber
+     * @param {number=} columnNumber
      */
-    highlightLine: function(lineNumber)
+    highlightPosition: function(lineNumber, columnNumber)
     {
-        if (typeof lineNumber !== "number" || lineNumber < 0)
+        if (lineNumber < 0)
             return;
 
         lineNumber = Math.min(lineNumber, this._textModel.linesCount - 1);
-        this._mainPanel.highlightLine(lineNumber);
+        if (typeof columnNumber !== "number" || columnNumber < 0 || columnNumber > this._textModel.lineLength(lineNumber))
+            columnNumber = 0;
+        this._mainPanel.highlightPosition(lineNumber, columnNumber);
     },
 
-    clearLineHighlight: function()
+    clearPositionHighlight: function()
     {
-        this._mainPanel.clearLineHighlight();
+        this._mainPanel.clearPositionHighlight();
     },
 
     /**
@@ -1269,7 +1277,7 @@ WebInspector.TextEditorGutterChunk.prototype = {
             parentElement.insertBefore(lineRow, this.element);
             this._expandedLineRows.push(lineRow);
         }
-        parentElement.removeChild(this.element);
+        this.element.remove();
         this._chunkedPanel._syncLineHeightListener(this._expandedLineRows[0]);
 
         this._chunkedPanel.endDomUpdates();
@@ -1299,7 +1307,7 @@ WebInspector.TextEditorGutterChunk.prototype = {
                     elementInserted = true;
                     parentElement.insertBefore(this.element, lineRow);
                 }
-                parentElement.removeChild(lineRow);
+                lineRow.remove();
             }
             this._chunkedPanel._cachedRows.push(lineRow);
         }
@@ -1374,7 +1382,7 @@ WebInspector.TextEditorMainPanel = function(delegate, textModel, url, syncScroll
     this.element.addEventListener("cut", this._handleCut.bind(this), false);
     this.element.addEventListener("keypress", this._handleKeyPress.bind(this), false);
 
-    this._showWhitespace = WebInspector.experimentsSettings.showWhitespaceInEditor.isEnabled();
+    this._showWhitespace = WebInspector.settings.showWhitespacesInEditor.get();
 
     this._container.addEventListener("focus", this._handleFocused.bind(this), false);
 
@@ -1761,6 +1769,7 @@ WebInspector.TextEditorMainPanel.prototype = {
     set mimeType(mimeType)
     {
         this._highlighter.mimeType = mimeType;
+        this._updateHighlightsForRange(this._textModel.range());
     },
 
     get mimeType()
@@ -1866,20 +1875,21 @@ WebInspector.TextEditorMainPanel.prototype = {
 
     /**
      * @param {number} lineNumber
+     * @param {number} columnNumber
      */
-    highlightLine: function(lineNumber)
+    highlightPosition: function(lineNumber, columnNumber)
     {
-        this.clearLineHighlight();
+        this.clearPositionHighlight();
         this._highlightedLine = lineNumber;
         this.revealLine(lineNumber);
 
         if (!this._readOnly)
-            this._restoreSelection(WebInspector.TextRange.createFromLocation(lineNumber, 0), false);
+            this._restoreSelection(WebInspector.TextRange.createFromLocation(lineNumber, columnNumber), false);
 
         this.addDecoration(lineNumber, "webkit-highlighted-line");
     },
 
-    clearLineHighlight: function()
+    clearPositionHighlight: function()
     {
         if (typeof this._highlightedLine === "number") {
             this.removeDecoration(this._highlightedLine, "webkit-highlighted-line");
@@ -3255,7 +3265,7 @@ WebInspector.TextEditorMainChunk.prototype = {
             parentElement.insertBefore(lineRow, this.element);
             this._expandedLineRows.push(lineRow);
         }
-        parentElement.removeChild(this.element);
+        this.element.remove();
         this._chunkedPanel._paintLines(this.startLine, this.startLine + this.linesCount);
 
         this._chunkedPanel.endDomUpdates();
@@ -3281,7 +3291,7 @@ WebInspector.TextEditorMainChunk.prototype = {
                     elementInserted = true;
                     parentElement.insertBefore(this.element, lineRow);
                 }
-                parentElement.removeChild(lineRow);
+                lineRow.remove();
             }
             this._chunkedPanel._releaseLinesHighlight(lineRow);
         }

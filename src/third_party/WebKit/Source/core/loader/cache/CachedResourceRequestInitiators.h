@@ -33,7 +33,12 @@ namespace WebCore {
 
 struct CachedResourceRequestInitiators {
     const AtomicString css;
+    const AtomicString document;
     const AtomicString icon;
+    const AtomicString link;
+    const AtomicString processinginstruction;
+    const AtomicString texttrack;
+    const AtomicString xml;
     const AtomicString xmlhttprequest;
     WTF_MAKE_NONCOPYABLE(CachedResourceRequestInitiators); WTF_MAKE_FAST_ALLOCATED;
 private:

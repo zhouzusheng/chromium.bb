@@ -24,10 +24,11 @@
  */
 
 [
+    NoInterfaceObject,
     ActiveDOMObject,
     Constructor,
-    CallWith=ScriptExecutionContext,
-    EventTarget,
+    ConstructorCallWith=ScriptExecutionContext,
+    EventTarget
 ] interface SpeechRecognition {
     attribute SpeechGrammarList grammars;
     attribute DOMString lang;

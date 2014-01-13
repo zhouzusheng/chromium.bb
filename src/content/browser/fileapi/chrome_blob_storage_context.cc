@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/blob/blob_storage_controller.h"
+#include "webkit/browser/blob/blob_storage_controller.h"
 
 using base::UserDataAdapter;
 using webkit_blob::BlobStorageController;
@@ -23,8 +23,9 @@ ChromeBlobStorageContext* ChromeBlobStorageContext::GetFor(
   if (!context->GetUserData(kBlobStorageContextKeyName)) {
     scoped_refptr<ChromeBlobStorageContext> blob =
         new ChromeBlobStorageContext();
-    context->SetUserData(kBlobStorageContextKeyName,
-                         new UserDataAdapter<ChromeBlobStorageContext>(blob));
+    context->SetUserData(
+        kBlobStorageContextKeyName,
+        new UserDataAdapter<ChromeBlobStorageContext>(blob.get()));
     // Check first to avoid memory leak in unittests.
     if (BrowserThread::IsMessageLoopValid(BrowserThread::IO)) {
       BrowserThread::PostTask(

@@ -27,17 +27,10 @@
 #include "HTMLNames.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/npruntime_impl.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/Event.h"
-#include "core/loader/FrameLoader.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
-#include "core/page/FrameTree.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
 #include "core/platform/Widget.h"
 #include "core/plugins/PluginView.h"
 #include "core/rendering/RenderEmbeddedObject.h"
@@ -86,7 +79,7 @@ bool HTMLPlugInElement::willRespondToMouseClickEvents()
     return true;
 }
 
-void HTMLPlugInElement::detach()
+void HTMLPlugInElement::detach(const AttachContext& context)
 {
     m_instance.clear();
 
@@ -101,7 +94,7 @@ void HTMLPlugInElement::detach()
         m_NPObject = 0;
     }
 
-    HTMLFrameOwnerElement::detach();
+    HTMLFrameOwnerElement::detach(context);
 }
 
 void HTMLPlugInElement::resetInstance()
@@ -189,10 +182,8 @@ void HTMLPlugInElement::defaultEventHandler(Event* event)
 
     RenderObject* r = renderer();
     if (r && r->isEmbeddedObject()) {
-        if (toRenderEmbeddedObject(r)->showsUnavailablePluginIndicator()) {
-            toRenderEmbeddedObject(r)->handleUnavailablePluginIndicatorEvent(event);
+        if (toRenderEmbeddedObject(r)->showsUnavailablePluginIndicator())
             return;
-        }
 
         if (displayState() < Playing)
             return;
@@ -227,9 +218,9 @@ bool HTMLPlugInElement::isPluginElement() const
     return true;
 }
 
-bool HTMLPlugInElement::supportsFocus() const
+bool HTMLPlugInElement::rendererIsFocusable() const
 {
-    if (HTMLFrameOwnerElement::supportsFocus())
+    if (HTMLFrameOwnerElement::supportsFocus() && HTMLFrameOwnerElement::rendererIsFocusable())
         return true;
 
     if (useFallbackContent() || !renderer() || !renderer()->isEmbeddedObject())

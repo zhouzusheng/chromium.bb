@@ -14,17 +14,18 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/metrics/stats_counters.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/version.h"
 #include "base/win/iat_patch_function.h"
 #include "base/win/registry.h"
 #include "base/win/windows_version.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "ui/base/win/dpi.h"
 #include "ui/base/win/hwnd_util.h"
-#include "webkit/glue/webkit_glue.h"
+#include "webkit/common/cursors/webcursor.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/plugin_lib.h"
@@ -35,7 +36,6 @@
 #include "webkit/plugins/npapi/webplugin_ime_win.h"
 #include "webkit/plugins/plugin_constants.h"
 
-using WebKit::WebCursorInfo;
 using WebKit::WebKeyboardEvent;
 using WebKit::WebInputEvent;
 using WebKit::WebMouseEvent;
@@ -657,8 +657,9 @@ void WebPluginDelegateImpl::OnThrottleMessage() {
   }
 
   if (!throttle_queue_was_empty) {
-    MessageLoop::current()->PostDelayedTask(
-        FROM_HERE, base::Bind(&WebPluginDelegateImpl::OnThrottleMessage),
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&WebPluginDelegateImpl::OnThrottleMessage),
         base::TimeDelta::FromMilliseconds(kFlashWMUSERMessageThrottleDelayMs));
   }
 }
@@ -680,8 +681,9 @@ void WebPluginDelegateImpl::ThrottleMessage(WNDPROC proc, HWND hwnd,
   throttle_queue->push_back(msg);
 
   if (throttle_queue->size() == 1) {
-    MessageLoop::current()->PostDelayedTask(
-        FROM_HERE, base::Bind(&WebPluginDelegateImpl::OnThrottleMessage),
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&WebPluginDelegateImpl::OnThrottleMessage),
         base::TimeDelta::FromMilliseconds(kFlashWMUSERMessageThrottleDelayMs));
   }
 }
@@ -825,13 +827,15 @@ bool WebPluginDelegateImpl::CreateDummyWindowForActivation() {
 }
 
 bool WebPluginDelegateImpl::WindowedReposition(
-    const gfx::Rect& window_rect,
-    const gfx::Rect& clip_rect) {
+    const gfx::Rect& window_rect_in_dip,
+    const gfx::Rect& clip_rect_in_dip) {
   if (!windowed_handle_) {
     NOTREACHED();
     return false;
   }
 
+  gfx::Rect window_rect = ui::win::DIPToScreenRect(window_rect_in_dip);
+  gfx::Rect clip_rect = ui::win::DIPToScreenRect(clip_rect_in_dip);
   if (window_rect_ == window_rect && clip_rect_ == clip_rect)
     return false;
 
@@ -1023,7 +1027,6 @@ LRESULT CALLBACK WebPluginDelegateImpl::NativeWndProc(
     // only synchronously calling RedrawWindow once at a time.
     if (old_message != custom_msg)
       flags |= RDW_UPDATENOW;
-
     RECT rect = invalid_rect.ToRECT();
     RedrawWindow(hwnd, &rect, NULL, flags);
     result = FALSE;
@@ -1036,7 +1039,7 @@ LRESULT CALLBACK WebPluginDelegateImpl::NativeWndProc(
 
       delegate->instance()->PushPopupsEnabledState(true);
 
-      MessageLoop::current()->PostDelayedTask(
+      base::MessageLoop::current()->PostDelayedTask(
           FROM_HERE,
           base::Bind(&WebPluginDelegateImpl::OnUserGestureEnd,
                      delegate->user_gesture_msg_factory_.GetWeakPtr()),
@@ -1271,7 +1274,7 @@ static bool NPEventFromWebInputEvent(const WebInputEvent& event,
 }
 
 bool WebPluginDelegateImpl::PlatformHandleInputEvent(
-    const WebInputEvent& event, WebCursorInfo* cursor_info) {
+    const WebInputEvent& event, WebCursor::CursorInfo* cursor_info) {
   DCHECK(cursor_info != NULL);
 
   NPEvent np_event;
@@ -1282,7 +1285,7 @@ bool WebPluginDelegateImpl::PlatformHandleInputEvent(
   // Allow this plug-in to access this IME emulator through IMM32 API while the
   // plug-in is processing this event.
   if (GetQuirks() & PLUGIN_QUIRK_EMULATE_IME) {
-    if (!plugin_ime_.get())
+    if (!plugin_ime_)
       plugin_ime_.reset(new WebPluginIMEWin);
   }
   WebPluginIMEWin::ScopedLock lock(
@@ -1317,7 +1320,7 @@ bool WebPluginDelegateImpl::PlatformHandleInputEvent(
   }
 
   bool old_task_reentrancy_state =
-      MessageLoop::current()->NestableTasksAllowed();
+      base::MessageLoop::current()->NestableTasksAllowed();
 
   // Maintain a local/global stack for the g_current_plugin_instance variable
   // as this may be a nested invocation.
@@ -1369,8 +1372,9 @@ bool WebPluginDelegateImpl::PlatformHandleInputEvent(
     // Restore the nestable tasks allowed state in the message loop and reset
     // the os modal loop state as the plugin returned from the TrackPopupMenu
     // API call.
-    MessageLoop::current()->SetNestableTasksAllowed(old_task_reentrancy_state);
-    MessageLoop::current()->set_os_modal_loop(false);
+    base::MessageLoop::current()->SetNestableTasksAllowed(
+        old_task_reentrancy_state);
+    base::MessageLoop::current()->set_os_modal_loop(false);
     // The Flash plugin at times sets focus to its hidden top level window
     // with class name SWFlash_PlaceholderX. This causes the chrome browser
     // window to receive a WM_ACTIVATEAPP message as a top level window from
@@ -1400,8 +1404,8 @@ void WebPluginDelegateImpl::OnModalLoopEntered() {
   DCHECK(handle_event_pump_messages_event_ != NULL);
   SetEvent(handle_event_pump_messages_event_);
 
-  MessageLoop::current()->SetNestableTasksAllowed(true);
-  MessageLoop::current()->set_os_modal_loop(true);
+  base::MessageLoop::current()->SetNestableTasksAllowed(true);
+  base::MessageLoop::current()->set_os_modal_loop(true);
 
   UnhookWindowsHookEx(handle_event_message_filter_hook_);
   handle_event_message_filter_hook_ = NULL;
@@ -1482,7 +1486,7 @@ void WebPluginDelegateImpl::ImeCompositionUpdated(
     const std::vector<int>& clauses,
     const std::vector<int>& target,
     int cursor_position) {
-  if (!plugin_ime_.get())
+  if (!plugin_ime_)
     plugin_ime_.reset(new WebPluginIMEWin);
 
   plugin_ime_->CompositionUpdated(text, clauses, target, cursor_position);
@@ -1491,7 +1495,7 @@ void WebPluginDelegateImpl::ImeCompositionUpdated(
 
 void WebPluginDelegateImpl::ImeCompositionCompleted(
     const base::string16& text) {
-  if (!plugin_ime_.get())
+  if (!plugin_ime_)
     plugin_ime_.reset(new WebPluginIMEWin);
   plugin_ime_->CompositionCompleted(text);
   plugin_ime_->SendEvents(instance());
@@ -1499,7 +1503,7 @@ void WebPluginDelegateImpl::ImeCompositionCompleted(
 
 bool WebPluginDelegateImpl::GetIMEStatus(int* input_type,
                                          gfx::Rect* caret_rect) {
-  if (!plugin_ime_.get())
+  if (!plugin_ime_)
     return false;
   return plugin_ime_->GetStatus(input_type, caret_rect);
 }

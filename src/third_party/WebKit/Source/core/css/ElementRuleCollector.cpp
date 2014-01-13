@@ -29,21 +29,13 @@
 #include "config.h"
 #include "core/css/ElementRuleCollector.h"
 
-#include "CSSValueKeywords.h"
-#include "core/css/CSSDefaultStyleSheets.h"
-#include "core/css/CSSRule.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/CSSSelector.h"
-#include "core/css/CSSSelectorList.h"
 #include "core/css/SelectorCheckerFastPath.h"
 #include "core/css/SiblingTraversalStrategies.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/StyledElement.h"
-#include "core/html/HTMLElement.h"
 #include "core/rendering/RenderRegion.h"
-#include "core/svg/SVGElement.h"
-
-#include <wtf/TemporaryChange.h>
 
 namespace WebCore {
 
@@ -96,7 +88,7 @@ void ElementRuleCollector::collectMatchingRules(const MatchRequest& matchRequest
     ASSERT(matchRequest.ruleSet);
     ASSERT(m_state.element());
 
-    const StyleResolver::State& state = m_state;
+    const StyleResolverState& state = m_state;
     Element* element = state.element();
     const StyledElement* styledElement = state.styledElement();
     const AtomicString& pseudoId = element->shadowPseudoId();
@@ -153,7 +145,7 @@ void ElementRuleCollector::collectMatchingRulesForRegion(const MatchRequest& mat
 
 void ElementRuleCollector::sortAndTransferMatchedRules()
 {
-    const StyleResolver::State& state = m_state;
+    const StyleResolverState& state = m_state;
 
     if (!m_matchedRules || m_matchedRules->isEmpty())
         return;
@@ -177,7 +169,7 @@ void ElementRuleCollector::sortAndTransferMatchedRules()
 
 inline bool ElementRuleCollector::ruleMatches(const RuleData& ruleData, const ContainerNode* scope, PseudoId& dynamicPseudo)
 {
-    const StyleResolver::State& state = m_state;
+    const StyleResolverState& state = m_state;
 
     if (ruleData.hasFastCheckableSelector()) {
         // We know this selector does not include any pseudo elements.
@@ -220,7 +212,7 @@ void ElementRuleCollector::collectMatchingRulesForList(const Vector<RuleData>* r
     if (!rules)
         return;
 
-    const StyleResolver::State& state = m_state;
+    const StyleResolverState& state = m_state;
 
     unsigned size = rules->size();
     for (unsigned i = 0; i < size; ++i) {
@@ -286,6 +278,10 @@ bool ElementRuleCollector::hasAnyMatchingRules(RuleSet* ruleSet)
     clearMatchedRules();
 
     m_mode = SelectorChecker::SharingRules;
+    // To check whether a given RuleSet has any rule matching a given element,
+    // should not see the element's treescope. Because RuleSet has no
+    // information about "scope".
+    m_behaviorAtBoundary = SelectorChecker::StaysWithinTreeScope;
     int firstRuleIndex = -1, lastRuleIndex = -1;
     StyleResolver::RuleRange ruleRange(firstRuleIndex, lastRuleIndex);
     collectMatchingRules(MatchRequest(ruleSet), ruleRange);

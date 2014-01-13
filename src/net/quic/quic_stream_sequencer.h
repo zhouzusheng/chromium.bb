@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "net/base/iovec.h"
 #include "net/quic/quic_protocol.h"
 
 using std::map;
@@ -49,12 +50,22 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
   bool OnStreamFrame(const QuicStreamFrame& frame);
 
   // Wait until we've seen 'offset' bytes, and then terminate the stream.
-  // TODO(ianswett): Simplify this method by removing half_close, now that
-  // the sequencer is bypassed for stream resets and half_close is always true.
-  void CloseStreamAtOffset(QuicStreamOffset offset, bool half_close);
+  void CloseStreamAtOffset(QuicStreamOffset offset);
 
   // Once data is buffered, it's up to the stream to read it when the stream
   // can handle more data.  The following three functions make that possible.
+
+  // Fills in up to iov_len iovecs with the next readable regions.  Returns the
+  // number of iovs used.  Non-destructive of the underlying data.
+  int GetReadableRegions(iovec* iov, size_t iov_len);
+
+  // Copies the data into the iov_len buffers provided.  Returns the number of
+  // bytes read.  Any buffered data no longer in use will be released.
+  int Readv(const struct iovec* iov, size_t iov_len);
+
+  // Consumes |num_bytes| data.  Used in conjunction with |GetReadableRegions|
+  // to do zero-copy reads.
+  void MarkConsumed(size_t num_bytes);
 
   // Returns true if the sequncer has bytes available for reading.
   bool HasBytesToRead() const;
@@ -62,11 +73,12 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
   // Returns true if the sequencer has delivered a half close.
   bool IsHalfClosed() const;
 
-  // Returns true if the sequencer has delivered a full close.
-  bool IsClosed() const;
-
   // Returns true if the sequencer has received this frame before.
   bool IsDuplicate(const QuicStreamFrame& frame) const;
+
+  // Calls |ProcessRawData| on |stream_| for each buffered frame that may
+  // be processed.
+  void FlushBufferedFrames();
 
  private:
   friend class test::QuicStreamSequencerPeer;
@@ -74,21 +86,15 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
   // TODO(alyssar) use something better than strings.
   typedef map<QuicStreamOffset, string> FrameMap;
 
-  void FlushBufferedFrames();
-
   bool MaybeCloseStream();
 
   ReliableQuicStream* stream_;  // The stream which owns this sequencer.
   QuicStreamOffset num_bytes_consumed_;  // The last data consumed by the stream
   FrameMap frames_;  // sequence number -> frame
   size_t max_frame_memory_;  //  the maximum memory the sequencer can buffer.
-  // The offset, if any, we got a stream cancelation for.  When this many bytes
-  // have been processed, the stream will be half or full closed depending on
-  // the half_close_ bool.
+  // The offset, if any, we got a stream termination for.  When this many bytes
+  // have been processed, the stream will be half closed.
   QuicStreamOffset close_offset_;
-  // Only valid if close_offset_ is set.  Indicates if it's a half or a full
-  // close.
-  bool half_close_;
 };
 
 }  // namespace net

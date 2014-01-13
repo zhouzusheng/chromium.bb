@@ -20,13 +20,9 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGLineElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attribute.h"
-#include "core/platform/graphics/FloatPoint.h"
-#include "core/rendering/svg/RenderSVGPath.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGLength.h"
@@ -79,7 +75,7 @@ bool SVGLineElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::y1Attr);
         supportedAttributes.add(SVGNames::y2Attr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGLineElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -152,5 +148,3 @@ bool SVGLineElement::selfHasRelativeLengths() const
 }
 
 }
-
-#endif // ENABLE(SVG)

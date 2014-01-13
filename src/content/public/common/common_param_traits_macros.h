@@ -15,12 +15,12 @@
 #include "content/public/common/ssl_status.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/request_priority.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebPoint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebReferrerPolicy.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebPoint.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "ui/base/window_open_disposition.h"
-#include "webkit/glue/webpreferences.h"
+#include "webkit/common/webpreferences.h"
 #include "webkit/plugins/webplugininfo.h"
 
 #undef IPC_MESSAGE_EXPORT
@@ -54,7 +54,7 @@ IPC_STRUCT_TRAITS_MEMBER(action)
 IPC_STRUCT_TRAITS_MEMBER(submit_element)
 IPC_STRUCT_TRAITS_MEMBER(username_element)
 IPC_STRUCT_TRAITS_MEMBER(username_value)
-IPC_STRUCT_TRAITS_MEMBER(possible_usernames)
+IPC_STRUCT_TRAITS_MEMBER(other_possible_usernames)
 IPC_STRUCT_TRAITS_MEMBER(password_element)
 IPC_STRUCT_TRAITS_MEMBER(password_value)
 IPC_STRUCT_TRAITS_MEMBER(password_autocomplete_set)
@@ -64,6 +64,7 @@ IPC_STRUCT_TRAITS_MEMBER(ssl_valid)
 IPC_STRUCT_TRAITS_MEMBER(preferred)
 IPC_STRUCT_TRAITS_MEMBER(blacklisted_by_user)
 IPC_STRUCT_TRAITS_MEMBER(type)
+IPC_STRUCT_TRAITS_MEMBER(times_used)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::SSLStatus)
@@ -102,8 +103,6 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(fantasy_font_family_map)
   IPC_STRUCT_TRAITS_MEMBER(default_font_size)
   IPC_STRUCT_TRAITS_MEMBER(default_fixed_font_size)
-  IPC_STRUCT_TRAITS_MEMBER(apply_default_device_scale_factor_in_compositor)
-  IPC_STRUCT_TRAITS_MEMBER(apply_page_scale_factor_in_compositor)
   IPC_STRUCT_TRAITS_MEMBER(minimum_font_size)
   IPC_STRUCT_TRAITS_MEMBER(minimum_logical_font_size)
   IPC_STRUCT_TRAITS_MEMBER(default_encoding)
@@ -138,6 +137,8 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(allow_file_access_from_file_urls)
   IPC_STRUCT_TRAITS_MEMBER(webaudio_enabled)
   IPC_STRUCT_TRAITS_MEMBER(experimental_webgl_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(experimental_websocket_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(pinch_virtual_viewport_enabled)
   IPC_STRUCT_TRAITS_MEMBER(flash_3d_enabled)
   IPC_STRUCT_TRAITS_MEMBER(flash_stage3d_enabled)
   IPC_STRUCT_TRAITS_MEMBER(flash_stage3d_baseline_enabled)
@@ -173,14 +174,13 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(password_echo_enabled)
   IPC_STRUCT_TRAITS_MEMBER(css_sticky_position_enabled)
   IPC_STRUCT_TRAITS_MEMBER(css_shaders_enabled)
-  IPC_STRUCT_TRAITS_MEMBER(css_variables_enabled)
   IPC_STRUCT_TRAITS_MEMBER(css_grid_layout_enabled)
   IPC_STRUCT_TRAITS_MEMBER(lazy_layout_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(region_based_columns_enabled)
   IPC_STRUCT_TRAITS_MEMBER(touch_enabled)
   IPC_STRUCT_TRAITS_MEMBER(device_supports_touch)
   IPC_STRUCT_TRAITS_MEMBER(device_supports_mouse)
   IPC_STRUCT_TRAITS_MEMBER(touch_adjustment_enabled)
-  IPC_STRUCT_TRAITS_MEMBER(touch_drag_drop_enabled)
   IPC_STRUCT_TRAITS_MEMBER(fixed_position_creates_stacking_context)
   IPC_STRUCT_TRAITS_MEMBER(sync_xhr_in_documents_enabled)
   IPC_STRUCT_TRAITS_MEMBER(deferred_image_decoding_enabled)
@@ -192,7 +192,6 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(initialize_at_minimum_page_scale)
   IPC_STRUCT_TRAITS_MEMBER(smart_insert_delete_enabled)
   IPC_STRUCT_TRAITS_MEMBER(cookie_enabled)
-  IPC_STRUCT_TRAITS_MEMBER(apply_page_scale_factor_in_compositor)
   IPC_STRUCT_TRAITS_MEMBER(spatial_navigation_enabled)
 #if defined(OS_ANDROID)
   IPC_STRUCT_TRAITS_MEMBER(text_autosizing_enabled)

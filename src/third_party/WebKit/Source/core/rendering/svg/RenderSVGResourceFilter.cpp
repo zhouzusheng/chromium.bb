@@ -23,35 +23,14 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
 
-#include "SVGNames.h"
-#include "core/html/ImageData.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
-#include "core/platform/graphics/FloatPoint.h"
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/Image.h"
-#include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/platform/graphics/filters/SourceAlpha.h"
 #include "core/platform/graphics/filters/SourceGraphic.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
-#include "core/rendering/svg/RenderSVGResource.h"
-#include "core/rendering/svg/RenderSVGResourceFilterPrimitive.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
-#include "core/svg/SVGElement.h"
-#include "core/svg/SVGFilterElement.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
-#include "core/svg/SVGStyledElement.h"
-#include "core/svg/SVGUnitTypes.h"
-#include "core/svg/graphics/filters/SVGFilter.h"
-
-#include <wtf/UnusedParam.h>
-#include <wtf/Vector.h>
 
 using namespace std;
 
@@ -109,7 +88,7 @@ PassRefPtr<SVGFilterBuilder> RenderSVGResourceFilter::buildPrimitives(SVGFilter*
             continue;
 
         SVGElement* element = toSVGElement(node);
-        if (!element->isFilterEffect())
+        if (!element->isFilterEffect() || !element->renderer())
             continue;
 
         SVGFilterPrimitiveStandardAttributes* effectElement = static_cast<SVGFilterPrimitiveStandardAttributes*>(element);
@@ -236,7 +215,7 @@ bool RenderSVGResourceFilter::applyResource(RenderObject* object, RenderStyle*, 
 
     OwnPtr<ImageBuffer> sourceGraphic;
     RenderingMode renderingMode = object->document()->page()->settings()->acceleratedFiltersEnabled() ? Accelerated : Unaccelerated;
-    if (!SVGRenderingContext::createImageBuffer(filterData->drawingRegion, effectiveTransform, sourceGraphic, ColorSpaceLinearRGB, renderingMode)) {
+    if (!SVGRenderingContext::createImageBuffer(filterData->drawingRegion, effectiveTransform, sourceGraphic, renderingMode)) {
         ASSERT(!m_filter.contains(object));
         filterData->savedContext = context;
         m_filter.set(object, filterData.leakPtr());
@@ -320,7 +299,7 @@ void RenderSVGResourceFilter::postApplyResource(RenderObject* object, GraphicsCo
             context->concatCTM(filterData->shearFreeAbsoluteTransform.inverse());
 
             context->scale(FloatSize(1 / filterData->filter->filterResolution().width(), 1 / filterData->filter->filterResolution().height()));
-            context->drawImageBuffer(resultImage, object->style()->colorSpace(), lastEffect->absolutePaintRect());
+            context->drawImageBuffer(resultImage, lastEffect->absolutePaintRect());
             context->scale(filterData->filter->filterResolution());
 
             context->concatCTM(filterData->shearFreeAbsoluteTransform);
@@ -371,4 +350,3 @@ FloatRect RenderSVGResourceFilter::drawingRegion(RenderObject* object) const
 }
 
 }
-#endif

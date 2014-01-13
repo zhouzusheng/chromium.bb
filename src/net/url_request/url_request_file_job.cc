@@ -21,9 +21,10 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/platform_file.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/worker_pool.h"
 #include "base/threading/thread_restrictions.h"
@@ -60,34 +61,6 @@ URLRequestFileJob::URLRequestFileJob(URLRequest* request,
       stream_(new FileStream(NULL)),
       remaining_bytes_(0),
       weak_ptr_factory_(this) {
-}
-
-// static
-URLRequestJob* URLRequestFileJob::Factory(URLRequest* request,
-                                          NetworkDelegate* network_delegate,
-                                          const std::string& scheme) {
-  base::FilePath file_path;
-  const bool is_file = FileURLToFilePath(request->url(), &file_path);
-
-  // Check file access permissions.
-  if (!network_delegate ||
-      !network_delegate->CanAccessFile(*request, file_path)) {
-    return new URLRequestErrorJob(request, network_delegate, ERR_ACCESS_DENIED);
-  }
-  // We need to decide whether to create URLRequestFileJob for file access or
-  // URLRequestFileDirJob for directory access. To avoid accessing the
-  // filesystem, we only look at the path string here.
-  // The code in the URLRequestFileJob::Start() method discovers that a path,
-  // which doesn't end with a slash, should really be treated as a directory,
-  // and it then redirects to the URLRequestFileDirJob.
-  if (is_file &&
-      file_path.EndsWithSeparator() &&
-      file_path.IsAbsolute())
-    return new URLRequestFileDirJob(request, network_delegate, file_path);
-
-  // Use a regular file request job for all non-directories (including invalid
-  // file names).
-  return new URLRequestFileJob(request, network_delegate, file_path);
 }
 
 void URLRequestFileJob::Start() {

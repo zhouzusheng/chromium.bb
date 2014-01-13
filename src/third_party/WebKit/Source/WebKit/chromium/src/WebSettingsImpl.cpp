@@ -31,14 +31,17 @@
 #include "config.h"
 #include "WebSettingsImpl.h"
 
+// FIXME: Needed temporarily for Grid (see http://crbug.com/241619)
+#include "RuntimeEnabledFeatures.h"
 #include "core/page/Settings.h"
 #include "core/platform/graphics/FontRenderingMode.h"
 #include "core/platform/graphics/chromium/DeferredImageDecoder.h"
-#include <public/WebString.h>
-#include <public/WebURL.h>
-#include <wtf/UnusedParam.h>
+#include "wtf/UnusedParam.h"
 
-#if defined(OS_WIN)
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
+
+#if OS(WINDOWS)
 #include "core/rendering/RenderThemeChromiumWin.h"
 #endif
 
@@ -52,13 +55,12 @@ WebSettingsImpl::WebSettingsImpl(Settings* settings)
     , m_showPaintRects(false)
     , m_renderVSyncNotificationEnabled(false)
     , m_viewportEnabled(false)
-    , m_initializeAtMinimumPageScale(true)
-    , m_useWideViewport(true)
     , m_gestureTapHighlightEnabled(true)
     , m_autoZoomFocusedNodeToLegibleScale(false)
     , m_deferredImageDecodingEnabled(false)
     , m_doubleTapToZoomEnabled(false)
     , m_supportDeprecatedTargetDensityDPI(false)
+    , m_pinchOverlayScrollbarThickness(0)
 {
     ASSERT(settings);
 }
@@ -101,9 +103,9 @@ void WebSettingsImpl::setPictographFontFamily(const WebString& font, UScriptCode
 void WebSettingsImpl::setDefaultFontSize(int size)
 {
     m_settings->setDefaultFontSize(size);
-#if defined(OS_WIN)
+#if OS(WINDOWS)
     // RenderTheme is a singleton that needs to know the default font size to
-    // draw some form controls.  We let it know each time the size changes.
+    // draw some form controls. We let it know each time the size changes.
     WebCore::RenderThemeChromiumWin::setDefaultFontSize(size);
 #endif
 }
@@ -198,9 +200,9 @@ void WebSettingsImpl::setImagesEnabled(bool enabled)
     m_settings->setImagesEnabled(enabled);
 }
 
-void WebSettingsImpl::setInitializeAtMinimumPageScale(bool enabled)
+void WebSettingsImpl::setLoadWithOverviewMode(bool enabled)
 {
-    m_initializeAtMinimumPageScale = enabled;
+    m_settings->setLoadWithOverviewMode(enabled);
 }
 
 void WebSettingsImpl::setPluginsEnabled(bool enabled)
@@ -260,7 +262,7 @@ void WebSettingsImpl::setAuthorAndUserStylesEnabled(bool enabled)
 
 void WebSettingsImpl::setUseWideViewport(bool useWideViewport)
 {
-    m_useWideViewport = useWideViewport;
+    m_settings->setUseWideViewport(useWideViewport);
 }
 
 void WebSettingsImpl::setDoubleTapToZoomEnabled(bool doubleTapToZoomEnabled)
@@ -306,11 +308,6 @@ void WebSettingsImpl::setEditableLinkBehaviorNeverLive()
     m_settings->setEditableLinkBehavior(WebCore::EditableLinkNeverLive);
 }
 
-void WebSettingsImpl::setFrameFlatteningEnabled(bool enabled)
-{
-    m_settings->setFrameFlatteningEnabled(enabled);
-}
-
 void WebSettingsImpl::setFontRenderingModeNormal()
 {
     // FIXME: If you ever need more behaviors than this, then we should probably
@@ -327,14 +324,6 @@ void WebSettingsImpl::setAllowUniversalAccessFromFileURLs(bool allow)
 void WebSettingsImpl::setAllowFileAccessFromFileURLs(bool allow)
 {
     m_settings->setAllowFileAccessFromFileURLs(allow);
-}
-
-void WebSettingsImpl::setTextDirectionSubmenuInclusionBehaviorNeverIncluded()
-{
-    // FIXME: If you ever need more behaviors than this, then we should probably
-    //        define an enum in WebSettings.h and have a switch statement that
-    //        translates.  Until then, this is probably fine, though.
-    m_settings->setTextDirectionSubmenuInclusionBehavior(WebCore::TextDirectionSubmenuNeverIncluded);
 }
 
 void WebSettingsImpl::setTouchDragDropEnabled(bool enabled)
@@ -367,6 +356,11 @@ void WebSettingsImpl::setExperimentalWebGLEnabled(bool enabled)
     m_settings->setWebGLEnabled(enabled);
 }
 
+void WebSettingsImpl::setExperimentalWebSocketEnabled(bool enabled)
+{
+    m_settings->setExperimentalWebSocketEnabled(enabled);
+}
+
 void WebSettingsImpl::setCSSStickyPositionEnabled(bool enabled)
 {
     m_settings->setCSSStickyPositionEnabled(enabled);
@@ -374,17 +368,18 @@ void WebSettingsImpl::setCSSStickyPositionEnabled(bool enabled)
 
 void WebSettingsImpl::setExperimentalCSSGridLayoutEnabled(bool enabled)
 {
-    m_settings->setCSSGridLayoutEnabled(enabled);
+    // FIXME: Remove once chromium doesn't call it anymore (see http://crbug.com/241619)
+    RuntimeEnabledFeatures::setCSSGridLayoutEnabled(enabled);
+}
+
+void WebSettingsImpl::setRegionBasedColumnsEnabled(bool enabled)
+{
+    m_settings->setRegionBasedColumnsEnabled(enabled);
 }
 
 void WebSettingsImpl::setExperimentalCSSCustomFilterEnabled(bool enabled)
 {
     m_settings->setCSSCustomFilterEnabled(enabled);
-}
-
-void WebSettingsImpl::setExperimentalCSSVariablesEnabled(bool enabled)
-{
-    m_settings->setCSSVariablesEnabled(enabled);
 }
 
 void WebSettingsImpl::setOpenGLMultisamplingEnabled(bool enabled)
@@ -448,6 +443,11 @@ void WebSettingsImpl::setAcceleratedCompositingFor3DTransformsEnabled(bool enabl
     m_settings->setAcceleratedCompositingFor3DTransformsEnabled(enabled);
 }
 
+void WebSettingsImpl::setAcceleratedCompositingForFiltersEnabled(bool enabled)
+{
+    m_settings->setAcceleratedCompositingForFiltersEnabled(enabled);
+}
+
 void WebSettingsImpl::setAcceleratedCompositingForVideoEnabled(bool enabled)
 {
     m_settings->setAcceleratedCompositingForVideoEnabled(enabled);
@@ -509,6 +509,11 @@ void WebSettingsImpl::setAcceleratedCompositingForFixedPositionEnabled(bool enab
     m_settings->setAcceleratedCompositingForFixedPositionEnabled(enabled);
 }
 
+void WebSettingsImpl::setAcceleratedCompositingForTransitionEnabled(bool enabled)
+{
+    m_settings->setAcceleratedCompositingForTransitionEnabled(enabled);
+}
+
 void WebSettingsImpl::setMinimumAccelerated2dCanvasSize(int numPixels)
 {
     m_settings->setMinimumAccelerated2dCanvasSize(numPixels);
@@ -544,19 +549,9 @@ void WebSettingsImpl::setCaretBrowsingEnabled(bool enabled)
     m_settings->setCaretBrowsingEnabled(enabled);
 }
 
-void WebSettingsImpl::setInteractiveFormValidationEnabled(bool enabled)
-{
-    m_settings->setInteractiveFormValidationEnabled(enabled);
-}
-
 void WebSettingsImpl::setValidationMessageTimerMagnification(int newValue)
 {
     m_settings->setValidationMessageTimerMagnification(newValue);
-}
-
-void WebSettingsImpl::setMinimumTimerInterval(double interval)
-{
-    // FIXME: remove this once the embedder is no longer calling it.
 }
 
 void WebSettingsImpl::setFullScreenEnabled(bool enabled)
@@ -692,6 +687,16 @@ void WebSettingsImpl::setSelectionIncludesAltImageText(bool enabled)
 void WebSettingsImpl::setSmartInsertDeleteEnabled(bool enabled)
 {
     m_settings->setSmartInsertDeleteEnabled(enabled);
+}
+
+void WebSettingsImpl::setPinchOverlayScrollbarThickness(int thickness)
+{
+    m_pinchOverlayScrollbarThickness = thickness;
+}
+
+void WebSettingsImpl::setPinchVirtualViewportEnabled(bool enabled)
+{
+    m_settings->setPinchVirtualViewportEnabled(enabled);
 }
 
 } // namespace WebKit

@@ -36,8 +36,8 @@
 
 #include "WebDevToolsAgentPrivate.h"
 #include "WebPageOverlay.h"
-#include <public/WebSize.h>
-#include <public/WebThread.h>
+#include "public/platform/WebSize.h"
+#include "public/platform/WebThread.h"
 #include <wtf/Forward.h>
 #include <wtf/OwnPtr.h>
 
@@ -49,6 +49,7 @@ class GraphicsContext;
 class InspectorClient;
 class InspectorController;
 class Node;
+class PlatformKeyboardEvent;
 }
 
 namespace WebKit {
@@ -110,6 +111,8 @@ public:
     virtual void getAllocatedObjects(HashSet<const void*>&);
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&);
     virtual void setTraceEventCallback(TraceEventCallback);
+
+    virtual void dispatchKeyEvent(const WebCore::PlatformKeyboardEvent&);
 
     int hostId() { return m_hostId; }
 

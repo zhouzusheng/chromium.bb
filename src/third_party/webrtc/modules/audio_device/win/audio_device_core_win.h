@@ -8,14 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_AUDIO_DEVICE_AUDIO_DEVICE_CORE_WIN_H
-#define WEBRTC_AUDIO_DEVICE_AUDIO_DEVICE_CORE_WIN_H
+#ifndef WEBRTC_AUDIO_DEVICE_AUDIO_DEVICE_CORE_WIN_H_
+#define WEBRTC_AUDIO_DEVICE_AUDIO_DEVICE_CORE_WIN_H_
 
 #if (_MSC_VER >= 1400)  // only include for VS 2005 and higher
 
 #include "audio_device_generic.h"
 
-#pragma once
 #include <wmcodecdsp.h>      // CLSID_CWMAudioAEC
                              // (must be before audioclient.h)
 #include <Audioclient.h>     // WASAPI
@@ -67,7 +66,7 @@ class ScopedCOMInitializer {
   }
 
   bool succeeded() const { return SUCCEEDED(hr_); }
- 
+
  private:
   void Initialize(COINIT init) {
     hr_ = CoInitializeEx(NULL, init);
@@ -210,6 +209,9 @@ public:
 public:
     virtual void AttachAudioBuffer(AudioDeviceBuffer* audioBuffer);
 
+private:
+    bool KeyPressed() const;
+
 private:    // avrt function pointers
     PAvRevertMmThreadCharacteristics    _PAvRevertMmThreadCharacteristics;
     PAvSetMmThreadCharacteristicsA      _PAvSetMmThreadCharacteristicsA;
@@ -267,8 +269,6 @@ private:
     int32_t _GetDeviceID(IMMDevice* pDevice, LPWSTR pszBuffer, int bufferLen);
     int32_t _GetDefaultDevice(EDataFlow dir, ERole role, IMMDevice** ppDevice);
     int32_t _GetListDevice(EDataFlow dir, int index, IMMDevice** ppDevice);
-
-    void _Get44kHzDrift();
 
     // Converts from wide-char to UTF-8 if UNICODE is defined.
     // Does nothing if UNICODE is undefined.
@@ -336,9 +336,6 @@ private:  // WASAPI
     UINT64                                  _readSamples;
     uint32_t                          _sndCardRecDelay;
 
-    float                                   _sampleDriftAt48kHz;
-    float                                   _driftAccumulator;
-
     uint16_t                          _recChannelsPrioList[2];
     uint16_t                          _playChannelsPrioList[2];
 
@@ -382,5 +379,4 @@ private:
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_AUDIO_DEVICE_AUDIO_DEVICE_CORE_WIN_H
-
+#endif  // WEBRTC_AUDIO_DEVICE_AUDIO_DEVICE_CORE_WIN_H_

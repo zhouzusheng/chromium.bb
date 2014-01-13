@@ -48,24 +48,24 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorController.h"
-#include "core/inspector/InspectorValues.h"
 #include "core/loader/cache/MemoryCache.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/PageGroup.h"
+#include "core/platform/JSONValues.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/network/ResourceError.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
 #include "core/rendering/RenderView.h"
-#include <public/Platform.h>
-#include <public/WebRect.h>
-#include <public/WebString.h>
-#include <public/WebURL.h>
-#include <public/WebURLError.h>
-#include <public/WebURLRequest.h>
-#include <public/WebURLResponse.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebRect.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
+#include "public/platform/WebURLError.h"
+#include "public/platform/WebURLRequest.h"
+#include "public/platform/WebURLResponse.h"
 #include <wtf/CurrentTime.h>
 #include <wtf/MathExtras.h>
 #include <wtf/Noncopyable.h>
@@ -124,6 +124,8 @@ private:
         HashSet<Page*>::const_iterator end =  page->group().pages().end();
         for (HashSet<Page*>::const_iterator it =  page->group().pages().begin(); it != end; ++it) {
             WebViewImpl* view = WebViewImpl::fromPage(*it);
+            if (!view)
+                continue;
             m_frozenViews.add(view);
             views.append(view);
             view->setIgnoreInputEvents(true);
@@ -388,7 +390,7 @@ void WebDevToolsAgentImpl::reattach(const WebString& savedState)
         return;
 
     ClientMessageLoopAdapter::ensureClientMessageLoopCreated(m_client);
-    inspectorController()->reconnectFrontend(this, savedState);
+    inspectorController()->reuseFrontend(this, savedState);
     WebKit::Platform::current()->currentThread()->addTaskObserver(this);
     m_attached = true;
 }
@@ -604,6 +606,14 @@ void WebDevToolsAgentImpl::dumpUncountedAllocatedObjects(const HashMap<const voi
 void WebDevToolsAgentImpl::setTraceEventCallback(TraceEventCallback callback)
 {
     m_client->setTraceEventCallback(callback);
+}
+
+void WebDevToolsAgentImpl::dispatchKeyEvent(const PlatformKeyboardEvent& event)
+{
+    WebKeyboardEvent webEvent = WebKeyboardEventBuilder(event);
+    if (!webEvent.keyIdentifier[0] && webEvent.type != WebInputEvent::Char)
+        webEvent.setKeyIdentifierFromWindowsKeyCode();
+    m_webViewImpl->handleInputEvent(webEvent);
 }
 
 void WebDevToolsAgentImpl::dispatchOnInspectorBackend(const WebString& message)

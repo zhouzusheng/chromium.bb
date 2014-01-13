@@ -29,7 +29,6 @@
 #include <gtest/gtest.h>
 #include "FrameTestHelpers.h"
 #include "URLTestHelpers.h"
-#include "WebCompositorInitializer.h"
 #include "WebFrame.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
@@ -40,10 +39,11 @@
 #include "core/dom/Node.h"
 #include "core/page/FrameView.h"
 #include "core/platform/graphics/IntRect.h"
-#include <public/WebContentLayer.h>
-#include <public/WebFloatPoint.h>
-#include <public/WebSize.h>
-#include <public/WebUnitTestSupport.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebContentLayer.h"
+#include "public/platform/WebFloatPoint.h"
+#include "public/platform/WebSize.h"
+#include "public/platform/WebUnitTestSupport.h"
 #include <wtf/PassOwnPtr.h>
 
 
@@ -54,8 +54,6 @@ namespace {
 
 TEST(LinkHighlightTest, verifyWebViewImplIntegration)
 {
-    WebKitTests::WebCompositorInitializer compositorInitializer(0);
-
     const std::string baseURL("http://www.test.com/");
     const std::string fileName("test_touch_link_highlight.html");
 
@@ -161,8 +159,6 @@ static WebViewClient* compositingWebViewClient()
 
 TEST(LinkHighlightTest, resetDuringNodeRemoval)
 {
-    WebKitTests::WebCompositorInitializer compositorInitializer(0);
-
     const std::string baseURL("http://www.test.com/");
     const std::string fileName("test_touch_link_highlight.html");
 
@@ -186,7 +182,7 @@ TEST(LinkHighlightTest, resetDuringNodeRemoval)
     webViewImpl->enableTapHighlight(platformEvent);
     ASSERT_TRUE(webViewImpl->linkHighlight());
 
-    GraphicsLayerChromium* highlightLayer = webViewImpl->linkHighlight()->currentGraphicsLayerForTesting();
+    GraphicsLayer* highlightLayer = webViewImpl->linkHighlight()->currentGraphicsLayerForTesting();
     ASSERT_TRUE(highlightLayer);
     EXPECT_TRUE(highlightLayer->linkHighlight());
 

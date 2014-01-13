@@ -9,12 +9,12 @@
 #include <vector>
 
 #include "ppapi/c/extensions/dev/ppb_ext_socket_dev.h"
-#include "ppapi/cpp/dev/var_dictionary_dev.h"
 #include "ppapi/cpp/extensions/dict_field.h"
 #include "ppapi/cpp/extensions/ext_output_traits.h"
 #include "ppapi/cpp/instance_handle.h"
 #include "ppapi/cpp/var.h"
 #include "ppapi/cpp/var_array_buffer.h"
+#include "ppapi/cpp/var_dictionary.h"
 
 namespace pp {
 namespace ext {
@@ -50,7 +50,7 @@ class SocketType_Dev {
   static const char* const kUdp;
 };
 
-typedef VarDictionary_Dev CreateOptions_Dev;
+typedef VarDictionary CreateOptions_Dev;
 
 class CreateInfo_Dev {
  public:
@@ -249,6 +249,35 @@ class Socket_Dev {
   typedef ExtCompletionCallbackWithOutput<std::vector<NetworkInterface_Dev> >
       GetNetworkListCallback;
   int32_t GetNetworkList(const GetNetworkListCallback& callback);
+
+  typedef ExtCompletionCallbackWithOutput<int32_t> JoinGroupCallback;
+  int32_t JoinGroup(int32_t socket_id,
+                    const std::string& address,
+                    const JoinGroupCallback& callback);
+
+  typedef ExtCompletionCallbackWithOutput<int32_t> LeaveGroupCallback;
+  int32_t LeaveGroup(int32_t socket_id,
+                     const std::string& address,
+                     const LeaveGroupCallback& callback);
+
+  typedef ExtCompletionCallbackWithOutput<int32_t>
+      SetMulticastTimeToLiveCallback;
+  int32_t SetMulticastTimeToLive(
+      int32_t socket_id,
+      int32_t ttl,
+      const SetMulticastTimeToLiveCallback& callback);
+
+  typedef ExtCompletionCallbackWithOutput<int32_t>
+      SetMulticastLoopbackModeCallback;
+  int32_t SetMulticastLoopbackMode(
+      int32_t socket_id,
+      bool enabled,
+      const SetMulticastLoopbackModeCallback& callback);
+
+  typedef ExtCompletionCallbackWithOutput<std::vector<std::string> >
+      GetJoinedGroupsCallback;
+  int32_t GetJoinedGroups(int32_t socket_id,
+                          const GetJoinedGroupsCallback& callback);
 
  private:
   InstanceHandle instance_;

@@ -7,10 +7,11 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/hash_tables.h"
 #include "base/debug/trace_event.h"
-#include "base/hash_tables.h"
 #include "base/metrics/histogram.h"
 #include "cc/base/math_util.h"
+#include "cc/output/copy_output_request.h"
 #include "cc/quads/draw_quad.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/transform.h"
@@ -57,8 +58,7 @@ namespace cc {
 DirectRenderer::DrawingFrame::DrawingFrame()
     : root_render_pass(NULL),
       current_render_pass(NULL),
-      current_texture(NULL),
-      flipped_y(false) {}
+      current_texture(NULL) {}
 
 DirectRenderer::DrawingFrame::~DrawingFrame() {}
 
@@ -78,10 +78,16 @@ void DirectRenderer::QuadRectTransform(gfx::Transform* quad_rect_transform,
   quad_rect_transform->Scale(quad_rect.width(), quad_rect.height());
 }
 
-// static
-void DirectRenderer::InitializeMatrices(DrawingFrame* frame,
+void DirectRenderer::InitializeViewport(DrawingFrame* frame,
                                         gfx::Rect draw_rect,
-                                        bool flip_y) {
+                                        gfx::Rect viewport_rect,
+                                        gfx::Size surface_size) {
+  bool flip_y = FlippedFramebuffer();
+
+  DCHECK_GE(viewport_rect.x(), 0);
+  DCHECK_GE(viewport_rect.y(), 0);
+  DCHECK_LE(viewport_rect.right(), surface_size.width());
+  DCHECK_LE(viewport_rect.bottom(), surface_size.height());
   if (flip_y) {
     frame->projection_matrix = OrthoProjectionMatrix(draw_rect.x(),
                                                      draw_rect.right(),
@@ -93,38 +99,41 @@ void DirectRenderer::InitializeMatrices(DrawingFrame* frame,
                                                      draw_rect.y(),
                                                      draw_rect.bottom());
   }
-  frame->window_matrix =
-      window_matrix(0, 0, draw_rect.width(), draw_rect.height());
-  frame->flipped_y = flip_y;
+
+  gfx::Rect window_rect = viewport_rect;
+  if (flip_y)
+    window_rect.set_y(surface_size.height() - viewport_rect.bottom());
+  frame->window_matrix = window_matrix(window_rect.x(),
+                                       window_rect.y(),
+                                       window_rect.width(),
+                                       window_rect.height());
+  SetDrawViewport(window_rect);
+
+  current_draw_rect_ = draw_rect;
+  current_viewport_rect_ = viewport_rect;
+  current_surface_size_ = surface_size;
 }
 
-// static
-gfx::Rect DirectRenderer::MoveScissorToWindowSpace(
-    const DrawingFrame* frame, const gfx::RectF& scissor_rect) {
-  gfx::Rect scissor_rect_in_canvas_space = gfx::ToEnclosingRect(scissor_rect);
-  // The scissor coordinates must be supplied in viewport space so we need to
-  // offset by the relative position of the top left corner of the current
-  // render pass.
-  gfx::Rect framebuffer_output_rect = frame->current_render_pass->output_rect;
-  scissor_rect_in_canvas_space.set_x(
-      scissor_rect_in_canvas_space.x() - framebuffer_output_rect.x());
-  if (frame->flipped_y && !frame->current_texture) {
-    scissor_rect_in_canvas_space.set_y(
-        framebuffer_output_rect.height() -
-        (scissor_rect_in_canvas_space.bottom() - framebuffer_output_rect.y()));
-  } else {
-    scissor_rect_in_canvas_space.set_y(
-        scissor_rect_in_canvas_space.y() - framebuffer_output_rect.y());
-  }
-  return scissor_rect_in_canvas_space;
+gfx::Rect DirectRenderer::MoveFromDrawToWindowSpace(
+    const gfx::RectF& draw_rect) const {
+  gfx::Rect window_rect = gfx::ToEnclosingRect(draw_rect);
+  window_rect -= current_draw_rect_.OffsetFromOrigin();
+  window_rect += current_viewport_rect_.OffsetFromOrigin();
+  if (FlippedFramebuffer())
+    window_rect.set_y(current_surface_size_.height() - window_rect.bottom());
+  return window_rect;
 }
 
 DirectRenderer::DirectRenderer(RendererClient* client,
+                               OutputSurface* output_surface,
                                ResourceProvider* resource_provider)
     : Renderer(client),
+      output_surface_(output_surface),
       resource_provider_(resource_provider) {}
 
 DirectRenderer::~DirectRenderer() {}
+
+bool DirectRenderer::CanReadPixels() const { return true; }
 
 void DirectRenderer::SetEnlargePassTextureAmountForTesting(
     gfx::Vector2d amount) {
@@ -133,6 +142,9 @@ void DirectRenderer::SetEnlargePassTextureAmountForTesting(
 
 void DirectRenderer::DecideRenderPassAllocationsForFrame(
     const RenderPassList& render_passes_in_draw_order) {
+  if (!resource_provider_)
+    return;
+
   base::hash_map<RenderPass::Id, const RenderPass*> render_passes_in_frame;
   for (size_t i = 0; i < render_passes_in_draw_order.size(); ++i)
     render_passes_in_frame.insert(std::pair<RenderPass::Id, const RenderPass*>(
@@ -191,15 +203,30 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order) {
   frame.root_damage_rect =
       Capabilities().using_partial_swap && client_->AllowPartialSwap() ?
       root_render_pass->damage_rect : root_render_pass->output_rect;
-  frame.root_damage_rect.Intersect(gfx::Rect(ViewportSize()));
+  frame.root_damage_rect.Intersect(gfx::Rect(client_->DeviceViewport().size()));
+
+  // Only reshape when we know we are going to draw. Otherwise, the reshape
+  // can leave the window at the wrong size if we never draw and the proper
+  // viewport size is never set.
+  output_surface_->Reshape(client_->DeviceViewport().size(),
+                           client_->DeviceScaleFactor());
 
   BeginDrawingFrame(&frame);
   for (size_t i = 0; i < render_passes_in_draw_order->size(); ++i) {
-    DrawRenderPass(&frame, render_passes_in_draw_order->at(i));
+    RenderPass* pass = render_passes_in_draw_order->at(i);
+    DrawRenderPass(&frame, pass);
 
-    const RenderPass* pass = frame.current_render_pass;
-    for (size_t i = 0; i < pass->copy_callbacks.size(); ++i)
-      CopyCurrentRenderPassToBitmap(&frame, pass->copy_callbacks[i]);
+    for (ScopedPtrVector<CopyOutputRequest>::iterator it =
+             pass->copy_requests.begin();
+         it != pass->copy_requests.end();
+         ++it) {
+      if (i > 0) {
+        // Doing a readback is destructive of our state on Mac, so make sure
+        // we restore the state between readbacks. http://crbug.com/99393.
+        UseRenderPass(&frame, pass);
+      }
+      CopyCurrentRenderPassToBitmap(&frame, pass->copy_requests.take(it));
+    }
   }
   FinishDrawingFrame(&frame);
 
@@ -230,7 +257,7 @@ void DirectRenderer::SetScissorStateForQuad(const DrawingFrame* frame,
                                             const DrawQuad& quad) {
   if (quad.isClipped()) {
     gfx::RectF quad_scissor_rect = quad.clipRect();
-    SetScissorTestRect(MoveScissorToWindowSpace(frame, quad_scissor_rect));
+    SetScissorTestRect(MoveFromDrawToWindowSpace(quad_scissor_rect));
   } else {
     EnsureScissorTestDisabled();
   }
@@ -252,7 +279,7 @@ void DirectRenderer::SetScissorStateForQuadWithRenderPassScissor(
   }
 
   *should_skip_quad = false;
-  SetScissorTestRect(MoveScissorToWindowSpace(frame, quad_scissor_rect));
+  SetScissorTestRect(MoveFromDrawToWindowSpace(quad_scissor_rect));
 }
 
 void DirectRenderer::FinishDrawingQuadList() {}
@@ -269,7 +296,7 @@ void DirectRenderer::DrawRenderPass(DrawingFrame* frame,
 
   if (using_scissor_as_optimization) {
     render_pass_scissor = ComputeScissorRectForRenderPass(frame);
-    SetScissorTestRect(MoveScissorToWindowSpace(frame, render_pass_scissor));
+    SetScissorTestRect(MoveFromDrawToWindowSpace(render_pass_scissor));
   }
 
   if (frame->current_render_pass != frame->root_render_pass ||
@@ -312,10 +339,15 @@ bool DirectRenderer::UseRenderPass(DrawingFrame* frame,
 
   if (render_pass == frame->root_render_pass) {
     BindFramebufferToOutputSurface(frame);
-    InitializeMatrices(frame, render_pass->output_rect, FlippedFramebuffer());
-    SetDrawViewportSize(render_pass->output_rect.size());
+    InitializeViewport(frame,
+                       render_pass->output_rect,
+                       client_->DeviceViewport(),
+                       output_surface_->SurfaceSize());
     return true;
   }
+
+  if (!resource_provider_)
+    return false;
 
   CachedResource* texture = render_pass_textures_.get(render_pass->id);
   DCHECK(texture);

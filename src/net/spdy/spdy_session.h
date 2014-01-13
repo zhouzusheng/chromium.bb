@@ -22,6 +22,7 @@
 #include "net/base/net_export.h"
 #include "net/base/request_priority.h"
 #include "net/socket/client_socket_handle.h"
+#include "net/socket/client_socket_pool.h"
 #include "net/socket/next_proto.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/stream_socket.h"
@@ -31,6 +32,7 @@
 #include "net/spdy/spdy_header_block.h"
 #include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_session_pool.h"
+#include "net/spdy/spdy_stream.h"
 #include "net/spdy/spdy_write_queue.h"
 #include "net/ssl/ssl_client_cert_type.h"
 #include "net/ssl/ssl_config_service.h"
@@ -128,7 +130,8 @@ class NET_EXPORT_PRIVATE SpdyStreamRequest {
   // returned, must not be called again without CancelRequest() or
   // ReleaseStream() being called first. Otherwise, in case of an
   // immediate error, this may be called again.
-  int StartRequest(const scoped_refptr<SpdySession>& session,
+  int StartRequest(SpdyStreamType type,
+                   const scoped_refptr<SpdySession>& session,
                    const GURL& url,
                    RequestPriority priority,
                    const BoundNetLog& net_log,
@@ -142,26 +145,31 @@ class NET_EXPORT_PRIVATE SpdyStreamRequest {
   // caller. Must be called at most once after StartRequest() returns
   // OK or |callback| is called with OK. The caller must immediately
   // set a delegate for the returned stream (except for test code).
-  scoped_refptr<SpdyStream> ReleaseStream();
+  base::WeakPtr<SpdyStream> ReleaseStream();
 
  private:
   friend class SpdySession;
 
-  // Called by |session_| when the stream attempt is
-  // finished. |stream| is non-NULL exactly when |rv| is OK. Also
-  // called with a NULL stream and ERR_ABORTED if |session_| is
-  // destroyed while the stream attempt is still pending.
-  void OnRequestComplete(const scoped_refptr<SpdyStream>& stream, int rv);
+  // Called by |session_| when the stream attempt has finished
+  // successfully.
+  void OnRequestCompleteSuccess(base::WeakPtr<SpdyStream>* stream);
+
+  // Called by |session_| when the stream attempt has finished with an
+  // error. Also called with ERR_ABORTED if |session_| is destroyed
+  // while the stream attempt is still pending.
+  void OnRequestCompleteFailure(int rv);
 
   // Accessors called by |session_|.
+  SpdyStreamType type() const { return type_; }
   const GURL& url() const { return url_; }
   RequestPriority priority() const { return priority_; }
   const BoundNetLog& net_log() const { return net_log_; }
 
   void Reset();
 
+  SpdyStreamType type_;
   scoped_refptr<SpdySession> session_;
-  scoped_refptr<SpdyStream> stream_;
+  base::WeakPtr<SpdyStream> stream_;
   GURL url_;
   RequestPriority priority_;
   BoundNetLog net_log_;
@@ -171,7 +179,8 @@ class NET_EXPORT_PRIVATE SpdyStreamRequest {
 };
 
 class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
-                               public BufferedSpdyFramerVisitorInterface {
+                               public BufferedSpdyFramerVisitorInterface,
+                               public LayeredPool {
  public:
   // TODO(akalin): Use base::TickClock when it becomes available.
   typedef base::TimeTicks (*TimeFunc)(void);
@@ -184,13 +193,13 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   };
 
   // Create a new SpdySession.
-  // |host_port_proxy_pair| is the host/port that this session connects to, and
-  // the proxy configuration settings that it's using.
+  // |spdy_session_key| is the host/port that this session connects to, privacy
+  // and proxy configuration settings that it's using.
   // |spdy_session_pool| is the SpdySessionPool that owns us.  Its lifetime must
   // strictly be greater than |this|.
   // |session| is the HttpNetworkSession.  |net_log| is the NetLog that we log
   // network events to.
-  SpdySession(const HostPortProxyPair& host_port_proxy_pair,
+  SpdySession(const SpdySessionKey& spdy_session_key,
               SpdySessionPool* spdy_session_pool,
               HttpServerProperties* http_server_properties,
               bool verify_domain_authentication,
@@ -207,12 +216,14 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
               NetLog* net_log);
 
   const HostPortPair& host_port_pair() const {
-    return host_port_proxy_pair_.first;
+    return spdy_session_key_.host_port_proxy_pair().first;
   }
   const HostPortProxyPair& host_port_proxy_pair() const {
-    return host_port_proxy_pair_;
+    return spdy_session_key_.host_port_proxy_pair();
   }
-
+  const SpdySessionKey& spdy_session_key() const {
+    return spdy_session_key_;
+  }
   // Get a pushed stream for a given |url|.  If the server initiates a
   // stream, it might already exist for a given path.  The server
   // might also not have initiated the stream yet, but indicated it
@@ -222,7 +233,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // ERR_IO_PENDING) otherwise.
   int GetPushStream(
       const GURL& url,
-      scoped_refptr<SpdyStream>* spdy_stream,
+      base::WeakPtr<SpdyStream>* spdy_stream,
       const BoundNetLog& stream_net_log);
 
   // Used by SpdySessionPool to initialize with a pre-existing SSL socket. For
@@ -248,7 +259,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // Pushes the given producer into the write queue for
   // |stream|. |stream| is guaranteed to be activated before the
   // producer is used to produce its frame.
-  void EnqueueStreamWrite(SpdyStream* stream,
+  void EnqueueStreamWrite(const base::WeakPtr<SpdyStream>& stream,
                           SpdyFrameType frame_type,
                           scoped_ptr<SpdyBufferProducer> producer);
 
@@ -270,11 +281,6 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
                             RequestPriority priority,
                             scoped_ptr<SpdyFrame>* credential_frame);
 
-  // Creates and returns a HEADERS frame.
-  scoped_ptr<SpdyFrame> CreateHeadersFrame(SpdyStreamId stream_id,
-                                           const SpdyHeaderBlock& headers,
-                                           SpdyControlFlags flags);
-
   // Creates and returns a SpdyBuffer holding a data frame with the
   // given data. May return NULL if stalled by flow control.
   scoped_ptr<SpdyBuffer> CreateDataBuffer(SpdyStreamId stream_id,
@@ -282,15 +288,19 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
                                           int len,
                                           SpdyDataFlags flags);
 
-  // Close a stream.
-  void CloseStream(SpdyStreamId stream_id, int status);
+  // Close the stream with the given ID, which must exist and be
+  // active. Note that that stream may hold the last reference to the
+  // session.
+  void CloseActiveStream(SpdyStreamId stream_id, int status);
 
-  // Close a stream that has been created but is not yet active.
-  void CloseCreatedStream(SpdyStream* stream, int status);
+  // Close the given created stream, which must exist but not yet be
+  // active. Note that |stream| may hold the last reference to the
+  // session.
+  void CloseCreatedStream(const base::WeakPtr<SpdyStream>& stream, int status);
 
-  // Reset a stream by sending a RST_STREAM frame with given status code.
-  // Also closes the stream.  Was not piggybacked to CloseStream since not
-  // all of the calls to CloseStream necessitate sending a RST_STREAM.
+  // Send a RST_STREAM frame with the given status code and close the
+  // stream with the given ID, which must exist and be active. Note
+  // that that stream may hold the last reference to the session.
   void ResetStream(SpdyStreamId stream_id,
                    SpdyRstStreamStatus status,
                    const std::string& description);
@@ -415,10 +425,10 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   SpdyCredentialState* credential_state() { return &credential_state_; }
 
   // Adds |alias| to set of aliases associated with this session.
-  void AddPooledAlias(const HostPortProxyPair& alias);
+  void AddPooledAlias(const SpdySessionKey& alias_key);
 
   // Returns the set of aliases associated with this session.
-  const std::set<HostPortProxyPair>& pooled_aliases() const {
+  const std::set<SpdySessionKey>& pooled_aliases() const {
     return pooled_aliases_;
   }
 
@@ -444,44 +454,52 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
     return buffered_spdy_framer_->GetDataFrameMaximumPayload();
   }
 
+  // LayeredPool implementation:
+  virtual bool CloseOneIdleConnection() OVERRIDE;
+
  private:
   friend class base::RefCounted<SpdySession>;
   friend class SpdyStreamRequest;
-  friend class SpdySessionSpdy3Test;
+  friend class SpdySessionTest;
 
   // Allow tests to access our innards for testing purposes.
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy2Test, ClientPing);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy2Test, FailedPing);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy2Test, GetActivePushStream);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy2Test, DeleteExpiredPushStreams);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy2Test, ProtocolNegotiation);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy2Test, ClearSettings);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, ClientPing);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, FailedPing);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, GetActivePushStream);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, DeleteExpiredPushStreams);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, ClearSettings);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, ProtocolNegotiation);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, ProtocolNegotiation31);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, ProtocolNegotiation4);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, AdjustRecvWindowSize31);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, AdjustSendWindowSize31);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test,
-                           SessionFlowControlInactiveStream31);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test,
-                           SessionFlowControlNoReceiveLeaks31);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test,
-                           SessionFlowControlNoSendLeaks31);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, SessionFlowControlEndToEnd31);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, ClientPing);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, FailedPing);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, GetActivePushStream);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, DeleteExpiredPushStreams);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, ProtocolNegotiation);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, ClearSettings);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, AdjustRecvWindowSize);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, AdjustSendWindowSize);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, SessionFlowControlInactiveStream);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, SessionFlowControlNoReceiveLeaks);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, SessionFlowControlNoSendLeaks);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, SessionFlowControlEndToEnd);
 
   typedef std::deque<SpdyStreamRequest*> PendingStreamRequestQueue;
   typedef std::set<SpdyStreamRequest*> PendingStreamRequestCompletionSet;
 
-  typedef std::map<int, scoped_refptr<SpdyStream> > ActiveStreamMap;
-  typedef std::map<std::string,
-      std::pair<scoped_refptr<SpdyStream>, base::TimeTicks> > PushedStreamMap;
+  struct ActiveStreamInfo {
+    ActiveStreamInfo();
+    explicit ActiveStreamInfo(SpdyStream* stream);
+    ~ActiveStreamInfo();
 
-  typedef std::set<scoped_refptr<SpdyStream> > CreatedStreamSet;
+    SpdyStream* stream;
+    bool waiting_for_syn_reply;
+  };
+  typedef std::map<SpdyStreamId, ActiveStreamInfo> ActiveStreamMap;
+
+  struct PushedStreamInfo {
+    PushedStreamInfo();
+    PushedStreamInfo(SpdyStreamId stream_id, base::TimeTicks creation_time);
+    ~PushedStreamInfo();
+
+    SpdyStreamId stream_id;
+    base::TimeTicks creation_time;
+  };
+  typedef std::map<std::string, PushedStreamInfo> PushedStreamMap;
+
+  typedef std::set<SpdyStream*> CreatedStreamSet;
 
   enum State {
     STATE_IDLE,
@@ -496,16 +514,16 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // Called by SpdyStreamRequest to start a request to create a
   // stream. If OK is returned, then |stream| will be filled in with a
   // valid stream. If ERR_IO_PENDING is returned, then
-  // |request->OnRequestComplete()| will be called when the stream is
-  // created (unless it is cancelled). Otherwise, no stream is created
-  // and the error is returned.
+  // |request->OnRequestComplete{Success,Failure}()| will be called
+  // when the stream is created (unless it is cancelled). Otherwise,
+  // no stream is created and the error is returned.
   int TryCreateStream(SpdyStreamRequest* request,
-                      scoped_refptr<SpdyStream>* stream);
+                      base::WeakPtr<SpdyStream>* stream);
 
   // Actually create a stream into |stream|. Returns OK if successful;
   // otherwise, returns an error and |stream| is not filled.
   int CreateStream(const SpdyStreamRequest& request,
-                   scoped_refptr<SpdyStream>* stream);
+                   base::WeakPtr<SpdyStream>* stream);
 
   // Called by SpdyStreamRequest to remove |request| from the stream
   // creation queue.
@@ -515,6 +533,26 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // was closed). Processes as many pending stream requests as
   // possible.
   void ProcessPendingStreamRequests();
+
+  // Close the stream pointed to by the given iterator. Note that that
+  // stream may hold the last reference to the session.
+  void CloseActiveStreamIterator(ActiveStreamMap::iterator it, int status);
+
+  // Close the stream pointed to by the given iterator. Note that that
+  // stream may hold the last reference to the session.
+  void CloseCreatedStreamIterator(CreatedStreamSet::iterator it, int status);
+
+  // Calls CloseActiveStreamIterator() and then SendResetStreamFrame().
+  void ResetStreamIterator(ActiveStreamMap::iterator it,
+                           SpdyRstStreamStatus status,
+                           const std::string& description);
+
+  // Send a RST_STREAM frame with the given parameters. There must be
+  // no active stream with the given ID.
+  void SendResetStreamFrame(SpdyStreamId stream_id,
+                            RequestPriority priority,
+                            SpdyRstStreamStatus status,
+                            const std::string& description);
 
   // Start the DoLoop to read data from socket.
   void StartRead();
@@ -587,11 +625,22 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   void EnqueueWrite(RequestPriority priority,
                     SpdyFrameType frame_type,
                     scoped_ptr<SpdyBufferProducer> producer,
-                    const scoped_refptr<SpdyStream>& stream);
+                    const base::WeakPtr<SpdyStream>& stream);
 
-  // Track active streams in the active stream list.
-  void ActivateStream(SpdyStream* stream);
-  void DeleteStream(SpdyStreamId id, int status);
+  // Inserts a newly-created stream into |created_streams_|.
+  void InsertCreatedStream(scoped_ptr<SpdyStream> stream);
+
+  // Activates |stream| (which must be in |created_streams_|) by
+  // assigning it an ID and returns it.
+  scoped_ptr<SpdyStream> ActivateCreatedStream(SpdyStream* stream);
+
+  // Inserts a newly-activated stream into |active_streams_|.
+  void InsertActivatedStream(scoped_ptr<SpdyStream> stream);
+
+  // Remove all internal references to |stream|, call OnClose() on it,
+  // and process any pending stream requests before deleting it.  Note
+  // that |stream| may hold the last reference to the session.
+  void DeleteStream(scoped_ptr<SpdyStream> stream, int status);
 
   // Removes this session from the session pool.
   void RemoveFromPool();
@@ -599,12 +648,15 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // Check if we have a pending pushed-stream for this url
   // Returns the stream if found (and returns it from the pending
   // list), returns NULL otherwise.
-  scoped_refptr<SpdyStream> GetActivePushStream(const std::string& url);
+  base::WeakPtr<SpdyStream> GetActivePushStream(const std::string& url);
 
-  // Calls OnResponseReceived().
-  // Returns true if successful.
-  bool Respond(const SpdyHeaderBlock& headers,
-               const scoped_refptr<SpdyStream> stream);
+  // Delegates to |stream->OnInitialResponseHeadersReceived()|. If an
+  // error is returned, the last reference to |this| may have been
+  // released.
+  int OnInitialResponseHeadersReceived(const SpdyHeaderBlock& response_headers,
+                                       base::Time response_time,
+                                       base::TimeTicks recv_first_byte_time,
+                                       SpdyStream* stream);
 
   void RecordPingRTTHistogram(base::TimeDelta duration);
   void RecordHistograms();
@@ -620,8 +672,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // shutdown.
   void CloseAllStreams(Error status);
 
-  void LogAbandonedStream(const scoped_refptr<SpdyStream>& stream,
-                          Error status);
+  void LogAbandonedStream(SpdyStream* stream, Error status);
 
   // Invokes a user callback for stream creation.  We provide this method so it
   // can be deferred to the MessageLoop, so we avoid re-entrancy problems.
@@ -722,7 +773,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
 
   // Queue a send-stalled stream for possibly resuming once we're not
   // send-stalled anymore.
-  void QueueSendStalledStream(const scoped_refptr<SpdyStream>& stream);
+  void QueueSendStalledStream(const SpdyStream& stream);
 
   // Go through the queue of send-stalled streams and try to resume as
   // many as possible.
@@ -764,12 +815,12 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // method.
   base::WeakPtrFactory<SpdySession> weak_factory_;
 
-  // The domain this session is connected to.
-  const HostPortProxyPair host_port_proxy_pair_;
+  // The key used to identify this session.
+  const SpdySessionKey spdy_session_key_;
 
-  // Set set of HostPortProxyPairs for which this session has serviced
+  // Set set of SpdySessionKeys for which this session has serviced
   // requests.
-  std::set<HostPortProxyPair> pooled_aliases_;
+  std::set<SpdySessionKey> pooled_aliases_;
 
   // |spdy_session_pool_| owns us, therefore its lifetime must exceed ours.  We
   // set this to NULL after we are removed from the pool.
@@ -799,6 +850,9 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // of whether or not there is currently any ongoing IO [might be waiting for
   // the server to start pushing the stream]) or there are still network events
   // incoming even though the consumer has already gone away (cancellation).
+  //
+  // |active_streams_| owns all its SpdyStream objects.
+  //
   // TODO(willchan): Perhaps we should separate out cancelled streams and move
   // them into a separate ActiveStreamMap, and not deliver network events to
   // them?
@@ -806,9 +860,14 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
 
   // Map of all the streams that have already started to be pushed by the
   // server, but do not have consumers yet.
+  //
+  // |unclaimed_pushed_streams_| does not own any of its SpdyStream
+  // objects.
   PushedStreamMap unclaimed_pushed_streams_;
 
   // Set of all created streams but that have not yet sent any frames.
+  //
+  // |created_streams_| owns all its SpdyStream objects.
   CreatedStreamSet created_streams_;
 
   // The write queue.
@@ -825,7 +884,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   size_t in_flight_write_frame_size_;
   // The stream to notify when |in_flight_write_| has been written to
   // the socket completely.
-  scoped_refptr<SpdyStream> in_flight_write_stream_;
+  base::WeakPtr<SpdyStream> in_flight_write_stream_;
 
   // Flag if we have a pending message scheduled for WriteSocket.
   bool delayed_write_pending_;

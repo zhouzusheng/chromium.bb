@@ -21,7 +21,6 @@
 #ifndef SVGPathSegClosePath_h
 #define SVGPathSegClosePath_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGPathSegWithContext.h"
 
 namespace WebCore {
@@ -37,6 +36,7 @@ private:
     SVGPathSegClosePath(SVGPathElement* element, SVGPathSegRole role)
         : SVGPathSegWithContext(element, role)
     {
+        ScriptWrappable::init(this);
     }
 
     virtual unsigned short pathSegType() const { return PATHSEG_CLOSEPATH; }
@@ -45,5 +45,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

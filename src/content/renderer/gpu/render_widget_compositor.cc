@@ -5,14 +5,14 @@
 #include "content/renderer/gpu/render_widget_compositor.h"
 
 #include <limits>
+#include <string>
 
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/time.h"
 #include "cc/base/switches.h"
-#include "cc/base/thread_impl.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/layers/layer.h"
 #include "cc/trees/layer_tree_host.h"
@@ -20,10 +20,10 @@
 #include "content/public/common/content_switches.h"
 #include "content/renderer/gpu/input_handler_manager.h"
 #include "content/renderer/render_thread_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
+#include "third_party/WebKit/public/web/WebWidget.h"
 #include "ui/gl/gl_switches.h"
-#include "webkit/compositor_bindings/web_layer_impl.h"
-#include "webkit/compositor_bindings/web_to_ccinput_handler_adapter.h"
+#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 namespace cc {
 class Layer;
@@ -86,16 +86,28 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   CommandLine* cmd = CommandLine::ForCurrentProcess();
 
   cc::LayerTreeSettings settings;
-  settings.accelerate_painting =
-      cmd->HasSwitch(switches::kEnableAcceleratedPainting);
-  settings.render_vsync_enabled = !cmd->HasSwitch(switches::kDisableGpuVsync);
-  settings.render_vsync_notification_enabled =
-      cmd->HasSwitch(switches::kEnableVsyncNotification);
-  settings.synchronously_disable_vsync = widget->SynchronouslyDisableVSync();
+
+  // For web contents, layer transforms should scale up the contents of layers
+  // to keep content always crisp when possible.
+  settings.layer_transforms_should_scale_layer_contents = true;
+
+  settings.throttle_frame_production =
+      !cmd->HasSwitch(switches::kDisableGpuVsync);
+  settings.begin_frame_scheduling_enabled =
+      cmd->HasSwitch(switches::kEnableBeginFrameScheduling);
+  settings.using_synchronous_renderer_compositor =
+      widget->UsingSynchronousRendererCompositor();
   settings.per_tile_painting_enabled =
       cmd->HasSwitch(cc::switches::kEnablePerTilePainting);
   settings.accelerated_animation_enabled =
       !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
+  settings.force_direct_layer_drawing =
+      cmd->HasSwitch(cc::switches::kForceDirectLayerDrawing);
+
+  // Android WebView does not support forced draw and this is to prevent
+  // crashes. Adding support for forced draw is tracked in crbug.com/250909.
+  settings.timeout_and_draw_when_animation_checkerboards =
+      !widget->UsingSynchronousRendererCompositor();
 
   int default_tile_width = settings.default_tile_size.width();
   if (cmd->HasSwitch(switches::kDefaultTileWidth)) {
@@ -126,13 +138,9 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.max_untiled_layer_size = gfx::Size(max_untiled_layer_width,
                                            max_untiled_layer_height);
 
-  settings.right_aligned_scheduling_enabled =
-      cmd->HasSwitch(cc::switches::kEnableRightAlignedScheduling);
   settings.impl_side_painting = cc::switches::IsImplSidePaintingEnabled();
   settings.use_color_estimator =
       !cmd->HasSwitch(cc::switches::kDisableColorEstimator);
-  settings.prediction_benchmarking =
-      cmd->HasSwitch(cc::switches::kEnablePredictionBenchmarking);
 
   settings.calculate_top_controls_position =
       cmd->HasSwitch(cc::switches::kEnableTopControlsPositionCalculation);
@@ -145,14 +153,10 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       settings.top_controls_height = controls_height;
   }
 
-  settings.compositor_frame_message =
-      cmd->HasSwitch(cc::switches::kEnableCompositorFrameMessage);
-
   if (settings.calculate_top_controls_position &&
-      (settings.top_controls_height <= 0 ||
-       !settings.compositor_frame_message)) {
-    DCHECK(false) << "Top controls repositioning enabled without valid height "
-                     "or compositor_frame_message set.";
+      settings.top_controls_height <= 0) {
+    DCHECK(false)
+        << "Top controls repositioning enabled without valid height set.";
     settings.calculate_top_controls_position = false;
   }
 
@@ -180,11 +184,10 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kBackgroundColorInsteadOfCheckerboard);
   settings.show_overdraw_in_tracing =
       cmd->HasSwitch(cc::switches::kTraceOverdraw);
-
-#if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_CHROMEOS)
-  settings.use_pinch_zoom_scrollbars =
-      cmd->HasSwitch(cc::switches::kEnablePinchZoomScrollbars);
-#endif
+  settings.use_pinch_virtual_viewport =
+      cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport);
+  settings.allow_antialiasing &=
+      !cmd->HasSwitch(cc::switches::kDisableCompositedAntialiasing);
 
   // These flags should be mirrored by UI versions in ui/compositor/.
   settings.initial_debug_state.show_debug_borders =
@@ -193,8 +196,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kShowFPSCounter);
   settings.initial_debug_state.show_paint_rects =
       cmd->HasSwitch(switches::kShowPaintRects);
-  settings.initial_debug_state.show_platform_layer_tree =
-      cmd->HasSwitch(cc::switches::kShowCompositedLayerTree);
   settings.initial_debug_state.show_property_changed_rects =
       cmd->HasSwitch(cc::switches::kShowPropertyChangedRects);
   settings.initial_debug_state.show_surface_damage_rects =
@@ -210,8 +211,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 
   settings.initial_debug_state.SetRecordRenderingStats(
       cmd->HasSwitch(switches::kEnableGpuBenchmarking));
-  settings.initial_debug_state.trace_all_rendered_frames =
-      cmd->HasSwitch(cc::switches::kTraceAllRenderedFrames);
 
   if (cmd->HasSwitch(cc::switches::kSlowDownRasterScaleFactor)) {
     const int kMinSlowDownScaleFactor = 0;
@@ -267,6 +266,8 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.strict_layer_property_change_checking =
       cmd->HasSwitch(cc::switches::kStrictLayerPropertyChangeChecking);
 
+  settings.use_map_image = cmd->HasSwitch(cc::switches::kUseMapImage);
+
 #if defined(OS_ANDROID)
   // TODO(danakj): Move these to the android code.
   settings.can_use_lcd_text = false;
@@ -291,6 +292,11 @@ RenderWidgetCompositor::RenderWidgetCompositor(RenderWidget* widget)
 
 RenderWidgetCompositor::~RenderWidgetCompositor() {}
 
+const base::WeakPtr<cc::InputHandler>&
+RenderWidgetCompositor::GetInputHandler() {
+  return layer_tree_host_->GetInputHandler();
+}
+
 void RenderWidgetCompositor::SetSuppressScheduleComposite(bool suppress) {
   if (suppress_schedule_composite_ == suppress)
     return;
@@ -305,7 +311,7 @@ void RenderWidgetCompositor::SetSuppressScheduleComposite(bool suppress) {
 }
 
 void RenderWidgetCompositor::Animate(base::TimeTicks time) {
-  layer_tree_host_->UpdateAnimations(time);
+  layer_tree_host_->UpdateClientAnimations(time);
 }
 
 void RenderWidgetCompositor::Composite(base::TimeTicks frame_begin_time) {
@@ -316,6 +322,12 @@ void RenderWidgetCompositor::SetNeedsDisplayOnAllLayers() {
   layer_tree_host_->SetNeedsDisplayOnAllLayers();
 }
 
+void RenderWidgetCompositor::SetRasterizeOnlyVisibleContent() {
+  cc::LayerTreeDebugState current = layer_tree_host_->debug_state();
+  current.rasterize_only_visible_content = true;
+  layer_tree_host_->SetDebugState(current);
+}
+
 void RenderWidgetCompositor::GetRenderingStats(cc::RenderingStats* stats) {
   layer_tree_host_->CollectRenderingStats(stats);
 }
@@ -324,11 +336,12 @@ skia::RefPtr<SkPicture> RenderWidgetCompositor::CapturePicture() {
   return layer_tree_host_->CapturePicture();
 }
 
-void RenderWidgetCompositor::UpdateTopControlsState(bool enable_hiding,
-                                                    bool enable_showing,
-                                                    bool animate) {
-  layer_tree_host_->UpdateTopControlsState(enable_hiding,
-                                           enable_showing,
+void RenderWidgetCompositor::UpdateTopControlsState(
+    cc::TopControlsState constraints,
+    cc::TopControlsState current,
+    bool animate) {
+  layer_tree_host_->UpdateTopControlsState(constraints,
+                                           current,
                                            animate);
 }
 
@@ -341,23 +354,22 @@ void RenderWidgetCompositor::SetNeedsRedrawRect(gfx::Rect damage_rect) {
   layer_tree_host_->SetNeedsRedrawRect(damage_rect);
 }
 
+void RenderWidgetCompositor::SetLatencyInfo(
+    const ui::LatencyInfo& latency_info) {
+  layer_tree_host_->SetLatencyInfo(latency_info);
+}
+
 bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {
-  scoped_ptr<cc::Thread> impl_thread;
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy =
       RenderThreadImpl::current()->compositor_message_loop_proxy();
-  threaded_ = !!compositor_message_loop_proxy;
-  if (threaded_) {
-    impl_thread = cc::ThreadImpl::CreateForDifferentThread(
-        compositor_message_loop_proxy);
-  }
   layer_tree_host_ = cc::LayerTreeHost::Create(this,
                                                settings,
-                                               impl_thread.Pass());
+                                               compositor_message_loop_proxy);
   return layer_tree_host_;
 }
 
 void RenderWidgetCompositor::setSurfaceReady() {
-  layer_tree_host_->SetSurfaceReady();
+  layer_tree_host_->SetLayerTreeHostClientReady();
 }
 
 void RenderWidgetCompositor::setRootLayer(const WebKit::WebLayer& layer) {
@@ -517,19 +529,9 @@ scoped_ptr<cc::OutputSurface> RenderWidgetCompositor::CreateOutputSurface() {
   return widget_->CreateOutputSurface();
 }
 
-void RenderWidgetCompositor::DidRecreateOutputSurface(bool success) {
+void RenderWidgetCompositor::DidInitializeOutputSurface(bool success) {
   if (!success)
     widget_->webwidget()->didExitCompositingMode();
-}
-
-scoped_ptr<cc::InputHandlerClient>
-RenderWidgetCompositor::CreateInputHandlerClient() {
-  scoped_ptr<cc::InputHandlerClient> ret;
-  scoped_ptr<WebKit::WebInputHandler> web_handler(
-      widget_->webwidget()->createInputHandler());
-  if (web_handler)
-     ret = WebKit::WebToCCInputHandlerAdapter::create(web_handler.Pass());
-  return ret.Pass();
 }
 
 void RenderWidgetCompositor::WillCommit() {

@@ -32,7 +32,7 @@
 
 namespace WebCore {
 
-class GraphicsContext3DPrivate;
+class GraphicsContext3D;
 class ImageBuffer;
 
 // The supported extensions are defined below.
@@ -52,7 +52,9 @@ public:
     //   GL_EXT_packed_depth_stencil / GL_OES_packed_depth_stencil
     //   GL_ANGLE_framebuffer_blit / GL_ANGLE_framebuffer_multisample
     //   GL_OES_texture_float
+    //   GL_OES_texture_float_linear
     //   GL_OES_texture_half_float
+    //   GL_OES_texture_half_float_linear
     //   GL_OES_standard_derivatives
     //   GL_OES_rgb8_rgba8
     //   GL_OES_vertex_array_object
@@ -71,6 +73,7 @@ public:
     //   GL_CHROMIUM_copy_texture
     //   GL_CHROMIUM_flipy
     //   GL_ARB_draw_buffers / GL_EXT_draw_buffers
+    //   GL_ANGLE_instanced_arrays
 
     //   GL_CHROMIUM_shallow_flush  : only supported if an ipc command buffer is used.
     //   GL_CHROMIUM_resource_safe  : indicating that textures/renderbuffers are always initialized before read/write.
@@ -231,7 +234,10 @@ public:
         QUERY_RESULT_AVAILABLE_EXT = 0x8867,
 
         // GL_CHROMIUM_command_buffer_query
-        COMMANDS_ISSUED_CHROMIUM = 0x84F2
+        COMMANDS_ISSUED_CHROMIUM = 0x84F2,
+
+        // GL_ANGLE_instanced_arrays
+        VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE = 0x88FE
     };
 
     // GL_ARB_robustness
@@ -259,12 +265,10 @@ public:
     String getTranslatedShaderSourceANGLE(Platform3DObject);
 
     // GL_CHROMIUM_copy_texture
-    void copyTextureCHROMIUM(GC3Denum, Platform3DObject, Platform3DObject, GC3Dint, GC3Denum);
-
-    // EXT Robustness - uses getGraphicsResetStatusARB
-    void readnPixelsEXT(int x, int y, GC3Dsizei width, GC3Dsizei height, GC3Denum format, GC3Denum type, GC3Dsizei bufSize, void *data);
-    void getnUniformfvEXT(GC3Duint program, int location, GC3Dsizei bufSize, float *params);
-    void getnUniformivEXT(GC3Duint program, int location, GC3Dsizei bufSize, int *params);
+    // canUseCopyTextureCHROMIUM(...) is used to check if copyTextureCHROMIUM(...) can work for the specified
+    // format, type and level for the destination texture.
+    bool canUseCopyTextureCHROMIUM(GC3Denum destFormat, GC3Denum destType, GC3Dint level);
+    void copyTextureCHROMIUM(GC3Denum, Platform3DObject, Platform3DObject, GC3Dint, GC3Denum, GC3Denum);
 
     // GL_EXT_debug_marker
     void insertEventMarkerEXT(const String&);
@@ -273,23 +277,6 @@ public:
 
     // GL_ARB_draw_buffers / GL_EXT_draw_buffers
     void drawBuffersEXT(GC3Dsizei n, const GC3Denum* bufs);
-
-    // Some helper methods to detect GPU functionality
-    bool isNVIDIA() { return false; }
-    bool isAMD() { return false; }
-    bool isIntel() { return false; }
-    String vendor() { return ""; }
-
-    // If this method returns false then the system *definitely* does not support multisampling.
-    // It does not necessarily say the system does support it - callers must attempt to construct
-    // multisampled renderbuffers and check framebuffer completeness.
-    // Ports should implement this to return false on configurations where it is known
-    // that multisampling is not available.
-    bool maySupportMultisampling() { return true; }
-
-    // Some configurations have bugs regarding built-in functions in their OpenGL drivers
-    // that must be avoided. Ports should implement this flag such configurations.
-    bool requiresBuiltInFunctionEmulation() { return false; }
 
     // GL_CHROMIUM_map_sub
     void* mapBufferSubDataCHROMIUM(unsigned target, int offset, int size, unsigned access);
@@ -323,14 +310,19 @@ public:
     // GL_CHROMIUM_shallow_flush
     void shallowFlushCHROMIUM();
 
+    // GL_ANGLE_instanced_arrays
+    void drawArraysInstancedANGLE(GC3Denum mode, GC3Dint first, GC3Dsizei count, GC3Dsizei primcount);
+    void drawElementsInstancedANGLE(GC3Denum mode, GC3Dsizei count, GC3Denum type, GC3Dintptr offset, GC3Dsizei primcount);
+    void vertexAttribDivisorANGLE(GC3Duint index, GC3Duint divisor);
+
 private:
     // Instances of this class are strictly owned by the GraphicsContext3D implementation and do not
     // need to be instantiated by any other code.
-    friend class GraphicsContext3DPrivate;
-    explicit Extensions3D(GraphicsContext3DPrivate*);
+    friend class GraphicsContext3D;
+    explicit Extensions3D(GraphicsContext3D*);
 
-    // Weak pointer back to GraphicsContext3DPrivate
-    GraphicsContext3DPrivate* m_private;
+    // Weak pointer back to GraphicsContext3D.
+    GraphicsContext3D* m_context;
 };
 
 } // namespace WebCore

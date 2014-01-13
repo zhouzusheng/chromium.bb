@@ -21,14 +21,12 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGSVGElement.h"
 
 #include "HTMLNames.h"
 #include "SVGNames.h"
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/css/CSSHelper.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/EventListener.h"
 #include "core/dom/EventNames.h"
@@ -55,7 +53,6 @@
 #include "core/svg/SVGTransformList.h"
 #include "core/svg/SVGViewElement.h"
 #include "core/svg/SVGViewSpec.h"
-#include "core/svg/SVGZoomEvent.h"
 #include "core/svg/animation/SMILTimeContainer.h"
 #include <wtf/StdLibExtras.h>
 
@@ -483,12 +480,12 @@ bool SVGSVGElement::rendererIsNeeded(const NodeRenderingContext& context)
     return StyledElement::rendererIsNeeded(context);
 }
 
-RenderObject* SVGSVGElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* SVGSVGElement::createRenderer(RenderStyle*)
 {
     if (isOutermostSVGSVGElement())
-        return new (arena) RenderSVGRoot(this);
+        return new (document()->renderArena()) RenderSVGRoot(this);
 
-    return new (arena) RenderSVGViewportContainer(this);
+    return new (document()->renderArena()) RenderSVGViewportContainer(this);
 }
 
 Node::InsertionNotificationRequest SVGSVGElement::insertedInto(ContainerNode* rootParent)
@@ -782,5 +779,3 @@ Element* SVGSVGElement::getElementById(const AtomicString& id) const
 }
 
 }
-
-#endif // ENABLE(SVG)

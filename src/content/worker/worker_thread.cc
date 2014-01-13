@@ -7,20 +7,22 @@
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/threading/thread_local.h"
-#include "content/common/appcache/appcache_dispatcher.h"
+#include "content/child/appcache_dispatcher.h"
+#include "content/child/indexed_db/indexed_db_message_filter.h"
+#include "content/child/runtime_features.h"
+#include "content/child/web_database_observer_impl.h"
 #include "content/common/db_message_filter.h"
-#include "content/common/indexed_db/indexed_db_message_filter.h"
-#include "content/common/web_database_observer_impl.h"
 #include "content/common/worker_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/worker/websharedworker_stub.h"
 #include "content/worker/worker_webkitplatformsupport_impl.h"
 #include "ipc/ipc_sync_channel.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebBlobRegistry.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
+#include "third_party/WebKit/public/web/WebDatabase.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
+#include "third_party/WebKit/public/platform/WebBlobRegistry.h"
 #include "webkit/glue/webkit_glue.h"
+#include "webkit/renderer/appcache/appcache_frontend_impl.h"
 
 using WebKit::WebRuntimeFeatures;
 
@@ -34,10 +36,9 @@ WorkerThread::WorkerThread() {
   webkit_platform_support_.reset(
       new WorkerWebKitPlatformSupportImpl(thread_safe_sender()));
   WebKit::initialize(webkit_platform_support_.get());
-  WebKit::setIDBFactory(
-      webkit_platform_support_.get()->idbFactory());
 
-  appcache_dispatcher_.reset(new AppCacheDispatcher(this));
+  appcache_dispatcher_.reset(
+      new AppCacheDispatcher(this, new appcache::AppCacheFrontendImpl()));
 
   web_database_observer_impl_.reset(
       new WebDatabaseObserverImpl(sync_message_filter()));
@@ -49,26 +50,7 @@ WorkerThread::WorkerThread() {
   channel()->AddFilter(indexed_db_message_filter_.get());
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  webkit_glue::EnableWebCoreLogChannels(
-      command_line.GetSwitchValueASCII(switches::kWebCoreLogChannels));
-
-  WebKit::WebRuntimeFeatures::enableDatabase(
-      !command_line.HasSwitch(switches::kDisableDatabases));
-
-  WebKit::WebRuntimeFeatures::enableApplicationCache(
-      !command_line.HasSwitch(switches::kDisableApplicationCache));
-
-#if defined(OS_WIN)
-  // We don't yet support notifications on non-Windows, so hide it from pages.
-  WebRuntimeFeatures::enableNotifications(
-      !command_line.HasSwitch(switches::kDisableDesktopNotifications));
-#endif
-
-  WebRuntimeFeatures::enableFileSystem(
-      !command_line.HasSwitch(switches::kDisableFileSystem));
-
-  WebRuntimeFeatures::enableIndexedDatabase(true);
+  SetRuntimeFeaturesDefaultsAndUpdateFromArgs(command_line);
 }
 
 WorkerThread::~WorkerThread() {

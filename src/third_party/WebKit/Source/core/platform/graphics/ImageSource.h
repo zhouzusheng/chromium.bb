@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.  All rights reserved.
- * Copyright (C) 2007-2008 Torch Mobile, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,23 +27,19 @@
 #define ImageSource_h
 
 #include "core/platform/graphics/ImageOrientation.h"
-#include "core/platform/graphics/NativeImagePtr.h"
-
-#include <wtf/Forward.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/Vector.h>
+#include "wtf/Forward.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
+class DeferredImageDecoder;
 class ImageOrientation;
 class IntPoint;
 class IntSize;
+class NativeImageSkia;
 class SharedBuffer;
-
-class DeferredImageDecoder;
-typedef DeferredImageDecoder NativeImageDecoder;
-typedef DeferredImageDecoder* NativeImageDecoderPtr;
 
 // Right now GIFs are the only recognized image format that supports animation.
 // The animation system and the constants below are designed with this in mind.
@@ -81,30 +76,24 @@ public:
     ~ImageSource();
 
     // Tells the ImageSource that the Image no longer cares about decoded frame
-    // data -- at all (if |destroyAll| is true), or before frame
-    // |clearBeforeFrame| (if |destroyAll| is false).  The ImageSource should
-    // delete cached decoded data for these frames where possible to keep memory
-    // usage low.  When |destroyAll| is true, the ImageSource should also reset
-    // any local state so that decoding can begin again.
+    // data except for the specified frame. Callers may pass WTF::notFound to
+    // clear all frames.
     //
-    // Implementations that delete less than what's specified above waste
-    // memory.  Implementations that delete more may burn CPU re-decoding frames
-    // that could otherwise have been cached, or encounter errors if they're
-    // asked to decode frames they can't decode due to the loss of previous
-    // decoded frames.
+    // In response, the ImageSource should delete cached decoded data for other
+    // frames where possible to keep memory use low. The expectation is that in
+    // the future, the caller may call createFrameAtIndex() with an index larger
+    // than the one passed to this function, and the implementation may then
+    // make use of the preserved frame data here in decoding that frame.
+    // By contrast, callers who call this function and then later ask for an
+    // earlier frame may require more work to be done, e.g. redecoding the image
+    // from the beginning.
     //
-    // Callers should not call clear(false, n) and subsequently call
-    // createFrameAtIndex(m) with m < n, unless they first call clear(true).
-    // This ensures that stateful ImageSources/decoders will work properly.
+    // Implementations may elect to preserve more frames than the one requested
+    // here if doing so is likely to save CPU time in the future, but will pay
+    // an increased memory cost to do so.
     //
-    // The |data| and |allDataReceived| parameters should be supplied by callers
-    // who set |destroyAll| to true if they wish to be able to continue using
-    // the ImageSource.  This way implementations which choose to destroy their
-    // decoders in some cases can reconstruct them correctly.
-    void clear(bool destroyAll,
-               size_t clearBeforeFrame = 0,
-               SharedBuffer* data = NULL,
-               bool allDataReceived = false);
+    // Returns the number of bytes of frame data actually cleared.
+    size_t clearCacheExceptFrame(size_t);
 
     bool initialized() const;
 
@@ -123,9 +112,7 @@ public:
 
     size_t frameCount() const;
 
-    // Callers should not call this after calling clear() with a higher index;
-    // see comments on clear() above.
-    PassNativeImagePtr createFrameAtIndex(size_t);
+    PassRefPtr<NativeImageSkia> createFrameAtIndex(size_t);
 
     float frameDurationAtIndex(size_t) const;
     bool frameHasAlphaAtIndex(size_t) const; // Whether or not the frame actually used any alpha.
@@ -136,21 +123,13 @@ public:
     // decoded then return 0.
     unsigned frameBytesAtIndex(size_t) const;
 
-#if ENABLE(IMAGE_DECODER_DOWN_SAMPLING)
-    static unsigned maxPixelsPerDecodedImage() { return s_maxPixelsPerDecodedImage; }
-    static void setMaxPixelsPerDecodedImage(unsigned maxPixels) { s_maxPixelsPerDecodedImage = maxPixels; }
-#endif
-
     void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
-    OwnPtr<NativeImageDecoderPtr> m_decoder;
+    OwnPtr<DeferredImageDecoder> m_decoder;
 
     AlphaOption m_alphaOption;
     GammaAndColorProfileOption m_gammaAndColorProfileOption;
-#if ENABLE(IMAGE_DECODER_DOWN_SAMPLING)
-    static unsigned s_maxPixelsPerDecodedImage;
-#endif
 };
 
 }

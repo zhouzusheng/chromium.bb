@@ -14,7 +14,7 @@ base.exportTo('tracing.tracks', function() {
    * A generic track that contains other tracks as its children.
    * @constructor
    */
-  var ContainerTrack = ui.define(tracing.tracks.Track);
+  var ContainerTrack = ui.define('container-track', tracing.tracks.Track);
   ContainerTrack.prototype = {
     __proto__: tracing.tracks.Track.prototype,
 
@@ -49,7 +49,7 @@ base.exportTo('tracing.tracks', function() {
       for (var i = 0; i < this.tracks_.length; i++)
         if (this.tracks_[i].visible)
           return this.tracks_[i].firstCanvas;
-      return undefined;
+        return undefined;
     },
 
     // The number of tracks actually displayed.

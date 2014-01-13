@@ -15,13 +15,11 @@ namespace net {
 
 QuicCryptoClientStream::QuicCryptoClientStream(
     const string& server_hostname,
-    const QuicConfig& config,
     QuicSession* session,
     QuicCryptoClientConfig* crypto_config)
     : QuicCryptoStream(session),
       next_state_(STATE_IDLE),
       num_client_hellos_(0),
-      config_(config),
       crypto_config_(crypto_config),
       server_hostname_(server_hostname) {
 }
@@ -38,16 +36,6 @@ bool QuicCryptoClientStream::CryptoConnect() {
   next_state_ = STATE_SEND_CHLO;
   DoHandshakeLoop(NULL);
   return true;
-}
-
-const QuicNegotiatedParameters&
-QuicCryptoClientStream::negotiated_params() const {
-  return negotiated_params_;
-}
-
-const QuicCryptoNegotiatedParameters&
-QuicCryptoClientStream::crypto_negotiated_params() const {
-  return crypto_negotiated_params_;
 }
 
 int QuicCryptoClientStream::num_sent_client_hellos() const {
@@ -70,7 +58,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
       crypto_config_->LookupOrCreate(server_hostname_);
 
   if (in != NULL) {
-    DLOG(INFO) << "Client received: " << in->DebugString();
+    DVLOG(1) << "Client received: " << in->DebugString();
   }
 
   for (;;) {
@@ -84,54 +72,49 @@ void QuicCryptoClientStream::DoHandshakeLoop(
         }
         num_client_hellos_++;
 
-        if (!cached->is_complete()) {
-          crypto_config_->FillInchoateClientHello(server_hostname_, cached,
-                                                  &out);
+        if (!cached->IsComplete(session()->connection()->clock()->WallNow())) {
+          crypto_config_->FillInchoateClientHello(
+              server_hostname_, cached, &crypto_negotiated_params_, &out);
           next_state_ = STATE_RECV_REJ;
-          DLOG(INFO) << "Client Sending: " << out.DebugString();
+          DVLOG(1) << "Client Sending: " << out.DebugString();
           SendHandshakeMessage(out);
           return;
         }
-        const CryptoHandshakeMessage* scfg = cached->GetServerConfig();
-        config_.ToHandshakeMessage(&out);
+        session()->config()->ToHandshakeMessage(&out);
         error = crypto_config_->FillClientHello(
             server_hostname_,
             session()->connection()->guid(),
             cached,
-            session()->connection()->clock(),
+            session()->connection()->clock()->WallNow(),
             session()->connection()->random_generator(),
             &crypto_negotiated_params_,
             &out,
             &error_details);
         if (error != QUIC_NO_ERROR) {
-          CloseConnectionWithDetails(error, error_details);
-          return;
-        }
-        error = config_.ProcessFinalPeerHandshake(
-            *scfg, CryptoUtils::PEER_PRIORITY, &negotiated_params_,
-            &error_details);
-        if (error != QUIC_NO_ERROR) {
+          // Flush the cached config so that, if it's bad, the server has a
+          // chance to send us another in the future.
+          cached->InvalidateServerConfig();
           CloseConnectionWithDetails(error, error_details);
           return;
         }
         next_state_ = STATE_RECV_SHLO;
-        DLOG(INFO) << "Client Sending: " << out.DebugString();
+        DVLOG(1) << "Client Sending: " << out.DebugString();
         SendHandshakeMessage(out);
         // Be prepared to decrypt with the new server write key.
         session()->connection()->SetAlternativeDecrypter(
-            crypto_negotiated_params_.decrypter.release(),
+            crypto_negotiated_params_.initial_crypters.decrypter.release(),
             true /* latch once used */);
         // Send subsequent packets under encryption on the assumption that the
         // server will accept the handshake.
         session()->connection()->SetEncrypter(
             ENCRYPTION_INITIAL,
-            crypto_negotiated_params_.encrypter.release());
+            crypto_negotiated_params_.initial_crypters.encrypter.release());
         session()->connection()->SetDefaultEncryptionLevel(
             ENCRYPTION_INITIAL);
         if (!encryption_established_) {
+          encryption_established_ = true;
           session()->OnCryptoHandshakeEvent(
               QuicSession::ENCRYPTION_FIRST_ESTABLISHED);
-          encryption_established_ = true;
         } else {
           session()->OnCryptoHandshakeEvent(
               QuicSession::ENCRYPTION_REESTABLISHED);
@@ -148,9 +131,9 @@ void QuicCryptoClientStream::DoHandshakeLoop(
                                      "Expected REJ");
           return;
         }
-        error = crypto_config_->ProcessRejection(cached, *in,
-                                                 &crypto_negotiated_params_,
-                                                 &error_details);
+        error = crypto_config_->ProcessRejection(
+            cached, *in, session()->connection()->clock()->WallNow(),
+            &crypto_negotiated_params_, &error_details);
         if (error != QUIC_NO_ERROR) {
           CloseConnectionWithDetails(error, error_details);
           return;
@@ -180,10 +163,19 @@ void QuicCryptoClientStream::DoHandshakeLoop(
             ENCRYPTION_NONE);
         next_state_ = STATE_SEND_CHLO;
         break;
-      case STATE_RECV_SHLO:
+      case STATE_RECV_SHLO: {
         // We sent a CHLO that we expected to be accepted and now we're hoping
         // for a SHLO from the server to confirm that.
         if (in->tag() == kREJ) {
+          // alternative_decrypter will be NULL if the original alternative
+          // decrypter latched and became the primary decrypter. That happens
+          // if we received a message encrypted with the INITIAL key.
+          if (session()->connection()->alternative_decrypter() == NULL) {
+            // The rejection was sent encrypted!
+            CloseConnectionWithDetails(QUIC_CRYPTO_ENCRYPTION_LEVEL_INCORRECT,
+                                       "encrypted REJ message");
+            return;
+          }
           next_state_ = STATE_RECV_REJ;
           break;
         }
@@ -192,11 +184,46 @@ void QuicCryptoClientStream::DoHandshakeLoop(
                                      "Expected SHLO or REJ");
           return;
         }
-        // TODO(agl): enable this once the tests are corrected to permit it.
-        // DCHECK(session()->connection()->alternative_decrypter() == NULL);
+        // alternative_decrypter will be NULL if the original alternative
+        // decrypter latched and became the primary decrypter. That happens
+        // if we received a message encrypted with the INITIAL key.
+        if (session()->connection()->alternative_decrypter() != NULL) {
+          // The server hello was sent without encryption.
+          CloseConnectionWithDetails(QUIC_CRYPTO_ENCRYPTION_LEVEL_INCORRECT,
+                                     "unencrypted SHLO message");
+          return;
+        }
+        error = crypto_config_->ProcessServerHello(
+            *in, session()->connection()->guid(), &crypto_negotiated_params_,
+            &error_details);
+        if (error != QUIC_NO_ERROR) {
+          CloseConnectionWithDetails(
+              error, "Server hello invalid: " + error_details);
+          return;
+        }
+        error = session()->config()->ProcessServerHello(*in, &error_details);
+        if (error != QUIC_NO_ERROR) {
+          CloseConnectionWithDetails(
+              error, "Server hello invalid: " + error_details);
+          return;
+        }
+        CrypterPair* crypters =
+            &crypto_negotiated_params_.forward_secure_crypters;
+        // TODO(agl): we don't currently latch this decrypter because the idea
+        // has been floated that the server shouldn't send packets encrypted
+        // with the FORWARD_SECURE key until it receives a FORWARD_SECURE
+        // packet from the client.
+        session()->connection()->SetAlternativeDecrypter(
+            crypters->decrypter.release(), false /* don't latch */);
+        session()->connection()->SetEncrypter(
+            ENCRYPTION_FORWARD_SECURE, crypters->encrypter.release());
+        session()->connection()->SetDefaultEncryptionLevel(
+            ENCRYPTION_FORWARD_SECURE);
+
         handshake_confirmed_ = true;
         session()->OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED);
         return;
+      }
       case STATE_IDLE:
         // This means that the peer sent us a message that we weren't expecting.
         CloseConnection(QUIC_INVALID_CRYPTO_MESSAGE_TYPE);

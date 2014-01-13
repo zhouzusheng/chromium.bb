@@ -32,27 +32,25 @@
 #ifndef V8Binding_h
 #define V8Binding_h
 
-#include "bindings/v8/BindingSecurity.h"
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/V8BindingMacros.h"
-#include "bindings/v8/V8DOMConfiguration.h"
-#include "bindings/v8/V8DOMWrapper.h"
-#include "bindings/v8/V8HiddenPropertyName.h"
-#include "bindings/v8/V8ObjectConstructor.h"
 #include "bindings/v8/V8PerIsolateData.h"
 #include "bindings/v8/V8StringResource.h"
 #include "bindings/v8/V8ThrowException.h"
 #include "bindings/v8/V8ValueCache.h"
-#include "core/dom/Document.h"
-#include "core/dom/NodeFilter.h"
-#include "wtf/Noncopyable.h"
+#include "wtf/MathExtras.h"
 #include "wtf/text/AtomicString.h"
 #include <v8.h>
 
 namespace WebCore {
 
     class DOMStringList;
+    class DOMWindow;
+    class Document;
+    class Frame;
+    class NodeFilter;
     class ScriptExecutionContext;
+    class XPathNSResolver;
 
     const int kMaxRecursionDepth = 22;
 
@@ -64,7 +62,7 @@ namespace WebCore {
     v8::Handle<v8::Value> throwError(V8ErrorType, const char*, v8::Isolate*);
 
     // Schedule a JavaScript error to be thrown.
-    v8::Handle<v8::Value> throwError(v8::Local<v8::Value>, v8::Isolate*);
+    v8::Handle<v8::Value> throwError(v8::Handle<v8::Value>, v8::Isolate*);
 
     // A helper for throwing JavaScript TypeError.
     v8::Handle<v8::Value> throwTypeError(const char*, v8::Isolate*);
@@ -72,7 +70,7 @@ namespace WebCore {
     // A helper for throwing JavaScript TypeError for not enough arguments.
     v8::Handle<v8::Value> throwNotEnoughArgumentsError(v8::Isolate*);
 
-    inline v8::Handle<v8::Value> argumentOrNull(const v8::Arguments& args, int index)
+    inline v8::Handle<v8::Value> argumentOrNull(const v8::FunctionCallbackInfo<v8::Value>& args, int index)
     {
         return index >= args.Length() ? v8::Local<v8::Value>() : args[index];
     }
@@ -92,6 +90,41 @@ namespace WebCore {
     inline v8::Handle<v8::Value> v8NullWithCheck(v8::Isolate* isolate)
     {
         return isolate ? v8Null(isolate) : v8::Handle<v8::Value>(v8::Null());
+    }
+
+    template<typename T, typename V>
+    inline void v8SetReturnValue(const T& args, V v)
+    {
+        args.GetReturnValue().Set(v);
+    }
+
+    template<typename T>
+    inline void v8SetReturnValueBool(const T& args, bool v)
+    {
+        args.GetReturnValue().Set(v);
+    }
+
+    template<typename T>
+    inline void v8SetReturnValueInt(const T& args, int v)
+    {
+        args.GetReturnValue().Set(v);
+    }
+
+    template<typename T>
+    inline void v8SetReturnValueUnsigned(const T& args, unsigned v)
+    {
+        // FIXME: this is temporary workaround to a v8 bug
+        if (V8_LIKELY((v & (1 << 31)) == 0)) {
+            args.GetReturnValue().Set(static_cast<int32_t>(v));
+            return;
+        }
+        args.GetReturnValue().Set(v8::Integer::NewFromUnsigned(v, args.GetReturnValue().GetIsolate()));
+    }
+
+    template<typename T>
+    inline void v8SetReturnValueNull(const T& args)
+    {
+        args.GetReturnValue().SetNull();
     }
 
     // Convert v8 types to a WTF::String. If the V8 string is not already
@@ -172,17 +205,6 @@ namespace WebCore {
         return V8PerIsolateData::from(isolate)->stringCache()->v8ExternalString(string.impl(), handleType, isolate);
     }
 
-    inline v8::Handle<v8::Integer> v8Integer(int value, v8::Isolate* isolate)
-    {
-        return V8PerIsolateData::from(isolate)->integerCache()->v8Integer(value, isolate);
-    }
-
-    inline v8::Handle<v8::Integer> v8UnsignedInteger(unsigned value, v8::Isolate* isolate)
-    {
-        ASSERT(isolate);
-        return V8PerIsolateData::from(isolate)->integerCache()->v8UnsignedInteger(value, isolate);
-    }
-
     inline v8::Handle<v8::Value> v8Undefined()
     {
         return v8::Handle<v8::Value>();
@@ -208,7 +230,7 @@ namespace WebCore {
     struct V8ValueTraits<unsigned long> {
         static inline v8::Handle<v8::Value> arrayV8Value(const unsigned long& value, v8::Isolate* isolate)
         {
-            return v8UnsignedInteger(value, isolate);
+            return v8::Integer::NewFromUnsigned(value, isolate);
         }
     };
 
@@ -228,15 +250,15 @@ namespace WebCore {
         }
     };
 
-    template<typename T>
-    v8::Handle<v8::Value> v8Array(const Vector<T>& iterator, v8::Isolate* isolate)
+    template<typename T, size_t inlineCapacity>
+    v8::Handle<v8::Value> v8Array(const Vector<T, inlineCapacity>& iterator, v8::Isolate* isolate)
     {
         v8::Local<v8::Array> result = v8::Array::New(iterator.size());
         int index = 0;
-        typename Vector<T>::const_iterator end = iterator.end();
+        typename Vector<T, inlineCapacity>::const_iterator end = iterator.end();
         typedef V8ValueTraits<T> TraitsType;
-        for (typename Vector<T>::const_iterator iter = iterator.begin(); iter != end; ++iter)
-            result->Set(v8Integer(index++, isolate), TraitsType::arrayV8Value(*iter, isolate));
+        for (typename Vector<T, inlineCapacity>::const_iterator iter = iterator.begin(); iter != end; ++iter)
+            result->Set(v8::Integer::New(index++, isolate), TraitsType::arrayV8Value(*iter, isolate));
         return result;
     }
 
@@ -248,6 +270,32 @@ namespace WebCore {
         EnforceRange,
         // FIXME: Implement Clamp
     };
+
+    // Convert a value to a 8-bit signed integer. The conversion fails if the
+    // value cannot be converted to a number or the range violated per WebIDL:
+    // http://www.w3.org/TR/WebIDL/#es-byte
+    int8_t toInt8(v8::Handle<v8::Value>, IntegerConversionConfiguration, bool& ok);
+    inline int8_t toInt8(v8::Handle<v8::Value> value, bool& ok) { return toInt8(value, NormalConversion, ok); }
+
+    // Convert a value to a 8-bit integer assuming the conversion cannot fail.
+    inline int8_t toInt8(v8::Handle<v8::Value> value)
+    {
+        bool ok;
+        return toInt8(value, NormalConversion, ok);
+    }
+
+    // Convert a value to a 8-bit unsigned integer. The conversion fails if the
+    // value cannot be converted to a number or the range violated per WebIDL:
+    // http://www.w3.org/TR/WebIDL/#es-octet
+    uint8_t toUInt8(v8::Handle<v8::Value>, IntegerConversionConfiguration, bool& ok);
+    inline uint8_t toUInt8(v8::Handle<v8::Value> value, bool& ok) { return toUInt8(value, NormalConversion, ok); }
+
+    // Convert a value to a 8-bit unsigned integer assuming the conversion cannot fail.
+    inline uint8_t toUInt8(v8::Handle<v8::Value> value)
+    {
+        bool ok;
+        return toUInt8(value, NormalConversion, ok);
+    }
 
     // Convert a value to a 32-bit signed integer. The conversion fails if the
     // value cannot be converted to a number or the range violated per WebIDL:
@@ -306,6 +354,8 @@ namespace WebCore {
 
     WrapperWorldType worldType(v8::Isolate*);
     WrapperWorldType worldTypeInMainThread(v8::Isolate*);
+
+    DOMWrapperWorld* isolatedWorldForIsolate(v8::Isolate*);
 
     template<class T> struct NativeValueTraits;
 
@@ -382,7 +432,7 @@ namespace WebCore {
     }
 
     template <class T>
-    Vector<T> toNativeArguments(const v8::Arguments& args, int startIndex)
+    Vector<T> toNativeArguments(const v8::FunctionCallbackInfo<v8::Value>& args, int startIndex)
     {
         ASSERT(startIndex <= args.Length());
         Vector<T> result;
@@ -393,7 +443,7 @@ namespace WebCore {
         return result;
     }
 
-    Vector<v8::Handle<v8::Value> > toVectorOfArguments(const v8::Arguments& args);
+    Vector<v8::Handle<v8::Value> > toVectorOfArguments(const v8::FunctionCallbackInfo<v8::Value>& args);
 
     // Validates that the passed object is a sequence type per WebIDL spec
     // http://www.w3.org/TR/2012/WD-WebIDL-20120207/#es-sequence
@@ -468,7 +518,7 @@ namespace WebCore {
         return std::isfinite(value) ? v8::Date::New(value) : v8NullWithCheck(isolate);
     }
 
-    v8::Persistent<v8::FunctionTemplate> createRawTemplate(v8::Isolate*);
+    v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate*);
 
     PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value>, v8::Isolate*);
     PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value>, v8::Isolate*);
@@ -476,6 +526,10 @@ namespace WebCore {
     v8::Handle<v8::Object> toInnerGlobalObject(v8::Handle<v8::Context>);
     DOMWindow* toDOMWindow(v8::Handle<v8::Context>);
     ScriptExecutionContext* toScriptExecutionContext(v8::Handle<v8::Context>);
+
+    DOMWindow* activeDOMWindow();
+    DOMWindow* firstDOMWindow();
+    Document* currentDocument();
 
     // Returns the context associated with a ScriptExecutionContext.
     v8::Local<v8::Context> toV8Context(ScriptExecutionContext*, DOMWrapperWorld*);
@@ -499,6 +553,13 @@ namespace WebCore {
     v8::Local<v8::Value> handleMaxRecursionDepthExceeded();
 
     void crashIfV8IsDead();
+
+    template <class T>
+    v8::Handle<T> unsafeHandleFromRawValue(const T* value)
+    {
+        const v8::Handle<T>* handle = reinterpret_cast<const v8::Handle<T>*>(&value);
+        return *handle;
+    }
 
 } // namespace WebCore
 

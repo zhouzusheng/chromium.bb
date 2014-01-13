@@ -18,10 +18,11 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time.h"
@@ -37,7 +38,7 @@
 #include "sql/statement.h"
 #include "sql/transaction.h"
 #include "third_party/sqlite/sqlite3.h"
-#include "webkit/quota/special_storage_policy.h"
+#include "webkit/browser/quota/special_storage_policy.h"
 
 using base::Time;
 
@@ -75,7 +76,6 @@ class SQLitePersistentCookieStore::Backend
       bool restore_old_session_cookies,
       quota::SpecialStoragePolicy* special_storage_policy)
       : path_(path),
-        db_(NULL),
         num_pending_(0),
         force_keep_session_state_(false),
         initialized_(false),
@@ -86,8 +86,7 @@ class SQLitePersistentCookieStore::Backend
         client_task_runner_(client_task_runner),
         background_task_runner_(background_task_runner),
         num_priority_waiting_(0),
-        total_priority_requests_(0) {
-  }
+        total_priority_requests_(0) {}
 
   // Creates or loads the SQLite database.
   void Load(const LoadedCallback& loaded_callback);
@@ -116,28 +115,6 @@ class SQLitePersistentCookieStore::Backend
 
  private:
   friend class base::RefCountedThreadSafe<SQLitePersistentCookieStore::Backend>;
-
-  class KillDatabaseErrorDelegate : public sql::ErrorDelegate {
-   public:
-    explicit KillDatabaseErrorDelegate(Backend* backend);
-
-    virtual ~KillDatabaseErrorDelegate() {}
-
-    // ErrorDelegate implementation.
-    virtual int OnError(int error,
-                        sql::Connection* connection,
-                        sql::Statement* stmt) OVERRIDE;
-
-   private:
-    // Do not increment the count on Backend, as that would create a circular
-    // reference (Backend -> Connection -> ErrorDelegate -> Backend).
-    Backend* backend_;
-
-    // True if the delegate has previously attempted to kill the database.
-    bool attempted_to_kill_database_;
-
-    DISALLOW_COPY_AND_ASSIGN(KillDatabaseErrorDelegate);
-  };
 
   // You should call Close() before destructing this object.
   ~Backend() {
@@ -224,8 +201,8 @@ class SQLitePersistentCookieStore::Backend
 
   void DeleteSessionCookiesOnShutdown();
 
+  void DatabaseErrorCallback(int error, sql::Statement* stmt);
   void KillDatabase();
-  void ScheduleKillDatabase();
 
   void PostBackgroundTask(const tracked_objects::Location& origin,
                           const base::Closure& task);
@@ -295,25 +272,6 @@ class SQLitePersistentCookieStore::Backend
 
   DISALLOW_COPY_AND_ASSIGN(Backend);
 };
-
-SQLitePersistentCookieStore::Backend::KillDatabaseErrorDelegate::
-KillDatabaseErrorDelegate(Backend* backend)
-    : backend_(backend),
-      attempted_to_kill_database_(false) {
-}
-
-int SQLitePersistentCookieStore::Backend::KillDatabaseErrorDelegate::OnError(
-    int error, sql::Connection* connection, sql::Statement* stmt) {
-  // Do not attempt to kill database more than once. If the first time failed,
-  // it is unlikely that a second time will be successful.
-  if (!attempted_to_kill_database_ && sql::IsErrorCatastrophic(error)) {
-    attempted_to_kill_database_ = true;
-
-    backend_->ScheduleKillDatabase();
-  }
-
-  return error;
-}
 
 namespace {
 
@@ -596,8 +554,12 @@ bool SQLitePersistentCookieStore::Backend::InitializeDatabase() {
     UMA_HISTOGRAM_COUNTS("Cookie.DBSizeInKB", db_size / 1024 );
 
   db_.reset(new sql::Connection);
-  db_->set_error_histogram_name("Sqlite.Cookie.Error");
-  db_->set_error_delegate(new KillDatabaseErrorDelegate(this));
+  db_->set_histogram_tag("Cookie");
+
+  // Unretained to avoid a ref loop with |db_|.
+  db_->set_error_callback(
+      base::Bind(&SQLitePersistentCookieStore::Backend::DatabaseErrorCallback,
+                 base::Unretained(this)));
 
   if (!db_->Open(path_)) {
     NOTREACHED() << "Unable to open cookie DB.";
@@ -618,10 +580,10 @@ bool SQLitePersistentCookieStore::Backend::InitializeDatabase() {
   }
 
   UMA_HISTOGRAM_CUSTOM_TIMES(
-    "Cookie.TimeInitializeDB",
-    base::Time::Now() - start,
-    base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(1),
-    50);
+      "Cookie.TimeInitializeDB",
+      base::Time::Now() - start,
+      base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(1),
+      50);
 
   start = base::Time::Now();
 
@@ -637,25 +599,40 @@ bool SQLitePersistentCookieStore::Backend::InitializeDatabase() {
     return false;
   }
 
-  // Build a map of domain keys (always eTLD+1) to domains.
-  while (smt.Step()) {
-    std::string domain = smt.ColumnString(0);
-    std::string key =
-      net::RegistryControlledDomainService::GetDomainAndRegistry(domain);
+  std::vector<std::string> host_keys;
+  while (smt.Step())
+    host_keys.push_back(smt.ColumnString(0));
 
-    std::map<std::string, std::set<std::string> >::iterator it =
-      keys_to_load_.find(key);
-    if (it == keys_to_load_.end())
-      it = keys_to_load_.insert(std::make_pair
-                                (key, std::set<std::string>())).first;
-    it->second.insert(domain);
+  UMA_HISTOGRAM_CUSTOM_TIMES(
+      "Cookie.TimeLoadDomains",
+      base::Time::Now() - start,
+      base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(1),
+      50);
+
+  base::Time start_parse = base::Time::Now();
+
+  // Build a map of domain keys (always eTLD+1) to domains.
+  for (size_t idx = 0; idx < host_keys.size(); ++idx) {
+    const std::string& domain = host_keys[idx];
+    std::string key =
+        net::registry_controlled_domains::GetDomainAndRegistry(
+            domain,
+            net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
+
+    keys_to_load_[key].insert(domain);
   }
 
   UMA_HISTOGRAM_CUSTOM_TIMES(
-    "Cookie.TimeInitializeDomainMap",
-    base::Time::Now() - start,
-    base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(1),
-    50);
+      "Cookie.TimeParseDomains",
+      base::Time::Now() - start_parse,
+      base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(1),
+      50);
+
+  UMA_HISTOGRAM_CUSTOM_TIMES(
+      "Cookie.TimeInitializeDomainMap",
+      base::Time::Now() - start,
+      base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(1),
+      50);
 
   initialized_ = true;
   return true;
@@ -1066,7 +1043,7 @@ void SQLitePersistentCookieStore::Backend::DeleteSessionCookiesOnShutdown() {
   if (!db_)
     return;
 
-  if (!special_storage_policy_)
+  if (!special_storage_policy_.get())
     return;
 
   sql::Statement del_smt(db_->GetCachedStatement(
@@ -1104,13 +1081,26 @@ void SQLitePersistentCookieStore::Backend::DeleteSessionCookiesOnShutdown() {
     LOG(WARNING) << "Unable to delete cookies on shutdown.";
 }
 
-void SQLitePersistentCookieStore::Backend::ScheduleKillDatabase() {
+void SQLitePersistentCookieStore::Backend::DatabaseErrorCallback(
+    int error,
+    sql::Statement* stmt) {
   DCHECK(background_task_runner_->RunsTasksOnCurrentThread());
+
+  if (!sql::IsErrorCatastrophic(error))
+    return;
+
+  // TODO(shess): Running KillDatabase() multiple times should be
+  // safe.
+  if (corruption_detected_)
+    return;
 
   corruption_detected_ = true;
 
   // Don't just do the close/delete here, as we are being called by |db| and
   // that seems dangerous.
+  // TODO(shess): Consider just calling RazeAndClose() immediately.
+  // db_ may not be safe to reset at this point, but RazeAndClose()
+  // would cause the stack to unwind safely with errors.
   PostBackgroundTask(FROM_HERE, base::Bind(&Backend::KillDatabase, this));
 }
 
@@ -1217,7 +1207,15 @@ net::CookieStore* CreatePersistentCookieStore(
               BrowserThread::GetBlockingPool()->GetSequenceToken()),
           restore_old_session_cookies,
           storage_policy);
-  return new net::CookieMonster(persistent_store, cookie_monster_delegate);
+  net::CookieMonster* cookie_monster =
+      new net::CookieMonster(persistent_store, cookie_monster_delegate);
+
+  const std::string cookie_priority_experiment_group =
+      base::FieldTrialList::FindFullName("CookieRetentionPriorityStudy");
+  cookie_monster->SetPriorityAwareGarbageCollection(
+      cookie_priority_experiment_group == "ExperimentOn");
+
+  return cookie_monster;
 }
 
 }  // namespace content

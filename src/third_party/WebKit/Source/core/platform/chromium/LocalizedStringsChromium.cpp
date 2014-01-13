@@ -35,9 +35,9 @@
 #include "core/platform/graphics/IntSize.h"
 #include "core/platform/text/DateTimeFormat.h"
 
-#include <public/Platform.h>
-#include <public/WebLocalizedString.h>
-#include <public/WebString.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebLocalizedString.h"
+#include "public/platform/WebString.h"
 #include <wtf/text/StringBuilder.h>
 #include <wtf/text/WTFString.h>
 
@@ -143,30 +143,6 @@ String AXImageMapText()
 String AXHeadingText()
 {
     return query(WebLocalizedString::AXHeadingText);
-}
-
-String AXDefinitionText()
-{
-    notImplemented();
-    return String("definition");
-}
-
-String AXDescriptionListTermText()
-{
-    notImplemented();
-    return String("term");
-}
-
-String AXDescriptionListDetailText()
-{
-    notImplemented();
-    return String("description");
-}
-
-String AXFooterRoleDescriptionText()
-{
-    notImplemented();
-    return String("footer");
 }
 
 String AXButtonActionVerb()
@@ -302,25 +278,7 @@ String missingPluginText()
     return query(WebLocalizedString::MissingPluginText);
 }
 
-String crashedPluginText()
-{
-    notImplemented();
-    return String("Plug-in Failure");
-}
-
 String blockedPluginByContentSecurityPolicyText()
-{
-    notImplemented();
-    return String();
-}
-
-String insecurePluginVersionText()
-{
-    notImplemented();
-    return String();
-}
-
-String inactivePluginText()
 {
     notImplemented();
     return String();
@@ -329,12 +287,6 @@ String inactivePluginText()
 String multipleFileUploadText(unsigned numberOfFiles)
 {
     return query(WebLocalizedString::MultipleFileUploadText, String::number(numberOfFiles));
-}
-
-// Used in FTPDirectoryDocument.cpp
-String unknownFileSizeText()
-{
-    return String();
 }
 
 // The following two functions are not declared in core/platform/LocalizedStrings.h.
@@ -361,58 +313,6 @@ String imageTitle(const String& filename, const IntSize& size)
     result.append(')');
     return result.toString();
 }
-
-// We don't use these strings, so they return an empty String. We can't just
-// make them asserts because webcore still calls them.
-String contextMenuItemTagOpenLinkInNewWindow() { return String(); }
-String contextMenuItemTagDownloadLinkToDisk() { return String(); }
-String contextMenuItemTagCopyLinkToClipboard() { return String(); }
-String contextMenuItemTagOpenImageInNewWindow() { return String(); }
-String contextMenuItemTagDownloadImageToDisk() { return String(); }
-String contextMenuItemTagCopyImageToClipboard() { return String(); }
-String contextMenuItemTagOpenFrameInNewWindow() { return String(); }
-String contextMenuItemTagCopy() { return String(); }
-String contextMenuItemTagGoBack() { return String(); }
-String contextMenuItemTagGoForward() { return String(); }
-String contextMenuItemTagStop() { return String(); }
-String contextMenuItemTagReload() { return String(); }
-String contextMenuItemTagCut() { return String(); }
-String contextMenuItemTagPaste() { return String(); }
-String contextMenuItemTagNoGuessesFound() { return String(); }
-String contextMenuItemTagIgnoreSpelling() { return String(); }
-String contextMenuItemTagLearnSpelling() { return String(); }
-String contextMenuItemTagSearchWeb() { return String(); }
-String contextMenuItemTagLookUpInDictionary(const String&) { return String(); }
-String contextMenuItemTagOpenLink() { return String(); }
-String contextMenuItemTagIgnoreGrammar() { return String(); }
-String contextMenuItemTagSpellingMenu() { return String(); }
-String contextMenuItemTagCheckSpelling() { return String(); }
-String contextMenuItemTagCheckSpellingWhileTyping() { return String(); }
-String contextMenuItemTagCheckGrammarWithSpelling() { return String(); }
-String contextMenuItemTagFontMenu() { return String(); }
-String contextMenuItemTagBold() { return String(); }
-String contextMenuItemTagItalic() { return String(); }
-String contextMenuItemTagUnderline() { return String(); }
-String contextMenuItemTagOutline() { return String(); }
-String contextMenuItemTagWritingDirectionMenu() { return String(); }
-String contextMenuItemTagTextDirectionMenu() { return String(); }
-String contextMenuItemTagDefaultDirection() { return String(); }
-String contextMenuItemTagLeftToRight() { return String(); }
-String contextMenuItemTagRightToLeft() { return String(); }
-String contextMenuItemTagInspectElement() { return String(); }
-String contextMenuItemTagShowSpellingPanel(bool show) { return String(); }
-String mediaElementLiveBroadcastStateText() { return String(); }
-String mediaElementLoadingStateText() { return String(); }
-String contextMenuItemTagOpenVideoInNewWindow() { return String(); }
-String contextMenuItemTagOpenAudioInNewWindow() { return String(); }
-String contextMenuItemTagCopyVideoLinkToClipboard() { return String(); }
-String contextMenuItemTagCopyAudioLinkToClipboard() { return String(); }
-String contextMenuItemTagToggleMediaControls() { return String(); }
-String contextMenuItemTagToggleMediaLoop() { return String(); }
-String contextMenuItemTagEnterVideoFullscreen() { return String(); }
-String contextMenuItemTagMediaPlay() { return String(); }
-String contextMenuItemTagMediaPause() { return String(); }
-String contextMenuItemTagMediaMute() { return String(); }
 
 String textTrackClosedCaptionsText() { return String(); }
 String textTrackSubtitlesText() { return String(); }

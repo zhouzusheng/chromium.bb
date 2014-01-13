@@ -85,7 +85,7 @@ mkpath($outputDir);
 
 if (length($fontNamesIn)) {
     my $names = new IO::File;
-    my $familyNamesFileBase = "WebKitFontFamily";
+    my $familyNamesFileBase = "FontFamily";
 
     open($names, $fontNamesIn) or die "Failed to open file: $fontNamesIn";
 
@@ -99,7 +99,7 @@ if (length($fontNamesIn)) {
     open F, ">$header" or die "Unable to open $header for writing.";
 
     printLicenseHeader($F);
-    printHeaderHead($F, "CSS", $familyNamesFileBase, "#include <wtf/text/AtomicString.h>");
+    printHeaderHead($F, "CSS", $familyNamesFileBase, "#include \"wtf/text/AtomicString.h\"");
 
     printMacros($F, "extern const WTF::AtomicString", "", \%parameters);
     print F "#endif\n\n";
@@ -389,7 +389,7 @@ sub printConstructorInterior
     if ($enabledTags{$tagName}{wrapperOnlyIfMediaIsAvailable}) {
         print F <<END
     Settings* settings = document->settings();
-    if (!MediaPlayer::isAvailable() || (settings && !settings->mediaEnabled()))
+    if (!RuntimeEnabledFeatures::mediaEnabled() || (settings && !settings->mediaEnabled()))
         return 0;
     
 END
@@ -539,7 +539,7 @@ sub printCppHead
     print F "#endif\n\n";
 
     print F "#include \"${nsName}Names.h\"\n\n";
-    print F "#include <wtf/StaticConstructors.h>\n";
+    print F "#include \"wtf/StaticConstructors.h\"\n";
 
     print F "namespace WebCore {\n\n";
     print F "namespace ${nsName}Names {\n\n";
@@ -559,14 +559,8 @@ sub printInit
 
 print F "\nvoid init()
 {
-    static bool initialized = false;
-    if (initialized)
-        return;
-    initialized = true;
-
     // Use placement new to initialize the globals.
 
-    AtomicString::init();
 ";
 }
 
@@ -1017,7 +1011,7 @@ sub printWrapperFunctions
 static v8::Handle<v8::Object> create${JSInterfaceName}Wrapper($parameters{namespace}Element* element, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     Settings* settings = element->document()->settings();
-    if (!MediaPlayer::isAvailable() || (settings && !settings->mediaEnabled()))
+    if (!RuntimeEnabledFeatures::mediaEnabled() || (settings && !settings->mediaEnabled()))
         return createV8$parameters{namespace}DirectWrapper(element, creationContext, isolate);
     return wrap(static_cast<${JSInterfaceName}*>(element), creationContext, isolate);
 }

@@ -21,14 +21,10 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGTransformable.h"
 
-#include "SVGNames.h"
-#include "core/platform/FloatConversion.h"
 #include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/svg/SVGParserUtilities.h"
-#include "core/svg/SVGStyledElement.h"
 #include "core/svg/SVGTransformList.h"
 
 namespace WebCore {
@@ -209,5 +205,3 @@ bool SVGTransformable::parseTransformAttribute(SVGTransformList& list, const UCh
 }
 
 }
-
-#endif // ENABLE(SVG)

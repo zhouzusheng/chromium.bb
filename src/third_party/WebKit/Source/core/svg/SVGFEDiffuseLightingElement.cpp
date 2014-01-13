@@ -19,15 +19,12 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/SVGFEDiffuseLightingElement.h"
 
 #include "SVGNames.h"
-#include "core/dom/Attr.h"
 #include "core/platform/graphics/filters/FEDiffuseLighting.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/rendering/style/RenderStyle.h"
-#include "core/svg/SVGColor.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGFELightElement.h"
 #include "core/svg/SVGParserUtilities.h"
@@ -88,7 +85,7 @@ bool SVGFEDiffuseLightingElement::isSupportedAttribute(const QualifiedName& attr
         supportedAttributes.add(SVGNames::kernelUnitLengthAttr);
         supportedAttributes.add(SVGNames::lighting_colorAttr); // Even though it's a SVG-CSS property, we override its handling here.
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFEDiffuseLightingElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -229,5 +226,3 @@ PassRefPtr<FilterEffect> SVGFEDiffuseLightingElement::build(SVGFilterBuilder* fi
 }
 
 }
-
-#endif // ENABLE(SVG)

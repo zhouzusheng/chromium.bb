@@ -48,19 +48,18 @@ icu::Collator* Collator::UnpackCollator(v8::Handle<v8::Object> obj) {
 }
 
 void Collator::DeleteCollator(v8::Isolate* isolate,
-                              v8::Persistent<v8::Value> object,
+                              v8::Persistent<v8::Object>* object,
                               void* param) {
-  v8::Persistent<v8::Object> persistent_object =
-      v8::Persistent<v8::Object>::Cast(object);
-
   // First delete the hidden C++ object.
   // Unpacking should never return NULL here. That would only happen if
   // this method is used as the weak callback for persistent handles not
   // pointing to a collator.
-  delete UnpackCollator(persistent_object);
+  v8::HandleScope handle_scope(isolate);
+  v8::Local<v8::Object> handle = v8::Local<v8::Object>::New(isolate, *object);
+  delete UnpackCollator(handle);
 
   // Then dispose of the persistent handle to JS object.
-  persistent_object.Dispose(isolate);
+  object->Dispose(isolate);
 }
 
 // Throws a JavaScript exception.
@@ -77,17 +76,19 @@ static v8::Handle<v8::Value> ThrowExceptionForICUError(const char* message) {
 }
 
 // static
-v8::Handle<v8::Value> Collator::JSInternalCompare(
-    const v8::Arguments& args) {
+void Collator::JSInternalCompare(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   if (args.Length() != 3 || !args[0]->IsObject() ||
       !args[1]->IsString() || !args[2]->IsString()) {
-    return v8::ThrowException(v8::Exception::SyntaxError(
+    v8::ThrowException(v8::Exception::SyntaxError(
         v8::String::New("Collator and two string arguments are required.")));
+    return;
   }
 
   icu::Collator* collator = UnpackCollator(args[0]->ToObject());
   if (!collator) {
-    return ThrowUnexpectedObjectError();
+    ThrowUnexpectedObjectError();
+    return;
   }
 
   v8::String::Value string_value1(args[1]);
@@ -99,25 +100,25 @@ v8::Handle<v8::Value> Collator::JSInternalCompare(
       string1, string_value1.length(), string2, string_value2.length(), status);
 
   if (U_FAILURE(status)) {
-    return ThrowExceptionForICUError(
+    ThrowExceptionForICUError(
         "Internal error. Unexpected failure in Collator.compare.");
+    return;
   }
 
-  return v8::Int32::New(result);
+  args.GetReturnValue().Set(result);
 }
 
-v8::Handle<v8::Value> Collator::JSCreateCollator(
-    const v8::Arguments& args) {
-  if (args.Length() != 3 ||
-      !args[0]->IsString() ||
-      !args[1]->IsObject() ||
+void Collator::JSCreateCollator(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  if (args.Length() != 3 || !args[0]->IsString() || !args[1]->IsObject() ||
       !args[2]->IsObject()) {
-    return v8::ThrowException(v8::Exception::SyntaxError(
+    v8::ThrowException(v8::Exception::SyntaxError(
         v8::String::New("Internal error, wrong parameters.")));
+    return;
   }
 
   v8::Isolate* isolate = args.GetIsolate();
-  v8::Persistent<v8::ObjectTemplate> intl_collator_template =
+  v8::Local<v8::ObjectTemplate> intl_collator_template =
       Utils::GetTemplate(isolate);
 
   // Create an empty object wrapper.
@@ -125,35 +126,36 @@ v8::Handle<v8::Value> Collator::JSCreateCollator(
   // But the handle shouldn't be empty.
   // That can happen if there was a stack overflow when creating the object.
   if (local_object.IsEmpty()) {
-    return local_object;
+    args.GetReturnValue().Set(local_object);
+    return;
   }
-
-  v8::Persistent<v8::Object> wrapper =
-      v8::Persistent<v8::Object>::New(isolate, local_object);
 
   // Set collator as internal field of the resulting JS object.
   icu::Collator* collator = InitializeCollator(
       args[0]->ToString(), args[1]->ToObject(), args[2]->ToObject());
 
   if (!collator) {
-    return v8::ThrowException(v8::Exception::Error(v8::String::New(
+    v8::ThrowException(v8::Exception::Error(v8::String::New(
         "Internal error. Couldn't create ICU collator.")));
+    return;
   } else {
-    wrapper->SetAlignedPointerInInternalField(0, collator);
+    local_object->SetAlignedPointerInInternalField(0, collator);
 
     // Make it safer to unpack later on.
     v8::TryCatch try_catch;
-    wrapper->Set(v8::String::New("collator"), v8::String::New("valid"));
+    local_object->Set(v8::String::New("collator"), v8::String::New("valid"));
     if (try_catch.HasCaught()) {
-      return v8::ThrowException(v8::Exception::Error(
+      v8::ThrowException(v8::Exception::Error(
           v8::String::New("Internal error, couldn't set property.")));
+      return;
     }
   }
 
+  v8::Persistent<v8::Object> wrapper(isolate, local_object);
   // Make object handle weak so we can delete iterator once GC kicks in.
-  wrapper.MakeWeak(isolate, NULL, DeleteCollator);
-
-  return wrapper;
+  wrapper.MakeWeak<void>(NULL, &DeleteCollator);
+  args.GetReturnValue().Set(wrapper);
+  wrapper.ClearAndLeak();
 }
 
 static icu::Collator* InitializeCollator(v8::Handle<v8::String> locale,

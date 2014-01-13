@@ -29,6 +29,8 @@
 #include "config.h"
 #include "core/loader/archive/ArchiveResourceCollection.h"
 
+#include "weborigin/KURL.h"
+
 namespace WebCore {
 
 ArchiveResourceCollection::ArchiveResourceCollection()
@@ -74,7 +76,7 @@ void ArchiveResourceCollection::addResource(PassRefPtr<ArchiveResource> resource
 
 ArchiveResource* ArchiveResourceCollection::archiveResourceForURL(const KURL& url)
 {
-    ArchiveResource* resource = m_subresources.get(url).get();
+    ArchiveResource* resource = m_subresources.get(url);
     if (!resource)
         return 0;
         

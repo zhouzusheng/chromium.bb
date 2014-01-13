@@ -41,8 +41,9 @@ namespace WebCore {
 
 RegularExpression::RegularExpression(const String& pattern, TextCaseSensitivity caseSensitivity, MultilineMode multilineMode)
 {
-    v8::HandleScope handleScope;
-    v8::Local<v8::Context> context = V8PerIsolateData::current()->ensureRegexContext();
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::HandleScope handleScope(isolate);
+    v8::Local<v8::Context> context = V8PerIsolateData::from(isolate)->ensureRegexContext();
     v8::Context::Scope scope(context);
 
     unsigned flags = v8::RegExp::kNone;
@@ -56,7 +57,7 @@ RegularExpression::RegularExpression(const String& pattern, TextCaseSensitivity 
 
     // If the regex failed to compile we'll get an empty handle.
     if (!regex.IsEmpty())
-        m_regex.set(regex);
+        m_regex.set(isolate, regex);
 }
 
 int RegularExpression::match(const String& string, int startFrom, int* matchLength) const
@@ -71,17 +72,19 @@ int RegularExpression::match(const String& string, int startFrom, int* matchLeng
     if (string.length() > INT_MAX)
          return -1;
 
-    v8::HandleScope handleScope;
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::HandleScope handleScope(isolate);
     v8::Local<v8::Context> context = V8PerIsolateData::current()->ensureRegexContext();
     v8::Context::Scope scope(context);
     v8::TryCatch tryCatch;
 
     V8RecursionScope::MicrotaskSuppression microtaskScope;
 
-    v8::Local<v8::Function> exec = m_regex->Get(v8::String::NewSymbol("exec")).As<v8::Function>();
+    v8::Local<v8::RegExp> regex = m_regex.newLocal(isolate);
+    v8::Local<v8::Function> exec = regex->Get(v8::String::NewSymbol("exec")).As<v8::Function>();
 
     v8::Handle<v8::Value> argv[] = { v8String(string.substringSharingImpl(startFrom), context->GetIsolate()) };
-    v8::Local<v8::Value> returnValue = exec->Call(m_regex.get(), 1, argv);
+    v8::Local<v8::Value> returnValue = exec->Call(regex, 1, argv);
 
     // RegExp#exec returns null if there's no match, otherwise it returns an
     // Array of strings with the first being the whole match string and others

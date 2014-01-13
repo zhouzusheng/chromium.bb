@@ -11,13 +11,12 @@
 #include "base/callback.h"
 #include "base/i18n/rtl.h"
 #include "base/process_util.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
-#include "content/public/common/context_menu_source_type.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/media_stream_request.h"
 #include "net/base/load_states.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
+#include "third_party/WebKit/public/web/WebPopupType.h"
 #include "ui/base/window_open_disposition.h"
 
 class GURL;
@@ -47,6 +46,7 @@ class Size;
 namespace content {
 
 class BrowserContext;
+class PageState;
 class RenderViewHost;
 class RenderViewHostDelegateView;
 class SessionStorageNamespace;
@@ -89,11 +89,11 @@ class CONTENT_EXPORT RenderViewHostDelegate {
         bool proceed,
         const base::TimeTicks& proceed_time) = 0;
 
-    // Called by ResourceDispatcherHost when a response for a pending cross-site
-    // request is received.  The ResourceDispatcherHost will pause the response
-    // until the onunload handler of the previous renderer is run.
-    virtual void OnCrossSiteResponse(int new_render_process_host_id,
-                                     int new_request_id) = 0;
+    // The |pending_render_view_host| is ready to commit a page.  The delegate
+    // should ensure that the old RenderViewHost runs its unload handler first.
+    virtual void OnCrossSiteResponse(
+        RenderViewHost* pending_render_view_host,
+        const GlobalRequestID& global_request_id) = 0;
 
    protected:
     virtual ~RendererManagement() {}
@@ -170,7 +170,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // The state for the page changed and should be updated.
   virtual void UpdateState(RenderViewHost* render_view_host,
                            int32 page_id,
-                           const std::string& state) {}
+                           const PageState& state) {}
 
   // The page's title was changed and should be updated.
   virtual void UpdateTitle(RenderViewHost* render_view_host,
@@ -213,6 +213,11 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // The RenderView set its opener to null, disowning it for the lifetime of
   // the window.
   virtual void DidDisownOpener(RenderViewHost* rvh) {}
+
+  // Another page accessed the initial empty document of this RenderView,
+  // which means it is no longer safe to display a pending URL without
+  // risking a URL spoof.
+  virtual void DidAccessInitialDocument() {}
 
   // The RenderView's main frame document element is ready. This happens when
   // the document has finished parsing.
@@ -363,6 +368,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // the Windows function which is actually a #define.
   virtual void CreateNewWindow(
       int route_id,
+      int main_frame_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
       SessionStorageNamespace* session_storage_namespace) {}
 
@@ -397,8 +403,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
 
   // A context menu should be shown, to be built using the context information
   // provided in the supplied params.
-  virtual void ShowContextMenu(const ContextMenuParams& params,
-                               ContextMenuSourceType type) {}
+  virtual void ShowContextMenu(const ContextMenuParams& params) {}
 
   // The render view has requested access to media devices listed in
   // |request|, and the client should grant or deny that permission by

@@ -21,21 +21,19 @@
 #include "config.h"
 #include "core/css/StyleSheetContents.h"
 
-#include "core/css/CSSImportRule.h"
+#include <wtf/Deque.h>
+#include <wtf/MemoryInstrumentationHashMap.h>
+#include <wtf/MemoryInstrumentationVector.h>
 #include "core/css/CSSParser.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaList.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleRuleImport.h"
-#include "core/dom/Document.h"
 #include "core/dom/Node.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/loader/cache/CachedCSSStyleSheet.h"
-#include "core/page/SecurityOrigin.h"
-#include <wtf/Deque.h>
-#include <wtf/MemoryInstrumentationHashMap.h>
-#include <wtf/MemoryInstrumentationVector.h>
+#include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -137,11 +135,9 @@ void StyleSheetContents::parserAppendRule(PassRefPtr<StyleRuleBase> rule)
         return;
     }
 
-#if ENABLE(RESOLUTION_MEDIA_QUERY)
     // Add warning message to inspector if dpi/dpcm values are used for screen media.
     if (rule->isMediaRule())
         reportMediaQueryWarningIfNeeded(singleOwnerDocument(), static_cast<StyleRuleMedia*>(rule.get())->mediaQueries());
-#endif
 
     m_childRules.append(rule);
 }
@@ -149,7 +145,7 @@ void StyleSheetContents::parserAppendRule(PassRefPtr<StyleRuleBase> rule)
 StyleRuleBase* StyleSheetContents::ruleAt(unsigned index) const
 {
     ASSERT_WITH_SECURITY_IMPLICATION(index < ruleCount());
-    
+
     unsigned childVectorIndex = index;
     if (hasCharsetRule()) {
         if (index == 0)
@@ -282,7 +278,7 @@ void StyleSheetContents::parseAuthorStyleSheet(const CachedCSSStyleSheet* cached
     bool hasValidMIMEType = false;
     String sheetText = cachedStyleSheet->sheetText(enforceMIMEType, &hasValidMIMEType);
 
-    CSSParser p(parserContext());
+    CSSParser p(parserContext(), UseCounter::getFrom(this));
     p.parseSheet(this, sheetText, 0, 0, true);
 
     // If we're loading a stylesheet cross-origin, and the MIME type is not standard, require the CSS
@@ -313,7 +309,7 @@ bool StyleSheetContents::parseString(const String& sheetText)
 
 bool StyleSheetContents::parseStringAtLine(const String& sheetText, int startLineNumber, bool createdByParser)
 {
-    CSSParser p(parserContext());
+    CSSParser p(parserContext(), UseCounter::getFrom(this));
     p.parseSheet(this, sheetText, startLineNumber, 0, createdByParser);
 
     return true;
@@ -336,7 +332,7 @@ void StyleSheetContents::checkLoaded()
     RefPtr<StyleSheetContents> protect(this);
 
     // Avoid |this| being deleted by scripts that run via
-    // ScriptableDocumentParser::executeScriptsWaitingForStylesheets().
+    // ScriptableDocumentParser::executeScriptsWaitingForResources().
     // See <rdar://problem/6622300>.
     RefPtr<StyleSheetContents> protector(this);
     StyleSheetContents* parentSheet = parentStyleSheet();
@@ -373,6 +369,14 @@ StyleSheetContents* StyleSheetContents::rootStyleSheet() const
     while (root->parentStyleSheet())
         root = root->parentStyleSheet();
     return const_cast<StyleSheetContents*>(root);
+}
+
+bool StyleSheetContents::hasSingleOwnerNode() const
+{
+    StyleSheetContents* root = rootStyleSheet();
+    if (root->m_clients.isEmpty())
+        return false;
+    return root->m_clients.size() == 1;
 }
 
 Node* StyleSheetContents::singleOwnerNode() const
@@ -453,9 +457,7 @@ static bool childRulesHaveFailedOrCanceledSubresources(const Vector<RefPtr<Style
         case StyleRuleBase::Charset:
         case StyleRuleBase::Keyframe:
         case StyleRuleBase::Supports:
-#if ENABLE(CSS_DEVICE_ADAPTATION)
         case StyleRuleBase::Viewport:
-#endif
         case StyleRuleBase::Filter:
             break;
         }

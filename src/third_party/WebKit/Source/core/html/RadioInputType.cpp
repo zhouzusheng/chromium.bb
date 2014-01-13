@@ -28,8 +28,6 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/InputTypeNames.h"
-#include "core/page/Frame.h"
-#include "core/page/Settings.h"
 #include "core/page/SpatialNavigation.h"
 #include "core/platform/LocalizedStrings.h"
 #include <wtf/PassOwnPtr.h>
@@ -92,7 +90,7 @@ void RadioInputType::handleKeydownEvent(KeyboardEvent* event)
         // Look for more radio buttons.
         if (!node->hasTagName(inputTag))
             continue;
-        HTMLInputElement* inputElement = static_cast<HTMLInputElement*>(node);
+        HTMLInputElement* inputElement = toHTMLInputElement(node);
         if (inputElement->form() != element()->form())
             break;
         if (inputElement->isRadioButton() && inputElement->name() == element()->name() && inputElement->isFocusable()) {
@@ -130,7 +128,7 @@ bool RadioInputType::isKeyboardFocusable(KeyboardEvent* event) const
     // skip any other elements in the group.
     Node* currentFocusedNode = element()->document()->focusedNode();
     if (currentFocusedNode && currentFocusedNode->hasTagName(inputTag)) {
-        HTMLInputElement* focusedInput = static_cast<HTMLInputElement*>(currentFocusedNode);
+        HTMLInputElement* focusedInput = toHTMLInputElement(currentFocusedNode);
         if (focusedInput->isRadioButton() && focusedInput->form() == element()->form() && focusedInput->name() == element()->name())
             return false;
     }

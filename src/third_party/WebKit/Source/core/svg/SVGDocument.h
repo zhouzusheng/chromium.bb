@@ -20,7 +20,6 @@
 
 #ifndef SVGDocument_h
 #define SVGDocument_h
-#if ENABLE(SVG)
 
 #include "core/dom/Document.h"
 #include "core/platform/graphics/FloatPoint.h"
@@ -51,8 +50,6 @@ public:
 private:
     SVGDocument(Frame*, const KURL&);
 
-    virtual bool isSVGDocument() const { return true; }
-
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
 
     FloatPoint m_translate;
@@ -75,7 +72,4 @@ void toSVGDocument(const SVGDocument*);
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif // SVGDocument_h
-
-// vim:ts=4:noet

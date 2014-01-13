@@ -64,7 +64,7 @@ class NET_EXPORT_PRIVATE QuicFramerVisitorInterface {
   // |quic_version_|. The visitor should return true after it updates the
   // version of the |framer_| to |received_version| or false to stop processing
   // this packet.
-  virtual bool OnProtocolVersionMismatch(QuicVersionTag received_version) = 0;
+  virtual bool OnProtocolVersionMismatch(QuicTag received_version) = 0;
 
   // Called when a new packet has been received, before it
   // has been validated or processed.
@@ -153,14 +153,14 @@ class NET_EXPORT_PRIVATE QuicFramer {
  public:
   // Constructs a new framer that installs a kNULL QuicEncrypter and
   // QuicDecrypter for level ENCRYPTION_NONE.
-  QuicFramer(QuicVersionTag quic_version,
+  QuicFramer(QuicTag quic_version,
              QuicTime creation_time,
              bool is_server);
 
   virtual ~QuicFramer();
 
   // Returns true if |version| is a supported protocol version.
-  bool IsSupportedVersion(QuicVersionTag version);
+  bool IsSupportedVersion(QuicTag version);
 
   // Calculates the largest observed packet to advertise in the case an Ack
   // Frame was truncated.  last_written in this case is the iterator for the
@@ -184,11 +184,11 @@ class NET_EXPORT_PRIVATE QuicFramer {
     fec_builder_ = builder;
   }
 
-  QuicVersionTag version() const {
+  QuicTag version() const {
     return quic_version_;
   }
 
-  void set_version(QuicVersionTag version) {
+  void set_version(QuicTag version) {
     DCHECK(IsSupportedVersion(version));
     quic_version_ = version;
   }
@@ -231,6 +231,9 @@ class NET_EXPORT_PRIVATE QuicFramer {
   static size_t GetMinConnectionCloseFrameSize();
   // Size in bytes of all GoAway frame fields without the reason phrase.
   static size_t GetMinGoAwayFrameSize();
+  // The maximum number of nacks which can be transmitted in a single ack packet
+  // without exceeding kMaxPacketSize.
+  static size_t GetMaxUnackedPackets(QuicPacketHeader header);
   // Size in bytes required for a serialized version negotiation packet
   size_t GetVersionNegotiationPacketSize(size_t number_versions);
 
@@ -243,7 +246,10 @@ class NET_EXPORT_PRIVATE QuicFramer {
   // Returns the associated data from the encrypted packet |encrypted| as a
   // stringpiece.
   static base::StringPiece GetAssociatedDataFromEncryptedPacket(
-      const QuicEncryptedPacket& encrypted, bool includes_version);
+      const QuicEncryptedPacket& encrypted,
+      QuicGuidLength guid_length,
+      bool includes_version,
+      QuicSequenceNumberLength sequence_number_length);
 
   // Returns a SerializedPacket whose |packet| member is owned by the caller,
   // and is populated with the fields in |header| and |frames|, or is NULL if
@@ -271,7 +277,7 @@ class NET_EXPORT_PRIVATE QuicFramer {
 
   QuicEncryptedPacket* ConstructVersionNegotiationPacket(
       const QuicPacketPublicHeader& header,
-      const QuicVersionTagList& supported_versions);
+      const QuicTagVector& supported_versions);
 
   // SetDecrypter sets the primary decrypter, replacing any that already exists,
   // and takes ownership. If an alternative decrypter is in place then the
@@ -296,6 +302,10 @@ class NET_EXPORT_PRIVATE QuicFramer {
   void SetEncrypter(EncryptionLevel level, QuicEncrypter* encrypter);
   const QuicEncrypter* encrypter(EncryptionLevel level) const;
 
+  // SwapCryptersForTest exchanges the state of the crypters with |other|. To
+  // be used in tests only.
+  void SwapCryptersForTest(QuicFramer* other);
+
   // Returns a new encrypted packet, owned by the caller.
   QuicEncryptedPacket* EncryptPacket(EncryptionLevel level,
                                      QuicPacketSequenceNumber sequence_number,
@@ -307,7 +317,7 @@ class NET_EXPORT_PRIVATE QuicFramer {
 
   const std::string& detailed_error() { return detailed_error_; }
 
-  // Read the guid from a packet header.
+  // Read the full 8 byte guid from a packet header.
   // Return true on success, else false.
   static bool ReadGuidFromPacket(const QuicEncryptedPacket& packet,
                                  QuicGuid* guid);
@@ -333,7 +343,9 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool ProcessPacketHeader(QuicPacketHeader* header,
                            const QuicEncryptedPacket& packet);
 
-  bool ProcessPacketSequenceNumber(QuicPacketSequenceNumber* sequence_number);
+  bool ProcessPacketSequenceNumber(
+      QuicSequenceNumberLength sequence_number_length,
+      QuicPacketSequenceNumber* sequence_number);
   bool ProcessFrameData();
   bool ProcessStreamFrame(QuicStreamFrame* frame);
   bool ProcessAckFrame(QuicAckFrame* frame);
@@ -345,19 +357,20 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool ProcessConnectionCloseFrame(QuicConnectionCloseFrame* frame);
   bool ProcessGoAwayFrame(QuicGoAwayFrame* frame);
 
-  bool DecryptPayload(QuicPacketSequenceNumber packet_sequence_number,
-                      bool version_flag,
+  bool DecryptPayload(const QuicPacketHeader& header,
                       const QuicEncryptedPacket& packet);
 
   // Returns the full packet sequence number from the truncated
   // wire format version and the last seen packet sequence number.
   QuicPacketSequenceNumber CalculatePacketSequenceNumberFromWire(
+      QuicSequenceNumberLength sequence_number_length,
       QuicPacketSequenceNumber packet_sequence_number) const;
 
   // Computes the wire size in bytes of the payload of |frame|.
   size_t ComputeFrameLength(const QuicFrame& frame);
 
   static bool AppendPacketSequenceNumber(
+      QuicSequenceNumberLength sequence_number_length,
       QuicPacketSequenceNumber packet_sequence_number,
       QuicDataWriter* writer);
 
@@ -393,10 +406,12 @@ class NET_EXPORT_PRIVATE QuicFramer {
   QuicErrorCode error_;
   // Updated by ProcessPacketHeader when it succeeds.
   QuicPacketSequenceNumber last_sequence_number_;
+  // Updated by WritePacketHeader.
+  QuicGuid last_serialized_guid_;
   // Buffer containing decrypted payload data during parsing.
   scoped_ptr<QuicData> decrypted_;
   // Version of the protocol being used.
-  QuicVersionTag quic_version_;
+  QuicTag quic_version_;
   // Primary decrypter used to decrypt packets during parsing.
   scoped_ptr<QuicDecrypter> decrypter_;
   // Alternative decrypter that can also be used to decrypt packets.

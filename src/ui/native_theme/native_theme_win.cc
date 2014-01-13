@@ -28,6 +28,7 @@
 #include "ui/gfx/gdi_util.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/sys_color_change_listener.h"
 #include "ui/native_theme/common_theme.h"
 
 // This was removed from Winvers.h but is still used.
@@ -45,10 +46,10 @@ const SkColor kDialogBackgroundColor = SkColorSetRGB(251, 251, 251);
 // FocusableBorder:
 const SkColor kFocusedBorderColor = SkColorSetRGB(0x4d, 0x90, 0xfe);
 const SkColor kUnfocusedBorderColor = SkColorSetRGB(0xd9, 0xd9, 0xd9);
-// TextButton:
-const SkColor kTextButtonBackgroundColor = SkColorSetRGB(0xde, 0xde, 0xde);
-const SkColor kTextButtonHighlightColor = SkColorSetARGB(200, 255, 255, 255);
-const SkColor kTextButtonHoverColor = SkColorSetRGB(6, 45, 117);
+// Button:
+const SkColor kButtonBackgroundColor = SkColorSetRGB(0xde, 0xde, 0xde);
+const SkColor kButtonHighlightColor = SkColorSetARGB(200, 255, 255, 255);
+const SkColor kButtonHoverColor = SkColorSetRGB(6, 45, 117);
 // MenuItem:
 const SkColor kEnabledMenuItemForegroundColor = SkColorSetRGB(6, 45, 117);
 const SkColor kDisabledMenuItemForegroundColor = SkColorSetRGB(161, 161, 146);
@@ -499,6 +500,8 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
 
     // Dialogs
     case kColorId_DialogBackground:
+      if (gfx::IsInvertedColorScheme())
+        return color_utils::InvertColor(kDialogBackgroundColor);
       return kDialogBackgroundColor;
 
     // FocusableBorder
@@ -507,17 +510,17 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
     case kColorId_UnfocusedBorderColor:
       return kUnfocusedBorderColor;
 
-    // TextButton
-    case kColorId_TextButtonBackgroundColor:
-      return kTextButtonBackgroundColor;
-    case kColorId_TextButtonEnabledColor:
+    // Button
+    case kColorId_ButtonBackgroundColor:
+      return kButtonBackgroundColor;
+    case kColorId_ButtonEnabledColor:
       return system_colors_[COLOR_BTNTEXT];
-    case kColorId_TextButtonDisabledColor:
+    case kColorId_ButtonDisabledColor:
       return system_colors_[COLOR_GRAYTEXT];
-    case kColorId_TextButtonHighlightColor:
-      return kTextButtonHighlightColor;
-    case kColorId_TextButtonHoverColor:
-      return kTextButtonHoverColor;
+    case kColorId_ButtonHighlightColor:
+      return kButtonHighlightColor;
+    case kColorId_ButtonHoverColor:
+      return kButtonHoverColor;
 
     // MenuItem
     case kColorId_EnabledMenuItemForegroundColor:

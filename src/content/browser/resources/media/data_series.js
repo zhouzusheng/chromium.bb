@@ -6,6 +6,8 @@
  * A TimelineDataSeries collects an ordered series of (time, value) pairs,
  * and converts them to graph points.  It also keeps track of its color and
  * current visibility state.
+ * It keeps MAX_STATS_DATA_POINT_BUFFER_SIZE data points at most. Old data
+ * points will be dropped when it reaches this size.
  */
 var TimelineDataSeries = (function() {
   'use strict';
@@ -29,12 +31,33 @@ var TimelineDataSeries = (function() {
 
   TimelineDataSeries.prototype = {
     /**
+     * @override
+     */
+    toJSON: function() {
+      if (this.dataPoints_.length < 1)
+        return {};
+
+      var values = [];
+      for (var i = 0; i < this.dataPoints_.length; ++i) {
+        values.push(this.dataPoints_[i].value);
+      }
+      return {
+        startTime: this.dataPoints_[0].time,
+        endTime: this.dataPoints_[this.dataPoints_.length - 1].time,
+        values: JSON.stringify(values),
+      };
+    },
+
+    /**
      * Adds a DataPoint to |this| with the specified time and value.
      * DataPoints are assumed to be received in chronological order.
      */
     addPoint: function(timeTicks, value) {
       var time = new Date(timeTicks);
       this.dataPoints_.push(new DataPoint(time, value));
+
+      if (this.dataPoints_.length > MAX_STATS_DATA_POINT_BUFFER_SIZE)
+        this.dataPoints_.shift();
     },
 
     isVisible: function() {

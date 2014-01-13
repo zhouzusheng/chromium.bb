@@ -27,10 +27,12 @@
 #define Canvas2DLayerBridge_h
 
 #include "SkDeferredCanvas.h"
+#include "SkImage.h"
 #include "core/platform/graphics/GraphicsContext3D.h"
 #include "core/platform/graphics/IntSize.h"
-#include <public/WebExternalTextureLayer.h>
-#include <public/WebExternalTextureLayerClient.h>
+#include "public/platform/WebExternalTextureLayer.h"
+#include "public/platform/WebExternalTextureLayerClient.h"
+#include "public/platform/WebExternalTextureMailbox.h"
 #include <wtf/DoublyLinkedList.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefPtr.h>
@@ -64,8 +66,8 @@ public:
     // WebKit::WebExternalTextureLayerClient implementation.
     virtual unsigned prepareTexture(WebKit::WebTextureUpdater&) OVERRIDE;
     virtual WebKit::WebGraphicsContext3D* context() OVERRIDE;
-    virtual bool prepareMailbox(WebKit::WebExternalTextureMailbox*) OVERRIDE { return false; }
-    virtual void mailboxReleased(const WebKit::WebExternalTextureMailbox&) OVERRIDE { }
+    virtual bool prepareMailbox(WebKit::WebExternalTextureMailbox*) OVERRIDE;
+    virtual void mailboxReleased(const WebKit::WebExternalTextureMailbox&) OVERRIDE;
 
     // SkDeferredCanvas::NotificationClient implementation
     virtual void prepareForDraw() OVERRIDE;
@@ -87,6 +89,7 @@ public:
 
 protected:
     Canvas2DLayerBridge(PassRefPtr<GraphicsContext3D>, SkDeferredCanvas*, OpacityMode, ThreadMode);
+    void setRateLimitingEnabled(bool);
 
     SkDeferredCanvas* m_canvas;
     OwnPtr<WebKit::WebExternalTextureLayer> m_layer;
@@ -94,10 +97,32 @@ protected:
     size_t m_bytesAllocated;
     bool m_didRecordDrawCommand;
     int m_framesPending;
+    bool m_rateLimitingEnabled;
 
     friend class WTF::DoublyLinkedListNode<Canvas2DLayerBridge>;
     Canvas2DLayerBridge* m_next;
     Canvas2DLayerBridge* m_prev;
+
+#if ENABLE(CANVAS_USES_MAILBOX)
+    enum MailboxStatus {
+        MailboxInUse,
+        MailboxReleased,
+        MailboxAvailable,
+    };
+
+    struct MailboxInfo {
+        WebKit::WebExternalTextureMailbox m_mailbox;
+        SkAutoTUnref<SkImage> m_image;
+        MailboxStatus m_status;
+
+        MailboxInfo(const MailboxInfo&);
+        MailboxInfo() {}
+    };
+    MailboxInfo* createMailboxInfo();
+
+    uint32_t m_lastImageId;
+    Vector<MailboxInfo> m_mailboxes;
+#endif
 };
 
 }

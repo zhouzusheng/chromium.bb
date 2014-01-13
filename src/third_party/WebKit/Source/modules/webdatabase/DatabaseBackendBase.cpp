@@ -31,7 +31,6 @@
 #include "modules/webdatabase/DatabaseBackendBase.h"
 
 #include "core/dom/ExceptionCode.h"
-#include "core/page/SecurityOrigin.h"
 #include "core/platform/Logging.h"
 #include "core/platform/sql/SQLiteStatement.h"
 #include "core/platform/sql/SQLiteTransaction.h"
@@ -40,7 +39,9 @@
 #include "modules/webdatabase/DatabaseBase.h"
 #include "modules/webdatabase/DatabaseContext.h"
 #include "modules/webdatabase/DatabaseManager.h"
+#include "modules/webdatabase/DatabaseObserver.h"
 #include "modules/webdatabase/DatabaseTracker.h"
+#include "weborigin/SecurityOrigin.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/PassRefPtr.h"
@@ -48,8 +49,6 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringHash.h"
-
-#include "modules/webdatabase/chromium/DatabaseObserver.h" // For error reporting.
 
 // Registering "opened" databases with the DatabaseTracker
 // =======================================================

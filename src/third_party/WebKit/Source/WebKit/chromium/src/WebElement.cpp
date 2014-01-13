@@ -33,10 +33,10 @@
 #include "WebElement.h"
 #include "core/dom/Element.h"
 #include "core/dom/NamedNodeMap.h"
-#include "core/dom/ShadowRoot.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderObject.h"
-#include <public/WebRect.h>
+#include "public/platform/WebRect.h"
 #include <wtf/PassRefPtr.h>
 
 
@@ -107,8 +107,10 @@ unsigned WebElement::attributeCount() const
 
 WebNode WebElement::shadowRoot() const
 {
-    Node* shadowRoot = constUnwrap<Element>()->shadowRoot()->toNode();
-    return WebNode(shadowRoot);
+    ShadowRoot* shadowRoot = constUnwrap<Element>()->shadowRoot();
+    if (!shadowRoot)
+        return WebNode();
+    return WebNode(shadowRoot->toNode());
 }
 
 WebString WebElement::attributeLocalName(unsigned index) const

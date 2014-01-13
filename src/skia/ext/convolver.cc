@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "skia/ext/convolver.h"
 #include "skia/ext/convolver_SSE2.h"
+#include "skia/ext/convolver_mips_dspr2.h"
 #include "third_party/skia/include/core/SkSize.h"
 #include "third_party/skia/include/core/SkTypes.h"
 
@@ -347,7 +348,8 @@ typedef void (*Convolve4RowsHorizontally_pointer)(
 typedef void (*ConvolveHorizontally_pointer)(
     const unsigned char* src_data,
     const ConvolutionFilter1D& filter,
-    unsigned char* out_row);
+    unsigned char* out_row,
+    bool has_alpha);
 
 struct ConvolveProcs {
   // This is how many extra pixels may be read by the
@@ -367,6 +369,10 @@ void SetupSIMD(ConvolveProcs *procs) {
     procs->convolve_4rows_horizontally = &Convolve4RowsHorizontally_SSE2;
     procs->convolve_horizontally = &ConvolveHorizontally_SSE2;
   }
+#elif defined SIMD_MIPS_DSPR2
+  procs->extra_horizontal_reads = 3;
+  procs->convolve_vertically = &ConvolveVertically_mips_dspr2;
+  procs->convolve_horizontally = &ConvolveHorizontally_mips_dspr2;
 #endif
 }
 
@@ -464,7 +470,7 @@ void BGRAConvolve2D(const unsigned char* source_data,
             avoid_simd_rows) {
           simd.convolve_horizontally(
               &source_data[next_x_row * source_byte_row_stride],
-              filter_x, row_buffer.AdvanceRow());
+              filter_x, row_buffer.AdvanceRow(), source_has_alpha);
         } else {
           if (source_has_alpha) {
             ConvolveHorizontally<true>(
@@ -670,6 +676,41 @@ void SingleChannelConvolveY1D(const unsigned char* source_data,
       *target_byte = BringBackTo8(accval, absolute_values);
     }
   }
+}
+
+void SetUpGaussianConvolutionKernel(ConvolutionFilter1D* filter,
+                                    float kernel_sigma,
+                                    bool derivative) {
+  DCHECK(filter != NULL);
+  DCHECK_GT(kernel_sigma, 0.0);
+  const int tail_length = static_cast<int>(4.0f * kernel_sigma + 0.5f);
+  const int kernel_size = tail_length * 2 + 1;
+  const float sigmasq = kernel_sigma * kernel_sigma;
+  std::vector<float> kernel_weights(kernel_size, 0.0);
+  float kernel_sum = 1.0f;
+
+  kernel_weights[tail_length] = 1.0f;
+
+  for (int ii = 1; ii <= tail_length; ++ii) {
+    float v = std::exp(-0.5f * ii * ii / sigmasq);
+    kernel_weights[tail_length + ii] = v;
+    kernel_weights[tail_length - ii] = v;
+    kernel_sum += 2.0f * v;
+  }
+
+  for (int i = 0; i < kernel_size; ++i)
+    kernel_weights[i] /= kernel_sum;
+
+  if (derivative) {
+    kernel_weights[tail_length] = 0.0;
+    for (int ii = 1; ii <= tail_length; ++ii) {
+      float v = sigmasq * kernel_weights[tail_length + ii] / ii;
+      kernel_weights[tail_length + ii] = v;
+      kernel_weights[tail_length - ii] = -v;
+    }
+  }
+
+  filter->AddFilter(0, &kernel_weights[0], kernel_weights.size());
 }
 
 }  // namespace skia

@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/auth.h"
 #include "net/base/host_port_pair.h"
@@ -19,6 +19,7 @@
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_stream_parser.h"
+#include "net/http/proxy_connect_redirect_http_stream.h"
 #include "net/socket/client_socket_handle.h"
 
 namespace net {
@@ -51,6 +52,7 @@ HttpProxyClientSocket::HttpProxyClientSocket(
       using_spdy_(using_spdy),
       protocol_negotiated_(protocol_negotiated),
       is_https_proxy_(is_https_proxy),
+      redirect_has_load_timing_info_(false),
       net_log_(transport_socket->socket()->NetLog()) {
   // Synthesize the bits of a request that we actually use.
   request_.url = request_url;
@@ -95,12 +97,12 @@ NextProto HttpProxyClientSocket::GetProtocolNegotiated() const {
 }
 
 const HttpResponseInfo* HttpProxyClientSocket::GetConnectResponseInfo() const {
-  return response_.headers ? &response_ : NULL;
+  return response_.headers.get() ? &response_ : NULL;
 }
 
 HttpStream* HttpProxyClientSocket::CreateConnectResponseStream() {
-  return new HttpBasicStream(transport_.release(),
-                             http_stream_parser_.release(), false);
+  return new ProxyConnectRedirectHttpStream(
+      redirect_has_load_timing_info_ ? &redirect_load_timing_info_ : NULL);
 }
 
 
@@ -414,8 +416,8 @@ int HttpProxyClientSocket::DoSendRequest() {
   }
 
   parser_buf_ = new GrowableIOBuffer();
-  http_stream_parser_.reset(
-      new HttpStreamParser(transport_.get(), &request_, parser_buf_, net_log_));
+  http_stream_parser_.reset(new HttpStreamParser(
+      transport_.get(), &request_, parser_buf_.get(), net_log_));
   return http_stream_parser_->SendRequest(
       request_line_, request_headers_, &response_, io_callback_);
 }
@@ -466,8 +468,15 @@ int HttpProxyClientSocket::DoReadHeadersComplete(int result) {
       // sanitize the response.  This still allows a rogue HTTPS proxy to
       // redirect an HTTPS site load to a similar-looking site, but no longer
       // allows it to impersonate the site the user requested.
-      if (is_https_proxy_ && SanitizeProxyRedirect(&response_, request_.url))
+      if (is_https_proxy_ && SanitizeProxyRedirect(&response_, request_.url)) {
+        bool is_connection_reused = http_stream_parser_->IsConnectionReused();
+        redirect_has_load_timing_info_ =
+            transport_->GetLoadTimingInfo(
+                is_connection_reused, &redirect_load_timing_info_);
+        transport_.reset();
+        http_stream_parser_.reset();
         return ERR_HTTPS_PROXY_TUNNEL_RESPONSE;
+      }
 
       // We're not using an HTTPS proxy, or we couldn't sanitize the redirect.
       LogBlockedTunnelResponse();
@@ -478,7 +487,7 @@ int HttpProxyClientSocket::DoReadHeadersComplete(int result) {
       // authentication code is smart enough to avoid being tricked by an
       // active network attacker.
       // The next state is intentionally not set as it should be STATE_NONE;
-      return HandleProxyAuthChallenge(auth_, &response_, net_log_);
+      return HandleProxyAuthChallenge(auth_.get(), &response_, net_log_);
 
     default:
       // Ignore response to avoid letting the proxy impersonate the target
@@ -493,11 +502,11 @@ int HttpProxyClientSocket::DoReadHeadersComplete(int result) {
 }
 
 int HttpProxyClientSocket::DoDrainBody() {
-  DCHECK(drain_buf_);
+  DCHECK(drain_buf_.get());
   DCHECK(transport_->is_initialized());
   next_state_ = STATE_DRAIN_BODY_COMPLETE;
-  return http_stream_parser_->ReadResponseBody(drain_buf_, kDrainBodyBufferSize,
-                                               io_callback_);
+  return http_stream_parser_->ReadResponseBody(
+      drain_buf_.get(), kDrainBodyBufferSize, io_callback_);
 }
 
 int HttpProxyClientSocket::DoDrainBodyComplete(int result) {

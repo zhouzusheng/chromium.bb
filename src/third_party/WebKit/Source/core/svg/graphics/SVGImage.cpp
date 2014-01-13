@@ -27,12 +27,12 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/svg/graphics/SVGImage.h"
 
 #include "core/loader/DocumentLoader.h"
 #include "core/page/FrameView.h"
 #include "core/page/Settings.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/ImageBuffer.h"
 #include "core/platform/graphics/ImageObserver.h"
 #include "core/platform/graphics/IntRect.h"
@@ -41,6 +41,7 @@
 #include "core/svg/SVGDocument.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/graphics/SVGImageChromeClient.h"
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
@@ -115,7 +116,7 @@ IntSize SVGImage::containerSize() const
 }
 
 void SVGImage::drawForContainer(GraphicsContext* context, const FloatSize containerSize, float zoom, const FloatRect& dstRect,
-    const FloatRect& srcRect, ColorSpace colorSpace, CompositeOperator compositeOp, BlendMode blendMode)
+    const FloatRect& srcRect, CompositeOperator compositeOp, BlendMode blendMode)
 {
     if (!m_page)
         return;
@@ -137,14 +138,12 @@ void SVGImage::drawForContainer(GraphicsContext* context, const FloatSize contai
     adjustedSrcSize.scale(roundedContainerSize.width() / containerSize.width(), roundedContainerSize.height() / containerSize.height());
     scaledSrc.setSize(adjustedSrcSize);
 
-    draw(context, dstRect, scaledSrc, colorSpace, compositeOp, blendMode);
+    draw(context, dstRect, scaledSrc, compositeOp, blendMode);
 
     setImageObserver(observer);
 }
 
-// Passes ownership of the native image to the caller so PassNativeImagePtr needs
-// to be a smart pointer type.
-PassNativeImagePtr SVGImage::nativeImageForCurrentFrame()
+PassRefPtr<NativeImageSkia> SVGImage::nativeImageForCurrentFrame()
 {
     if (!m_page)
         return 0;
@@ -153,41 +152,44 @@ PassNativeImagePtr SVGImage::nativeImageForCurrentFrame()
     if (!buffer) // failed to allocate image
         return 0;
 
-    draw(buffer->context(), rect(), rect(), ColorSpaceDeviceRGB, CompositeSourceOver, BlendModeNormal);
+    draw(buffer->context(), rect(), rect(), CompositeSourceOver, BlendModeNormal);
 
     // FIXME: WK(Bug 113657): We should use DontCopyBackingStore here.
     return buffer->copyImage(CopyBackingStore)->nativeImageForCurrentFrame();
 }
 
 void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize containerSize, float zoom, const FloatRect& srcRect,
-    const AffineTransform& patternTransform, const FloatPoint& phase, ColorSpace colorSpace, CompositeOperator compositeOp, const FloatRect& dstRect)
+    const FloatSize& scale, const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& dstRect)
 {
     FloatRect zoomedContainerRect = FloatRect(FloatPoint(), containerSize);
     zoomedContainerRect.scale(zoom);
 
     // The ImageBuffer size needs to be scaled to match the final resolution.
+    // FIXME: No need to get the full CTM here, we just need the scale.
     AffineTransform transform = context->getCTM();
     FloatSize imageBufferScale = FloatSize(transform.xScale(), transform.yScale());
     ASSERT(imageBufferScale.width());
     ASSERT(imageBufferScale.height());
 
+    FloatSize scaleWithoutCTM(scale.width() / imageBufferScale.width(), scale.height() / imageBufferScale.height());
+
     FloatRect imageBufferSize = zoomedContainerRect;
     imageBufferSize.scale(imageBufferScale.width(), imageBufferScale.height());
 
     OwnPtr<ImageBuffer> buffer = ImageBuffer::create(expandedIntSize(imageBufferSize.size()), 1);
-    drawForContainer(buffer->context(), containerSize, zoom, imageBufferSize, zoomedContainerRect, ColorSpaceDeviceRGB, CompositeSourceOver, BlendModeNormal);
+    if (!buffer) // Failed to allocate buffer.
+        return;
+    drawForContainer(buffer->context(), containerSize, zoom, imageBufferSize, zoomedContainerRect, CompositeSourceOver, BlendModeNormal);
     RefPtr<Image> image = buffer->copyImage(DontCopyBackingStore, Unscaled);
 
     // Adjust the source rect and transform due to the image buffer's scaling.
     FloatRect scaledSrcRect = srcRect;
     scaledSrcRect.scale(imageBufferScale.width(), imageBufferScale.height());
-    AffineTransform unscaledPatternTransform(patternTransform);
-    unscaledPatternTransform.scale(1 / imageBufferScale.width(), 1 / imageBufferScale.height());
 
-    image->drawPattern(context, scaledSrcRect, unscaledPatternTransform, phase, colorSpace, compositeOp, dstRect);
+    image->drawPattern(context, scaledSrcRect, scaleWithoutCTM, phase, compositeOp, dstRect);
 }
 
-void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace, CompositeOperator compositeOp, BlendMode)
+void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, BlendMode blendMode)
 {
     if (!m_page)
         return;
@@ -195,13 +197,13 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
     FrameView* view = frameView();
 
     GraphicsContextStateSaver stateSaver(*context);
-    context->setCompositeOperation(compositeOp);
+    context->setCompositeOperation(compositeOp, blendMode);
     context->clip(enclosingIntRect(dstRect));
     if (compositeOp != CompositeSourceOver)
         context->beginTransparencyLayer(1);
 
     FloatSize scale(dstRect.width() / srcRect.width(), dstRect.height() / srcRect.height());
-    
+
     // We can only draw the entire frame, clipped to the rect we want. So compute where the top left
     // of the image would be if we were drawing without clipping, and translate accordingly.
     FloatSize topLeftOffset(srcRect.location().x() * scale.width(), srcRect.location().y() * scale.height());
@@ -215,7 +217,7 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
     if (view->needsLayout())
         view->layout();
 
-    view->paint(context, IntRect(0, 0, view->width(), view->height()));
+    view->paint(context, enclosingIntRect(srcRect));
 
     if (compositeOp != CompositeSourceOver)
         context->endTransparencyLayer();
@@ -346,15 +348,14 @@ bool SVGImage::dataChanged(bool allDataReceived)
         FrameLoader* loader = frame->loader();
         loader->forceSandboxFlags(SandboxAll);
 
+        frame->view()->setScrollbarsSuppressed(true);
         frame->view()->setCanHaveScrollbars(false); // SVG Images will always synthesize a viewBox, if it's not available, and thus never see scrollbars.
         frame->view()->setTransparent(true); // SVG Images are transparent.
 
         ASSERT(loader->activeDocumentLoader()); // DocumentLoader should have been created by frame->init().
-        loader->activeDocumentLoader()->writer()->setMIMEType("image/svg+xml");
-        loader->activeDocumentLoader()->writer()->begin(KURL()); // create the empty document
-        loader->activeDocumentLoader()->writer()->addData(data()->data(), data()->size());
-        loader->activeDocumentLoader()->writer()->end();
-
+        DocumentWriter* writer = loader->activeDocumentLoader()->beginWriting("image/svg+xml", "UTF-8");
+        writer->addData(data()->data(), data()->size());
+        writer->end();
         // Set the intrinsic size before a container size is available.
         m_intrinsicSize = containerSize();
     }
@@ -377,4 +378,3 @@ void SVGImage::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 
 }
 
-#endif // ENABLE(SVG)

@@ -6,9 +6,9 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "build/build_config.h"
-#include "content/common/child_process.h"
+#include "content/child/child_process.h"
 #include "content/common/media/audio_messages.h"
 #include "content/renderer/media/audio_message_filter.h"
 #include "content/renderer/render_thread_impl.h"
@@ -82,7 +82,7 @@ void PepperPlatformAudioOutputImpl::OnStreamCreated(
 #endif
   DCHECK(length);
 
-  if (base::MessageLoopProxy::current() == main_message_loop_proxy_) {
+  if (base::MessageLoopProxy::current().get() == main_message_loop_proxy_) {
     // Must dereference the client only on the main thread. Shutdown may have
     // occurred while the request was in-flight, so we need to NULL check.
     if (client_)
@@ -107,8 +107,7 @@ PepperPlatformAudioOutputImpl::~PepperPlatformAudioOutputImpl() {
 
 PepperPlatformAudioOutputImpl::PepperPlatformAudioOutputImpl()
     : client_(NULL),
-      main_message_loop_proxy_(base::MessageLoopProxy::current()) {
-}
+      main_message_loop_proxy_(base::MessageLoopProxy::current().get()) {}
 
 bool PepperPlatformAudioOutputImpl::Initialize(
     int sample_rate,
@@ -138,8 +137,9 @@ void PepperPlatformAudioOutputImpl::InitializeOnIOThread(
     const media::AudioParameters& params) {
   DCHECK(ChildProcess::current()->io_message_loop_proxy()->
       BelongsToCurrentThread());
+  const int kSessionId = 0;
   if (ipc_)
-    ipc_->CreateStream(this, params);
+    ipc_->CreateStream(this, params, kSessionId);
 }
 
 void PepperPlatformAudioOutputImpl::StartPlaybackOnIOThread() {

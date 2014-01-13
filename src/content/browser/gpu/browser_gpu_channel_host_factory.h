@@ -22,7 +22,6 @@ class BrowserGpuChannelHostFactory : public GpuChannelHostFactory {
 
   // GpuChannelHostFactory implementation.
   virtual bool IsMainThread() OVERRIDE;
-  virtual bool IsIOThread() OVERRIDE;
   virtual base::MessageLoop* GetMainLoop() OVERRIDE;
   virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() OVERRIDE;
   virtual base::WaitableEvent* GetShutDownEvent() OVERRIDE;
@@ -63,7 +62,7 @@ class BrowserGpuChannelHostFactory : public GpuChannelHostFactory {
     int gpu_host_id;
     bool reused_gpu_process;
     IPC::ChannelHandle channel_handle;
-    GPUInfo gpu_info;
+    gpu::GPUInfo gpu_info;
   };
 
   BrowserGpuChannelHostFactory();
@@ -87,7 +86,7 @@ class BrowserGpuChannelHostFactory : public GpuChannelHostFactory {
   void GpuChannelEstablishedOnIO(
       EstablishRequest* request,
       const IPC::ChannelHandle& channel_handle,
-      const GPUInfo& gpu_info);
+      const gpu::GPUInfo& gpu_info);
   static void AddFilterOnIO(
       int gpu_host_id,
       scoped_refptr<IPC::ChannelProxy::MessageFilter> filter);

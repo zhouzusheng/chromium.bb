@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "base/json/json_reader.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/time.h"
 #include "base/values.h"
 #include "google_apis/gaia/gaia_urls.h"
@@ -226,7 +226,8 @@ bool OAuth2AccessTokenFetcher::ParseGetAccessTokenResponse(
   if (!value.get() || value->GetType() != base::Value::TYPE_DICTIONARY)
     return false;
 
-  DictionaryValue* dict = static_cast<DictionaryValue*>(value.get());
+  base::DictionaryValue* dict =
+      static_cast<base::DictionaryValue*>(value.get());
   return dict->GetString(kAccessTokenKey, access_token) &&
       dict->GetInteger(kExpiresInKey, expires_in);
 }

@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/stl_util.h"
 #include "base/task_runner_util.h"
 #include "webkit/plugins/ppapi/host_globals.h"
@@ -108,10 +108,13 @@ class QuotaFileIO::WriteOperation : public PendingOperationBase {
     }
 
     if (!base::PostTaskAndReplyWithResult(
-            plugin_delegate->GetFileThreadMessageLoopProxy(), FROM_HERE,
+            plugin_delegate->GetFileThreadMessageLoopProxy().get(),
+            FROM_HERE,
             base::Bind(&WriteAdapter,
-                       quota_io_->file_, offset_,
-                       base::Passed(&buffer_), bytes_to_write_),
+                       quota_io_->file_,
+                       offset_,
+                       base::Passed(&buffer_),
+                       bytes_to_write_),
             base::Bind(&WriteOperation::DidWrite,
                        weak_factory_.GetWeakPtr()))) {
       DidFail(base::PLATFORM_FILE_ERROR_FAILED);
@@ -195,8 +198,9 @@ class QuotaFileIO::SetLengthOperation : public PendingOperationBase {
     }
 
     if (!base::FileUtilProxy::Truncate(
-            plugin_delegate->GetFileThreadMessageLoopProxy(),
-            quota_io_->file_, length_,
+            plugin_delegate->GetFileThreadMessageLoopProxy().get(),
+            quota_io_->file_,
+            length_,
             base::Bind(&SetLengthOperation::DidFinish,
                        weak_factory_.GetWeakPtr()))) {
       DidFail(base::PLATFORM_FILE_ERROR_FAILED);
@@ -306,7 +310,8 @@ bool QuotaFileIO::RegisterOperationForQuotaChecks(
     // Query the file size.
     ++outstanding_quota_queries_;
     if (!base::FileUtilProxy::GetFileInfoFromPlatformFile(
-            plugin_delegate->GetFileThreadMessageLoopProxy(), file_,
+            plugin_delegate->GetFileThreadMessageLoopProxy().get(),
+            file_,
             base::Bind(&QuotaFileIO::DidQueryInfoForQuota,
                        weak_factory_.GetWeakPtr()))) {
       // This makes the call fail synchronously; we do not fire the callback

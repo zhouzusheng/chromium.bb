@@ -37,7 +37,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
                                          public IPC::Listener {
  public:
   typedef IDMap<RenderProcessHost>::iterator iterator;
-  typedef IDMap<RenderWidgetHost>::const_iterator RenderWidgetHostsIterator;
 
   // Details for RENDERER_PROCESS_CLOSED notifications.
   struct RendererClosedDetails {
@@ -64,11 +63,12 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Gets the next available routing id.
   virtual int GetNextRoutingID() = 0;
 
-  // Called on the UI thread to simulate a SwapOut_ACK message to the
-  // ResourceDispatcherHost.  Necessary for a cross-site request, in the case
-  // that the original RenderViewHost is not live and thus cannot run an
-  // unload handler.
-  virtual void SimulateSwapOutACK(const ViewMsg_SwapOut_Params& params) = 0;
+  // These methods add or remove listener for a specific message routing ID.
+  // Used for refcounting, each holder of this object must AddRoute and
+  // RemoveRoute. This object should be allocated on the heap; when no
+  // listeners own it any more, it will delete itself.
+  virtual void AddRoute(int32 routing_id, IPC::Listener* listener) = 0;
+  virtual void RemoveRoute(int32 routing_id) = 0;
 
   // Called to wait for the next UpdateRect message for the specified render
   // widget.  Returns true if successful, and the msg out-param will contain a
@@ -127,6 +127,10 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // still owns the returned DIB.
   virtual TransportDIB* GetTransportDIB(TransportDIB::Id dib_id) = 0;
 
+  // Return the TransportDIB for the given id. In contrast to GetTransportDIB,
+  // the caller owns the resulting TransportDIB.
+  virtual TransportDIB* MapTransportDIB(TransportDIB::Id dib_id) = 0;
+
   // Returns the user browser context associated with this renderer process.
   virtual content::BrowserContext* GetBrowserContext() const = 0;
 
@@ -142,9 +146,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // etc.
   virtual int GetID() const = 0;
 
-  // Returns the render widget host for the routing id passed in.
-  virtual RenderWidgetHost* GetRenderWidgetHostByID(int routing_id) = 0;
-
   // Returns true iff channel_ has been set to non-NULL. Use this for checking
   // if there is connection or not. Virtual for mocking out for tests.
   virtual bool HasConnection() const = 0;
@@ -156,9 +157,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Returns the renderer channel.
   virtual IPC::ChannelProxy* GetChannel() = 0;
 
-  // Returns the list of attached render widget hosts.
-  virtual RenderWidgetHostsIterator GetRenderWidgetHostsIterator() = 0;
-
   // Try to shutdown the associated render process as fast as possible
   virtual bool FastShutdownForPageCount(size_t count) = 0;
 
@@ -167,14 +165,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // part of the interface.
   virtual void SetIgnoreInputEvents(bool ignore_input_events) = 0;
   virtual bool IgnoreInputEvents() const = 0;
-
-  // Used for refcounting, each holder of this object must Attach and Release
-  // just like it would for a COM object. This object should be allocated on
-  // the heap; when no listeners own it any more, it will delete itself.
-  virtual void Attach(content::RenderWidgetHost* host, int routing_id) = 0;
-
-  // See Attach()
-  virtual void Release(int routing_id) = 0;
 
   // Schedules the host for deletion and removes it from the all_hosts list.
   virtual void Cleanup() = 0;
@@ -227,6 +217,12 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Returns the RenderProcessHost given its ID.  Returns NULL if the ID does
   // not correspond to a live RenderProcessHost.
   static RenderProcessHost* FromID(int render_process_id);
+
+  // Returns whether the process-per-site model is in use (globally or just for
+  // the current site), in which case we should ensure there is only one
+  // RenderProcessHost per site for the entire browser context.
+  static bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
+                                      const GURL& url);
 
   // Returns true if the caller should attempt to use an existing
   // RenderProcessHost rather than creating a new one.

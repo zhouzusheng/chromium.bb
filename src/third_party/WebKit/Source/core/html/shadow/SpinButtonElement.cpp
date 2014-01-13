@@ -31,6 +31,7 @@
 #include "core/dom/EventNames.h"
 #include "core/dom/MouseEvent.h"
 #include "core/dom/WheelEvent.h"
+#include "core/html/shadow/ShadowElementNames.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
@@ -54,19 +55,16 @@ inline SpinButtonElement::SpinButtonElement(Document* document, SpinButtonOwner&
 
 PassRefPtr<SpinButtonElement> SpinButtonElement::create(Document* document, SpinButtonOwner& spinButtonOwner)
 {
-    return adoptRef(new SpinButtonElement(document, spinButtonOwner));
+    RefPtr<SpinButtonElement> element = adoptRef(new SpinButtonElement(document, spinButtonOwner));
+    element->setPseudo(AtomicString("-webkit-inner-spin-button", AtomicString::ConstructFromLiteral));
+    element->setAttribute(idAttr, ShadowElementNames::spinButton());
+    return element.release();
 }
 
-const AtomicString& SpinButtonElement::shadowPseudoId() const
-{
-    DEFINE_STATIC_LOCAL(AtomicString, innerPseudoId, ("-webkit-inner-spin-button", AtomicString::ConstructFromLiteral));
-    return innerPseudoId;
-}
-
-void SpinButtonElement::detach()
+void SpinButtonElement::detach(const AttachContext& context)
 {
     releaseCapture();
-    HTMLDivElement::detach();
+    HTMLDivElement::detach(context);
 }
 
 void SpinButtonElement::defaultEventHandler(Event* event)
@@ -90,7 +88,7 @@ void SpinButtonElement::defaultEventHandler(Event* event)
         return;
     }
 
-    MouseEvent* mouseEvent = static_cast<MouseEvent*>(event);
+    MouseEvent* mouseEvent = toMouseEvent(event);
     IntPoint local = roundedIntPoint(box->absoluteToLocal(mouseEvent->absoluteLocation(), UseTransforms));
     if (mouseEvent->type() == eventNames().mousedownEvent && mouseEvent->button() == LeftButton) {
         if (box->pixelSnappedBorderBoxRect().contains(local)) {
@@ -121,14 +119,12 @@ void SpinButtonElement::defaultEventHandler(Event* event)
                 if (Frame* frame = document()->frame()) {
                     frame->eventHandler()->setCapturingMouseEventsNode(this);
                     m_capturing = true;
-                    if (Page* page = document()->page()) {
-                        if (page->chrome())
-                            page->chrome()->registerPopupOpeningObserver(this);
-                    }
+                    if (Page* page = document()->page())
+                        page->chrome().registerPopupOpeningObserver(this);
                 }
             }
             UpDownState oldUpDownState = m_upDownState;
-            m_upDownState = local.y() < box->height() / 2 ? Up : Down;
+            m_upDownState = (local.y() < box->height() / 2) ? Up : Down;
             if (m_upDownState != oldUpDownState)
                 renderer()->repaint();
         } else {
@@ -199,10 +195,8 @@ void SpinButtonElement::releaseCapture()
         if (Frame* frame = document()->frame()) {
             frame->eventHandler()->setCapturingMouseEventsNode(0);
             m_capturing = false;
-            if (Page* page = document()->page()) {
-                if (page->chrome())
-                    page->chrome()->unregisterPopupOpeningObserver(this);
-            }
+            if (Page* page = document()->page())
+                page->chrome().unregisterPopupOpeningObserver(this);
         }
     }
 }

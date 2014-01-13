@@ -23,6 +23,7 @@
 #include "config.h"
 #include "core/rendering/RenderInline.h"
 
+#include "core/dom/FullscreenController.h"
 #include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/page/Chrome.h"
@@ -351,9 +352,11 @@ void RenderInline::splitInlines(RenderBlock* fromBlock, RenderBlock* toBlock,
     // that renderer is wrapped in a RenderFullScreen, so |this| is not its
     // parent. Since the splitting logic expects |this| to be the parent, set
     // |beforeChild| to be the RenderFullScreen.
-    const Element* fullScreenElement = document()->webkitCurrentFullScreenElement();
-    if (fullScreenElement && beforeChild && beforeChild->node() == fullScreenElement)
-        beforeChild = document()->fullScreenRenderer();
+    if (FullscreenController* fullscreen = FullscreenController::fromIfExists(document())) {
+        const Element* fullScreenElement = fullscreen->webkitCurrentFullScreenElement();
+        if (fullScreenElement && beforeChild && beforeChild->node() == fullScreenElement)
+            beforeChild = fullscreen->fullScreenRenderer();
+    }
 
     // Now take all of the children from beforeChild to the end and remove
     // them from |this| and place them in the clone.
@@ -526,6 +529,7 @@ void RenderInline::addChildToContinuation(RenderObject* newChild, RenderObject* 
 
 void RenderInline::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
+    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
     m_lineBoxes.paint(this, paintInfo, paintOffset);
 }
 
@@ -799,7 +803,7 @@ bool RenderInline::hitTestCulledInline(const HitTestRequest& request, HitTestRes
         // We can not use addNodeToRectBasedTestResult to determine if we fully enclose the hit-test area
         // because it can only handle rectangular targets.
         result.addNodeToRectBasedTestResult(node(), request, locationInContainer);
-        return regionResult.contains(enclosingIntRect(tmpLocation.boundingBox()));
+        return regionResult.contains(tmpLocation.boundingBox());
     }
     return false;
 }
@@ -1136,8 +1140,11 @@ LayoutSize RenderInline::offsetFromContainer(RenderObject* container, const Layo
     if (container->hasOverflowClip())
         offset -= toRenderBox(container)->scrolledContentOffset();
 
-    if (offsetDependsOnPoint)
-        *offsetDependsOnPoint = container->hasColumns() || (container->isBox() && container->style()->isFlippedBlocksWritingMode());
+    if (offsetDependsOnPoint) {
+        *offsetDependsOnPoint = container->hasColumns()
+            || (container->isBox() && container->style()->isFlippedBlocksWritingMode())
+            || container->isRenderFlowThread();
+    }
 
     return offset;
 }
@@ -1190,39 +1197,6 @@ void RenderInline::mapLocalToContainer(const RenderLayerModelObject* repaintCont
     }
 
     o->mapLocalToContainer(repaintContainer, transformState, mode, wasFixed);
-}
-
-const RenderObject* RenderInline::pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap& geometryMap) const
-{
-    ASSERT(ancestorToStopAt != this);
-
-    bool ancestorSkipped;
-    RenderObject* container = this->container(ancestorToStopAt, &ancestorSkipped);
-    if (!container)
-        return 0;
-
-    LayoutSize adjustmentForSkippedAncestor;
-    if (ancestorSkipped) {
-        // There can't be a transform between repaintContainer and o, because transforms create containers, so it should be safe
-        // to just subtract the delta between the ancestor and o.
-        adjustmentForSkippedAncestor = -ancestorToStopAt->offsetFromAncestorContainer(container);
-    }
-
-    bool offsetDependsOnPoint = false;
-    LayoutSize containerOffset = offsetFromContainer(container, LayoutPoint(), &offsetDependsOnPoint);
-
-    bool preserve3D = container->style()->preserves3D() || style()->preserves3D();
-    if (shouldUseTransformFromContainer(container)) {
-        TransformationMatrix t;
-        getTransformFromContainer(container, containerOffset, t);
-        t.translateRight(adjustmentForSkippedAncestor.width(), adjustmentForSkippedAncestor.height()); // FIXME: right?
-        geometryMap.push(this, t, preserve3D, offsetDependsOnPoint);
-    } else {
-        containerOffset += adjustmentForSkippedAncestor;
-        geometryMap.push(this, containerOffset, preserve3D, offsetDependsOnPoint);
-    }
-    
-    return ancestorSkipped ? ancestorToStopAt : container;
 }
 
 void RenderInline::updateDragState(bool dragOn)
@@ -1352,7 +1326,7 @@ LayoutSize RenderInline::offsetForInFlowPositionedInline(const RenderBox* child)
     LayoutUnit inlinePosition;
     LayoutUnit blockPosition;
     if (firstLineBox()) {
-        inlinePosition = roundedLayoutUnit(firstLineBox()->logicalLeft());
+        inlinePosition = LayoutUnit::fromFloatRound(firstLineBox()->logicalLeft());
         blockPosition = firstLineBox()->logicalTop();
     } else {
         inlinePosition = layer()->staticInlinePosition();

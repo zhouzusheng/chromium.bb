@@ -7,16 +7,14 @@
 #include "content/common/view_messages.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebView.h"
 
 using appcache::AppCacheBackend;
 using WebKit::WebApplicationCacheHostClient;
 using WebKit::WebConsoleMessage;
 
 namespace content {
-
-static bool g_disable_logging = false;
 
 RendererWebApplicationCacheHostImpl::RendererWebApplicationCacheHostImpl(
     RenderViewImpl* render_view,
@@ -28,7 +26,7 @@ RendererWebApplicationCacheHostImpl::RendererWebApplicationCacheHostImpl(
 
 void RendererWebApplicationCacheHostImpl::OnLogMessage(
     appcache::LogLevel log_level, const std::string& message) {
-  if (g_disable_logging)
+  if (RenderThreadImpl::current()->layout_test_mode())
     return;
 
   RenderViewImpl* render_view = GetRenderView();
@@ -59,11 +57,6 @@ void RendererWebApplicationCacheHostImpl::OnCacheSelected(
 
 RenderViewImpl* RendererWebApplicationCacheHostImpl::GetRenderView() {
   return RenderViewImpl::FromRoutingID(routing_id_);
-}
-
-// static
-void RendererWebApplicationCacheHostImpl::DisableLoggingForTesting() {
-  g_disable_logging = true;
 }
 
 }  // namespace content

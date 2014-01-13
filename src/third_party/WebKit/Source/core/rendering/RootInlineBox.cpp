@@ -42,6 +42,13 @@ using namespace std;
 
 namespace WebCore {
     
+struct SameSizeAsRootInlineBox : public InlineFlowBox {
+    unsigned variables[5];
+    void* pointers[4];
+};
+
+COMPILE_ASSERT(sizeof(RootInlineBox) == sizeof(SameSizeAsRootInlineBox), RootInlineBox_should_stay_small);
+
 typedef WTF::HashMap<const RootInlineBox*, EllipsisBox*> EllipsisBoxMap;
 static EllipsisBoxMap* gEllipsisBoxMap = 0;
 
@@ -53,9 +60,6 @@ RootInlineBox::RootInlineBox(RenderBlock* block)
     , m_lineBottom(0)
     , m_lineTopWithLeading(0)
     , m_lineBottomWithLeading(0)
-#if ENABLE(CSS3_TEXT)
-    , m_maxLogicalTop(0)
-#endif // CSS3_TEXT
 {
     setIsHorizontal(block->isHorizontalWritingMode());
 }
@@ -235,13 +239,9 @@ void RootInlineBox::setContainingRegion(RenderRegion* region)
 
 LayoutUnit RootInlineBox::alignBoxesInBlockDirection(LayoutUnit heightOfBlock, GlyphOverflowAndFallbackFontsMap& textBoxDataMap, VerticalPositionCache& verticalPositionCache)
 {
-#if ENABLE(SVG)
     // SVG will handle vertical alignment on its own.
     if (isSVGRootInlineBox())
         return 0;
-
-    // FIXME: figure out how to call computeMaxLogicalTop() when SVG is enabled.
-#endif
 
     LayoutUnit maxPositionTop = 0;
     LayoutUnit maxPositionBottom = 0;
@@ -293,13 +293,17 @@ LayoutUnit RootInlineBox::alignBoxesInBlockDirection(LayoutUnit heightOfBlock, G
         heightOfBlock += gridSnapAdjustment;
     }
 
-#if ENABLE(CSS3_TEXT)
-    m_maxLogicalTop = 0;
-    computeMaxLogicalTop(m_maxLogicalTop);
-#endif // CSS3_TEXT
-
     return heightOfBlock + maxHeight;
 }
+
+#if ENABLE(CSS3_TEXT)
+float RootInlineBox::maxLogicalTop() const
+{
+    float maxLogicalTop = 0;
+    computeMaxLogicalTop(maxLogicalTop);
+    return maxLogicalTop;
+}
+#endif // CSS3_TEXT
 
 LayoutUnit RootInlineBox::beforeAnnotationsAdjustment() const
 {
@@ -460,7 +464,7 @@ GapRects RootInlineBox::lineSelectionGap(RenderBlock* rootBlock, const LayoutPoi
                 LayoutRect gapRect = rootBlock->logicalRectToPhysicalRect(rootBlockPhysicalPosition, logicalRect);
                 if (isPreviousBoxSelected && gapRect.width() > 0 && gapRect.height() > 0) {
                     if (paintInfo && box->parent()->renderer()->style()->visibility() == VISIBLE)
-                        paintInfo->context->fillRect(gapRect, box->parent()->renderer()->selectionBackgroundColor(), box->parent()->renderer()->style()->colorSpace());
+                        paintInfo->context->fillRect(gapRect, box->parent()->renderer()->selectionBackgroundColor());
                     // VisibleSelection may be non-contiguous, see comment above.
                     result.uniteCenter(gapRect);
                 }

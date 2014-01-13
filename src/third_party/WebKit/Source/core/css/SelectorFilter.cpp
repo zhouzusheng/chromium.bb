@@ -135,6 +135,7 @@ void SelectorFilter::collectIdentifierHashes(const CSSSelector* selector, unsign
     unsigned* hash = identifierHashes;
     unsigned* end = identifierHashes + maximumIdentifierCount;
     CSSSelector::Relation relation = selector->relation();
+    bool relationIsForShadowDistributed = selector->relationIsForShadowDistributed();
 
     // Skip the topmost selector. It is handled quickly by the rule hashes.
     bool skipOverSubselectors = true;
@@ -147,12 +148,15 @@ void SelectorFilter::collectIdentifierHashes(const CSSSelector* selector, unsign
             break;
         case CSSSelector::DirectAdjacent:
         case CSSSelector::IndirectAdjacent:
-        case CSSSelector::ShadowDescendant:
-        case CSSSelector::ShadowDistributed:
+        case CSSSelector::ShadowPseudo:
             skipOverSubselectors = true;
             break;
         case CSSSelector::Descendant:
         case CSSSelector::Child:
+            if (relationIsForShadowDistributed) {
+                skipOverSubselectors = true;
+                break;
+            }
             skipOverSubselectors = false;
             collectDescendantSelectorIdentifierHashes(selector, hash);
             break;
@@ -160,9 +164,9 @@ void SelectorFilter::collectIdentifierHashes(const CSSSelector* selector, unsign
         if (hash == end)
             return;
         relation = selector->relation();
+        relationIsForShadowDistributed = selector->relationIsForShadowDistributed();
     }
     *hash = 0;
 }
 
 }
-

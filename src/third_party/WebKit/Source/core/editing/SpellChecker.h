@@ -30,12 +30,11 @@
 #include "core/dom/Range.h"
 #include "core/platform/Timer.h"
 #include "core/platform/text/TextChecking.h"
-#include <wtf/Deque.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "wtf/Deque.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -83,6 +82,7 @@ public:
     bool isCheckable(Range*) const;
 
     void requestCheckingFor(PassRefPtr<SpellCheckRequest>);
+    void cancelCheck();
 
     int lastRequestSequence() const
     {

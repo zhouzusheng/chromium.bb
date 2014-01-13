@@ -25,9 +25,7 @@
  */
 
 [
-    Conditional=SVG,
-    
-    DoNotGenerateToV8,
+    NoInterfaceObject
 ] interface SVGURIReference {
     readonly attribute SVGAnimatedString href;
 };

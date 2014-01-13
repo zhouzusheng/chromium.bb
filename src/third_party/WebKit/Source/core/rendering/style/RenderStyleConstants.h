@@ -35,18 +35,20 @@ enum PrintColorAdjust {
 };
 
 // The difference between two styles.  The following values are used:
-// (1) StyleDifferenceEqual - The two styles are identical
-// (2) StyleDifferenceRecompositeLayer - The layer needs its position and transform updated, but no repaint
+// (1) StyleDifferenceEqual - The two styles are identical.
+// (2) StyleDifferenceRecompositeLayer - The layer needs its position and transform updated, but no repaint.
 // (3) StyleDifferenceRepaint - The object just needs to be repainted.
-// (4) StyleDifferenceRepaintLayer - The layer and its descendant layers needs to be repainted.
-// (5) StyleDifferenceLayoutPositionedMovementOnly - Only the position of this positioned object has been updated
-// (6) StyleDifferenceSimplifiedLayout - Only overflow needs to be recomputed
-// (7) StyleDifferenceSimplifiedLayoutAndPositionedMovement - Both positioned movement and simplified layout updates are required.
-// (8) StyleDifferenceLayout - A full layout is required.
+// (4) StyleDifferenceRepaintIfText - The object needs to be repainted if it contains text.
+// (5) StyleDifferenceRepaintLayer - The layer and its descendant layers needs to be repainted.
+// (6) StyleDifferenceLayoutPositionedMovementOnly - Only the position of this positioned object has been updated.
+// (7) StyleDifferenceSimplifiedLayout - Only overflow needs to be recomputed.
+// (8) StyleDifferenceSimplifiedLayoutAndPositionedMovement - Both positioned movement and simplified layout updates are required.
+// (9) StyleDifferenceLayout - A full layout is required.
 enum StyleDifference {
     StyleDifferenceEqual,
     StyleDifferenceRecompositeLayer,
     StyleDifferenceRepaint,
+    StyleDifferenceRepaintIfText,
     StyleDifferenceRepaintLayer,
     StyleDifferenceLayoutPositionedMovementOnly,
     StyleDifferenceSimplifiedLayout,
@@ -117,7 +119,7 @@ enum EBoxSizing { CONTENT_BOX, BORDER_BOX };
 // Random visual rendering model attributes. Not inherited.
 
 enum EOverflow {
-    OVISIBLE, OHIDDEN, OSCROLL, OAUTO, OOVERLAY, OMARQUEE, OPAGEDX, OPAGEDY
+    OVISIBLE, OHIDDEN, OSCROLL, OAUTO, OOVERLAY, OPAGEDX, OPAGEDY
 };
 
 enum EVerticalAlign {
@@ -331,21 +333,23 @@ enum ETextTransform {
     CAPITALIZE, UPPERCASE, LOWERCASE, TTNONE
 };
 
-static const size_t ETextDecorationBits = 4;
-enum ETextDecoration {
-    TDNONE = 0x0 , UNDERLINE = 0x1, OVERLINE = 0x2, LINE_THROUGH= 0x4, BLINK = 0x8
+static const size_t TextDecorationBits = 4;
+enum TextDecoration {
+    TextDecorationNone = 0x0,
+    TextDecorationUnderline = 0x1,
+    TextDecorationOverline = 0x2,
+    TextDecorationLineThrough = 0x4,
+    TextDecorationBlink = 0x8
 };
-inline ETextDecoration operator|(ETextDecoration a, ETextDecoration b) { return ETextDecoration(int(a) | int(b)); }
-inline ETextDecoration& operator|=(ETextDecoration& a, ETextDecoration b) { return a = a | b; }
+inline TextDecoration operator| (TextDecoration a, TextDecoration b) { return TextDecoration(int(a) | int(b)); }
+inline TextDecoration& operator|= (TextDecoration& a, TextDecoration b) { return a = a | b; }
 
 enum TextDecorationStyle {
     TextDecorationStyleSolid,
-#if ENABLE(CSS3_TEXT)
     TextDecorationStyleDouble,
     TextDecorationStyleDotted,
     TextDecorationStyleDashed,
     TextDecorationStyleWavy
-#endif // CSS3_TEXT
 };
 
 #if ENABLE(CSS3_TEXT)
@@ -471,7 +475,7 @@ enum ImageResolutionSnap { ImageResolutionNoSnap = 0, ImageResolutionSnapPixels 
 
 enum Order { LogicalOrder = 0, VisualOrder };
 
-enum RegionOverflow { AutoRegionOverflow, BreakRegionOverflow };
+enum RegionFragment { AutoRegionFragment, BreakRegionFragment };
 
 enum ColumnAxis { HorizontalColumnAxis, VerticalColumnAxis, AutoColumnAxis };
 
@@ -490,6 +494,8 @@ enum RubyPosition { RubyPositionBefore, RubyPositionAfter };
 enum GridAutoFlow { AutoFlowNone, AutoFlowColumn, AutoFlowRow };
 
 enum DraggableRegionMode { DraggableRegionNone, DraggableRegionDrag, DraggableRegionNoDrag };
+
+enum TouchAction { TouchActionAuto, TouchActionNone };
 
 // Reasonable maximum to prevent insane font sizes from causing crashes on some platforms (such as Windows).
 static const float maximumAllowedFontSize = 1000000.0f;

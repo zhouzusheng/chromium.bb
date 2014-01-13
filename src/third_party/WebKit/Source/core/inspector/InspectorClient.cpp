@@ -33,7 +33,6 @@
 
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
-#include "bindings/v8/ScriptValue.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 
@@ -55,7 +54,7 @@ bool InspectorClient::doDispatchMessageOnFrontendPage(Page* frontendPage, const 
     String dispatchToFrontend = "InspectorFrontendAPI.dispatchMessageAsync(" + message + ");";
 
     // FIXME: This should execute the script in the appropriate world.
-    scriptController->evaluate(ScriptSourceCode(dispatchToFrontend));
+    scriptController->executeScriptInMainWorld(ScriptSourceCode(dispatchToFrontend));
     return true;
 }
 

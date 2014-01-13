@@ -23,7 +23,6 @@
 
 #include "config.h"
 
-#if ENABLE(SVG)
 #include "core/rendering/svg/RenderSVGRoot.h"
 
 #include "core/page/Chrome.h"
@@ -31,22 +30,16 @@
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/transforms/TransformState.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/svg/RenderSVGContainer.h"
-#include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
-#include "core/rendering/svg/RenderSVGResourceFilter.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
-#include "core/svg/SVGLength.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/SVGStyledElement.h"
-#include "core/svg/SVGViewSpec.h"
 
 using namespace std;
 
@@ -126,10 +119,10 @@ bool RenderSVGRoot::isEmbeddedThroughSVGImage() const
         return false;
 
     // Test whether we're embedded through an img.
-    if (!frame->page() || !frame->page()->chrome())
+    if (!frame->page())
         return false;
 
-    ChromeClient* chromeClient = frame->page()->chrome()->client();
+    ChromeClient* chromeClient = frame->page()->chrome().client();
     if (!chromeClient || !chromeClient->isSVGImageChromeClient())
         return false;
 
@@ -254,6 +247,8 @@ void RenderSVGRoot::layout()
         updateCachedBoundaries();
         m_needsBoundariesOrTransformUpdate = false;
     }
+
+    updateLayerTransform();
 
     repainter.repaintAfterLayout();
 
@@ -502,5 +497,3 @@ void RenderSVGRoot::addResourceForClientInvalidation(RenderSVGResourceContainer*
 }
 
 }
-
-#endif // ENABLE(SVG)

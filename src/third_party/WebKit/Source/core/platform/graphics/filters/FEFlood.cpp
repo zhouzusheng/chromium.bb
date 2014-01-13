@@ -79,6 +79,8 @@ FEFlood::FEFlood(Filter* filter, const Color& floodColor, float floodOpacity)
     , m_floodColor(floodColor)
     , m_floodOpacity(floodOpacity)
 {
+    FilterEffect::setOperatingColorSpace(ColorSpaceDeviceRGB);
+    FilterEffect::setResultColorSpace(ColorSpaceDeviceRGB);
 }
 
 PassRefPtr<FEFlood> FEFlood::create(Filter* filter, const Color& floodColor, float floodOpacity)
@@ -119,7 +121,7 @@ void FEFlood::applySoftware()
         return;
 
     Color color = colorWithOverrideAlpha(floodColor().rgb(), floodOpacity());
-    resultImage->context()->fillRect(FloatRect(FloatPoint(), absolutePaintRect().size()), color, ColorSpaceDeviceRGB);
+    resultImage->context()->fillRect(FloatRect(FloatPoint(), absolutePaintRect().size()), color);
 }
 
 SkImageFilter* FEFlood::createImageFilter(SkiaImageFilterBuilder* builder)

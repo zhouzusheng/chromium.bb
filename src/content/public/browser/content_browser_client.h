@@ -14,6 +14,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/file_descriptor_info.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/socket_permission_request.h"
@@ -21,7 +22,7 @@
 #include "net/base/mime_util.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/url_request/url_request_job_factory.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNotificationPresenter.h"
+#include "third_party/WebKit/public/web/WebNotificationPresenter.h"
 #include "webkit/glue/resource_type.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
@@ -33,6 +34,7 @@ class GURL;
 struct WebPreferences;
 
 namespace base {
+class DictionaryValue;
 class FilePath;
 }
 namespace crypto {
@@ -75,6 +77,7 @@ class BrowserContext;
 class BrowserMainParts;
 class BrowserPpapiHost;
 class BrowserURLHandler;
+class LocationProvider;
 class MediaObserver;
 class QuotaPermissionContext;
 class RenderProcessHost;
@@ -127,9 +130,16 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual WebContentsViewDelegate* GetWebContentsViewDelegate(
       WebContents* web_contents);
 
-  // Notifies that a <webview> guest WebContents has been created.
-  virtual void GuestWebContentsCreated(WebContents* guest_web_contents,
-                                       WebContents* embedder_web_contents) {}
+  // Notifies that a guest WebContents has been attached to a BrowserPlugin.
+  // A guest is attached to a BrowserPlugin when the guest has acquired an
+  // embedder WebContents. This happens on initial navigation or when a new
+  // window is attached to a BrowserPlugin. |extra_params| are params sent
+  // from javascript.
+  virtual void GuestWebContentsAttached(
+      WebContents* guest_web_contents,
+      WebContents* embedder_web_contents,
+      int browser_plugin_instance_id,
+      const base::DictionaryValue& extra_params) {}
 
   // Notifies that a RenderProcessHost has been created. This is called before
   // the content layer adds its own BrowserMessageFilters, so that the
@@ -191,6 +201,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Returns whether a specified URL is handled by the embedder's internal
   // protocol handlers.
   virtual bool IsHandledURL(const GURL& url);
+
+  // Returns whether the given process is allowed to commit |url|.  This is a
+  // more conservative check than IsSuitableHost, since it is used after a
+  // navigation has committed to ensure that the process did not exceed its
+  // authority.
+  virtual bool CanCommitURL(RenderProcessHost* process_host, const GURL& url);
 
   // Returns whether a new view for a given |site_url| can be launched in a
   // given |process_host|.
@@ -348,8 +364,9 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Informs the embedder that a certificate error has occured.  If
   // |overridable| is true and if |strict_enforcement| is false, the user
   // can ignore the error and continue. The embedder can call the callback
-  // asynchronously. If |cancel_request| is set to true, the request will be
-  // cancelled immediately and the callback won't be run.
+  // asynchronously. If |result| is not set to
+  // CERTIFICATE_REQUEST_RESULT_TYPE_CONTINUE, the request will be cancelled
+  // or denied immediately, and the callback won't be run.
   virtual void AllowCertificateError(
       int render_process_id,
       int render_view_id,
@@ -360,7 +377,7 @@ class CONTENT_EXPORT ContentBrowserClient {
       bool overridable,
       bool strict_enforcement,
       const base::Callback<void(bool)>& callback,
-      bool* cancel_request) {}
+      CertificateRequestResultType* result) {}
 
   // Selects a SSL client certificate and returns it to the |callback|. If no
   // certificate was selected NULL is returned to the |callback|.
@@ -496,10 +513,13 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool SupportsBrowserPlugin(BrowserContext* browser_context,
                                      const GURL& site_url);
 
-  // Returns true if renderer processes can use Pepper TCP/UDP sockets from
-  // the given origin and connection type.
+  // Returns true if the socket operation specified by |params| is allowed
+  // from the given |browser_context| and |url|. |private_api| indicates whether
+  // this permission check is for the private Pepper socket API or the public
+  // one.
   virtual bool AllowPepperSocketAPI(BrowserContext* browser_context,
                                     const GURL& url,
+                                    bool private_api,
                                     const SocketPermissionRequest& params);
 
   // Returns the directory containing hyphenation dictionaries.
@@ -519,6 +539,10 @@ class CONTENT_EXPORT ContentBrowserClient {
       const base::FilePath& storage_partition_path,
       ScopedVector<fileapi::FileSystemMountPointProvider>*
           additional_providers) {}
+
+  // Allows an embedder to return its own LocationProvider implementation.
+  // Return NULL to use the default one for the platform to be created.
+  virtual LocationProvider* OverrideSystemLocationProvider();
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Populates |mappings| with all files that need to be mapped before launching

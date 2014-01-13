@@ -20,7 +20,6 @@
 #ifndef SVGAnimatedString_h
 #define SVGAnimatedString_h
 
-#if ENABLE(SVG)
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/properties/SVGAnimatedPropertyMacros.h"
 #include "core/svg/properties/SVGAnimatedStaticPropertyTearOff.h"
@@ -34,7 +33,7 @@ typedef SVGAnimatedStaticPropertyTearOff<String> SVGAnimatedString;
 DECLARE_ANIMATED_PROPERTY(SVGAnimatedString, String, UpperProperty, LowerProperty)
 
 #define DEFINE_ANIMATED_STRING(OwnerType, DOMAttribute, UpperProperty, LowerProperty) \
-DEFINE_ANIMATED_PROPERTY(AnimatedString, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty)
+DEFINE_ANIMATED_PROPERTY(AnimatedString, OwnerType, DOMAttribute, DOMAttribute.localName(), UpperProperty, LowerProperty, SVGAnimatedString, String)
 
 class SVGAnimationElement;
 
@@ -57,5 +56,4 @@ public:
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif

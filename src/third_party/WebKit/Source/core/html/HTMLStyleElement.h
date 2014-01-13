@@ -43,7 +43,7 @@ public:
 
     bool scoped() const;
     void setScoped(bool);
-    Element* scopingElement() const;
+    ContainerNode* scopingNode();
     bool isRegisteredAsScoped() const
     {
         // Note: We cannot rely on the 'scoped' attribute still being present when this method is invoked.
@@ -51,6 +51,11 @@ public:
         if (m_scopedStyleRegistrationState == NotRegistered)
             return false;
         return true;
+    }
+
+    bool isRegisteredInShadowRoot() const
+    {
+        return m_scopedStyleRegistrationState == RegisteredInShadowRoot;
     }
 
     using StyleElement::sheet;
@@ -67,6 +72,7 @@ private:
     // overload from HTMLElement
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void didNotifySubtreeInsertions(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
@@ -96,6 +102,12 @@ private:
     };
     ScopedStyleRegistrationState m_scopedStyleRegistrationState;
 };
+
+inline HTMLStyleElement* toHTMLStyleElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::styleTag));
+    return static_cast<HTMLStyleElement*>(node);
+}
 
 } //namespace
 

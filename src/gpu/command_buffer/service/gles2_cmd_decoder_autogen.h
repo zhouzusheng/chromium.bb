@@ -1407,7 +1407,22 @@ error::Error GLES2DecoderImpl::HandleHint(
     LOCAL_SET_GL_ERROR_INVALID_ENUM("glHint", mode, "mode");
     return error::kNoError;
   }
-  DoHint(target, mode);
+  switch (target) {
+    case GL_GENERATE_MIPMAP_HINT:
+      if (state_.hint_generate_mipmap != mode) {
+        state_.hint_generate_mipmap = mode;
+        glHint(target, mode);
+      }
+      break;
+    case GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES:
+      if (state_.hint_fragment_shader_derivative != mode) {
+        state_.hint_fragment_shader_derivative = mode;
+        glHint(target, mode);
+      }
+      break;
+    default:
+      NOTREACHED();
+  }
   return error::kNoError;
 }
 
@@ -2966,6 +2981,12 @@ error::Error GLES2DecoderImpl::HandleBindVertexArrayOES(
     uint32 immediate_data_size, const gles2::cmds::BindVertexArrayOES& c) {
   GLuint array = c.array;
   DoBindVertexArrayOES(array);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleSwapBuffers(
+    uint32 immediate_data_size, const gles2::cmds::SwapBuffers& c) {
+  DoSwapBuffers();
   return error::kNoError;
 }
 

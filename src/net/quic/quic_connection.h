@@ -16,13 +16,14 @@
 #ifndef NET_QUIC_QUIC_CONNECTION_H_
 #define NET_QUIC_QUIC_CONNECTION_H_
 
+#include <deque>
 #include <list>
 #include <map>
 #include <queue>
 #include <set>
 #include <vector>
 
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/linked_hash_map.h"
 #include "net/quic/congestion_control/quic_congestion_manager.h"
@@ -81,9 +82,16 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
 // Interface which gets callbacks from the QuicConnection at interesting
 // points.  Implementations must not mutate the state of the connection
 // as a result of these callbacks.
-class NET_EXPORT_PRIVATE QuicConnectionDebugVisitorInterface {
+class NET_EXPORT_PRIVATE QuicConnectionDebugVisitorInterface
+    : public QuicPacketGenerator::DebugDelegateInterface {
  public:
   virtual ~QuicConnectionDebugVisitorInterface() {}
+
+  // Called when a packet has been sent.
+  virtual void OnPacketSent(QuicPacketSequenceNumber sequence_number,
+                            EncryptionLevel level,
+                            const QuicEncryptedPacket& packet,
+                            int rv) = 0;
 
   // Called when a packet has been received, but before it is
   // validated or parsed.
@@ -93,8 +101,7 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitorInterface {
 
   // Called when the protocol version on the received packet doensn't match
   // current protocol version of the connection.
-  virtual void OnProtocolVersionMismatch(
-      QuicVersionTag version) = 0;
+  virtual void OnProtocolVersionMismatch(QuicTag version) = 0;
 
   // Called when the complete header of a packet has been parsed.
   virtual void OnPacketHeader(const QuicPacketHeader& header) = 0;
@@ -203,6 +210,11 @@ class NET_EXPORT_PRIVATE QuicConnection
     FORCE
   };
 
+  enum RetransmissionType {
+    INITIAL_ENCRYPTION_ONLY,
+    ALL_PACKETS
+  };
+
   // Constructs a new QuicConnection for the specified |guid| and |address|.
   // |helper| will be owned by this connection.
   QuicConnection(QuicGuid guid,
@@ -258,14 +270,16 @@ class NET_EXPORT_PRIVATE QuicConnection
   // queued writes to happen.  Returns false if the socket has become blocked.
   virtual bool OnCanWrite() OVERRIDE;
 
-  QuicVersionTag version() const {
-    return quic_version_;
-  }
+  // Do any work which logically would be done in OnPacket but can not be
+  // safely done until the packet is validated.  Returns true if the packet
+  // can be handled, false otherwise.
+  bool ProcessValidatedPacket();
+
+  QuicTag version() const { return quic_version_; }
 
   // From QuicFramerVisitorInterface
   virtual void OnError(QuicFramer* framer) OVERRIDE;
-  virtual bool OnProtocolVersionMismatch(
-      QuicVersionTag received_version) OVERRIDE;
+  virtual bool OnProtocolVersionMismatch(QuicTag received_version) OVERRIDE;
   virtual void OnPacket() OVERRIDE;
   virtual void OnPublicResetPacket(
       const QuicPublicResetPacket& packet) OVERRIDE;
@@ -299,6 +313,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   }
   void set_debug_visitor(QuicConnectionDebugVisitorInterface* debug_visitor) {
     debug_visitor_ = debug_visitor;
+    packet_generator_.set_debug_delegate(debug_visitor);
   }
   const IPEndPoint& self_address() const { return self_address_; }
   const IPEndPoint& peer_address() const { return peer_address_; }
@@ -330,6 +345,15 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Returns true if the connection has queued packets or frames.
   bool HasQueuedData() const;
 
+  // Sets (or resets) the idle state connection timeout. Also, checks and times
+  // out the connection if network timer has expired for |timeout|.
+  void SetIdleNetworkTimeout(QuicTime::Delta timeout);
+  // Sets (or resets) the total time delta the connection can be alive for.
+  // Also, checks and times out the connection if timer has expired for
+  // |timeout|. Used to limit the time a connection can be alive before crypto
+  // handshake finishes.
+  void SetOverallConnectionTimeout(QuicTime::Delta timeout);
+
   // If the connection has timed out, this will close the connection and return
   // true.  Otherwise, it will return false and will reset the timeout alarm.
   bool CheckForTimeout();
@@ -344,6 +368,13 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Called when an RTO fires.  Returns the time when this alarm
   // should next fire, or 0 if no retransmission alarm should be set.
   QuicTime OnRetransmissionTimeout();
+
+  // Retransmits unacked packets which were sent with initial encryption, if
+  // |initial_encryption_only| is true, otherwise retransmits all unacked
+  // packets. Used when the negotiated protocol version is different than what
+  // was initially assumed and when the visitor wants to re-transmit packets
+  // with initial encryption when the initial encrypter changes.
+  void RetransmitUnackedPackets(RetransmissionType retransmission_type);
 
   // Changes the encrypter used for level |level| to |encrypter|. The function
   // takes ownership of |encrypter|.
@@ -406,19 +437,18 @@ class NET_EXPORT_PRIVATE QuicConnection
                    HasRetransmittableData retransmittable,
                    Force force);
 
+  int WritePacketToWire(QuicPacketSequenceNumber sequence_number,
+                        EncryptionLevel level,
+                        const QuicEncryptedPacket& packet,
+                        int* error);
+
   // Make sure an ack we got from our peer is sane.
   bool ValidateAckFrame(const QuicAckFrame& incoming_ack);
 
-  // These two are called by OnAckFrame to update the appropriate internal
-  // state.
-  //
-  // Updates internal state based on incoming_ack.received_info
-  void UpdatePacketInformationReceivedByPeer(
-      const QuicAckFrame& incoming_ack);
-  // Updates internal state based in incoming_ack.sent_info
-  void UpdatePacketInformationSentByPeer(const QuicAckFrame& incoming_ack);
-
   QuicConnectionHelperInterface* helper() { return helper_.get(); }
+
+ protected:
+  QuicFramer framer_;
 
  private:
   friend class test::QuicConnectionPeer;
@@ -445,21 +475,32 @@ class NET_EXPORT_PRIVATE QuicConnection
   struct RetransmissionInfo {
     explicit RetransmissionInfo(QuicPacketSequenceNumber sequence_number)
         : sequence_number(sequence_number),
-          scheduled_time(QuicTime::Zero()),
           number_nacks(0),
           number_retransmissions(0) {
     }
 
     QuicPacketSequenceNumber sequence_number;
-    QuicTime scheduled_time;
     size_t number_nacks;
     size_t number_retransmissions;
   };
 
-  class RetransmissionInfoComparator {
+  struct RetransmissionTime {
+    RetransmissionTime(QuicPacketSequenceNumber sequence_number,
+                       const QuicTime& scheduled_time,
+                       bool for_fec)
+        : sequence_number(sequence_number),
+          scheduled_time(scheduled_time),
+          for_fec(for_fec) { }
+
+    QuicPacketSequenceNumber sequence_number;
+    QuicTime scheduled_time;
+    bool for_fec;
+  };
+
+  class RetransmissionTimeComparator {
    public:
-    bool operator()(const RetransmissionInfo& lhs,
-                    const RetransmissionInfo& rhs) const {
+    bool operator()(const RetransmissionTime& lhs,
+                    const RetransmissionTime& rhs) const {
       DCHECK(lhs.scheduled_time.IsInitialized() &&
              rhs.scheduled_time.IsInitialized());
       return lhs.scheduled_time > rhs.scheduled_time;
@@ -472,43 +513,72 @@ class NET_EXPORT_PRIVATE QuicConnection
   typedef std::map<QuicFecGroupNumber, QuicFecGroup*> FecGroupMap;
   typedef base::hash_map<QuicPacketSequenceNumber,
                          RetransmissionInfo> RetransmissionMap;
-  typedef std::priority_queue<RetransmissionInfo,
-                              std::vector<RetransmissionInfo>,
-                              RetransmissionInfoComparator>
+  typedef std::priority_queue<RetransmissionTime,
+                              std::vector<RetransmissionTime>,
+                              RetransmissionTimeComparator>
       RetransmissionTimeouts;
 
   // Selects and updates the version of the protocol being used by selecting a
   // version from |available_versions| which is also supported. Returns true if
   // such a version exists, false otherwise.
-  bool SelectMutualVersion(
-      const QuicVersionTagList& available_versions);
+  bool SelectMutualVersion(const QuicTagVector& available_versions);
   // Sends a version negotiation packet to the peer.
   void SendVersionNegotiationPacket();
 
-  void MaybeSetupRetransmission(QuicPacketSequenceNumber sequence_number);
+  void SetupRetransmission(QuicPacketSequenceNumber sequence_number,
+                           EncryptionLevel level);
   bool IsRetransmission(QuicPacketSequenceNumber sequence_number);
-  void RetransmitAllUnackedPackets();
+
+  void SetupAbandonFecTimer(QuicPacketSequenceNumber sequence_number);
+
+  // Drop packet corresponding to |sequence_number| by deleting entries from
+  // |unacked_packets_| and |retransmission_map_|, if present. We need to drop
+  // all packets with encryption level NONE after the default level has been set
+  // to FORWARD_SECURE.
+  void DropPacket(QuicPacketSequenceNumber sequence_number);
 
   // Writes as many queued packets as possible.  The connection must not be
   // blocked when this is called.
   bool WriteQueuedPackets();
 
+  // Queues |packet| in the hopes that it can be decrypted in the
+  // future, when a new key is installed.
+  void QueueUndecryptablePacket(const QuicEncryptedPacket& packet);
+
+  // Attempts to process any queued undecryptable packets.
+  void MaybeProcessUndecryptablePackets();
+
   // If a packet can be revived from the current FEC group, then
   // revive and process the packet.
   void MaybeProcessRevivedPacket();
+
+  void HandleAckForSentPackets(const QuicAckFrame& incoming_ack,
+                               SequenceNumberSet* acked_packets);
+  void HandleAckForSentFecPackets(const QuicAckFrame& incoming_ack,
+                                  SequenceNumberSet* acked_packets);
+
+  // These two are called by OnAckFrame.
+  //
+  // Updates internal state based on incoming_ack.received_info
+  void UpdatePacketInformationReceivedByPeer(
+      const QuicAckFrame& incoming_ack);
+  // Updates internal state based on incoming_ack.sent_info
+  void UpdatePacketInformationSentByPeer(const QuicAckFrame& incoming_ack);
 
   void UpdateOutgoingAck();
 
   void MaybeSendAckInResponseToPacket();
 
-  // Get the FEC group associate with the last processed packet.
+  void MaybeAbandonFecPacket(QuicPacketSequenceNumber sequence_number);
+
+  // Get the FEC group associate with the last processed packet or NULL, if the
+  // group has already been deleted.
   QuicFecGroup* GetFecGroup();
 
   // Closes any FEC groups protecting packets before |sequence_number|.
   void CloseFecGroupsBefore(QuicPacketSequenceNumber sequence_number);
 
   scoped_ptr<QuicConnectionHelperInterface> helper_;
-  QuicFramer framer_;
   EncryptionLevel encryption_level_;
   const QuicClock* clock_;
   QuicRandom* random_generator_;
@@ -518,10 +588,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   // client.
   IPEndPoint self_address_;
   IPEndPoint peer_address_;
-  // Address on the last(currently being processed) packet received. Not
-  // verified/authenticated.
-  IPEndPoint last_self_address_;
-  IPEndPoint last_peer_address_;
 
   bool last_packet_revived_;  // True if the last packet was revived from FEC.
   size_t last_size_;  // Size of the last received packet.
@@ -546,6 +612,18 @@ class NET_EXPORT_PRIVATE QuicConnection
   // When new packets are created which may be retransmitted, they are added
   // to this map, which contains owning pointers to the contained frames.
   UnackedPacketMap unacked_packets_;
+
+  // Pending fec packets that have not been acked yet. These packets need to be
+  // cleared out of the cgst_window after a timeout since FEC packets are never
+  // retransmitted.
+  // Ask: What should be the timeout for these packets?
+  UnackedPacketMap unacked_fec_packets_;
+
+  // Collection of packets which were received before encryption was
+  // established, but which could not be decrypted.  We buffer these on
+  // the assumption that they could not be processed because they were
+  // sent with the INITIAL encryption and the CHLO message was lost.
+  std::deque<QuicEncryptedPacket*> undecryptable_packets_;
 
   // Heap of packets that we might need to retransmit, and the time at
   // which we should retransmit them. Every time a packet is sent it is added
@@ -580,7 +658,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicPacketGenerator packet_generator_;
 
   // Network idle time before we kill of this connection.
-  const QuicTime::Delta timeout_;
+  QuicTime::Delta idle_network_timeout_;
+  // Overall connection timeout.
+  QuicTime::Delta overall_connection_timeout_;
+  // Connection creation time.
+  QuicTime creation_time_;
 
   // Statistics for this session.
   QuicConnectionStats stats_;
@@ -603,7 +685,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicVersionNegotiationState version_negotiation_state_;
 
   // The version of the protocol this connection is using.
-  QuicVersionTag quic_version_;
+  QuicTag quic_version_;
+
+  size_t max_packets_per_retransmission_alarm_;
 
   // Tracks if the connection was created by the server.
   bool is_server_;
@@ -615,8 +699,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   // True if the last ack received from the peer may have been truncated.  False
   // otherwise.
   bool received_truncated_ack_;
-
   bool send_ack_in_response_to_packet_;
+
+  // Set to true if the udp packet headers have a new self or peer address.
+  // This is checked later on validating a data or version negotiation packet.
+  bool address_migrating_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

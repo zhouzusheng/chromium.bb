@@ -58,7 +58,7 @@ WebInspector.NetworkLogView = function(coulmnsVisibilitySetting)
     this._requestGridNodes = {};
     this._lastRequestGridNodeId = 0;
     this._mainRequestLoadTime = -1;
-    this._mainRequestDOMContentTime = -1;
+    this._mainRequestDOMContentLoadedTime = -1;
     this._typeFilterElements = {};
     this._typeFilter = WebInspector.NetworkLogView._trivialTypeFilter;
     this._matchedRequests = [];
@@ -77,7 +77,7 @@ WebInspector.NetworkLogView = function(coulmnsVisibilitySetting)
     WebInspector.networkManager.addEventListener(WebInspector.NetworkManager.EventTypes.RequestFinished, this._onRequestUpdated, this);
 
     WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._mainFrameNavigated, this);
-    WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.OnLoad, this._onLoadEventFired, this);
+    WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.Load, this._loadEventFired, this);
     WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.DOMContentLoaded, this._domContentLoadedEventFired, this);
 
     this._initializeView();
@@ -433,7 +433,7 @@ WebInspector.NetworkLogView.prototype = {
             if (this._summaryBarElement._isDisplayingWarning)
                 return;
             this._summaryBarElement._isDisplayingWarning = true;
-
+            this._summaryBarElement.removeChildren();
             this._summaryBarElement.createChild("div", "warning-icon-small");
             this._summaryBarElement.appendChild(document.createTextNode(
                 WebInspector.UIString("No requests captured. Reload the page to see detailed information on the network activity.")));
@@ -448,7 +448,7 @@ WebInspector.NetworkLogView.prototype = {
         var maxTime = -1;
         for (var i = 0; i < this._requests.length; ++i) {
             var request = this._requests[i];
-            var requestTransferSize = (request.cached || !request.transferSize) ? 0 : request.transferSize;
+            var requestTransferSize = request.transferSize;
             transferSize += requestTransferSize;
             if (!this._filteredOutRequests.get(request)) {
                 selectedRequestsNumber++;
@@ -467,11 +467,11 @@ WebInspector.NetworkLogView.prototype = {
             text += String.sprintf(WebInspector.UIString("%d requests"), requestsNumber);
             text += "  \u2758  " + String.sprintf(WebInspector.UIString("%s transferred"), Number.bytesToString(transferSize));
         }
-        if (baseTime !== -1 && this._mainRequestLoadTime !== -1 && this._mainRequestDOMContentTime !== -1 && this._mainRequestDOMContentTime > baseTime) {
-            text += "  \u2758  " + String.sprintf(WebInspector.UIString("%s (onload: %s, DOMContentLoaded: %s)"),
+        if (baseTime !== -1 && this._mainRequestLoadTime !== -1 && this._mainRequestDOMContentLoadedTime !== -1 && this._mainRequestDOMContentLoadedTime > baseTime) {
+            text += "  \u2758  " + String.sprintf(WebInspector.UIString("%s (load: %s, DOMContentLoaded: %s)"),
                         Number.secondsToString(maxTime - baseTime),
                         Number.secondsToString(this._mainRequestLoadTime - baseTime),
-                        Number.secondsToString(this._mainRequestDOMContentTime - baseTime));
+                        Number.secondsToString(this._mainRequestDOMContentLoadedTime - baseTime));
         }
         this._summaryBarElement.textContent = text;
     },
@@ -581,18 +581,18 @@ WebInspector.NetworkLogView.prototype = {
             this._timelineGrid.addEventDivider(loadDividerPadding);
         }
 
-        if (this._mainRequestDOMContentTime !== -1) {
-            var percent = this.calculator.computePercentageFromEventTime(this._mainRequestDOMContentTime);
+        if (this._mainRequestDOMContentLoadedTime !== -1) {
+            var percent = this.calculator.computePercentageFromEventTime(this._mainRequestDOMContentLoadedTime);
 
-            var domContentDivider = document.createElement("div");
-            domContentDivider.className = "network-event-divider network-blue-divider";
+            var domContentLoadedDivider = document.createElement("div");
+            domContentLoadedDivider.className = "network-event-divider network-blue-divider";
 
-            var domContentDividerPadding = document.createElement("div");
-            domContentDividerPadding.className = "network-event-divider-padding";
-            domContentDividerPadding.title = WebInspector.UIString("DOMContent event fired");
-            domContentDividerPadding.appendChild(domContentDivider);
-            domContentDividerPadding.style.left = percent + "%";
-            this._timelineGrid.addEventDivider(domContentDividerPadding);
+            var domContentLoadedDividerPadding = document.createElement("div");
+            domContentLoadedDividerPadding.className = "network-event-divider-padding";
+            domContentLoadedDividerPadding.title = WebInspector.UIString("DOMContentLoaded event fired");
+            domContentLoadedDividerPadding.appendChild(domContentLoadedDivider);
+            domContentLoadedDividerPadding.style.left = percent + "%";
+            this._timelineGrid.addEventDivider(domContentLoadedDividerPadding);
         }
     },
 
@@ -653,7 +653,7 @@ WebInspector.NetworkLogView.prototype = {
         this._largerRequestsButton.addEventListener("click", this._toggleLargerRequests, this);
     },
 
-    _onLoadEventFired: function(event)
+    _loadEventFired: function(event)
     {
         this._mainRequestLoadTime = event.data || -1;
         // Schedule refresh to update boundaries and draw the new line.
@@ -662,7 +662,7 @@ WebInspector.NetworkLogView.prototype = {
 
     _domContentLoadedEventFired: function(event)
     {
-        this._mainRequestDOMContentTime = event.data || -1;
+        this._mainRequestDOMContentLoadedTime = event.data || -1;
         // Schedule refresh to update boundaries and draw the new line.
         this._scheduleRefresh();
     },
@@ -690,7 +690,7 @@ WebInspector.NetworkLogView.prototype = {
         var boundariesChanged = false;
         if (this.calculator.updateBoundariesForEventTime) {
             boundariesChanged = this.calculator.updateBoundariesForEventTime(this._mainRequestLoadTime) || boundariesChanged;
-            boundariesChanged = this.calculator.updateBoundariesForEventTime(this._mainRequestDOMContentTime) || boundariesChanged;
+            boundariesChanged = this.calculator.updateBoundariesForEventTime(this._mainRequestDOMContentLoadedTime) || boundariesChanged;
         }
 
         for (var requestId in this._staleRequests) {
@@ -759,7 +759,7 @@ WebInspector.NetworkLogView.prototype = {
         }
 
         this._mainRequestLoadTime = -1;
-        this._mainRequestDOMContentTime = -1;
+        this._mainRequestDOMContentLoadedTime = -1;
     },
 
     get requests()
@@ -2266,8 +2266,8 @@ WebInspector.NetworkDataGridNode.prototype = {
             this._sizeCell.setTextAndTitle(WebInspector.UIString("(from cache)"));
             this._sizeCell.addStyleClass("network-dim-cell");
         } else {
-            var resourceSize = typeof this._request.resourceSize === "number" ? Number.bytesToString(this._request.resourceSize) : "?";
-            var transferSize = typeof this._request.transferSize === "number" ? Number.bytesToString(this._request.transferSize) : "?";
+            var resourceSize = Number.bytesToString(this._request.resourceSize);
+            var transferSize = Number.bytesToString(this._request.transferSize);
             this._sizeCell.setTextAndTitle(transferSize);
             this._sizeCell.removeStyleClass("network-dim-cell");
             this._appendSubtitle(this._sizeCell, resourceSize);
@@ -2427,9 +2427,6 @@ WebInspector.NetworkDataGridNode.SizeComparator = function(a, b)
         return 1;
     if (a._request.cached && !b._request.cached)
         return -1;
-
-    if (a._request.transferSize === b._request.transferSize)
-        return 0;
 
     return a._request.transferSize - b._request.transferSize;
 }

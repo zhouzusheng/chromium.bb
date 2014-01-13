@@ -4,10 +4,12 @@
 
 #include "cc/trees/thread_proxy.h"
 
+#include <string>
+
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
-#include "cc/base/thread.h"
+#include "base/metrics/histogram.h"
 #include "cc/input/input_handler.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/output_surface.h"
@@ -16,7 +18,6 @@
 #include "cc/scheduler/delay_based_time_source.h"
 #include "cc/scheduler/frame_rate_controller.h"
 #include "cc/scheduler/scheduler.h"
-#include "cc/scheduler/vsync_time_source.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
 
@@ -28,19 +29,42 @@ const double kContextRecreationTickRate = 0.03;
 // Measured in seconds.
 const double kSmoothnessTakesPriorityExpirationDelay = 0.25;
 
+const size_t kDrawDurationHistorySize = 60;
+const double kDrawDurationEstimationPercentile = 100.0;
+const int kDrawDurationEstimatePaddingInMicroseconds = 0;
+
 }  // namespace
 
 namespace cc {
 
-scoped_ptr<Proxy> ThreadProxy::Create(LayerTreeHost* layer_tree_host,
-                                      scoped_ptr<Thread> impl_thread) {
+struct ThreadProxy::ReadbackRequest {
+  CompletionEvent completion;
+  bool success;
+  void* pixels;
+  gfx::Rect rect;
+};
+
+struct ThreadProxy::CommitPendingRequest {
+  CompletionEvent completion;
+  bool commit_pending;
+};
+
+struct ThreadProxy::SchedulerStateRequest {
+  CompletionEvent completion;
+  std::string state;
+};
+
+scoped_ptr<Proxy> ThreadProxy::Create(
+    LayerTreeHost* layer_tree_host,
+    scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
   return make_scoped_ptr(
-      new ThreadProxy(layer_tree_host, impl_thread.Pass())).PassAs<Proxy>();
+      new ThreadProxy(layer_tree_host, impl_task_runner)).PassAs<Proxy>();
 }
 
-ThreadProxy::ThreadProxy(LayerTreeHost* layer_tree_host,
-                         scoped_ptr<Thread> impl_thread)
-    : Proxy(impl_thread.Pass()),
+ThreadProxy::ThreadProxy(
+    LayerTreeHost* layer_tree_host,
+    scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner)
+    : Proxy(impl_task_runner),
       animate_requested_(false),
       commit_requested_(false),
       commit_request_sent_to_impl_thread_(false),
@@ -52,21 +76,22 @@ ThreadProxy::ThreadProxy(LayerTreeHost* layer_tree_host,
       manage_tiles_pending_(false),
       weak_factory_on_impl_thread_(this),
       weak_factory_(this),
-      begin_frame_completion_event_on_impl_thread_(NULL),
+      begin_frame_sent_to_main_thread_completion_event_on_impl_thread_(NULL),
       readback_request_on_impl_thread_(NULL),
       commit_completion_event_on_impl_thread_(NULL),
       completion_event_for_commit_held_on_tree_activation_(NULL),
       texture_acquisition_completion_event_on_impl_thread_(NULL),
       next_frame_is_newly_committed_frame_on_impl_thread_(false),
-      render_vsync_enabled_(layer_tree_host->settings().render_vsync_enabled),
-      render_vsync_notification_enabled_(
-          layer_tree_host->settings().render_vsync_notification_enabled),
-      synchronously_disable_vsync_(
-          layer_tree_host->settings().synchronously_disable_vsync),
-      vsync_client_(NULL),
+      throttle_frame_production_(
+          layer_tree_host->settings().throttle_frame_production),
+      begin_frame_scheduling_enabled_(
+          layer_tree_host->settings().begin_frame_scheduling_enabled),
+      using_synchronous_renderer_compositor_(
+          layer_tree_host->settings().using_synchronous_renderer_compositor),
       inside_draw_(false),
       defer_commits_(false),
-      renew_tree_priority_on_impl_thread_pending_(false) {
+      renew_tree_priority_on_impl_thread_pending_(false),
+      draw_duration_history_(kDrawDurationHistorySize) {
   TRACE_EVENT0("cc", "ThreadProxy::ThreadProxy");
   DCHECK(IsMainThread());
   DCHECK(layer_tree_host_);
@@ -92,15 +117,16 @@ bool ThreadProxy::CompositeAndReadback(void* pixels, gfx::Rect rect) {
   // Perform a synchronous commit.
   {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
-    CompletionEvent begin_frame_completion;
-    Proxy::ImplThread()->PostTask(
-        base::Bind(&ThreadProxy::ForceBeginFrameOnImplThread,
+    CompletionEvent begin_frame_sent_to_main_thread_completion;
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&ThreadProxy::ForceCommitOnImplThread,
                    impl_thread_weak_ptr_,
-                   &begin_frame_completion));
-    begin_frame_completion.Wait();
+                   &begin_frame_sent_to_main_thread_completion));
+    begin_frame_sent_to_main_thread_completion.Wait();
   }
   in_composite_and_readback_ = true;
-  BeginFrame(scoped_ptr<BeginFrameAndCommitState>());
+  BeginFrameOnMainThread(scoped_ptr<BeginFrameAndCommitState>());
   in_composite_and_readback_ = false;
 
   // Perform a synchronous readback.
@@ -109,13 +135,28 @@ bool ThreadProxy::CompositeAndReadback(void* pixels, gfx::Rect rect) {
   request.pixels = pixels;
   {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
-    Proxy::ImplThread()->PostTask(
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
         base::Bind(&ThreadProxy::RequestReadbackOnImplThread,
                    impl_thread_weak_ptr_,
                    &request));
     request.completion.Wait();
   }
   return request.success;
+}
+
+void ThreadProxy::ForceCommitOnImplThread(CompletionEvent* completion) {
+  TRACE_EVENT0("cc", "ThreadProxy::ForceCommitOnImplThread");
+  DCHECK(IsImplThread());
+  DCHECK(!begin_frame_sent_to_main_thread_completion_event_on_impl_thread_);
+
+  scheduler_on_impl_thread_->SetNeedsForcedCommit();
+  if (scheduler_on_impl_thread_->CommitPending()) {
+    completion->Signal();
+    return;
+  }
+
+  begin_frame_sent_to_main_thread_completion_event_on_impl_thread_ = completion;
 }
 
 void ThreadProxy::RequestReadbackOnImplThread(ReadbackRequest* request) {
@@ -139,7 +180,8 @@ void ThreadProxy::FinishAllRendering() {
   // Make sure all GL drawing is finished on the impl thread.
   DebugScopedSetMainThreadBlocked main_thread_blocked(this);
   CompletionEvent completion;
-  Proxy::ImplThread()->PostTask(
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
       base::Bind(&ThreadProxy::FinishAllRenderingOnImplThread,
                  impl_thread_weak_ptr_,
                  &completion));
@@ -151,14 +193,16 @@ bool ThreadProxy::IsStarted() const {
   return started_;
 }
 
-void ThreadProxy::SetSurfaceReady() {
-  TRACE_EVENT0("cc", "ThreadProxy::SetSurfaceReady");
-  Proxy::ImplThread()->PostTask(base::Bind(
-      &ThreadProxy::SetSurfaceReadyOnImplThread, impl_thread_weak_ptr_));
+void ThreadProxy::SetLayerTreeHostClientReady() {
+  TRACE_EVENT0("cc", "ThreadProxy::SetLayerTreeHostClientReady");
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ThreadProxy::SetLayerTreeHostClientReadyOnImplThread,
+                 impl_thread_weak_ptr_));
 }
 
-void ThreadProxy::SetSurfaceReadyOnImplThread() {
-  TRACE_EVENT0("cc", "ThreadProxy::SetSurfaceReadyOnImplThread");
+void ThreadProxy::SetLayerTreeHostClientReadyOnImplThread() {
+  TRACE_EVENT0("cc", "ThreadProxy::SetLayerTreeHostClientReadyOnImplThread");
   scheduler_on_impl_thread_->SetCanStart();
 }
 
@@ -166,10 +210,12 @@ void ThreadProxy::SetVisible(bool visible) {
   TRACE_EVENT0("cc", "ThreadProxy::SetVisible");
   DebugScopedSetMainThreadBlocked main_thread_blocked(this);
   CompletionEvent completion;
-  Proxy::ImplThread()->PostTask(base::Bind(&ThreadProxy::SetVisibleOnImplThread,
-                                           impl_thread_weak_ptr_,
-                                           &completion,
-                                           visible));
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ThreadProxy::SetVisibleOnImplThread,
+                 impl_thread_weak_ptr_,
+                 &completion,
+                 visible));
   completion.Wait();
 }
 
@@ -200,7 +246,7 @@ void ThreadProxy::DoCreateAndInitializeOutputSurface() {
   if (created_offscreen_context_provider_) {
     offscreen_context_provider = layer_tree_host_->client()->
         OffscreenContextProviderForCompositorThread();
-    success = !!offscreen_context_provider;
+    success = !!offscreen_context_provider.get();
     if (!success) {
       OnOutputSurfaceInitializeAttempted(false, capabilities);
       return;
@@ -215,7 +261,8 @@ void ThreadProxy::DoCreateAndInitializeOutputSurface() {
     CompletionEvent completion;
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
 
-    Proxy::ImplThread()->PostTask(
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
         base::Bind(&ThreadProxy::InitializeOutputSurfaceOnImplThread,
                    impl_thread_weak_ptr_,
                    &completion,
@@ -243,8 +290,8 @@ void ThreadProxy::OnOutputSurfaceInitializeAttempted(
       layer_tree_host_->OnCreateAndInitializeOutputSurfaceAttempted(success);
   if (result == LayerTreeHost::CreateFailedButTryAgain) {
     if (!output_surface_creation_callback_.callback().is_null()) {
-      Proxy::MainThread()->PostTask(
-          output_surface_creation_callback_.callback());
+      Proxy::MainThreadTaskRunner()->PostTask(
+          FROM_HERE, output_surface_creation_callback_.callback());
     }
   } else {
     output_surface_creation_callback_.Cancel();
@@ -268,8 +315,10 @@ void ThreadProxy::SetNeedsAnimate() {
   if (commit_request_sent_to_impl_thread_)
     return;
   commit_request_sent_to_impl_thread_ = true;
-  Proxy::ImplThread()->PostTask(base::Bind(
-      &ThreadProxy::SetNeedsCommitOnImplThread, impl_thread_weak_ptr_));
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ThreadProxy::SetNeedsCommitOnImplThread,
+                 impl_thread_weak_ptr_));
 }
 
 void ThreadProxy::SetNeedsCommit() {
@@ -282,14 +331,17 @@ void ThreadProxy::SetNeedsCommit() {
   if (commit_request_sent_to_impl_thread_)
     return;
   commit_request_sent_to_impl_thread_ = true;
-  Proxy::ImplThread()->PostTask(base::Bind(
-      &ThreadProxy::SetNeedsCommitOnImplThread, impl_thread_weak_ptr_));
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ThreadProxy::SetNeedsCommitOnImplThread,
+                 impl_thread_weak_ptr_));
 }
 
 void ThreadProxy::DidLoseOutputSurfaceOnImplThread() {
   DCHECK(IsImplThread());
   TRACE_EVENT0("cc", "ThreadProxy::DidLoseOutputSurfaceOnImplThread");
-  Proxy::ImplThread()->PostTask(
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
       base::Bind(&ThreadProxy::CheckOutputSurfaceStatusOnImplThread,
                  impl_thread_weak_ptr_));
 }
@@ -299,8 +351,8 @@ void ThreadProxy::CheckOutputSurfaceStatusOnImplThread() {
   TRACE_EVENT0("cc", "ThreadProxy::CheckOutputSurfaceStatusOnImplThread");
   if (!layer_tree_host_impl_->IsContextLost())
     return;
-  if (cc::ContextProvider* offscreen_contexts = layer_tree_host_impl_->
-          resource_provider()->offscreen_context_provider())
+  if (cc::ContextProvider* offscreen_contexts = layer_tree_host_impl_
+          ->resource_provider()->offscreen_context_provider())
     offscreen_contexts->VerifyContexts();
   scheduler_on_impl_thread_->DidLoseOutputSurface();
 }
@@ -308,36 +360,22 @@ void ThreadProxy::CheckOutputSurfaceStatusOnImplThread() {
 void ThreadProxy::OnSwapBuffersCompleteOnImplThread() {
   DCHECK(IsImplThread());
   TRACE_EVENT0("cc", "ThreadProxy::OnSwapBuffersCompleteOnImplThread");
-  scheduler_on_impl_thread_->DidSwapBuffersComplete();
-  Proxy::MainThread()->PostTask(
+  Proxy::MainThreadTaskRunner()->PostTask(
+      FROM_HERE,
       base::Bind(&ThreadProxy::DidCompleteSwapBuffers, main_thread_weak_ptr_));
 }
 
-void ThreadProxy::OnVSyncParametersChanged(base::TimeTicks timebase,
-                                           base::TimeDelta interval) {
+void ThreadProxy::SetNeedsBeginFrameOnImplThread(bool enable) {
   DCHECK(IsImplThread());
-  TRACE_EVENT2("cc",
-               "ThreadProxy::OnVSyncParametersChanged",
-               "timebase",
-               (timebase - base::TimeTicks()).InMilliseconds(),
-               "interval",
-               interval.InMilliseconds());
-  scheduler_on_impl_thread_->SetTimebaseAndInterval(timebase, interval);
+  TRACE_EVENT1("cc", "ThreadProxy::SetNeedsBeginFrameOnImplThread",
+               "enable", enable);
+  layer_tree_host_impl_->SetNeedsBeginFrame(enable);
 }
 
-void ThreadProxy::DidVSync(base::TimeTicks frame_time) {
+void ThreadProxy::BeginFrameOnImplThread(const BeginFrameArgs& args) {
   DCHECK(IsImplThread());
-  TRACE_EVENT0("cc", "ThreadProxy::DidVSync");
-  if (vsync_client_)
-    vsync_client_->DidVSync(frame_time);
-}
-
-void ThreadProxy::RequestVSyncNotification(VSyncClient* client) {
-  DCHECK(IsImplThread());
-  TRACE_EVENT1(
-      "cc", "ThreadProxy::RequestVSyncNotification", "enable", !!client);
-  vsync_client_ = client;
-  layer_tree_host_impl_->EnableVSyncNotification(!!client);
+  TRACE_EVENT0("cc", "ThreadProxy::BeginFrameOnImplThread");
+  scheduler_on_impl_thread_->BeginFrame(args);
 }
 
 void ThreadProxy::OnCanDrawStateChanged(bool can_draw) {
@@ -351,10 +389,8 @@ void ThreadProxy::OnCanDrawStateChanged(bool can_draw) {
 
 void ThreadProxy::OnHasPendingTreeStateChanged(bool has_pending_tree) {
   DCHECK(IsImplThread());
-  TRACE_EVENT1("cc",
-               "ThreadProxy::OnHasPendingTreeStateChanged",
-               "has_pending_tree",
-               has_pending_tree);
+  TRACE_EVENT1("cc", "ThreadProxy::OnHasPendingTreeStateChanged",
+               "has_pending_tree", has_pending_tree);
   scheduler_on_impl_thread_->SetHasPendingTree(has_pending_tree);
 }
 
@@ -364,37 +400,18 @@ void ThreadProxy::SetNeedsCommitOnImplThread() {
   scheduler_on_impl_thread_->SetNeedsCommit();
 }
 
-void ThreadProxy::SetNeedsManageTilesOnImplThread() {
-  if (manage_tiles_pending_)
-    return;
-  Proxy::ImplThread()->PostTask(
-      base::Bind(&ThreadProxy::ManageTilesOnImplThread, impl_thread_weak_ptr_));
-  manage_tiles_pending_ = true;
-}
-
-void ThreadProxy::ManageTilesOnImplThread() {
-  // TODO(nduca): If needed, move this into CCSchedulerStateMachine.
-  manage_tiles_pending_ = false;
-  if (layer_tree_host_impl_)
-    layer_tree_host_impl_->ManageTiles();
-}
-
-void ThreadProxy::SetNeedsForcedCommitOnImplThread() {
-  DCHECK(IsImplThread());
-  TRACE_EVENT0("cc", "ThreadProxy::SetNeedsForcedCommitOnImplThread");
-  scheduler_on_impl_thread_->SetNeedsForcedCommit();
-}
-
 void ThreadProxy::PostAnimationEventsToMainThreadOnImplThread(
     scoped_ptr<AnimationEventsVector> events,
     base::Time wall_clock_time) {
   DCHECK(IsImplThread());
   TRACE_EVENT0("cc",
                "ThreadProxy::PostAnimationEventsToMainThreadOnImplThread");
-  Proxy::MainThread()->PostTask(base::Bind(&ThreadProxy::SetAnimationEvents,
-                                           main_thread_weak_ptr_,
-                                           base::Passed(&events),
-                                           wall_clock_time));
+  Proxy::MainThreadTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ThreadProxy::SetAnimationEvents,
+                 main_thread_weak_ptr_,
+                 base::Passed(&events),
+                 wall_clock_time));
 }
 
 bool ThreadProxy::ReduceContentsTextureMemoryOnImplThread(size_t limit_bytes,
@@ -455,9 +472,11 @@ bool ThreadProxy::IsInsideDraw() { return inside_draw_; }
 void ThreadProxy::SetNeedsRedraw(gfx::Rect damage_rect) {
   DCHECK(IsMainThread());
   TRACE_EVENT0("cc", "ThreadProxy::SetNeedsRedraw");
-  Proxy::ImplThread()->PostTask(base::Bind(
-      &ThreadProxy::SetNeedsRedrawRectOnImplThread,
-      impl_thread_weak_ptr_, damage_rect));
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ThreadProxy::SetNeedsRedrawRectOnImplThread,
+                 impl_thread_weak_ptr_,
+                 damage_rect));
 }
 
 void ThreadProxy::SetDeferCommits(bool defer_commits) {
@@ -471,8 +490,9 @@ void ThreadProxy::SetDeferCommits(bool defer_commits) {
     TRACE_EVENT_ASYNC_END0("cc", "ThreadProxy::SetDeferCommits", this);
 
   if (!defer_commits_ && pending_deferred_commit_)
-    Proxy::MainThread()->PostTask(
-        base::Bind(&ThreadProxy::BeginFrame,
+    Proxy::MainThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&ThreadProxy::BeginFrameOnMainThread,
                    main_thread_weak_ptr_,
                    base::Passed(&pending_deferred_commit_)));
 }
@@ -508,31 +528,29 @@ void ThreadProxy::DidInitializeVisibleTileOnImplThread() {
 
 void ThreadProxy::MainThreadHasStoppedFlinging() {
   DCHECK(IsMainThread());
-  Proxy::ImplThread()->PostTask(
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
       base::Bind(&ThreadProxy::MainThreadHasStoppedFlingingOnImplThread,
                  impl_thread_weak_ptr_));
 }
 
 void ThreadProxy::MainThreadHasStoppedFlingingOnImplThread() {
   DCHECK(IsImplThread());
-  if (input_handler_client_on_impl_thread_)
-    input_handler_client_on_impl_thread_->MainThreadHasStoppedFlinging();
+  layer_tree_host_impl_->MainThreadHasStoppedFlinging();
 }
 
 void ThreadProxy::Start(scoped_ptr<OutputSurface> first_output_surface) {
   DCHECK(IsMainThread());
-  DCHECK(Proxy::ImplThread());
+  DCHECK(Proxy::HasImplThread());
   DCHECK(first_output_surface);
   // Create LayerTreeHostImpl.
   DebugScopedSetMainThreadBlocked main_thread_blocked(this);
   CompletionEvent completion;
-  scoped_ptr<InputHandlerClient> input_handler_client =
-      layer_tree_host_->CreateInputHandlerClient();
-  Proxy::ImplThread()->PostTask(
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
       base::Bind(&ThreadProxy::InitializeImplOnImplThread,
                  base::Unretained(this),
-                 &completion,
-                 input_handler_client.release()));
+                 &completion));
   completion.Wait();
 
   main_thread_weak_ptr_ = weak_factory_.GetWeakPtr();
@@ -554,7 +572,8 @@ void ThreadProxy::Stop() {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
 
     CompletionEvent completion;
-    Proxy::ImplThread()->PostTask(
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
         base::Bind(&ThreadProxy::FinishGLOnImplThread,
                    impl_thread_weak_ptr_,
                    &completion));
@@ -564,7 +583,8 @@ void ThreadProxy::Stop() {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
 
     CompletionEvent completion;
-    Proxy::ImplThread()->PostTask(
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
         base::Bind(&ThreadProxy::LayerTreeHostClosedOnImplThread,
                    impl_thread_weak_ptr_,
                    &completion));
@@ -581,7 +601,8 @@ void ThreadProxy::Stop() {
 void ThreadProxy::ForceSerializeOnSwapBuffers() {
   DebugScopedSetMainThreadBlocked main_thread_blocked(this);
   CompletionEvent completion;
-  Proxy::ImplThread()->PostTask(
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
       base::Bind(&ThreadProxy::ForceSerializeOnSwapBuffersOnImplThread,
                  impl_thread_weak_ptr_,
                  &completion));
@@ -602,41 +623,35 @@ void ThreadProxy::FinishAllRenderingOnImplThread(CompletionEvent* completion) {
   completion->Signal();
 }
 
-void ThreadProxy::ForceBeginFrameOnImplThread(CompletionEvent* completion) {
-  TRACE_EVENT0("cc", "ThreadProxy::ForceBeginFrameOnImplThread");
-  DCHECK(!begin_frame_completion_event_on_impl_thread_);
-
-  SetNeedsForcedCommitOnImplThread();
-  if (scheduler_on_impl_thread_->CommitPending()) {
-    completion->Signal();
-    return;
-  }
-
-  begin_frame_completion_event_on_impl_thread_ = completion;
-}
-
-void ThreadProxy::ScheduledActionBeginFrame() {
-  TRACE_EVENT0("cc", "ThreadProxy::ScheduledActionBeginFrame");
+void ThreadProxy::ScheduledActionSendBeginFrameToMainThread() {
+  TRACE_EVENT0("cc", "ThreadProxy::ScheduledActionSendBeginFrameToMainThread");
   scoped_ptr<BeginFrameAndCommitState> begin_frame_state(
       new BeginFrameAndCommitState);
-  begin_frame_state->monotonic_frame_begin_time = base::TimeTicks::Now();
-  begin_frame_state->scroll_info = layer_tree_host_impl_->ProcessScrollDeltas();
-  DCHECK_GT(layer_tree_host_impl_->memory_allocation_limit_bytes(), 0u);
+  begin_frame_state->monotonic_frame_begin_time =
+      layer_tree_host_impl_->CurrentPhysicalTimeTicks();
+  begin_frame_state->scroll_info =
+      layer_tree_host_impl_->ProcessScrollDeltas();
+
+  if (!layer_tree_host_impl_->settings().impl_side_painting) {
+    DCHECK_GT(layer_tree_host_impl_->memory_allocation_limit_bytes(), 0u);
+  }
   begin_frame_state->memory_allocation_limit_bytes =
       layer_tree_host_impl_->memory_allocation_limit_bytes();
-  Proxy::MainThread()->PostTask(base::Bind(&ThreadProxy::BeginFrame,
-                                           main_thread_weak_ptr_,
-                                           base::Passed(&begin_frame_state)));
+  Proxy::MainThreadTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ThreadProxy::BeginFrameOnMainThread,
+                 main_thread_weak_ptr_,
+                 base::Passed(&begin_frame_state)));
 
-  if (begin_frame_completion_event_on_impl_thread_) {
-    begin_frame_completion_event_on_impl_thread_->Signal();
-    begin_frame_completion_event_on_impl_thread_ = NULL;
+  if (begin_frame_sent_to_main_thread_completion_event_on_impl_thread_) {
+    begin_frame_sent_to_main_thread_completion_event_on_impl_thread_->Signal();
+    begin_frame_sent_to_main_thread_completion_event_on_impl_thread_ = NULL;
   }
 }
 
-void ThreadProxy::BeginFrame(
+void ThreadProxy::BeginFrameOnMainThread(
     scoped_ptr<BeginFrameAndCommitState> begin_frame_state) {
-  TRACE_EVENT0("cc", "ThreadProxy::BeginFrame");
+  TRACE_EVENT0("cc", "ThreadProxy::BeginFrameOnMainThread");
   DCHECK(IsMainThread());
   if (!layer_tree_host_)
     return;
@@ -669,15 +684,19 @@ void ThreadProxy::BeginFrame(
     commit_request_sent_to_impl_thread_ = false;
 
     TRACE_EVENT0("cc", "EarlyOut_NotVisible");
-    Proxy::ImplThread()->PostTask(base::Bind(
-        &ThreadProxy::BeginFrameAbortedOnImplThread, impl_thread_weak_ptr_));
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&ThreadProxy::BeginFrameAbortedByMainThreadOnImplThread,
+                   impl_thread_weak_ptr_));
     return;
   }
 
   layer_tree_host_->WillBeginFrame();
 
   if (begin_frame_state) {
-    layer_tree_host_->UpdateAnimations(
+    layer_tree_host_->UpdateClientAnimations(
+        begin_frame_state->monotonic_frame_begin_time);
+    layer_tree_host_->AnimateLayers(
         begin_frame_state->monotonic_frame_begin_time);
   }
 
@@ -700,8 +719,8 @@ void ThreadProxy::BeginFrame(
       make_scoped_ptr(new ResourceUpdateQueue);
   layer_tree_host_->UpdateLayers(
       queue.get(),
-      begin_frame_state ? begin_frame_state->memory_allocation_limit_bytes
-                        : 0u);
+      begin_frame_state ?
+          begin_frame_state->memory_allocation_limit_bytes : 0u);
 
   // Once single buffered layers are committed, they cannot be modified until
   // they are drawn by the impl thread.
@@ -724,16 +743,16 @@ void ThreadProxy::BeginFrame(
       layer_tree_host_->needs_offscreen_context()) {
     offscreen_context_provider = layer_tree_host_->client()->
         OffscreenContextProviderForCompositorThread();
-    if (offscreen_context_provider)
+    if (offscreen_context_provider.get())
       created_offscreen_context_provider_ = true;
   }
 
-  // Notify the impl thread that the BeginFrame has completed. This will
+  // Notify the impl thread that the main thread is ready to commit. This will
   // begin the commit process, which is blocking from the main thread's
   // point of view, but asynchronously performed on the impl thread,
   // coordinated by the Scheduler.
   {
-    TRACE_EVENT0("cc", "commit");
+    TRACE_EVENT0("cc", "ThreadProxy::BeginFrameOnMainThread::commit");
 
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
 
@@ -742,8 +761,9 @@ void ThreadProxy::BeginFrame(
     base::TimeTicks start_time = stats_instrumentation->StartRecording();
 
     CompletionEvent completion;
-    Proxy::ImplThread()->PostTask(
-        base::Bind(&ThreadProxy::BeginFrameCompleteOnImplThread,
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&ThreadProxy::StartCommitOnImplThread,
                    impl_thread_weak_ptr_,
                    &completion,
                    queue.release(),
@@ -758,13 +778,13 @@ void ThreadProxy::BeginFrame(
   layer_tree_host_->DidBeginFrame();
 }
 
-void ThreadProxy::BeginFrameCompleteOnImplThread(
+void ThreadProxy::StartCommitOnImplThread(
     CompletionEvent* completion,
     ResourceUpdateQueue* raw_queue,
     scoped_refptr<cc::ContextProvider> offscreen_context_provider) {
   scoped_ptr<ResourceUpdateQueue> queue(raw_queue);
 
-  TRACE_EVENT0("cc", "ThreadProxy::BeginFrameCompleteOnImplThread");
+  TRACE_EVENT0("cc", "ThreadProxy::StartCommitOnImplThread");
   DCHECK(!commit_completion_event_on_impl_thread_);
   DCHECK(IsImplThread() && IsMainThreadBlocked());
   DCHECK(scheduler_on_impl_thread_);
@@ -776,43 +796,44 @@ void ThreadProxy::BeginFrameCompleteOnImplThread(
     return;
   }
 
-  if (offscreen_context_provider)
+  if (offscreen_context_provider.get())
     offscreen_context_provider->BindToCurrentThread();
   layer_tree_host_impl_->resource_provider()->
       set_offscreen_context_provider(offscreen_context_provider);
 
-  if (layer_tree_host_->contents_texture_manager()->
-          LinkedEvictedBackingsExist()) {
-    // Clear any uploads we were making to textures linked to evicted
-    // resources
-    queue->ClearUploadsToEvictedResources();
-    // Some textures in the layer tree are invalid. Kick off another commit
-    // to fill them again.
-    SetNeedsCommitOnImplThread();
+  if (layer_tree_host_->contents_texture_manager()) {
+    if (layer_tree_host_->contents_texture_manager()->
+            LinkedEvictedBackingsExist()) {
+      // Clear any uploads we were making to textures linked to evicted
+      // resources
+      queue->ClearUploadsToEvictedResources();
+      // Some textures in the layer tree are invalid. Kick off another commit
+      // to fill them again.
+      SetNeedsCommitOnImplThread();
+    }
+
+    layer_tree_host_->contents_texture_manager()->
+        PushTexturePrioritiesToBackings();
   }
 
-  layer_tree_host_->contents_texture_manager()->
-      PushTexturePrioritiesToBackings();
-
+  commit_completion_event_on_impl_thread_ = completion;
   current_resource_update_controller_on_impl_thread_ =
       ResourceUpdateController::Create(
           this,
-          Proxy::ImplThread(),
+          Proxy::ImplThreadTaskRunner(),
           queue.Pass(),
           layer_tree_host_impl_->resource_provider());
   current_resource_update_controller_on_impl_thread_->PerformMoreUpdates(
       scheduler_on_impl_thread_->AnticipatedDrawTime());
-
-  commit_completion_event_on_impl_thread_ = completion;
 }
 
-void ThreadProxy::BeginFrameAbortedOnImplThread() {
-  TRACE_EVENT0("cc", "ThreadProxy::BeginFrameAbortedOnImplThread");
+void ThreadProxy::BeginFrameAbortedByMainThreadOnImplThread() {
+  TRACE_EVENT0("cc", "ThreadProxy::BeginFrameAbortedByMainThreadOnImplThread");
   DCHECK(IsImplThread());
   DCHECK(scheduler_on_impl_thread_);
   DCHECK(scheduler_on_impl_thread_->CommitPending());
 
-  scheduler_on_impl_thread_->BeginFrameAborted();
+  scheduler_on_impl_thread_->BeginFrameAbortedByMainThread();
 }
 
 void ThreadProxy::ScheduledActionCommit() {
@@ -836,9 +857,11 @@ void ThreadProxy::ScheduledActionCommit() {
   next_frame_is_newly_committed_frame_on_impl_thread_ = true;
 
   if (layer_tree_host_->settings().impl_side_painting &&
-      layer_tree_host_->BlocksPendingCommit()) {
+      layer_tree_host_->BlocksPendingCommit() &&
+      layer_tree_host_impl_->pending_tree()) {
     // For some layer types in impl-side painting, the commit is held until
-    // the pending tree is activated.
+    // the pending tree is activated.  It's also possible that the
+    // pending tree has already activated if there was no work to be done.
     TRACE_EVENT_INSTANT0("cc", "HoldCommit", TRACE_EVENT_SCOPE_THREAD);
     completion_event_for_commit_held_on_tree_activation_ =
         commit_completion_event_on_impl_thread_;
@@ -867,7 +890,8 @@ void ThreadProxy::ScheduledActionActivatePendingTreeIfNeeded() {
 
 void ThreadProxy::ScheduledActionBeginOutputSurfaceCreation() {
   DCHECK(IsImplThread());
-  Proxy::MainThread()->PostTask(
+  Proxy::MainThreadTaskRunner()->PostTask(
+      FROM_HERE,
       base::Bind(&ThreadProxy::CreateAndInitializeOutputSurface,
                  main_thread_weak_ptr_));
 }
@@ -875,8 +899,6 @@ void ThreadProxy::ScheduledActionBeginOutputSurfaceCreation() {
 ScheduledActionDrawAndSwapResult
 ThreadProxy::ScheduledActionDrawAndSwapInternal(bool forced_draw) {
   TRACE_EVENT0("cc", "ThreadProxy::ScheduledActionDrawAndSwap");
-
-  base::AutoReset<bool> mark_inside(&inside_draw_, true);
 
   ScheduledActionDrawAndSwapResult result;
   result.did_draw = false;
@@ -894,12 +916,18 @@ ThreadProxy::ScheduledActionDrawAndSwapInternal(bool forced_draw) {
       layer_tree_host_impl_->CurrentFrameTimeTicks();
   base::Time wall_clock_time = layer_tree_host_impl_->CurrentFrameTime();
 
-  if (input_handler_client_on_impl_thread_)
-    input_handler_client_on_impl_thread_->Animate(monotonic_time);
-
-  layer_tree_host_impl_->ActivatePendingTreeIfNeeded();
+  // TODO(enne): This should probably happen post-animate.
+  if (layer_tree_host_impl_->pending_tree()) {
+    layer_tree_host_impl_->ActivatePendingTreeIfNeeded();
+    if (layer_tree_host_impl_->pending_tree())
+      layer_tree_host_impl_->pending_tree()->UpdateDrawProperties();
+  }
   layer_tree_host_impl_->Animate(monotonic_time, wall_clock_time);
   layer_tree_host_impl_->UpdateBackgroundAnimateTicking(false);
+
+  base::TimeTicks start_time = base::TimeTicks::HighResNow();
+  base::TimeDelta draw_duration_estimate = DrawDurationEstimate();
+  base::AutoReset<bool> mark_inside(&inside_draw_, true);
 
   // This method is called on a forced draw, regardless of whether we are able
   // to produce a frame, as the calling site on main thread is blocked until its
@@ -912,16 +940,20 @@ ThreadProxy::ScheduledActionDrawAndSwapInternal(bool forced_draw) {
   // DrawLayers() depends on the result of PrepareToDraw(), it is guarded on
   // CanDraw() as well.
 
-  // If it is a forced draw, make sure we do a draw and swap.
-  gfx::Rect readback_rect;
-  if (readback_request_on_impl_thread_)
-    readback_rect = readback_request_on_impl_thread_->rect;
+  bool drawing_for_readback = !!readback_request_on_impl_thread_;
+  bool can_do_readback = layer_tree_host_impl_->renderer()->CanReadPixels();
 
   LayerTreeHostImpl::FrameData frame;
   bool draw_frame = false;
   bool start_ready_animations = true;
 
-  if (layer_tree_host_impl_->CanDraw()) {
+  if (layer_tree_host_impl_->CanDraw() &&
+      (!drawing_for_readback || can_do_readback)) {
+    // If it is for a readback, make sure we draw the portion being read back.
+    gfx::Rect readback_rect;
+    if (drawing_for_readback)
+      readback_rect = readback_request_on_impl_thread_->rect;
+
     // Do not start animations if we skip drawing the frame to avoid
     // checkerboarding.
     if (layer_tree_host_impl_->PrepareToDraw(&frame, readback_rect) ||
@@ -934,22 +966,12 @@ ThreadProxy::ScheduledActionDrawAndSwapInternal(bool forced_draw) {
   if (draw_frame) {
     layer_tree_host_impl_->DrawLayers(
         &frame,
-        scheduler_on_impl_thread_->LastVSyncTime());
+        scheduler_on_impl_thread_->LastBeginFrameOnImplThreadTime());
     result.did_draw = true;
   }
   layer_tree_host_impl_->DidDrawAllLayers(frame);
 
   layer_tree_host_impl_->UpdateAnimationState(start_ready_animations);
-
-  // Check for tree activation.
-  if (completion_event_for_commit_held_on_tree_activation_ &&
-      !layer_tree_host_impl_->pending_tree()) {
-    TRACE_EVENT_INSTANT0("cc", "ReleaseCommitbyActivation",
-                         TRACE_EVENT_SCOPE_THREAD);
-    DCHECK(layer_tree_host_impl_->settings().impl_side_painting);
-    completion_event_for_commit_held_on_tree_activation_->Signal();
-    completion_event_for_commit_held_on_tree_activation_ = NULL;
-  }
 
   // Check for a pending CompositeAndReadback.
   if (readback_request_on_impl_thread_) {
@@ -972,14 +994,44 @@ ThreadProxy::ScheduledActionDrawAndSwapInternal(bool forced_draw) {
   // Tell the main thread that the the newly-commited frame was drawn.
   if (next_frame_is_newly_committed_frame_on_impl_thread_) {
     next_frame_is_newly_committed_frame_on_impl_thread_ = false;
-    Proxy::MainThread()->PostTask(
+    Proxy::MainThreadTaskRunner()->PostTask(
+        FROM_HERE,
         base::Bind(&ThreadProxy::DidCommitAndDrawFrame, main_thread_weak_ptr_));
   }
 
-  if (draw_frame)
+  if (draw_frame) {
     CheckOutputSurfaceStatusOnImplThread();
 
-  layer_tree_host_impl_->BeginNextFrame();
+    base::TimeDelta draw_duration = base::TimeTicks::HighResNow() - start_time;
+    draw_duration_history_.InsertSample(draw_duration);
+    base::TimeDelta draw_duration_overestimate;
+    base::TimeDelta draw_duration_underestimate;
+    if (draw_duration > draw_duration_estimate)
+      draw_duration_underestimate = draw_duration - draw_duration_estimate;
+    else
+      draw_duration_overestimate = draw_duration_estimate - draw_duration;
+    UMA_HISTOGRAM_CUSTOM_TIMES("Renderer.DrawDuration",
+                               draw_duration,
+                               base::TimeDelta::FromMilliseconds(1),
+                               base::TimeDelta::FromMilliseconds(100),
+                               50);
+    UMA_HISTOGRAM_CUSTOM_TIMES("Renderer.DrawDurationUnderestimate",
+                               draw_duration_underestimate,
+                               base::TimeDelta::FromMilliseconds(1),
+                               base::TimeDelta::FromMilliseconds(100),
+                               50);
+    UMA_HISTOGRAM_CUSTOM_TIMES("Renderer.DrawDurationOverestimate",
+                               draw_duration_overestimate,
+                               base::TimeDelta::FromMilliseconds(1),
+                               base::TimeDelta::FromMilliseconds(100),
+                               50);
+  }
+
+  // Update the tile state after drawing.  This prevents manage tiles from
+  // being in the critical path for getting things on screen, but still
+  // makes sure that tile state is updated on a semi-regular basis.
+  if (layer_tree_host_impl_->settings().impl_side_painting)
+    layer_tree_host_impl_->ManageTiles();
 
   return result;
 }
@@ -998,7 +1050,8 @@ void ThreadProxy::AcquireLayerTextures() {
   TRACE_EVENT0("cc", "ThreadProxy::AcquireLayerTextures");
   DebugScopedSetMainThreadBlocked main_thread_blocked(this);
   CompletionEvent completion;
-  Proxy::ImplThread()->PostTask(
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
       base::Bind(&ThreadProxy::AcquireLayerTexturesForMainThreadOnImplThread,
                  impl_thread_weak_ptr_,
                  &completion));
@@ -1037,11 +1090,20 @@ void ThreadProxy::DidAnticipatedDrawTimeChange(base::TimeTicks time) {
   if (current_resource_update_controller_on_impl_thread_)
     current_resource_update_controller_on_impl_thread_
         ->PerformMoreUpdates(time);
+  layer_tree_host_impl_->ResetCurrentFrameTimeForNextFrame();
+}
+
+base::TimeDelta ThreadProxy::DrawDurationEstimate() {
+  base::TimeDelta historical_estimate =
+      draw_duration_history_.Percentile(kDrawDurationEstimationPercentile);
+  base::TimeDelta padding = base::TimeDelta::FromMicroseconds(
+      kDrawDurationEstimatePaddingInMicroseconds);
+  return historical_estimate + padding;
 }
 
 void ThreadProxy::ReadyToFinalizeTextureUpdates() {
   DCHECK(IsImplThread());
-  scheduler_on_impl_thread_->BeginFrameComplete();
+  scheduler_on_impl_thread_->FinishCommit();
 }
 
 void ThreadProxy::DidCommitAndDrawFrame() {
@@ -1076,7 +1138,8 @@ void ThreadProxy::CreateAndInitializeOutputSurface() {
   bool has_initialized_output_surface_on_impl_thread = true;
   {
     CompletionEvent completion;
-    Proxy::ImplThread()->PostTask(
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
         base::Bind(&ThreadProxy::HasInitializedOutputSurfaceOnImplThread,
                    impl_thread_weak_ptr_,
                    &completion,
@@ -1102,48 +1165,21 @@ void ThreadProxy::HasInitializedOutputSurfaceOnImplThread(
   completion->Signal();
 }
 
-void ThreadProxy::InitializeImplOnImplThread(
-    CompletionEvent* completion,
-    InputHandlerClient* input_handler_client) {
+void ThreadProxy::InitializeImplOnImplThread(CompletionEvent* completion) {
   TRACE_EVENT0("cc", "ThreadProxy::InitializeImplOnImplThread");
   DCHECK(IsImplThread());
   layer_tree_host_impl_ = layer_tree_host_->CreateLayerTreeHostImpl(this);
-  const base::TimeDelta display_refresh_interval =
-      base::TimeDelta::FromMicroseconds(
-          base::Time::kMicrosecondsPerSecond /
-          layer_tree_host_->settings().refresh_rate);
-  scoped_ptr<FrameRateController> frame_rate_controller;
-  if (render_vsync_enabled_) {
-    if (render_vsync_notification_enabled_) {
-      frame_rate_controller.reset(
-          new FrameRateController(VSyncTimeSource::Create(
-              this,
-              synchronously_disable_vsync_ ?
-                  VSyncTimeSource::DISABLE_SYNCHRONOUSLY :
-                  VSyncTimeSource::DISABLE_ON_NEXT_TICK)));
-    } else {
-      frame_rate_controller.reset(
-          new FrameRateController(DelayBasedTimeSource::Create(
-              display_refresh_interval, Proxy::ImplThread())));
-    }
-  } else {
-    frame_rate_controller.reset(new FrameRateController(Proxy::ImplThread()));
-  }
   const LayerTreeSettings& settings = layer_tree_host_->settings();
   SchedulerSettings scheduler_settings;
   scheduler_settings.impl_side_painting = settings.impl_side_painting;
   scheduler_settings.timeout_and_draw_when_animation_checkerboards =
       settings.timeout_and_draw_when_animation_checkerboards;
-  scheduler_on_impl_thread_ = Scheduler::Create(this,
-                                                frame_rate_controller.Pass(),
-                                                scheduler_settings);
+  scheduler_settings.using_synchronous_renderer_compositor =
+      settings.using_synchronous_renderer_compositor;
+  scheduler_settings.throttle_frame_production =
+      settings.throttle_frame_production;
+  scheduler_on_impl_thread_ = Scheduler::Create(this, scheduler_settings);
   scheduler_on_impl_thread_->SetVisible(layer_tree_host_impl_->visible());
-
-  input_handler_client_on_impl_thread_.reset(input_handler_client);
-  if (input_handler_client_on_impl_thread_) {
-    input_handler_client_on_impl_thread_->BindToHandler(
-        layer_tree_host_impl_.get());
-  }
 
   impl_thread_weak_ptr_ = weak_factory_on_impl_thread_.GetWeakPtr();
   completion->Signal();
@@ -1166,34 +1202,31 @@ void ThreadProxy::InitializeOutputSurfaceOnImplThread(
 
   *success = layer_tree_host_impl_->InitializeRenderer(output_surface.Pass());
 
-  if (offscreen_context_provider)
-    offscreen_context_provider->BindToCurrentThread();
-
   if (*success) {
     *capabilities = layer_tree_host_impl_->GetRendererCapabilities();
-    scheduler_on_impl_thread_->SetSwapBuffersCompleteSupported(
-        capabilities->using_swap_complete_callback);
-
-    OutputSurface* output_surface_ptr = layer_tree_host_impl_->output_surface();
-    DCHECK(output_surface_ptr);
-    int max_frames_pending =
-        output_surface_ptr->capabilities().max_frames_pending;
-    if (max_frames_pending <= 0)
-      max_frames_pending = FrameRateController::DEFAULT_MAX_FRAMES_PENDING;
-    if (output_surface_ptr->capabilities().has_parent_compositor)
-      max_frames_pending = 1;
-
-    scheduler_on_impl_thread_->SetMaxFramesPending(max_frames_pending);
-
-    layer_tree_host_impl_->resource_provider()->
-        set_offscreen_context_provider(offscreen_context_provider);
-
     scheduler_on_impl_thread_->DidCreateAndInitializeOutputSurface();
-  } else if (offscreen_context_provider) {
-    offscreen_context_provider->VerifyContexts();
   }
 
+  DidTryInitializeRendererOnImplThread(*success, offscreen_context_provider);
+
   completion->Signal();
+}
+
+void ThreadProxy::DidTryInitializeRendererOnImplThread(
+    bool success,
+    scoped_refptr<ContextProvider> offscreen_context_provider) {
+  DCHECK(IsImplThread());
+  DCHECK(!inside_draw_);
+
+  if (offscreen_context_provider.get())
+    offscreen_context_provider->BindToCurrentThread();
+
+  if (success) {
+    layer_tree_host_impl_->resource_provider()->
+        set_offscreen_context_provider(offscreen_context_provider);
+  } else if (offscreen_context_provider.get()) {
+    offscreen_context_provider->VerifyContexts();
+  }
 }
 
 void ThreadProxy::FinishGLOnImplThread(CompletionEvent* completion) {
@@ -1209,12 +1242,10 @@ void ThreadProxy::LayerTreeHostClosedOnImplThread(CompletionEvent* completion) {
   DCHECK(IsImplThread());
   layer_tree_host_->DeleteContentsTexturesOnImplThread(
       layer_tree_host_impl_->resource_provider());
-  layer_tree_host_impl_->EnableVSyncNotification(false);
-  input_handler_client_on_impl_thread_.reset();
-  layer_tree_host_impl_.reset();
+  layer_tree_host_impl_->SetNeedsBeginFrame(false);
   scheduler_on_impl_thread_.reset();
+  layer_tree_host_impl_.reset();
   weak_factory_on_impl_thread_.InvalidateWeakPtrs();
-  vsync_client_ = NULL;
   completion->Signal();
 }
 
@@ -1234,10 +1265,12 @@ scoped_ptr<base::Value> ThreadProxy::AsValue() const {
   {
     DebugScopedSetMainThreadBlocked main_thread_blocked(
         const_cast<ThreadProxy*>(this));
-    Proxy::ImplThread()->PostTask(base::Bind(&ThreadProxy::AsValueOnImplThread,
-                                             impl_thread_weak_ptr_,
-                                             &completion,
-                                             state.get()));
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&ThreadProxy::AsValueOnImplThread,
+                   impl_thread_weak_ptr_,
+                   &completion,
+                   state.get()));
     completion.Wait();
   }
   return state.PassAs<base::Value>();
@@ -1255,7 +1288,8 @@ bool ThreadProxy::CommitPendingForTesting() {
   CommitPendingRequest commit_pending_request;
   {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
-    Proxy::ImplThread()->PostTask(
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
         base::Bind(&ThreadProxy::CommitPendingOnImplThreadForTesting,
                    impl_thread_weak_ptr_,
                    &commit_pending_request));
@@ -1274,13 +1308,38 @@ void ThreadProxy::CommitPendingOnImplThreadForTesting(
   request->completion.Signal();
 }
 
+std::string ThreadProxy::SchedulerStateAsStringForTesting() {
+  if (IsImplThread())
+    return scheduler_on_impl_thread_->StateAsStringForTesting();
+
+  SchedulerStateRequest scheduler_state_request;
+  {
+    DebugScopedSetMainThreadBlocked main_thread_blocked(this);
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&ThreadProxy::SchedulerStateAsStringOnImplThreadForTesting,
+                   impl_thread_weak_ptr_,
+                   &scheduler_state_request));
+    scheduler_state_request.completion.Wait();
+  }
+  return scheduler_state_request.state;
+}
+
+void ThreadProxy::SchedulerStateAsStringOnImplThreadForTesting(
+    SchedulerStateRequest* request) {
+  DCHECK(IsImplThread());
+  request->state = scheduler_on_impl_thread_->StateAsStringForTesting();
+  request->completion.Signal();
+}
+
 skia::RefPtr<SkPicture> ThreadProxy::CapturePicture() {
   DCHECK(IsMainThread());
   CompletionEvent completion;
   skia::RefPtr<SkPicture> picture;
   {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
-    Proxy::ImplThread()->PostTask(
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
         base::Bind(&ThreadProxy::CapturePictureOnImplThread,
                    impl_thread_weak_ptr_,
                    &completion,
@@ -1303,19 +1362,20 @@ void ThreadProxy::RenewTreePriority() {
       layer_tree_host_impl_->CurrentlyScrollingLayer() ||
       layer_tree_host_impl_->page_scale_animation_active();
 
+  base::TimeTicks now = layer_tree_host_impl_->CurrentPhysicalTimeTicks();
+
   // Update expiration time if smoothness currently takes priority.
   if (smoothness_takes_priority) {
     smoothness_takes_priority_expiration_time_ =
-        base::TimeTicks::Now() +
-        base::TimeDelta::FromMilliseconds(
-            kSmoothnessTakesPriorityExpirationDelay * 1000);
+        now + base::TimeDelta::FromMilliseconds(
+                  kSmoothnessTakesPriorityExpirationDelay * 1000);
   }
 
   // We use the same priority for both trees by default.
   TreePriority priority = SAME_PRIORITY_FOR_BOTH_TREES;
 
   // Smoothness takes priority if expiration time is in the future.
-  if (smoothness_takes_priority_expiration_time_ > base::TimeTicks::Now())
+  if (smoothness_takes_priority_expiration_time_ > now)
     priority = SMOOTHNESS_TAKES_PRIORITY;
 
   // New content always takes priority when the active tree has
@@ -1334,8 +1394,7 @@ void ThreadProxy::RenewTreePriority() {
         UpdateSmoothnessTakesPriority(priority == SMOOTHNESS_TAKES_PRIORITY);
   }
 
-  base::TimeDelta delay =
-      smoothness_takes_priority_expiration_time_ - base::TimeTicks::Now();
+  base::TimeDelta delay = smoothness_takes_priority_expiration_time_ - now;
 
   // Need to make sure a delayed task is posted when we have smoothness
   // takes priority expiration time in the future.
@@ -1344,7 +1403,8 @@ void ThreadProxy::RenewTreePriority() {
   if (renew_tree_priority_on_impl_thread_pending_)
     return;
 
-  Proxy::ImplThread()->PostDelayedTask(
+  Proxy::ImplThreadTaskRunner()->PostDelayedTask(
+      FROM_HERE,
       base::Bind(&ThreadProxy::RenewTreePriorityOnImplThread,
                  weak_factory_on_impl_thread_.GetWeakPtr()),
       delay);
@@ -1360,22 +1420,28 @@ void ThreadProxy::RenewTreePriorityOnImplThread() {
 }
 
 void ThreadProxy::RequestScrollbarAnimationOnImplThread(base::TimeDelta delay) {
-  Proxy::ImplThread()->PostDelayedTask(
+  Proxy::ImplThreadTaskRunner()->PostDelayedTask(
+      FROM_HERE,
       base::Bind(&ThreadProxy::StartScrollbarAnimationOnImplThread,
                  impl_thread_weak_ptr_),
       delay);
 }
 
 void ThreadProxy::StartScrollbarAnimationOnImplThread() {
-  layer_tree_host_impl_->StartScrollbarAnimation(
-      layer_tree_host_impl_->CurrentFrameTimeTicks());
+  layer_tree_host_impl_->StartScrollbarAnimation();
 }
 
-void ThreadProxy::DidReceiveLastInputEventForVSync(
-    base::TimeTicks frame_time) {
-  if (render_vsync_notification_enabled_) {
-    TRACE_EVENT0("cc", "ThreadProxy::DidReceiveLastInputEventForVSync");
-    DidVSync(frame_time);
+void ThreadProxy::DidActivatePendingTree() {
+  DCHECK(IsImplThread());
+  TRACE_EVENT0("cc", "ThreadProxy::DidActivatePendingTreeOnImplThread");
+
+  if (completion_event_for_commit_held_on_tree_activation_ &&
+      !layer_tree_host_impl_->pending_tree()) {
+    TRACE_EVENT_INSTANT0("cc", "ReleaseCommitbyActivation",
+                         TRACE_EVENT_SCOPE_THREAD);
+    DCHECK(layer_tree_host_impl_->settings().impl_side_painting);
+    completion_event_for_commit_held_on_tree_activation_->Signal();
+    completion_event_for_commit_held_on_tree_activation_ = NULL;
   }
 }
 

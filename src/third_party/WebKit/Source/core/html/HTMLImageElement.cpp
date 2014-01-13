@@ -24,16 +24,13 @@
 #include "core/html/HTMLImageElement.h"
 
 #include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
 #include "HTMLNames.h"
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/EventNames.h"
-#include "core/html/HTMLDocument.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/cache/CachedImage.h"
-#include "core/page/FrameView.h"
 #include "core/rendering/RenderImage.h"
 
 using namespace std;
@@ -141,12 +138,12 @@ String HTMLImageElement::altText() const
     return alt;
 }
 
-RenderObject* HTMLImageElement::createRenderer(RenderArena* arena, RenderStyle* style)
+RenderObject* HTMLImageElement::createRenderer(RenderStyle* style)
 {
     if (style->hasContent())
         return RenderObject::createObject(this, style);
 
-    RenderImage* image = new (arena) RenderImage(this);
+    RenderImage* image = new (document()->renderArena()) RenderImage(this);
     image->setImageResource(RenderImageResource::create());
     return image;
 }
@@ -159,9 +156,9 @@ bool HTMLImageElement::canStartSelection() const
     return false;
 }
 
-void HTMLImageElement::attach()
+void HTMLImageElement::attach(const AttachContext& context)
 {
-    HTMLElement::attach();
+    HTMLElement::attach(context);
 
     if (renderer() && renderer()->isImage() && !m_imageLoader.hasPendingBeforeLoadEvent()) {
         RenderImage* renderImage = toRenderImage(renderer());
@@ -179,15 +176,11 @@ void HTMLImageElement::attach()
 
 Node::InsertionNotificationRequest HTMLImageElement::insertedInto(ContainerNode* insertionPoint)
 {
+    // m_form can be non-null if it was set in constructor.
     if (!m_form) {
-        // m_form can be non-null if it was set in constructor.
-        for (ContainerNode* ancestor = parentNode(); ancestor; ancestor = ancestor->parentNode()) {
-            if (ancestor->hasTagName(formTag)) {
-                m_form = static_cast<HTMLFormElement*>(ancestor);
-                m_form->registerImgElement(this);
-                break;
-            }
-        }
+        m_form = findFormAncestor();
+        if (m_form)
+            m_form->registerImgElement(this);
     }
 
     // If we have been inserted from a renderer-less document,

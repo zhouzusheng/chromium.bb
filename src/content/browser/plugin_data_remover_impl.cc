@@ -9,14 +9,14 @@
 #include "base/bind.h"
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner_helpers.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/utf_string_conversions.h"
 #include "base/version.h"
 #include "content/browser/plugin_process_host.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/renderer_host/pepper/pepper_flash_file_message_filter.h"
 #include "content/common/child_process_host_impl.h"
-#include "content/common/plugin_messages.h"
+#include "content/common/plugin_process_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/pepper_plugin_info.h"
@@ -69,8 +69,7 @@ class PluginDataRemoverImpl::Context
         begin_time_(begin_time),
         is_removing_(false),
         browser_context_path_(browser_context->GetPath()),
-        resource_context_(browser_context->GetResourceContext()),
-        channel_(NULL) {
+        resource_context_(browser_context->GetResourceContext()) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   }
 
@@ -177,7 +176,7 @@ class PluginDataRemoverImpl::Context
   // IPC::Listener methods.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(Context, message)
-      IPC_MESSAGE_HANDLER(PluginHostMsg_ClearSiteDataResult,
+      IPC_MESSAGE_HANDLER(PluginProcessHostMsg_ClearSiteDataResult,
                           OnClearSiteDataResult)
       IPC_MESSAGE_HANDLER(PpapiHostMsg_ClearSiteDataResult,
                           OnPpapiClearSiteDataResult)
@@ -243,7 +242,8 @@ class PluginDataRemoverImpl::Context
     if (is_ppapi) {
       msg = CreatePpapiClearSiteDataMsg(max_age);
     } else {
-      msg = new PluginMsg_ClearSiteData(std::string(), kClearAllData, max_age);
+      msg = new PluginProcessMsg_ClearSiteData(
+          std::string(), kClearAllData, max_age);
     }
     if (!channel_->Send(msg)) {
       NOTREACHED() << "Couldn't send ClearSiteData message";
@@ -253,13 +253,13 @@ class PluginDataRemoverImpl::Context
   }
 
   // Handles the PpapiHostMsg_ClearSiteDataResult message by delegating to the
-  // PluginHostMsg_ClearSiteDataResult handler.
+  // PluginProcessHostMsg_ClearSiteDataResult handler.
   void OnPpapiClearSiteDataResult(uint32 request_id, bool success) {
     DCHECK_EQ(0u, request_id);
     OnClearSiteDataResult(success);
   }
 
-  // Handles the PluginHostMsg_ClearSiteDataResult message.
+  // Handles the PluginProcessHostMsg_ClearSiteDataResult message.
   void OnClearSiteDataResult(bool success) {
     LOG_IF(ERROR, !success) << "ClearSiteData returned error";
     UMA_HISTOGRAM_TIMES("ClearPluginData.time",

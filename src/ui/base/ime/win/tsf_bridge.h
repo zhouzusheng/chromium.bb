@@ -44,16 +44,27 @@ class UI_EXPORT TSFBridge {
   static TSFBridge* ReplaceForTesting(TSFBridge* bridge);
 
   // Destroys the thread local instance.
-  virtual void Shutdown() = 0;
+  static void Shutdown();
 
   // Handles TextInputTypeChanged event. RWHVW is responsible for calling this
   // handler whenever renderer's input text type is changed. Does nothing
   // unless |client| is focused.
-  virtual void OnTextInputTypeChanged(TextInputClient* client) = 0;
+  virtual void OnTextInputTypeChanged(const TextInputClient* client) = 0;
+
+  // Sends an event to TSF manager that the text layout should be updated.
+  virtual void OnTextLayoutChanged() = 0;
 
   // Cancels the ongoing composition if exists.
+  // Returns true if there is no composition.
+  // Returns false if an edit session is on-going.
   // Returns false if an error occures.
   virtual bool CancelComposition() = 0;
+
+  // Confirms the ongoing composition if exists.
+  // Returns true if there is no composition.
+  // Returns false if an edit session is on-going.
+  // Returns false if an error occures.
+  virtual bool ConfirmComposition() = 0;
 
   // Sets currently focused TextInputClient.
   // Caller must free |client|.

@@ -56,7 +56,12 @@ class ConnectionRequest;
 
 extern const char LOCAL_PORT_TYPE[];
 extern const char STUN_PORT_TYPE[];
+extern const char PRFLX_PORT_TYPE[];
 extern const char RELAY_PORT_TYPE[];
+
+extern const char UDP_PROTOCOL_NAME[];
+extern const char TCP_PROTOCOL_NAME[];
+extern const char SSLTCP_PROTOCOL_NAME[];
 
 // The length of time we wait before timing out readability on a connection.
 const uint32 CONNECTION_READ_TIMEOUT = 30 * 1000;   // 30 seconds
@@ -114,7 +119,7 @@ class Port : public PortInterface, public talk_base::MessageHandler,
        const talk_base::IPAddress& ip,
        const std::string& username_fragment, const std::string& password);
   Port(talk_base::Thread* thread, const std::string& type,
-       const uint32 preference, talk_base::PacketSocketFactory* factory,
+       talk_base::PacketSocketFactory* factory,
        talk_base::Network* network, const talk_base::IPAddress& ip,
        int min_port, int max_port, const std::string& username_fragment,
        const std::string& password);
@@ -160,12 +165,6 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   int component() const { return component_; }
   void set_component(int component) { component_ = component; }
 
-
-  uint32 type_preference() const { return type_preference_; }
-  void set_type_preference(uint32 preference) {
-    type_preference_ = preference;
-  }
-
   bool send_retransmit_count_attribute() const {
     return send_retransmit_count_attribute_;
   }
@@ -201,24 +200,24 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   const std::string username_fragment() const;
   const std::string& password() const { return password_; }
 
-  // PrepareAddress will attempt to get an address for this port that other
-  // clients can send to.  It may take some time before the address is read.
-  // Once it is ready, we will send SignalAddressReady.  If errors are
-  // preventing the port from getting an address, it may send
-  // SignalAddressError.
-  sigslot::signal1<Port*> SignalAddressReady;
-  sigslot::signal1<Port*> SignalAddressError;
-
   // Fired when candidates are discovered by the port. When all candidates
   // are discovered that belong to port SignalAddressReady is fired.
-  // TODO(mallinath) - Change SignalAddressError to SignalPortError.
-  // TODO(mallinath) - Change SignalAddressReady to SignalPortReady.
   sigslot::signal2<Port*, const Candidate&> SignalCandidateReady;
 
   // Provides all of the above information in one handy object.
   virtual const std::vector<Candidate>& Candidates() const {
     return candidates_;
   }
+
+  // SignalPortComplete is sent when port completes the task of candidates
+  // allocation.
+  sigslot::signal1<Port*> SignalPortComplete;
+  // This signal sent when port fails to allocate candidates and this port
+  // can't be used in establishing the connections. When port is in shared mode
+  // and port fails to allocate one of the candidates, port shouldn't send
+  // this signal as other candidates might be usefull in establishing the
+  // connection.
+  sigslot::signal1<Port*> SignalPortError;
 
   // Returns a map containing all of the connections of this port, keyed by the
   // remote address.
@@ -292,6 +291,16 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   // Called when the socket is currently able to send.
   void OnReadyToSend();
 
+  // Called when the Connection discovers a local peer reflexive candidate.
+  // Returns the index of the new local candidate.
+  size_t AddPrflxCandidate(const Candidate& local);
+
+  // Returns if RFC 5245 ICE protocol is used.
+  bool IsStandardIce() const;
+
+  // Returns if Google ICE protocol is used.
+  bool IsGoogleIce() const;
+
  protected:
   void set_type(const std::string& type) { type_ = type; }
   // Fills in the local address of the port.
@@ -330,14 +339,9 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   // Checks if this port is useless, and hence, should be destroyed.
   void CheckTimeout();
 
-  std::string ComputeFoundation(const std::string& type,
-      const std::string& protocol,
-      const talk_base::SocketAddress& base_address) const;
-
   talk_base::Thread* thread_;
   talk_base::PacketSocketFactory* factory_;
   std::string type_;
-  uint32 type_preference_;
   bool send_retransmit_count_attribute_;
   talk_base::Network* network_;
   talk_base::IPAddress ip_;
@@ -408,6 +412,7 @@ class Connection : public talk_base::MessageHandler,
   };
 
   ReadState read_state() const { return read_state_; }
+  bool readable() const { return read_state_ == STATE_READABLE; }
 
   enum WriteState {
     STATE_WRITABLE          = 0,  // we have received ping responses recently
@@ -417,6 +422,7 @@ class Connection : public talk_base::MessageHandler,
   };
 
   WriteState write_state() const { return write_state_; }
+  bool writable() const { return write_state_ == STATE_WRITABLE; }
 
   // Determines whether the connection has finished connecting.  This can only
   // be false for TCP connections.
@@ -485,6 +491,7 @@ class Connection : public talk_base::MessageHandler,
 
   // Debugging description of this connection
   std::string ToString() const;
+  std::string ToSensitiveString() const;
 
   bool reported() const { return reported_; }
   void set_reported(bool reported) { reported_ = reported;}
@@ -551,6 +558,9 @@ class Connection : public talk_base::MessageHandler,
   talk_base::RateTracker send_rate_tracker_;
 
  private:
+  void MaybeAddPrflxCandidate(ConnectionRequest* request,
+                              StunMessage* response);
+
   bool reported_;
   State state_;
 

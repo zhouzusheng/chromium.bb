@@ -44,10 +44,6 @@ namespace internal {
 
 class Descriptor BASE_EMBEDDED {
  public:
-  static int IndexFromValue(Object* value) {
-    return Smi::cast(value)->value();
-  }
-
   MUST_USE_RESULT MaybeObject* KeyToUniqueName() {
     if (!key_->IsUniqueName()) {
       MaybeObject* maybe_result = HEAP->InternalizeString(String::cast(key_));
@@ -63,11 +59,6 @@ class Descriptor BASE_EMBEDDED {
 #ifdef OBJECT_PRINT
   void Print(FILE* out);
 #endif
-
-  void SetEnumerationIndex(int index) {
-    details_ = PropertyDetails(details_.attributes(), details_.type(),
-                               details_.representation(), index);
-  }
 
   void SetSortedKeyIndex(int index) { details_ = details_.set_pointer(index); }
 
@@ -95,10 +86,10 @@ class Descriptor BASE_EMBEDDED {
              PropertyAttributes attributes,
              PropertyType type,
              Representation representation,
-             int index)
+             int field_index = 0)
       : key_(key),
         value_(value),
-        details_(attributes, type, representation, index) { }
+        details_(attributes, type, representation, field_index) { }
 
   friend class DescriptorArray;
 };
@@ -109,10 +100,9 @@ class FieldDescriptor: public Descriptor {
   FieldDescriptor(Name* key,
                   int field_index,
                   PropertyAttributes attributes,
-                  Representation representation,
-                  int index = 0)
-      : Descriptor(key, Smi::FromInt(field_index), attributes,
-                   FIELD, representation, index) {}
+                  Representation representation)
+      : Descriptor(key, Smi::FromInt(0), attributes,
+                   FIELD, representation, field_index) {}
 };
 
 
@@ -120,10 +110,9 @@ class ConstantFunctionDescriptor: public Descriptor {
  public:
   ConstantFunctionDescriptor(Name* key,
                              JSFunction* function,
-                             PropertyAttributes attributes,
-                             int index)
-      : Descriptor(key, function, attributes,
-                   CONSTANT_FUNCTION, Representation::Tagged(), index) {}
+                             PropertyAttributes attributes)
+      : Descriptor(key, function, attributes, CONSTANT_FUNCTION,
+                   Representation::Tagged()) {}
 };
 
 
@@ -131,10 +120,9 @@ class CallbacksDescriptor:  public Descriptor {
  public:
   CallbacksDescriptor(Name* key,
                       Object* foreign,
-                      PropertyAttributes attributes,
-                      int index = 0)
+                      PropertyAttributes attributes)
       : Descriptor(key, foreign, attributes, CALLBACKS,
-                   Representation::Tagged(), index) {}
+                   Representation::Tagged()) {}
 };
 
 
@@ -215,6 +203,8 @@ class LookupResult BASE_EMBEDDED {
   }
 
   bool CanHoldValue(Handle<Object> value) {
+    if (IsNormal()) return true;
+    ASSERT(!IsTransition());
     return value->FitsRepresentation(details_.representation());
   }
 
@@ -268,6 +258,8 @@ class LookupResult BASE_EMBEDDED {
 
   Representation representation() {
     ASSERT(IsFound());
+    ASSERT(!IsTransition());
+    ASSERT(details_.type() != NONEXISTENT);
     return details_.representation();
   }
 
@@ -318,7 +310,6 @@ class LookupResult BASE_EMBEDDED {
 
   bool IsDontDelete() { return details_.IsDontDelete(); }
   bool IsDontEnum() { return details_.IsDontEnum(); }
-  bool IsDeleted() { return details_.IsDeleted(); }
   bool IsFound() { return lookup_type_ != NOT_FOUND; }
   bool IsTransition() { return lookup_type_ == TRANSITION_TYPE; }
   bool IsHandler() { return lookup_type_ == HANDLER_TYPE; }
@@ -355,12 +346,12 @@ class LookupResult BASE_EMBEDDED {
   Object* GetLazyValue() {
     switch (type()) {
       case FIELD:
-        return holder()->FastPropertyAt(GetFieldIndex().field_index());
+        return holder()->RawFastPropertyAt(GetFieldIndex().field_index());
       case NORMAL: {
         Object* value;
         value = holder()->property_dictionary()->ValueAt(GetDictionaryEntry());
         if (holder()->IsGlobalObject()) {
-          value = JSGlobalPropertyCell::cast(value)->value();
+          value = PropertyCell::cast(value)->value();
         }
         return value;
       }
@@ -401,6 +392,11 @@ class LookupResult BASE_EMBEDDED {
     return IsTransition() && GetTransitionDetails(map).type() == FIELD;
   }
 
+  bool IsTransitionToConstantFunction(Map* map) {
+    return IsTransition() &&
+        GetTransitionDetails(map).type() == CONSTANT_FUNCTION;
+  }
+
   Map* GetTransitionMap() {
     ASSERT(IsTransition());
     return Map::cast(GetValue());
@@ -424,14 +420,12 @@ class LookupResult BASE_EMBEDDED {
   PropertyIndex GetFieldIndex() {
     ASSERT(lookup_type_ == DESCRIPTOR_TYPE);
     ASSERT(IsField());
-    return PropertyIndex::NewFieldIndex(
-        Descriptor::IndexFromValue(GetValue()));
+    return PropertyIndex::NewFieldIndex(GetFieldIndexFromMap(holder()->map()));
   }
 
   int GetLocalFieldIndexFromMap(Map* map) {
     ASSERT(IsField());
-    return Descriptor::IndexFromValue(GetValueFromMap(map)) -
-        map->inobject_properties();
+    return GetFieldIndexFromMap(map) - map->inobject_properties();
   }
 
   int GetDictionaryEntry() {
@@ -471,6 +465,12 @@ class LookupResult BASE_EMBEDDED {
     ASSERT(lookup_type_ == DESCRIPTOR_TYPE);
     ASSERT(number_ < map->NumberOfOwnDescriptors());
     return map->instance_descriptors()->GetValue(number_);
+  }
+
+  int GetFieldIndexFromMap(Map* map) const {
+    ASSERT(lookup_type_ == DESCRIPTOR_TYPE);
+    ASSERT(number_ < map->NumberOfOwnDescriptors());
+    return map->instance_descriptors()->GetFieldIndex(number_);
   }
 
   void Iterate(ObjectVisitor* visitor);

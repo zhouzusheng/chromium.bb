@@ -20,6 +20,7 @@
 #include "net/quic/quic_stream_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/spdy/spdy_session_key.h"
 #include "net/ssl/ssl_config_service.h"
 
 namespace net {
@@ -126,7 +127,9 @@ class HttpStreamFactoryImpl::Job {
   };
 
   void OnStreamReadyCallback();
-  void OnSpdySessionReadyCallback();
+  void OnWebSocketStreamReadyCallback();
+  // This callback function is called when a new SPDY session is created.
+  void OnNewSpdySessionReadyCallback();
   void OnStreamFailedCallback(int result);
   void OnCertificateErrorCallback(int result, const SSLInfo& ssl_info);
   void OnNeedsProxyAuthCallback(const HttpResponseInfo& response_info,
@@ -177,7 +180,7 @@ class HttpStreamFactoryImpl::Job {
   // After calling, the caller can use ssl_info_.
   void GetSSLInfo();
 
-  HostPortProxyPair GetSpdySessionKey() const;
+  SpdySessionKey GetSpdySessionKey() const;
 
   // Returns true if the current request can use an existing spdy session.
   bool CanUseExistingSpdySession() const;
@@ -220,7 +223,7 @@ class HttpStreamFactoryImpl::Job {
   // be found.  Will return ERR_SPDY_SESSION_ALREADY_EXISTS if such a
   // session is found, and OK otherwise.
   static int OnHostResolution(SpdySessionPool* spdy_session_pool,
-                              const HostPortProxyPair& spdy_session_key,
+                              const SpdySessionKey& spdy_session_key,
                               const AddressList& addresses,
                               const BoundNetLog& net_log);
 
@@ -291,6 +294,7 @@ class HttpStreamFactoryImpl::Job {
   bool establishing_tunnel_;
 
   scoped_ptr<HttpStream> stream_;
+  scoped_ptr<WebSocketStreamBase> websocket_stream_;
 
   // True if we negotiated NPN.
   bool was_npn_negotiated_;

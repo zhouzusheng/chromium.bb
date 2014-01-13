@@ -30,9 +30,10 @@
  */
 
 [
+    GlobalContext=WindowAndWorker,
     ActiveDOMObject,
     Constructor,
-    CallWith=ScriptExecutionContext,
+    ConstructorCallWith=ScriptExecutionContext,
     EventTarget
 ] interface FileReader {
     // ready states

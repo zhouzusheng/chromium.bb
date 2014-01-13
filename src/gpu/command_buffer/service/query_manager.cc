@@ -10,10 +10,10 @@
 #include "base/shared_memory.h"
 #include "base/time.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
+#include "gpu/command_buffer/service/async_pixel_transfer_manager.h"
 #include "gpu/command_buffer/service/error_state.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
-#include "ui/gl/async_pixel_transfer_delegate.h"
 
 namespace gpu {
 namespace gles2 {
@@ -183,7 +183,7 @@ class AsyncPixelTransfersCompletedQuery
   virtual ~AsyncPixelTransfersCompletedQuery();
 
   static void MarkAsCompletedThreadSafe(
-      uint32 submit_count, const gfx::AsyncMemoryParams& mem_params) {
+      uint32 submit_count, const AsyncMemoryParams& mem_params) {
     DCHECK(mem_params.shared_memory);
     DCHECK(mem_params.shared_memory->memory());
     void *data = static_cast<int8*>(mem_params.shared_memory->memory()) +
@@ -207,7 +207,7 @@ bool AsyncPixelTransfersCompletedQuery::Begin() {
 }
 
 bool AsyncPixelTransfersCompletedQuery::End(uint32 submit_count) {
-  gfx::AsyncMemoryParams mem_params;
+  AsyncMemoryParams mem_params;
   // Get the real shared memory since it might need to be duped to prevent
   // use-after-free of the memory.
   Buffer buffer = manager()->decoder()->GetSharedMemoryBuffer(shm_id());
@@ -221,7 +221,7 @@ bool AsyncPixelTransfersCompletedQuery::End(uint32 submit_count) {
   // Ask AsyncPixelTransferDelegate to run completion callback after all
   // previous async transfers are done. No guarantee that callback is run
   // on the current thread.
-  manager()->decoder()->GetAsyncPixelTransferDelegate()->AsyncNotifyCompletion(
+  manager()->decoder()->GetAsyncPixelTransferManager()->AsyncNotifyCompletion(
       mem_params,
       base::Bind(AsyncPixelTransfersCompletedQuery::MarkAsCompletedThreadSafe,
                  submit_count));
@@ -325,7 +325,7 @@ void QueryManager::Destroy(bool have_context) {
   pending_queries_.clear();
   pending_transfer_queries_.clear();
   while (!queries_.empty()) {
-    Query* query = queries_.begin()->second;
+    Query* query = queries_.begin()->second.get();
     query->Destroy(have_context);
     queries_.erase(queries_.begin());
   }
@@ -372,7 +372,7 @@ QueryManager::Query* QueryManager::GetQuery(
 void QueryManager::RemoveQuery(GLuint client_id) {
   QueryMap::iterator it = queries_.find(client_id);
   if (it != queries_.end()) {
-    Query* query = it->second;
+    Query* query = it->second.get();
     RemovePendingQuery(query);
     query->MarkAsDeleted();
     queries_.erase(it);

@@ -27,12 +27,11 @@
 #include "core/html/parser/BackgroundHTMLParser.h"
 
 #include "core/html/parser/HTMLDocumentParser.h"
-#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLParserThread.h"
 #include "core/html/parser/HTMLTokenizer.h"
 #include "core/html/parser/XSSAuditor.h"
-#include <wtf/MainThread.h>
-#include <wtf/text/TextPosition.h>
+#include "wtf/MainThread.h"
+#include "wtf/text/TextPosition.h"
 
 namespace WebCore {
 
@@ -145,7 +144,7 @@ void BackgroundHTMLParser::pumpTokenizer()
 
     while (true) {
         m_sourceTracker.start(m_input.current(), m_tokenizer.get(), *m_token);
-        if (!m_tokenizer->nextToken(m_input.current(), *m_token.get())) {
+        if (!m_tokenizer->nextToken(m_input.current(), *m_token)) {
             // We've reached the end of our current input.
             sendTokensToMainThread();
             break;
@@ -162,7 +161,7 @@ void BackgroundHTMLParser::pumpTokenizer()
 
             CompactHTMLToken token(m_token.get(), TextPosition(m_input.current().currentLine(), m_input.current().currentColumn()));
 
-            m_preloadScanner->scan(token, m_pendingPreloads);
+            m_preloadScanner->scan(token, m_input.current(), m_pendingPreloads);
 
             m_pendingTokens->append(token);
         }

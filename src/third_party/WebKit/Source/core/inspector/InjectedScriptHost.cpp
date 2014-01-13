@@ -31,29 +31,19 @@
 #include "config.h"
 #include "core/inspector/InjectedScriptHost.h"
 
-#include "InspectorFrontend.h"
-#include "core/dom/Element.h"
-#include "core/html/HTMLFrameOwnerElement.h"
-#include "core/inspector/InjectedScript.h"
 #include "core/inspector/InspectorAgent.h"
-#include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorConsoleAgent.h"
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorDOMStorageAgent.h"
 #include "core/inspector/InspectorDatabaseAgent.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
-#include "core/inspector/InspectorValues.h"
-#include "core/loader/FrameLoader.h"
-#include "core/page/Frame.h"
+#include "core/inspector/InstrumentingAgents.h"
+#include "core/platform/JSONValues.h"
 #include "core/platform/Pasteboard.h"
-#include "core/storage/Storage.h"
-#include "modules/webdatabase/Database.h"
 
-
-#include "core/editing/markup.h"
-
-#include <wtf/RefPtr.h>
-#include <wtf/StdLibExtras.h>
+#include "wtf/RefPtr.h"
+#include "wtf/StdLibExtras.h"
+#include "wtf/text/StringBuilder.h"
 
 using namespace std;
 
@@ -65,12 +55,10 @@ PassRefPtr<InjectedScriptHost> InjectedScriptHost::create()
 }
 
 InjectedScriptHost::InjectedScriptHost()
-    : m_inspectorAgent(0)
-    , m_consoleAgent(0)
-    , m_databaseAgent(0)
-    , m_domStorageAgent(0)
-    , m_domAgent(0)
+    : m_instrumentingAgents(0)
+    , m_scriptDebugServer(0)
 {
+    ScriptWrappable::init(this);
     m_defaultInspectableObject = adoptPtr(new InspectableObject());
 }
 
@@ -80,32 +68,28 @@ InjectedScriptHost::~InjectedScriptHost()
 
 void InjectedScriptHost::disconnect()
 {
-    m_inspectorAgent = 0;
-    m_consoleAgent = 0;
-    m_databaseAgent = 0;
-    m_domStorageAgent = 0;
-    m_domAgent = 0;
+    m_instrumentingAgents = 0;
+    m_scriptDebugServer = 0;
 }
 
-void InjectedScriptHost::inspectImpl(PassRefPtr<InspectorValue> object, PassRefPtr<InspectorValue> hints)
+void InjectedScriptHost::inspectImpl(PassRefPtr<JSONValue> object, PassRefPtr<JSONValue> hints)
 {
-    if (m_inspectorAgent) {
+    if (InspectorAgent* inspectorAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorAgent() : 0) {
         RefPtr<TypeBuilder::Runtime::RemoteObject> remoteObject = TypeBuilder::Runtime::RemoteObject::runtimeCast(object);
-        m_inspectorAgent->inspect(remoteObject, hints->asObject());
+        inspectorAgent->inspect(remoteObject, hints->asObject());
     }
 }
 
 void InjectedScriptHost::getEventListenersImpl(Node* node, Vector<EventListenerInfo>& listenersArray)
 {
-    if (m_domAgent)
-        m_domAgent->getEventListeners(node, listenersArray, false);
+    InspectorDOMAgent::getEventListeners(node, listenersArray, false);
 }
 
 void InjectedScriptHost::clearConsoleMessages()
 {
-    if (m_consoleAgent) {
+    if (InspectorConsoleAgent* consoleAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorConsoleAgent() : 0) {
         ErrorString error;
-        m_consoleAgent->clearMessages(&error);
+        consoleAgent->clearMessages(&error);
     }
 }
 
@@ -140,23 +124,48 @@ InjectedScriptHost::InspectableObject* InjectedScriptHost::inspectedObject(unsig
 
 String InjectedScriptHost::databaseIdImpl(Database* database)
 {
-    if (m_databaseAgent)
-        return m_databaseAgent->databaseId(database);
+    if (InspectorDatabaseAgent* databaseAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorDatabaseAgent() : 0)
+        return databaseAgent->databaseId(database);
     return String();
 }
 
 String InjectedScriptHost::storageIdImpl(Storage* storage)
 {
-    if (m_domStorageAgent)
-        return m_domStorageAgent->storageId(storage);
+    if (InspectorDOMStorageAgent* domStorageAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorDOMStorageAgent() : 0)
+        return domStorageAgent->storageId(storage);
     return String();
 }
 
-ScriptDebugServer& InjectedScriptHost::scriptDebugServer()
+void InjectedScriptHost::debugFunction(const String& scriptId, int lineNumber, int columnNumber)
 {
-    return m_debuggerAgent->scriptDebugServer();
+    if (InspectorDebuggerAgent* debuggerAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorDebuggerAgent() : 0)
+        debuggerAgent->setBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::DebugCommandBreakpointSource);
 }
 
+void InjectedScriptHost::undebugFunction(const String& scriptId, int lineNumber, int columnNumber)
+{
+    if (InspectorDebuggerAgent* debuggerAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorDebuggerAgent() : 0)
+        debuggerAgent->removeBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::DebugCommandBreakpointSource);
+}
+
+void InjectedScriptHost::monitorFunction(const String& scriptId, int lineNumber, int columnNumber, const String& functionName)
+{
+    StringBuilder builder;
+    builder.appendLiteral("console.log(\"function ");
+    if (functionName.isEmpty())
+        builder.appendLiteral("(anonymous function)");
+    else
+        builder.append(functionName);
+    builder.appendLiteral(" called\" + (arguments.length > 0 ? \" with arguments: \" + Array.prototype.join.call(arguments, \", \") : \"\")) && false");
+    if (InspectorDebuggerAgent* debuggerAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorDebuggerAgent() : 0)
+        debuggerAgent->setBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::MonitorCommandBreakpointSource, builder.toString());
+}
+
+void InjectedScriptHost::unmonitorFunction(const String& scriptId, int lineNumber, int columnNumber)
+{
+    if (InspectorDebuggerAgent* debuggerAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorDebuggerAgent() : 0)
+        debuggerAgent->removeBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::MonitorCommandBreakpointSource);
+}
 
 } // namespace WebCore
 

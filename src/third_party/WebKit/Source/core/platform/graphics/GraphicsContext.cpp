@@ -889,7 +889,11 @@ void GraphicsContext::drawHighlightForText(const Font& font, const TextRun& run,
     if (paintingDisabled())
         return;
 
+    // SHEZ: disable antialiasing for selection rects
+    bool previousAntiAliasSetting = shouldAntialias();
+    setShouldAntialias(false);
     fillRect(font.selectionRectForText(run, point, h, from, to), backgroundColor);
+    setShouldAntialias(previousAntiAliasSetting);
 }
 
 void GraphicsContext::drawImage(Image* image, const IntPoint& p, CompositeOperator op, RespectImageOrientationEnum shouldRespectImageOrientation)

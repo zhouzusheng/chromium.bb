@@ -1467,7 +1467,7 @@ void CaretBase::paintCaret(Node* node, GraphicsContext* context, const LayoutPoi
         element = node->parentElement();
 
     if (element && element->renderer())
-        caretColor = element->renderer()->style()->visitedDependentColor(CSSPropertyColor);
+        caretColor = element->renderer()->style()->visitedDependentColor(CSSPropertyWebkitCaretColor);
 
     context->fillRect(caret, caretColor);
 }

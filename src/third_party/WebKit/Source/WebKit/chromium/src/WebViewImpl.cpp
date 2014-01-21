@@ -70,6 +70,8 @@
 #include "WebAutofillClient.h"
 #include "WebDevToolsAgentImpl.h"
 #include "WebDevToolsAgentPrivate.h"
+#include "WebDocument.h"
+#include "WebDOMCustomEvent.h"
 #include "WebFrameImpl.h"
 #include "WebHelperPluginImpl.h"
 #include "WebHitTestResult.h"
@@ -3746,6 +3748,19 @@ bool WebViewImpl::navigationPolicyFromMouseEvent(unsigned short button,
           *policy = WebNavigationPolicyDownload;
     }
     return true;
+}
+
+void WebViewImpl::willDrag()
+{
+    WebDocument document = mainFrame()->document();
+    WebDOMEvent dom_event = document.createEvent("CustomEvent");
+    WebDOMCustomEvent ev = dom_event.to<WebDOMCustomEvent>();
+
+    ev.initCustomEvent(
+        WebString::fromUTF8("BBWillDrag"),
+        false, false,
+        WebSerializedScriptValue());
+    document.dispatchEvent(ev);
 }
 
 void WebViewImpl::startDragging(Frame* frame,

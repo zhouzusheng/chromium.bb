@@ -49,7 +49,7 @@ static bool canAccessDocument(Document* targetDocument, SecurityReportingOption 
 
     DOMWindow* active = activeDOMWindow();
     if (!active)
-        return false;
+        return isNonWindowContextsAllowed();
 
     if (active->document()->securityOrigin()->canAccess(targetDocument->securityOrigin()))
         return true;

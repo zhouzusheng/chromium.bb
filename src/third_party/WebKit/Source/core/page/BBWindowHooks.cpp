@@ -118,7 +118,6 @@ void BBWindowHooks::fakePaint(Document* document)
         LayoutRect visibleRect = frame->view()->visibleContentRect();
         if (!visibleRect.isEmpty()) {
             GraphicsContext context(static_cast<SkCanvas*>(0));
-            context.setPaintingDisabled(true);
 
             PaintBehavior oldBehavior = frame->view()->paintBehavior();
             frame->view()->setPaintBehavior(

@@ -2309,7 +2309,7 @@ void RenderLayer::scrollRectToVisible(const LayoutRect& rect, const ScrollAlignm
         }
     }
     
-    if (renderer()->frame()->eventHandler()->autoscrollInProgress())
+    if (renderer()->frame()->page() && renderer()->frame()->page()->autoscrollInProgress())
         parentLayer = enclosingScrollableLayer();
 
     if (parentLayer)

@@ -124,6 +124,7 @@ void URLRequestContextGetterImpl::initialize()
         = net::HostResolver::CreateDefaultResolver(0);
 
     d_storage->set_cert_verifier(net::CertVerifier::CreateDefault());
+    d_storage->set_transport_security_state(new net::TransportSecurityState());
     {
         net::ProxyService* proxyService =
             d_browserContext->profile()->initFromBrowserIOThread();
@@ -137,6 +138,8 @@ void URLRequestContextGetterImpl::initialize()
     net::HttpNetworkSession::Params networkSessionParams;
     networkSessionParams.cert_verifier =
         d_urlRequestContext->cert_verifier();
+    networkSessionParams.transport_security_state =
+        d_urlRequestContext->transport_security_state();
     networkSessionParams.server_bound_cert_service =
         d_urlRequestContext->server_bound_cert_service();
     networkSessionParams.proxy_service =

@@ -8,8 +8,8 @@
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "ui/gfx/native_widget_types.h"
-#include "base/string16.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
+#include "base/strings/string16.h"
+#include "third_party/WebKit/public/web/WebTextDirection.h"
 
 namespace WebKit {
 class WebMouseWheelEvent;

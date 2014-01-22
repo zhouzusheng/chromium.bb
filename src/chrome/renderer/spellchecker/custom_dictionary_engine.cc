@@ -40,7 +40,7 @@ void CustomDictionaryEngine::OnCustomDictionaryChanged(
   }
 }
 
-void CustomDictionaryEngine::OnCustomDictionaryReset(const std::vector<std::string>& words) {
+void CustomDictionaryEngine::OnCustomDictionaryReset(const std::set<std::string>& words) {
   dictionary_.clear();
   Init(words);
 }

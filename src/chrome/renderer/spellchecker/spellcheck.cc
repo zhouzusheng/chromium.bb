@@ -167,7 +167,7 @@ void SpellCheck::OnCustomDictionaryChanged(
   }
 }
 
-void SpellCheck::OnCustomDictionaryReset(const std::vector<std::string>& custom_words) {
+void SpellCheck::OnCustomDictionaryReset(const std::set<std::string>& custom_words) {
   custom_dictionary_.OnCustomDictionaryReset(custom_words);
   if (spellcheck_enabled_) {
     RequestSpellcheckForView requestor;

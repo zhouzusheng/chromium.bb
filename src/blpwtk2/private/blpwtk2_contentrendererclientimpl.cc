@@ -24,10 +24,10 @@
 
 #include <blpwtk2_renderviewobserverimpl.h>
 
-#include <base/utf_string_conversions.h>
+#include <base/strings/utf_string_conversions.h>
 #include <net/base/net_errors.h>
-#include <third_party/WebKit/Source/Platform/chromium/public/WebURLError.h>
-#include <third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h>
+#include <third_party/WebKit/public/platform/WebURLError.h>
+#include <third_party/WebKit/public/platform/WebURLRequest.h>
 #include <content/public/renderer/render_thread.h>
 #include <chrome/renderer/spellchecker/spellcheck_provider.h>
 #include <chrome/renderer/spellchecker/spellcheck.h>

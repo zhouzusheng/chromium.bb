@@ -24,8 +24,8 @@
 
 #include <blpwtk2_webdocument.h>
 
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h>
+#include <third_party/WebKit/public/web/WebDocument.h>
+#include <third_party/WebKit/public/web/WebFrame.h>
 
 namespace blpwtk2 {
 

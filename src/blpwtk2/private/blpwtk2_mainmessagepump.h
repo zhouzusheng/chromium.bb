@@ -26,7 +26,7 @@
 #include <blpwtk2_config.h>
 
 #include <base/callback.h>
-#include <base/message_pump_win.h>
+#include <base/message_loop/message_pump_win.h>
 
 namespace base {
     class RunLoop;

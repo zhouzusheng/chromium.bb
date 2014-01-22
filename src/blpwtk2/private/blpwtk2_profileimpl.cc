@@ -180,7 +180,7 @@ void ProfileImpl::updateSpellCheckUserPrefs()
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-    PrefService* prefs = components::UserPrefs::Get(d_browserContext);
+    PrefService* prefs = user_prefs::UserPrefs::Get(d_browserContext);
 
     bool wasEnabled = prefs->GetBoolean(prefs::kEnableContinuousSpellcheck);
 

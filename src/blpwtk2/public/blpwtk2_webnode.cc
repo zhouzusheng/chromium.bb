@@ -26,9 +26,9 @@
 #include <blpwtk2_string.h>
 #include <blpwtk2_stringref.h>
 
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebNode.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebNodeList.h>
+#include <third_party/WebKit/public/web/WebDocument.h>
+#include <third_party/WebKit/public/web/WebNode.h>
+#include <third_party/WebKit/public/web/WebNodeList.h>
 
 #include <v8/include/v8.h>
 

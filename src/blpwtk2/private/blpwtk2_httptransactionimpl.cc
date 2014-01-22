@@ -265,6 +265,16 @@ void HttpTransactionImpl::StopCaching()
         d_fallbackTransaction->StopCaching();
 }
 
+bool HttpTransactionImpl::GetFullRequestHeaders(net::HttpRequestHeaders* headers) const
+{
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+
+    if (d_fallbackTransaction.get())
+        return d_fallbackTransaction->GetFullRequestHeaders(headers);
+
+    return false;
+}
+
 void HttpTransactionImpl::DoneReading()
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));

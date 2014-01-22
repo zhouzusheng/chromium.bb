@@ -44,8 +44,6 @@ const size_t g_shaderSize[] =
 };
 }
 
-#define error libglesv2_error
-
 namespace rx
 {
 Blit::Blit(rx::Renderer9 *renderer)

@@ -22,7 +22,7 @@
 
 #include <blpwtk2_toolkit.h>
 
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebKit.h>
+#include <third_party/WebKit/public/web/WebKit.h>
 
 // dependencies needed for SubProcessMain()
 #include <blpwtk2_contentmaindelegateimpl.h>

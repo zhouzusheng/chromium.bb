@@ -37,7 +37,7 @@
 #include <blpwtk2_statics.h>
 
 #include <base/message_loop.h>
-#include <base/utf_string_conversions.h>
+#include <base/strings/utf_string_conversions.h>
 #include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/devtools_http_handler.h>
 #include <content/public/browser/render_view_host.h>
@@ -45,7 +45,7 @@
 #include <content/public/browser/web_contents.h>
 #include <content/public/browser/web_contents_view.h>
 #include <content/public/browser/site_instance.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebView.h>
+#include <third_party/WebKit/public/web/WebView.h>
 
 namespace blpwtk2 {
 

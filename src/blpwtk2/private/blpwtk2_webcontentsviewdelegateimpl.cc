@@ -29,8 +29,8 @@
 
 #include <content/public/browser/web_contents.h>
 #include <content/public/common/context_menu_params.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h>
-#include <webkit/glue/webmenuitem.h>
+#include <third_party/WebKit/public/web/WebContextMenuData.h>
+#include <webkit/common/webmenuitem.h>
 
 namespace {
 
@@ -96,8 +96,7 @@ WebContentsViewDelegateImpl::GetDragDestDelegate()
 }
 
 void WebContentsViewDelegateImpl::ShowContextMenu(
-            const content::ContextMenuParams& params,
-            content::ContextMenuSourceType type)
+            const content::ContextMenuParams& params)
 {
     WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(d_webContents->GetDelegate());
     webViewImpl->saveCustomContextMenuContext(params.custom_context);

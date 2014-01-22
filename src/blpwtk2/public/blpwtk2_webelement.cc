@@ -24,7 +24,7 @@
 
 #include <blpwtk2_string.h>
 #include <blpwtk2_stringref.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebElement.h>
+#include <third_party/WebKit/public/web/WebElement.h>
 
 #include <base/logging.h>
 

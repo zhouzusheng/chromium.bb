@@ -219,8 +219,7 @@ MainMessagePump* MainMessagePump::current()
 }
 
 MainMessagePump::MainMessagePump()
-: base::MessagePumpForUI(base::win::WrappedWindowProc<wndProcThunk>,
-                         L"blpwtk2_MainMessagePump")
+: base::MessagePumpForUI(base::win::WrappedWindowProc<wndProcThunk>)
 , d_hasAutoPumpTimer(false)
 , d_didNotifyWillProcessMsg(false)
 , d_moreWorkIsPlausible(false)

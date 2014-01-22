@@ -32,7 +32,7 @@
 #include <content/public/browser/web_contents_observer.h>
 #include <content/public/common/context_menu_params.h>
 #include <ui/gfx/native_widget_types.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h>
+#include <third_party/WebKit/public/web/WebTextDirection.h>
 
 namespace content {
     class WebContents;

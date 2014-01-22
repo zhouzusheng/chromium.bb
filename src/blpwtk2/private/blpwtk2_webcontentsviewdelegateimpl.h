@@ -47,8 +47,7 @@ class WebContentsViewDelegateImpl : public content::WebContentsViewDelegate {
 
     // Shows a context menu.
     virtual void ShowContextMenu(
-        const content::ContextMenuParams& params,
-        content::ContextMenuSourceType type) OVERRIDE;
+        const content::ContextMenuParams& params) OVERRIDE;
 
     // These methods allow the embedder to intercept WebContentsViewWin's
     // implementation of these WebContentsView methods. See the WebContentsView

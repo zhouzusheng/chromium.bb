@@ -24,7 +24,7 @@
 #include "WebBBPrintInfo.h"
 #include "core/page/BBPrintInfo.h"
 
-#include <public/WebString.h>
+#include "public/platform/WebString.h"
 
 using namespace WebCore;
 
@@ -117,6 +117,11 @@ void WebBBPrintHeader::reset()
     m_private.reset();
 }
 
+void WebBBPrintHeader::assign(const WebBBPrintHeader& other)
+{
+    m_private = other.m_private;
+}
+
 WebBBPrintHeader::WebBBPrintHeader(const PassRefPtr<WebCore::BBPrintHeader>& header)
 : m_private(header)
 {
@@ -155,6 +160,11 @@ WebBBPrintHeader WebBBPrintInfo::footerRight() const
 void WebBBPrintInfo::reset()
 {
     m_private.reset();
+}
+
+void WebBBPrintInfo::assign(const WebBBPrintInfo& other)
+{
+    m_private = other.m_private;
 }
 
 WebBBPrintInfo::WebBBPrintInfo(const PassRefPtr<WebCore::BBPrintInfo>& info)

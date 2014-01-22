@@ -203,13 +203,13 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
     languages.push_back(FileLanguagePair(file, d->GetLanguage()));
   }
 
-  std::vector<std::string> custom_words;
+  std::set<std::string> custom_words;
   if (prefs->FindPreference(prefs::kSpellCheckCustomWords)) {
     const base::ListValue *words = prefs->GetList(prefs::kSpellCheckCustomWords);
     for (size_t wordIndex = 0; wordIndex < words->GetSize(); wordIndex++) {
       std::string word;
       words->GetString(wordIndex, &word);
-      custom_words.push_back(word);
+      custom_words.insert(word);
     }
   }
   else {
@@ -364,16 +364,16 @@ void SpellcheckService::OnUseSpellingServiceChanged() {
 }
 
 void SpellcheckService::OnSpellCheckCustomWordsChanged() {
-  PrefService* prefs = components::UserPrefs::Get(context_);
+  PrefService* prefs = user_prefs::UserPrefs::Get(context_);
   DCHECK(prefs);
 
   const base::ListValue *words = prefs->GetList(prefs::kSpellCheckCustomWords);
-  chrome::spellcheck_common::WordList to_add;
+  std::set<std::string> to_add;
 
   for (size_t wordIndex = 0; wordIndex < words->GetSize(); wordIndex++) {
     std::string word;
     words->GetString(wordIndex, &word);
-    to_add.push_back(word);
+    to_add.insert(word);
   }
 
   for (content::RenderProcessHost::iterator i(

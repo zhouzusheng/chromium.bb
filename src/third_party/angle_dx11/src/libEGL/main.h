@@ -39,12 +39,12 @@ EGLSurface getCurrentDrawSurface();
 void setCurrentReadSurface(EGLSurface surface);
 EGLSurface getCurrentReadSurface();
 
-void libegl_error(EGLint errorCode);
+void error(EGLint errorCode);
 
 template<class T>
-const T &libegl_error(EGLint errorCode, const T &returnValue)
+const T &error(EGLint errorCode, const T &returnValue)
 {
-    libegl_error(errorCode);
+    error(errorCode);
 
     return returnValue;
 }

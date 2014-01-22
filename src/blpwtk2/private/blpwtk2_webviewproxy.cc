@@ -34,7 +34,7 @@
 #include <base/bind.h>
 #include <base/message_loop.h>
 #include <content/public/renderer/render_view.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebView.h>
+#include <third_party/WebKit/public/web/WebView.h>
 #include <ui/gfx/size.h>
 
 namespace blpwtk2 {

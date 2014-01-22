@@ -23,9 +23,9 @@
 #ifndef WebBBPrintInfo_h
 #define WebBBPrintInfo_h
 
-#include "../../../Platform/chromium/public/WebCommon.h"
-#include "../../../Platform/chromium/public/WebColor.h"
-#include "../../../Platform/chromium/public/WebPrivatePtr.h"
+#include "../platform/WebCommon.h"
+#include "../platform/WebColor.h"
+#include "../platform/WebPrivatePtr.h"
 
 namespace WebCore {
     class BBPrintInfo;
@@ -47,10 +47,10 @@ public:
     ~WebBBPrintHeader() { reset(); }
 
     WebBBPrintHeader() { }
-    WebBBPrintHeader(const WebBBPrintHeader& o) { m_private = o.m_private; }
+    WebBBPrintHeader(const WebBBPrintHeader& o) { assign(o); }
     WebBBPrintHeader& operator=(const WebBBPrintHeader& o)
     {
-        m_private = o.m_private;
+        assign(o);
         return *this;
     }
 
@@ -73,6 +73,7 @@ public:
     WEBKIT_EXPORT unsigned short align() const;
 
     WEBKIT_EXPORT void reset();
+    WEBKIT_EXPORT void assign(const WebBBPrintHeader&);
 
     bool isNull() const { return m_private.isNull(); }
 
@@ -90,10 +91,10 @@ public:
     ~WebBBPrintInfo() { reset(); }
 
     WebBBPrintInfo() { }
-    WebBBPrintInfo(const WebBBPrintInfo& o) { m_private = o.m_private; }
+    WebBBPrintInfo(const WebBBPrintInfo& o) { assign(o); }
     WebBBPrintInfo& operator=(const WebBBPrintInfo& o)
     {
-        m_private = o.m_private;
+        assign(o);
         return *this;
     }
 
@@ -105,6 +106,7 @@ public:
     WEBKIT_EXPORT WebBBPrintHeader footerRight() const;
 
     WEBKIT_EXPORT void reset();
+    WEBKIT_EXPORT void assign(const WebBBPrintInfo&);
 
     bool isNull() const { return m_private.isNull(); }
 

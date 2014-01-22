@@ -26,14 +26,14 @@
 #include <third_party/skia/include/core/SkTypeface.h>
 #include <third_party/skia/include/core/SkTypeface.h>
 #include <skia/ext/platform_canvas.h>
-#include <third_party/WebKit/Source/Platform/chromium/public/WebCanvas.h>
-#include <third_party/WebKit/Source/Platform/chromium/public/WebSize.h>
-#include <third_party/WebKit/Source/Platform/chromium/public/WebString.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebBBPrintInfo.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebPrintParams.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebView.h>
+#include <third_party/WebKit/public/platform/WebCanvas.h>
+#include <third_party/WebKit/public/platform/WebSize.h>
+#include <third_party/WebKit/public/platform/WebString.h>
+#include <third_party/WebKit/public/web/WebBBPrintInfo.h>
+#include <third_party/WebKit/public/web/WebDocument.h>
+#include <third_party/WebKit/public/web/WebFrame.h>
+#include <third_party/WebKit/public/web/WebPrintParams.h>
+#include <third_party/WebKit/public/web/WebView.h>
 #include <content/public/renderer/render_view.h>
 #include <shlwapi.h>
 #include <commdlg.h>
@@ -57,7 +57,8 @@ static void printMarginBoxPart(WebKit::WebCanvas *canvas,
     if (formatText.isEmpty())
         return;
 
-    wnsprintf(buf, sizeof(buf) / sizeof(buf[0]), formatText.data(), pageToPrint + 1, numPages);
+    base::string16 formatText16 = formatText;
+    wnsprintf(buf, sizeof(buf) / sizeof(buf[0]), formatText16.c_str(), pageToPrint + 1, numPages);
 
     std::wstring text(buf);
 
@@ -208,9 +209,10 @@ void PrintUtil::PrintPage(WebKit::WebFrame* frame, WebKit::WebView* view)
     // TODO: Use printDc to draw directly into?
     WebKit::WebCanvas *canvas = skia::CreateBitmapCanvas(w, h, true);
 
+    base::string16 title = frame->document().title();
     DOCINFO docInfo = {0};
     docInfo.cbSize = sizeof(docInfo);
-    docInfo.lpszDocName = frame->document().title().data();
+    docInfo.lpszDocName = title.c_str();
 
     if (::StartDoc(printDc, &docInfo) > 0) {
 

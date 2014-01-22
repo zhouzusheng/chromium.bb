@@ -91,7 +91,7 @@ BrowserContextImpl::BrowserContextImpl(ProfileImpl* profile)
         PrefServiceBuilder builder;
         builder.WithUserPrefs(d_userPrefs);
         d_prefService.reset(builder.Create(d_prefRegistry.get()));
-        components::UserPrefs::Set(this, d_prefService.get());
+        user_prefs::UserPrefs::Set(this, d_prefService.get());
     }
 
     SpellcheckServiceFactory::GetInstance();  // This needs to be initialized before

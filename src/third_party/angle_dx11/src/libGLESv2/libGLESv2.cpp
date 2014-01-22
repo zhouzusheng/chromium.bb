@@ -21,8 +21,6 @@
 #include "libGLESv2/Query.h"
 #include "libGLESv2/Context.h"
 
-#define error libglesv2_error
-
 bool validImageSize(GLint level, GLsizei width, GLsizei height)
 {
     if (level < 0 || width < 0 || height < 0)

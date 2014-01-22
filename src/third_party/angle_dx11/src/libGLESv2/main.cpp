@@ -118,7 +118,7 @@ egl::Display *getDisplay()
 }
 
 // Records an error code
-void libglesv2_error(GLenum errorCode)
+void error(GLenum errorCode)
 {
     gl::Context *context = glGetCurrentContext();
 

@@ -114,11 +114,11 @@ void ToolkitImpl::startupThreads()
     }
 
     if (!d_systemPluginsEnabled) {
-        webkit::npapi::PluginList::Singleton()->SkipLoadingDefaultPlugins();
+        webkit::npapi::PluginList::Singleton()->DisablePluginsDiscovery();
     }
 
     if (Statics::isRendererMainThreadMode()) {
-        new base::MessageLoop(MessageLoop::TYPE_UI);
+        new base::MessageLoop(base::MessageLoop::TYPE_UI);
         content::WebContentsViewWin::disableHookOnRoot();
         d_browserThread.reset(new BrowserThread(&d_sandboxInfo,
                                                 &d_profileManager));

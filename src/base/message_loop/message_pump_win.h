@@ -162,8 +162,7 @@ class BASE_EXPORT MessagePumpForUI : public MessagePumpWin {
   // The application-defined code passed to the hook procedure.
   static const int kMessageFilterCode = 0x5001;
 
-  MessagePumpForUI(WNDPROC wnd_proc = NULL,
-                   const wchar_t* wnd_class_name = NULL);
+  MessagePumpForUI(WNDPROC wnd_proc = NULL);
   virtual ~MessagePumpForUI();
 
   // Sets a new MessageFilter. MessagePumpForUI takes ownership of
@@ -197,10 +196,12 @@ class BASE_EXPORT MessagePumpForUI : public MessagePumpWin {
   // Atom representing the registered window class.
   ATOM atom_;
 
+  // Instance of the module containing the window procedure.
+  HMODULE instance_;
+
  protected:
   // A hidden message-only window.
   HWND message_hwnd_;
-  const wchar_t* wnd_class_name_;
 
   scoped_ptr<MessageFilter> message_filter_;
 };

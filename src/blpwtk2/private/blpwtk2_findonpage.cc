@@ -23,7 +23,7 @@
 #include <blpwtk2_findonpage.h>
 
 #include <content/public/browser/render_view_host.h>
-#include <third_party/WebKit/Source/WebKit/chromium/public/WebFindOptions.h>
+#include <third_party/WebKit/public/web/WebFindOptions.h>
 
 namespace blpwtk2 {
 

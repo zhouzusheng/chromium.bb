@@ -25,8 +25,6 @@
 #undef near
 #undef far
 
-#define error libglesv2_error
-
 namespace gl
 {
 std::string str(int i)
@@ -1675,13 +1673,11 @@ bool ProgramBinary::load(InfoLog &infoLog, const void *binary, GLsizei length)
 
     size_t size;
     stream.read(&size);
-#undef error
     if (stream.error())
     {
         infoLog.append("Invalid program binary.");
         return false;
     }
-#define error libglesv2_error
 
     mUniforms.resize(size);
     for (unsigned int i = 0; i < size; ++i)
@@ -1704,13 +1700,11 @@ bool ProgramBinary::load(InfoLog &infoLog, const void *binary, GLsizei length)
     }
 
     stream.read(&size);
-#undef error
     if (stream.error())
     {
         infoLog.append("Invalid program binary.");
         return false;
     }
-#define error libglesv2_error
 
     mUniformIndex.resize(size);
     for (unsigned int i = 0; i < size; ++i)

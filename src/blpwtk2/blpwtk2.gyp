@@ -69,8 +69,8 @@
           'action_name': 'Generate angle bindings',
           'inputs': [
             'gen_angle_bindings.py',
-            '<(DEPTH)/third_party/angle/src/libGLESv2/libGLESv2.def',
-            '<(DEPTH)/third_party/angle/src/libEGL/libEGL.def',
+            '<(angle_path)/src/libGLESv2/libGLESv2.def',
+            '<(angle_path)/src/libEGL/libEGL.def',
           ],
           'outputs': [
             '<(angle_bindings_cc)',
@@ -107,12 +107,12 @@
         '../content/content.gyp:content_utility',
         '../content/content.gyp:content_worker',
         '../base/base.gyp:base',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../ipc/ipc.gyp:ipc',
         '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:ui',
+        '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
         '../webkit/support/webkit_support.gyp:webkit_support',
         '../sandbox/sandbox.gyp:sandbox',
@@ -297,8 +297,8 @@
       'type': 'loadable_module',
       'dependencies': [
         'blpwtk2_generate_sources',
-        '../third_party/angle/src/build_angle.gyp:libGLESv2_static',
-        '../third_party/angle/src/build_angle.gyp:libEGL_static',
+        '<(angle_path)/src/build_angle.gyp:libGLESv2_static',
+        '<(angle_path)/src/build_angle.gyp:libEGL_static',
       ],
       'conditions': [
         ['bb_version!=""', {

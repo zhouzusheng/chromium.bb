@@ -158,7 +158,7 @@ EGLSurface getCurrentReadSurface()
     return current->readSurface;
 }
 
-void libegl_error(EGLint errorCode)
+void error(EGLint errorCode)
 {
     egl::setCurrentError(errorCode);
 }

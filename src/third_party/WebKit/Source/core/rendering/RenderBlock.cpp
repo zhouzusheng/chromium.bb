@@ -3804,7 +3804,7 @@ LayoutRect RenderBlock::lineEndingSelectionGap(RenderBlock* rootBlock, const Lay
 
     LayoutRect gapRect = rootBlock->logicalRectToPhysicalRect(rootBlockPhysicalPosition, LayoutRect(lineEndingLogicalLeft, rootBlockLogicalTop, lineEndingLogicalWidth, logicalHeight));
     if (paintInfo)
-        paintInfo->context->fillRect(pixelSnappedIntRect(gapRect), selObj->selectionBackgroundColor(), selObj->style()->colorSpace());
+        paintInfo->context->fillRect(pixelSnappedIntRect(gapRect), selObj->selectionBackgroundColor());
     return gapRect;
 }
 

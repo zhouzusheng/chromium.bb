@@ -18,6 +18,7 @@
 #include "content/public/common/window_container_type.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect_f.h"
@@ -59,6 +60,13 @@ class WebLayer;
 namespace content {
 
 struct OpenURLParams;
+
+struct ContentCreatedParams {
+    WindowOpenDisposition disposition;
+    float x, y, width, height;
+    bool x_set, y_set, width_set, height_set;
+    bool hidden, nofocus, topmost;
+};
 
 // Objects implement this interface to get notified about changes in the
 // WebContents and to provide necessary functionality.
@@ -301,6 +309,7 @@ class CONTENT_EXPORT WebContentsDelegate {
                                   int64 source_frame_id,
                                   const string16& frame_name,
                                   const GURL& target_url,
+                                  const ContentCreatedParams& params,
                                   WebContents* new_contents) {}
 
   // Notifies the delegate that the content restrictions for this tab has
@@ -427,6 +436,48 @@ class CONTENT_EXPORT WebContentsDelegate {
       const GURL& url,
       const base::FilePath& plugin_path,
       const base::Callback<void(bool)>& callback);
+
+  // Handle external protocol such as 'mailto:'
+  virtual void HandleExternalProtocol(const GURL& url) {}
+
+  // Return true if an NC hit test result was set.  Returning false means the
+  // default NC hit test behavior should be performed.  The hit test should be
+  // performed using the most recent mouse coordinates.
+  virtual bool OnNCHitTest(int* result);
+
+  // Return true if a non-client drag operation should be initiated, in which
+  // case, the mouse will be captured and OnNCDragMove will be called
+  // continuously until OnNCDragEnd gets called.  Returning false means the
+  // default Windows dragging will be performed.  The specified 'point' is in
+  // screen coordinates.
+  virtual bool OnNCDragBegin(int hitTestCode, const gfx::Point& point);
+
+  // Invoked while the move moves during an NC drag event.  This only gets
+  // called if the previous call to OnNCDragBegin returned true.
+  virtual void OnNCDragMove() {}
+
+  // Invoked when an NC drag event ends.  This only gets called if the previous
+  // call to OnNCDragBegin returned true.
+  virtual void OnNCDragEnd() {}
+
+  // Return true if the cursor was set.  Returning false means the default
+  // cursor will be set.
+  virtual bool OnSetCursor(int hitTestCode);
+
+  // Invoked when the RenderWidgetHost's backing store has been updated.
+  virtual void DidUpdateBackingStore() {}
+
+  // Return true if the RWHV should take focus on mouse-down.
+  virtual bool ShouldSetFocusOnMouseDown();
+
+  // Allows delegate to show a custom tooltip. If the delegate doesn't want a
+  // custom tooltip, it should just return 'false'. Otherwise, it should show
+  // the tooltip and return 'true'. By default, the delegate doesn't provide a
+  // custom tooltip.
+  virtual bool ShowTooltip(
+      WebContents* web_contents,
+      const string16& tooltip_text,
+      WebKit::WebTextDirection text_direction_hint);
 
  protected:
   virtual ~WebContentsDelegate();

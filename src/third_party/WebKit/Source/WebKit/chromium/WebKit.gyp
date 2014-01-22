@@ -199,6 +199,7 @@
                 'src/WebAccessibilityObject.cpp',
                 'src/WebArrayBuffer.cpp',
                 'src/WebArrayBufferView.cpp',
+                'src/WebBBPrintInfo.cpp',
                 'src/WebBindings.cpp',
                 'src/WebBlob.cpp',
                 'src/WebBlobData.cpp',

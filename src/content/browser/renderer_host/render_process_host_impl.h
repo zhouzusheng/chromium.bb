@@ -34,7 +34,6 @@ class Size;
 namespace content {
 class GpuMessageFilter;
 class PeerConnectionTrackerHost;
-class RendererMainThread;
 class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
@@ -66,7 +65,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
       public ChildProcessLauncher::Client,
       public GpuDataManagerObserver {
  public:
-  RenderProcessHostImpl(BrowserContext* browser_context,
+  RenderProcessHostImpl(int host_id,
+                        bool is_in_process,
+                        BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
                         bool supports_browser_plugin,
                         bool is_guest);
@@ -110,6 +111,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual base::TimeDelta GetChildProcessIdleTime() const OVERRIDE;
   virtual void SurfaceUpdated(int32 surface_id) OVERRIDE;
   virtual void ResumeRequestsForView(int route_id) OVERRIDE;
+  virtual bool IsInProcess() const OVERRIDE;
+  virtual bool UsesInProcessPlugins() const OVERRIDE;
+  virtual void SetUsesInProcessPlugins() OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -143,6 +147,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
   void EndFrameSubscription(int route_id);
 
+  // This value is guaranteed to never be returned by GenerateUniqueId() below.
+  static int kInvalidId;
+
+  // Generate a new unique host id.
+  static int GenerateUniqueId();
+
   // Register/unregister the host identified by the host id in the global host
   // list.
   static void RegisterHost(int host_id, RenderProcessHost* host);
@@ -173,8 +183,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       BrowserContext* browser_context,
       RenderProcessHost* process,
       const GURL& url);
-
-  static base::MessageLoop* GetInProcessRendererThreadForTesting();
 
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
@@ -263,9 +271,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // This is used to clear our cache five seconds after the last use.
   base::DelayTimer<RenderProcessHostImpl> cached_dibs_cleaner_;
 
-  // Used in single-process mode.
-  scoped_ptr<RendererMainThread> in_process_renderer_;
-
   // True after Init() has been called. We can't just check channel_ because we
   // also reset that in the case of process termination.
   bool is_initialized_;
@@ -309,6 +314,13 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Indicates whether this is a RenderProcessHost of a Browser Plugin guest
   // renderer.
   bool is_guest_;
+
+  // Indicates whether this is a RenderProcessHost for an in-process
+  // renderer.
+  bool is_in_process_;
+
+  // Indicates whether this RenderProcessHost uses in-process plugins.
+  bool uses_in_process_plugins_;
 
   // Forwards messages between WebRTCInternals in the browser process
   // and PeerConnectionTracker in the renderer process.

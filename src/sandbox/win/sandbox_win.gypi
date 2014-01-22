@@ -183,6 +183,10 @@
       'include_dirs': [
         '../..',
       ],
+      'defines': [
+        'SANDBOX_DLL',
+        'SANDBOX_EXPORTS',
+      ],
       'copies': [
         {
           'destination': '<(PRODUCT_DIR)',

@@ -243,6 +243,9 @@
       # by the GYP command line or by ~/.gyp/include.gypi.
       'component%': 'static_library',
 
+      # Product version, appended to product_name for Bloomberg targets.
+      'bb_version%': '',
+
       # By default, don't include PPAPI plugin examples for blpwtk2.
       'bb_ppapi_examples%': 0,
 
@@ -779,6 +782,7 @@
     'sysroot%': '<(sysroot)',
     'system_libdir%': '<(system_libdir)',
     'component%': '<(component)',
+    'bb_version%': '<(bb_version)',
     'bb_ppapi_examples%': '<(bb_ppapi_examples)',
     'use_titlecase_in_grd_files%': '<(use_titlecase_in_grd_files)',
     'use_third_party_translations%': '<(use_third_party_translations)',

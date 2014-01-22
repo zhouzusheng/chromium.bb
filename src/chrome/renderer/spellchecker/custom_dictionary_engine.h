@@ -33,6 +33,7 @@ class CustomDictionaryEngine {
   void OnCustomDictionaryChanged(
       const std::vector<std::string>& words_added,
       const std::vector<std::string>& words_removed);
+  void OnCustomDictionaryReset(const std::vector<std::string>& words);
 
  private:
   // Correctly spelled words.

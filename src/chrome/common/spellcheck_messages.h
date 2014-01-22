@@ -5,10 +5,10 @@
 // IPC messages for spellcheck.
 // Multiply-included message file, hence no include guard.
 
+#include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_marker.h"
 #include "chrome/common/spellcheck_result.h"
 #include "ipc/ipc_message_macros.h"
-#include "ipc/ipc_platform_file.h"
 
 
 #define IPC_MESSAGE_START SpellCheckMsgStart
@@ -36,10 +36,9 @@ IPC_MESSAGE_CONTROL1(SpellCheckMsg_EnableSpellCheck,
 // Passes some initialization params from the browser to the renderer's
 // spellchecker. This can be called directly after startup or in (async)
 // response to a RequestDictionary ViewHost message.
-IPC_MESSAGE_CONTROL4(SpellCheckMsg_Init,
-                     IPC::PlatformFileForTransit /* bdict_file */,
+IPC_MESSAGE_CONTROL3(SpellCheckMsg_Init,
+                     std::vector<chrome::spellcheck_common::FileLanguagePair> /* languages */,
                      std::set<std::string> /* custom_dict_words */,
-                     std::string /* language */,
                      bool /* auto spell correct */)
 
 // Words have been added and removed in the custom dictionary; update the local
@@ -47,6 +46,9 @@ IPC_MESSAGE_CONTROL4(SpellCheckMsg_Init,
 IPC_MESSAGE_CONTROL2(SpellCheckMsg_CustomDictionaryChanged,
                      std::vector<std::string> /* words_added */,
                      std::vector<std::string> /* words_removed */)
+
+IPC_MESSAGE_CONTROL1(SpellCheckMsg_ResetCustomDictionary,
+                     std::vector<std::string> /* custom_dict_words */)
 
 // Toggle the auto spell correct functionality.
 IPC_MESSAGE_CONTROL1(SpellCheckMsg_EnableAutoSpellCorrect,

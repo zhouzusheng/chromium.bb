@@ -23,6 +23,7 @@
 using WebKit::WebVector;
 using WebKit::WebTextCheckingResult;
 using WebKit::WebTextCheckingType;
+using chrome::spellcheck_common::FileLanguagePair;
 
 namespace {
 
@@ -40,6 +41,21 @@ bool UpdateSpellcheckEnabled::Visit(content::RenderView* render_view) {
   SpellCheckProvider* provider = SpellCheckProvider::Get(render_view);
   DCHECK(provider);
   provider->EnableSpellcheck(enabled_);
+  return true;
+}
+
+class RequestSpellcheckForView : public content::RenderViewVisitor {
+ public:
+  RequestSpellcheckForView() {}
+  virtual bool Visit(content::RenderView* render_view) OVERRIDE;
+ private:
+  DISALLOW_COPY_AND_ASSIGN(RequestSpellcheckForView);
+};
+
+bool RequestSpellcheckForView::Visit(content::RenderView* render_view) {
+  SpellCheckProvider* provider = SpellCheckProvider::Get(render_view);
+  DCHECK(provider);
+  provider->RequestSpellcheck();
   return true;
 }
 
@@ -118,6 +134,8 @@ bool SpellCheck::OnControlMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(SpellCheckMsg_Init, OnInit)
     IPC_MESSAGE_HANDLER(SpellCheckMsg_CustomDictionaryChanged,
                         OnCustomDictionaryChanged)
+    IPC_MESSAGE_HANDLER(SpellCheckMsg_ResetCustomDictionary,
+                        OnCustomDictionaryReset)
     IPC_MESSAGE_HANDLER(SpellCheckMsg_EnableAutoSpellCorrect,
                         OnEnableAutoSpellCorrect)
     IPC_MESSAGE_HANDLER(SpellCheckMsg_EnableSpellCheck, OnEnableSpellCheck)
@@ -129,12 +147,10 @@ bool SpellCheck::OnControlMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
-void SpellCheck::OnInit(IPC::PlatformFileForTransit bdict_file,
+void SpellCheck::OnInit(const std::vector<FileLanguagePair>& languages,
                         const std::set<std::string>& custom_words,
-                        const std::string& language,
                         bool auto_spell_correct) {
-  Init(IPC::PlatformFileForTransitToPlatformFile(bdict_file),
-       custom_words, language);
+  Init(languages, custom_words);
   auto_spell_correct_turned_on_ = auto_spell_correct;
 #if !defined(OS_MACOSX)
   PostDelayedSpellCheckTask(pending_request_param_.release());
@@ -145,6 +161,18 @@ void SpellCheck::OnCustomDictionaryChanged(
     const std::vector<std::string>& words_added,
     const std::vector<std::string>& words_removed) {
   custom_dictionary_.OnCustomDictionaryChanged(words_added, words_removed);
+  if (spellcheck_enabled_) {
+    RequestSpellcheckForView requestor;
+    content::RenderView::ForEach(&requestor);
+  }
+}
+
+void SpellCheck::OnCustomDictionaryReset(const std::vector<std::string>& custom_words) {
+  custom_dictionary_.OnCustomDictionaryReset(custom_words);
+  if (spellcheck_enabled_) {
+    RequestSpellcheckForView requestor;
+    content::RenderView::ForEach(&requestor);
+  }
 }
 
 void SpellCheck::OnEnableAutoSpellCorrect(bool enable) {
@@ -166,10 +194,19 @@ void SpellCheck::OnRequestDocumentMarkers() {
 
 // TODO(groby): Make sure we always have a spelling engine, even before Init()
 // is called.
-void SpellCheck::Init(base::PlatformFile file,
-                      const std::set<std::string>& custom_words,
-                      const std::string& language) {
-  spellcheck_.Init(file, language);
+void SpellCheck::Init(const std::vector<FileLanguagePair>& languages,
+                      const std::set<std::string>& custom_words) {
+  size_t langCount = languages.size();
+  spellcheck_.clear();
+
+  for (size_t langIndex = 0; langIndex < langCount; langIndex++) {
+    SpellcheckLanguage *language = new SpellcheckLanguage();
+    spellcheck_.push_back(language);
+    const FileLanguagePair& flp = languages[langIndex];
+    language->Init(IPC::PlatformFileForTransitToPlatformFile(flp.first),
+                   flp.second);
+  }
+
   custom_dictionary_.Init(custom_words);
 }
 
@@ -188,10 +225,86 @@ bool SpellCheck::SpellCheckWord(
   if (InitializeIfNeeded())
     return true;
 
-  return spellcheck_.SpellCheckWord(in_word, in_word_len,
-                                    tag,
-                                    misspelling_start, misspelling_len,
-                                    optional_suggestions);
+  *misspelling_start = *misspelling_len = 0;
+  if (spellcheck_.empty()) {
+    return true;
+  }
+
+  int checked_offset = 0;
+  while (checked_offset < in_word_len) {
+    // Find the first misspelled word in the first language.
+
+    SpellcheckLanguage *firstLang = spellcheck_[0];
+    std::vector<string16> suggestions_vector;
+    std::set<string16> suggestions_set;
+    int segment_misspelling_start;
+    int segment_misspelling_len;
+
+    if (firstLang->SpellCheckWord(
+        in_word + checked_offset,
+        in_word_len - checked_offset,
+        tag,
+        &segment_misspelling_start,
+        &segment_misspelling_len,
+        optional_suggestions ? &suggestions_vector : 0)) {
+      // Everything is OK in the first language, no need to check the other
+      // languages.
+      return true;
+    }
+
+    if (optional_suggestions) {
+      for (std::size_t i = 0; i < suggestions_vector.size(); ++i) {
+        suggestions_set.insert(suggestions_vector[i]);
+      }
+    }
+
+    // We have a misspelling in the first language!  See if this word is
+    // recognized in the custom dictionary or any of the other languages.
+
+    bool alternativeFound =
+        custom_dictionary_.SpellCheckWord(in_word + checked_offset,
+                                          segment_misspelling_start,
+                                          segment_misspelling_len);
+
+    for (size_t langIndex = 1;
+        langIndex < spellcheck_.size() && !alternativeFound;
+        ++langIndex) {
+      SpellcheckLanguage *language = spellcheck_[langIndex];
+      suggestions_vector.clear();
+
+      int tmpStart, tmpLen;
+      alternativeFound = language->SpellCheckWord(
+          in_word + checked_offset + segment_misspelling_start,
+          segment_misspelling_len,
+          tag,
+          &tmpStart, &tmpLen,
+          optional_suggestions ? &suggestions_vector : 0);
+
+      if (optional_suggestions) {
+        for (std::size_t i = 0; i < suggestions_vector.size(); ++i) {
+          suggestions_set.insert(suggestions_vector[i]);
+        }
+      }
+    }
+
+    if (!alternativeFound) {
+      if (optional_suggestions) {
+        for (std::set<string16>::const_iterator it = suggestions_set.begin();
+            it != suggestions_set.end();
+            ++it) {
+          optional_suggestions->push_back(*it);
+        }
+      }
+      *misspelling_start = checked_offset + segment_misspelling_start;
+      *misspelling_len = segment_misspelling_len;
+      return false;
+    }
+    else {
+      checked_offset += segment_misspelling_start + segment_misspelling_len;
+    }
+  }
+
+  return true;
 }
 
 bool SpellCheck::SpellCheckParagraph(
@@ -314,7 +427,14 @@ void SpellCheck::RequestTextChecking(
 #endif
 
 bool SpellCheck::InitializeIfNeeded() {
-  return spellcheck_.InitializeIfNeeded();
+  bool inited = true;
+  ScopedVector<SpellcheckLanguage>::iterator it;
+
+  for (it = spellcheck_.begin(); it != spellcheck_.end(); it++) {
+    inited &= (*it)->InitializeIfNeeded();
+  }
+
+  return inited;
 }
 
 #if !defined(OS_MACOSX) // OSX doesn't have |pending_request_param_|
@@ -333,7 +453,13 @@ void SpellCheck::PostDelayedSpellCheckTask(SpellcheckRequest* request) {
 void SpellCheck::PerformSpellCheck(SpellcheckRequest* param) {
   DCHECK(param);
 
-  if (!spellcheck_.IsEnabled()) {
+  bool allEnabled = !spellcheck_.empty();
+  ScopedVector<SpellcheckLanguage>::iterator it;
+  for (it = spellcheck_.begin(); it != spellcheck_.end(); it++) {
+    allEnabled &= (*it)->IsEnabled();
+  }
+
+  if (!allEnabled) {
     param->completion()->didCancelCheckingText();
   } else {
     WebVector<WebKit::WebTextCheckingResult> results;

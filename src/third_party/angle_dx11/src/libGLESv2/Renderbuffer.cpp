@@ -16,6 +16,8 @@
 #include "libGLESv2/renderer/Renderer.h"
 #include "libGLESv2/utilities.h"
 
+#define error libglesv2_error
+
 namespace gl
 {
 unsigned int RenderbufferStorage::mCurrentSerial = 1;

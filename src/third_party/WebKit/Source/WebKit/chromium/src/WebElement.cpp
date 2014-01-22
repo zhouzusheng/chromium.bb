@@ -31,13 +31,26 @@
 #include "config.h"
 #include "WebDocument.h"
 #include "WebElement.h"
+#include "core/css/CSSStyleDeclaration.h"
 #include "core/dom/Element.h"
 #include "core/dom/NamedNodeMap.h"
+#include "core/dom/NodeTraversal.h"
+#include "core/dom/Position.h"
+#include "core/dom/Range.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/Editor.h"
+#include "core/editing/SpellChecker.h"
+#include "core/html/HTMLElement.h"
+#include "core/html/HTMLFrameOwnerElement.h"
+#include "core/html/HTMLTextFormControlElement.h"
+#include "core/html/DOMTokenList.h"
+#include "core/page/Frame.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderObject.h"
+#include "core/platform/text/TextChecking.h"
 #include "public/platform/WebRect.h"
 #include <wtf/PassRefPtr.h>
+#include <bindings/V8Element.h>
 
 
 using namespace WebCore;
@@ -113,6 +126,13 @@ WebNode WebElement::shadowRoot() const
     return WebNode(shadowRoot->toNode());
 }
 
+WebString WebElement::attributeName(unsigned index) const
+{
+    if (index >= attributeCount())
+        return WebString();
+    return constUnwrap<Element>()->attributeItem(index)->name().toString();
+}
+
 WebString WebElement::attributeLocalName(unsigned index) const
 {
     if (index >= attributeCount())
@@ -150,6 +170,118 @@ WebDocument WebElement::document() const
 WebRect WebElement::boundsInViewportSpace()
 {
     return unwrap<Element>()->boundsInRootViewSpace();
+}
+
+bool WebElement::setCssProperty(const WebString& name, const WebString& value, const WebString& priority)
+{
+    ExceptionCode exceptionCode = 0;
+    unwrap<Element>()->style()->setProperty(name, value, priority, exceptionCode);
+    return !exceptionCode;
+}
+
+bool WebElement::removeCssProperty(const WebString& name)
+{
+    ExceptionCode exceptionCode = 0;
+    unwrap<Element>()->style()->removeProperty(name, exceptionCode);
+    return !exceptionCode;
+}
+
+bool WebElement::addClass(const WebString& name)
+{
+    ExceptionCode exceptionCode = 0;
+    unwrap<Element>()->classList()->add(name, exceptionCode);
+    return !exceptionCode;
+}
+
+bool WebElement::removeClass(const WebString& name)
+{
+    ExceptionCode exceptionCode = 0;
+    unwrap<Element>()->classList()->remove(name, exceptionCode);
+    return !exceptionCode;
+}
+
+bool WebElement::containsClass(const WebString& name)
+{
+    ExceptionCode exceptionCode = 0;
+    return unwrap<Element>()->classList()->contains(name, exceptionCode);
+}
+
+bool WebElement::toggleClass(const WebString& name)
+{
+    ExceptionCode exceptionCode = 0;
+    unwrap<Element>()->classList()->toggle(name, exceptionCode);
+    return !exceptionCode;
+}
+
+WebString WebElement::innerHTML() const
+{
+    const WebCore::Element* webCoreElemPtr = constUnwrap<Element>();
+    const WebCore::HTMLElement* htmlElemPtr =(const WebCore::HTMLElement*) webCoreElemPtr;
+    if (htmlElemPtr) {
+        return htmlElemPtr->innerHTML();
+    }
+    return WebString();
+}
+
+void WebElement::requestSpellCheck()
+{
+    Element* element = unwrap<Element>();
+    if (!element ||
+        !element->document() ||
+        !element->document()->frame() ||
+        !element->document()->frame()->editor() ||
+        !element->document()->frame()->editor()->isContinuousSpellCheckingEnabled() ||
+        !element->document()->frame()->editor()->spellChecker()) {
+        return;
+    }
+
+    SpellChecker* spellChecker = element->document()->frame()->editor()->spellChecker();
+    Node* stayWithin = element;
+    while (element) {
+        if (element->isFrameOwnerElement()) {
+            Document* contentDocument = toFrameOwnerElement(element)->contentDocument();
+            if (contentDocument && contentDocument->documentElement()) {
+                WebElement documentElement = contentDocument->documentElement();
+                documentElement.requestSpellCheck();
+            }
+            element = ElementTraversal::nextSkippingChildren(element, stayWithin);
+        }
+        else if (element->isTextFormControl()) {
+            HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerTextElement();
+            if (innerElement && innerElement->rendererIsEditable()) {
+                RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), firstPositionInNode(innerElement), lastPositionInNode(innerElement));
+                spellChecker->requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+            }
+            element = ElementTraversal::nextSkippingChildren(element, stayWithin);
+        }
+        else if (element->rendererIsEditable()) {
+            RefPtr<Range> rangeToCheck = Range::create(element->document(), firstPositionInNode(element), lastPositionInNode(element));
+            spellChecker->requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+            element = ElementTraversal::nextSkippingChildren(element, stayWithin);
+        }
+        else {
+            element = ElementTraversal::next(element, stayWithin);
+        }
+    }
+}
+
+bool WebElement::isWebElement(v8::Handle<v8::Value> handle)
+{
+    if (!handle->IsObject()) {
+        return false;
+    }
+    v8::TryCatch tryCatch;
+    v8::Handle<v8::Object> obj = handle->ToObject();
+    if (!WebCore::V8Element::HasInstance(obj, obj->CreationContext()->GetIsolate(), WebCore::MainWorld)) {
+        return false;
+    }
+    WebCore::V8Element::toNative(obj);
+    return !tryCatch.HasCaught();
+}
+
+WebElement WebElement::fromV8Handle(v8::Handle<v8::Value> handle)
+{
+    return WebCore::V8Element::toNative(handle->ToObject());
 }
 
 WebElement::WebElement(const PassRefPtr<Element>& elem)

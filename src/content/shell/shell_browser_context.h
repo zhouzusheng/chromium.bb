@@ -48,6 +48,7 @@ class ShellBrowserContext : public BrowserContext {
   virtual SpeechRecognitionPreferences*
       GetSpeechRecognitionPreferences() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
+  virtual bool AllowDictionaryDownloads() OVERRIDE;
 
   net::URLRequestContextGetter* CreateRequestContext(
       ProtocolHandlerMap* protocol_handlers);

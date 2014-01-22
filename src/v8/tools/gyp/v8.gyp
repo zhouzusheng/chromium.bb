@@ -55,9 +55,13 @@
         ['component=="shared_library"', {
           'type': '<(component)',
           'sources': [
+            '../../src/blpv8.rc',
             # Note: on non-Windows we still build this file so that gyp
             # has some sources to link into the component.
             '../../src/v8dll-main.cc',
+          ],
+          'dependencies': [
+            '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
           ],
           'defines': [
             'V8_SHARED',
@@ -80,6 +84,9 @@
             }],
           ],
           'conditions': [
+            ['bb_version!=""', {
+              'product_name': 'blpv8.<(bb_version)',
+            }],
             ['OS=="mac"', {
               'xcode_settings': {
                 'OTHER_LDFLAGS': ['-dynamiclib', '-all_load']

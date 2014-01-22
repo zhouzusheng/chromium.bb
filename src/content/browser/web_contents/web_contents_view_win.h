@@ -46,10 +46,24 @@ class CONTENT_EXPORT WebContentsViewWin
     // Hacks for old ThinkPad touchpads/scroll points.
     MESSAGE_HANDLER(WM_NCCALCSIZE, OnNCCalcSize)
     MESSAGE_HANDLER(WM_NCHITTEST, OnNCHitTest)
+    MESSAGE_HANDLER(WM_NCLBUTTONDOWN, OnNCLButtonDown)
+    MESSAGE_HANDLER(WM_LBUTTONUP, OnLButtonUp)
+    MESSAGE_HANDLER(WM_CAPTURECHANGED, OnCaptureChanged);
+    MESSAGE_HANDLER(WM_SETCURSOR, OnSetCursor)
     MESSAGE_HANDLER(WM_HSCROLL, OnScroll)
     MESSAGE_HANDLER(WM_VSCROLL, OnScroll)
     MESSAGE_HANDLER(WM_SIZE, OnSize)
   END_MSG_MAP()
+
+  // If the embedder's root window does not belong to the browser's thread,
+  // then we cannot add a filter hook into it's wndproc, otherwise we run into
+  // race conditions because the filter hook code is not threadsafe.  As a
+  // workaround, embedders can disable hooking onto the root window, and we
+  // will depend on the embedder to notify us (in the browser thread) when the
+  // root window receives WM_WINDOWPOSCHANGED or WM_SETTINGCHANGE.
+  static void disableHookOnRoot();
+  static void onRootWindowPositionChanged(gfx::NativeView root);
+  static void onRootWindowSettingChange(gfx::NativeView root);
 
   // Overridden from WebContentsView:
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
@@ -118,6 +132,14 @@ class CONTENT_EXPORT WebContentsViewWin
       UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled);
   LRESULT OnNCHitTest(
       UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled);
+  LRESULT OnNCLButtonDown(
+      UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled);
+  LRESULT OnLButtonUp(
+      UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled);
+  LRESULT OnCaptureChanged(
+      UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled);
+  LRESULT OnSetCursor(
+      UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled);
   LRESULT OnScroll(
       UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled);
   LRESULT OnSize(
@@ -129,6 +151,12 @@ class CONTENT_EXPORT WebContentsViewWin
   WebContentsImpl* web_contents_;
 
   scoped_ptr<WebContentsViewDelegate> delegate_;
+
+  // Set to true when the delegate is performing NC drag operations.
+  bool is_delegate_nc_dragging_;
+
+  // The NC hit-test code that is in effect while NC dragging.
+  int nc_dragging_hittest_code_;
 
   // The helper object that handles drag destination related interactions with
   // Windows.

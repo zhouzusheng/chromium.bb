@@ -19,6 +19,8 @@
 #include "libEGL/Display.h"
 #include "libEGL/Surface.h"
 
+#define error libegl_error
+
 bool validateDisplay(egl::Display *display)
 {
     if (display == EGL_NO_DISPLAY)

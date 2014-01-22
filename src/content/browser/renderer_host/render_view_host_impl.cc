@@ -491,7 +491,7 @@ void RenderViewHostImpl::WasSwappedOut() {
         ++views;
     }
 
-    if (!RenderProcessHost::run_renderer_in_process() &&
+    if (!GetProcess()->IsInProcess() &&
         process_handle && views <= 1) {
       // The process can safely be terminated, only if WebContents sets
       // SuddenTerminationAllowed, which indicates that the timer has expired.
@@ -2036,6 +2036,12 @@ void RenderViewHostImpl::OnGetWindowSnapshot(const int snapshot_id) {
 
   Send(new ViewMsg_WindowSnapshotCompleted(
       GetRoutingID(), snapshot_id, gfx::Size(), png));
+}
+
+void RenderViewHostImpl::HandleExternalProtocol(const GURL& url)
+{
+  if (delegate_)
+    delegate_->HandleExternalProtocol(url);
 }
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)

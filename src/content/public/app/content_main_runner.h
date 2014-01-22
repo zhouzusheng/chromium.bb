@@ -8,6 +8,7 @@
 #include <string>
 
 #include "build/build_config.h"
+#include "content/common/content_export.h"
 
 #if defined(OS_WIN)
 #include <windows.h>
@@ -27,7 +28,7 @@ class ContentMainRunner {
   virtual ~ContentMainRunner() {}
 
   // Create a new ContentMainRunner object.
-  static ContentMainRunner* Create();
+  CONTENT_EXPORT static ContentMainRunner* Create();
 
   // Initialize all necessary content state.
 #if defined(OS_WIN)

@@ -412,6 +412,9 @@ class CONTENT_EXPORT RenderViewHostDelegate {
       const MediaStreamRequest& request,
       const MediaResponseCallback& callback) {}
 
+  // Handle external protocol such as 'mailto:'
+  virtual void HandleExternalProtocol(const GURL& url) {}
+
  protected:
   virtual ~RenderViewHostDelegate() {}
 };

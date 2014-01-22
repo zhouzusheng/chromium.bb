@@ -217,8 +217,8 @@
           'msvs_disabled_warnings': [ 4267 ],
         },
         {
-          'target_name': 'libGLESv2',
-          'type': 'shared_library',
+          'target_name': 'libGLESv2_static',
+          'type': 'static_library',
           'dependencies': ['translator_hlsl'],
           'include_dirs': [
             '.',
@@ -233,7 +233,6 @@
             'common/debug.h',
             'common/RefCountObject.cpp',
             'common/RefCountObject.h',
-            'common/version.h',
             'libGLESv2/precompiled.h',
             'libGLESv2/precompiled.cpp',
             'libGLESv2/BinaryStream.h',
@@ -251,8 +250,6 @@
             'libGLESv2/HandleAllocator.cpp',
             'libGLESv2/HandleAllocator.h',
             'libGLESv2/libGLESv2.cpp',
-            'libGLESv2/libGLESv2.def',
-            'libGLESv2/libGLESv2.rc',
             'libGLESv2/main.cpp',
             'libGLESv2/main.h',
             'libGLESv2/mathutil.h',
@@ -358,19 +355,32 @@
           ],
           # TODO(jschuh): http://crbug.com/167187 size_t -> int
           'msvs_disabled_warnings': [ 4267 ],
-          'msvs_settings': {
-            'VCLinkerTool': {
-              'AdditionalDependencies': [
-                'd3d9.lib',
-                'dxguid.lib',
-              ],
-            }
+          'link_settings': {
+            'libraries': [
+              '-ld3d9.lib',
+              '-ldxguid.lib',
+            ],
           },
         },
         {
-          'target_name': 'libEGL',
+          'target_name': 'libGLESv2_shared',
+          'product_name': 'libGLESv2',
           'type': 'shared_library',
-          'dependencies': ['libGLESv2'],
+          'dependencies': ['libGLESv2_static'],
+          'include_dirs': [
+            '.',
+            '../include',
+          ],
+          'sources': [
+            'common/version.h',
+            'libGLESv2/dllmain.cpp',
+            'libGLESv2/libGLESv2.def',
+            'libGLESv2/libGLESv2.rc',
+          ],
+        },
+        {
+          'target_name': 'libEGL_static',
+          'type': 'static_library',
           'include_dirs': [
             '.',
             '../include',
@@ -382,14 +392,11 @@
             'common/debug.h',
             'common/RefCountObject.cpp',
             'common/RefCountObject.h',
-            'common/version.h',
             'libEGL/Config.cpp',
             'libEGL/Config.h',
             'libEGL/Display.cpp',
             'libEGL/Display.h',
             'libEGL/libEGL.cpp',
-            'libEGL/libEGL.def',
-            'libEGL/libEGL.rc',
             'libEGL/main.cpp',
             'libEGL/main.h',
             'libEGL/Surface.cpp',
@@ -397,13 +404,26 @@
           ],
           # TODO(jschuh): http://crbug.com/167187 size_t -> int
           'msvs_disabled_warnings': [ 4267 ],
-          'msvs_settings': {
-            'VCLinkerTool': {
-              'AdditionalDependencies': [
-                'd3d9.lib',
-              ],
-            }
+          'link_settings': {
+            'libraries': [
+              '-ld3d9.lib',
+            ],
           },
+        },
+        {
+          'target_name': 'libEGL',
+          'type': 'loadable_module',
+          'dependencies': ['libGLESv2_shared','libEGL_static'],
+          'include_dirs': [
+            '.',
+            '../include',
+          ],
+          'sources': [
+            'common/version.h',
+            'libEGL/dllmain.cpp',
+            'libEGL/libEGL.def',
+            'libEGL/libEGL.rc',
+          ],
         },
       ],
     }],

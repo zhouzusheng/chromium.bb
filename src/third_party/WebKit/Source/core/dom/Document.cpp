@@ -125,6 +125,7 @@
 #include "core/loader/Prerenderer.h"
 #include "core/loader/TextResourceDecoder.h"
 #include "core/loader/cache/CachedResourceLoader.h"
+#include "core/page/BBPrintInfo.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/ContentSecurityPolicy.h"
@@ -457,6 +458,7 @@ Document::Document(Frame* frame, const KURL& url, DocumentClassFlags documentCla
     , m_timeline(DocumentTimeline::create(this))
     , m_templateDocumentHost(0)
     , m_fontloader(0)
+    , m_bbPrintInfo(0)
     , m_didAssociateFormControlsTimer(this, &Document::didAssociateFormControlsTimerFired)
 {
     ScriptWrappable::init(this);
@@ -5191,6 +5193,13 @@ PassRefPtr<FontLoader> Document::fontloader()
     if (!m_fontloader)
         m_fontloader = FontLoader::create(this);
     return m_fontloader;
+}
+
+PassRefPtr<BBPrintInfo> Document::bbPrintInfo()
+{
+    if (!m_bbPrintInfo)
+        m_bbPrintInfo = BBPrintInfo::create(this);
+    return m_bbPrintInfo;
 }
 
 void Document::didAssociateFormControl(Element* element)

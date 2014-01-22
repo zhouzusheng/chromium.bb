@@ -87,6 +87,11 @@ RenderProcessImpl::~RenderProcessImpl() {
   ClearTransportDIBCache();
 }
 
+static bool g_forceInProcessPlugins = false;
+void RenderProcessImpl::ForceInProcessPlugins() {
+  g_forceInProcessPlugins = true;
+}
+
 bool RenderProcessImpl::InProcessPlugins() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
@@ -97,6 +102,7 @@ bool RenderProcessImpl::InProcessPlugins() {
   return command_line.HasSwitch(switches::kInProcessPlugins);
 #else
   return command_line.HasSwitch(switches::kInProcessPlugins) ||
+         g_forceInProcessPlugins ||
          command_line.HasSwitch(switches::kSingleProcess);
 #endif
 }
@@ -185,7 +191,7 @@ void RenderProcessImpl::ReleaseTransportDIB(TransportDIB* mem) {
 }
 
 bool RenderProcessImpl::UseInProcessPlugins() const {
-  return in_process_plugins_;
+  return in_process_plugins_ || g_forceInProcessPlugins;
 }
 
 bool RenderProcessImpl::GetTransportDIBFromCache(TransportDIB** mem,

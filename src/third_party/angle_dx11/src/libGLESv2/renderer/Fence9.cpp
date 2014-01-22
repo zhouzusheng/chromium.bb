@@ -12,6 +12,8 @@
 #include "libGLESv2/renderer/renderer9_utils.h"
 #include "libGLESv2/renderer/Renderer9.h"
 
+#define error libglesv2_error
+
 namespace rx
 {
 

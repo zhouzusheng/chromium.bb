@@ -6,6 +6,8 @@
 
 #include "base/command_line.h"
 #include "content/browser/in_process_webkit/browser_webkitplatformsupport_impl.h"
+#include "content/public/browser/content_browser_client.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
@@ -28,7 +30,7 @@ WebKitThread::~WebKitThread() {
 void WebKitThread::Initialize() {
   DCHECK(!webkit_thread_.get());
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess)) {
+  if (GetContentClient()->browser()->SupportsInProcessRenderer()) {
     // TODO(joth): As this cannot work in single process mode use of the
     // webkit thread is deprecated; see http://crbug.com/106839.
     return;

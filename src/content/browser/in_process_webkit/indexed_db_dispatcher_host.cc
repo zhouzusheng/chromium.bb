@@ -21,7 +21,9 @@
 #include "content/browser/renderer_host/render_message_filter.h"
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "googleurl/src/gurl.h"
@@ -77,7 +79,7 @@ void IndexedDBDispatcherHost::ResetDispatcherHosts() {
   // thread, and we must not reset the dispatcher hosts until after those
   // messages are processed.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED) ||
-         CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess));
+         GetContentClient()->browser()->SupportsInProcessRenderer());
 
   // Note that we explicitly separate CloseAll() from destruction of the
   // DatabaseDispatcherHost, since CloseAll() can invoke callbacks which need to

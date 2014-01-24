@@ -110,12 +110,13 @@
         '../ipc/ipc.gyp:ipc',
         '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
+        '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:blink_common',
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:ui',
         '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
-        '../webkit/support/webkit_support.gyp:webkit_support',
         '../sandbox/sandbox.gyp:sandbox',
+        '../webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
       ],
       'conditions': [
         ['OS=="win" and win_use_allocator_shim==1', {

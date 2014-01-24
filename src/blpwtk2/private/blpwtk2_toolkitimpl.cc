@@ -36,7 +36,6 @@
 #include <blpwtk2_webviewproxy.h>
 
 #include <base/command_line.h>
-#include <base/file_util.h>
 #include <base/message_loop.h>
 #include <base/path_service.h>
 #include <base/synchronization/waitable_event.h>
@@ -50,7 +49,6 @@
 #include <content/browser/web_contents/web_contents_view_win.h>
 #include <content/browser/renderer_host/render_process_host_impl.h>
 #include <sandbox/win/src/win_utils.h>
-#include <webkit/plugins/npapi/plugin_list.h>
 
 extern HANDLE g_instDLL;  // set in DllMain
 
@@ -73,11 +71,10 @@ ToolkitImpl* ToolkitImpl::instance()
 }
 
 ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
-                         bool systemPluginsEnabled)
+                         bool pluginDiscoveryEnabled)
 : d_threadsStarted(false)
 , d_threadsStopped(false)
-, d_systemPluginsEnabled(false)
-, d_mainDelegate(false)
+, d_mainDelegate(false, pluginDiscoveryEnabled)
 , d_dictionaryPath(dictionaryPath.data(), dictionaryPath.length())
 {
     DCHECK(!g_instance);
@@ -106,15 +103,6 @@ void ToolkitImpl::startupThreads()
     if (!d_dictionaryPath.empty()) {
         base::ThreadRestrictions::ScopedAllowIO allowIO;
         PathService::Override(chrome::DIR_APP_DICTIONARIES, base::FilePath::FromUTF8Unsafe(d_dictionaryPath));
-    }
-
-    for (size_t i = 0; i < d_pluginPaths.size(); ++i) {
-        const base::FilePath& path = d_pluginPaths[i];
-        webkit::npapi::PluginList::Singleton()->AddExtraPluginPath(d_pluginPaths[i]);
-    }
-
-    if (!d_systemPluginsEnabled) {
-        webkit::npapi::PluginList::Singleton()->DisablePluginsDiscovery();
     }
 
     if (Statics::isRendererMainThreadMode()) {
@@ -172,9 +160,7 @@ void ToolkitImpl::setRendererUsesInProcessPlugins(int renderer)
 
 void ToolkitImpl::registerPlugin(const char* pluginPath)
 {
-    base::FilePath path = base::FilePath::FromUTF8Unsafe(pluginPath);
-    path = base::MakeAbsoluteFilePath(path);
-    d_pluginPaths.push_back(path);
+    d_mainDelegate.registerPlugin(pluginPath);
 }
 
 Profile* ToolkitImpl::getProfile(const char* dataDir)

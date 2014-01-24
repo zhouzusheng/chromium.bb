@@ -32,6 +32,7 @@
 #include <base/file_util.h>
 #include <base/logging.h>
 #include <base/path_service.h>
+#include <content/public/browser/plugin_service.h>
 #include <content/public/common/content_switches.h>
 #include <webkit/common/user_agent/user_agent.h>
 #include <webkit/common/user_agent/user_agent_util.h>
@@ -73,6 +74,13 @@ ContentClient::~ContentClient()
 {
 }
 
+void ContentClient::registerPlugin(const char* pluginPath)
+{
+    base::FilePath path = base::FilePath::FromUTF8Unsafe(pluginPath);
+    path = base::MakeAbsoluteFilePath(path);
+    d_pluginPaths.push_back(path);
+}
+
 // Returns the user agent.
 std::string ContentClient::GetUserAgent() const
 {
@@ -93,8 +101,24 @@ base::StringPiece ContentClient::GetDataResource(
         resource_id, scale_factor);
 }
 
-ContentMainDelegateImpl::ContentMainDelegateImpl(bool isSubProcess)
+void ContentClient::AddNPAPIPlugins(
+    webkit::npapi::PluginList* plugin_list)
+{
+    for (size_t i = 0; i < d_pluginPaths.size(); ++i) {
+        // Using the PluginService instead of PluginList because we don't want
+        // to link directly to PluginList.  PluginList is linked statically
+        // in plugin_common, which is linked into the content module.  If we
+        // link plugin_common as well, then this also exposes
+        // PluginList::GetInstance(), which (in component builds) would give us
+        // a different instance than the one used in the content module.
+        content::PluginService::GetInstance()->AddExtraPluginPath(d_pluginPaths[i]);
+    }
+}
+
+ContentMainDelegateImpl::ContentMainDelegateImpl(bool isSubProcess,
+                                                 bool pluginDiscoveryEnabled)
 : d_rendererInfoMap(0)
+, d_pluginDiscoveryEnabled(pluginDiscoveryEnabled)
 , d_isSubProcess(isSubProcess)
 {
 }
@@ -111,6 +135,16 @@ void ContentMainDelegateImpl::setRendererInfoMap(
     d_rendererInfoMap = rendererInfoMap;
 }
 
+void ContentMainDelegateImpl::disablePluginDiscovery()
+{
+    d_pluginDiscoveryEnabled = false;
+}
+
+void ContentMainDelegateImpl::registerPlugin(const char* pluginPath)
+{
+    d_contentClient.registerPlugin(pluginPath);
+}
+
 // ContentMainDelegate implementation
 bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
 {
@@ -124,6 +158,11 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
         subprocess = subprocess.AppendASCII(BLPWTK2_SUBPROCESS_EXE_NAME);
         commandLine->AppendSwitchNative(switches::kBrowserSubprocessPath,
                                         subprocess.value().c_str());
+    }
+
+    if (!d_pluginDiscoveryEnabled &&
+        !commandLine->HasSwitch(switches::kDisablePluginsDiscovery)) {
+        commandLine->AppendSwitch(switches::kDisablePluginsDiscovery);
     }
 
     InitLogging();

@@ -61,7 +61,7 @@ class ToolkitImpl : public Toolkit {
   public:
     static ToolkitImpl* instance();
 
-    ToolkitImpl(const StringRef& dictionaryPath, bool systemPluginsEnabled);
+    ToolkitImpl(const StringRef& dictionaryPath, bool pluginDiscoveryEnabled);
     virtual ~ToolkitImpl();
 
     void startupThreads();
@@ -90,13 +90,11 @@ class ToolkitImpl : public Toolkit {
   private:
     bool d_threadsStarted;
     bool d_threadsStopped;
-    bool d_systemPluginsEnabled;
     ProfileManager d_profileManager;
     RendererInfoMap d_rendererInfoMap;
     sandbox::SandboxInterfaceInfo d_sandboxInfo;
     ContentMainDelegateImpl d_mainDelegate;
     scoped_ptr<content::ContentMainRunner> d_mainRunner;
-    std::vector<base::FilePath> d_pluginPaths;
     std::string d_dictionaryPath;
 
     // only used for the RENDERER_MAIN thread mode

@@ -59,7 +59,7 @@ PrintJobWorker::PrintJobWorker(PrintJobWorkerOwner* owner)
   DCHECK_EQ(owner_->message_loop(), base::MessageLoop::current());
 
   printing_context_.reset(PrintingContext::Create(
-      g_browser_process->GetApplicationLocale()));
+      "en-US"));
 }
 
 PrintJobWorker::~PrintJobWorker() {

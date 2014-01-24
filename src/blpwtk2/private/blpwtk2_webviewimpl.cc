@@ -35,6 +35,7 @@
 
 #include <base/message_loop/message_loop.h>
 #include <base/strings/utf_string_conversions.h>
+#include <chrome/browser/printing/print_view_manager.h>
 #include <content/browser/renderer_host/render_widget_host_view_base.h>
 #include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/devtools_http_handler.h>
@@ -85,6 +86,8 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
     d_webContents.reset(content::WebContents::Create(createParams));
     d_webContents->SetDelegate(this);
     Observe(d_webContents.get());
+
+    printing::PrintViewManager::CreateForWebContents(d_webContents.get());
 
     if (!initiallyVisible)
         ShowWindow(getNativeView(), SW_HIDE);
@@ -251,6 +254,16 @@ void WebViewImpl::find(const StringRef& text, bool matchCase, bool forward)
     if (!d_find) d_find.reset(new FindOnPage());
 
     handleFindRequest(d_find->makeRequest(text, matchCase, forward));
+}
+
+void WebViewImpl::print()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+
+    printing::PrintViewManager* printViewManager =
+        printing::PrintViewManager::FromWebContents(d_webContents.get());
+    printViewManager->PrintNow();
 }
 
 void WebViewImpl::loadInspector(WebView* inspectedView)

@@ -179,6 +179,10 @@ public:
     // notification is used to update the WebView's screen configuration.
     virtual void rootWindowSettingsChanged() = 0;
 
+    // Display a print dialog and print the contents of this WebView if the
+    // user clicks 'OK'.
+    virtual void print() = 0;
+
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the
     // 'destroy()' method, instead of deleting the object directly.

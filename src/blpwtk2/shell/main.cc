@@ -595,6 +595,26 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
 {
     g_instance = instance;
 
+    std::string url = "http://www.google.com";
+
+    {
+        int argc;
+        LPWSTR *argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+        if (!argv) {
+            return -1;
+        }
+
+        for (int i = 1; i < argc; ++i) {
+            if (argv[i][0] != '-') {
+                char buf[1024];
+                sprintf_s(buf, sizeof(buf), "%S", argv[i]);
+                url = buf;
+            }
+        }
+
+        ::LocalFree(argv);
+    }
+
     int rc = registerShellWindowClass();
     if (rc) return rc;
 
@@ -618,10 +638,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     updateSpellCheckConfig(profile);
 
     Shell* firstShell = createShell(profile);
-    firstShell->d_webView->loadUrl("http://www.google.com");
-    //firstShell->d_webView->loadUrl("file://c:/stuff/test.html");
-    //firstShell->d_webView->loadUrl("http://get.webgl.org");
-    //firstShell->d_webView->loadUrl("http://andrew-hoyer.com/experiments/walking/");
+    firstShell->d_webView->loadUrl(url);
     ShowWindow(firstShell->d_mainWnd, SW_SHOW);
     UpdateWindow(firstShell->d_mainWnd);
     firstShell->d_webView->focus();
@@ -673,15 +690,15 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         case IDC_BACK:
             shell->d_webView->goBack();
             shell->d_webView->focus();
-            break;
+            return 0;
         case IDC_FORWARD:
             shell->d_webView->goForward();
             shell->d_webView->focus();
-            break;
+            return 0;
         case IDC_RELOAD:
             shell->d_webView->reload();
             shell->d_webView->focus();
-            break;
+            return 0;
         case IDM_ZOOM_025:
         case IDM_ZOOM_050:
         case IDM_ZOOM_075:
@@ -692,26 +709,26 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
                 static const int zoom_values[] = {25, 50, 75, 100, 125, 150, 200};
                 shell->d_webView->setZoomPercent(zoom_values[wmId - IDM_ZOOM_025]);
             }
-            break;
+            return 0;
         case IDC_FIND:
             if (HIWORD(wParam) == EN_CHANGE) {
                 shell->find();
             }
-            break;
+            return 0;
         case IDC_FIND_PREV:
         case IDC_FIND_NEXT:
             shell->findNext(wmId == IDC_FIND_NEXT);
-            break;
+            return 0;
         case IDC_STOP:
             shell->d_webView->stop();
             shell->d_webView->focus();
-            break;
+            return 0;
         case IDM_NEW_WINDOW:
             newShell = createShell(shell->d_profile);
             ShowWindow(newShell->d_mainWnd, SW_SHOW);
             UpdateWindow(newShell->d_mainWnd);
             SetFocus(newShell->d_urlEntryWnd);
-            break;
+            return 0;
         case IDM_CLOSE_WINDOW:
             DestroyWindow(shell->d_mainWnd);
             return 0;

@@ -41,7 +41,7 @@ class ProfileManager {
     ProfileManager();
     ~ProfileManager();
 
-    Profile* getOrCreateProfile(const char* dataDir);
+    Profile* createProfile(const std::string& dataDir, bool diskCacheEnabled);
     Profile* createIncognitoProfile();
     Profile* defaultProfile();
 

@@ -30,6 +30,7 @@
 #include <blpwtk2_inprocessrendererhost.h>
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_mainmessagepump.h>
+#include <blpwtk2_profilecreateparams.h>
 #include <blpwtk2_profileimpl.h>
 #include <blpwtk2_webviewcreateparams.h>
 #include <blpwtk2_webviewimpl.h>
@@ -163,18 +164,14 @@ void ToolkitImpl::registerPlugin(const char* pluginPath)
     d_mainDelegate.registerPlugin(pluginPath);
 }
 
-Profile* ToolkitImpl::getProfile(const char* dataDir)
+Profile* ToolkitImpl::createProfile(const ProfileCreateParams& params)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(dataDir);
-    DCHECK(*dataDir);
-    return d_profileManager.getOrCreateProfile(dataDir);
-}
-
-Profile* ToolkitImpl::createIncognitoProfile()
-{
-    DCHECK(Statics::isInApplicationMainThread());
-    return d_profileManager.createIncognitoProfile();
+    if (params.dataDir().isEmpty()) {
+        return d_profileManager.createIncognitoProfile();
+    }
+    std::string dataDir(params.dataDir().data(), params.dataDir().length());
+    return d_profileManager.createProfile(dataDir, params.diskCacheEnabled());
 }
 
 bool ToolkitImpl::hasDevTools()
@@ -211,11 +208,6 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     if (!profile) {
         profile = static_cast<ProfileImpl*>(d_profileManager.defaultProfile());
     }
-
-    // Prevent the application from changing the 'diskCacheEnabled' setting,
-    // because it will be accessed from a different thread, and cannot be
-    // changed thereafter.
-    profile->disableDiskCacheChanges();
 
     int hostAffinity;
     bool isInProcess = false;

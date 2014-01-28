@@ -37,24 +37,24 @@
 
 namespace blpwtk2 {
 
-ProfileImpl::ProfileImpl(const char* dataDir)
-: d_dataDir(dataDir ? dataDir : "")
+ProfileImpl::ProfileImpl(const std::string& dataDir, bool diskCacheEnabled)
+: d_dataDir(dataDir)
 , d_browserContext(0)
 , d_uiLoop(0)
 , d_ioLoop(0)
 , d_fileLoop(0)
 , d_proxyService(0)
 , d_useAppProxyConfig(false)
-, d_diskCacheEnabled(d_dataDir.length() != 0)
-, d_canChangeDiskCacheEnablement(true)
+, d_diskCacheEnabled(diskCacheEnabled)
+, d_isDestroyed(false)
 {
-    // dataDir must not be an empty string.  It must be null for
-    // incognito profiles.
-    DCHECK(!dataDir || d_dataDir.length() != 0);
+    // If disk cache is enabled, then it must not be incognito.
+    DCHECK(!d_diskCacheEnabled || !isIncognito());
 }
 
 ProfileImpl::~ProfileImpl()
 {
+    DCHECK(d_isDestroyed);
 }
 
 void ProfileImpl::initFromBrowserUIThread(
@@ -93,18 +93,16 @@ net::ProxyService* ProfileImpl::initFromBrowserIOThread()
 
 // Profile overrides
 
-void ProfileImpl::setDiskCacheEnabled(bool enabled)
+void ProfileImpl::destroy()
 {
-    // No need a lock, because these variables will only be modified in the
-    // application-main thread.
-
-    DCHECK(!enabled || d_dataDir.length());
-    DCHECK(d_canChangeDiskCacheEnablement || enabled == d_diskCacheEnabled);
-    d_diskCacheEnabled = enabled;
+    DCHECK(!d_isDestroyed);
+    d_isDestroyed = true;
 }
 
 void ProfileImpl::setProxyConfig(const ProxyConfig& config)
 {
+    DCHECK(!d_isDestroyed);
+
     base::AutoLock guard(d_lock);
 
     const net::ProxyConfig& impl = getProxyConfigImpl(config)->d_config;
@@ -125,6 +123,8 @@ void ProfileImpl::setProxyConfig(const ProxyConfig& config)
 
 void ProfileImpl::useSystemProxyConfig()
 {
+    DCHECK(!d_isDestroyed);
+
     base::AutoLock guard(d_lock);
 
     if (!d_useAppProxyConfig) {
@@ -143,6 +143,8 @@ void ProfileImpl::useSystemProxyConfig()
 
 void ProfileImpl::setSpellCheckConfig(const SpellCheckConfig& config)
 {
+    DCHECK(!d_isDestroyed);
+
     // Auto-correct cannot be enabled if spellcheck is disabled.
     DCHECK(!config.isAutoCorrectEnabled() || config.isSpellCheckEnabled());
 

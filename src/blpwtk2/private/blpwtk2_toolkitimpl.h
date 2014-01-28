@@ -70,8 +70,7 @@ class ToolkitImpl : public Toolkit {
     void setRendererUsesInProcessPlugins(int renderer);
     void registerPlugin(const char* pluginPath);
 
-    virtual Profile* getProfile(const char* dataDir) OVERRIDE;
-    virtual Profile* createIncognitoProfile() OVERRIDE;
+    virtual Profile* createProfile(const ProfileCreateParams& params) OVERRIDE;
 
     virtual bool hasDevTools() OVERRIDE;
 

@@ -87,6 +87,7 @@
 namespace blpwtk2 {
 
 class Profile;
+class ProfileCreateParams;
 class WebView;
 class WebViewDelegate;
 
@@ -94,24 +95,15 @@ class WebViewDelegate;
 // instance of this class can be created using the 'ToolkitFactory'.
 class Toolkit {
   public:
-    // Get the profile that stores data in the specified 'dataDir'.  A browser
-    // will typically create a profile for each user on the system.  The data
-    // (cookies, local storage, cache, etc) for any WebViews created using this
-    // profile will be stored within the specified 'dataDir' path.  The profile
-    // will be created if it does not already exist.  Note that profile
-    // settings (such as proxy configuration) are not persisted in the
-    // 'dataDir', so applications are responsible for restoring those settings
-    // (if desired) when they first get the profile.
-    // The returned Profile object will remain valid until shutdown() is
-    // called.  The behavior is undefined if any other process creates a
-    // profile in the same 'dataDir'.
-    virtual Profile* getProfile(const char* dataDir) = 0;
-
-    // Create a new Profile that will prevent WebViews that are created using
-    // it from storing any data (cookies, local storage, cache, etc) on disk.
-    // The returned Profile object will remain valid until shutdown() is
-    // called.
-    virtual Profile* createIncognitoProfile() = 0;
+    // Create a Profile using the specified 'params'.  A browser will typically
+    // create a profile for each user on the system.  The data (cookies, local
+    // storage, cache, etc) for any WebViews created using this profile will be
+    // stored within the 'dataDir' path in the 'params' object.  An incognito
+    // profile will be returned if the 'dataDir' is empty.
+    // For non-incognito profiles, the behavior is undefined if a Profile has
+    // already been created in the 'dataDir' (in this process, or any other
+    // process).
+    virtual Profile* createProfile(const ProfileCreateParams& params) = 0;
 
     // Return true if the blpwtk2_devtools pak file was detected and has been
     // loaded.  This method determines whether blpwtk2::WebView::loadInspector
@@ -123,9 +115,8 @@ class Toolkit {
     // Destroy this Toolkit object.  This will shutdown all threads and block
     // until all threads have joined.  The behavior is undefined if this
     // Toolkit object is used after 'destroy' has been called.  The behavior is
-    // also undefined if there are any WebViews that haven't been destroyed.
-    // Note that this method also invalidates any Profile pointers that were
-    // obtained through this interface.
+    // also undefined if there are any WebViews or Profiles that haven't been
+    // destroyed.
     virtual void destroy() = 0;
 
     // Create a WebView that will be hosted in the specified 'parent' window.

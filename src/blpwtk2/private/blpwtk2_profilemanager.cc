@@ -50,22 +50,18 @@ ProfileManager::~ProfileManager()
     }
 
     if (d_defaultProfile) {
+        d_defaultProfile->destroy();
         delete d_defaultProfile;
     }
 }
 
-Profile* ProfileManager::getOrCreateProfile(const char* dataDir)
+Profile* ProfileManager::createProfile(const std::string& dataDir, bool diskCacheEnabled)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(dataDir);
-    DCHECK(*dataDir);
+    DCHECK(!dataDir.empty());
+    DCHECK(d_profileMap.find(dataDir) == d_profileMap.end());
 
-    ProfileMap::const_iterator it = d_profileMap.find(dataDir);
-    if (it != d_profileMap.end()) {
-        return it->second;
-    }
-
-    ProfileImpl* profile = new ProfileImpl(dataDir);
+    ProfileImpl* profile = new ProfileImpl(dataDir, diskCacheEnabled);
     d_profileMap[dataDir] = profile;
     return profile;
 }
@@ -73,7 +69,7 @@ Profile* ProfileManager::getOrCreateProfile(const char* dataDir)
 Profile* ProfileManager::createIncognitoProfile()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    ProfileImpl* profile = new ProfileImpl(0);
+    ProfileImpl* profile = new ProfileImpl("", false);
     d_profileList.push_back(profile);
     return profile;
 }
@@ -82,7 +78,7 @@ Profile* ProfileManager::defaultProfile()
 {
     DCHECK(Statics::isInApplicationMainThread());
     if (!d_defaultProfile) {
-        d_defaultProfile = new ProfileImpl(0);
+        d_defaultProfile = new ProfileImpl("", false);
     }
     return d_defaultProfile;
 }

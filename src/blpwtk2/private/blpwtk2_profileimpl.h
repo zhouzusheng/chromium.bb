@@ -85,7 +85,7 @@ class ProxyConfig;
 // thread, then deletes all the ProfileImpl objects.
 class ProfileImpl : public Profile {
   public:
-    explicit ProfileImpl(const char* dataDir);
+    ProfileImpl(const std::string& dataDir, bool diskCacheEnabled);
     virtual ~ProfileImpl();
 
     void initFromBrowserUIThread(content::BrowserContext* browserContext,
@@ -93,26 +93,17 @@ class ProfileImpl : public Profile {
                                  base::MessageLoop* fileLoop);
     net::ProxyService* initFromBrowserIOThread();
 
-    // Occurs on the application-main thread when a WebView using this profile
-    // is created.
-    void disableDiskCacheChanges() { d_canChangeDiskCacheEnablement = false; }
-
-    // Occurs on the IO thread when setting up the cache.  No lock is required
-    // here because setDiskCacheEnabled cannot be called after WebViews have
-    // been created.
     bool diskCacheEnabled() const { return d_diskCacheEnabled; }
+    const std::string& dataDir() const { return d_dataDir; }
+    bool isIncognito() const { return d_dataDir.empty(); }
 
-    const char* dataDir() const
-    {
-        return d_dataDir.length() != 0 ? d_dataDir.c_str() : 0;
-    }
     content::BrowserContext* browserContext() const
     {
         return d_browserContext;
     }
 
     // Profile overrides, must only be called on the application-main thread.
-    virtual void setDiskCacheEnabled(bool enabled) OVERRIDE;
+    virtual void destroy() OVERRIDE;
     virtual void setProxyConfig(const ProxyConfig& config) OVERRIDE;
     virtual void useSystemProxyConfig() OVERRIDE;
     virtual void setSpellCheckConfig(const SpellCheckConfig& config) OVERRIDE;
@@ -136,10 +127,10 @@ class ProfileImpl : public Profile {
     net::ProxyService* d_proxyService;
     scoped_ptr<net::ProxyConfigService> d_proxyConfigService;
     net::ProxyConfig d_appProxyConfig;
+    SpellCheckConfig d_spellCheckConfig;
     bool d_useAppProxyConfig;
     bool d_diskCacheEnabled;
-    bool d_canChangeDiskCacheEnablement;
-    SpellCheckConfig d_spellCheckConfig;
+    bool d_isDestroyed;
 
     DISALLOW_COPY_AND_ASSIGN(ProfileImpl);
 };

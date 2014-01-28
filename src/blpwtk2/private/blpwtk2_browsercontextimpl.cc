@@ -59,7 +59,7 @@ BrowserContextImpl::BrowserContextImpl(ProfileImpl* profile)
     DCHECK(d_profile);
     DCHECK(!d_profile->browserContext());
 
-    if (d_profile->dataDir()) {
+    if (!d_profile->isIncognito()) {
         // allow IO during creation of data directory
         base::ThreadRestrictions::ScopedAllowIO allowIO;
 
@@ -107,7 +107,7 @@ BrowserContextImpl::BrowserContextImpl(ProfileImpl* profile)
 
 BrowserContextImpl::~BrowserContextImpl()
 {
-    if (!d_profile->dataDir()) {
+    if (d_profile->isIncognito()) {
         // Delete the temporary directory that we created in the constructor.
 
         // allow IO during deletion of temporary directory
@@ -155,7 +155,7 @@ base::FilePath BrowserContextImpl::GetPath()
 
 bool BrowserContextImpl::IsOffTheRecord() const
 {
-    return 0 == d_profile->dataDir();
+    return d_profile->isIncognito();
 }
 
 net::URLRequestContextGetter* BrowserContextImpl::GetRequestContext()

@@ -179,6 +179,8 @@
         'public/blpwtk2_newviewparams.h',
         'public/blpwtk2_profile.cc',
         'public/blpwtk2_profile.h',
+        'public/blpwtk2_profilecreateparams.cc',
+        'public/blpwtk2_profilecreateparams.h',
         'public/blpwtk2_proxyconfig.cc',
         'public/blpwtk2_proxyconfig.h',
         'public/blpwtk2_refcountedobject.cc',

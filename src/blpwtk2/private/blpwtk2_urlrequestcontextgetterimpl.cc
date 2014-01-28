@@ -46,6 +46,8 @@
 #include <net/ssl/default_server_bound_cert_store.h>
 #include <net/ssl/server_bound_cert_service.h>
 #include <net/ssl/ssl_config_service_defaults.h>
+#include <net/url_request/data_protocol_handler.h>
+#include <net/url_request/file_protocol_handler.h>
 #include <net/url_request/protocol_intercept_job_factory.h>
 #include <net/url_request/static_http_user_agent_settings.h>
 #include <net/url_request/url_request_context.h>
@@ -190,6 +192,14 @@ void URLRequestContextGetterImpl::initialize()
     scoped_ptr<net::URLRequestJobFactoryImpl> jobFactory(
         new net::URLRequestJobFactoryImpl());
     installProtocolHandlers(jobFactory.get(), &d_protocolHandlers);
+    bool setProtocol = jobFactory->SetProtocolHandler(
+        chrome::kDataScheme,
+        new net::DataProtocolHandler);
+    DCHECK(setProtocol);
+    setProtocol = jobFactory->SetProtocolHandler(
+        chrome::kFileScheme,
+        new net::FileProtocolHandler);
+    DCHECK(setProtocol);
     d_storage->set_job_factory(jobFactory.release());
 }
 

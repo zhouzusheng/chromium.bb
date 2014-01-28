@@ -37,6 +37,7 @@
 #include <content/public/browser/render_process_host.h>
 #include <content/public/browser/resource_dispatcher_host.h>
 #include <content/public/browser/resource_dispatcher_host_delegate.h>
+#include <content/public/common/url_constants.h>
 #include <chrome/browser/spellchecker/spellcheck_message_filter.h>
 
 namespace blpwtk2 {
@@ -160,6 +161,28 @@ net::URLRequestContextGetter* ContentBrowserClientImpl::CreateRequestContext(
     }
 
     return contextImpl->requestContextGetter();
+}
+
+bool ContentBrowserClientImpl::IsHandledURL(const GURL& url)
+{
+    if (!url.is_valid())
+        return false;
+    DCHECK_EQ(url.scheme(), StringToLowerASCII(url.scheme()));
+    // Keep in sync with ProtocolHandlers added by
+    // URLRequestContextGetterImpl::GetURLRequestContext().
+    static const char* const kProtocolList[] = {
+        chrome::kBlobScheme,
+        chrome::kFileSystemScheme,
+        chrome::kChromeUIScheme,
+        chrome::kChromeDevToolsScheme,
+        chrome::kDataScheme,
+        chrome::kFileScheme,
+    };
+    for (size_t i = 0; i < arraysize(kProtocolList); ++i) {
+        if (url.scheme() == kProtocolList[i])
+            return true;
+    }
+    return false;
 }
 
 content::MediaObserver* ContentBrowserClientImpl::GetMediaObserver()

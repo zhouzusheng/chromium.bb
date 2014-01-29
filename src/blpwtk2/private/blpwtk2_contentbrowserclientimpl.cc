@@ -155,11 +155,7 @@ net::URLRequestContextGetter* ContentBrowserClientImpl::CreateRequestContext(
     BrowserContextImpl* contextImpl
         = static_cast<BrowserContextImpl*>(browserContext);
 
-    if (!contextImpl->requestContextGetter()) {
-        new URLRequestContextGetterImpl(contextImpl, protocolHandlers);
-        DCHECK(contextImpl->requestContextGetter());
-    }
-
+    contextImpl->requestContextGetter()->setProtocolHandlers(protocolHandlers);
     return contextImpl->requestContextGetter();
 }
 

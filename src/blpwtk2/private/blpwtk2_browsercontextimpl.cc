@@ -26,6 +26,7 @@
 #include <blpwtk2_resourcecontextimpl.h>
 #include <blpwtk2_spellcheckconfig.h>
 #include <blpwtk2_stringref.h>
+#include <blpwtk2_urlrequestcontextgetterimpl.h>
 
 #include <base/files/file_path.h>
 #include <base/file_util.h>
@@ -40,29 +41,25 @@
 #include <components/browser_context_keyed_service/browser_context_dependency_manager.h>
 #include <components/user_prefs/pref_registry_syncable.h>
 #include <components/user_prefs/user_prefs.h>
-#include <net/proxy/proxy_service.h>
-#include <net/proxy/proxy_config_service.h>
-#include <net/proxy/proxy_config_service_fixed.h>
-#include <net/url_request/url_request_context_getter.h>
 
 namespace blpwtk2 {
 
 BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
                                        bool diskCacheEnabled)
-: d_proxyService(0)
-, d_diskCacheEnabled(diskCacheEnabled)
-, d_isIncognito(dataDir.empty())
+: d_isIncognito(dataDir.empty())
 {
     // If disk cache is enabled, then it must not be incognito.
-    DCHECK(!d_diskCacheEnabled || !d_isIncognito);
+    DCHECK(!diskCacheEnabled || !d_isIncognito);
+
+    base::FilePath path;
 
     if (!d_isIncognito) {
         // allow IO during creation of data directory
         base::ThreadRestrictions::ScopedAllowIO allowIO;
 
-        d_path = base::FilePath::FromUTF8Unsafe(dataDir);
-        if (!file_util::PathExists(d_path))
-            file_util::CreateDirectory(d_path);
+        path = base::FilePath::FromUTF8Unsafe(dataDir);
+        if (!file_util::PathExists(path))
+            file_util::CreateDirectory(path);
     }
     else {
         // It seems that even incognito browser contexts need to return a valid
@@ -73,8 +70,10 @@ BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
 
         // allow IO during creation of temporary directory
         base::ThreadRestrictions::ScopedAllowIO allowIO;
-        file_util::CreateNewTempDirectory(L"blpwtk2_", &d_path);
+        file_util::CreateNewTempDirectory(L"blpwtk2_", &path);
     }
+
+    d_requestContextGetter = new URLRequestContextGetterImpl(path, diskCacheEnabled);
 
     {
         // Initialize prefs for this context.
@@ -104,8 +103,8 @@ BrowserContextImpl::~BrowserContextImpl()
 
         // allow IO during deletion of temporary directory
         base::ThreadRestrictions::ScopedAllowIO allowIO;
-        DCHECK(file_util::PathExists(d_path));
-        file_util::Delete(d_path, true);
+        DCHECK(file_util::PathExists(d_requestContextGetter->path()));
+        file_util::Delete(d_requestContextGetter->path(), true);
     }
 
     BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(this);
@@ -117,17 +116,7 @@ BrowserContextImpl::~BrowserContextImpl()
     }
 }
 
-void BrowserContextImpl::setRequestContextGetter(
-    net::URLRequestContextGetter* getter)
-{
-    d_requestContextGetter = getter;
-
-    if (d_resourceContext) {
-        d_resourceContext->setRequestContextGetter(d_requestContextGetter);
-    }
-}
-
-net::URLRequestContextGetter* BrowserContextImpl::requestContextGetter() const
+URLRequestContextGetterImpl* BrowserContextImpl::requestContextGetter() const
 {
     return d_requestContextGetter.get();
 }
@@ -135,47 +124,13 @@ net::URLRequestContextGetter* BrowserContextImpl::requestContextGetter() const
 void BrowserContextImpl::setProxyConfig(const net::ProxyConfig& config)
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-    {
-        base::AutoLock guard(d_proxyConfigServiceLock);
-        d_proxyConfigService.reset(new net::ProxyConfigServiceFixed(config));
-    }
-
-    content::BrowserThread::PostTask(
-        content::BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(&BrowserContextImpl::ioOnUpdateProxyConfig,
-                   base::Unretained(this)));
+    d_requestContextGetter->setProxyConfig(config);
 }
 
 void BrowserContextImpl::useSystemProxyConfig()
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-    {
-        base::MessageLoop* ioLoop =
-            content::BrowserThread::UnsafeGetMessageLoopForThread(
-                content::BrowserThread::IO);
-
-        base::MessageLoop* fileLoop =
-            content::BrowserThread::UnsafeGetMessageLoopForThread(
-                content::BrowserThread::FILE);
-
-        base::AutoLock guard(d_proxyConfigServiceLock);
-        // We must create the proxy config service on the UI loop on Linux
-        // because it must synchronously run on the glib message loop.  This
-        // will be passed to the ProxyServer on the IO thread.
-        d_proxyConfigService.reset(
-            net::ProxyService::CreateSystemProxyConfigService(
-                ioLoop->message_loop_proxy(),
-                fileLoop));
-    }
-
-    content::BrowserThread::PostTask(
-        content::BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(&BrowserContextImpl::ioOnUpdateProxyConfig,
-                   base::Unretained(this)));
+    d_requestContextGetter->useSystemProxyConfig();
 }
 
 void BrowserContextImpl::setSpellCheckConfig(const SpellCheckConfig& config)
@@ -213,46 +168,11 @@ void BrowserContextImpl::setSpellCheckConfig(const SpellCheckConfig& config)
     }
 }
 
-void BrowserContextImpl::ioOnUpdateProxyConfig()
-{
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
-
-    scoped_ptr<net::ProxyConfigService> proxyConfigService;
-
-    {
-        base::AutoLock guard(d_proxyConfigServiceLock);
-        DCHECK(d_proxyConfigService);
-        proxyConfigService = d_proxyConfigService.Pass();
-    }
-
-    if (d_proxyService) {
-        d_proxyService->ResetConfigService(proxyConfigService.release());
-        return;
-    }
-
-    // TODO(jam): use v8 if possible, look at chrome code.
-    d_proxyService = net::ProxyService::CreateUsingSystemProxyResolver(
-        proxyConfigService.release(), 0, 0);
-}
-
-net::ProxyService* BrowserContextImpl::proxyService()
-{
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
-    DCHECK(d_proxyService);
-    return d_proxyService;
-}
-
-bool BrowserContextImpl::diskCacheEnabled()
-{
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
-    return d_diskCacheEnabled;
-}
-
 // ======== content::BrowserContext implementation =============
 
 base::FilePath BrowserContextImpl::GetPath()
 {
-    return d_path;
+    return d_requestContextGetter->path();
 }
 
 bool BrowserContextImpl::IsOffTheRecord() const
@@ -292,11 +212,11 @@ BrowserContextImpl::GetMediaRequestContextForStoragePartition(
 
 content::ResourceContext* BrowserContextImpl::GetResourceContext()
 {
-	DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-	if (!d_resourceContext.get()) {
-		d_resourceContext.reset(new ResourceContextImpl());
-        d_resourceContext->setRequestContextGetter(d_requestContextGetter.get());
+    if (!d_resourceContext.get()) {
+        d_resourceContext.reset(
+            new ResourceContextImpl(d_requestContextGetter.get()));
     }
     return d_resourceContext.get();
 }

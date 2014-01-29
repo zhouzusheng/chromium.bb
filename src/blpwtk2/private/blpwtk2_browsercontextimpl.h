@@ -25,15 +25,12 @@
 
 #include <blpwtk2_config.h>
 
-#include <base/files/file_path.h>
 #include <base/memory/ref_counted.h>
 #include <base/memory/scoped_ptr.h>
 #include <content/public/browser/browser_context.h>
 
 namespace net {
 class ProxyConfig;
-class ProxyConfigService;
-class ProxyService;
 }  // close namespace net
 
 namespace user_prefs {
@@ -47,6 +44,7 @@ namespace blpwtk2 {
 class PrefStore;
 class ResourceContextImpl;
 class SpellCheckConfig;
+class URLRequestContextGetterImpl;
 
 // This is our implementation of the content::BrowserContext interface.  A
 // browser context represents a user's "Profile" in chromium.  In blpwtk2, we
@@ -65,18 +63,12 @@ class BrowserContextImpl : public content::BrowserContext {
                        bool diskCacheEnabled);
     virtual ~BrowserContextImpl();
 
-    void setRequestContextGetter(net::URLRequestContextGetter* getter);
-    net::URLRequestContextGetter* requestContextGetter() const;
+    URLRequestContextGetterImpl* requestContextGetter() const;
 
     // Only called from the UI thread.
     void setProxyConfig(const net::ProxyConfig& config);
     void useSystemProxyConfig();
     void setSpellCheckConfig(const SpellCheckConfig& config);
-
-    // Only called from the IO thread.
-    void ioOnUpdateProxyConfig();
-    net::ProxyService* proxyService();
-    bool diskCacheEnabled();
 
 
     // ======== content::BrowserContext implementation =============
@@ -103,18 +95,11 @@ class BrowserContextImpl : public content::BrowserContext {
     virtual bool AllowDictionaryDownloads() OVERRIDE;
 
   private:
-
-    base::Lock d_proxyConfigServiceLock;
-    scoped_ptr<net::ProxyConfigService> d_proxyConfigService;
-    net::ProxyService* d_proxyService;   // only touched in the IO thread
-
     scoped_ptr<ResourceContextImpl> d_resourceContext;
-    scoped_refptr<net::URLRequestContextGetter> d_requestContextGetter;
+    scoped_refptr<URLRequestContextGetterImpl> d_requestContextGetter;
     scoped_refptr<user_prefs::PrefRegistrySyncable> d_prefRegistry;
     scoped_ptr<PrefService> d_prefService;
     scoped_refptr<PrefStore> d_userPrefs;
-    base::FilePath d_path;
-    bool d_diskCacheEnabled;
     bool d_isIncognito;
 
     DISALLOW_COPY_AND_ASSIGN(BrowserContextImpl);

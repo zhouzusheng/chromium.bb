@@ -25,6 +25,7 @@
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
 #include <blpwtk2_inprocessrendererhost.h>
+#include <blpwtk2_profileimpl.h>
 #include <blpwtk2_profilemanager.h>
 #include <blpwtk2_statics.h>
 
@@ -60,8 +61,8 @@ BrowserMainRunner::~BrowserMainRunner()
     d_devToolsHttpHandlerDelegate.reset();
     d_inProcessRendererHost.reset();
     Statics::browserMainMessageLoop = 0;
-    d_profileManager->deleteBrowserContexts();
     d_impl->Shutdown();
+    d_profileManager->deleteBrowserContexts();
 }
 
 int BrowserMainRunner::Run()
@@ -75,8 +76,10 @@ void BrowserMainRunner::createInProcessRendererHost(ProfileImpl* profile,
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_inProcessRendererHost.get());
     DCHECK(rendererInfoMap);
-    BrowserContextImpl* browserContext
-        = BrowserContextImpl::fromProfile(profile);
+    BrowserContextImpl* browserContext = profile->browserContext();
+    if (!browserContext) {
+        browserContext = profile->createBrowserContext();
+    }
     d_inProcessRendererHost.reset(
         new InProcessRendererHost(browserContext, rendererInfoMap));
 }

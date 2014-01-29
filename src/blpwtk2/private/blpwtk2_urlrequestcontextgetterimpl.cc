@@ -25,7 +25,6 @@
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_httptransactionfactoryimpl.h>
 #include <blpwtk2_networkdelegateimpl.h>
-#include <blpwtk2_profileimpl.h>
 
 #include <base/command_line.h>
 #include <base/logging.h>  // for DCHECK
@@ -127,11 +126,7 @@ void URLRequestContextGetterImpl::initialize()
 
     d_storage->set_cert_verifier(net::CertVerifier::CreateDefault());
     d_storage->set_transport_security_state(new net::TransportSecurityState());
-    {
-        net::ProxyService* proxyService =
-            d_browserContext->profile()->initFromBrowserIOThread();
-        d_storage->set_proxy_service(proxyService);
-    }
+    d_storage->set_proxy_service(d_browserContext->proxyService());
     d_storage->set_ssl_config_service(new net::SSLConfigServiceDefaults);
     d_storage->set_http_auth_handler_factory(
         net::HttpAuthHandlerFactory::CreateDefault(hostResolver.get()));
@@ -168,7 +163,7 @@ void URLRequestContextGetterImpl::initialize()
     networkSessionParams.host_resolver =
         d_urlRequestContext->host_resolver();
 
-    bool useCache = d_browserContext->profile()->diskCacheEnabled();
+    bool useCache = d_browserContext->diskCacheEnabled();
     net::HttpCache::BackendFactory* backendFactory =
         useCache ? new net::HttpCache::DefaultBackend(net::DISK_CACHE,
                                                       net::CACHE_BACKEND_DEFAULT,

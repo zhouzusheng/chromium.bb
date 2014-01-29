@@ -23,8 +23,9 @@
 #include <blpwtk2_browsercontextimpl.h>
 
 #include <blpwtk2_prefstore.h>
-#include <blpwtk2_profileimpl.h>
 #include <blpwtk2_resourcecontextimpl.h>
+#include <blpwtk2_spellcheckconfig.h>
+#include <blpwtk2_stringref.h>
 
 #include <base/files/file_path.h>
 #include <base/file_util.h>
@@ -39,31 +40,27 @@
 #include <components/browser_context_keyed_service/browser_context_dependency_manager.h>
 #include <components/user_prefs/pref_registry_syncable.h>
 #include <components/user_prefs/user_prefs.h>
+#include <net/proxy/proxy_service.h>
+#include <net/proxy/proxy_config_service.h>
+#include <net/proxy/proxy_config_service_fixed.h>
 #include <net/url_request/url_request_context_getter.h>
 
 namespace blpwtk2 {
 
-// static
-BrowserContextImpl* BrowserContextImpl::fromProfile(ProfileImpl* profile)
+BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
+                                       bool diskCacheEnabled)
+: d_proxyService(0)
+, d_diskCacheEnabled(diskCacheEnabled)
+, d_isIncognito(dataDir.empty())
 {
-    DCHECK(profile);
-    if (profile->browserContext()) {
-        return static_cast<BrowserContextImpl*>(profile->browserContext());
-    }
-    return new BrowserContextImpl(profile);
-}
+    // If disk cache is enabled, then it must not be incognito.
+    DCHECK(!d_diskCacheEnabled || !d_isIncognito);
 
-BrowserContextImpl::BrowserContextImpl(ProfileImpl* profile)
-: d_profile(profile)
-{
-    DCHECK(d_profile);
-    DCHECK(!d_profile->browserContext());
-
-    if (!d_profile->isIncognito()) {
+    if (!d_isIncognito) {
         // allow IO during creation of data directory
         base::ThreadRestrictions::ScopedAllowIO allowIO;
 
-        d_path = base::FilePath::FromUTF8Unsafe(d_profile->dataDir());
+        d_path = base::FilePath::FromUTF8Unsafe(dataDir);
         if (!file_util::PathExists(d_path))
             file_util::CreateDirectory(d_path);
     }
@@ -98,16 +95,11 @@ BrowserContextImpl::BrowserContextImpl(ProfileImpl* profile)
                                               // calling CreateBrowserContextServices.
 
     BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(this, false);
-
-    d_profile->initFromBrowserUIThread(
-        this,
-        content::BrowserThread::UnsafeGetMessageLoopForThread(content::BrowserThread::IO),
-        content::BrowserThread::UnsafeGetMessageLoopForThread(content::BrowserThread::FILE));
 }
 
 BrowserContextImpl::~BrowserContextImpl()
 {
-    if (d_profile->isIncognito()) {
+    if (d_isIncognito) {
         // Delete the temporary directory that we created in the constructor.
 
         // allow IO during deletion of temporary directory
@@ -140,11 +132,121 @@ net::URLRequestContextGetter* BrowserContextImpl::requestContextGetter() const
     return d_requestContextGetter.get();
 }
 
-ProfileImpl* BrowserContextImpl::profile() const
+void BrowserContextImpl::setProxyConfig(const net::ProxyConfig& config)
 {
-    return d_profile;
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+    {
+        base::AutoLock guard(d_proxyConfigServiceLock);
+        d_proxyConfigService.reset(new net::ProxyConfigServiceFixed(config));
+    }
+
+    content::BrowserThread::PostTask(
+        content::BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&BrowserContextImpl::ioOnUpdateProxyConfig,
+                   base::Unretained(this)));
 }
 
+void BrowserContextImpl::useSystemProxyConfig()
+{
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+    {
+        base::MessageLoop* ioLoop =
+            content::BrowserThread::UnsafeGetMessageLoopForThread(
+                content::BrowserThread::IO);
+
+        base::MessageLoop* fileLoop =
+            content::BrowserThread::UnsafeGetMessageLoopForThread(
+                content::BrowserThread::FILE);
+
+        base::AutoLock guard(d_proxyConfigServiceLock);
+        // We must create the proxy config service on the UI loop on Linux
+        // because it must synchronously run on the glib message loop.  This
+        // will be passed to the ProxyServer on the IO thread.
+        d_proxyConfigService.reset(
+            net::ProxyService::CreateSystemProxyConfigService(
+                ioLoop->message_loop_proxy(),
+                fileLoop));
+    }
+
+    content::BrowserThread::PostTask(
+        content::BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&BrowserContextImpl::ioOnUpdateProxyConfig,
+                   base::Unretained(this)));
+}
+
+void BrowserContextImpl::setSpellCheckConfig(const SpellCheckConfig& config)
+{
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+    PrefService* prefs = user_prefs::UserPrefs::Get(this);
+
+    bool wasEnabled = prefs->GetBoolean(prefs::kEnableContinuousSpellcheck);
+
+    std::string languages;
+    base::ListValue customWords;
+    for (size_t i = 0; i < config.numLanguages(); ++i) {
+        StringRef str = config.languageAt(i);
+        if (!languages.empty()) {
+            languages.append(",");
+        }
+        languages.append(str.data(), str.length());
+    }
+    for (size_t i = 0; i < config.numCustomWords(); ++i) {
+        StringRef str = config.customWordAt(i);
+        customWords.AppendString(std::string(str.data(), str.length()));
+    }
+    prefs->SetBoolean(prefs::kEnableContinuousSpellcheck,
+                      config.isSpellCheckEnabled());
+    prefs->SetBoolean(prefs::kEnableAutoSpellCorrect,
+                      config.isAutoCorrectEnabled());
+    prefs->SetString(prefs::kSpellCheckDictionary, languages);
+    prefs->Set(prefs::kSpellCheckCustomWords, customWords);
+
+    if (!wasEnabled && config.isSpellCheckEnabled()) {
+        // Ensure the spellcheck service is created for this context if we just
+        // turned it on.
+        SpellcheckServiceFactory::GetForContext(this);
+    }
+}
+
+void BrowserContextImpl::ioOnUpdateProxyConfig()
+{
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+
+    scoped_ptr<net::ProxyConfigService> proxyConfigService;
+
+    {
+        base::AutoLock guard(d_proxyConfigServiceLock);
+        DCHECK(d_proxyConfigService);
+        proxyConfigService = d_proxyConfigService.Pass();
+    }
+
+    if (d_proxyService) {
+        d_proxyService->ResetConfigService(proxyConfigService.release());
+        return;
+    }
+
+    // TODO(jam): use v8 if possible, look at chrome code.
+    d_proxyService = net::ProxyService::CreateUsingSystemProxyResolver(
+        proxyConfigService.release(), 0, 0);
+}
+
+net::ProxyService* BrowserContextImpl::proxyService()
+{
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+    DCHECK(d_proxyService);
+    return d_proxyService;
+}
+
+bool BrowserContextImpl::diskCacheEnabled()
+{
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+    return d_diskCacheEnabled;
+}
 
 // ======== content::BrowserContext implementation =============
 
@@ -155,7 +257,7 @@ base::FilePath BrowserContextImpl::GetPath()
 
 bool BrowserContextImpl::IsOffTheRecord() const
 {
-    return d_profile->isIncognito();
+    return d_isIncognito;
 }
 
 net::URLRequestContextGetter* BrowserContextImpl::GetRequestContext()

@@ -167,11 +167,21 @@ void ToolkitImpl::registerPlugin(const char* pluginPath)
 Profile* ToolkitImpl::createProfile(const ProfileCreateParams& params)
 {
     DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(Statics::isRendererMainThreadMode()
+        || Statics::isOriginalThreadMode());
+
+    if (!d_threadsStarted) {
+        startupThreads();
+    }
+
     if (params.dataDir().isEmpty()) {
-        return d_profileManager.createIncognitoProfile();
+        return d_profileManager.createIncognitoProfile(
+            Statics::browserMainMessageLoop);
     }
     std::string dataDir(params.dataDir().data(), params.dataDir().length());
-    return d_profileManager.createProfile(dataDir, params.diskCacheEnabled());
+    return d_profileManager.createProfile(dataDir,
+                                          params.diskCacheEnabled(),
+                                          Statics::browserMainMessageLoop);
 }
 
 bool ToolkitImpl::hasDevTools()
@@ -206,7 +216,8 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
 
     ProfileImpl* profile = static_cast<ProfileImpl*>(params.profile());
     if (!profile) {
-        profile = static_cast<ProfileImpl*>(d_profileManager.defaultProfile());
+        profile = static_cast<ProfileImpl*>(
+            d_profileManager.defaultProfile(Statics::browserMainMessageLoop));
     }
 
     int hostAffinity;

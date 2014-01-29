@@ -31,6 +31,10 @@
 #include <map>
 #include <string>
 
+namespace base {
+class MessageLoop;
+}  // close namespace base
+
 namespace blpwtk2 {
 
 class Profile;
@@ -41,9 +45,11 @@ class ProfileManager {
     ProfileManager();
     ~ProfileManager();
 
-    Profile* createProfile(const std::string& dataDir, bool diskCacheEnabled);
-    Profile* createIncognitoProfile();
-    Profile* defaultProfile();
+    Profile* createProfile(const std::string& dataDir,
+                           bool diskCacheEnabled,
+                           base::MessageLoop* uiLoop);
+    Profile* createIncognitoProfile(base::MessageLoop* uiLoop);
+    Profile* defaultProfile(base::MessageLoop* uiLoop);
 
     // Must be called just before returning from the browser main thread.
     void deleteBrowserContexts();

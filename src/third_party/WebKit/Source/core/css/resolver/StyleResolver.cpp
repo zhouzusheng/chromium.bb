@@ -2759,6 +2759,15 @@ void StyleResolver::applyProperty(CSSPropertyID id, CSSValue* value)
         state.document()->setHasAnnotatedRegions(true);
         return;
     }
+    case CSSPropertyWebkitCaretColor: {
+        HANDLE_INHERIT_AND_INITIAL(caretColor, CaretColor);
+        if (!primitiveValue)
+            break;
+
+        Color col = colorFromPrimitiveValue(primitiveValue);
+        state.style()->setCaretColor(col);
+        return;
+    }
     case CSSPropertyWebkitTextStrokeWidth: {
         HANDLE_INHERIT_AND_INITIAL(textStrokeWidth, TextStrokeWidth)
         float width = 0;

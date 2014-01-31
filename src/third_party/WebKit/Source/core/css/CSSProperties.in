@@ -116,7 +116,7 @@ z-index type_name=int, custom_all
 -webkit-column-progression type_name=ColumnProgression
 -webkit-column-rule-color custom_all
 -webkit-column-rule-style type_name=EBorderStyle, initial=initialBorderStyle
--webkit-column-span type_name=ColumnSpan
+-webkit-column-span type_name=unsigned int, name_for_methods=ColumnSpanCount, custom_all
 -webkit-column-width type_name=float, custom_all
 -webkit-flow-from type_name=const AtomicString&, name_for_methods=RegionThread, custom_value
 -webkit-flow-into type_name=const AtomicString&, name_for_methods=FlowThread, custom_value

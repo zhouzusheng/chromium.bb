@@ -793,7 +793,7 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
                 
                 if (underline.startOffset <= end()) {
                     // underline intersects this run.  Paint it.
-                    paintCompositionUnderline(context, boxOrigin, underline);
+                    paintCompositionUnderline(context, boxOrigin, underline, textFillColor);
                     if (underline.endOffset > end() + 1)
                         // underline also runs into the next run. Bail now, no more marker advancement.
                         break;
@@ -1397,7 +1397,7 @@ void InlineTextBox::paintDocumentMarkers(GraphicsContext* pt, const FloatPoint& 
     }
 }
 
-void InlineTextBox::paintCompositionUnderline(GraphicsContext* ctx, const FloatPoint& boxOrigin, const CompositionUnderline& underline)
+void InlineTextBox::paintCompositionUnderline(GraphicsContext* ctx, const FloatPoint& boxOrigin, const CompositionUnderline& underline, const Color& color)
 {
     if (m_truncation == cFullTruncation)
         return;
@@ -1437,7 +1437,7 @@ void InlineTextBox::paintCompositionUnderline(GraphicsContext* ctx, const FloatP
     start += 1;
     width -= 2;
 
-    ctx->setStrokeColor(underline.color);
+    ctx->setStrokeColor(color);
     ctx->setStrokeThickness(lineThickness);
     ctx->drawLineForText(FloatPoint(boxOrigin.x() + start, boxOrigin.y() + logicalHeight() - lineThickness), width, textRenderer()->document()->printing());
 }

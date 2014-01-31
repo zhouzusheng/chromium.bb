@@ -177,7 +177,7 @@ LRESULT InputMethodWin::OnDeadChar(UINT message,
   composition.text.assign(1, static_cast<char16>(wparam));
   composition.selection = ui::Range(0, 1);
   composition.underlines.push_back(
-      ui::CompositionUnderline(0, 1, SK_ColorBLACK, false));
+      ui::CompositionUnderline(0, 1, false));
   GetTextInputClient()->SetCompositionText(composition);
   return 0;
 }

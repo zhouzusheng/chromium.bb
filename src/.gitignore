@@ -1,0 +1,31 @@
+# Gyp generated files
+*.vcproj
+*.sln
+*.rules
+*_rules.mk
+*.user
+*.vcxproj
+*.vcxproj.filters
+
+# VS generated files
+*.ncb
+*.suo
+*.sdf
+*.opensdf
+ipch/
+_Resharper.*/
+
+# Generated python
+*.pyc
+
+# Build output directories
+/build/Debug/
+/build/Release/
+/out/
+
+# Special cases
+/build/util/LASTCHANGE
+/build/util/LASTCHANGE.blink
+/third_party/WebKit/Source/bindings/idl_files_list.tmp
+/third_party/ffmpeg/libavcodec/flac.c_preprocessed.c
+

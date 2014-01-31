@@ -518,6 +518,9 @@ namespace WebCore {
         return std::isfinite(value) ? v8::Date::New(value) : v8NullWithCheck(isolate);
     }
 
+    bool isNonWindowContextsAllowed();
+    void setNonWindowContextsAllowed(bool allowed);
+
     v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate*);
 
     PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value>, v8::Isolate*);
@@ -542,6 +545,8 @@ namespace WebCore {
     {
         v8::Handle<v8::Context> context = v8::Context::GetEntered();
         if (context.IsEmpty())
+            return 0;
+        if (isNonWindowContextsAllowed() && !DOMWrapperWorld::contextHasCorrectPrototype(context))
             return 0;
         return DOMWrapperWorld::isolatedWorld(context);
     }

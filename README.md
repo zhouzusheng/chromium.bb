@@ -8,9 +8,9 @@ This repository serves a couple of purposes for us:
 * **Provide a trimmed snapshot of the Chromium tree**
   A typical Chromium checkout is about 3GB and fetches code from several
 different repositories.  Most of that code is not used by Bloomberg (we only
-use the `test_shell` portion of Chromium).
+use the `content` portion of Chromium, and only for the Windows platform).
 
-  Our checkout is about 260MB, and this all comes from a single repo, which
+  Our checkout is about 300MB, and this all comes from a single repo, which
 makes it much easier for us to use internally.
 
 * **Provide a space for us to make/publish changes**
@@ -29,68 +29,39 @@ intention to submit as many bugfixes upstream as we can.
 [here](http://bloomberg.github.com/chromium.bb/).
 
 
-## Overall Structure
+## Branch Structure
 
-The structure of this repository is somewhat unconventional, but it serves our
-purpose well.  The `master` branch is not really used (it just contains this
-README).
+The `master` branch contains the code that is used to make the official
+Chromium builds used by Bloomberg.  It is not used for development.  Actual
+development happens in one of the `bugfix/*` or `feature/*` branches.
 
-Our real entry points are the snapshots we get from upstream.  We tag each of
-these snapshots using the format `upstream/<channel>/<version>`, for example:
-`upstream/stable/21.0.1180.60`.
+Each `bugfix/*` or `feature/*` branch is based on the `upstream/latest` branch,
+which contains a snapshot of the code we get from the upstream Chromium
+project.  (Note: The `upstream/latest` is not an *exact* copy of the upstream
+Chromium repo.  There are some minor modifications made to the build files and
+code, in order to aid and optimize our tree minimization process).
 
-Each tag we snapshot is committed on top of the tag for the previous version.
-This essentially forms a linear branch of upstream versions.  This is the
-<code>upstream/latest</code> branch.
-
-All our `bugfix/` and `feature/` branches are based off one of these tags.  The
-version number of the base tag is appended to the name of the branch, for
-example: `bugfix/offsetleft/19.0.1084.52` is based off the tag
-`upstream/stable/19.0.1084.52`.
-
-When we make a release, we first decide which upstream tag to base the release
-from.  Our merge tool then selects the branches corresponding to that version,
-and also includes the branches from any previous versions.  For example, when
-making a release based on `19.0.1084.52`, we also include branches that were
-based on `18.0.1025.162`, but not branches that were based on `20.0.1132.47`.
-
-Sometimes, conflicts arise when we merge branches that were based on older
-versions, due to other changes from upstream.  For example,
-`bugfix/offsetleft/19.0.1084.52` does not apply cleanly over
-`upstream/stable/20.0.1132.47`.  To resolve this, a new branch is created
-called `bugfix/offsetleft/20.0.1132.47`, based off
-`upstream/stable/20.0.1132.47`, and the previous branch
-`bugfix/offsetleft/19.0.1084.52` is merged and the conflicts are resolved in
-the new branch.  This way, the merge tool we use during releases can work
-autonomously to pickup our `offsetleft` changes.
+The `release/candidate` branch contains changes that are scheduled to be
+included in the next release.
 
 
 ## Build Instructions
 
 * Setup your build environment, as per [these
   instructions](http://www.chromium.org/developers/how-tos/build-instructions-windows).
-* Checkout one of the upstream tags (you can pick the latest version by using
-  the `upstream/latest` branch).
-* If you are using `upstream/stable/24.0.1312.52` or later, you will need to
-  generate your projects.  Note that in previous versions, the generated
-  project files were checked into the repo, so this step was not necessary.
-    * Open a command-prompt window and set the following environment variables:
-
-            set GYP_GENERATORS=msvs
-            set GYP_MSVS_VERSION=2008
-            set CHROMIUM_GYP_FILE=src/webkit/webkit.gyp
-
-    * Run the following command from inside the top-level `chromium/` directory:
+* Run the following command from inside the top-level 'chromium/' directory:
 
             gclient runhooks
 
-* Open `chromium/src/webkit/webkit.sln`.  This is the generated solution file
-  for `test_shell`.
-* Build the `test_shell` project.
-* Now you can start merging branches that you're interested in (see branch
-  descriptions [here](http://bloomberg.github.com/chromium.bb/)).
-* Each branch introduces a specific fix, which you can test by running
-  `test_shell` against the URL provided in the branch description.
+* Open `chromium/src/blpwtk2/blpwtk2.sln`.  This solution file should be
+  generated from the previous step.
+* Build the `blpwtk2_all` project.
+* Now, you can either run the `content_shell` project or the `blpwtk2_shell`
+  project.
+    * The `content_shell` project is from the upstream Chromium project, and
+      uses the `content` layer directly.
+    * The `blpwtk2_shell` project is from our `feature/blpwtk2` branch, and
+      uses our `blpwtk2` integration layer.
 
 ---
 ###### Microsoft, Windows, Visual Studio and ClearType are registered trademarks of Microsoft Corp.

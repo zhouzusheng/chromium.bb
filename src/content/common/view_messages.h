@@ -340,6 +340,27 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
   // The URL that will be loaded in the new window (empty if none has been
   // sepcified).
   IPC_STRUCT_MEMBER(GURL, target_url)
+
+  // The x-coordinate of the window, only valid if x_set.
+  IPC_STRUCT_MEMBER(float, x)
+  IPC_STRUCT_MEMBER(bool, x_set)
+
+  // The y-coordinate of the window, only valid if y_set.
+  IPC_STRUCT_MEMBER(float, y)
+  IPC_STRUCT_MEMBER(bool, y_set)
+
+  // The width of the window, only valid if width_set.
+  IPC_STRUCT_MEMBER(float, width)
+  IPC_STRUCT_MEMBER(bool, width_set)
+
+  // The height of the window, only valid if height_set.
+  IPC_STRUCT_MEMBER(float, height)
+  IPC_STRUCT_MEMBER(bool, height_set)
+
+  // blpwtk-specific flags.
+  IPC_STRUCT_MEMBER(bool, hidden)
+  IPC_STRUCT_MEMBER(bool, nofocus)
+  IPC_STRUCT_MEMBER(bool, topmost)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_CreateWorker_Params)

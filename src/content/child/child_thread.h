@@ -42,7 +42,8 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
  public:
   // Creates the thread.
   ChildThread();
-  // Used for single-process mode.
+  // Used for single-process mode.  If the channel_name is empty, channel
+  // initialization will be deferred until SetChannelName() is called.
   explicit ChildThread(const std::string& channel_name);
   // ChildProcess::main_thread() is reset after Shutdown(), and before the
   // destructor, so any subsystem that relies on ChildProcess::main_thread()
@@ -55,11 +56,20 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
   // IPC::Sender implementation:
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
+  // Perform deferred channel initialization for the case where ChildThread
+  // was constructed with an empty channel_name.
+  void SetChannelName(const std::string& channel_name);
+
   // See documentation on MessageRouter for AddRoute and RemoveRoute
   void AddRoute(int32 routing_id, IPC::Listener* listener);
   void RemoveRoute(int32 routing_id);
 
+ protected:
+  // SHEZ: Protect this so that we can limit the number of ways this member is
+  // SHEZ: accessed.  Since we now allow channel initialization to be deferred,
+  // SHEZ: it is possible that this member would be null.
   IPC::SyncChannel* channel() { return channel_.get(); }
+ public:
 
   // Creates a ResourceLoaderBridge.
   // Tests can override this method if they want a custom loading behavior.
@@ -137,6 +147,7 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
 
  private:
   void Init();
+  void InitChannel();
 
   // IPC message handlers.
   void OnShutdown();

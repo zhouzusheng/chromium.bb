@@ -214,4 +214,9 @@ void resetPluginCache(bool reloadPages)
     WebCore::Page::refreshPlugins(reloadPages);
 }
 
+void allowNonWindowContexts_Unsafe()
+{
+    WebCore::setNonWindowContextsAllowed(true);
+}
+
 } // namespace WebKit

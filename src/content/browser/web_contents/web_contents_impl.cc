@@ -273,7 +273,7 @@ WebContents* WebContents::CreateWithSessionStorage(
     const WebContents::CreateParams& params,
     const SessionStorageNamespaceMap& session_storage_namespace_map) {
   WebContentsImpl* new_contents = new WebContentsImpl(
-      params.browser_context, NULL);
+      params.browser_context, NULL, params.render_process_affinity);
 
   for (SessionStorageNamespaceMap::const_iterator it =
            session_storage_namespace_map.begin();
@@ -328,7 +328,8 @@ class WebContentsImpl::DestructionObserver : public WebContentsObserver {
 
 WebContentsImpl::WebContentsImpl(
     BrowserContext* browser_context,
-    WebContentsImpl* opener)
+    WebContentsImpl* opener,
+    int render_process_affinity)
     : delegate_(NULL),
       controller_(this, browser_context),
       render_view_host_delegate_view_(NULL),
@@ -336,7 +337,7 @@ WebContentsImpl::WebContentsImpl(
 #if defined(OS_WIN) && defined(USE_AURA)
       accessible_parent_(NULL),
 #endif
-      render_manager_(this, this, this),
+      render_manager_(this, this, this, render_process_affinity),
       is_loading_(false),
       crashed_status_(base::TERMINATION_STATUS_STILL_RUNNING),
       crashed_error_code_(0),
@@ -413,7 +414,7 @@ WebContentsImpl* WebContentsImpl::CreateWithOpener(
     WebContentsImpl* opener) {
   TRACE_EVENT0("browser", "WebContentsImpl::CreateWithOpener");
   WebContentsImpl* new_contents = new WebContentsImpl(
-      params.browser_context, opener);
+      params.browser_context, opener, params.render_process_affinity);
 
   new_contents->Init(params);
   return new_contents;
@@ -424,7 +425,9 @@ BrowserPluginGuest* WebContentsImpl::CreateGuest(
     BrowserContext* browser_context,
     SiteInstance* site_instance,
     int guest_instance_id) {
-  WebContentsImpl* new_contents = new WebContentsImpl(browser_context, NULL);
+  // TODO: should CreateGuest() take a process affinity parameter?
+  WebContentsImpl* new_contents = new WebContentsImpl(
+      browser_context, NULL, SiteInstance::kNoProcessAffinity);
 
   // This makes |new_contents| act as a guest.
   // For more info, see comment above class BrowserPluginGuest.
@@ -1378,6 +1381,27 @@ bool WebContentsImpl::PreHandleWheelEvent(
   return false;
 }
 
+void WebContentsImpl::DidUpdateBackingStore() {
+  if (delegate_)
+    delegate_->DidUpdateBackingStore();
+}
+
+bool WebContentsImpl::ShouldSetFocusOnMouseDown() {
+  if (delegate_) {
+    return delegate_->ShouldSetFocusOnMouseDown();
+  }
+  return true;
+}
+
+bool WebContentsImpl::ShowTooltip(
+    const string16& tooltip_text,
+    WebKit::WebTextDirection text_direction_hint) {
+  if (delegate_) {
+    return delegate_->ShowTooltip(this, tooltip_text, text_direction_hint);
+  }
+  return false;
+}
+
 #if defined(OS_WIN) && defined(USE_AURA)
 gfx::NativeViewAccessible WebContentsImpl::GetParentNativeViewAccessible() {
   return accessible_parent_;
@@ -1461,7 +1485,8 @@ void WebContentsImpl::CreateNewWindow(
   // WebContentsView. In the future, we may want to create the view separately.
   WebContentsImpl* new_contents =
       new WebContentsImpl(GetBrowserContext(),
-                          params.opener_suppressed ? NULL : this);
+                          params.opener_suppressed ? NULL : this,
+                          render_manager_.RenderProcessAffinity());
 
   // We must assign the SessionStorageNamespace before calling Init().
   //
@@ -1516,9 +1541,22 @@ void WebContentsImpl::CreateNewWindow(
   }
 
   if (delegate_) {
+    ContentCreatedParams delegate_params;
+    delegate_params.disposition = params.disposition;
+    delegate_params.x = params.x;
+    delegate_params.y = params.y;
+    delegate_params.width = params.width;
+    delegate_params.height = params.height;
+    delegate_params.x_set = params.x_set;
+    delegate_params.y_set = params.y_set;
+    delegate_params.width_set = params.width_set;
+    delegate_params.height_set = params.height_set;
+    delegate_params.nofocus = params.nofocus;
+    delegate_params.hidden = params.hidden;
+    delegate_params.topmost = params.topmost;
     delegate_->WebContentsCreated(
         this, params.opener_frame_id, params.frame_name,
-        params.target_url, new_contents);
+        params.target_url, delegate_params, new_contents);
   }
 
   if (params.opener_suppressed) {
@@ -1696,6 +1734,11 @@ void WebContentsImpl::RequestMediaAccessPermission(
     delegate_->RequestMediaAccessPermission(this, request, callback);
   else
     callback.Run(MediaStreamDevices(), scoped_ptr<MediaStreamUI>());
+}
+
+void WebContentsImpl::HandleExternalProtocol(const GURL& url) {
+  if (delegate_) 
+    delegate_->HandleExternalProtocol(url);
 }
 
 void WebContentsImpl::DidSendScreenRects(RenderWidgetHostImpl* rwh) {

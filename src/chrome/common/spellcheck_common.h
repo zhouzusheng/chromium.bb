@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "ipc/ipc_platform_file.h"
+
 namespace base {
 class FilePath;
 }
@@ -42,6 +44,8 @@ static const size_t MAX_CUSTOM_DICTIONARY_WORD_BYTES = 99;
 
 typedef std::vector<std::string> WordList;
 typedef std::set<std::string> WordSet;
+
+typedef std::pair<IPC::PlatformFileForTransit, std::string> FileLanguagePair;
 
 base::FilePath GetVersionedFileName(const std::string& input_language,
                                     const base::FilePath& dict_dir);

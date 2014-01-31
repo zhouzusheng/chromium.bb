@@ -634,6 +634,7 @@ void BrowserPluginGuest::WebContentsCreated(WebContents* source_contents,
                                             int64 source_frame_id,
                                             const string16& frame_name,
                                             const GURL& target_url,
+                                            const ContentCreatedParams& params,
                                             WebContents* new_contents) {
   WebContentsImpl* new_contents_impl =
       static_cast<WebContentsImpl*>(new_contents);

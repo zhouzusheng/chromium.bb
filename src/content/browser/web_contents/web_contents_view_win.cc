@@ -33,6 +33,7 @@ namespace {
 
 typedef std::map<HWND, WebContentsViewWin*> HwndToWcvMap;
 HwndToWcvMap hwnd_to_wcv_map;
+bool disable_hook_on_root = false;
 
 void RemoveHwndToWcvMapEntry(WebContentsViewWin* wcv) {
   HwndToWcvMap::iterator it;
@@ -78,6 +79,7 @@ class PositionChangedMessageFilter : public ui::HWNDMessageFilter {
 };
 
 void AddFilterToParentHwndSubclass(HWND hwnd, ui::HWNDMessageFilter* filter) {
+  DCHECK(!disable_hook_on_root);
   HWND parent = ::GetAncestor(hwnd, GA_ROOT);
   if (parent) {
     ui::HWNDSubclass::RemoveFilterFromAllTargets(filter);
@@ -87,10 +89,29 @@ void AddFilterToParentHwndSubclass(HWND hwnd, ui::HWNDMessageFilter* filter) {
 
 }  // namespace namespace
 
+// static
+void WebContentsViewWin::disableHookOnRoot()
+{
+  disable_hook_on_root = true;
+}
+
+// static
+void WebContentsViewWin::onRootWindowPositionChanged(gfx::NativeView root)
+{
+  EnumChildWindows(root, EnumChildProc, 0);
+}
+
+// static
+void WebContentsViewWin::onRootWindowSettingChange(gfx::NativeView root)
+{
+  EnumChildWindows(root, EnumChildProc, 0);
+}
+
 WebContentsViewWin::WebContentsViewWin(WebContentsImpl* web_contents,
                                        WebContentsViewDelegate* delegate)
     : web_contents_(web_contents),
       delegate_(delegate),
+      is_delegate_nc_dragging_(false),
       hwnd_message_filter_(new PositionChangedMessageFilter) {
 }
 
@@ -302,7 +323,8 @@ void WebContentsViewWin::CloseTab() {
 LRESULT WebContentsViewWin::OnCreate(
     UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
   hwnd_to_wcv_map.insert(std::make_pair(hwnd(), this));
-  AddFilterToParentHwndSubclass(hwnd(), hwnd_message_filter_.get());
+  if (!disable_hook_on_root)
+    AddFilterToParentHwndSubclass(hwnd(), hwnd_message_filter_.get());
   return 0;
 }
 
@@ -323,7 +345,8 @@ LRESULT WebContentsViewWin::OnWindowPosChanged(
     UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
 
   // Our parent might have changed. So we re-install our hwnd message filter.
-  AddFilterToParentHwndSubclass(hwnd(), hwnd_message_filter_.get());
+  if (!disable_hook_on_root)
+    AddFilterToParentHwndSubclass(hwnd(), hwnd_message_filter_.get());
 
   WINDOWPOS* window_pos = reinterpret_cast<WINDOWPOS*>(lparam);
   if (window_pos->flags & SWP_HIDEWINDOW) {
@@ -371,6 +394,16 @@ LRESULT WebContentsViewWin::OnMouseDown(
 
 LRESULT WebContentsViewWin::OnMouseMove(
     UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
+  if (is_delegate_nc_dragging_) {
+    // When the delegate handles NC dragging, we ::SetCapture on our hwnd.
+    // This causes subsequent mouse moves to come in as WM_MOUSEMOVE instead of
+    // coming in as WM_NCMOUSEMOVE.
+    if (web_contents_->GetDelegate()) {
+      web_contents_->GetDelegate()->OnNCDragMove();
+    }
+    handled = TRUE;
+    return 0;
+  }
   // Let our delegate know that the mouse moved (useful for resetting status
   // bubble state).
   if (web_contents_->GetDelegate()) {
@@ -392,7 +425,75 @@ LRESULT WebContentsViewWin::OnNCCalcSize(
 
 LRESULT WebContentsViewWin::OnNCHitTest(
     UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
+  if (is_delegate_nc_dragging_) {
+    handled = TRUE;
+    return nc_dragging_hittest_code_;
+  }
+  if (web_contents_->GetDelegate()) {
+    int result;
+    if (web_contents_->GetDelegate()->OnNCHitTest(&result)) {
+      handled = TRUE;
+      return result;
+    }
+  }
   return HTTRANSPARENT;
+}
+
+LRESULT WebContentsViewWin::OnNCLButtonDown(
+    UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
+  DCHECK(!is_delegate_nc_dragging_);
+  if (web_contents_->GetDelegate()) {
+    is_delegate_nc_dragging_ = web_contents_->GetDelegate()->OnNCDragBegin(
+        wparam,
+        gfx::Screen::GetNativeScreen()->GetCursorScreenPoint());
+    if (is_delegate_nc_dragging_) {
+      nc_dragging_hittest_code_ = wparam;
+      SetCapture(GetNativeView());
+      handled = TRUE;
+      return 0;
+    }
+  }
+  handled = FALSE;
+  return 1;
+}
+
+LRESULT WebContentsViewWin::OnLButtonUp(
+    UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
+  if (is_delegate_nc_dragging_) {
+    is_delegate_nc_dragging_ = false;
+    ::ReleaseCapture();
+    if (web_contents_->GetDelegate()) {
+      web_contents_->GetDelegate()->OnNCDragEnd();
+    }
+    handled = TRUE;
+    return 0;
+  }
+  handled = FALSE;
+  return 1;
+}
+
+LRESULT WebContentsViewWin::OnCaptureChanged(
+    UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
+  if (is_delegate_nc_dragging_) {
+    is_delegate_nc_dragging_ = false;
+    if (web_contents_->GetDelegate()) {
+      web_contents_->GetDelegate()->OnNCDragEnd();
+    }
+    handled = TRUE;
+    return 0;
+  }
+  handled = FALSE;
+  return 1;
+}
+
+LRESULT WebContentsViewWin::OnSetCursor(
+    UINT message, WPARAM wparam, LPARAM lparam, BOOL& handled) {
+  if (web_contents_->GetDelegate()) {
+    if (web_contents_->GetDelegate()->OnSetCursor(LOWORD(lparam))) {
+      return 1;
+    }
+  }
+  return 0;
 }
 
 LRESULT WebContentsViewWin::OnScroll(

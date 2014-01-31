@@ -1661,6 +1661,32 @@ void StyleResolver::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         if (e->hasTagName(SVGNames::foreignObjectTag))
             style->setEffectiveZoom(RenderStyle::initialZoom());
     }
+
+    if (e && e->hasTagName(htmlTag)) {
+        if (e->document()->frame() &&
+            e->document()->frame()->ownerElement() &&
+            e->document()->frame()->ownerElement()->renderer()) {
+            float ownerEffectiveZoom
+                = e->document()->frame()->ownerElement()->renderer()->style()->effectiveZoom();
+            float childZoom = style->zoom();
+            style->setEffectiveZoom(ownerEffectiveZoom * childZoom);
+        }
+    }
+
+    if (e && e->hasTagName(iframeTag)) {
+        HTMLIFrameElement* iframe = static_cast<HTMLIFrameElement*>(e);
+        if (iframe->contentDocument() && iframe->contentDocument()->body() &&
+            iframe->contentDocument()->body()->parentNode() &&
+            iframe->contentDocument()->body()->parentNode()->renderer()) {
+            Node* child = iframe->contentDocument()->body()->parentNode();
+            float ownerEffectiveZoom = style->effectiveZoom();
+            float childZoom = child->renderer()->style()->zoom();
+            float childEffectiveZoom = child->renderer()->style()->effectiveZoom();
+            if (childEffectiveZoom != ownerEffectiveZoom * childZoom) {
+                child->setNeedsStyleRecalc();
+            }
+        }
+    }
 }
 
 void StyleResolver::adjustGridItemPosition(RenderStyle* style) const

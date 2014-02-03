@@ -27,7 +27,6 @@
 #include <blpwtk2_mediarequestimpl.h>
 #include <blpwtk2_ncdragutil.h>
 #include <blpwtk2_newviewparams.h>
-#include <blpwtk2_profileimpl.h>
 #include <blpwtk2_webframeimpl.h>
 #include <blpwtk2_stringref.h>
 #include <blpwtk2_webviewdelegate.h>
@@ -52,12 +51,13 @@ namespace blpwtk2 {
 
 WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
                          gfx::NativeView parent,
-                         Profile* profile,
+                         BrowserContextImpl* browserContext,
                          int hostAffinity,
                          bool initiallyVisible,
                          bool takeFocusOnMouseDown)
 : d_delegate(delegate)
 , d_implClient(0)
+, d_browserContext(browserContext)
 , d_focusBeforeEnabled(false)
 , d_focusAfterEnabled(false)
 , d_isReadyForDelete(false)
@@ -71,16 +71,9 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 , d_lastNCHitTestResult(HTCLIENT)
 {
     DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(profile);
+    DCHECK(browserContext);
 
-    if (ThreadMode::ORIGINAL == Statics::threadMode)
-        ++Statics::numWebViews;
-
-    ProfileImpl* profileImpl = static_cast<ProfileImpl*>(profile);
-    BrowserContextImpl* browserContext = profileImpl->browserContext();
-    if (!browserContext) {
-        browserContext = profileImpl->createBrowserContext();
-    }
+    d_browserContext->incrementWebViewCount();
 
     content::WebContents::CreateParams createParams(browserContext);
     createParams.render_process_affinity = hostAffinity;
@@ -95,9 +88,12 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
     SetParent(getNativeView(), parent);
 }
 
-WebViewImpl::WebViewImpl(content::WebContents* contents, bool takeFocusOnMouseDown)
+WebViewImpl::WebViewImpl(content::WebContents* contents,
+                         BrowserContextImpl* browserContext,
+                         bool takeFocusOnMouseDown)
 : d_delegate(0)
 , d_implClient(0)
+, d_browserContext(browserContext)
 , d_focusBeforeEnabled(false)
 , d_focusAfterEnabled(false)
 , d_isReadyForDelete(false)
@@ -112,8 +108,7 @@ WebViewImpl::WebViewImpl(content::WebContents* contents, bool takeFocusOnMouseDo
 {
     DCHECK(Statics::isInBrowserMainThread());
 
-    if (ThreadMode::ORIGINAL == Statics::threadMode)
-        ++Statics::numWebViews;
+    d_browserContext->incrementWebViewCount();
 
     d_webContents.reset(contents);
     d_webContents->SetDelegate(this);
@@ -179,10 +174,7 @@ void WebViewImpl::destroy()
     DCHECK(!d_wasDestroyed);
     DCHECK(!d_isDeletingSoon);
 
-    if (ThreadMode::ORIGINAL == Statics::threadMode) {
-        DCHECK(0 < Statics::numWebViews);
-        --Statics::numWebViews;
-    }
+    d_browserContext->decrementWebViewCount();
 
     Observe(0);  // stop observing the WebContents
     d_wasDestroyed = true;
@@ -508,7 +500,9 @@ void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(source_contents == d_webContents);
-    WebViewImpl* newView = new WebViewImpl(new_contents, d_takeFocusOnMouseDown);
+    WebViewImpl* newView = new WebViewImpl(new_contents,
+                                           d_browserContext,
+                                           d_takeFocusOnMouseDown);
     if (d_wasDestroyed || !d_delegate) {
         newView->destroy();
         return;

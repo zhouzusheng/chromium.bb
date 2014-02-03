@@ -43,7 +43,7 @@ class MessageLoop;
 
 namespace blpwtk2 {
 
-class Profile;
+class ProfileProxy;
 class WebFrameImpl;
 class WebViewImpl;
 
@@ -65,7 +65,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     WebViewProxy(WebViewDelegate* delegate,
                  gfx::NativeView parent,
                  base::MessageLoop* implDispatcher,
-                 Profile* profile,
+                 ProfileProxy* profileProxy,
                  int hostAffinity,
                  bool initiallyVisible,
                  bool takeFocusOnMouseDown,
@@ -73,6 +73,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     WebViewProxy(WebViewImpl* impl,
                  base::MessageLoop* implDispatcher,
                  base::MessageLoop* proxyDispatcher,
+                 ProfileProxy* profileProxy,
                  bool isInProcess);
 
     bool isMoveAckNotPending() const { return !d_moveAckPending; }
@@ -151,7 +152,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
 
   private:
     // methods that get invoked in the impl thread
-    void implInit(gfx::NativeView parent, Profile* profile,
+    void implInit(gfx::NativeView parent, ProfileProxy* profileProxy,
                   int hostAffinity, bool initiallyVisible,
                   bool takeFocusOnMouseDown);
     void implDestroy();
@@ -208,6 +209,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void proxyMoveAck();
     void proxyAboutToNavigateRenderView(int routingId);
 
+    ProfileProxy* d_profileProxy;
     WebViewImpl* d_impl;
     base::MessageLoop* d_implDispatcher;
     base::MessageLoop* d_proxyDispatcher;

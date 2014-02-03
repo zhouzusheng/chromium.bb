@@ -25,6 +25,7 @@
 #include <blpwtk2_contextmenuparams.h>
 #include <blpwtk2_mainmessagepump.h>
 #include <blpwtk2_newviewparams.h>
+#include <blpwtk2_profileproxy.h>
 #include <blpwtk2_statics.h>
 #include <blpwtk2_stringref.h>
 #include <blpwtk2_webframeimpl.h>
@@ -42,12 +43,13 @@ namespace blpwtk2 {
 WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
                            gfx::NativeView parent,
                            base::MessageLoop* implDispatcher,
-                           Profile* profile,
+                           ProfileProxy* profileProxy,
                            int hostAffinity,
                            bool initiallyVisible,
                            bool takeFocusOnMouseDown,
                            bool isInProcess)
-: d_impl(0)
+: d_profileProxy(profileProxy)
+, d_impl(0)
 , d_implDispatcher(implDispatcher)
 , d_proxyDispatcher(base::MessageLoop::current())
 , d_delegate(delegate)
@@ -60,21 +62,23 @@ WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
 , d_gotRendererInfo(false)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(profile);
-    ++Statics::numWebViews;
+    DCHECK(profileProxy);
+    profileProxy->incrementWebViewCount();
 
     AddRef();  // this is balanced in destroy()
 
     d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implInit, this, parent, profile,
+        base::Bind(&WebViewProxy::implInit, this, parent, profileProxy,
                    hostAffinity, initiallyVisible, takeFocusOnMouseDown));
 }
 
 WebViewProxy::WebViewProxy(WebViewImpl* impl,
                            base::MessageLoop* implDispatcher,
                            base::MessageLoop* proxyDispatcher,
+                           ProfileProxy* profileProxy,
                            bool isInProcess)
-: d_impl(impl)
+: d_profileProxy(profileProxy)
+, d_impl(impl)
 , d_implDispatcher(implDispatcher)
 , d_proxyDispatcher(proxyDispatcher)
 , d_delegate(0)
@@ -87,7 +91,7 @@ WebViewProxy::WebViewProxy(WebViewImpl* impl,
 , d_gotRendererInfo(false)
 {
     DCHECK(base::MessageLoop::current() == implDispatcher);
-    ++Statics::numWebViews;
+    profileProxy->incrementWebViewCount();
 
     AddRef();  // this is balanced in destroy()
 
@@ -104,8 +108,7 @@ void WebViewProxy::destroy()
     DCHECK(Statics::isInApplicationMainThread());
 
     DCHECK(!d_wasDestroyed);
-    DCHECK(0 < Statics::numWebViews);
-    --Statics::numWebViews;
+    d_profileProxy->decrementWebViewCount();
     d_wasDestroyed = true;
     d_implDispatcher->PostTask(FROM_HERE,
         base::Bind(&WebViewProxy::implDestroy, this));
@@ -444,6 +447,7 @@ void WebViewProxy::didCreateNewView(WebView* source,
     WebViewProxy* newProxy = new WebViewProxy(static_cast<WebViewImpl*>(newView),
                                               d_implDispatcher,
                                               d_proxyDispatcher,
+                                              d_profileProxy,
                                               d_isInProcess);
     *newViewDelegate = newProxy;
     d_proxyDispatcher->PostTask(FROM_HERE,
@@ -571,12 +575,13 @@ void WebViewProxy::findStateWithReqId(int reqId,
 }
 
 void WebViewProxy::implInit(gfx::NativeView parent,
-                            Profile* profile,
+                            ProfileProxy* profileProxy,
                             int hostAffinity,
                             bool initiallyVisible,
                             bool takeFocusOnMouseDown)
 {
-    d_impl = new WebViewImpl(this, parent, profile, hostAffinity,
+    BrowserContextImpl* browserContext = profileProxy->browserContext();
+    d_impl = new WebViewImpl(this, parent, browserContext, hostAffinity,
                              initiallyVisible, takeFocusOnMouseDown);
     d_impl->setImplClient(this);
 }

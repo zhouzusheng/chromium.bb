@@ -39,10 +39,9 @@ namespace sandbox {
 
 namespace blpwtk2 {
 
+class BrowserContextImplManager;
 class DevToolsHttpHandlerDelegateImpl;
 class InProcessRendererHost;
-class ProfileImpl;
-class ProfileManager;
 class RendererInfoMap;
 
 // This class represents the browser-main-thread's "main".  See
@@ -54,16 +53,15 @@ class RendererInfoMap;
 // 'blpwtk2_browserthread.h' where this is done).
 class BrowserMainRunner {
   public:
-    BrowserMainRunner(sandbox::SandboxInterfaceInfo* sandboxInfo,
-                      ProfileManager* profileManager);
+    explicit BrowserMainRunner(sandbox::SandboxInterfaceInfo* sandboxInfo);
     ~BrowserMainRunner();
 
     int Run();
 
     // Create the (singleton) InProcessRendererHost.  This can only be called
-    // from the browser-main thread.  This is a no-op if the
+    // from the browser-main thread.  The behavior is undefined if the
     // InProcessRendererHost has already been created.
-    void createInProcessRendererHost(ProfileImpl* profile,
+    void createInProcessRendererHost(content::BrowserContext* browserContext,
                                      RendererInfoMap* rendererInfoMap);
 
     // Return true if the in-process renderer host has been created, and false
@@ -73,9 +71,9 @@ class BrowserMainRunner {
   private:
     content::MainFunctionParams d_mainParams;
     scoped_ptr<content::BrowserMainRunner> d_impl;
+    scoped_ptr<BrowserContextImplManager> d_browserContextImplManager;
     scoped_ptr<InProcessRendererHost> d_inProcessRendererHost;
     scoped_ptr<DevToolsHttpHandlerDelegateImpl> d_devToolsHttpHandlerDelegate;
-    ProfileManager* d_profileManager;
 
     DISALLOW_COPY_AND_ASSIGN(BrowserMainRunner);
 };

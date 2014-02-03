@@ -78,6 +78,7 @@ URLRequestContextGetterImpl::URLRequestContextGetterImpl(
 : d_path(path)
 , d_diskCacheEnabled(diskCacheEnabled)
 , d_gotProtocolHandlers(false)
+, d_wasProxyInitialized(false)
 {
 }
 
@@ -88,6 +89,8 @@ URLRequestContextGetterImpl::~URLRequestContextGetterImpl()
 void URLRequestContextGetterImpl::setProxyConfig(const net::ProxyConfig& config)
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+    d_wasProxyInitialized = true;
 
     scoped_ptr<net::ProxyConfigService> proxyConfigService(
         new net::ProxyConfigServiceFixed(config));
@@ -102,6 +105,8 @@ void URLRequestContextGetterImpl::setProxyConfig(const net::ProxyConfig& config)
 void URLRequestContextGetterImpl::useSystemProxyConfig()
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+    d_wasProxyInitialized = true;
 
     base::MessageLoop* ioLoop =
         content::BrowserThread::UnsafeGetMessageLoopForThread(
@@ -132,6 +137,15 @@ void URLRequestContextGetterImpl::setProtocolHandlers(
     // Note: It is guaranteed that this is only called once, and it happens
     //       before GetURLRequestContext() is called on the IO thread.
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+    // If we haven't got a proxy configuration at this point, just initialize
+    // to use the system proxy settings.  Note that proxy configuration must be
+    // setup before the IO thread starts using this URLRequestContextGetter.
+    if (!d_wasProxyInitialized) {
+        useSystemProxyConfig();
+        DCHECK(d_wasProxyInitialized);
+    }
+
     base::AutoLock guard(d_protocolHandlersLock);
     DCHECK(!d_gotProtocolHandlers);
     std::swap(d_protocolHandlers, *protocolHandlers);

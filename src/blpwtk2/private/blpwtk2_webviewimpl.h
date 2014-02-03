@@ -40,9 +40,9 @@ namespace content {
 
 namespace blpwtk2 {
 
+class BrowserContextImpl;
 class ContextMenuParams;
 class DevToolsFrontendHostDelegateImpl;
-class Profile;
 class WebViewDelegate;
 class WebViewImplClient;
 
@@ -66,11 +66,13 @@ class WebViewImpl : public WebView,
   public:
     WebViewImpl(WebViewDelegate* delegate,
                 gfx::NativeView parent,
-                Profile* profile,
+                BrowserContextImpl* browserContext,
                 int hostAffinity,
                 bool initiallyVisible,
                 bool takeFocusOnMouseDown);
-    WebViewImpl(content::WebContents* contents, bool takeFocusOnMouseDown);
+    WebViewImpl(content::WebContents* contents,
+                BrowserContextImpl* browserContext,
+                bool takeFocusOnMouseDown);
     virtual ~WebViewImpl();
 
     void setImplClient(WebViewImplClient* client);
@@ -252,6 +254,7 @@ class WebViewImpl : public WebView,
     scoped_ptr<FindOnPage> d_find;
     WebViewDelegate* d_delegate;
     WebViewImplClient* d_implClient;
+    BrowserContextImpl* d_browserContext;
     gfx::NativeView d_originalParent;
     bool d_focusBeforeEnabled;
     bool d_focusAfterEnabled;

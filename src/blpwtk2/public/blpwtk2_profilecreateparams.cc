@@ -28,7 +28,7 @@ namespace blpwtk2 {
 
 ProfileCreateParams::ProfileCreateParams(const StringRef& dataDir)
 : d_dataDir(dataDir)
-, d_diskCacheEnabled(true)
+, d_diskCacheEnabled(!dataDir.isEmpty())
 {
 }
 

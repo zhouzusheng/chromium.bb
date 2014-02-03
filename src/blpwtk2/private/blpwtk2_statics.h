@@ -39,6 +39,7 @@ namespace content {
 
 namespace blpwtk2 {
 
+class BrowserContextImplManager;
 class HttpTransactionHandler;
 class Profile;
 class MediaObserverImpl;
@@ -79,12 +80,15 @@ struct Statics {
     // The single MediaObserverImpl instance.
     static MediaObserverImpl* mediaObserver;
 
+    // The single BrowserContextImplManager instance.
+    static BrowserContextImplManager* browserContextImplManager;
+
     // Whether or not devtools is available.
     static bool hasDevTools;
 
-    // Number of WebViews that have not yet been destroyed.  This is
+    // Number of Profiles that have not yet been destroyed.  This is
     // incremented and decremented from the application's main thread.
-    static int numWebViews;
+    static int numProfiles;
 
 
     // ====== some utility functions =============

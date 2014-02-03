@@ -26,12 +26,13 @@
 #include <blpwtk2_constants.h>
 #include <blpwtk2_browserthread.h>
 #include <blpwtk2_browsercontextimpl.h>
+#include <blpwtk2_browsercontextimplmanager.h>
 #include <blpwtk2_inprocessrenderer.h>
 #include <blpwtk2_inprocessrendererhost.h>
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_mainmessagepump.h>
 #include <blpwtk2_profilecreateparams.h>
-#include <blpwtk2_profileimpl.h>
+#include <blpwtk2_profileproxy.h>
 #include <blpwtk2_webviewcreateparams.h>
 #include <blpwtk2_webviewimpl.h>
 #include <blpwtk2_webviewproxy.h>
@@ -188,6 +189,7 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
                          bool pluginDiscoveryEnabled)
 : d_threadsStarted(false)
 , d_threadsStopped(false)
+, d_defaultProfile(0)
 , d_mainDelegate(false, pluginDiscoveryEnabled)
 , d_dictionaryPath(dictionaryPath.data(), dictionaryPath.length())
 {
@@ -224,13 +226,11 @@ void ToolkitImpl::startupThreads()
     if (Statics::isRendererMainThreadMode()) {
         new base::MessageLoop(base::MessageLoop::TYPE_UI);
         content::WebContentsViewWin::disableHookOnRoot();
-        d_browserThread.reset(new BrowserThread(&d_sandboxInfo,
-                                                &d_profileManager));
+        d_browserThread.reset(new BrowserThread(&d_sandboxInfo));
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
-        d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo,
-                                                        &d_profileManager));
+        d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo));
     }
 
     InProcessRenderer::init();
@@ -243,6 +243,11 @@ void ToolkitImpl::shutdownThreads()
 {
     DCHECK(!d_threadsStopped);
     DCHECK(d_threadsStarted);
+
+    if (d_defaultProfile) {
+        d_defaultProfile->destroy();
+        d_defaultProfile = 0;
+    }
 
     if (Statics::isRendererMainThreadMode()) {
         d_browserThread->sync();  // make sure any WebView::destroy has been
@@ -289,14 +294,19 @@ Profile* ToolkitImpl::createProfile(const ProfileCreateParams& params)
         startupThreads();
     }
 
-    if (params.dataDir().isEmpty()) {
-        return d_profileManager.createIncognitoProfile(
-            Statics::browserMainMessageLoop);
-    }
     std::string dataDir(params.dataDir().data(), params.dataDir().length());
-    return d_profileManager.createProfile(dataDir,
-                                          params.diskCacheEnabled(),
-                                          Statics::browserMainMessageLoop);
+    if (Statics::isRendererMainThreadMode()) {
+        return new ProfileProxy(dataDir,
+                                params.diskCacheEnabled(),
+                                d_browserThread->messageLoop());
+    }
+    else {
+        DCHECK(Statics::isOriginalThreadMode());
+        DCHECK(Statics::browserContextImplManager);
+        return Statics::browserContextImplManager->createBrowserContextImpl(
+            dataDir,
+            params.diskCacheEnabled());
+    }
 }
 
 bool ToolkitImpl::hasDevTools()
@@ -308,9 +318,7 @@ bool ToolkitImpl::hasDevTools()
 void ToolkitImpl::destroy()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(0 == Statics::numWebViews) << "Have not destroyed "
-                                      << Statics::numWebViews
-                                      << " WebViews!";
+    DCHECK(0 == Statics::numProfiles);
     if (d_threadsStarted) {
         shutdownThreads();
     }
@@ -329,10 +337,12 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
         startupThreads();
     }
 
-    ProfileImpl* profile = static_cast<ProfileImpl*>(params.profile());
+    Profile* profile = params.profile();
     if (!profile) {
-        profile = static_cast<ProfileImpl*>(
-            d_profileManager.defaultProfile(Statics::browserMainMessageLoop));
+        if (!d_defaultProfile) {
+            d_defaultProfile = createProfile(ProfileCreateParams(""));
+        }
+        profile = d_defaultProfile;
     }
 
     int hostAffinity;
@@ -351,15 +361,14 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
 
         if (!mainRunner->hasInProcessRendererHost()) {
             if (Statics::isOriginalThreadMode()) {
-                mainRunner->createInProcessRendererHost(profile, &d_rendererInfoMap);
+                createInProcessRendererHost(profile);
             }
             else {
                 d_browserThread->messageLoop()->PostTask(
                     FROM_HERE,
-                    base::Bind(&BrowserMainRunner::createInProcessRendererHost,
-                               base::Unretained(mainRunner),
-                               profile,
-                               &d_rendererInfoMap));
+                    base::Bind(&ToolkitImpl::createInProcessRendererHost,
+                               base::Unretained(this),
+                               profile));
                 d_browserThread->sync();
             }
 
@@ -390,19 +399,22 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     if (Statics::isRendererMainThreadMode()) {
         DCHECK(d_browserThread.get());
 
+        ProfileProxy* profileProxy = static_cast<ProfileProxy*>(profile);
         return new WebViewProxy(delegate,
                                 parent,
                                 d_browserThread->messageLoop(),
-                                profile,
+                                profileProxy,
                                 hostAffinity,
                                 params.initiallyVisible(),
                                 params.takeFocusOnMouseDown(),
                                 isInProcess);
     }
     else if (Statics::isOriginalThreadMode()) {
+        BrowserContextImpl* browserContext =
+            static_cast<BrowserContextImpl*>(profile);
         return new WebViewImpl(delegate,
                                parent,
-                               profile,
+                               browserContext,
                                hostAffinity,
                                params.initiallyVisible(),
                                params.takeFocusOnMouseDown());
@@ -449,6 +461,25 @@ void ToolkitImpl::postHandleMessage(const NativeMsg* msg)
     if (d_threadsStarted) {
         MainMessagePump::current()->postHandleMessage(*msg);
     }
+}
+
+void ToolkitImpl::createInProcessRendererHost(Profile* profile)
+{
+    BrowserMainRunner* mainRunner;
+    BrowserContextImpl* browserContext;
+
+    if (Statics::isOriginalThreadMode()) {
+        mainRunner = d_browserMainRunner.get();
+        browserContext = static_cast<BrowserContextImpl*>(profile);
+    }
+    else {
+        DCHECK(Statics::isRendererMainThreadMode());
+        mainRunner = d_browserThread->mainRunner();
+        browserContext = static_cast<ProfileProxy*>(profile)->browserContext();
+    }
+
+    mainRunner->createInProcessRendererHost(browserContext,
+                                            &d_rendererInfoMap);
 }
 
 }  // close namespace blpwtk2

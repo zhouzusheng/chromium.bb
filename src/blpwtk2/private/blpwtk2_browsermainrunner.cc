@@ -22,11 +22,9 @@
 
 #include <blpwtk2_browsermainrunner.h>
 
-#include <blpwtk2_browsercontextimpl.h>
+#include <blpwtk2_browsercontextimplmanager.h>
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
 #include <blpwtk2_inprocessrendererhost.h>
-#include <blpwtk2_profileimpl.h>
-#include <blpwtk2_profilemanager.h>
 #include <blpwtk2_statics.h>
 
 #include <base/logging.h>  // for DCHECK
@@ -36,10 +34,8 @@
 namespace blpwtk2 {
 
 BrowserMainRunner::BrowserMainRunner(
-    sandbox::SandboxInterfaceInfo* sandboxInfo,
-    ProfileManager* profileManager)
+    sandbox::SandboxInterfaceInfo* sandboxInfo)
 : d_mainParams(*CommandLine::ForCurrentProcess())
-, d_profileManager(profileManager)
 {
     Statics::initBrowserMainThread();
 
@@ -52,6 +48,8 @@ BrowserMainRunner::BrowserMainRunner(
     // content::BrowserMainLoop).
     Statics::browserMainMessageLoop = base::MessageLoop::current();
 
+    d_browserContextImplManager.reset(new BrowserContextImplManager());
+
     d_devToolsHttpHandlerDelegate.reset(
         new DevToolsHttpHandlerDelegateImpl());
 }
@@ -61,8 +59,13 @@ BrowserMainRunner::~BrowserMainRunner()
     d_devToolsHttpHandlerDelegate.reset();
     d_inProcessRendererHost.reset();
     Statics::browserMainMessageLoop = 0;
+
+    // This needs to happen after the main message loop has finished, but
+    // before shutting down threads, because the BrowserContext holds on to
+    // state that needs to be deleted on those threads.
+    d_browserContextImplManager->deleteBrowserContexts();
+
     d_impl->Shutdown();
-    d_profileManager->deleteBrowserContexts();
 }
 
 int BrowserMainRunner::Run()
@@ -70,16 +73,12 @@ int BrowserMainRunner::Run()
     return d_impl->Run();
 }
 
-void BrowserMainRunner::createInProcessRendererHost(ProfileImpl* profile,
+void BrowserMainRunner::createInProcessRendererHost(content::BrowserContext* browserContext,
                                                     RendererInfoMap* rendererInfoMap)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_inProcessRendererHost.get());
     DCHECK(rendererInfoMap);
-    BrowserContextImpl* browserContext = profile->browserContext();
-    if (!browserContext) {
-        browserContext = profile->createBrowserContext();
-    }
     d_inProcessRendererHost.reset(
         new InProcessRendererHost(browserContext, rendererInfoMap));
 }

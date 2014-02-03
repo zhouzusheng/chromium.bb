@@ -35,8 +35,9 @@ HttpTransactionHandler* Statics::httpTransactionHandler = 0;
 base::MessageLoop* Statics::rendererMessageLoop = 0;
 base::MessageLoop* Statics::browserMainMessageLoop = 0;
 MediaObserverImpl* Statics::mediaObserver = 0;
+BrowserContextImplManager* Statics::browserContextImplManager = 0;
 bool Statics::hasDevTools = false;
-int Statics::numWebViews = 0;
+int Statics::numProfiles = 0;
 
 void Statics::initApplicationMainThread()
 {

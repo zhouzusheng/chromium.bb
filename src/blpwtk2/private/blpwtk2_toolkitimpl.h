@@ -26,7 +26,6 @@
 #include <blpwtk2_config.h>
 
 #include <blpwtk2_contentmaindelegateimpl.h>
-#include <blpwtk2_profilemanager.h>
 #include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_toolkit.h>
 
@@ -48,6 +47,7 @@ namespace blpwtk2 {
 
 class BrowserThread;
 class BrowserMainRunner;
+class Profile;
 class StringRef;
 
 // This is the implementation of the Toolkit.  This class is responsible for
@@ -87,9 +87,11 @@ class ToolkitImpl : public Toolkit {
     virtual void postHandleMessage(const NativeMsg* msg) OVERRIDE;
 
   private:
+    void createInProcessRendererHost(Profile* profile);
+
     bool d_threadsStarted;
     bool d_threadsStopped;
-    ProfileManager d_profileManager;
+    Profile* d_defaultProfile;
     RendererInfoMap d_rendererInfoMap;
     sandbox::SandboxInterfaceInfo d_sandboxInfo;
     ContentMainDelegateImpl d_mainDelegate;

@@ -22,6 +22,7 @@
 
 #include <blpwtk2_profilemanager.h>
 
+#include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_profileimpl.h>
 #include <blpwtk2_statics.h>
 
@@ -50,39 +51,37 @@ ProfileManager::~ProfileManager()
     }
 
     if (d_defaultProfile) {
+        d_defaultProfile->destroy();
         delete d_defaultProfile;
     }
 }
 
-Profile* ProfileManager::getOrCreateProfile(const char* dataDir)
+Profile* ProfileManager::createProfile(const std::string& dataDir,
+                                       bool diskCacheEnabled,
+                                       base::MessageLoop* uiLoop)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(dataDir);
-    DCHECK(*dataDir);
+    DCHECK(!dataDir.empty());
+    DCHECK(d_profileMap.find(dataDir) == d_profileMap.end());
 
-    ProfileMap::const_iterator it = d_profileMap.find(dataDir);
-    if (it != d_profileMap.end()) {
-        return it->second;
-    }
-
-    ProfileImpl* profile = new ProfileImpl(dataDir);
+    ProfileImpl* profile = new ProfileImpl(dataDir, diskCacheEnabled, uiLoop);
     d_profileMap[dataDir] = profile;
     return profile;
 }
 
-Profile* ProfileManager::createIncognitoProfile()
+Profile* ProfileManager::createIncognitoProfile(base::MessageLoop* uiLoop)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    ProfileImpl* profile = new ProfileImpl(0);
+    ProfileImpl* profile = new ProfileImpl("", false, uiLoop);
     d_profileList.push_back(profile);
     return profile;
 }
 
-Profile* ProfileManager::defaultProfile()
+Profile* ProfileManager::defaultProfile(base::MessageLoop* uiLoop)
 {
     DCHECK(Statics::isInApplicationMainThread());
     if (!d_defaultProfile) {
-        d_defaultProfile = new ProfileImpl(0);
+        d_defaultProfile = new ProfileImpl("", false, uiLoop);
     }
     return d_defaultProfile;
 }

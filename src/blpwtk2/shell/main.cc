@@ -627,7 +627,8 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
 
     g_toolkit = blpwtk2::ToolkitFactory::create(toolkitParams);
 
-    blpwtk2::Profile* profile = g_toolkit->createIncognitoProfile();
+    blpwtk2::ProfileCreateParams profileParams("");
+    blpwtk2::Profile* profile = g_toolkit->createProfile(profileParams);
 
     g_spellCheckEnabled = true;
     g_autoCorrectEnabled = true;
@@ -659,6 +660,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     }
 #endif
 
+    profile->destroy();
     g_toolkit->destroy();
     g_toolkit = 0;
     return 0;

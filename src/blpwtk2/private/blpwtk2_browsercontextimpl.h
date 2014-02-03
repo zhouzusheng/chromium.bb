@@ -25,10 +25,13 @@
 
 #include <blpwtk2_config.h>
 
-#include <base/files/file_path.h>
 #include <base/memory/ref_counted.h>
 #include <base/memory/scoped_ptr.h>
 #include <content/public/browser/browser_context.h>
+
+namespace net {
+class ProxyConfig;
+}  // close namespace net
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -39,8 +42,9 @@ class PrefService;
 namespace blpwtk2 {
 
 class PrefStore;
-class ProfileImpl;
 class ResourceContextImpl;
+class SpellCheckConfig;
+class URLRequestContextGetterImpl;
 
 // This is our implementation of the content::BrowserContext interface.  A
 // browser context represents a user's "Profile" in chromium.  In blpwtk2, we
@@ -55,19 +59,17 @@ class ResourceContextImpl;
 // control caching/proxying etc.
 class BrowserContextImpl : public content::BrowserContext {
   public:
-    // Return the BrowserContext for the specified 'profile'.  If 'profile'
-    // doesn't have a BrowserContext yet, a new BrowserContextImpl will be
-    // created and returned.  The newly created BrowserContextImpl will be
-    // automatically associated with the specified 'profile'.  This function
-    // can only be invoked from the browser-main thread.
-    static BrowserContextImpl* fromProfile(ProfileImpl* profile);
-
-    explicit BrowserContextImpl(ProfileImpl* profile);
+    BrowserContextImpl(const std::string& dataDir,
+                       bool diskCacheEnabled);
     virtual ~BrowserContextImpl();
 
-    void setRequestContextGetter(net::URLRequestContextGetter* getter);
-    net::URLRequestContextGetter* requestContextGetter() const;
-    ProfileImpl* profile() const;
+    URLRequestContextGetterImpl* requestContextGetter() const;
+
+    // Only called from the UI thread.
+    void setProxyConfig(const net::ProxyConfig& config);
+    void useSystemProxyConfig();
+    void setSpellCheckConfig(const SpellCheckConfig& config);
+
 
     // ======== content::BrowserContext implementation =============
 
@@ -94,12 +96,11 @@ class BrowserContextImpl : public content::BrowserContext {
 
   private:
     scoped_ptr<ResourceContextImpl> d_resourceContext;
-    scoped_refptr<net::URLRequestContextGetter> d_requestContextGetter;
+    scoped_refptr<URLRequestContextGetterImpl> d_requestContextGetter;
     scoped_refptr<user_prefs::PrefRegistrySyncable> d_prefRegistry;
     scoped_ptr<PrefService> d_prefService;
     scoped_refptr<PrefStore> d_userPrefs;
-    ProfileImpl* d_profile;
-    base::FilePath d_path;
+    bool d_isIncognito;
 
     DISALLOW_COPY_AND_ASSIGN(BrowserContextImpl);
 };

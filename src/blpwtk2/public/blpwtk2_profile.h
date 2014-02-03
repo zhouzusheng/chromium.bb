@@ -42,11 +42,11 @@ class SpellCheckConfig;
 //       process must use the same Profile.
 class Profile {
   public:
-    // Enable or disable the disk cache for this profile.  This method can only
-    // be used before any WebViews for this profile are created, after which
-    // the setting is locked.  The behavior is undefined if this profile does
-    // not have any data directory.
-    virtual void setDiskCacheEnabled(bool enabled) = 0;
+    // Destroy this profile.  Note that all WebViews created from this profile
+    // must be destroyed before the profile is destroyed.  The behavior is
+    // undefined if this Profile object is used after 'destroy' has been
+    // called.
+    virtual void destroy() = 0;
 
     // Configure the proxy using the specified 'config'.  This method may be
     // called even after WebViews have been created, and the new proxy settings
@@ -67,9 +67,8 @@ class Profile {
     virtual void setSpellCheckConfig(const SpellCheckConfig& config) = 0;
 
   protected:
-    // Destroy this profile.  Note that clients of blpwtk2 should not delete
-    // this object.  It will be deleted automatically when 'Toolkit::destroy'
-    // is called.
+    // Destroy this Profile object.  Note that clients of blpwtk2 should use
+    // the 'destroy()' method, instead of deleting the object directly.
     virtual ~Profile();
 };
 

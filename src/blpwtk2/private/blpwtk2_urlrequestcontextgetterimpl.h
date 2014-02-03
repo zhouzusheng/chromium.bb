@@ -28,46 +28,66 @@
 #include <base/files/file_path.h>
 #include <base/memory/ref_counted.h>
 #include <base/memory/scoped_ptr.h>
+#include <base/synchronization/lock.h>
 #include <content/public/browser/content_browser_client.h>  // for ProtocolHandlerMap
 #include <net/url_request/url_request_context_getter.h>
 #include <net/url_request/url_request_job_factory.h>
 
 namespace net {
+    class ProxyConfig;
     class ProxyConfigService;
-    class NetworkDelegate;
+    class ProxyService;
     class URLRequestContext;
     class URLRequestContextStorage;
 }  // close namespace net
 
 namespace blpwtk2 {
 
-class BrowserContextImpl;
-
-// An instance of this is created for each BrowserContext by the
-// ContentBrowserClient.  This implementation is mostly a copy of
-// ShellURLRequestContextGetter from content_shell, but cleaned up and modified
-// a bit to make it do what we need.
+// An instance of this is created for each BrowserContextImpl.  This
+// implementation is mostly a copy of ShellURLRequestContextGetter from
+// content_shell, but cleaned up and modified a bit to make it do what we need.
+//
+// This implementation has methods to change the proxy configuration, so we
+// hold on to the proxy service ourselves, rather than putting it in the
+// URLRequestContextStorage.
+//
+// This object is created on the browser-main thread, but also lives on the IO
+// thread.  Thread-safe destruction is maintained because the base interface
+// derives from RefCountedThreadSafe.
 class URLRequestContextGetterImpl : public net::URLRequestContextGetter {
 public:
-    URLRequestContextGetterImpl(
-        BrowserContextImpl* browserContext,
-        content::ProtocolHandlerMap* protocolHandlers);
+    URLRequestContextGetterImpl(const base::FilePath& path,
+                                bool diskCacheEnabled);
     virtual ~URLRequestContextGetterImpl();
+
+    // Called on the UI thread.
+    void setProxyConfig(const net::ProxyConfig& config);
+    void useSystemProxyConfig();
+    void setProtocolHandlers(content::ProtocolHandlerMap* protocolHandlers);
+    const base::FilePath& path() const { return d_path; }
 
     // net::URLRequestContextGetter implementation.
     virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
-
     virtual scoped_refptr<base::SingleThreadTaskRunner>
     GetNetworkTaskRunner() const OVERRIDE;
 
 private:
+    // Called on the IO thread.
     void initialize();
+    void updateProxyConfig(
+        scoped_ptr<net::ProxyConfigService> proxyConfigService);
 
-    BrowserContextImpl* d_browserContext;
-    scoped_ptr<net::NetworkDelegate> d_networkDelegate;
+    scoped_ptr<net::ProxyService> d_proxyService;
     scoped_ptr<net::URLRequestContextStorage> d_storage;
     scoped_ptr<net::URLRequestContext> d_urlRequestContext;
+
+    // accessed on both UI and IO threads
+    base::Lock d_protocolHandlersLock;
     content::ProtocolHandlerMap d_protocolHandlers;
+    bool d_gotProtocolHandlers;
+
+    base::FilePath d_path;
+    bool d_diskCacheEnabled;
 
     DISALLOW_COPY_AND_ASSIGN(URLRequestContextGetterImpl);
 };

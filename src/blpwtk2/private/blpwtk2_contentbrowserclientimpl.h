@@ -84,6 +84,10 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
         content::BrowserContext* browserContext,
         content::ProtocolHandlerMap* protocolHandlers) OVERRIDE;
 
+    // Returns whether a specified URL is handled by the embedder's internal
+    // protocol handlers.
+    virtual bool IsHandledURL(const GURL& url) OVERRIDE;
+
     virtual content::MediaObserver* GetMediaObserver() OVERRIDE;
 
   private:

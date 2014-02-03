@@ -23,8 +23,10 @@
 #include <blpwtk2_browsercontextimpl.h>
 
 #include <blpwtk2_prefstore.h>
-#include <blpwtk2_profileimpl.h>
 #include <blpwtk2_resourcecontextimpl.h>
+#include <blpwtk2_spellcheckconfig.h>
+#include <blpwtk2_stringref.h>
+#include <blpwtk2_urlrequestcontextgetterimpl.h>
 
 #include <base/files/file_path.h>
 #include <base/file_util.h>
@@ -39,33 +41,25 @@
 #include <components/browser_context_keyed_service/browser_context_dependency_manager.h>
 #include <components/user_prefs/pref_registry_syncable.h>
 #include <components/user_prefs/user_prefs.h>
-#include <net/url_request/url_request_context_getter.h>
 
 namespace blpwtk2 {
 
-// static
-BrowserContextImpl* BrowserContextImpl::fromProfile(ProfileImpl* profile)
+BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
+                                       bool diskCacheEnabled)
+: d_isIncognito(dataDir.empty())
 {
-    DCHECK(profile);
-    if (profile->browserContext()) {
-        return static_cast<BrowserContextImpl*>(profile->browserContext());
-    }
-    return new BrowserContextImpl(profile);
-}
+    // If disk cache is enabled, then it must not be incognito.
+    DCHECK(!diskCacheEnabled || !d_isIncognito);
 
-BrowserContextImpl::BrowserContextImpl(ProfileImpl* profile)
-: d_profile(profile)
-{
-    DCHECK(d_profile);
-    DCHECK(!d_profile->browserContext());
+    base::FilePath path;
 
-    if (d_profile->dataDir()) {
+    if (!d_isIncognito) {
         // allow IO during creation of data directory
         base::ThreadRestrictions::ScopedAllowIO allowIO;
 
-        d_path = base::FilePath::FromUTF8Unsafe(d_profile->dataDir());
-        if (!file_util::PathExists(d_path))
-            file_util::CreateDirectory(d_path);
+        path = base::FilePath::FromUTF8Unsafe(dataDir);
+        if (!file_util::PathExists(path))
+            file_util::CreateDirectory(path);
     }
     else {
         // It seems that even incognito browser contexts need to return a valid
@@ -76,8 +70,10 @@ BrowserContextImpl::BrowserContextImpl(ProfileImpl* profile)
 
         // allow IO during creation of temporary directory
         base::ThreadRestrictions::ScopedAllowIO allowIO;
-        file_util::CreateNewTempDirectory(L"blpwtk2_", &d_path);
+        file_util::CreateNewTempDirectory(L"blpwtk2_", &path);
     }
+
+    d_requestContextGetter = new URLRequestContextGetterImpl(path, diskCacheEnabled);
 
     {
         // Initialize prefs for this context.
@@ -98,22 +94,17 @@ BrowserContextImpl::BrowserContextImpl(ProfileImpl* profile)
                                               // calling CreateBrowserContextServices.
 
     BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(this, false);
-
-    d_profile->initFromBrowserUIThread(
-        this,
-        content::BrowserThread::UnsafeGetMessageLoopForThread(content::BrowserThread::IO),
-        content::BrowserThread::UnsafeGetMessageLoopForThread(content::BrowserThread::FILE));
 }
 
 BrowserContextImpl::~BrowserContextImpl()
 {
-    if (!d_profile->dataDir()) {
+    if (d_isIncognito) {
         // Delete the temporary directory that we created in the constructor.
 
         // allow IO during deletion of temporary directory
         base::ThreadRestrictions::ScopedAllowIO allowIO;
-        DCHECK(file_util::PathExists(d_path));
-        file_util::Delete(d_path, true);
+        DCHECK(file_util::PathExists(d_requestContextGetter->path()));
+        file_util::Delete(d_requestContextGetter->path(), true);
     }
 
     BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(this);
@@ -125,37 +116,68 @@ BrowserContextImpl::~BrowserContextImpl()
     }
 }
 
-void BrowserContextImpl::setRequestContextGetter(
-    net::URLRequestContextGetter* getter)
-{
-    d_requestContextGetter = getter;
-
-    if (d_resourceContext) {
-        d_resourceContext->setRequestContextGetter(d_requestContextGetter);
-    }
-}
-
-net::URLRequestContextGetter* BrowserContextImpl::requestContextGetter() const
+URLRequestContextGetterImpl* BrowserContextImpl::requestContextGetter() const
 {
     return d_requestContextGetter.get();
 }
 
-ProfileImpl* BrowserContextImpl::profile() const
+void BrowserContextImpl::setProxyConfig(const net::ProxyConfig& config)
 {
-    return d_profile;
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    d_requestContextGetter->setProxyConfig(config);
 }
 
+void BrowserContextImpl::useSystemProxyConfig()
+{
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    d_requestContextGetter->useSystemProxyConfig();
+}
+
+void BrowserContextImpl::setSpellCheckConfig(const SpellCheckConfig& config)
+{
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+    PrefService* prefs = user_prefs::UserPrefs::Get(this);
+
+    bool wasEnabled = prefs->GetBoolean(prefs::kEnableContinuousSpellcheck);
+
+    std::string languages;
+    base::ListValue customWords;
+    for (size_t i = 0; i < config.numLanguages(); ++i) {
+        StringRef str = config.languageAt(i);
+        if (!languages.empty()) {
+            languages.append(",");
+        }
+        languages.append(str.data(), str.length());
+    }
+    for (size_t i = 0; i < config.numCustomWords(); ++i) {
+        StringRef str = config.customWordAt(i);
+        customWords.AppendString(std::string(str.data(), str.length()));
+    }
+    prefs->SetBoolean(prefs::kEnableContinuousSpellcheck,
+                      config.isSpellCheckEnabled());
+    prefs->SetBoolean(prefs::kEnableAutoSpellCorrect,
+                      config.isAutoCorrectEnabled());
+    prefs->SetString(prefs::kSpellCheckDictionary, languages);
+    prefs->Set(prefs::kSpellCheckCustomWords, customWords);
+
+    if (!wasEnabled && config.isSpellCheckEnabled()) {
+        // Ensure the spellcheck service is created for this context if we just
+        // turned it on.
+        SpellcheckServiceFactory::GetForContext(this);
+    }
+}
 
 // ======== content::BrowserContext implementation =============
 
 base::FilePath BrowserContextImpl::GetPath()
 {
-    return d_path;
+    return d_requestContextGetter->path();
 }
 
 bool BrowserContextImpl::IsOffTheRecord() const
 {
-    return 0 == d_profile->dataDir();
+    return d_isIncognito;
 }
 
 net::URLRequestContextGetter* BrowserContextImpl::GetRequestContext()
@@ -190,11 +212,11 @@ BrowserContextImpl::GetMediaRequestContextForStoragePartition(
 
 content::ResourceContext* BrowserContextImpl::GetResourceContext()
 {
-	DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-	if (!d_resourceContext.get()) {
-		d_resourceContext.reset(new ResourceContextImpl());
-        d_resourceContext->setRequestContextGetter(d_requestContextGetter.get());
+    if (!d_resourceContext.get()) {
+        d_resourceContext.reset(
+            new ResourceContextImpl(d_requestContextGetter.get()));
     }
     return d_resourceContext.get();
 }

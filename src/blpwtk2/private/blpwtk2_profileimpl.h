@@ -30,7 +30,6 @@
 
 #include <base/basictypes.h>
 #include <base/compiler_specific.h>
-#include <base/memory/scoped_ptr.h>
 #include <base/synchronization/lock.h>
 #include <net/proxy/proxy_config.h>
 
@@ -40,17 +39,9 @@ namespace base {
 class MessageLoop;
 }  // close namespace base
 
-namespace content {
-class BrowserContext;
-}  // close namespace content
-
-namespace net {
-class ProxyConfigService;
-class ProxyService;
-}  // close namespace net
-
 namespace blpwtk2 {
 
+class BrowserContextImpl;
 class ProxyConfig;
 
 // Concrete implementation of the Profile interface.  There is a 1-to-1
@@ -63,21 +54,12 @@ class ProxyConfig;
 // RENDERER_MAIN thread-mode is used.  See blpwtk2_toolkit.h for an explanation
 // about thread-modes.
 //
-// The ProfileImpl objects are stored in Statics, which contains a mapping from
-// data-directory to ProfileImpl, and also a list of incognito ProfileImpls.
+// The ProfileImpl objects are stored in ProfileManager, which contains a
+// mapping from data-directory to ProfileImpl, and also a list of incognito
+// ProfileImpls.
 //
-// Initialization of a ProfileImpl happens in a few stages.  First, it is
-// constructed in the application's main thread.  When the browser-main thread
-// creates a BrowserContext for this ProfileImpl, it will invoke the
-// 'initFromBrowserUIThread' method.  At this point, it also provides the
-// MessageLoop for the IO and FILE threads (these are needed by the system
-// proxy config service).  Later, when the IO thread needs to obtain the
-// ProxyService for this profile, it will invoke the 'initFromBrowserIOThread'
-// method.
-//
-// Whenever a proxy setting change happens, it will need to bounce through
-// these different threads before arriving at the ProxyService on the IO
-// thread, where the setting is actually made effective.
+// When a profile setting is modified, the update is posted to the browser-main
+// thread so that the BrowserContextImpl settings can be updated.
 //
 // The ProfileImpl will always out-live the BrowserContextImpl.  blpwtk2's
 // shutdown procedure destroys the BrowserMainRunner (which causes all the
@@ -85,61 +67,38 @@ class ProxyConfig;
 // thread, then deletes all the ProfileImpl objects.
 class ProfileImpl : public Profile {
   public:
-    explicit ProfileImpl(const char* dataDir);
+    ProfileImpl(const std::string& dataDir,
+                bool diskCacheEnabled,
+                base::MessageLoop* uiLoop);
     virtual ~ProfileImpl();
 
-    void initFromBrowserUIThread(content::BrowserContext* browserContext,
-                                 base::MessageLoop* ioLoop,
-                                 base::MessageLoop* fileLoop);
-    net::ProxyService* initFromBrowserIOThread();
+    bool isIncognito() const { return d_dataDir.empty(); }
 
-    // Occurs on the application-main thread when a WebView using this profile
-    // is created.
-    void disableDiskCacheChanges() { d_canChangeDiskCacheEnablement = false; }
-
-    // Occurs on the IO thread when setting up the cache.  No lock is required
-    // here because setDiskCacheEnabled cannot be called after WebViews have
-    // been created.
-    bool diskCacheEnabled() const { return d_diskCacheEnabled; }
-
-    const char* dataDir() const
-    {
-        return d_dataDir.length() != 0 ? d_dataDir.c_str() : 0;
-    }
-    content::BrowserContext* browserContext() const
-    {
-        return d_browserContext;
-    }
+    // Only called from the UI thread.
+    BrowserContextImpl* browserContext() const;
+    BrowserContextImpl* createBrowserContext();
 
     // Profile overrides, must only be called on the application-main thread.
-    virtual void setDiskCacheEnabled(bool enabled) OVERRIDE;
+    virtual void destroy() OVERRIDE;
     virtual void setProxyConfig(const ProxyConfig& config) OVERRIDE;
     virtual void useSystemProxyConfig() OVERRIDE;
     virtual void setSpellCheckConfig(const SpellCheckConfig& config) OVERRIDE;
 
   private:
-    void createProxyConfigService();
-    void updateSpellCheckUserPrefs();
-    // called on the UI thread when a proxy config change happens
-    void uiOnUpdateProxyConfig();
-    // called on the IO thread when a proxy config change happens
-    void ioOnUpdateProxyConfig();
-    // called on the UI thread when a spell check config change happens
-    void uiOnUpdateSpellCheckConfig();
+    // methods that get invoked in the UI thread
+    void uiUpdateProxyConfig();
+    void uiUpdateSpellCheckConfig();
+
+    BrowserContextImpl* d_browserContext;  // only touched in the UI thread
 
     base::Lock d_lock;
     std::string d_dataDir;
-    content::BrowserContext* d_browserContext;
     base::MessageLoop* d_uiLoop;
-    base::MessageLoop* d_ioLoop;
-    base::MessageLoop* d_fileLoop;
-    net::ProxyService* d_proxyService;
-    scoped_ptr<net::ProxyConfigService> d_proxyConfigService;
     net::ProxyConfig d_appProxyConfig;
+    SpellCheckConfig d_spellCheckConfig;
     bool d_useAppProxyConfig;
     bool d_diskCacheEnabled;
-    bool d_canChangeDiskCacheEnablement;
-    SpellCheckConfig d_spellCheckConfig;
+    bool d_isDestroyed;
 
     DISALLOW_COPY_AND_ASSIGN(ProfileImpl);
 };

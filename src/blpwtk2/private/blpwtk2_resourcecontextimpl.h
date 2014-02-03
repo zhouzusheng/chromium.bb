@@ -39,11 +39,9 @@ namespace blpwtk2 {
 // and must be destructed in the IO thread.
 class ResourceContextImpl : public content::ResourceContext {
   public:
-    ResourceContextImpl();
+    explicit ResourceContextImpl(net::URLRequestContextGetter* getter);
     virtual ~ResourceContextImpl();
 
-    void setRequestContextGetter(net::URLRequestContextGetter* getter);
-    
     // ======== content::ResourceContext implementation =============
 
     virtual net::HostResolver* GetHostResolver() OVERRIDE;

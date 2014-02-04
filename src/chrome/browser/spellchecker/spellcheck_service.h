@@ -11,7 +11,6 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
-#include "chrome/browser/spellchecker/feedback_sender.h"
 #include "chrome/browser/spellchecker/spellcheck_custom_dictionary.h"
 #include "chrome/browser/spellchecker/spellcheck_hunspell_dictionary.h"
 #include "chrome/common/spellcheck_common.h"
@@ -92,9 +91,6 @@ class SpellcheckService : public BrowserContextKeyedService,
   // Returns the instance of the custom dictionary.
   SpellcheckCustomDictionary* GetCustomDictionary();
 
-  // Returns the instance of the spelling service feedback sender.
-  spellcheck::FeedbackSender* GetFeedbackSender();
-
   // Load a dictionary from a given path. Format specifies how the dictionary
   // is stored. Return value is true if successful.
   bool LoadExternalDictionary(std::string language,
@@ -158,8 +154,6 @@ class SpellcheckService : public BrowserContextKeyedService,
   scoped_ptr<SpellcheckCustomDictionary> custom_dictionary_;
 
   ScopedVector<SpellcheckHunspellDictionary> hunspell_dictionaries_;
-
-  scoped_ptr<spellcheck::FeedbackSender> feedback_sender_;
 
   base::WeakPtrFactory<SpellcheckService> weak_ptr_factory_;
 

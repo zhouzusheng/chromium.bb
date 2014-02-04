@@ -27,18 +27,13 @@
 
 namespace blpwtk2 {
 
-ResourceContextImpl::ResourceContextImpl() : d_requestContextGetter(NULL)
+ResourceContextImpl::ResourceContextImpl(net::URLRequestContextGetter* getter)
+    : d_requestContextGetter(getter)
 {
 }
 
 ResourceContextImpl::~ResourceContextImpl()
 {
-}
-
-void ResourceContextImpl::setRequestContextGetter(
-    net::URLRequestContextGetter* getter)
-{
-    d_requestContextGetter = getter;
 }
 
 net::HostResolver* ResourceContextImpl::GetHostResolver()

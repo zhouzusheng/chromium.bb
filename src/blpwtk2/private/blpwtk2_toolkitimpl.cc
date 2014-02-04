@@ -30,12 +30,15 @@
 #include <blpwtk2_inprocessrendererhost.h>
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_mainmessagepump.h>
+#include <blpwtk2_profilecreateparams.h>
 #include <blpwtk2_profileimpl.h>
 #include <blpwtk2_webviewcreateparams.h>
 #include <blpwtk2_webviewimpl.h>
 #include <blpwtk2_webviewproxy.h>
 
 #include <base/command_line.h>
+#include <base/file_util.h>
+#include <base/files/file_enumerator.h>
 #include <base/message_loop.h>
 #include <base/path_service.h>
 #include <base/synchronization/waitable_event.h>
@@ -50,6 +53,8 @@
 #include <content/browser/renderer_host/render_process_host_impl.h>
 #include <sandbox/win/src/win_utils.h>
 
+#include <TlHelp32.h>  // for CreateToolhelp32Snapshot
+
 extern HANDLE g_instDLL;  // set in DllMain
 
 namespace blpwtk2 {
@@ -61,6 +66,115 @@ static base::MessagePump* messagePumpForUIFactory()
     }
 
     return new base::MessagePumpForUI();
+}
+
+static bool loadRunningProcessIds(std::set<int>* pids)
+{
+    HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hProcessSnap == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    PROCESSENTRY32 pe32;
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+    if (!Process32First(hProcessSnap, &pe32)) {
+        CloseHandle(hProcessSnap);
+        return false;
+    }
+
+    do {
+        pids->insert(pe32.th32ProcessID);
+    } while (Process32Next(hProcessSnap, &pe32));
+
+    CloseHandle(hProcessSnap);
+    return true;
+}
+
+// Returns true if 'dirName' matches the pattern "<prefix><number>_<number>"
+// for any prefix in 'prefixes'.  If so, load the first <number> into 'pid'.
+static bool isScopedDir(const std::wstring& dirName,
+                        const std::vector<std::wstring>& prefixes,
+                        int *pid)
+{
+    const wchar_t* dirNameC = dirName.c_str();
+    for (std::size_t i = 0; i < prefixes.size(); ++i) {
+        if (prefixes[i].length() >= dirName.length()) {
+            continue;
+        }
+        if (0 != wcsncmp(dirNameC, prefixes[i].data(), prefixes[i].length())) {
+            continue;
+        }
+        const wchar_t* pidStart = dirNameC + prefixes[i].length();
+        if (!iswdigit(*pidStart)) {
+            continue;
+        }
+        *pid = *pidStart - '0';
+        const wchar_t* pidEnd = pidStart + 1;
+        while (iswdigit(*pidEnd)) {
+            *pid *= 10;
+            *pid += *pidEnd - '0';
+            ++pidEnd;
+        }
+        if (*pidEnd != '_') {
+            continue;
+        }
+        const wchar_t* randStart = pidEnd + 1;
+        if (!iswdigit(*randStart)) {
+            continue;
+        }
+        const wchar_t* randEnd = randStart + 1;
+        while (iswdigit(*randEnd)) {
+            ++randEnd;
+        }
+        if (*randEnd != 0) {
+            continue;
+        }
+        return true;
+    }
+    return false;
+}
+
+static void deleteTemporaryScopedDirs()
+{
+    std::set<int> pids;
+    if (!loadRunningProcessIds(&pids)) {
+        return;
+    }
+
+    base::FilePath tempPath;
+    if (!file_util::GetTempDir(&tempPath)) {
+        return;
+    }
+
+    std::vector<std::wstring> prefixes;
+    prefixes.push_back(L"scoped_dir");
+    prefixes.push_back(L"scoped_dir_");
+    prefixes.push_back(L"blpwtk2_");
+
+    int count = 0;
+    base::FileEnumerator enumerator(
+        tempPath,
+        false,
+        base::FileEnumerator::DIRECTORIES);
+    for (base::FilePath path = enumerator.Next(); !path.empty(); path = enumerator.Next()) {
+        std::wstring baseName = path.BaseName().value();
+        int pid;
+        if (isScopedDir(baseName, prefixes, &pid)) {
+            if (pids.end() == pids.find(pid)) {
+                file_util::Delete(path, true);
+                ++count;
+                if (count == 100) {
+                    // There are thousands of these directories currently in
+                    // people's TEMP.  We'll just delete a 100 of them at a
+                    // time, and over time, they will all be gone.
+                    // This is so that blpwtk2 doesn't take a really really
+                    // long time to startup the first time this function is
+                    // called.
+                    return;
+                }
+            }
+        }
+    }
 }
 
 static ToolkitImpl* g_instance = 0;
@@ -79,6 +193,8 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
 {
     DCHECK(!g_instance);
     g_instance = this;
+
+    deleteTemporaryScopedDirs();
 
     d_mainDelegate.setRendererInfoMap(&d_rendererInfoMap);
     base::MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);
@@ -163,18 +279,24 @@ void ToolkitImpl::registerPlugin(const char* pluginPath)
     d_mainDelegate.registerPlugin(pluginPath);
 }
 
-Profile* ToolkitImpl::getProfile(const char* dataDir)
+Profile* ToolkitImpl::createProfile(const ProfileCreateParams& params)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(dataDir);
-    DCHECK(*dataDir);
-    return d_profileManager.getOrCreateProfile(dataDir);
-}
+    DCHECK(Statics::isRendererMainThreadMode()
+        || Statics::isOriginalThreadMode());
 
-Profile* ToolkitImpl::createIncognitoProfile()
-{
-    DCHECK(Statics::isInApplicationMainThread());
-    return d_profileManager.createIncognitoProfile();
+    if (!d_threadsStarted) {
+        startupThreads();
+    }
+
+    if (params.dataDir().isEmpty()) {
+        return d_profileManager.createIncognitoProfile(
+            Statics::browserMainMessageLoop);
+    }
+    std::string dataDir(params.dataDir().data(), params.dataDir().length());
+    return d_profileManager.createProfile(dataDir,
+                                          params.diskCacheEnabled(),
+                                          Statics::browserMainMessageLoop);
 }
 
 bool ToolkitImpl::hasDevTools()
@@ -209,13 +331,9 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
 
     ProfileImpl* profile = static_cast<ProfileImpl*>(params.profile());
     if (!profile) {
-        profile = static_cast<ProfileImpl*>(d_profileManager.defaultProfile());
+        profile = static_cast<ProfileImpl*>(
+            d_profileManager.defaultProfile(Statics::browserMainMessageLoop));
     }
-
-    // Prevent the application from changing the 'diskCacheEnabled' setting,
-    // because it will be accessed from a different thread, and cannot be
-    // changed thereafter.
-    profile->disableDiskCacheChanges();
 
     int hostAffinity;
     bool isInProcess = false;

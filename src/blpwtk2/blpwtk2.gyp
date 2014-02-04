@@ -117,6 +117,7 @@
         '../v8/tools/gyp/v8.gyp:v8',
         '../sandbox/sandbox.gyp:sandbox',
         '../webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
+        '../webkit/support/webkit_support.gyp:webkit_resources',
       ],
       'conditions': [
         ['OS=="win" and win_use_allocator_shim==1', {
@@ -129,6 +130,7 @@
         }],
       ],
       'sources': [
+        '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources.rc',
         '<(products_h)',
         '<(version_h)',
         '<(version_cc)',
@@ -179,6 +181,8 @@
         'public/blpwtk2_newviewparams.h',
         'public/blpwtk2_profile.cc',
         'public/blpwtk2_profile.h',
+        'public/blpwtk2_profilecreateparams.cc',
+        'public/blpwtk2_profilecreateparams.h',
         'public/blpwtk2_proxyconfig.cc',
         'public/blpwtk2_proxyconfig.h',
         'public/blpwtk2_refcountedobject.cc',

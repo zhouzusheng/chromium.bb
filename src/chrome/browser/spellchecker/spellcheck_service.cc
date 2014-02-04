@@ -48,8 +48,6 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
       prefs->GetString(prefs::kSpellCheckDictionary),
       &language_code,
       &country_code);
-  feedback_sender_.reset(new spellcheck::FeedbackSender(
-      context->GetRequestContext(), language_code, country_code));
 
   pref_change_registrar_.Add(
       prefs::kEnableAutoSpellCorrect,
@@ -233,10 +231,6 @@ SpellcheckCustomDictionary* SpellcheckService::GetCustomDictionary() {
   return custom_dictionary_.get();
 }
 
-spellcheck::FeedbackSender* SpellcheckService::GetFeedbackSender() {
-  return feedback_sender_.get();
-}
-
 bool SpellcheckService::LoadExternalDictionary(std::string language,
                                                std::string locale,
                                                std::string path,
@@ -352,13 +346,6 @@ void SpellcheckService::OnSpellCheckDictionaryChanged() {
     hunspell_dictionary->Load();
     hunspell_dictionaries_.push_back(hunspell_dictionary);
   }
-
-  // SHEZ: removed feedback sender code when merging blpwtk2 for v29
-  //std::string language_code;
-  //std::string country_code;
-  //chrome::spellcheck_common::GetISOLanguageCountryCodeFromLocale(
-  //    dictionary, &language_code, &country_code);
-  //feedback_sender_->OnLanguageCountryChange(language_code, country_code);
 }
 
 void SpellcheckService::OnUseSpellingServiceChanged() {

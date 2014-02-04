@@ -77,8 +77,10 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
         ++Statics::numWebViews;
 
     ProfileImpl* profileImpl = static_cast<ProfileImpl*>(profile);
-    BrowserContextImpl* browserContext =
-        BrowserContextImpl::fromProfile(profileImpl);
+    BrowserContextImpl* browserContext = profileImpl->browserContext();
+    if (!browserContext) {
+        browserContext = profileImpl->createBrowserContext();
+    }
 
     content::WebContents::CreateParams createParams(browserContext);
     createParams.render_process_affinity = hostAffinity;

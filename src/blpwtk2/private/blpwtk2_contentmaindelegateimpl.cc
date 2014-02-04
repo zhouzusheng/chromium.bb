@@ -37,7 +37,10 @@
 #include <webkit/common/user_agent/user_agent.h>
 #include <webkit/common/user_agent/user_agent_util.h>
 #include <ui/base/resource/resource_bundle.h>
+#include <ui/base/resource/resource_bundle_win.h>
 #include <ui/base/ui_base_switches.h>
+
+extern HANDLE g_instDLL;
 
 namespace blpwtk2 {
 
@@ -52,18 +55,6 @@ static void InitLogging()
     settings.delete_old = logging::DELETE_OLD_LOG_FILE;
     logging::InitLogging(settings);
     logging::SetLogItems(true, true, true, true);
-}
-
-static void InitDevToolsBundle()
-{
-    base::FilePath pak_file;
-    base::FilePath pak_dir;
-    PathService::Get(base::DIR_MODULE, &pak_dir);
-    pak_file = pak_dir.AppendASCII(BLPWTK2_DEVTOOLS_PAK_NAME);
-    if (file_util::PathExists(pak_file)) {
-        Statics::hasDevTools = true;
-        ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
-    }
 }
 
 ContentClient::ContentClient()
@@ -93,10 +84,6 @@ base::StringPiece ContentClient::GetDataResource(
     int resource_id,
     ui::ScaleFactor scale_factor) const
 {
-    if (!Statics::hasDevTools) {
-        return base::StringPiece();
-    }
-
     return ui::ResourceBundle::GetSharedInstance().GetRawDataResourceForScale(
         resource_id, scale_factor);
 }
@@ -173,8 +160,20 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
 
 void ContentMainDelegateImpl::PreSandboxStartup()
 {
+    ui::SetResourcesDataDLL((HINSTANCE)g_instDLL);
+    ui::ResourceBundle::InitSharedInstance();
+    ui::ResourceBundle::GetSharedInstance().AddDLLResources();
     if (!d_isSubProcess) {
-        InitDevToolsBundle();
+        base::FilePath pak_file;
+        base::FilePath pak_dir;
+        PathService::Get(base::DIR_MODULE, &pak_dir);
+        pak_file = pak_dir.AppendASCII(BLPWTK2_DEVTOOLS_PAK_NAME);
+        if (file_util::PathExists(pak_file)) {
+            Statics::hasDevTools = true;
+            ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(
+                pak_file,
+                ui::SCALE_FACTOR_NONE);
+        }
     }
 }
 

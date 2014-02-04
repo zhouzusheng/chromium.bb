@@ -100,14 +100,6 @@ void SpellCheckMessageFilter::OnNotifyChecked(const string16& word,
 
 void SpellCheckMessageFilter::OnRespondDocumentMarkers(
     const std::vector<uint32>& markers) {
-  SpellcheckService* spellcheck =
-      SpellcheckServiceFactory::GetForRenderProcessId(render_process_id_);
-  // Spellcheck service may not be available for a renderer process that is
-  // shutting down.
-  if (!spellcheck)
-    return;
-  spellcheck->GetFeedbackSender()->OnReceiveDocumentMarkers(
-      render_process_id_, markers);
 }
 
 #if !defined(OS_MACOSX)
@@ -140,8 +132,6 @@ void SpellCheckMessageFilter::OnTextCheckComplete(
   if (!spellcheck)
     return;
   std::vector<SpellCheckResult> results_copy = results;
-  spellcheck->GetFeedbackSender()->OnSpellcheckResults(
-      &results_copy, render_process_id_, text, markers);
   Send(new SpellCheckMsg_RespondSpellingService(
       route_id, identifier, success, text, results_copy));
 }

@@ -3253,6 +3253,7 @@ void StyleResolver::applyProperty(CSSPropertyID id, CSSValue* value)
     case CSSPropertyWebkitUserDrag:
     case CSSPropertyWebkitUserModify:
     case CSSPropertyWebkitUserSelect:
+    case CSSPropertyBbRubberbandable:
     case CSSPropertyWebkitClipPath:
     case CSSPropertyWebkitWrapFlow:
     case CSSPropertyWebkitShapeMargin:

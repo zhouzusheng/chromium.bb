@@ -90,6 +90,7 @@ public:
     unsigned lineBreak : 3; // LineBreak
     unsigned resize : 2; // EResize
     unsigned userSelect : 2; // EUserSelect
+    unsigned rubberbandable : 1;  // ERubberbandable
     unsigned colorSpace : 1; // ColorSpace
     unsigned speak : 3; // ESpeak
     unsigned hyphens : 2; // Hyphens

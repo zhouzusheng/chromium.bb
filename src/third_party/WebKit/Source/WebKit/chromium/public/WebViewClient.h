@@ -291,6 +291,17 @@ public:
     // Return true to swallow the input event if the embedder will start a disambiguation popup
     virtual bool didTapMultipleTargets(const WebGestureEvent&, const WebVector<WebRect>& targetRects) { return false; }
 
+    // Show a notification popup for the specified form vaidation messages
+    // besides the anchor rectangle. An implementation of this function should
+    // not hide the popup until hideValidationMessage call.
+    virtual void showValidationMessage(const WebRect& anchorInScreen, const WebString& mainText, const WebString& supplementalText, WebTextDirection hint) { }
+    // Hide notifation popup for form validation messages.
+    virtual void hideValidationMessage() { }
+
+    // Called when a rubberband rectangle should be displayed or hidden.
+    virtual void setRubberbandRect(const WebRect&) { }
+    virtual void hideRubberbandRect() { }
+
     // Session history -----------------------------------------------------
 
     // Tells the embedder to navigate back or forward in session history by

@@ -71,6 +71,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , lineBreak(LineBreakAuto)
     , resize(RenderStyle::initialResize())
     , userSelect(RenderStyle::initialUserSelect())
+    , rubberbandable(RenderStyle::initialRubberbandable())
     , colorSpace(ColorSpaceDeviceRGB)
     , speak(SpeakNormal)
     , hyphens(HyphensManual)
@@ -129,6 +130,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , lineBreak(o.lineBreak)
     , resize(o.resize)
     , userSelect(o.userSelect)
+    , rubberbandable(o.rubberbandable)
     , colorSpace(o.colorSpace)
     , speak(o.speak)
     , hyphens(o.hyphens)
@@ -206,6 +208,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
 #endif
         && resize == o.resize
         && userSelect == o.userSelect
+        && rubberbandable == o.rubberbandable
         && colorSpace == o.colorSpace
         && speak == o.speak
         && hyphens == o.hyphens

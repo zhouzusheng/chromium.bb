@@ -26,6 +26,10 @@
 #include <blpwtk2_config.h>
 #include <string>
 
+namespace base {
+class SingleThreadTaskRunner;
+}  // close namespace base
+
 namespace blpwtk2 {
 
 // Utility for initializing and cleaning up the in-process renderer.  If we are
@@ -47,6 +51,10 @@ class InProcessRenderer {
     // Perform any cleanup, such as shutting down the secondary thread if we
     // are in the original chromium thread mode.
     static void cleanup();
+
+    // Return the task runner for the renderer's IO thread.  This can only be
+    // called between calls to 'init()' and 'cleanup()'.
+    static base::SingleThreadTaskRunner* ipcTaskRunner();
 
     // Set the channel name that will be used by the render-process-host to
     // communicate with the in-process renderer.  This can only be called once

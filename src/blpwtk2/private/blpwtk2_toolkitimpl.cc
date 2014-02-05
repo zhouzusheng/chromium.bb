@@ -31,6 +31,9 @@
 #include <blpwtk2_inprocessrendererhost.h>
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_mainmessagepump.h>
+#include <blpwtk2_processclientimpl.h>
+#include <blpwtk2_processhostimpl.h>
+#include <blpwtk2_products.h>
 #include <blpwtk2_profilecreateparams.h>
 #include <blpwtk2_profileproxy.h>
 #include <blpwtk2_webviewcreateparams.h>
@@ -236,6 +239,20 @@ void ToolkitImpl::startupThreads()
     InProcessRenderer::init();
     MainMessagePump::current()->init();
 
+    if (Statics::isRendererMainThreadMode()) {
+        std::string channelId = IPC::Channel::GenerateVerifiedChannelID(BLPWTK2_VERSION);
+
+        d_browserThread->messageLoop()->PostTask(
+            FROM_HERE,
+            base::Bind(&ToolkitImpl::createInProcessHost,
+                       base::Unretained(this),
+                       channelId));
+        d_browserThread->sync();  // TODO: remove this sync
+        d_inProcessClient.reset(
+            new ProcessClientImpl(channelId,
+                                  InProcessRenderer::ipcTaskRunner()));
+    }
+
     d_threadsStarted = true;
 }
 
@@ -250,6 +267,12 @@ void ToolkitImpl::shutdownThreads()
     }
 
     if (Statics::isRendererMainThreadMode()) {
+        d_inProcessClient.reset();
+        d_browserThread->messageLoop()->PostTask(
+            FROM_HERE,
+            base::Bind(&ToolkitImpl::destroyInProcessHost,
+                       base::Unretained(this)));
+
         d_browserThread->sync();  // make sure any WebView::destroy has been
                                   // handled by the browser-main thread
     }
@@ -480,6 +503,18 @@ void ToolkitImpl::createInProcessRendererHost(Profile* profile)
 
     mainRunner->createInProcessRendererHost(browserContext,
                                             &d_rendererInfoMap);
+}
+
+void ToolkitImpl::createInProcessHost(const std::string& channelId)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    d_inProcessHost.reset(new ProcessHostImpl(channelId));
+}
+
+void ToolkitImpl::destroyInProcessHost()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    d_inProcessHost.reset();
 }
 
 }  // close namespace blpwtk2

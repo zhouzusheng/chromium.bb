@@ -47,6 +47,8 @@ namespace blpwtk2 {
 
 class BrowserThread;
 class BrowserMainRunner;
+class ProcessClientImpl;
+class ProcessHostImpl;
 class Profile;
 class StringRef;
 
@@ -88,6 +90,8 @@ class ToolkitImpl : public Toolkit {
 
   private:
     void createInProcessRendererHost(Profile* profile);
+    void createInProcessHost(const std::string& channelId);
+    void destroyInProcessHost();
 
     bool d_threadsStarted;
     bool d_threadsStopped;
@@ -100,6 +104,8 @@ class ToolkitImpl : public Toolkit {
 
     // only used for the RENDERER_MAIN thread mode
     scoped_ptr<BrowserThread> d_browserThread;
+    scoped_ptr<ProcessClientImpl> d_inProcessClient;
+    scoped_ptr<ProcessHostImpl> d_inProcessHost;
 
     // only used for the ORIGINAL thread mode
     scoped_ptr<BrowserMainRunner> d_browserMainRunner;

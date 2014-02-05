@@ -46,6 +46,7 @@ class Message;
 
 namespace ui {
 class ViewProp;
+class RubberbandOutline;
 }
 
 namespace WebKit {
@@ -236,6 +237,8 @@ class RenderWidgetHostViewWin
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
   virtual void SetClickthroughRegion(SkRegion* region) OVERRIDE;
+  virtual void SetRubberbandRect(const gfx::Rect& rect) OVERRIDE;
+  virtual void HideRubberbandRect() OVERRIDE;
 
   // Implementation of NotificationObserver:
   virtual void Observe(int type,
@@ -594,6 +597,9 @@ class RenderWidgetHostViewWin
 
   // The OS-provided default IAccessible instance for our hwnd.
   base::win::ScopedComPtr<IAccessible> window_iaccessible_;
+
+  // The rect to draw the rubberband highlight.
+  scoped_ptr<ui::RubberbandOutline> rubberband_outline_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewWin);
 };

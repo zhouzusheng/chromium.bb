@@ -625,6 +625,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       gfx::NativeViewId dummy_activation_window);
 #endif
   void OnSnapshot(bool success, const SkBitmap& bitmap);
+  void OnSetRubberbandRect(const gfx::Rect& rect);
+  void OnHideRubberbandRect();
 
   // Called (either immediately or asynchronously) after we're done with our
   // BackingStore and can send an ACK to the renderer so it can paint onto it

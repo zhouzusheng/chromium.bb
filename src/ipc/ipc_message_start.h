@@ -78,6 +78,7 @@ enum IPCMessageStart {
   PeerConnectionTrackerMsgStart,
   VisitedLinkMsgStart,
   OneClickSigninMsgStart,
+  BlpProfileMsgStart,
   AppShimMsgStart,
   ValidationMessageMsgStart,
   WebRtcLoggingMsgStart,

@@ -39,6 +39,8 @@ BrowserContextImplManager* Statics::browserContextImplManager = 0;
 bool Statics::hasDevTools = false;
 int Statics::numProfiles = 0;
 
+static int lastRoutingId = 0;
+
 void Statics::initApplicationMainThread()
 {
     DCHECK(applicationMainThreadId == base::kInvalidThreadId);
@@ -51,6 +53,11 @@ void Statics::initBrowserMainThread()
     browserMainThreadId = base::PlatformThread::CurrentId();
 }
 
+int Statics::getUniqueRoutingId()
+{
+    DCHECK(isInApplicationMainThread());
+    return ++lastRoutingId;
+}
 
 }  // close namespace blpwtk2
 

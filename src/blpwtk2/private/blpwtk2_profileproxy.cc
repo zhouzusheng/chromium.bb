@@ -24,6 +24,8 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_browsercontextimplmanager.h>
+#include <blpwtk2_processclient.h>
+#include <blpwtk2_profile_messages.h>
 #include <blpwtk2_proxyconfig.h>
 #include <blpwtk2_proxyconfigimpl.h>
 #include <blpwtk2_spellcheckconfig.h>
@@ -32,32 +34,37 @@
 
 #include <base/bind.h>
 #include <base/message_loop/message_loop.h>
+#include <ipc/ipc_sender.h>
 
 namespace blpwtk2 {
 
-ProfileProxy::ProfileProxy(const std::string& dataDir,
-                           bool diskCacheEnabled,
-                           base::MessageLoop* uiLoop)
+ProfileProxy::ProfileProxy(ProcessClient* processClient,
+                           int routingId,
+                           const std::string& dataDir,
+                           bool diskCacheEnabled)
 : d_browserContext(0)
-, d_uiLoop(uiLoop)
+, d_processClient(processClient)
+, d_routingId(routingId)
 , d_numWebViews(0)
 {
     // If disk cache is enabled, then it must not be incognito.
     DCHECK(!diskCacheEnabled || dataDir.empty());
-    DCHECK(d_uiLoop);
+    DCHECK(d_processClient);
 
     ++Statics::numProfiles;
 
-    AddRef();  // this is balanced in destroy()
-
-    d_uiLoop->PostTask(
-        FROM_HERE,
-        base::Bind(&ProfileProxy::uiInit, this, dataDir, diskCacheEnabled));
+    // TODO: make this async when WebViewProxy has been converted to use IPC
+    void* browserContextPtr;
+    Send(new BlpProfileHostMsg_New(routingId,
+                                   dataDir,
+                                   diskCacheEnabled,
+                                   &browserContextPtr));
+    d_browserContext =
+        reinterpret_cast<BrowserContextImpl*>(browserContextPtr);
 }
 
 ProfileProxy::~ProfileProxy()
 {
-    DCHECK(!d_browserContext);
 }
 
 BrowserContextImpl* ProfileProxy::browserContext() const
@@ -80,6 +87,11 @@ void ProfileProxy::decrementWebViewCount()
     --d_numWebViews;
 }
 
+int ProfileProxy::routingId() const
+{
+    return d_routingId;
+}
+
 // Profile overrides
 
 void ProfileProxy::destroy()
@@ -90,80 +102,43 @@ void ProfileProxy::destroy()
     DCHECK(0 < Statics::numProfiles);
     --Statics::numProfiles;
 
-    d_uiLoop->PostTask(
-        FROM_HERE,
-        base::Bind(&ProfileProxy::uiDestroy, this));
+    Send(new BlpProfileHostMsg_Destroy(d_routingId));
 
-    Release();  // balance the AddRef() from the constructor
+    delete this;
 }
 
 void ProfileProxy::setProxyConfig(const ProxyConfig& config)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    d_uiLoop->PostTask(
-        FROM_HERE,
-        base::Bind(&ProfileProxy::uiSetProxyConfig, this, config));
+    DCHECK(d_browserContext);
+
+    Send(new BlpProfileHostMsg_SetProxyConfig(d_routingId, config));
 }
 
 void ProfileProxy::useSystemProxyConfig()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    d_uiLoop->PostTask(
-        FROM_HERE,
-        base::Bind(&ProfileProxy::uiUseSystemProxyConfig, this));
+    DCHECK(d_browserContext);
+
+    Send(new BlpProfileHostMsg_UseSystemProxyConfig(d_routingId));
 }
 
 void ProfileProxy::setSpellCheckConfig(const SpellCheckConfig& config)
 {
     DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(d_browserContext);
 
     // Auto-correct cannot be enabled if spellcheck is disabled.
     DCHECK(!config.isAutoCorrectEnabled() || config.isSpellCheckEnabled());
 
-    d_uiLoop->PostTask(
-        FROM_HERE,
-        base::Bind(&ProfileProxy::uiSetSpellCheckConfig, this, config));
+    Send(new BlpProfileHostMsg_SetSpellCheckConfig(d_routingId, config));
 }
 
-void ProfileProxy::uiInit(const std::string& dataDir,
-                          bool diskCacheEnabled)
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(!d_browserContext);
-    DCHECK(Statics::browserContextImplManager);
-    d_browserContext =
-        Statics::browserContextImplManager->createBrowserContextImpl(
-            dataDir,
-            diskCacheEnabled);
-}
+// IPC::Sender override
 
-void ProfileProxy::uiDestroy()
+bool ProfileProxy::Send(IPC::Message* message)
 {
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(d_browserContext);
-    d_browserContext->destroy();
-    d_browserContext = 0;
-}
-
-void ProfileProxy::uiSetProxyConfig(const ProxyConfig& config)
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(d_browserContext);
-    d_browserContext->setProxyConfig(config);
-}
-
-void ProfileProxy::uiUseSystemProxyConfig()
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(d_browserContext);
-    d_browserContext->useSystemProxyConfig();
-}
-
-void ProfileProxy::uiSetSpellCheckConfig(const SpellCheckConfig& config)
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(d_browserContext);
-    d_browserContext->setSpellCheckConfig(config);
+    return d_processClient->Send(message);
 }
 
 }  // close namespace blpwtk2

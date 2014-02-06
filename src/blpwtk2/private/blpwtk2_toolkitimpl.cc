@@ -319,9 +319,10 @@ Profile* ToolkitImpl::createProfile(const ProfileCreateParams& params)
 
     std::string dataDir(params.dataDir().data(), params.dataDir().length());
     if (Statics::isRendererMainThreadMode()) {
-        return new ProfileProxy(dataDir,
-                                params.diskCacheEnabled(),
-                                d_browserThread->messageLoop());
+        return new ProfileProxy(d_inProcessClient.get(),
+                                Statics::getUniqueRoutingId(),
+                                dataDir,
+                                params.diskCacheEnabled());
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());

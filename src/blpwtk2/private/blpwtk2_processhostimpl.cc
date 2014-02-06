@@ -23,6 +23,7 @@
 #include <blpwtk2_processhostimpl.h>
 
 #include <blpwtk2_profile_messages.h>
+#include <blpwtk2_profilehost.h>
 
 #include <content/public/browser/browser_thread.h>
 #include <ipc/ipc_channel_proxy.h>
@@ -77,7 +78,17 @@ bool ProcessHostImpl::Send(IPC::Message* message)
 bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
 {
     if (message.routing_id() == MSG_ROUTING_CONTROL) {
-        // TODO: handle control messages here
+        // Dispatch control messages
+        bool msgIsOk = true;
+        IPC_BEGIN_MESSAGE_MAP_EX(ProcessHostImpl, message, msgIsOk)
+            IPC_MESSAGE_HANDLER(BlpProfileHostMsg_New, onProfileNew)
+            IPC_MESSAGE_HANDLER(BlpProfileHostMsg_Destroy, onProfileDestroy)
+            IPC_MESSAGE_UNHANDLED_ERROR()
+        IPC_END_MESSAGE_MAP_EX()
+
+        if (!msgIsOk) {
+            LOG(ERROR) << "bad message " << message.type();
+        }
         return true;
     }
 
@@ -109,6 +120,28 @@ void ProcessHostImpl::OnChannelConnected(int32 peer_pid)
 void ProcessHostImpl::OnChannelError()
 {
     LOG(ERROR) << "channel error!";
+}
+
+// Control message handlers
+
+void ProcessHostImpl::onProfileNew(int routingId,
+                                   const std::string& dataDir,
+                                   bool diskCacheEnabled,
+                                   void** browserContext)
+{
+    ProfileHost* profileHost = new ProfileHost(this,
+                                               routingId,
+                                               dataDir,
+                                               diskCacheEnabled);
+    *browserContext = profileHost->browserContext();
+}
+
+void ProcessHostImpl::onProfileDestroy(int routingId)
+{
+    ProfileHost* profileHost =
+        static_cast<ProfileHost*>(findListener(routingId));
+    DCHECK(profileHost);
+    delete profileHost;
 }
 
 }  // close namespace blpwtk2

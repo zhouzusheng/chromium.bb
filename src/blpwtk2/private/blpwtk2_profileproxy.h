@@ -30,6 +30,7 @@
 #include <base/memory/ref_counted.h>
 #include <base/basictypes.h>
 #include <base/compiler_specific.h>
+#include <ipc/ipc_sender.h>
 
 #include <string>
 
@@ -40,6 +41,7 @@ class MessageLoop;
 namespace blpwtk2 {
 
 class BrowserContextImpl;
+class ProcessClient;
 class ProxyConfig;
 class SpellCheckConfig;
 
@@ -52,17 +54,18 @@ class SpellCheckConfig;
 // thread.
 //
 // See blpwtk2_toolkit.h for an explanation about the threads.
-class ProfileProxy : public base::RefCountedThreadSafe<ProfileProxy>,
-                        public Profile {
+class ProfileProxy : public Profile,
+                        private IPC::Sender {
   public:
-    ProfileProxy(const std::string& dataDir,
-                 bool diskCacheEnabled,
-                 base::MessageLoop* uiLoop);
-    virtual ~ProfileProxy();
+    ProfileProxy(ProcessClient* processClient,
+                 int routingId,
+                 const std::string& dataDir,
+                 bool diskCacheEnabled);
 
     // Only called from the application-main thread.
     void incrementWebViewCount();
     void decrementWebViewCount();
+    int routingId() const;
 
     // Only called from the browser-main thread.
     BrowserContextImpl* browserContext() const;
@@ -74,16 +77,15 @@ class ProfileProxy : public base::RefCountedThreadSafe<ProfileProxy>,
     virtual void setSpellCheckConfig(const SpellCheckConfig& config) OVERRIDE;
 
   private:
-    // methods that get invoked in the UI thread
-    void uiInit(const std::string& dataDir,
-                bool diskCacheEnabled);
-    void uiDestroy();
-    void uiSetProxyConfig(const ProxyConfig& config);
-    void uiUseSystemProxyConfig();
-    void uiSetSpellCheckConfig(const SpellCheckConfig& config);
+    // Destructor is private.  Calling destroy() will delete the object.
+    virtual ~ProfileProxy();
+
+    // IPC::Sender override
+    virtual bool Send(IPC::Message* message) OVERRIDE;
 
     BrowserContextImpl* d_browserContext;  // only touched in the UI thread
-    base::MessageLoop* d_uiLoop;
+    ProcessClient* d_processClient;
+    int d_routingId;
     int d_numWebViews;
 
     DISALLOW_COPY_AND_ASSIGN(ProfileProxy);

@@ -115,6 +115,8 @@ struct Statics {
 
     static void initApplicationMainThread();
     static void initBrowserMainThread();
+
+    static int getUniqueRoutingId();
 };
 
 }  // close namespace blpwtk2

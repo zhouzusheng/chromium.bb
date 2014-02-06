@@ -62,6 +62,13 @@ class ProcessHostImpl : public ProcessHost,
     virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
     virtual void OnChannelError() OVERRIDE;
 
+    // Control message handlers
+    void onProfileNew(int routingId,
+                      const std::string& dataDir,
+                      bool diskCacheEnabled,
+                      void** browserContext);
+    void onProfileDestroy(int routingId);
+
     scoped_ptr<IPC::ChannelProxy> d_channel;
     IDMap<IPC::Listener> d_routes;
 

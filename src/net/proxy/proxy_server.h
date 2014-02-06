@@ -61,6 +61,11 @@ class NET_EXPORT ProxyServer {
 
   const HostPortPair& host_port_pair() const;
 
+  // These references to the internal structure are provided to simplify IPC
+  // serialization.
+  Scheme& internalScheme() { return scheme_; }
+  HostPortPair& internalHostPortPair() { return host_port_pair_; }
+
   // Parses from an input with format:
   //   [<scheme>"://"]<server>[":"<port>]
   //

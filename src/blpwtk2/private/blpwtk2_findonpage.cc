@@ -22,32 +22,15 @@
 
 #include <blpwtk2_findonpage.h>
 
-#include <content/public/browser/render_view_host.h>
-#include <third_party/WebKit/public/web/WebFindOptions.h>
-
 namespace blpwtk2 {
 
-void FindOnPage::Request::executeOn(content::RenderViewHost* host) const
+FindOnPageRequest FindOnPage::makeRequest(const StringRef& text,
+                                          bool matchCase,
+                                          bool forward)
 {
-    if (!d_reqId) {
-        host->StopFinding(content::STOP_FIND_ACTION_CLEAR_SELECTION);
-        return;
-    }
-    WebKit::WebFindOptions options;
-    options.findNext = d_findNext;
-    options.forward = d_forward;
-    options.matchCase = d_matchCase;
-    WebKit::WebString textStr = toWebString(d_text);
-    host->Find(d_reqId, textStr, options);
-}
-
-FindOnPage::Request FindOnPage::makeRequest(const StringRef& text,
-                                            bool matchCase,
-                                            bool forward)
-{
-    bool findNext = d_text.equals(text);
+    bool findNext = StringRef(d_text).equals(text);
     if (!findNext) {
-        d_text.assign(text);
+        d_text.assign(text.data(), text.length());
 
         // clear values for a new find
         d_numberOfMatches = 0;
@@ -57,8 +40,15 @@ FindOnPage::Request FindOnPage::makeRequest(const StringRef& text,
             d_reqId = 1; // handle overflow
         }
     }
-    int reqId = d_text.isEmpty() ? 0 : d_reqId; // 0 reqId to reset search
-    return Request(reqId, d_text, matchCase, findNext, forward);
+    int reqId = d_text.empty() ? 0 : d_reqId; // 0 reqId to reset search
+
+    FindOnPageRequest request;
+    request.reqId = reqId;
+    request.text = d_text;
+    request.matchCase = matchCase;
+    request.findNext = findNext;
+    request.forward = forward;
+    return request;
 }
 
 bool FindOnPage::applyUpdate(int reqId,

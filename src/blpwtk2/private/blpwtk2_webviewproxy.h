@@ -157,7 +157,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
                   bool takeFocusOnMouseDown);
     void implDestroy();
     void implLoadUrl(const std::string& url);
-    void implFind(const FindOnPage::Request& request);
+    void implFind(const FindOnPageRequest& request);
     void implLoadInspector(WebView* inspectedView);
     void implInspectElementAt(const POINT& point);
     void implReload(bool ignoreCache);

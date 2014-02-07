@@ -44,10 +44,10 @@
 #include <content/public/browser/web_contents.h>
 #include <content/public/browser/web_contents_view.h>
 #include <content/public/browser/site_instance.h>
+#include <third_party/WebKit/public/web/WebFindOptions.h>
 #include <third_party/WebKit/public/web/WebView.h>
 
 namespace blpwtk2 {
-
 
 WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
                          gfx::NativeView parent,
@@ -158,14 +158,24 @@ void WebViewImpl::saveCustomContextMenuContext(const content::CustomContextMenuC
     d_customContext = context;
 }
 
-void WebViewImpl::handleFindRequest(const FindOnPage::Request& request)
+void WebViewImpl::handleFindRequest(const FindOnPageRequest& request)
 {
-    DCHECK(Statics::isRendererMainThreadMode()) <<  "original thread mode should use find";
     DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
 
-    if (d_wasDestroyed) return;
-
-    request.executeOn(d_webContents->GetRenderViewHost());
+    content::RenderViewHost* host = d_webContents->GetRenderViewHost();
+    if (!request.reqId) {
+        host->StopFinding(content::STOP_FIND_ACTION_CLEAR_SELECTION);
+        return;
+    }
+    WebKit::WebFindOptions options;
+    options.findNext = request.findNext;
+    options.forward = request.forward;
+    options.matchCase = request.matchCase;
+    WebKit::WebString textStr =
+        WebKit::WebString::fromUTF8(request.text.data(),
+                                    request.text.length());
+    host->Find(request.reqId, textStr, options);
 }
 
 void WebViewImpl::destroy()
@@ -209,15 +219,14 @@ void WebViewImpl::loadUrl(const StringRef& url)
 void WebViewImpl::find(const StringRef& text, bool matchCase, bool forward)
 {
     DCHECK(Statics::isOriginalThreadMode())
-        <<  "renderer-main thread mode should use findWithReqId";
+        <<  "renderer-main thread mode should use handleFindRequest";
 
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
 
     if (!d_find) d_find.reset(new FindOnPage());
 
-    FindOnPage::Request request = d_find->makeRequest(text, matchCase, forward);
-    request.executeOn(d_webContents->GetRenderViewHost());
+    handleFindRequest(d_find->makeRequest(text, matchCase, forward));
 }
 
 void WebViewImpl::loadInspector(WebView* inspectedView)

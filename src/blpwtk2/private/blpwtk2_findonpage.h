@@ -25,13 +25,24 @@
 
 #include <blpwtk2_config.h>
 
-#include <blpwtk2_string.h>
+#include <blpwtk2_stringref.h>
+
+#include <string>
 
 namespace content {
 class RenderViewHost;
 }
 
 namespace blpwtk2 {
+
+struct FindOnPageRequest
+{
+    int reqId;
+    std::string text;
+    bool matchCase;
+    bool findNext;
+    bool forward;
+};
 
 class FindOnPage
 {
@@ -48,38 +59,14 @@ public:
     // zero-based index of the active match
     int activeMatchIndex() const { return d_activeMatchOrdinal - 1; }
 
-    class Request
-    {
-    public:
-        Request(int reqId,
-                String text,
-                bool matchCase,
-                bool findNext,
-                bool forward)
-        : d_reqId(reqId)
-        , d_text(text)
-        , d_matchCase(matchCase)
-        , d_findNext(findNext)
-        , d_forward(forward)
-        {
-        }
-
-        void executeOn(content::RenderViewHost* host) const;
-
-    private:
-        int d_reqId;
-        String d_text;
-        bool d_matchCase;
-        bool d_findNext;
-        bool d_forward;
-    };
-
-    Request makeRequest(const StringRef& text, bool matchCase, bool forward);
+    FindOnPageRequest makeRequest(const StringRef& text,
+                                  bool matchCase,
+                                  bool forward);
     bool applyUpdate(int reqId, int numberOfMatches, int activeMatchOrdinal);
 
 
 private:
-    String d_text;
+    std::string d_text;
     int d_reqId;
     int d_numberOfMatches;
     int d_activeMatchOrdinal; // 1-based index

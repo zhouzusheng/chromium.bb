@@ -80,7 +80,7 @@ class WebViewImpl : public WebView,
     gfx::NativeView getNativeView() const;
     void showContextMenu(const ContextMenuParams& params);
     void saveCustomContextMenuContext(const content::CustomContextMenuContext& context);
-    void handleFindRequest(const FindOnPage::Request& request);
+    void handleFindRequest(const FindOnPageRequest& request);
 
     /////////////// WebView overrides
 

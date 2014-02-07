@@ -599,7 +599,7 @@ void WebViewProxy::implLoadUrl(const std::string& url)
     d_impl->loadUrl(url);
 }
 
-void WebViewProxy::implFind(const FindOnPage::Request& request)
+void WebViewProxy::implFind(const FindOnPageRequest& request)
 {
     DCHECK(d_impl);
     d_impl->handleFindRequest(request);

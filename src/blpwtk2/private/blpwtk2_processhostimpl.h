@@ -73,8 +73,7 @@ class ProcessHostImpl : public ProcessHost,
     // Control message handlers
     void onProfileNew(int routingId,
                       const std::string& dataDir,
-                      bool diskCacheEnabled,
-                      void** browserContext);
+                      bool diskCacheEnabled);
     void onProfileDestroy(int routingId);
     void onWebViewNew(const BlpWebViewHostMsg_NewParams& params);
     void onWebViewDestroy(int routingId);

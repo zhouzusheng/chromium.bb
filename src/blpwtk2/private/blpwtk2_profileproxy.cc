@@ -42,8 +42,7 @@ ProfileProxy::ProfileProxy(ProcessClient* processClient,
                            int routingId,
                            const std::string& dataDir,
                            bool diskCacheEnabled)
-: d_browserContext(0)
-, d_processClient(processClient)
+: d_processClient(processClient)
 , d_routingId(routingId)
 , d_numWebViews(0)
 {
@@ -53,25 +52,13 @@ ProfileProxy::ProfileProxy(ProcessClient* processClient,
 
     ++Statics::numProfiles;
 
-    // TODO: make this async when WebViewProxy has been converted to use IPC
-    void* browserContextPtr;
     Send(new BlpProfileHostMsg_New(routingId,
                                    dataDir,
-                                   diskCacheEnabled,
-                                   &browserContextPtr));
-    d_browserContext =
-        reinterpret_cast<BrowserContextImpl*>(browserContextPtr);
+                                   diskCacheEnabled));
 }
 
 ProfileProxy::~ProfileProxy()
 {
-}
-
-BrowserContextImpl* ProfileProxy::browserContext() const
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(d_browserContext);
-    return d_browserContext;
 }
 
 void ProfileProxy::incrementWebViewCount()
@@ -110,7 +97,6 @@ void ProfileProxy::destroy()
 void ProfileProxy::setProxyConfig(const ProxyConfig& config)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(d_browserContext);
 
     Send(new BlpProfileHostMsg_SetProxyConfig(d_routingId, config));
 }
@@ -118,7 +104,6 @@ void ProfileProxy::setProxyConfig(const ProxyConfig& config)
 void ProfileProxy::useSystemProxyConfig()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(d_browserContext);
 
     Send(new BlpProfileHostMsg_UseSystemProxyConfig(d_routingId));
 }
@@ -126,7 +111,6 @@ void ProfileProxy::useSystemProxyConfig()
 void ProfileProxy::setSpellCheckConfig(const SpellCheckConfig& config)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(d_browserContext);
 
     // Auto-correct cannot be enabled if spellcheck is disabled.
     DCHECK(!config.isAutoCorrectEnabled() || config.isSpellCheckEnabled());

@@ -37,15 +37,10 @@
 // ============== Messages from client to host ======================
 
 // This creates a new profile.
-// This is temporarily a sync message so that the ProfileProxy can get the
-// BrowserContextImpl before WebViewProxy tries to access it.  When
-// WebViewProxy has been converted to use IPC, we can make this async.
-// TODO: make this async when WebViewProxy is using IPC
-IPC_SYNC_MESSAGE_CONTROL3_1(BlpProfileHostMsg_New,
-                            int /* routingId */,
-                            std::string /*dataDir*/,
-                            bool /* diskCacheEnabled */,
-                            void*)
+IPC_MESSAGE_CONTROL3(BlpProfileHostMsg_New,
+                     int /* routingId */,
+                     std::string /*dataDir*/,
+                     bool /* diskCacheEnabled */)
 
 // Set the proxy configuration.
 IPC_MESSAGE_ROUTED1(BlpProfileHostMsg_SetProxyConfig,
@@ -59,7 +54,6 @@ IPC_MESSAGE_ROUTED1(BlpProfileHostMsg_SetSpellCheckConfig,
                     blpwtk2::SpellCheckConfig /* config */)
 
 // This destroys the profile.
-// TODO: make this async when WebViewProxy is using IPC
-IPC_SYNC_MESSAGE_CONTROL1_0(BlpProfileHostMsg_Destroy,
-                            int /* routingId */)
+IPC_MESSAGE_CONTROL1(BlpProfileHostMsg_Destroy,
+                     int /* routingId */)
 

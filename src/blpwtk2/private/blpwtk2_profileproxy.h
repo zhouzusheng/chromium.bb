@@ -40,7 +40,6 @@ class MessageLoop;
 
 namespace blpwtk2 {
 
-class BrowserContextImpl;
 class ProcessClient;
 class ProxyConfig;
 class SpellCheckConfig;
@@ -67,9 +66,6 @@ class ProfileProxy : public Profile,
     void decrementWebViewCount();
     int routingId() const;
 
-    // Only called from the browser-main thread.
-    BrowserContextImpl* browserContext() const;
-
     // Profile overrides, must only be called on the application-main thread.
     virtual void destroy() OVERRIDE;
     virtual void setProxyConfig(const ProxyConfig& config) OVERRIDE;
@@ -83,7 +79,6 @@ class ProfileProxy : public Profile,
     // IPC::Sender override
     virtual bool Send(IPC::Message* message) OVERRIDE;
 
-    BrowserContextImpl* d_browserContext;  // only touched in the UI thread
     ProcessClient* d_processClient;
     int d_routingId;
     int d_numWebViews;

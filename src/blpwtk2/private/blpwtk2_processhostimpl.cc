@@ -146,14 +146,9 @@ void ProcessHostImpl::OnChannelError()
 
 void ProcessHostImpl::onProfileNew(int routingId,
                                    const std::string& dataDir,
-                                   bool diskCacheEnabled,
-                                   void** browserContext)
+                                   bool diskCacheEnabled)
 {
-    ProfileHost* profileHost = new ProfileHost(this,
-                                               routingId,
-                                               dataDir,
-                                               diskCacheEnabled);
-    *browserContext = profileHost->browserContext();
+    new ProfileHost(this, routingId, dataDir, diskCacheEnabled);
 }
 
 void ProcessHostImpl::onProfileDestroy(int routingId)

@@ -89,7 +89,6 @@ class ToolkitImpl : public Toolkit {
     virtual void postHandleMessage(const NativeMsg* msg) OVERRIDE;
 
   private:
-    void createInProcessRendererHost(Profile* profile);
     void createInProcessHost(const std::string& channelId);
     void destroyInProcessHost();
 

@@ -22,25 +22,28 @@
 
 #include <blpwtk2_processhostimpl.h>
 
+#include <blpwtk2_browsercontextimpl.h>
+#include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_constants.h>
 #include <blpwtk2_profile_messages.h>
 #include <blpwtk2_profilehost.h>
-#include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_webview_messages.h>
 #include <blpwtk2_webviewhost.h>
 
 #include <content/public/browser/browser_thread.h>
-#include <content/public/browser/site_instance.h>
 #include <ipc/ipc_channel_proxy.h>
 
 namespace blpwtk2 {
 
 ProcessHostImpl::ProcessHostImpl(const std::string& channelId,
-                                 RendererInfoMap* rendererInfoMap)
+                                 RendererInfoMap* rendererInfoMap,
+                                 BrowserMainRunner* mainRunner)
 : d_rendererInfoMap(rendererInfoMap)
+, d_mainRunner(mainRunner)
 , d_lastRoutingId(0x10000)
 {
     DCHECK(d_rendererInfoMap);
+    DCHECK(d_mainRunner);
 
     scoped_refptr<base::SingleThreadTaskRunner> ioTaskRunner =
         content::BrowserThread::GetMessageLoopProxyForThread(
@@ -167,14 +170,10 @@ void ProcessHostImpl::onWebViewNew(const BlpWebViewHostMsg_NewParams& params)
         static_cast<ProfileHost*>(findListener(params.profileId));
     DCHECK(profileHost);
 
-    int hostAffinity;
-    if (params.rendererAffinity == blpwtk2::Constants::ANY_OUT_OF_PROCESS_RENDERER) {
-        hostAffinity = content::SiteInstance::kNoProcessAffinity;
-    }
-    else {
-        hostAffinity = d_rendererInfoMap->rendererToHostId(params.rendererAffinity);
-        DCHECK(-1 != hostAffinity);
-    }
+    int hostAffinity =
+        d_mainRunner->obtainHostAffinity(profileHost->browserContext(),
+                                         params.rendererAffinity,
+                                         d_rendererInfoMap);
 
     bool isInProcess =
         params.rendererAffinity == blpwtk2::Constants::IN_PROCESS_RENDERER;

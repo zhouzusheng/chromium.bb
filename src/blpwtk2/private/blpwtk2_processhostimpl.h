@@ -42,6 +42,7 @@ class ChannelProxy;
 
 namespace blpwtk2 {
 
+class BrowserMainRunner;
 class RendererInfoMap;
 
 // This object lives in the browser process, and on the browser UI thread.  It
@@ -50,7 +51,8 @@ class ProcessHostImpl : public ProcessHost,
                         private IPC::Listener {
   public:
     ProcessHostImpl(const std::string& channelId,
-                    RendererInfoMap* rendererInfoMap);
+                    RendererInfoMap* rendererInfoMap,
+                    BrowserMainRunner* mainRunner);
     ~ProcessHostImpl();
 
     // ProcessHost overrides
@@ -79,6 +81,7 @@ class ProcessHostImpl : public ProcessHost,
 
     scoped_ptr<IPC::ChannelProxy> d_channel;
     RendererInfoMap* d_rendererInfoMap;
+    BrowserMainRunner* d_mainRunner;
     IDMap<IPC::Listener> d_routes;
     int d_lastRoutingId;
 

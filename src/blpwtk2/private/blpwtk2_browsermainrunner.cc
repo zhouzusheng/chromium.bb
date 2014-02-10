@@ -23,13 +23,17 @@
 #include <blpwtk2_browsermainrunner.h>
 
 #include <blpwtk2_browsercontextimplmanager.h>
+#include <blpwtk2_constants.h>
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
 #include <blpwtk2_inprocessrendererhost.h>
+#include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_statics.h>
 
 #include <base/logging.h>  // for DCHECK
 #include <base/message_loop.h>
+#include <content/browser/renderer_host/render_process_host_impl.h>
 #include <content/public/browser/browser_main_runner.h>
+#include <content/public/browser/site_instance.h>
 
 namespace blpwtk2 {
 
@@ -73,19 +77,37 @@ int BrowserMainRunner::Run()
     return d_impl->Run();
 }
 
-void BrowserMainRunner::createInProcessRendererHost(content::BrowserContext* browserContext,
-                                                    RendererInfoMap* rendererInfoMap)
+int BrowserMainRunner::obtainHostAffinity(
+    content::BrowserContext* browserContext,
+    int rendererAffinity,
+    RendererInfoMap* rendererInfoMap)
 {
     DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(!d_inProcessRendererHost.get());
     DCHECK(rendererInfoMap);
-    d_inProcessRendererHost.reset(
-        new InProcessRendererHost(browserContext, rendererInfoMap));
-}
 
-bool BrowserMainRunner::hasInProcessRendererHost() const
-{
-    return 0 != d_inProcessRendererHost.get();
+    int hostAffinity;
+    if (rendererAffinity == Constants::IN_PROCESS_RENDERER) {
+        if (!d_inProcessRendererHost.get()) {
+            d_inProcessRendererHost.reset(
+                new InProcessRendererHost(browserContext, rendererInfoMap));
+        }
+
+        hostAffinity = rendererInfoMap->rendererToHostId(rendererAffinity);
+        DCHECK(-1 != hostAffinity);
+    }
+    else if (rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
+        hostAffinity = content::SiteInstance::kNoProcessAffinity;
+    }
+    else {
+        hostAffinity = rendererInfoMap->rendererToHostId(rendererAffinity);
+        if (-1 == hostAffinity) {
+            hostAffinity = content::RenderProcessHostImpl::GenerateUniqueId();
+            rendererInfoMap->setRendererHostId(rendererAffinity,
+                                               hostAffinity);
+        }
+    }
+
+    return hostAffinity;
 }
 
 }  // close namespace blpwtk2

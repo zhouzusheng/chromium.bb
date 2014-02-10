@@ -58,15 +58,13 @@ class BrowserMainRunner {
 
     int Run();
 
-    // Create the (singleton) InProcessRendererHost.  This can only be called
-    // from the browser-main thread.  The behavior is undefined if the
-    // InProcessRendererHost has already been created.
-    void createInProcessRendererHost(content::BrowserContext* browserContext,
-                                     RendererInfoMap* rendererInfoMap);
-
-    // Return true if the in-process renderer host has been created, and false
-    // otherwise.
-    bool hasInProcessRendererHost() const;
+    // Obtain the host affinity for the specified 'rendererAffinity', using the
+    // specified 'rendererInfoMap' to perform the lookup.  If
+    // 'rendererAffinity' is 'IN_PROCESS_RENDERER', then the in-process
+    // renderer host will be initialized.
+    int obtainHostAffinity(content::BrowserContext* browserContext,
+                           int rendererAffinity,
+                           RendererInfoMap* rendererInfoMap);
 
   private:
     content::MainFunctionParams d_mainParams;

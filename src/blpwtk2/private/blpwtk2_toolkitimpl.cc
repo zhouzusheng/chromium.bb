@@ -50,11 +50,9 @@
 #include <chrome/common/chrome_paths.h>
 #include <content/public/app/content_main_runner.h>
 #include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
-#include <content/public/browser/render_process_host.h>
-#include <content/public/browser/site_instance.h>
 #include <content/public/common/content_switches.h>
 #include <content/browser/web_contents/web_contents_view_win.h>
-#include <content/browser/renderer_host/render_process_host_impl.h>
+#include <ipc/ipc_channel.h>
 #include <sandbox/win/src/win_utils.h>
 
 #include <TlHelp32.h>  // for CreateToolhelp32Snapshot
@@ -369,7 +367,6 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
         profile = d_defaultProfile;
     }
 
-    int hostAffinity;
     bool singleProcess = CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
     // Enforce in-process renderer if "--single-process" is specified on the
     // command line.  This is useful for debugging.
@@ -379,44 +376,6 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     DCHECK(singleProcess ||
            rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER ||
            d_rendererInfoMap.dcheckProfileForRenderer(rendererAffinity, profile));
-
-    if (rendererAffinity == Constants::IN_PROCESS_RENDERER) {
-        BrowserMainRunner* mainRunner =
-            Statics::isOriginalThreadMode() ? d_browserMainRunner.get()
-                                            : d_browserThread->mainRunner();
-
-        if (!mainRunner->hasInProcessRendererHost()) {
-            if (Statics::isOriginalThreadMode()) {
-                createInProcessRendererHost(profile);
-            }
-            else {
-                d_browserThread->messageLoop()->PostTask(
-                    FROM_HERE,
-                    base::Bind(&ToolkitImpl::createInProcessRendererHost,
-                               base::Unretained(this),
-                               profile));
-                d_browserThread->sync();
-            }
-
-            DCHECK(mainRunner->hasInProcessRendererHost());
-        }
-
-        hostAffinity = d_rendererInfoMap.rendererToHostId(rendererAffinity);
-        DCHECK(-1 != hostAffinity);
-    }
-    else if (rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
-        hostAffinity = content::SiteInstance::kNoProcessAffinity;
-    }
-    else {
-        DCHECK(0 <= rendererAffinity);
-
-        hostAffinity = d_rendererInfoMap.rendererToHostId(rendererAffinity);
-        if (-1 == hostAffinity) {
-            hostAffinity = content::RenderProcessHostImpl::GenerateUniqueId();
-            d_rendererInfoMap.setRendererHostId(rendererAffinity,
-                                                hostAffinity);
-        }
-    }
 
     if (Statics::isRendererMainThreadMode()) {
         DCHECK(d_browserThread.get());
@@ -434,6 +393,10 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     else if (Statics::isOriginalThreadMode()) {
         BrowserContextImpl* browserContext =
             static_cast<BrowserContextImpl*>(profile);
+        int hostAffinity =
+            d_browserMainRunner->obtainHostAffinity(browserContext,
+                                                    rendererAffinity,
+                                                    &d_rendererInfoMap);
         return new WebViewImpl(delegate,
                                parent,
                                browserContext,
@@ -485,29 +448,12 @@ void ToolkitImpl::postHandleMessage(const NativeMsg* msg)
     }
 }
 
-void ToolkitImpl::createInProcessRendererHost(Profile* profile)
-{
-    BrowserMainRunner* mainRunner;
-    BrowserContextImpl* browserContext;
-
-    if (Statics::isOriginalThreadMode()) {
-        mainRunner = d_browserMainRunner.get();
-        browserContext = static_cast<BrowserContextImpl*>(profile);
-    }
-    else {
-        DCHECK(Statics::isRendererMainThreadMode());
-        mainRunner = d_browserThread->mainRunner();
-        browserContext = static_cast<ProfileProxy*>(profile)->browserContext();
-    }
-
-    mainRunner->createInProcessRendererHost(browserContext,
-                                            &d_rendererInfoMap);
-}
-
 void ToolkitImpl::createInProcessHost(const std::string& channelId)
 {
     DCHECK(Statics::isInBrowserMainThread());
-    d_inProcessHost.reset(new ProcessHostImpl(channelId, &d_rendererInfoMap));
+    d_inProcessHost.reset(new ProcessHostImpl(channelId,
+                                              &d_rendererInfoMap,
+                                              d_browserThread->mainRunner()));
 }
 
 void ToolkitImpl::destroyInProcessHost()

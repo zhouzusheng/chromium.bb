@@ -22,5 +22,7 @@
 
 // Multiply-included file, hence no include guard.
 
+#include <blpwtk2_enumtraits.h>
 #include <blpwtk2_profile_messages.h>
+#include <blpwtk2_webview_messages.h>
 

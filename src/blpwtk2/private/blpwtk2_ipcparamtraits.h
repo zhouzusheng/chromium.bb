@@ -29,11 +29,38 @@
 #include <ipc/ipc_param_traits.h>
 
 namespace blpwtk2 {
+class ContextMenuParams;
+struct FindOnPageRequest;
+class NewViewParams;
 class ProxyConfig;
 class SpellCheckConfig;
 }  // close namespace blpwtk2
 
 namespace IPC {
+
+template <>
+struct ParamTraits<blpwtk2::ContextMenuParams> {
+    typedef blpwtk2::ContextMenuParams param_type;
+    static void Write(Message* m, const param_type& p);
+    static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+    static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct ParamTraits<blpwtk2::FindOnPageRequest> {
+    typedef blpwtk2::FindOnPageRequest param_type;
+    static void Write(Message* m, const param_type& p);
+    static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+    static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct ParamTraits<blpwtk2::NewViewParams> {
+    typedef blpwtk2::NewViewParams param_type;
+    static void Write(Message* m, const param_type& p);
+    static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+    static void Log(const param_type& p, std::string* l);
+};
 
 template <>
 struct ParamTraits<blpwtk2::ProxyConfig> {

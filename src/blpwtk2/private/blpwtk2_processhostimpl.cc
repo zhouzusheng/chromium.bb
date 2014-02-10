@@ -22,16 +22,26 @@
 
 #include <blpwtk2_processhostimpl.h>
 
+#include <blpwtk2_constants.h>
 #include <blpwtk2_profile_messages.h>
 #include <blpwtk2_profilehost.h>
+#include <blpwtk2_rendererinfomap.h>
+#include <blpwtk2_webview_messages.h>
+#include <blpwtk2_webviewhost.h>
 
 #include <content/public/browser/browser_thread.h>
+#include <content/public/browser/site_instance.h>
 #include <ipc/ipc_channel_proxy.h>
 
 namespace blpwtk2 {
 
-ProcessHostImpl::ProcessHostImpl(const std::string& channelId)
+ProcessHostImpl::ProcessHostImpl(const std::string& channelId,
+                                 RendererInfoMap* rendererInfoMap)
+: d_rendererInfoMap(rendererInfoMap)
+, d_lastRoutingId(0x10000)
 {
+    DCHECK(d_rendererInfoMap);
+
     scoped_refptr<base::SingleThreadTaskRunner> ioTaskRunner =
         content::BrowserThread::GetMessageLoopProxyForThread(
             content::BrowserThread::IO);
@@ -66,6 +76,11 @@ IPC::Listener* ProcessHostImpl::findListener(int routingId)
     return d_routes.Lookup(routingId);
 }
 
+int ProcessHostImpl::getUniqueRoutingId()
+{
+    return ++d_lastRoutingId;
+}
+
 // IPC::Sender overrides
 
 bool ProcessHostImpl::Send(IPC::Message* message)
@@ -83,6 +98,8 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
         IPC_BEGIN_MESSAGE_MAP_EX(ProcessHostImpl, message, msgIsOk)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_New, onProfileNew)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_Destroy, onProfileDestroy)
+            IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_New, onWebViewNew)
+            IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Destroy, onWebViewDestroy)
             IPC_MESSAGE_UNHANDLED_ERROR()
         IPC_END_MESSAGE_MAP_EX()
 
@@ -142,6 +159,41 @@ void ProcessHostImpl::onProfileDestroy(int routingId)
         static_cast<ProfileHost*>(findListener(routingId));
     DCHECK(profileHost);
     delete profileHost;
+}
+
+void ProcessHostImpl::onWebViewNew(const BlpWebViewHostMsg_NewParams& params)
+{
+    ProfileHost* profileHost =
+        static_cast<ProfileHost*>(findListener(params.profileId));
+    DCHECK(profileHost);
+
+    int hostAffinity;
+    if (params.rendererAffinity == blpwtk2::Constants::ANY_OUT_OF_PROCESS_RENDERER) {
+        hostAffinity = content::SiteInstance::kNoProcessAffinity;
+    }
+    else {
+        hostAffinity = d_rendererInfoMap->rendererToHostId(params.rendererAffinity);
+        DCHECK(-1 != hostAffinity);
+    }
+
+    bool isInProcess =
+        params.rendererAffinity == blpwtk2::Constants::IN_PROCESS_RENDERER;
+    new WebViewHost(this,
+                    profileHost->browserContext(),
+                    params.routingId,
+                    isInProcess,
+                    (NativeView)params.parent,
+                    hostAffinity,
+                    params.initiallyVisible,
+                    params.takeFocusOnMouseDown);
+}
+
+void ProcessHostImpl::onWebViewDestroy(int routingId)
+{
+    WebViewHost* webViewHost =
+        static_cast<WebViewHost*>(findListener(routingId));
+    DCHECK(webViewHost);
+    delete webViewHost;
 }
 
 }  // close namespace blpwtk2

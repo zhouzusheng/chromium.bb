@@ -34,24 +34,30 @@
 
 #include <string>
 
+struct BlpWebViewHostMsg_NewParams;
+
 namespace IPC {
 class ChannelProxy;
 }  // close namespace blpwtk2
 
 namespace blpwtk2 {
 
+class RendererInfoMap;
+
 // This object lives in the browser process, and on the browser UI thread.  It
 // sets up a channel to speak to a blpwtk2 ProcessClientImpl.
 class ProcessHostImpl : public ProcessHost,
                         private IPC::Listener {
   public:
-    explicit ProcessHostImpl(const std::string& channelId);
+    ProcessHostImpl(const std::string& channelId,
+                    RendererInfoMap* rendererInfoMap);
     ~ProcessHostImpl();
 
     // ProcessHost overrides
     virtual void addRoute(int routingId, IPC::Listener* listener) OVERRIDE;
     virtual void removeRoute(int routingId) OVERRIDE;
     virtual IPC::Listener* findListener(int routingId) OVERRIDE;
+    virtual int getUniqueRoutingId() OVERRIDE;
 
     // IPC::Sender overrides
     virtual bool Send(IPC::Message* message) OVERRIDE;
@@ -68,9 +74,13 @@ class ProcessHostImpl : public ProcessHost,
                       bool diskCacheEnabled,
                       void** browserContext);
     void onProfileDestroy(int routingId);
+    void onWebViewNew(const BlpWebViewHostMsg_NewParams& params);
+    void onWebViewDestroy(int routingId);
 
     scoped_ptr<IPC::ChannelProxy> d_channel;
+    RendererInfoMap* d_rendererInfoMap;
     IDMap<IPC::Listener> d_routes;
+    int d_lastRoutingId;
 
     DISALLOW_COPY_AND_ASSIGN(ProcessHostImpl);
 };

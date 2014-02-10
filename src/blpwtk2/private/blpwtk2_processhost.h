@@ -52,6 +52,11 @@ class ProcessHost : public IPC::Sender {
     // no such listener.
     virtual IPC::Listener* findListener(int routingId) = 0;
 
+    // Get a new host-allocated routingId.  These routing ids start at 0x10000,
+    // to make them different from routing ids allocated from the client (which
+    // start at 0).
+    virtual int getUniqueRoutingId() = 0;
+
   protected:
     virtual ~ProcessHost();
 };

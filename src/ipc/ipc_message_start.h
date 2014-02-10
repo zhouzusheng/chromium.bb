@@ -79,6 +79,7 @@ enum IPCMessageStart {
   VisitedLinkMsgStart,
   OneClickSigninMsgStart,
   BlpProfileMsgStart,
+  BlpWebViewMsgStart,
   AppShimMsgStart,
   ValidationMessageMsgStart,
   WebRtcLoggingMsgStart,

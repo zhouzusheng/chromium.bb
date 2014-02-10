@@ -370,15 +370,17 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     }
 
     int hostAffinity;
-    bool isInProcess = false;
     bool singleProcess = CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
     // Enforce in-process renderer if "--single-process" is specified on the
     // command line.  This is useful for debugging.
-    if (singleProcess || params.rendererAffinity() == Constants::IN_PROCESS_RENDERER) {
-        DCHECK(params.rendererAffinity() != Constants::IN_PROCESS_RENDERER ||
-               d_rendererInfoMap.dcheckProfileForRenderer(
-                   params.rendererAffinity(), profile));
+    int rendererAffinity = singleProcess ? Constants::IN_PROCESS_RENDERER
+                                         : params.rendererAffinity();
 
+    DCHECK(singleProcess ||
+           rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER ||
+           d_rendererInfoMap.dcheckProfileForRenderer(rendererAffinity, profile));
+
+    if (rendererAffinity == Constants::IN_PROCESS_RENDERER) {
         BrowserMainRunner* mainRunner =
             Statics::isOriginalThreadMode() ? d_browserMainRunner.get()
                                             : d_browserThread->mainRunner();
@@ -399,23 +401,19 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
             DCHECK(mainRunner->hasInProcessRendererHost());
         }
 
-        hostAffinity = d_rendererInfoMap.rendererToHostId(Constants::IN_PROCESS_RENDERER);
+        hostAffinity = d_rendererInfoMap.rendererToHostId(rendererAffinity);
         DCHECK(-1 != hostAffinity);
-        isInProcess = true;
     }
-    else if (params.rendererAffinity() == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
+    else if (rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
         hostAffinity = content::SiteInstance::kNoProcessAffinity;
     }
     else {
-        DCHECK(0 <= params.rendererAffinity());
-        DCHECK(d_rendererInfoMap.dcheckProfileForRenderer(
-            params.rendererAffinity(), profile));
+        DCHECK(0 <= rendererAffinity);
 
-        hostAffinity = d_rendererInfoMap.rendererToHostId(
-            params.rendererAffinity());
+        hostAffinity = d_rendererInfoMap.rendererToHostId(rendererAffinity);
         if (-1 == hostAffinity) {
             hostAffinity = content::RenderProcessHostImpl::GenerateUniqueId();
-            d_rendererInfoMap.setRendererHostId(params.rendererAffinity(),
+            d_rendererInfoMap.setRendererHostId(rendererAffinity,
                                                 hostAffinity);
         }
     }
@@ -424,14 +422,14 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
         DCHECK(d_browserThread.get());
 
         ProfileProxy* profileProxy = static_cast<ProfileProxy*>(profile);
-        return new WebViewProxy(delegate,
-                                parent,
-                                d_browserThread->messageLoop(),
+        return new WebViewProxy(d_inProcessClient.get(),
+                                Statics::getUniqueRoutingId(),
                                 profileProxy,
-                                hostAffinity,
+                                delegate,
+                                parent,
+                                rendererAffinity,
                                 params.initiallyVisible(),
-                                params.takeFocusOnMouseDown(),
-                                isInProcess);
+                                params.takeFocusOnMouseDown());
     }
     else if (Statics::isOriginalThreadMode()) {
         BrowserContextImpl* browserContext =
@@ -509,7 +507,7 @@ void ToolkitImpl::createInProcessRendererHost(Profile* profile)
 void ToolkitImpl::createInProcessHost(const std::string& channelId)
 {
     DCHECK(Statics::isInBrowserMainThread());
-    d_inProcessHost.reset(new ProcessHostImpl(channelId));
+    d_inProcessHost.reset(new ProcessHostImpl(channelId, &d_rendererInfoMap));
 }
 
 void ToolkitImpl::destroyInProcessHost()

@@ -30,7 +30,6 @@
 #include <blpwtk2_stringref.h>
 #include <blpwtk2_webframeimpl.h>
 #include <blpwtk2_webviewimpl.h>
-#include <blpwtk2_mediarequestimpl.h>
 
 #include <base/bind.h>
 #include <base/message_loop.h>
@@ -489,15 +488,6 @@ void WebViewProxy::showContextMenu(WebView* source, const ContextMenuParams& par
         base::Bind(&WebViewProxy::proxyShowContextMenu, this, params));
 }
 
-void WebViewProxy::handleMediaRequest(WebView* source, MediaRequest* mediaRequest)
-{
-    DCHECK(source == d_impl);
-    DCHECK(mediaRequest);
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyHandleMediaRequest, this,
-                    make_scoped_refptr(static_cast<MediaRequestImpl*>(mediaRequest))));
-}
-
 void WebViewProxy::handleExternalProtocol(WebView* source, const StringRef& url)
 {
     DCHECK(source == d_impl);
@@ -849,13 +839,6 @@ void WebViewProxy::proxyShowContextMenu(const ContextMenuParams& params)
 {
     if (d_delegate && !d_wasDestroyed)
         d_delegate->showContextMenu(this, params);
-}
-
-void WebViewProxy::proxyHandleMediaRequest(MediaRequest* request)
-{
-    if (d_delegate && !d_wasDestroyed){
-        d_delegate->handleMediaRequest(this, request);
-    }
 }
 
 void WebViewProxy::proxyHandleExternalProtocol(const std::string& url)

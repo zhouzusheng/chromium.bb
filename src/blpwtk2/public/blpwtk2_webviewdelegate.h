@@ -112,15 +112,6 @@ class BLPWTK2_EXPORT WebViewDelegate {
     virtual void showContextMenu(WebView* source,
                                  const ContextMenuParams& params) {}
 
-    // Invoked when a request has been made to access user's media devices
-    // such as the camera or the microphone. The specified 'request' contains
-    // information on the devices that are available.
-    // Note that users should call addRef() on the specified 'request' in order
-    // to obtain ownership on it, and call release() when they don't need it
-    // any more.
-    virtual void handleMediaRequest(WebView* source,
-                                    MediaRequest* request) {}
-
     // Invoked when an attempt is made to navigate using a protocol
     // that cannot be used withing the browser, such as 'mailto:'.
     virtual void handleExternalProtocol(WebView* source,

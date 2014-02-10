@@ -40,7 +40,6 @@
 #include <blpwtk2_httptransaction.h>
 #include <blpwtk2_httptransactionhandler.h>
 #include <blpwtk2_newviewparams.h>
-#include <blpwtk2_mediarequest.h>
 #include <blpwtk2_profile.h>
 #include <blpwtk2_profilecreateparams.h>
 #include <blpwtk2_proxyconfig.h>

@@ -24,7 +24,6 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
-#include <blpwtk2_mediarequestimpl.h>
 #include <blpwtk2_ncdragutil.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_webframeimpl.h>
@@ -566,24 +565,6 @@ void WebViewImpl::CloseContents(content::WebContents* source)
     }
 
     d_delegate->destroyView(this);
-}
-
-void WebViewImpl::RequestMediaAccessPermission(content::WebContents* web_contents,
-                                               const content::MediaStreamRequest& request,
-                                               const content::MediaResponseCallback& callback)
-{
-    if (d_delegate) {
-        MediaObserverImpl* mediaObserver = Statics::mediaObserver;
-        content::MediaStreamDevices devices;
-        if (content::IsAudioMediaType(request.audio_type)) {
-            devices.insert(devices.end(), mediaObserver->getAudioDevices().begin(),  mediaObserver->getAudioDevices().end());
-        }
-        if (content::IsVideoMediaType(request.video_type)) {
-            devices.insert(devices.end(), mediaObserver->getVideoDevices().begin(),  mediaObserver->getVideoDevices().end());
-        }
-        scoped_refptr<MediaRequestImpl> refPtr(new MediaRequestImpl(devices, callback));
-        d_delegate->handleMediaRequest(this, refPtr.get());
-    }
 }
 
 void WebViewImpl::HandleExternalProtocol(const GURL& url)

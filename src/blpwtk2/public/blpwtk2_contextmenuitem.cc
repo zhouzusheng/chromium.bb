@@ -22,105 +22,95 @@
 
 #include <blpwtk2_contextmenuitem.h>
 
-#include <base/logging.h>
+#include <blpwtk2_contextmenuitemimpl.h>
+#include <blpwtk2_stringref.h>
 
-#include <vector>
+#include <base/logging.h>
 
 namespace blpwtk2 {
 
-class ContextMenuSubItems {
-public:
-    ContextMenuSubItems(int count) : d_items(count) {}
-    int count() const { return d_items.size(); }
-    const ContextMenuItem& item(int i) const { return d_items[i]; }
-    ContextMenuItem& item(int i) { return d_items[i]; }
-private:
-    std::vector<ContextMenuItem> d_items;
-};
+ContextMenuItemImpl* getContextMenuItemImpl(ContextMenuItem& obj)
+{
+    return obj.d_impl;
+}
+
+const ContextMenuItemImpl* getContextMenuItemImpl(const ContextMenuItem& obj)
+{
+    return obj.d_impl;
+}
 
 ContextMenuItem::ContextMenuItem()
-: d_type(OPTION)
-, d_action(0)
-, d_submenu(0)
+: d_impl(new ContextMenuItemImpl())
 {
 }
 
 ContextMenuItem::~ContextMenuItem()
 {
-    if (d_submenu) {
-        delete d_submenu;
-        d_submenu = 0;
-    }
+    delete d_impl;
 }
 
 ContextMenuItem::ContextMenuItem(const ContextMenuItem& other)
-: d_label(other.d_label)
-, d_tooltip(other.d_tooltip)
-, d_type(other.d_type)
-, d_action(other.d_action)
-, d_textDirection(other.d_textDirection)
-, d_hasDirectionalOverride(other.d_hasDirectionalOverride)
-, d_enabled(other.d_enabled)
-, d_checked(other.d_checked)
+: d_impl(new ContextMenuItemImpl(*other.d_impl))
 {
-    if (!other.d_submenu) {
-        d_submenu = 0;
-    } else {
-        d_submenu = new ContextMenuSubItems(*other.d_submenu);
-    }
 }
 
 ContextMenuItem& ContextMenuItem::operator= (const ContextMenuItem& other)
 {
-    if (this == &other) {
-        return *this;
-    }
-    d_label = other.d_label;
-    d_tooltip = other.d_tooltip;
-    d_type = other.d_type;
-    d_action = other.d_action;
-    d_textDirection = other.d_textDirection;
-    d_hasDirectionalOverride = other.d_hasDirectionalOverride;
-    d_enabled = other.d_enabled;
-    d_checked = other.d_checked;
-    if (d_submenu) {
-        delete d_submenu;
-    }
-    if (!other.d_submenu) {
-        d_submenu = 0;
-    } else {
-        d_submenu = new ContextMenuSubItems(*other.d_submenu);
+    if (this != &other) {
+        *d_impl = *other.d_impl;
     }
     return *this;
 }
 
+StringRef ContextMenuItem::label() const
+{
+    return d_impl->d_label;
+}
+
+StringRef ContextMenuItem::tooltip() const
+{
+    return d_impl->d_tooltip;
+}
+
+ContextMenuItem::Type ContextMenuItem::type() const
+{
+    return static_cast<Type>(d_impl->d_type);
+}
+
+unsigned ContextMenuItem::action() const
+{
+    return d_impl->d_action;
+}
+
+TextDirection::Value ContextMenuItem::textDirection() const
+{
+    return d_impl->d_textDirection;
+}
+
+bool ContextMenuItem::hasDirectionalOverride() const
+{
+    return d_impl->d_hasDirectionalOverride;
+}
+
+bool ContextMenuItem::enabled() const
+{
+    return d_impl->d_enabled;
+}
+
+bool ContextMenuItem::checked() const
+{
+    return d_impl->d_checked;
+}
+
 int ContextMenuItem::numSubMenuItems() const
 {
-    if (d_submenu) {
-        return d_submenu->count();
-    }
-    return 0;
-}
-void ContextMenuItem::setNumSubMenuItems(const int count)
-{
-    DCHECK(d_submenu == 0);
-    if (count != 0) {
-         d_submenu = new ContextMenuSubItems(count);
-    }
+    return d_impl->d_submenu.size();
 }
 
-const ContextMenuItem& ContextMenuItem::subMenuItem(const int index) const
+const ContextMenuItem& ContextMenuItem::subMenuItem(int index) const
 {
-    DCHECK(d_submenu != 0);
-    DCHECK(index >= 0 && index < d_submenu->count());
-    return d_submenu->item(index);
-}
-
-ContextMenuItem& ContextMenuItem::subMenuItem(const int index)
-{
-    DCHECK(d_submenu != 0);
-    DCHECK(index >= 0 && index < d_submenu->count());
-    return d_submenu->item(index);
+    DCHECK(index >= 0 && index < (int)d_impl->d_submenu.size());
+    return d_impl->d_submenu[index];
 }
 
 };

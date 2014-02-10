@@ -22,151 +22,99 @@
 
 #include <blpwtk2_contextmenuparams.h>
 
+#include <blpwtk2_contextmenuitem.h>
+#include <blpwtk2_contextmenuparamsimpl.h>
+#include <blpwtk2_stringref.h>
+
 #include <base/logging.h>
 
 #include <vector>
 
 namespace blpwtk2 {
 
-struct SpellSuggestionsData {
-    std::vector<String> d_suggestions;
-};
+ContextMenuParamsImpl* getContextMenuParamsImpl(ContextMenuParams& obj)
+{
+    return obj.d_impl;
+}
 
-class CustomItems {
-public:
-    CustomItems(int count) : d_items(count) {}
-    int count() const { return d_items.size(); }
-    const ContextMenuItem& item(int i) const { return d_items[i]; }
-    ContextMenuItem& item(int i) { return d_items[i]; }
-private:
-    std::vector<ContextMenuItem> d_items;
-};
+const ContextMenuParamsImpl* getContextMenuParamsImpl(const ContextMenuParams& obj)
+{
+    return obj.d_impl;
+}
 
 ContextMenuParams::ContextMenuParams()
-: d_customItems(0)
-, d_suggestions(0)
+: d_impl(new ContextMenuParamsImpl())
 {
-}
-
-ContextMenuParams::ContextMenuParams(const ContextMenuParams& other)
-: d_misspelledWord(other.d_misspelledWord)
-, d_pointOnScreen(other.d_pointOnScreen)
-, d_canCut(other.d_canCut)
-, d_canCopy(other.d_canCopy)
-, d_canPaste(other.d_canPaste)
-, d_canDelete(other.d_canDelete)
-{
-    if (!other.d_customItems) {
-        d_customItems = 0;
-    } else {
-        d_customItems = new CustomItems(*other.d_customItems);
-    }
-
-    if (!other.d_suggestions) {
-        d_suggestions = 0;
-    } else {
-        d_suggestions = new SpellSuggestionsData(*other.d_suggestions);
-    }
-}
-
-ContextMenuParams& ContextMenuParams::operator=(const ContextMenuParams& other)
-{
-    if (this == &other) {
-        return *this;
-    }
-    d_misspelledWord = other.d_misspelledWord;
-    d_pointOnScreen = other.d_pointOnScreen;
-    d_canCut = other.d_canCut;
-    d_canCopy = other.d_canCopy;
-    d_canPaste = other.d_canPaste;
-    d_canDelete = other.d_canDelete;
-    if (d_customItems) {
-        delete d_customItems;
-    }
-    if (!other.d_customItems) {
-        d_customItems = 0;
-    } else {
-        d_customItems = new CustomItems(*other.d_customItems);
-    }
-    if (d_suggestions) {
-        delete d_suggestions;
-    }
-    if (!other.d_suggestions) {
-        d_suggestions = 0;
-    } else {
-        d_suggestions = new SpellSuggestionsData(*other.d_suggestions);
-    }
-    return *this;
 }
 
 ContextMenuParams::~ContextMenuParams()
 {
-    if (d_customItems) {
-        delete d_customItems;
-        d_customItems = 0;
+    delete d_impl;
+}
+
+ContextMenuParams::ContextMenuParams(const ContextMenuParams& other)
+: d_impl(new ContextMenuParamsImpl(*other.d_impl))
+{
+}
+
+ContextMenuParams& ContextMenuParams::operator=(const ContextMenuParams& other)
+{
+    if (this != &other) {
+        *d_impl = *other.d_impl;
     }
-    if (d_suggestions) {
-        delete d_suggestions;
-        d_suggestions = 0;
-    }
+    return *this;
+}
+
+const POINT& ContextMenuParams::pointOnScreen() const
+{
+    return d_impl->d_pointOnScreen;
+}
+
+bool ContextMenuParams::canCut() const
+{
+    return d_impl->d_canCut;
+}
+
+bool ContextMenuParams::canCopy() const
+{
+    return d_impl->d_canCopy;
+}
+
+bool ContextMenuParams::canPaste() const
+{
+    return d_impl->d_canPaste;
+}
+
+bool ContextMenuParams::canDelete() const
+{
+    return d_impl->d_canDelete;
+}
+
+StringRef ContextMenuParams::misspelledWord() const
+{
+    return d_impl->d_misspelledWord;
 }
 
 int ContextMenuParams::numCustomItems() const
 {
-    if (d_customItems) {
-        return d_customItems->count();
-    }
-    return 0;
+    return d_impl->d_customItems.size();
 }
 
-void ContextMenuParams::setNumCustomItems(const int count)
+const ContextMenuItem& ContextMenuParams::customItem(int index) const
 {
-    DCHECK(d_customItems == 0);
-    if (count > 0) {
-        d_customItems = new CustomItems(count);
-    }
-}
-
-const ContextMenuItem& ContextMenuParams::customItem(const int index) const
-{
-    DCHECK(d_customItems != 0);
-    DCHECK(index >= 0 && index < d_customItems->count());
-    return d_customItems->item(index);
-}
-
-ContextMenuItem& ContextMenuParams::customItem(const int index)
-{
-    DCHECK(d_customItems != 0);
-    DCHECK(index >= 0 && index < d_customItems->count());
-    return d_customItems->item(index);
+    DCHECK(index >= 0 && index < (int)d_impl->d_customItems.size());
+    return d_impl->d_customItems[index];
 }
 
 int ContextMenuParams::numSpellSuggestions() const
 {
-    return d_suggestions ? d_suggestions->d_suggestions.size() : 0;
+    return d_impl->d_suggestions.size();
 }
 
-void ContextMenuParams::setNumSpellSuggestions(int count)
+StringRef ContextMenuParams::spellSuggestion(int index) const
 {
-    DCHECK(d_suggestions == 0);
-    if (count > 0) {
-        d_suggestions = new SpellSuggestionsData();
-        d_suggestions->d_suggestions.resize(count);
-    }
-}
-
-const String& ContextMenuParams::spellSuggestion(int index) const
-{
-    DCHECK(d_suggestions != 0);
-    DCHECK(index >= 0 && index < (int)d_suggestions->d_suggestions.size());
-    return d_suggestions->d_suggestions[index];
-}
-
-String& ContextMenuParams::spellSuggestion(int index)
-{
-    DCHECK(d_suggestions != 0);
-    DCHECK(index >= 0 && index < (int)d_suggestions->d_suggestions.size());
-    return d_suggestions->d_suggestions[index];
+    DCHECK(index >= 0 && index < (int)d_impl->d_suggestions.size());
+    return d_impl->d_suggestions[index];
 }
 
 }

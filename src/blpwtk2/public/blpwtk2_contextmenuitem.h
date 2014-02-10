@@ -24,12 +24,17 @@
 #define INCLUDED_BLPWTK2_CONTEXTMENUITEM_H
 
 #include <blpwtk2_config.h>
-#include <blpwtk2_string.h>
+
 #include <blpwtk2_textdirection.h>
 
 namespace blpwtk2 {
 
-class ContextMenuSubItems;
+class ContextMenuItem;
+class StringRef;
+
+struct ContextMenuItemImpl;
+ContextMenuItemImpl* getContextMenuItemImpl(ContextMenuItem& obj);
+const ContextMenuItemImpl* getContextMenuItemImpl(const ContextMenuItem& obj);
 
 //This class represents a single context menu item.
 class BLPWTK2_EXPORT ContextMenuItem {
@@ -48,47 +53,22 @@ class BLPWTK2_EXPORT ContextMenuItem {
     ContextMenuItem(const ContextMenuItem& other);
     ContextMenuItem& operator= (const ContextMenuItem& other);
 
-    String label() const { return d_label;}
-    void setLabel(const String& label) { d_label = label;}
-
-    String tooltip() const { return d_tooltip; }
-    void setTooltip(const String& tooltip) { d_tooltip = tooltip; }
-
-    Type type() const { return d_type; }
-    void setType(Type type) { d_type = type; }
-
-    unsigned action() const { return d_action; }
-    void setAction(unsigned action) { d_action = action; }
-
-    TextDirection::Value textDirection() const { return d_textDirection; }
-    void setTextDirection(TextDirection::Value textDirection) { d_textDirection = textDirection; }
-
-    bool hasDirectionalOverride() const { return d_hasDirectionalOverride; }
-    void setHasDirectionalOverride(bool hasDirectionalOverride) { d_hasDirectionalOverride = hasDirectionalOverride; }
-
-    bool enabled() const { return d_enabled; }
-    void setEnabled(bool enabled) { d_enabled = enabled; }
-
-    bool checked() const { return d_checked; }
-    void setChecked(bool checked) { d_checked = checked; }
-
+    StringRef label() const;
+    StringRef tooltip() const;
+    Type type() const;
+    unsigned action() const;
+    TextDirection::Value textDirection() const;
+    bool hasDirectionalOverride() const;
+    bool enabled() const;
+    bool checked() const;
     int numSubMenuItems() const;
-    void setNumSubMenuItems(int count);
-
     const ContextMenuItem& subMenuItem(int index) const;
-    ContextMenuItem& subMenuItem(int index);
 
   private:
-    String d_label;
-    String d_tooltip;
-    Type d_type;
-    unsigned d_action;
-    TextDirection::Value d_textDirection;
-    bool d_hasDirectionalOverride;
-    bool d_enabled;
-    bool d_checked;
-    ContextMenuSubItems* d_submenu;
+    friend ContextMenuItemImpl* getContextMenuItemImpl(ContextMenuItem& obj);
+    friend const ContextMenuItemImpl* getContextMenuItemImpl(const ContextMenuItem& obj);
 
+    ContextMenuItemImpl* d_impl;
 };
 
 }  // close namespace blpwtk2

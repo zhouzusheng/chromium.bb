@@ -82,9 +82,6 @@ class ToolkitImpl : public Toolkit {
                                    WebViewDelegate* delegate,
                                    const WebViewCreateParams& params) OVERRIDE;
 
-    virtual void onRootWindowPositionChanged(gfx::NativeView root) OVERRIDE;
-    virtual void onRootWindowSettingChange(gfx::NativeView root) OVERRIDE;
-
     virtual bool preHandleMessage(const NativeMsg* msg) OVERRIDE;
     virtual void postHandleMessage(const NativeMsg* msg) OVERRIDE;
 

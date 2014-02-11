@@ -99,6 +99,8 @@ IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_Find,
                     blpwtk2::FindOnPageRequest /* request */)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_ReplaceMisspelledRange,
                     std::string /* text */)
+IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_RootWindowPositionChanged)
+IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_RootWindowSettingsChanged)
 
 // This destroys the WebView.
 IPC_MESSAGE_CONTROL1(BlpWebViewHostMsg_Destroy,

@@ -824,10 +824,10 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         }
         break;
     case WM_WINDOWPOSCHANGED:
-        g_toolkit->onRootWindowPositionChanged(hwnd);
+        shell->d_webView->rootWindowPositionChanged();
         break;
     case WM_SETTINGCHANGE:
-        g_toolkit->onRootWindowSettingChange(hwnd);
+        shell->d_webView->rootWindowSettingsChanged();
         break;
     case WM_ERASEBKGND:
         return 1;

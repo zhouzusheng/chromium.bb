@@ -36,6 +36,7 @@
 
 #include <base/message_loop.h>
 #include <base/strings/utf_string_conversions.h>
+#include <content/browser/renderer_host/render_widget_host_view_base.h>
 #include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/devtools_http_handler.h>
 #include <content/public/browser/render_view_host.h>
@@ -428,6 +429,28 @@ void WebViewImpl::replaceMisspelledRange(const StringRef& text)
     base::string16 text16;
     UTF8ToUTF16(text.data(), text.length(), &text16);
     d_webContents->GetRenderViewHost()->ReplaceMisspelling(text16);
+}
+
+void WebViewImpl::rootWindowPositionChanged()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    content::RenderWidgetHostViewBase* rwhv =
+        static_cast<content::RenderWidgetHostViewBase*>(
+            d_webContents->GetRenderWidgetHostView());
+    if (rwhv)
+        rwhv->UpdateScreenInfo(rwhv->GetNativeView());
+}
+
+void WebViewImpl::rootWindowSettingsChanged()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    content::RenderWidgetHostViewBase* rwhv =
+        static_cast<content::RenderWidgetHostViewBase*>(
+            d_webContents->GetRenderWidgetHostView());
+    if (rwhv)
+        rwhv->UpdateScreenInfo(rwhv->GetNativeView());
 }
 
 void WebViewImpl::UpdateTargetURL(content::WebContents* source,

@@ -101,6 +101,8 @@ class WebViewHost : public IPC::Listener,
     void onSetZoomPercent(int value);
     void onFind(const FindOnPageRequest& value);
     void onReplaceMisspelledRange(const std::string& text);
+    void onRootWindowPositionChanged();
+    void onRootWindowSettingsChanged();
 
     // IPC::Sender override
     virtual bool Send(IPC::Message* message) OVERRIDE;

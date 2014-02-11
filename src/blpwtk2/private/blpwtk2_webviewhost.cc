@@ -108,6 +108,8 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetZoomPercent, onSetZoomPercent)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Find, onFind)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_ReplaceMisspelledRange, onReplaceMisspelledRange)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowPositionChanged, onRootWindowPositionChanged)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowSettingsChanged, onRootWindowSettingsChanged)
         IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP_EX()
 
@@ -269,6 +271,16 @@ void WebViewHost::onFind(const FindOnPageRequest& value)
 void WebViewHost::onReplaceMisspelledRange(const std::string& text)
 {
     d_webView->replaceMisspelledRange(text);
+}
+
+void WebViewHost::onRootWindowPositionChanged()
+{
+    d_webView->rootWindowPositionChanged();
+}
+
+void WebViewHost::onRootWindowSettingsChanged()
+{
+    d_webView->rootWindowSettingsChanged();
 }
 
 // IPC::Sender override

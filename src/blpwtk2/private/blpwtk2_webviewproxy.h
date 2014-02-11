@@ -110,6 +110,8 @@ class WebViewProxy : public WebView,
     virtual void setZoomPercent(int value) OVERRIDE;
     virtual void find(const StringRef& text, bool matchCase, bool forward) OVERRIDE;
     virtual void replaceMisspelledRange(const StringRef& text) OVERRIDE;
+    virtual void rootWindowPositionChanged() OVERRIDE;
+    virtual void rootWindowSettingsChanged() OVERRIDE;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.

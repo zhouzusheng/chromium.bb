@@ -129,24 +129,6 @@ class Toolkit {
         WebViewDelegate* delegate = 0,
         const WebViewCreateParams& params = WebViewCreateParams()) = 0;
 
-    // This function must be called by the application whenever any root
-    // window containing a WebView receives WM_WINDOWPOSCHANGED.  Chromium
-    // internally uses this notification to update its screen configuration
-    // for the WebViews contained inside.  Note that this is only necessary
-    // for 'ThreadMode::RENDERER_MAIN'.  This function is a no-op for other
-    // thread modes (Chromium automatically hooks to the root window's WndProc
-    // if thread mode is 'ThreadMode::ORIGINAL').
-    virtual void onRootWindowPositionChanged(NativeView root) = 0;
-
-    // This function must be called by the application whenever any root
-    // window containing a WebView receives WM_SETTINGCHANGE.  Chromium
-    // internally uses this notification to update its screen configuration
-    // for the WebViews contained inside.  Note that this is only necessary
-    // for 'ThreadMode::RENDERER_MAIN'.  This function is a no-op for other
-    // thread modes (Chromium automatically hooks to the root window's WndProc
-    // if thread mode is 'ThreadMode::ORIGINAL').
-    virtual void onRootWindowSettingChange(NativeView root) = 0;
-
     // Do extra chromium work needed at each message-loop iteration.  These
     // functions must be called on each message within the application's
     // message loop, like:

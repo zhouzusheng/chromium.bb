@@ -202,6 +202,7 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
 
     d_mainDelegate.setRendererInfoMap(&d_rendererInfoMap);
     base::MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);
+    content::WebContentsViewWin::disableHookOnRoot();
 }
 
 ToolkitImpl::~ToolkitImpl()
@@ -227,7 +228,6 @@ void ToolkitImpl::startupThreads()
 
     if (Statics::isRendererMainThreadMode()) {
         new base::MessageLoop(base::MessageLoop::TYPE_UI);
-        content::WebContentsViewWin::disableHookOnRoot();
         d_browserThread.reset(new BrowserThread(&d_sandboxInfo));
     }
     else {
@@ -413,26 +413,6 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
 
     NOTREACHED();
     return 0;
-}
-
-void ToolkitImpl::onRootWindowPositionChanged(gfx::NativeView root)
-{
-    DCHECK(Statics::isInApplicationMainThread());
-    if (d_threadsStarted && Statics::isRendererMainThreadMode()) {
-        DCHECK(d_browserThread);
-        d_browserThread->messageLoop()->PostTask(FROM_HERE,
-            base::Bind(&content::WebContentsViewWin::onRootWindowPositionChanged, root));
-    }
-}
-
-void ToolkitImpl::onRootWindowSettingChange(gfx::NativeView root)
-{
-    DCHECK(Statics::isInApplicationMainThread());
-    if (d_threadsStarted && Statics::isRendererMainThreadMode()) {
-        DCHECK(d_browserThread);
-        d_browserThread->messageLoop()->PostTask(FROM_HERE,
-            base::Bind(&content::WebContentsViewWin::onRootWindowSettingChange, root));
-    }
 }
 
 bool ToolkitImpl::preHandleMessage(const NativeMsg* msg)

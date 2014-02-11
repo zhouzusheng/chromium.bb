@@ -163,6 +163,16 @@ public:
     // context menu handlers.
     virtual void replaceMisspelledRange(const StringRef& text) = 0;
 
+    // This function must be called by the application whenever the root
+    // window containing this WebView receives WM_WINDOWPOSCHANGED.  This
+    // notification is used to update the WebView's screen configuration.
+    virtual void rootWindowPositionChanged() = 0;
+
+    // This function must be called by the application whenever the root
+    // window containing this WebView receives WM_SETTINGCHANGE.  This
+    // notification is used to update the WebView's screen configuration.
+    virtual void rootWindowSettingsChanged() = 0;
+
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the
     // 'destroy()' method, instead of deleting the object directly.

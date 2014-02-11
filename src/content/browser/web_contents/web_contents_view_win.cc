@@ -90,21 +90,8 @@ void AddFilterToParentHwndSubclass(HWND hwnd, ui::HWNDMessageFilter* filter) {
 }  // namespace namespace
 
 // static
-void WebContentsViewWin::disableHookOnRoot()
-{
+void WebContentsViewWin::disableHookOnRoot() {
   disable_hook_on_root = true;
-}
-
-// static
-void WebContentsViewWin::onRootWindowPositionChanged(gfx::NativeView root)
-{
-  EnumChildWindows(root, EnumChildProc, 0);
-}
-
-// static
-void WebContentsViewWin::onRootWindowSettingChange(gfx::NativeView root)
-{
-  EnumChildWindows(root, EnumChildProc, 0);
 }
 
 WebContentsViewWin::WebContentsViewWin(WebContentsImpl* web_contents,

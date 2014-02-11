@@ -336,6 +336,18 @@ void WebViewProxy::replaceMisspelledRange(const StringRef& text)
     Send(new BlpWebViewHostMsg_ReplaceMisspelledRange(d_routingId, stext));
 }
 
+void WebViewProxy::rootWindowPositionChanged()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    Send(new BlpWebViewHostMsg_RootWindowPositionChanged(d_routingId));
+}
+
+void WebViewProxy::rootWindowSettingsChanged()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    Send(new BlpWebViewHostMsg_RootWindowSettingsChanged(d_routingId));
+}
+
 // IPC::Sender override
 
 bool WebViewProxy::Send(IPC::Message* message)

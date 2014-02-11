@@ -25,6 +25,7 @@
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_constants.h>
+#include <blpwtk2_control_messages.h>
 #include <blpwtk2_profile_messages.h>
 #include <blpwtk2_profilehost.h>
 #include <blpwtk2_webview_messages.h>
@@ -99,6 +100,7 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
         // Dispatch control messages
         bool msgIsOk = true;
         IPC_BEGIN_MESSAGE_MAP_EX(ProcessHostImpl, message, msgIsOk)
+            IPC_MESSAGE_HANDLER(BlpControlHostMsg_Sync, onSync)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_New, onProfileNew)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_Destroy, onProfileDestroy)
             IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_New, onWebViewNew)
@@ -143,6 +145,11 @@ void ProcessHostImpl::OnChannelError()
 }
 
 // Control message handlers
+
+void ProcessHostImpl::onSync()
+{
+    DLOG(INFO) << "sync";
+}
 
 void ProcessHostImpl::onProfileNew(int routingId,
                                    const std::string& dataDir,

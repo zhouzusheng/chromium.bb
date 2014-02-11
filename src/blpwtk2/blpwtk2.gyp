@@ -254,6 +254,7 @@
         'private/blpwtk2_mainmessagepump.h',
         'private/blpwtk2_message_generator.cc',
         'private/blpwtk2_message_generator.h',
+        'private/blpwtk2_control_messages.h',
         'private/blpwtk2_profile_messages.h',
         'private/blpwtk2_webview_messages.h',
         'private/blpwtk2_enumtraits.h',

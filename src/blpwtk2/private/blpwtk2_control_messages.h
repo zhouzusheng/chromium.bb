@@ -20,10 +20,18 @@
  * IN THE SOFTWARE.
  */
 
+// IPC messages for global process control.
 // Multiply-included file, hence no include guard.
 
-#include <blpwtk2_enumtraits.h>
-#include <blpwtk2_control_messages.h>
-#include <blpwtk2_profile_messages.h>
-#include <blpwtk2_webview_messages.h>
+#include <ipc/ipc_message_macros.h>
+
+#undef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT
+
+#define IPC_MESSAGE_START BlpControlMsgStart
+
+// ============== Messages from client to host ======================
+
+// This syncs the ProcessClient with the ProcessHost.
+IPC_SYNC_MESSAGE_CONTROL0_0(BlpControlHostMsg_Sync)
 

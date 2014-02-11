@@ -71,6 +71,7 @@ class ProcessHostImpl : public ProcessHost,
     virtual void OnChannelError() OVERRIDE;
 
     // Control message handlers
+    void onSync();
     void onProfileNew(int routingId,
                       const std::string& dataDir,
                       bool diskCacheEnabled);

@@ -27,6 +27,7 @@
 #include <blpwtk2_browserthread.h>
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_browsercontextimplmanager.h>
+#include <blpwtk2_control_messages.h>
 #include <blpwtk2_inprocessrenderer.h>
 #include <blpwtk2_inprocessrendererhost.h>
 #include <blpwtk2_browsermainrunner.h>
@@ -265,14 +266,19 @@ void ToolkitImpl::shutdownThreads()
     }
 
     if (Statics::isRendererMainThreadMode()) {
+        // Make sure any messages posted to the ProcessHost have been handled.
+        d_inProcessClient->Send(new BlpControlHostMsg_Sync());
+
         d_inProcessClient.reset();
+
         d_browserThread->messageLoop()->PostTask(
             FROM_HERE,
             base::Bind(&ToolkitImpl::destroyInProcessHost,
                        base::Unretained(this)));
 
-        d_browserThread->sync();  // make sure any WebView::destroy has been
-                                  // handled by the browser-main thread
+        // Make sure any tasks posted to the browser-main thread have been
+        // handled.
+        d_browserThread->sync();
     }
 
     MainMessagePump::current()->cleanup();

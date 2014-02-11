@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2014 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,27 +20,13 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_REFCOUNTEDOBJECT_H
-#define INCLUDED_BLPWTK2_REFCOUNTEDOBJECT_H
+#include <blpwtk2_processclient.h>
 
 namespace blpwtk2 {
 
-// This class represents a simple reference counted object.
-// Users receiving an object of this type should call addRef() if they
-// are planning to use it, and call release() when they are done.
-class RefCountedObject {
-  public:
-    // Gain ownership on the object. Users should call release()
-    // when they don't need it any more.
-    virtual void addRef() = 0;
+ProcessClient::~ProcessClient()
+{
+}
 
-    // Release the object.
-    virtual void release() = 0;
+}  // close namespace blpwtk2
 
-  protected:
-    virtual ~RefCountedObject();
-};
-
-} // close namespace blpwtk2
-
-#endif // INCLUDED_BLPWTK2_REFCOUNTEDOBJECT_H

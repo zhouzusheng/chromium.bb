@@ -22,14 +22,17 @@
 
 #include <blpwtk2_webviewproxy.h>
 
+#include <blpwtk2_constants.h>
 #include <blpwtk2_contextmenuparams.h>
 #include <blpwtk2_mainmessagepump.h>
 #include <blpwtk2_newviewparams.h>
+#include <blpwtk2_processclient.h>
+#include <blpwtk2_profileproxy.h>
 #include <blpwtk2_statics.h>
 #include <blpwtk2_stringref.h>
 #include <blpwtk2_webframeimpl.h>
-#include <blpwtk2_webviewimpl.h>
-#include <blpwtk2_mediarequestimpl.h>
+#include <blpwtk2_webviewdelegate.h>
+#include <blpwtk2_webview_messages.h>
 
 #include <base/bind.h>
 #include <base/message_loop.h>
@@ -39,92 +42,82 @@
 
 namespace blpwtk2 {
 
-WebViewProxy::WebViewProxy(WebViewDelegate* delegate,
+WebViewProxy::WebViewProxy(ProcessClient* processClient,
+                           int routingId,
+                           ProfileProxy* profileProxy,
+                           WebViewDelegate* delegate,
                            gfx::NativeView parent,
-                           base::MessageLoop* implDispatcher,
-                           Profile* profile,
-                           int hostAffinity,
+                           int rendererAffinity,
                            bool initiallyVisible,
-                           bool takeFocusOnMouseDown,
-                           bool isInProcess)
-: d_impl(0)
-, d_implDispatcher(implDispatcher)
-, d_proxyDispatcher(base::MessageLoop::current())
+                           bool takeFocusOnMouseDown)
+: d_profileProxy(profileProxy)
+, d_processClient(processClient)
 , d_delegate(delegate)
-, d_routingId(0)
-, d_implMoveAckPending(false)
+, d_routingId(routingId)
+, d_rendererRoutingId(0)
 , d_moveAckPending(false)
-, d_wasDestroyed(false)
 , d_isMainFrameAccessible(false)
-, d_isInProcess(isInProcess)
 , d_gotRendererInfo(false)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(profile);
-    ++Statics::numWebViews;
+    DCHECK(profileProxy);
+    DCHECK(d_processClient);
 
-    AddRef();  // this is balanced in destroy()
+    profileProxy->incrementWebViewCount();
+    d_processClient->addRoute(d_routingId, this);
 
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implInit, this, parent, profile,
-                   hostAffinity, initiallyVisible, takeFocusOnMouseDown));
+    BlpWebViewHostMsg_NewParams params;
+    params.routingId = routingId;
+    params.profileId = profileProxy->routingId();
+    params.initiallyVisible = initiallyVisible;
+    params.takeFocusOnMouseDown = takeFocusOnMouseDown;
+    params.rendererAffinity = rendererAffinity;
+    params.parent = (NativeViewForTransit)parent;
+    Send(new BlpWebViewHostMsg_New(params));
 }
 
-WebViewProxy::WebViewProxy(WebViewImpl* impl,
-                           base::MessageLoop* implDispatcher,
-                           base::MessageLoop* proxyDispatcher,
-                           bool isInProcess)
-: d_impl(impl)
-, d_implDispatcher(implDispatcher)
-, d_proxyDispatcher(proxyDispatcher)
+WebViewProxy::WebViewProxy(ProcessClient* processClient,
+                           int routingId,
+                           ProfileProxy* profileProxy)
+: d_profileProxy(profileProxy)
+, d_processClient(processClient)
 , d_delegate(0)
-, d_routingId(0)
-, d_implMoveAckPending(false)
+, d_routingId(routingId)
+, d_rendererRoutingId(0)
 , d_moveAckPending(false)
-, d_wasDestroyed(false)
 , d_isMainFrameAccessible(false)
-, d_isInProcess(isInProcess)
 , d_gotRendererInfo(false)
 {
-    DCHECK(base::MessageLoop::current() == implDispatcher);
-    ++Statics::numWebViews;
-
-    AddRef();  // this is balanced in destroy()
-
-    impl->setImplClient(this);
+    profileProxy->incrementWebViewCount();
+    d_processClient->addRoute(d_routingId, this);
 }
 
 WebViewProxy::~WebViewProxy()
 {
-    DCHECK(d_wasDestroyed);
 }
 
 void WebViewProxy::destroy()
 {
     DCHECK(Statics::isInApplicationMainThread());
 
-    DCHECK(!d_wasDestroyed);
-    DCHECK(0 < Statics::numWebViews);
-    --Statics::numWebViews;
-    d_wasDestroyed = true;
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implDestroy, this));
+    d_processClient->removeRoute(d_routingId);
+    d_profileProxy->decrementWebViewCount();
 
-    Release();  // balance the AddRef() from the constructor
+    Send(new BlpWebViewHostMsg_Destroy(d_routingId));
+
+    delete this;
 }
 
 WebFrame* WebViewProxy::mainFrame()
 {
-    DCHECK(!d_wasDestroyed);
     DCHECK(Statics::isRendererMainThreadMode());
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(d_isInProcess);
     DCHECK(d_isMainFrameAccessible)
         << "You should wait for didFinishLoad";
     DCHECK(d_gotRendererInfo);
 
     if (!d_mainFrame.get()) {
-        content::RenderView* rv = content::RenderView::FromRoutingID(d_routingId);
+        content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
         DCHECK(rv);
 
         WebKit::WebFrame* webFrame = rv->GetWebView()->mainFrame();
@@ -137,112 +130,89 @@ WebFrame* WebViewProxy::mainFrame()
 void WebViewProxy::loadUrl(const StringRef& url)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
     std::string surl(url.data(), url.length());
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implLoadUrl, this, surl));
+    Send(new BlpWebViewHostMsg_LoadUrl(d_routingId, surl));
 }
 
 void WebViewProxy::find(const StringRef& text, bool matchCase, bool forward)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
 
     if (!d_find) d_find.reset(new FindOnPage());
 
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implFind, this,
-                   d_find->makeRequest(text, matchCase, forward)));
+    FindOnPageRequest request = d_find->makeRequest(text, matchCase, forward);
+    Send(new BlpWebViewHostMsg_Find(d_routingId, request));
 }
 
 void WebViewProxy::loadInspector(WebView* inspectedView)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
     DCHECK(inspectedView);
     WebViewProxy* inspectedViewProxy
         = static_cast<WebViewProxy*>(inspectedView);
-    DCHECK(!inspectedViewProxy->d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implLoadInspector, this, inspectedView));
+    Send(new BlpWebViewHostMsg_LoadInspector(d_routingId,
+                                             inspectedViewProxy->routingId()));
 }
 
 void WebViewProxy::inspectElementAt(const POINT& point)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implInspectElementAt, this, point));
+    Send(new BlpWebViewHostMsg_InspectElementAt(d_routingId,
+                                                gfx::Point(point)));
 }
 
 void WebViewProxy::reload(bool ignoreCache)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implReload, this, ignoreCache));
+    Send(new BlpWebViewHostMsg_Reload(d_routingId, ignoreCache));
 }
 
 void WebViewProxy::goBack()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implGoBack, this));
+    Send(new BlpWebViewHostMsg_GoBack(d_routingId));
 }
 
 void WebViewProxy::goForward()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implGoForward, this));
+    Send(new BlpWebViewHostMsg_GoForward(d_routingId));
 }
 
 void WebViewProxy::stop()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implStop, this));
+    Send(new BlpWebViewHostMsg_Stop(d_routingId));
 }
 
 void WebViewProxy::focus()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implFocus, this));
+    Send(new BlpWebViewHostMsg_Focus(d_routingId));
 }
 
 void WebViewProxy::show()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implShow, this));
+    Send(new BlpWebViewHostMsg_Show(d_routingId));
 }
 
 void WebViewProxy::hide()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implHide, this));
+    Send(new BlpWebViewHostMsg_Hide(d_routingId));
 }
 
 void WebViewProxy::setParent(NativeView parent)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implSetParent, this, parent));
+    Send(new BlpWebViewHostMsg_SetParent(d_routingId,
+                                         (NativeViewForTransit)parent));
 }
 
 void WebViewProxy::move(int left, int top, int width, int height)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
     DCHECK(0 <= width);
     DCHECK(0 <= height);
 
@@ -253,7 +223,6 @@ void WebViewProxy::move(int left, int top, int width, int height)
     }
 
     DCHECK(!d_moveAckPending);
-    DCHECK(!d_implMoveAckPending);
 
     d_rect = rc;
 
@@ -272,20 +241,15 @@ void WebViewProxy::move(int left, int top, int width, int height)
     //   * the browser thread gets the backing store updated with the new size.
 
     if (!d_gotRendererInfo) {
-        d_implDispatcher->PostTask(
-            FROM_HERE,
-            base::Bind(&WebViewProxy::implMove, this, left, top, width, height));
+        Send(new BlpWebViewHostMsg_Move(d_routingId, d_rect));
         return;
     }
 
-    DCHECK(d_isInProcess);
-
-    content::RenderView* rv = content::RenderView::FromRoutingID(d_routingId);
+    content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
     DCHECK(rv);
 
     d_moveAckPending = true;
-    d_implDispatcher->PostTask(FROM_HERE,
-                               base::Bind(&WebViewProxy::implSyncMove, this, d_rect));
+    Send(new BlpWebViewHostMsg_SyncMove(d_routingId, d_rect));
 
     if (!d_rect.IsEmpty()) {
         rv->SetSize(d_rect.size());
@@ -301,508 +265,172 @@ void WebViewProxy::move(int left, int top, int width, int height)
 void WebViewProxy::cutSelection()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implCutSelection, this));
+    Send(new BlpWebViewHostMsg_CutSelection(d_routingId));
 }
 
 void WebViewProxy::copySelection()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implCopySelection, this));
+    Send(new BlpWebViewHostMsg_CopySelection(d_routingId));
 }
 
 void WebViewProxy::paste()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implPaste, this));
+    Send(new BlpWebViewHostMsg_Paste(d_routingId));
 }
 
 void WebViewProxy::deleteSelection()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implDeleteSelection, this));
+    Send(new BlpWebViewHostMsg_DeleteSelection(d_routingId));
 }
 
 void WebViewProxy::enableFocusBefore(bool enabled)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implEnableFocusBefore, this, enabled));
+    Send(new BlpWebViewHostMsg_EnableFocusBefore(d_routingId, enabled));
 }
 
 void WebViewProxy::enableFocusAfter(bool enabled)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implEnableFocusAfter, this, enabled));
+    Send(new BlpWebViewHostMsg_EnableFocusAfter(d_routingId, enabled));
 }
 
 void WebViewProxy::enableNCHitTest(bool enabled)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implEnableNCHitTest, this, enabled));
+    Send(new BlpWebViewHostMsg_EnableNCHitTest(d_routingId, enabled));
 }
 
 void WebViewProxy::onNCHitTestResult(int x, int y, int result)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implOnNCHitTestResult, this, x, y, result));
+    Send(new BlpWebViewHostMsg_OnNCHitTestResult(d_routingId, x, y, result));
 }
 
 void WebViewProxy::performCustomContextMenuAction(int actionId)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implPerformCustomContextMenuAction, this, actionId));
+    Send(new BlpWebViewHostMsg_PerformContextMenuAction(d_routingId,
+                                                        actionId));
 }
 
 void WebViewProxy::enableCustomTooltip(bool enabled)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implEnableCustomTooltip, this, enabled));
+    Send(new BlpWebViewHostMsg_EnableCustomTooltip(d_routingId, enabled));
 }
 
 void WebViewProxy::setZoomPercent(int value)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implSetZoomPercent, this, value));
+    Send(new BlpWebViewHostMsg_SetZoomPercent(d_routingId, value));
 }
 
 void WebViewProxy::replaceMisspelledRange(const StringRef& text)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(!d_wasDestroyed);
     std::string stext(text.data(), text.length());
-    d_implDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::implReplaceMisspelledRange, this, stext));
+    Send(new BlpWebViewHostMsg_ReplaceMisspelledRange(d_routingId, stext));
 }
 
-void WebViewProxy::updateTargetURL(WebView* source, const StringRef& url)
+// IPC::Sender override
+
+bool WebViewProxy::Send(IPC::Message* message)
 {
-    DCHECK(source == d_impl);
-    std::string surl(url.data(), url.length());
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyUpdateTargetURL, this, surl));
+    DCHECK(d_processClient);
+    return d_processClient->Send(message);
 }
 
-void WebViewProxy::updateNavigationState(WebView* source,
-                                         const NavigationState& state)
-{
-    DCHECK(source == d_impl);
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyUpdateNavigationState, this, state));
-}
+// IPC::Listener overrides
 
-void WebViewProxy::didNavigateMainFramePostCommit(WebView* source, const StringRef& url)
+bool WebViewProxy::OnMessageReceived(const IPC::Message& message)
 {
-    DCHECK(source == d_impl);
-    std::string surl(url.data(), url.length());
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyDidNavigateMainFramePostCommit, this, surl));
-}
+    bool handled = true;
+    bool msgIsOk = true;
+    IPC_BEGIN_MESSAGE_MAP_EX(WebViewProxy, message, msgIsOk)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_UpdateTargetURL, onUpdateTargetURL)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_UpdateNavigationState, onUpdateNavigationState)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_DidNavigateMainFramePostCommit, onDidNavigateMainFramePostCommit)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_DidFinishLoad, onDidFinishLoad)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_DidFailLoad, onDidFailLoad)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_DidCreateNewView, onDidCreateNewView)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_DestroyView, onDestroyView)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_FocusBefore, onFocusBefore)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_FocusAfter, onFocusAfter)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_Focused, onFocused)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_ShowContextMenu, onShowContextMenu)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_HandleExternalProtocol, onHandleExternalProtocol)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_MoveView, onMoveView)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_RequestNCHitTest, onRequestNCHitTest)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_ShowTooltip, onShowTooltip)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_FindState, onFindState)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_MoveAck, onMoveAck)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_AboutToNavigateRenderView, onAboutToNavigateRenderView)
+        IPC_MESSAGE_UNHANDLED(handled = false)
+    IPC_END_MESSAGE_MAP_EX()
 
-void WebViewProxy::didFinishLoad(WebView* source, const StringRef& url)
-{
-    DCHECK(source == d_impl);
-    std::string surl(url.data(), url.length());
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyDidFinishLoad, this, surl));
-}
-
-void WebViewProxy::didFailLoad(WebView* source, const StringRef& url)
-{
-    DCHECK(source == d_impl);
-    std::string surl(url.data(), url.length());
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyDidFailLoad, this, surl));
-}
-
-void WebViewProxy::didCreateNewView(WebView* source,
-                                    WebView* newView,
-                                    const NewViewParams& params,
-                                    WebViewDelegate** newViewDelegate)
-{
-    DCHECK(source == d_impl);
-    WebViewProxy* newProxy = new WebViewProxy(static_cast<WebViewImpl*>(newView),
-                                              d_implDispatcher,
-                                              d_proxyDispatcher,
-                                              d_isInProcess);
-    *newViewDelegate = newProxy;
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyDidCreateNewView, this, newProxy, params));
-}
-
-void WebViewProxy::destroyView(WebView* source)
-{
-    DCHECK(source == d_impl);
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyDestroyView, this));
-}
-
-void WebViewProxy::focusBefore(WebView* source)
-{
-    DCHECK(source == d_impl);
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyFocusBefore, this));
-}
-
-void WebViewProxy::focusAfter(WebView* source)
-{
-    DCHECK(source == d_impl);
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyFocusAfter, this));
-}
-
-void WebViewProxy::focused(WebView* source)
-{
-    DCHECK(source == d_impl);
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyFocused, this));
-}
-
-void WebViewProxy::showContextMenu(WebView* source, const ContextMenuParams& params)
-{
-    DCHECK(source == d_impl);
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyShowContextMenu, this, params));
-}
-
-void WebViewProxy::handleMediaRequest(WebView* source, MediaRequest* mediaRequest)
-{
-    DCHECK(source == d_impl);
-    DCHECK(mediaRequest);
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyHandleMediaRequest, this,
-                    make_scoped_refptr(static_cast<MediaRequestImpl*>(mediaRequest))));
-}
-
-void WebViewProxy::handleExternalProtocol(WebView* source, const StringRef& url)
-{
-    DCHECK(source == d_impl);
-    std::string surl(url.data(), url.length());
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyHandleExternalProtocol, this, surl));
-}
-
-void WebViewProxy::moveView(WebView* source, int x, int y, int width, int height)
-{
-    DCHECK(source == d_impl);
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyMoveView, this, x, y, width, height));
-}
-
-void WebViewProxy::requestNCHitTest(WebView* source)
-{
-    DCHECK(source == d_impl);
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyRequestNCHitTest, this));
-}
-
-void WebViewProxy::showTooltip(WebView* source, const String& tooltipText, TextDirection::Value direction)
-{
-    DCHECK(source == d_impl);
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyShowTooltip, this, tooltipText, direction));
-}
-
-void WebViewProxy::findState(WebView* source,
-                             int numberOfMatches,
-                             int activeMatchOrdinal,
-                             bool finalUpdate)
-{
-    NOTREACHED() << "findState should come in via findStateWithReqId";
-}
-
-bool WebViewProxy::shouldDisableBrowserSideResize()
-{
-    return d_isInProcess;
-}
-
-void WebViewProxy::aboutToNativateRenderView(int routingId)
-{
-    if (d_isInProcess) {
-        d_proxyDispatcher->PostTask(FROM_HERE,
-            base::Bind(&WebViewProxy::proxyAboutToNavigateRenderView,
-                       this, routingId));
+    if (!msgIsOk) {
+        LOG(ERROR) << "bad message " << message.type();
     }
+
+    return handled;
 }
 
-void WebViewProxy::didUpdatedBackingStore(const gfx::Size& size)
-{
-    if (d_implMoveAckPending && d_implRect.size() == size) {
-        DCHECK(d_isInProcess);
-        d_implMoveAckPending = false;
-        d_impl->move(d_implRect.x(), d_implRect.y(),
-                     d_implRect.width(), d_implRect.height());
-        d_proxyDispatcher->PostTask(FROM_HERE,
-            base::Bind(&WebViewProxy::proxyMoveAck, this));
-    }
-}
+// Message handlers
 
-void WebViewProxy::findStateWithReqId(int reqId,
-                                      int numberOfMatches,
-                                      int activeMatchOrdinal,
-                                      bool finalUpdate)
+void WebViewProxy::onUpdateTargetURL(const std::string& url)
 {
-    d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyFindState,
-                   this, reqId,
-                   numberOfMatches,
-                   activeMatchOrdinal,
-                   finalUpdate));
-}
-
-void WebViewProxy::implInit(gfx::NativeView parent,
-                            Profile* profile,
-                            int hostAffinity,
-                            bool initiallyVisible,
-                            bool takeFocusOnMouseDown)
-{
-    d_impl = new WebViewImpl(this, parent, profile, hostAffinity,
-                             initiallyVisible, takeFocusOnMouseDown);
-    d_impl->setImplClient(this);
-}
-
-void WebViewProxy::implDestroy()
-{
-    DCHECK(d_impl);
-    d_impl->destroy();
-    d_impl = 0;
-}
-
-void WebViewProxy::implLoadUrl(const std::string& url)
-{
-    DCHECK(d_impl);
-    d_impl->loadUrl(url);
-}
-
-void WebViewProxy::implFind(const FindOnPage::Request& request)
-{
-    DCHECK(d_impl);
-    d_impl->handleFindRequest(request);
-}
-
-void WebViewProxy::implLoadInspector(WebView* inspectedView)
-{
-    DCHECK(d_impl);
-    WebViewProxy* inspectedViewProxy
-        = static_cast<WebViewProxy*>(inspectedView);
-    DCHECK(inspectedViewProxy->d_impl);
-    d_impl->loadInspector(inspectedViewProxy->d_impl);
-}
-
-void WebViewProxy::implInspectElementAt(const POINT& point)
-{
-    DCHECK(d_impl);
-    d_impl->inspectElementAt(point);
-}
-
-void WebViewProxy::implReload(bool ignoreCache)
-{
-    DCHECK(d_impl);
-    d_impl->reload(ignoreCache);
-}
-
-void WebViewProxy::implGoBack()
-{
-    DCHECK(d_impl);
-    d_impl->goBack();
-}
-
-void WebViewProxy::implGoForward()
-{
-    DCHECK(d_impl);
-    d_impl->goForward();
-}
-
-void WebViewProxy::implStop()
-{
-    DCHECK(d_impl);
-    d_impl->stop();
-}
-
-void WebViewProxy::implFocus()
-{
-    DCHECK(d_impl);
-    d_impl->focus();
-}
-
-void WebViewProxy::implShow()
-{
-    DCHECK(d_impl);
-    d_impl->show();
-}
-
-void WebViewProxy::implHide()
-{
-    DCHECK(d_impl);
-    d_impl->hide();
-}
-
-void WebViewProxy::implSetParent(NativeView parent)
-{
-    DCHECK(d_impl);
-    d_impl->setParent(parent);
-}
-
-void WebViewProxy::implSyncMove(const gfx::Rect& rc)
-{
-    DCHECK(d_impl);
-    DCHECK(d_isInProcess);
-    DCHECK(!d_implMoveAckPending);
-
-    // We don't get backing store updates for empty rectangles, so just move
-    // the WebView and send an ack back.  Also, if the browser-side renderer
-    // already matches the size before we get here, then we already have a
-    // backing store, so move the WebView and send an ack.  This can happen
-    // if the size didn't actually change, or if the browser thread pulled
-    // out the backing store update msg before we reach this point.
-    if (rc.IsEmpty() || d_impl->rendererMatchesSize(rc.size())) {
-        d_impl->move(rc.x(), rc.y(), rc.width(), rc.height());
-        d_proxyDispatcher->PostTask(FROM_HERE,
-            base::Bind(&WebViewProxy::proxyMoveAck, this));
-    }
-    else {
-        // We need to wait for didUpdatedBackingStore in order to ack the move.
-        d_implMoveAckPending = true;
-        d_implRect = rc;
-    }
-}
-
-void WebViewProxy::implMove(int left, int top, int width, int height)
-{
-    DCHECK(d_impl);
-    d_impl->move(left, top, width, height);
-}
-
-void WebViewProxy::implCutSelection()
-{
-    DCHECK(d_impl);
-    d_impl->cutSelection();
-}
-
-void WebViewProxy::implCopySelection()
-{
-    DCHECK(d_impl);
-    d_impl->copySelection();
-}
-
-void WebViewProxy::implPaste()
-{
-    DCHECK(d_impl);
-    d_impl->paste();
-}
-
-void WebViewProxy::implDeleteSelection()
-{
-    DCHECK(d_impl);
-    d_impl->deleteSelection();
-}
-
-void WebViewProxy::implEnableFocusBefore(bool enabled)
-{
-    DCHECK(d_impl);
-    d_impl->enableFocusBefore(enabled);
-}
-
-void WebViewProxy::implEnableFocusAfter(bool enabled)
-{
-    DCHECK(d_impl);
-    d_impl->enableFocusAfter(enabled);
-}
-
-void WebViewProxy::implEnableNCHitTest(bool enabled)
-{
-    DCHECK(d_impl);
-    d_impl->enableNCHitTest(enabled);
-}
-
-void WebViewProxy::implOnNCHitTestResult(int x, int y, int result)
-{
-    DCHECK(d_impl);
-    d_impl->onNCHitTestResult(x, y, result);
-}
-
-void WebViewProxy::implPerformCustomContextMenuAction(int actionId)
-{
-    DCHECK(d_impl);
-    d_impl->performCustomContextMenuAction(actionId);
-}
-
-void WebViewProxy::implEnableCustomTooltip(bool enabled)
-{
-    DCHECK(d_impl);
-    d_impl->enableCustomTooltip(enabled);
-}
-
-void WebViewProxy::implSetZoomPercent(int value)
-{
-    DCHECK(d_impl);
-    d_impl->setZoomPercent(value);
-}
-
-void WebViewProxy::implReplaceMisspelledRange(const std::string& text)
-{
-    DCHECK(d_impl);
-    d_impl->replaceMisspelledRange(text);
-}
-
-void WebViewProxy::proxyUpdateTargetURL(const std::string& url)
-{
-    if (d_delegate && !d_wasDestroyed)
+    if (d_delegate)
         d_delegate->updateTargetURL(this, url);
 }
 
-void WebViewProxy::proxyUpdateNavigationState(const NavigationState& state)
+void WebViewProxy::onUpdateNavigationState(bool canGoBack,
+                                           bool canGoForward,
+                                           bool isLoading)
 {
-    if (d_delegate && !d_wasDestroyed)
+    if (d_delegate) {
+        WebViewDelegate::NavigationState state;
+        state.canGoBack = canGoBack;
+        state.canGoForward = canGoForward;
+        state.isLoading = isLoading;
         d_delegate->updateNavigationState(this, state);
+    }
 }
 
-void WebViewProxy::proxyDidNavigateMainFramePostCommit(const std::string& url)
+void WebViewProxy::onDidNavigateMainFramePostCommit(const std::string& url)
 {
-    if (d_delegate && !d_wasDestroyed)
+    if (d_delegate)
         d_delegate->didNavigateMainFramePostCommit(this, url);
 }
 
-void WebViewProxy::proxyDidFinishLoad(const std::string& url)
+void WebViewProxy::onDidFinishLoad(const std::string& url)
 {
     d_isMainFrameAccessible = true;  // wait until we receive this
                                      // notification before we make the
                                      // mainFrame accessible
 
-    if (d_delegate && !d_wasDestroyed)
+    if (d_delegate)
         d_delegate->didFinishLoad(this, url);
 }
 
-void WebViewProxy::proxyDidFailLoad(const std::string& url)
+void WebViewProxy::onDidFailLoad(const std::string& url)
 {
-    if (d_delegate && !d_wasDestroyed)
+    if (d_delegate)
         d_delegate->didFailLoad(this, url);
 }
 
-void WebViewProxy::proxyDidCreateNewView(WebViewProxy* newProxy,
-                                         const NewViewParams& params)
+void WebViewProxy::onDidCreateNewView(int newRoutingId,
+                                      const NewViewParams& params)
 {
-    if (d_wasDestroyed || !d_delegate) {
+    WebViewProxy* newProxy =
+        new WebViewProxy(d_processClient,
+                         newRoutingId,
+                         d_profileProxy);
+
+    if (!d_delegate) {
         newProxy->destroy();
         return;
     }
@@ -811,9 +439,8 @@ void WebViewProxy::proxyDidCreateNewView(WebViewProxy* newProxy,
                                  &newProxy->d_delegate);
 }
 
-void WebViewProxy::proxyDestroyView()
+void WebViewProxy::onDestroyView()
 {
-    if (d_wasDestroyed) return;
     if (!d_delegate) {
         destroy();
         return;
@@ -822,53 +449,49 @@ void WebViewProxy::proxyDestroyView()
     d_delegate->destroyView(this);
 }
 
-void WebViewProxy::proxyFocusBefore()
+void WebViewProxy::onFocusBefore()
 {
-    if (d_delegate && !d_wasDestroyed)
+    if (d_delegate)
         d_delegate->focusBefore(this);
 }
 
-void WebViewProxy::proxyFocusAfter()
+void WebViewProxy::onFocusAfter()
 {
-    if (d_delegate && !d_wasDestroyed)
+    if (d_delegate)
         d_delegate->focusAfter(this);
 }
 
-void WebViewProxy::proxyFocused()
+void WebViewProxy::onFocused()
 {
-    if (d_delegate && !d_wasDestroyed)
+    if (d_delegate)
         d_delegate->focused(this);
 }
 
-void WebViewProxy::proxyShowContextMenu(const ContextMenuParams& params)
+void WebViewProxy::onShowContextMenu(const ContextMenuParams& params)
 {
-    if (d_delegate && !d_wasDestroyed)
+    if (d_delegate)
         d_delegate->showContextMenu(this, params);
 }
 
-void WebViewProxy::proxyHandleMediaRequest(MediaRequest* request)
+void WebViewProxy::onHandleExternalProtocol(const std::string& url)
 {
-    if (d_delegate && !d_wasDestroyed){
-        d_delegate->handleMediaRequest(this, request);
-    }
-}
-
-void WebViewProxy::proxyHandleExternalProtocol(const std::string& url)
-{
-    if (d_delegate && !d_wasDestroyed)
+    if (d_delegate)
         d_delegate->handleExternalProtocol(this, url);
 }
 
-void WebViewProxy::proxyMoveView(int x, int y, int width, int height)
+void WebViewProxy::onMoveView(const gfx::Rect& rect)
 {
-    if (d_delegate && !d_wasDestroyed) {
-        d_delegate->moveView(this, x, y, width, height);
+    if (d_delegate) {
+        d_delegate->moveView(this,
+                             rect.x(),
+                             rect.y(),
+                             rect.width(),
+                             rect.height());
     }
 }
 
-void WebViewProxy::proxyRequestNCHitTest()
+void WebViewProxy::onRequestNCHitTest()
 {
-    if (d_wasDestroyed) return;
     if (!d_delegate) {
         onNCHitTestResult(0, 0, HTERROR);
     }
@@ -877,20 +500,20 @@ void WebViewProxy::proxyRequestNCHitTest()
     }
 }
 
-void WebViewProxy::proxyShowTooltip(const String& tooltipText, TextDirection::Value direction)
+void WebViewProxy::onShowTooltip(const std::string& tooltipText, TextDirection::Value direction)
 {
-    if (d_delegate && !d_wasDestroyed) {
-        d_delegate->showTooltip(this, tooltipText, direction);
+    if (d_delegate) {
+        d_delegate->showTooltip(this, String(tooltipText), direction);
     }
 }
 
-void WebViewProxy::proxyFindState(int reqId,
-                                  int numberOfMatches,
-                                  int activeMatchOrdinal,
-                                  bool finalUpdate)
+void WebViewProxy::onFindState(int reqId,
+                               int numberOfMatches,
+                               int activeMatchOrdinal,
+                               bool finalUpdate)
 {
     DCHECK(d_find);
-    if (d_delegate && !d_wasDestroyed &&
+    if (d_delegate &&
         d_find->applyUpdate(reqId, numberOfMatches, activeMatchOrdinal)) {
         d_delegate->findState(this,
                               d_find->numberOfMatches(),
@@ -899,32 +522,29 @@ void WebViewProxy::proxyFindState(int reqId,
     }
 }
 
-void WebViewProxy::proxyMoveAck()
+void WebViewProxy::onMoveAck()
 {
-    DCHECK(!d_wasDestroyed);
     DCHECK(d_moveAckPending);
     d_moveAckPending = false;
 }
 
-void WebViewProxy::proxyAboutToNavigateRenderView(int routingId)
+void WebViewProxy::onAboutToNavigateRenderView(int rendererRoutingId)
 {
-    DCHECK(d_isInProcess);
-    if (d_wasDestroyed) return;
-
-    content::RenderView* rv = content::RenderView::FromRoutingID(routingId);
+    content::RenderView* rv =
+        content::RenderView::FromRoutingID(rendererRoutingId);
     if (!rv) {
         // The RenderView has not been created yet.  Keep reposting this task
         // until the RenderView is available.
-        d_proxyDispatcher->PostTask(
+        base::MessageLoop::current()->PostTask(
             FROM_HERE,
-            base::Bind(&WebViewProxy::proxyAboutToNavigateRenderView,
-                       this,
-                       routingId));
+            base::Bind(&WebViewProxy::onAboutToNavigateRenderView,
+                       AsWeakPtr(),
+                       rendererRoutingId));
         return;
     }
 
     d_gotRendererInfo = true;
-    d_routingId = routingId;
+    d_rendererRoutingId = rendererRoutingId;
 
     if (!d_rect.IsEmpty()) {
         rv->SetSize(d_rect.size());

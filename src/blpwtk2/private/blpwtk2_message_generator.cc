@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2014 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,29 +20,32 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_CONFIG_H
-#define INCLUDED_BLPWTK2_CONFIG_H
+// Get basic type definitions.
+#define IPC_MESSAGE_IMPL
+#include <blpwtk2_message_generator.h>
 
-#include <windows.h>  // NOLINT
+// Generate constructors.
+#include <ipc/struct_constructor_macros.h>
+#include <blpwtk2_message_generator.h>
 
-#if defined BUILDING_BLPWTK2_SHARED
-#define BLPWTK2_EXPORT _declspec(dllexport)
-#elif defined USING_BLPWTK2_SHARED
-#define BLPWTK2_EXPORT _declspec(dllimport)
-#else
-#define BLPWTK2_EXPORT
-#endif
+// Generate destructors.
+#include <ipc/struct_destructor_macros.h>
+#include <blpwtk2_message_generator.h>
 
-#include <blpwtk2_version.h>
+// Generate param traits write methods.
+#include <ipc/param_traits_write_macros.h>
+namespace IPC {
+#include <blpwtk2_message_generator.h>
+}  // namespace IPC
 
-namespace blpwtk2 {
+// Generate param traits read methods.
+#include <ipc/param_traits_read_macros.h>
+namespace IPC {
+#include <blpwtk2_message_generator.h>
+}  // namespace IPC
 
-// TODO: support other native handles
-typedef HWND NativeView;
-typedef void* NativeViewForTransit;
-typedef MSG NativeMsg;
-
-}  // close namespace blpwtk2
-
-#endif  // INCLUDED_BLPWTK2_CONFIG_H
-
+// Generate param traits log methods.
+#include <ipc/param_traits_log_macros.h>
+namespace IPC {
+#include <blpwtk2_message_generator.h>
+}  // namespace IPC

@@ -24,12 +24,16 @@
 #define INCLUDED_BLPWTK2_CONTEXTMENUPARAMS_H
 
 #include <blpwtk2_config.h>
-#include <blpwtk2_contextmenuitem.h>
 
 namespace blpwtk2 {
 
-class CustomItems;
-struct SpellSuggestionsData;
+class ContextMenuItem;
+class ContextMenuParams;
+class StringRef;
+
+struct ContextMenuParamsImpl;
+ContextMenuParamsImpl* getContextMenuParamsImpl(ContextMenuParams& obj);
+const ContextMenuParamsImpl* getContextMenuParamsImpl(const ContextMenuParams& obj);
 
 // This class contains parameters that are passed to the application whenever
 // the user right clicks or presses the "Show Menu" key inside a WebView.  The
@@ -42,45 +46,24 @@ class BLPWTK2_EXPORT ContextMenuParams {
     ContextMenuParams(const ContextMenuParams& other);
     ContextMenuParams& operator=(const ContextMenuParams& other);
 
-    void setPointOnScreen(const POINT& pt) { d_pointOnScreen = pt; }
-    const POINT& pointOnScreen() const { return d_pointOnScreen; }
-
-    void setCanCut(bool can) { d_canCut = can; }
-    bool canCut() const { return d_canCut; }
-
-    void setCanCopy(bool can) { d_canCopy = can; }
-    bool canCopy() const { return d_canCopy; }
-
-    void setCanPaste(bool can) { d_canPaste = can; }
-    bool canPaste() const { return d_canPaste; }
-
-    void setCanDelete(bool can) { d_canDelete = can; }
-    bool canDelete() const { return d_canDelete; }
-
-    void setMisspelledWord(const String& word) { d_misspelledWord = word; }
-    const String& misspelledWord() const { return d_misspelledWord; }
+    const POINT& pointOnScreen() const;
+    bool canCut() const;
+    bool canCopy() const;
+    bool canPaste() const;
+    bool canDelete() const;
+    StringRef misspelledWord() const;
 
     int numCustomItems() const;
-    void setNumCustomItems(int count);
-
     const ContextMenuItem& customItem(int index) const;
-    ContextMenuItem& customItem(int index);
 
     int numSpellSuggestions() const;
-    void setNumSpellSuggestions(int count);
-
-    const String& spellSuggestion(int index) const;
-    String& spellSuggestion(int index);
+    StringRef spellSuggestion(int index) const;
 
   private:
-    String d_misspelledWord;
-    POINT d_pointOnScreen;
-    bool d_canCut;
-    bool d_canCopy;
-    bool d_canPaste;
-    bool d_canDelete;
-    CustomItems* d_customItems;
-    SpellSuggestionsData *d_suggestions;
+    friend ContextMenuParamsImpl* getContextMenuParamsImpl(ContextMenuParams& obj);
+    friend const ContextMenuParamsImpl* getContextMenuParamsImpl(const ContextMenuParams& obj);
+
+    ContextMenuParamsImpl* d_impl;
 };
 
 }  // close namespace blpwtk2

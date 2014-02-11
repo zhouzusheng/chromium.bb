@@ -36,10 +36,8 @@ namespace blpwtk2 {
 
 static base::WaitableEvent* s_initWaitEvent = 0;
 
-BrowserThread::BrowserThread(sandbox::SandboxInterfaceInfo* sandboxInfo,
-                             ProfileManager* profileManager)
+BrowserThread::BrowserThread(sandbox::SandboxInterfaceInfo* sandboxInfo)
 : d_sandboxInfo(sandboxInfo)
-, d_profileManager(profileManager)
 {
     base::WaitableEvent event(true, false);
     s_initWaitEvent = &event;
@@ -93,7 +91,7 @@ void BrowserThread::ThreadMain()
     // those assertions.
     base::ShadowingAtExitManager atExitManager;
 
-    d_mainRunner = new BrowserMainRunner(d_sandboxInfo, d_profileManager);
+    d_mainRunner = new BrowserMainRunner(d_sandboxInfo);
 
     // Allow the main thread to continue executing, after the
     // ShadowingAtExitManager has been fully constructed and installed, and

@@ -26,12 +26,17 @@
 #include <blpwtk2_constants.h>
 #include <blpwtk2_browserthread.h>
 #include <blpwtk2_browsercontextimpl.h>
+#include <blpwtk2_browsercontextimplmanager.h>
+#include <blpwtk2_control_messages.h>
 #include <blpwtk2_inprocessrenderer.h>
 #include <blpwtk2_inprocessrendererhost.h>
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_mainmessagepump.h>
+#include <blpwtk2_processclientimpl.h>
+#include <blpwtk2_processhostimpl.h>
+#include <blpwtk2_products.h>
 #include <blpwtk2_profilecreateparams.h>
-#include <blpwtk2_profileimpl.h>
+#include <blpwtk2_profileproxy.h>
 #include <blpwtk2_webviewcreateparams.h>
 #include <blpwtk2_webviewimpl.h>
 #include <blpwtk2_webviewproxy.h>
@@ -46,11 +51,9 @@
 #include <chrome/common/chrome_paths.h>
 #include <content/public/app/content_main_runner.h>
 #include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
-#include <content/public/browser/render_process_host.h>
-#include <content/public/browser/site_instance.h>
 #include <content/public/common/content_switches.h>
 #include <content/browser/web_contents/web_contents_view_win.h>
-#include <content/browser/renderer_host/render_process_host_impl.h>
+#include <ipc/ipc_channel.h>
 #include <sandbox/win/src/win_utils.h>
 
 #include <TlHelp32.h>  // for CreateToolhelp32Snapshot
@@ -188,6 +191,7 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
                          bool pluginDiscoveryEnabled)
 : d_threadsStarted(false)
 , d_threadsStopped(false)
+, d_defaultProfile(0)
 , d_mainDelegate(false, pluginDiscoveryEnabled)
 , d_dictionaryPath(dictionaryPath.data(), dictionaryPath.length())
 {
@@ -224,17 +228,29 @@ void ToolkitImpl::startupThreads()
     if (Statics::isRendererMainThreadMode()) {
         new base::MessageLoop(base::MessageLoop::TYPE_UI);
         content::WebContentsViewWin::disableHookOnRoot();
-        d_browserThread.reset(new BrowserThread(&d_sandboxInfo,
-                                                &d_profileManager));
+        d_browserThread.reset(new BrowserThread(&d_sandboxInfo));
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
-        d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo,
-                                                        &d_profileManager));
+        d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo));
     }
 
     InProcessRenderer::init();
     MainMessagePump::current()->init();
+
+    if (Statics::isRendererMainThreadMode()) {
+        std::string channelId = IPC::Channel::GenerateVerifiedChannelID(BLPWTK2_VERSION);
+
+        d_browserThread->messageLoop()->PostTask(
+            FROM_HERE,
+            base::Bind(&ToolkitImpl::createInProcessHost,
+                       base::Unretained(this),
+                       channelId));
+        d_browserThread->sync();  // TODO: remove this sync
+        d_inProcessClient.reset(
+            new ProcessClientImpl(channelId,
+                                  InProcessRenderer::ipcTaskRunner()));
+    }
 
     d_threadsStarted = true;
 }
@@ -244,9 +260,25 @@ void ToolkitImpl::shutdownThreads()
     DCHECK(!d_threadsStopped);
     DCHECK(d_threadsStarted);
 
+    if (d_defaultProfile) {
+        d_defaultProfile->destroy();
+        d_defaultProfile = 0;
+    }
+
     if (Statics::isRendererMainThreadMode()) {
-        d_browserThread->sync();  // make sure any WebView::destroy has been
-                                  // handled by the browser-main thread
+        // Make sure any messages posted to the ProcessHost have been handled.
+        d_inProcessClient->Send(new BlpControlHostMsg_Sync());
+
+        d_inProcessClient.reset();
+
+        d_browserThread->messageLoop()->PostTask(
+            FROM_HERE,
+            base::Bind(&ToolkitImpl::destroyInProcessHost,
+                       base::Unretained(this)));
+
+        // Make sure any tasks posted to the browser-main thread have been
+        // handled.
+        d_browserThread->sync();
     }
 
     MainMessagePump::current()->cleanup();
@@ -289,14 +321,20 @@ Profile* ToolkitImpl::createProfile(const ProfileCreateParams& params)
         startupThreads();
     }
 
-    if (params.dataDir().isEmpty()) {
-        return d_profileManager.createIncognitoProfile(
-            Statics::browserMainMessageLoop);
-    }
     std::string dataDir(params.dataDir().data(), params.dataDir().length());
-    return d_profileManager.createProfile(dataDir,
-                                          params.diskCacheEnabled(),
-                                          Statics::browserMainMessageLoop);
+    if (Statics::isRendererMainThreadMode()) {
+        return new ProfileProxy(d_inProcessClient.get(),
+                                Statics::getUniqueRoutingId(),
+                                dataDir,
+                                params.diskCacheEnabled());
+    }
+    else {
+        DCHECK(Statics::isOriginalThreadMode());
+        DCHECK(Statics::browserContextImplManager);
+        return Statics::browserContextImplManager->createBrowserContextImpl(
+            dataDir,
+            params.diskCacheEnabled());
+    }
 }
 
 bool ToolkitImpl::hasDevTools()
@@ -308,9 +346,7 @@ bool ToolkitImpl::hasDevTools()
 void ToolkitImpl::destroy()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(0 == Statics::numWebViews) << "Have not destroyed "
-                                      << Statics::numWebViews
-                                      << " WebViews!";
+    DCHECK(0 == Statics::numProfiles);
     if (d_threadsStarted) {
         shutdownThreads();
     }
@@ -329,80 +365,47 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
         startupThreads();
     }
 
-    ProfileImpl* profile = static_cast<ProfileImpl*>(params.profile());
+    Profile* profile = params.profile();
     if (!profile) {
-        profile = static_cast<ProfileImpl*>(
-            d_profileManager.defaultProfile(Statics::browserMainMessageLoop));
+        if (!d_defaultProfile) {
+            d_defaultProfile = createProfile(ProfileCreateParams(""));
+        }
+        profile = d_defaultProfile;
     }
 
-    int hostAffinity;
-    bool isInProcess = false;
     bool singleProcess = CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
     // Enforce in-process renderer if "--single-process" is specified on the
     // command line.  This is useful for debugging.
-    if (singleProcess || params.rendererAffinity() == Constants::IN_PROCESS_RENDERER) {
-        DCHECK(params.rendererAffinity() != Constants::IN_PROCESS_RENDERER ||
-               d_rendererInfoMap.dcheckProfileForRenderer(
-                   params.rendererAffinity(), profile));
+    int rendererAffinity = singleProcess ? Constants::IN_PROCESS_RENDERER
+                                         : params.rendererAffinity();
 
-        BrowserMainRunner* mainRunner =
-            Statics::isOriginalThreadMode() ? d_browserMainRunner.get()
-                                            : d_browserThread->mainRunner();
-
-        if (!mainRunner->hasInProcessRendererHost()) {
-            if (Statics::isOriginalThreadMode()) {
-                mainRunner->createInProcessRendererHost(profile, &d_rendererInfoMap);
-            }
-            else {
-                d_browserThread->messageLoop()->PostTask(
-                    FROM_HERE,
-                    base::Bind(&BrowserMainRunner::createInProcessRendererHost,
-                               base::Unretained(mainRunner),
-                               profile,
-                               &d_rendererInfoMap));
-                d_browserThread->sync();
-            }
-
-            DCHECK(mainRunner->hasInProcessRendererHost());
-        }
-
-        hostAffinity = d_rendererInfoMap.rendererToHostId(Constants::IN_PROCESS_RENDERER);
-        DCHECK(-1 != hostAffinity);
-        isInProcess = true;
-    }
-    else if (params.rendererAffinity() == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
-        hostAffinity = content::SiteInstance::kNoProcessAffinity;
-    }
-    else {
-        DCHECK(0 <= params.rendererAffinity());
-        DCHECK(d_rendererInfoMap.dcheckProfileForRenderer(
-            params.rendererAffinity(), profile));
-
-        hostAffinity = d_rendererInfoMap.rendererToHostId(
-            params.rendererAffinity());
-        if (-1 == hostAffinity) {
-            hostAffinity = content::RenderProcessHostImpl::GenerateUniqueId();
-            d_rendererInfoMap.setRendererHostId(params.rendererAffinity(),
-                                                hostAffinity);
-        }
-    }
+    DCHECK(singleProcess ||
+           rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER ||
+           d_rendererInfoMap.dcheckProfileForRenderer(rendererAffinity, profile));
 
     if (Statics::isRendererMainThreadMode()) {
         DCHECK(d_browserThread.get());
 
-        return new WebViewProxy(delegate,
+        ProfileProxy* profileProxy = static_cast<ProfileProxy*>(profile);
+        return new WebViewProxy(d_inProcessClient.get(),
+                                Statics::getUniqueRoutingId(),
+                                profileProxy,
+                                delegate,
                                 parent,
-                                d_browserThread->messageLoop(),
-                                profile,
-                                hostAffinity,
+                                rendererAffinity,
                                 params.initiallyVisible(),
-                                params.takeFocusOnMouseDown(),
-                                isInProcess);
+                                params.takeFocusOnMouseDown());
     }
     else if (Statics::isOriginalThreadMode()) {
+        BrowserContextImpl* browserContext =
+            static_cast<BrowserContextImpl*>(profile);
+        int hostAffinity =
+            d_browserMainRunner->obtainHostAffinity(browserContext,
+                                                    rendererAffinity,
+                                                    &d_rendererInfoMap);
         return new WebViewImpl(delegate,
                                parent,
-                               profile,
+                               browserContext,
                                hostAffinity,
                                params.initiallyVisible(),
                                params.takeFocusOnMouseDown());
@@ -449,6 +452,20 @@ void ToolkitImpl::postHandleMessage(const NativeMsg* msg)
     if (d_threadsStarted) {
         MainMessagePump::current()->postHandleMessage(*msg);
     }
+}
+
+void ToolkitImpl::createInProcessHost(const std::string& channelId)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    d_inProcessHost.reset(new ProcessHostImpl(channelId,
+                                              &d_rendererInfoMap,
+                                              d_browserThread->mainRunner()));
+}
+
+void ToolkitImpl::destroyInProcessHost()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    d_inProcessHost.reset();
 }
 
 }  // close namespace blpwtk2

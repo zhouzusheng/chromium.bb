@@ -39,7 +39,6 @@ namespace sandbox {
 namespace blpwtk2 {
 
 class BrowserMainRunner;
-class ProfileManager;
 
 // This class is only used if we are using 'ThreadMode::RENDERER_MAIN'.  See
 // blpwtk2_toolkit.h for an explanation about the threads.
@@ -50,8 +49,7 @@ class ProfileManager;
 // to this thread.
 class BrowserThread : private base::PlatformThread::Delegate {
   public:
-    BrowserThread(sandbox::SandboxInterfaceInfo* sandboxInfo,
-                  ProfileManager* profileManager);
+    explicit BrowserThread(sandbox::SandboxInterfaceInfo* sandboxInfo);
     ~BrowserThread();
 
     void sync();
@@ -64,7 +62,6 @@ class BrowserThread : private base::PlatformThread::Delegate {
 
     sandbox::SandboxInterfaceInfo* d_sandboxInfo;
     BrowserMainRunner* d_mainRunner;
-    ProfileManager* d_profileManager;
     base::PlatformThreadHandle d_threadHandle;
 };
 

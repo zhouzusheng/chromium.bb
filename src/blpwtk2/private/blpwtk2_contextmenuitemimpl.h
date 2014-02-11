@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2014 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,52 +20,33 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_PROFILEMANAGER_H
-#define INCLUDED_BLPWTK2_PROFILEMANAGER_H
+#ifndef INCLUDED_BLPWTK2_CONTEXTMENUITEMIMPL_H
+#define INCLUDED_BLPWTK2_CONTEXTMENUITEMIMPL_H
 
 #include <blpwtk2_config.h>
 
-#include <base/basictypes.h>
+#include <blpwtk2_textdirection.h>
 
-#include <list>
-#include <map>
 #include <string>
-
-namespace base {
-class MessageLoop;
-}  // close namespace base
+#include <vector>
 
 namespace blpwtk2 {
 
-class Profile;
-class ProfileImpl;
+class ContextMenuItem;
 
-class ProfileManager {
-  public:
-    ProfileManager();
-    ~ProfileManager();
-
-    Profile* createProfile(const std::string& dataDir,
-                           bool diskCacheEnabled,
-                           base::MessageLoop* uiLoop);
-    Profile* createIncognitoProfile(base::MessageLoop* uiLoop);
-    Profile* defaultProfile(base::MessageLoop* uiLoop);
-
-    // Must be called just before returning from the browser main thread.
-    void deleteBrowserContexts();
-
-  private:
-    typedef std::map<std::string, ProfileImpl*> ProfileMap;
-    typedef std::list<ProfileImpl*> ProfileList;
-
-    ProfileMap d_profileMap;    // used for profiles that have dataDir
-    ProfileList d_profileList;  // used for profiles without dataDir
-    ProfileImpl* d_defaultProfile;
-
-    DISALLOW_COPY_AND_ASSIGN(ProfileManager);
+struct ContextMenuItemImpl {
+    std::string d_label;
+    std::string d_tooltip;
+    int d_type;  // this is the ContextMenuItem::Type enum
+    unsigned d_action;
+    TextDirection::Value d_textDirection;
+    bool d_hasDirectionalOverride;
+    bool d_enabled;
+    bool d_checked;
+    std::vector<ContextMenuItem> d_submenu;
 };
 
 }  // close namespace blpwtk2
 
-#endif  // INCLUDED_BLPWTK2_PROFILEMANAGER_H
+#endif  // INCLUDED_BLPWTK2_CONTEXTMENUITEMIMPL_H
 

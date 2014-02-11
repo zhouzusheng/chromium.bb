@@ -26,7 +26,6 @@
 #include <blpwtk2_config.h>
 
 #include <blpwtk2_contentmaindelegateimpl.h>
-#include <blpwtk2_profilemanager.h>
 #include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_toolkit.h>
 
@@ -48,6 +47,9 @@ namespace blpwtk2 {
 
 class BrowserThread;
 class BrowserMainRunner;
+class ProcessClientImpl;
+class ProcessHostImpl;
+class Profile;
 class StringRef;
 
 // This is the implementation of the Toolkit.  This class is responsible for
@@ -87,9 +89,12 @@ class ToolkitImpl : public Toolkit {
     virtual void postHandleMessage(const NativeMsg* msg) OVERRIDE;
 
   private:
+    void createInProcessHost(const std::string& channelId);
+    void destroyInProcessHost();
+
     bool d_threadsStarted;
     bool d_threadsStopped;
-    ProfileManager d_profileManager;
+    Profile* d_defaultProfile;
     RendererInfoMap d_rendererInfoMap;
     sandbox::SandboxInterfaceInfo d_sandboxInfo;
     ContentMainDelegateImpl d_mainDelegate;
@@ -98,6 +103,8 @@ class ToolkitImpl : public Toolkit {
 
     // only used for the RENDERER_MAIN thread mode
     scoped_ptr<BrowserThread> d_browserThread;
+    scoped_ptr<ProcessClientImpl> d_inProcessClient;
+    scoped_ptr<ProcessHostImpl> d_inProcessHost;
 
     // only used for the ORIGINAL thread mode
     scoped_ptr<BrowserMainRunner> d_browserMainRunner;

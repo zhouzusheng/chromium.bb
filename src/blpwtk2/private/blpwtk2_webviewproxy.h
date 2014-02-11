@@ -25,13 +25,13 @@
 
 #include <blpwtk2_config.h>
 
-#include <blpwtk2_findonpage.h>
+#include <blpwtk2_textdirection.h>
 #include <blpwtk2_webview.h>
-#include <blpwtk2_webviewdelegate.h>
-#include <blpwtk2_webviewimplclient.h>
 
-#include <base/memory/ref_counted.h>
 #include <base/memory/scoped_ptr.h>
+#include <base/memory/weak_ptr.h>
+#include <ipc/ipc_listener.h>
+#include <ipc/ipc_sender.h>
 #include <ui/gfx/native_widget_types.h>
 #include <ui/gfx/rect.h>
 
@@ -43,9 +43,13 @@ class MessageLoop;
 
 namespace blpwtk2 {
 
-class Profile;
+class ContextMenuParams;
+class FindOnPage;
+class NewViewParams;
+class ProcessClient;
+class ProfileProxy;
 class WebFrameImpl;
-class WebViewImpl;
+class WebViewDelegate;
 
 // This is an alternate implementation of the blpwtk2::WebView interface, and
 // is only used when we are using 'ThreadMode::RENDERER_MAIN'.  This class is
@@ -57,24 +61,24 @@ class WebViewImpl;
 // the application thread).
 //
 // See blpwtk2_toolkit.h for an explanation about the threads.
-class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
-                        public WebView,
-                        public WebViewDelegate,
-                        public WebViewImplClient {
+class WebViewProxy : public WebView,
+                        private IPC::Sender,
+                        private IPC::Listener,
+                        private base::SupportsWeakPtr<WebViewProxy> {
   public:
-    WebViewProxy(WebViewDelegate* delegate,
+    WebViewProxy(ProcessClient* processClient,
+                 int routingId,
+                 ProfileProxy* profileProxy,
+                 WebViewDelegate* delegate,
                  gfx::NativeView parent,
-                 base::MessageLoop* implDispatcher,
-                 Profile* profile,
-                 int hostAffinity,
+                 int rendererAffinity,
                  bool initiallyVisible,
-                 bool takeFocusOnMouseDown,
-                 bool isInProcess);
-    WebViewProxy(WebViewImpl* impl,
-                 base::MessageLoop* implDispatcher,
-                 base::MessageLoop* proxyDispatcher,
-                 bool isInProcess);
+                 bool takeFocusOnMouseDown);
+    WebViewProxy(ProcessClient* processClient,
+                 int routingId,
+                 ProfileProxy* profileProxy);
 
+    int routingId() const { return d_routingId; }
     bool isMoveAckNotPending() const { return !d_moveAckPending; }
 
     // ========== WebView overrides ================
@@ -107,121 +111,54 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void find(const StringRef& text, bool matchCase, bool forward) OVERRIDE;
     virtual void replaceMisspelledRange(const StringRef& text) OVERRIDE;
 
-    // ========== WebViewDelegate overrides ================
-
-    virtual void updateTargetURL(WebView* source, const StringRef& url) OVERRIDE;
-    virtual void updateNavigationState(WebView* source,
-                                       const NavigationState& state) OVERRIDE;
-    virtual void didNavigateMainFramePostCommit(WebView* source, const StringRef& url) OVERRIDE;
-    virtual void didFinishLoad(WebView* source, const StringRef& url) OVERRIDE;
-    virtual void didFailLoad(WebView* source, const StringRef& url) OVERRIDE;
-    virtual void didCreateNewView(WebView* source,
-                                  WebView* newView,
-                                  const NewViewParams& params,
-                                  WebViewDelegate** newViewDelegate) OVERRIDE;
-    virtual void destroyView(WebView* source) OVERRIDE;
-    virtual void focusBefore(WebView* source) OVERRIDE;
-    virtual void focusAfter(WebView* source) OVERRIDE;
-    virtual void focused(WebView* source) OVERRIDE;
-    virtual void showContextMenu(WebView* source, const ContextMenuParams& params) OVERRIDE;
-    virtual void handleMediaRequest(WebView* source, MediaRequest* request) OVERRIDE;
-    virtual void handleExternalProtocol(WebView* source, const StringRef& url) OVERRIDE;
-    virtual void moveView(WebView* source, int x, int y, int width, int height) OVERRIDE;
-    virtual void requestNCHitTest(WebView* source) OVERRIDE;
-    virtual void showTooltip(WebView* source, const String& tooltipText, TextDirection::Value direction) OVERRIDE;
-    virtual void findState(WebView* source,
-                           int numberOfMatches,
-                           int activeMatchOrdinal,
-                           bool finalUpdate) OVERRIDE;
-
-    // ========== WebViewImplClient overrides ================
-
-    virtual bool shouldDisableBrowserSideResize() OVERRIDE;
-    virtual void aboutToNativateRenderView(int routingId) OVERRIDE;
-    virtual void didUpdatedBackingStore(const gfx::Size& size) OVERRIDE;
-    virtual void findStateWithReqId(int reqId,
-                                    int numberOfMatches,
-                                    int activeMatchOrdinal,
-                                    bool finalUpdate) OVERRIDE;
+  private:
+    // Destructor is private.  Calling destroy() will delete the object.
+    virtual ~WebViewProxy();
 
   private:
-    // only RefCountedThreadSafe should be able to delete this object
-    friend class base::RefCountedThreadSafe<WebViewProxy>;
-    ~WebViewProxy();
+    // IPC::Sender override
+    virtual bool Send(IPC::Message* message) OVERRIDE;
 
-  private:
-    // methods that get invoked in the impl thread
-    void implInit(gfx::NativeView parent, Profile* profile,
-                  int hostAffinity, bool initiallyVisible,
-                  bool takeFocusOnMouseDown);
-    void implDestroy();
-    void implLoadUrl(const std::string& url);
-    void implFind(const FindOnPage::Request& request);
-    void implLoadInspector(WebView* inspectedView);
-    void implInspectElementAt(const POINT& point);
-    void implReload(bool ignoreCache);
-    void implGoBack();
-    void implGoForward();
-    void implStop();
-    void implFocus();
-    void implShow();
-    void implHide();
-    void implSetParent(NativeView parent);
-    void implSyncMove(const gfx::Rect& rc);
-    void implMove(int left, int top, int width, int height);
-    void implCutSelection();
-    void implCopySelection();
-    void implPaste();
-    void implDeleteSelection();
-    void implEnableFocusBefore(bool enabled);
-    void implEnableFocusAfter(bool enabled);
-    void implEnableNCHitTest(bool enabled);
-    void implOnNCHitTestResult(int x, int y, int result);
-    void implPerformCustomContextMenuAction(int actionId);
-    void implEnableCustomTooltip(bool enabled);
-    void implSetZoomPercent(int value);
-    void implReplaceMisspelledRange(const std::string& text);
+    // IPC::Listener overrides
+    virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
-    // methods that get invoked in the proxy (main) thread
-    void proxyUpdateTargetURL(const std::string& url);
-    void proxyUpdateNavigationState(const NavigationState& state);
-    void proxyDidNavigateMainFramePostCommit(const std::string& url);
-    void proxyDidFinishLoad(const std::string& url);
-    void proxyDidFailLoad(const std::string& url);
-    void proxyDidCreateNewView(WebViewProxy* newProxy,
-                               const NewViewParams& params);
-    void proxyDestroyView();
-    void proxyFocusBefore();
-    void proxyFocusAfter();
-    void proxyFocused();
-    void proxyShowContextMenu(const ContextMenuParams& params);
-    void proxyHandleMediaRequest(MediaRequest* request);
-    void proxyHandleExternalProtocol(const std::string& url);
-    void proxyMoveView(int x, int y, int width, int height);
-    void proxyRequestNCHitTest();
-    void proxyShowTooltip(const String& tooltipText, TextDirection::Value direction); 
-    void proxyFindState(int reqId,
-                        int numberOfMatches,
-                        int activeMatchOrdinal,
-                        bool finalUpdate);
+    // Message handlers
+    void onUpdateTargetURL(const std::string& url);
+    void onUpdateNavigationState(bool canGoBack,
+                                 bool canGoForward,
+                                 bool isLoading);
+    void onDidNavigateMainFramePostCommit(const std::string& url);
+    void onDidFinishLoad(const std::string& url);
+    void onDidFailLoad(const std::string& url);
+    void onDidCreateNewView(int newRoutingId,
+                            const NewViewParams& params);
+    void onDestroyView();
+    void onFocusBefore();
+    void onFocusAfter();
+    void onFocused();
+    void onShowContextMenu(const ContextMenuParams& params);
+    void onHandleExternalProtocol(const std::string& url);
+    void onMoveView(const gfx::Rect& rect);
+    void onRequestNCHitTest();
+    void onShowTooltip(const std::string& tooltipText, TextDirection::Value direction);
+    void onFindState(int reqId,
+                     int numberOfMatches,
+                     int activeMatchOrdinal,
+                     bool finalUpdate);
+    void onMoveAck();
+    void onAboutToNavigateRenderView(int rendererRoutingId);
 
-    void proxyMoveAck();
-    void proxyAboutToNavigateRenderView(int routingId);
 
-    WebViewImpl* d_impl;
-    base::MessageLoop* d_implDispatcher;
-    base::MessageLoop* d_proxyDispatcher;
+    ProfileProxy* d_profileProxy;
+    ProcessClient* d_processClient;
     WebViewDelegate* d_delegate;
     scoped_ptr<FindOnPage> d_find;
     scoped_ptr<WebFrameImpl> d_mainFrame;
     int d_routingId;
+    int d_rendererRoutingId;
     gfx::Rect d_rect;
-    gfx::Rect d_implRect;       // touched only in the impl thread
-    bool d_implMoveAckPending;  // touched only in the impl thread
     bool d_moveAckPending;
-    bool d_wasDestroyed;
     bool d_isMainFrameAccessible;
-    bool d_isInProcess;
     bool d_gotRendererInfo;
 };
 

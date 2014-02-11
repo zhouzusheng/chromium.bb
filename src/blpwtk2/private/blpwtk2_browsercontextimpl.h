@@ -25,13 +25,11 @@
 
 #include <blpwtk2_config.h>
 
+#include <blpwtk2_profile.h>
+
 #include <base/memory/ref_counted.h>
 #include <base/memory/scoped_ptr.h>
 #include <content/public/browser/browser_context.h>
-
-namespace net {
-class ProxyConfig;
-}  // close namespace net
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -46,29 +44,35 @@ class ResourceContextImpl;
 class SpellCheckConfig;
 class URLRequestContextGetterImpl;
 
-// This is our implementation of the content::BrowserContext interface.  A
-// browser context represents a user's "Profile" in chromium.  In blpwtk2, we
-// create a BrowserContext for each blpwtk2::Profile.
-//
-// There is a 1-to-1 relationship between BrowserContextImpl and ProfileImpl.
-// See blpwtk2_profileimpl.h for more details about this relationship.
+// This is our implementation of the content::BrowserContext interface.  It is
+// also the implementation of blpwtk2::Profile that lives on the browser-main
+// thread.
 //
 // This class is responsible for providing net::URLRequestContextGetter
 // objects.  URLRequestContextGetter are used to create a "request context" for
 // each URL request.  The request context contains the necessary mechanisms to
 // control caching/proxying etc.
-class BrowserContextImpl : public content::BrowserContext {
+//
+// Do not create BrowserContextImpl objects directly.  Instead, create them
+// using BrowserContextImplManager.
+class BrowserContextImpl : public content::BrowserContext,
+                            public Profile {
   public:
     BrowserContextImpl(const std::string& dataDir,
                        bool diskCacheEnabled);
     virtual ~BrowserContextImpl();
 
+    // Only called from the browser-main thread.
     URLRequestContextGetterImpl* requestContextGetter() const;
+    void incrementWebViewCount();
+    void decrementWebViewCount();
+    bool isDestroyed() const;
 
-    // Only called from the UI thread.
-    void setProxyConfig(const net::ProxyConfig& config);
-    void useSystemProxyConfig();
-    void setSpellCheckConfig(const SpellCheckConfig& config);
+    // Profile overrides, must only be called on the browser-main thread.
+    virtual void destroy() OVERRIDE;
+    virtual void setProxyConfig(const ProxyConfig& config) OVERRIDE;
+    virtual void useSystemProxyConfig() OVERRIDE;
+    virtual void setSpellCheckConfig(const SpellCheckConfig& config) OVERRIDE;
 
 
     // ======== content::BrowserContext implementation =============
@@ -100,7 +104,9 @@ class BrowserContextImpl : public content::BrowserContext {
     scoped_refptr<user_prefs::PrefRegistrySyncable> d_prefRegistry;
     scoped_ptr<PrefService> d_prefService;
     scoped_refptr<PrefStore> d_userPrefs;
+    int d_numWebViews;
     bool d_isIncognito;
+    bool d_isDestroyed;
 
     DISALLOW_COPY_AND_ASSIGN(BrowserContextImpl);
 };

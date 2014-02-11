@@ -47,6 +47,7 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   // at init time, or later by calling SetInProcessRendererChannelName.
   static void InitInProcessRenderer(const std::string& channel_id);
   static void SetInProcessRendererChannelName(const std::string& channel_id);
+  static base::SingleThreadTaskRunner* IPCTaskRunner();
   static void CleanUpInProcessRenderer();
 
   RenderThread();

@@ -40,7 +40,7 @@ public:
     virtual ~WebViewImplClient();
 
     virtual bool shouldDisableBrowserSideResize() = 0;
-    virtual void aboutToNativateRenderView(int routingId) = 0;
+    virtual void aboutToNativateRenderView(int rendererRoutingId) = 0;
     virtual void didUpdatedBackingStore(const gfx::Size& size) = 0;
     virtual void findStateWithReqId(int reqId,
                                     int numberOfMatches,

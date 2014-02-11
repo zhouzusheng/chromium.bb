@@ -102,6 +102,14 @@ void InProcessRenderer::cleanup()
 }
 
 // static
+base::SingleThreadTaskRunner* InProcessRenderer::ipcTaskRunner()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(Statics::isRendererMainThreadMode());
+    return content::RenderThread::IPCTaskRunner();
+}
+
+// static
 void InProcessRenderer::setChannelName(const std::string& channelName)
 {
     DCHECK(Statics::isInBrowserMainThread());

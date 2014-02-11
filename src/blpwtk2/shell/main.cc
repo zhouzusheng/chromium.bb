@@ -244,8 +244,8 @@ public:
     Shell* d_inspectorFor;
     POINT d_contextMenuPoint;
     std::string d_findText;
-    std::vector<blpwtk2::String> d_contextMenuSpellReplacements;
-    blpwtk2::String d_misspelledWord;
+    std::vector<std::string> d_contextMenuSpellReplacements;
+    std::string d_misspelledWord;
 
     Shell(HWND mainWnd,
           HWND urlEntryWnd,
@@ -463,34 +463,6 @@ public:
         DestroyMenu(menu);
     }
 
-    virtual void handleMediaRequest(blpwtk2::WebView* source, blpwtk2::MediaRequest* request) OVERRIDE
-    {
-        assert(source == d_webView);
-        assert (request);
-        OutputDebugStringA("DELEGATE: handleMedaiRequest\n");
-
-        request->addRef();
-
-        // Grant access to the first audio and first video devices if they exist.
-        int* deviceIndices = new int[2];
-        bool audioFound = false, videoFound = false;
-        int index = 0;
-        for (int i = 0; i < request->deviceCount(); ++i) {
-            if (!audioFound && request->deviceType(i) == blpwtk2::MediaRequest::DEVICE_TYPE_AUDIO){
-                deviceIndices[index++] = i;
-                audioFound = true;
-            }
-            if (!videoFound && request->deviceType(i) == blpwtk2::MediaRequest::DEVICE_TYPE_VIDEO){
-                deviceIndices[index++] = i;
-                videoFound = true;
-            }
-        }
-        request->grantAccess(deviceIndices, index);
-
-        delete[] deviceIndices;
-        request->release();
-    }
-
     virtual void handleExternalProtocol(blpwtk2::WebView* source, const blpwtk2::StringRef& url) OVERRIDE
     {
         assert(source == d_webView);
@@ -566,7 +538,8 @@ public:
         if (!params.misspelledWord().isEmpty()) {
             AppendMenu(menu, MF_SEPARATOR, 0, NULL);
 
-            d_misspelledWord = params.misspelledWord();
+            d_misspelledWord.assign(params.misspelledWord().data(),
+                                    params.misspelledWord().length());
 
             std::string menuText = "Add to dictionary: ";
             menuText.append(d_misspelledWord.c_str());
@@ -580,7 +553,8 @@ public:
 
             for (int i = 0; i < params.numSpellSuggestions(); ++i) {
                 int index = d_contextMenuSpellReplacements.size();
-                const blpwtk2::String& text = params.spellSuggestion(i);
+                std::string text(params.spellSuggestion(i).data(),
+                                 params.spellSuggestion(i).length());
                 d_contextMenuSpellReplacements.push_back(text);
                 AppendMenuA(menu, MF_STRING, IDM_CONTEXT_MENU_BASE_SPELL_TAG + index, text.c_str());
             }
@@ -1061,18 +1035,20 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
 void populateMenuItem(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem& item)
 {
     UINT flags =  MF_STRING | (item.enabled() ? MF_ENABLED : MF_GRAYED);
+    std::string label(item.label().data(),
+                      item.label().length());
     if (item.type() == blpwtk2::ContextMenuItem::OPTION) {
-        AppendMenuA(menu, flags, menuIdStart + item.action(), item.label().c_str());
+        AppendMenuA(menu, flags, menuIdStart + item.action(), label.c_str());
     }
     else if (item.type() == blpwtk2::ContextMenuItem::CHECKABLE_OPTION) {
         flags = flags | (item.checked() ? MF_CHECKED : MF_UNCHECKED);
-        AppendMenuA(menu, flags, menuIdStart + item.action(), item.label().c_str());
+        AppendMenuA(menu, flags, menuIdStart + item.action(), label.c_str());
     } else if (item.type() ==  blpwtk2::ContextMenuItem::SEPARATOR) {
         AppendMenuA(menu, MF_SEPARATOR, 0, NULL);
     } else if (item.type() == blpwtk2::ContextMenuItem::SUBMENU) {
         HMENU popupMenu = CreatePopupMenu();
         flags = flags | MF_POPUP;
-        AppendMenuA(menu, flags, (UINT_PTR)popupMenu, item.label().c_str());
+        AppendMenuA(menu, flags, (UINT_PTR)popupMenu, label.c_str());
         populateSubmenu(popupMenu, menuIdStart, item);
     }
 }

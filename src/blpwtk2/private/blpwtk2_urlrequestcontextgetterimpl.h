@@ -88,6 +88,7 @@ private:
 
     base::FilePath d_path;
     bool d_diskCacheEnabled;
+    bool d_wasProxyInitialized;
 
     DISALLOW_COPY_AND_ASSIGN(URLRequestContextGetterImpl);
 };

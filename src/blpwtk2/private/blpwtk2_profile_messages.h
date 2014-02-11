@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2014 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,32 +20,40 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_H
-#define INCLUDED_BLPWTK2_H
+// IPC messages for Profile.
+// Multiply-included file, hence no include guard.
 
-#include <blpwtk2_constants.h>
-#include <blpwtk2_toolkit.h>
-#include <blpwtk2_toolkitcreateparams.h>
-#include <blpwtk2_toolkitfactory.h>
-#include <blpwtk2_stringref.h>
-#include <blpwtk2_string.h>
-#include <blpwtk2_webnode.h>
-#include <blpwtk2_webelement.h>
-#include <blpwtk2_webdocument.h>
-#include <blpwtk2_webview.h>
-#include <blpwtk2_webviewdelegate.h>
-#include <blpwtk2_webframe.h>
-#include <blpwtk2_contextmenuitem.h>
-#include <blpwtk2_contextmenuparams.h>
-#include <blpwtk2_httptransaction.h>
-#include <blpwtk2_httptransactionhandler.h>
-#include <blpwtk2_newviewparams.h>
-#include <blpwtk2_profile.h>
-#include <blpwtk2_profilecreateparams.h>
+#include <blpwtk2_ipcparamtraits.h>
 #include <blpwtk2_proxyconfig.h>
 #include <blpwtk2_spellcheckconfig.h>
-#include <blpwtk2_textdirection.h>
 
-#endif  // INCLUDED_BLPWTK2_H
+#include <ipc/ipc_message_macros.h>
 
+#undef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT
+
+#define IPC_MESSAGE_START BlpProfileMsgStart
+
+// ============== Messages from client to host ======================
+
+// This creates a new profile.
+IPC_MESSAGE_CONTROL3(BlpProfileHostMsg_New,
+                     int /* routingId */,
+                     std::string /*dataDir*/,
+                     bool /* diskCacheEnabled */)
+
+// Set the proxy configuration.
+IPC_MESSAGE_ROUTED1(BlpProfileHostMsg_SetProxyConfig,
+                    blpwtk2::ProxyConfig /* config */)
+
+// Use the system proxy configuration.
+IPC_MESSAGE_ROUTED0(BlpProfileHostMsg_UseSystemProxyConfig)
+
+// Set the spellcheck configuration.
+IPC_MESSAGE_ROUTED1(BlpProfileHostMsg_SetSpellCheckConfig,
+                    blpwtk2::SpellCheckConfig /* config */)
+
+// This destroys the profile.
+IPC_MESSAGE_CONTROL1(BlpProfileHostMsg_Destroy,
+                     int /* routingId */)
 

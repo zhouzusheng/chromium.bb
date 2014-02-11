@@ -274,6 +274,12 @@ void RenderThread::SetInProcessRendererChannelName(const std::string& channel_id
 }
 
 // static
+base::SingleThreadTaskRunner* RenderThread::IPCTaskRunner()
+{
+  return g_render_process->io_message_loop_proxy();
+}
+
+// static
 void RenderThread::CleanUpInProcessRenderer()
 {
   if (g_render_process) {

@@ -40,9 +40,9 @@ namespace content {
 
 namespace blpwtk2 {
 
+class BrowserContextImpl;
 class ContextMenuParams;
 class DevToolsFrontendHostDelegateImpl;
-class Profile;
 class WebViewDelegate;
 class WebViewImplClient;
 
@@ -66,11 +66,13 @@ class WebViewImpl : public WebView,
   public:
     WebViewImpl(WebViewDelegate* delegate,
                 gfx::NativeView parent,
-                Profile* profile,
+                BrowserContextImpl* browserContext,
                 int hostAffinity,
                 bool initiallyVisible,
                 bool takeFocusOnMouseDown);
-    WebViewImpl(content::WebContents* contents, bool takeFocusOnMouseDown);
+    WebViewImpl(content::WebContents* contents,
+                BrowserContextImpl* browserContext,
+                bool takeFocusOnMouseDown);
     virtual ~WebViewImpl();
 
     void setImplClient(WebViewImplClient* client);
@@ -78,7 +80,7 @@ class WebViewImpl : public WebView,
     gfx::NativeView getNativeView() const;
     void showContextMenu(const ContextMenuParams& params);
     void saveCustomContextMenuContext(const content::CustomContextMenuContext& context);
-    void handleFindRequest(const FindOnPage::Request& request);
+    void handleFindRequest(const FindOnPageRequest& request);
 
     /////////////// WebView overrides
 
@@ -145,16 +147,6 @@ class WebViewImpl : public WebView,
     // Request the delegate to close this web contents, and do whatever cleanup
     // it needs to do.
     virtual void CloseContents(content::WebContents* source) OVERRIDE;
-
-    // Asks permission to use the camera and/or microphone. If permission is
-    // granted, a call should be made to |callback| with the devices. If the
-    // request is denied, a call should be made to |callback| with an empty list
-    // of devices. |request| has the details of the request (e.g. which of audio
-    // and/or video devices are requested, and lists of available devices).
-    virtual void RequestMediaAccessPermission(
-        content::WebContents* web_contents,
-        const content::MediaStreamRequest& request,
-        const content::MediaResponseCallback& callback) OVERRIDE;
 
     // Handle external protocol url such as 'mailto:'
     virtual void HandleExternalProtocol(const GURL& url) OVERRIDE;
@@ -252,6 +244,7 @@ class WebViewImpl : public WebView,
     scoped_ptr<FindOnPage> d_find;
     WebViewDelegate* d_delegate;
     WebViewImplClient* d_implClient;
+    BrowserContextImpl* d_browserContext;
     gfx::NativeView d_originalParent;
     bool d_focusBeforeEnabled;
     bool d_focusAfterEnabled;

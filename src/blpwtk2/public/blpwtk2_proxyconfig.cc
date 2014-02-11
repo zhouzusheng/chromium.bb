@@ -132,6 +132,11 @@ void ProxyConfig::addBypassRule(const StringRef& rule)
     d_impl->d_config.proxy_rules().bypass_rules.AddRuleFromString(srule);
 }
 
+ProxyConfigImpl* getProxyConfigImpl(ProxyConfig& config)
+{
+    return config.d_impl;
+}
+
 const ProxyConfigImpl* getProxyConfigImpl(const ProxyConfig& config)
 {
     return config.d_impl;

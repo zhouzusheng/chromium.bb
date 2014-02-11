@@ -31,6 +31,7 @@ struct ProxyConfigImpl;
 class StringRef;
 class ProxyConfig;
 
+ProxyConfigImpl* getProxyConfigImpl(ProxyConfig&);
 const ProxyConfigImpl* getProxyConfigImpl(const ProxyConfig&);
 
 // This is a value-semantic type containing proxy configuration settings.
@@ -95,6 +96,7 @@ class BLPWTK2_EXPORT ProxyConfig {
     void addBypassRule(const StringRef& rule);
 
   private:
+    friend ProxyConfigImpl* getProxyConfigImpl(ProxyConfig&);
     friend const ProxyConfigImpl* getProxyConfigImpl(const ProxyConfig&);
     ProxyConfigImpl *d_impl;
 };

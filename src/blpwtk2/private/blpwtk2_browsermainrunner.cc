@@ -22,24 +22,24 @@
 
 #include <blpwtk2_browsermainrunner.h>
 
-#include <blpwtk2_browsercontextimpl.h>
+#include <blpwtk2_browsercontextimplmanager.h>
+#include <blpwtk2_constants.h>
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
 #include <blpwtk2_inprocessrendererhost.h>
-#include <blpwtk2_profileimpl.h>
-#include <blpwtk2_profilemanager.h>
+#include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_statics.h>
 
 #include <base/logging.h>  // for DCHECK
 #include <base/message_loop.h>
+#include <content/browser/renderer_host/render_process_host_impl.h>
 #include <content/public/browser/browser_main_runner.h>
+#include <content/public/browser/site_instance.h>
 
 namespace blpwtk2 {
 
 BrowserMainRunner::BrowserMainRunner(
-    sandbox::SandboxInterfaceInfo* sandboxInfo,
-    ProfileManager* profileManager)
+    sandbox::SandboxInterfaceInfo* sandboxInfo)
 : d_mainParams(*CommandLine::ForCurrentProcess())
-, d_profileManager(profileManager)
 {
     Statics::initBrowserMainThread();
 
@@ -52,6 +52,8 @@ BrowserMainRunner::BrowserMainRunner(
     // content::BrowserMainLoop).
     Statics::browserMainMessageLoop = base::MessageLoop::current();
 
+    d_browserContextImplManager.reset(new BrowserContextImplManager());
+
     d_devToolsHttpHandlerDelegate.reset(
         new DevToolsHttpHandlerDelegateImpl());
 }
@@ -61,8 +63,13 @@ BrowserMainRunner::~BrowserMainRunner()
     d_devToolsHttpHandlerDelegate.reset();
     d_inProcessRendererHost.reset();
     Statics::browserMainMessageLoop = 0;
+
+    // This needs to happen after the main message loop has finished, but
+    // before shutting down threads, because the BrowserContext holds on to
+    // state that needs to be deleted on those threads.
+    d_browserContextImplManager->deleteBrowserContexts();
+
     d_impl->Shutdown();
-    d_profileManager->deleteBrowserContexts();
 }
 
 int BrowserMainRunner::Run()
@@ -70,23 +77,37 @@ int BrowserMainRunner::Run()
     return d_impl->Run();
 }
 
-void BrowserMainRunner::createInProcessRendererHost(ProfileImpl* profile,
-                                                    RendererInfoMap* rendererInfoMap)
+int BrowserMainRunner::obtainHostAffinity(
+    content::BrowserContext* browserContext,
+    int rendererAffinity,
+    RendererInfoMap* rendererInfoMap)
 {
     DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(!d_inProcessRendererHost.get());
     DCHECK(rendererInfoMap);
-    BrowserContextImpl* browserContext = profile->browserContext();
-    if (!browserContext) {
-        browserContext = profile->createBrowserContext();
-    }
-    d_inProcessRendererHost.reset(
-        new InProcessRendererHost(browserContext, rendererInfoMap));
-}
 
-bool BrowserMainRunner::hasInProcessRendererHost() const
-{
-    return 0 != d_inProcessRendererHost.get();
+    int hostAffinity;
+    if (rendererAffinity == Constants::IN_PROCESS_RENDERER) {
+        if (!d_inProcessRendererHost.get()) {
+            d_inProcessRendererHost.reset(
+                new InProcessRendererHost(browserContext, rendererInfoMap));
+        }
+
+        hostAffinity = rendererInfoMap->rendererToHostId(rendererAffinity);
+        DCHECK(-1 != hostAffinity);
+    }
+    else if (rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
+        hostAffinity = content::SiteInstance::kNoProcessAffinity;
+    }
+    else {
+        hostAffinity = rendererInfoMap->rendererToHostId(rendererAffinity);
+        if (-1 == hostAffinity) {
+            hostAffinity = content::RenderProcessHostImpl::GenerateUniqueId();
+            rendererInfoMap->setRendererHostId(rendererAffinity,
+                                               hostAffinity);
+        }
+    }
+
+    return hostAffinity;
 }
 
 }  // close namespace blpwtk2

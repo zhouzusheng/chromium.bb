@@ -24,10 +24,8 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
-#include <blpwtk2_mediarequestimpl.h>
 #include <blpwtk2_ncdragutil.h>
 #include <blpwtk2_newviewparams.h>
-#include <blpwtk2_profileimpl.h>
 #include <blpwtk2_webframeimpl.h>
 #include <blpwtk2_stringref.h>
 #include <blpwtk2_webviewdelegate.h>
@@ -45,19 +43,20 @@
 #include <content/public/browser/web_contents.h>
 #include <content/public/browser/web_contents_view.h>
 #include <content/public/browser/site_instance.h>
+#include <third_party/WebKit/public/web/WebFindOptions.h>
 #include <third_party/WebKit/public/web/WebView.h>
 
 namespace blpwtk2 {
 
-
 WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
                          gfx::NativeView parent,
-                         Profile* profile,
+                         BrowserContextImpl* browserContext,
                          int hostAffinity,
                          bool initiallyVisible,
                          bool takeFocusOnMouseDown)
 : d_delegate(delegate)
 , d_implClient(0)
+, d_browserContext(browserContext)
 , d_focusBeforeEnabled(false)
 , d_focusAfterEnabled(false)
 , d_isReadyForDelete(false)
@@ -71,16 +70,9 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 , d_lastNCHitTestResult(HTCLIENT)
 {
     DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(profile);
+    DCHECK(browserContext);
 
-    if (ThreadMode::ORIGINAL == Statics::threadMode)
-        ++Statics::numWebViews;
-
-    ProfileImpl* profileImpl = static_cast<ProfileImpl*>(profile);
-    BrowserContextImpl* browserContext = profileImpl->browserContext();
-    if (!browserContext) {
-        browserContext = profileImpl->createBrowserContext();
-    }
+    d_browserContext->incrementWebViewCount();
 
     content::WebContents::CreateParams createParams(browserContext);
     createParams.render_process_affinity = hostAffinity;
@@ -95,9 +87,12 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
     SetParent(getNativeView(), parent);
 }
 
-WebViewImpl::WebViewImpl(content::WebContents* contents, bool takeFocusOnMouseDown)
+WebViewImpl::WebViewImpl(content::WebContents* contents,
+                         BrowserContextImpl* browserContext,
+                         bool takeFocusOnMouseDown)
 : d_delegate(0)
 , d_implClient(0)
+, d_browserContext(browserContext)
 , d_focusBeforeEnabled(false)
 , d_focusAfterEnabled(false)
 , d_isReadyForDelete(false)
@@ -112,8 +107,7 @@ WebViewImpl::WebViewImpl(content::WebContents* contents, bool takeFocusOnMouseDo
 {
     DCHECK(Statics::isInBrowserMainThread());
 
-    if (ThreadMode::ORIGINAL == Statics::threadMode)
-        ++Statics::numWebViews;
+    d_browserContext->incrementWebViewCount();
 
     d_webContents.reset(contents);
     d_webContents->SetDelegate(this);
@@ -163,14 +157,24 @@ void WebViewImpl::saveCustomContextMenuContext(const content::CustomContextMenuC
     d_customContext = context;
 }
 
-void WebViewImpl::handleFindRequest(const FindOnPage::Request& request)
+void WebViewImpl::handleFindRequest(const FindOnPageRequest& request)
 {
-    DCHECK(Statics::isRendererMainThreadMode()) <<  "original thread mode should use find";
     DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
 
-    if (d_wasDestroyed) return;
-
-    request.executeOn(d_webContents->GetRenderViewHost());
+    content::RenderViewHost* host = d_webContents->GetRenderViewHost();
+    if (!request.reqId) {
+        host->StopFinding(content::STOP_FIND_ACTION_CLEAR_SELECTION);
+        return;
+    }
+    WebKit::WebFindOptions options;
+    options.findNext = request.findNext;
+    options.forward = request.forward;
+    options.matchCase = request.matchCase;
+    WebKit::WebString textStr =
+        WebKit::WebString::fromUTF8(request.text.data(),
+                                    request.text.length());
+    host->Find(request.reqId, textStr, options);
 }
 
 void WebViewImpl::destroy()
@@ -179,10 +183,7 @@ void WebViewImpl::destroy()
     DCHECK(!d_wasDestroyed);
     DCHECK(!d_isDeletingSoon);
 
-    if (ThreadMode::ORIGINAL == Statics::threadMode) {
-        DCHECK(0 < Statics::numWebViews);
-        --Statics::numWebViews;
-    }
+    d_browserContext->decrementWebViewCount();
 
     Observe(0);  // stop observing the WebContents
     d_wasDestroyed = true;
@@ -217,15 +218,14 @@ void WebViewImpl::loadUrl(const StringRef& url)
 void WebViewImpl::find(const StringRef& text, bool matchCase, bool forward)
 {
     DCHECK(Statics::isOriginalThreadMode())
-        <<  "renderer-main thread mode should use findWithReqId";
+        <<  "renderer-main thread mode should use handleFindRequest";
 
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
 
     if (!d_find) d_find.reset(new FindOnPage());
 
-    FindOnPage::Request request = d_find->makeRequest(text, matchCase, forward);
-    request.executeOn(d_webContents->GetRenderViewHost());
+    handleFindRequest(d_find->makeRequest(text, matchCase, forward));
 }
 
 void WebViewImpl::loadInspector(WebView* inspectedView)
@@ -508,7 +508,9 @@ void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(source_contents == d_webContents);
-    WebViewImpl* newView = new WebViewImpl(new_contents, d_takeFocusOnMouseDown);
+    WebViewImpl* newView = new WebViewImpl(new_contents,
+                                           d_browserContext,
+                                           d_takeFocusOnMouseDown);
     if (d_wasDestroyed || !d_delegate) {
         newView->destroy();
         return;
@@ -563,24 +565,6 @@ void WebViewImpl::CloseContents(content::WebContents* source)
     }
 
     d_delegate->destroyView(this);
-}
-
-void WebViewImpl::RequestMediaAccessPermission(content::WebContents* web_contents,
-                                               const content::MediaStreamRequest& request,
-                                               const content::MediaResponseCallback& callback)
-{
-    if (d_delegate) {
-        MediaObserverImpl* mediaObserver = Statics::mediaObserver;
-        content::MediaStreamDevices devices;
-        if (content::IsAudioMediaType(request.audio_type)) {
-            devices.insert(devices.end(), mediaObserver->getAudioDevices().begin(),  mediaObserver->getAudioDevices().end());
-        }
-        if (content::IsVideoMediaType(request.video_type)) {
-            devices.insert(devices.end(), mediaObserver->getVideoDevices().begin(),  mediaObserver->getVideoDevices().end());
-        }
-        scoped_refptr<MediaRequestImpl> refPtr(new MediaRequestImpl(devices, callback));
-        d_delegate->handleMediaRequest(this, refPtr.get());
-    }
 }
 
 void WebViewImpl::HandleExternalProtocol(const GURL& url)

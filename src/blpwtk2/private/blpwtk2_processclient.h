@@ -20,33 +20,43 @@
  * IN THE SOFTWARE.
  */
 
-#include <blpwtk2_profilecreateparams.h>
+#ifndef INCLUDED_BLPWTK2_PROCESSCLIENT_H
+#define INCLUDED_BLPWTK2_PROCESSCLIENT_H
 
-#include <base/logging.h>  // for DCHECK
+#include <blpwtk2_config.h>
+
+#include <ipc/ipc_sender.h>
+
+namespace IPC {
+class Listener;
+}  // close namespace IPC
 
 namespace blpwtk2 {
 
-ProfileCreateParams::ProfileCreateParams(const StringRef& dataDir)
-: d_dataDir(dataDir)
-, d_diskCacheEnabled(!dataDir.isEmpty())
-{
-}
+// This interface is used in blpwtk2 client processes to send messages to a
+// ProcessHost (running in the browser-main thread).  It uses IPC::Sender, so
+// the ProcessHost can potentially be in another process on the same machine.
+// Each blpwtk2 client process would typically have a single ProcessClient
+// object.  IPC::Listeners can subscribe to routed messages using the
+// 'addRoute' method.
+class ProcessClient : public IPC::Sender {
+  public:
+    // Add the specified 'listener' to be routed using the specified
+    // 'routingId'.
+    virtual void addRoute(int routingId, IPC::Listener* listener) = 0;
 
-void ProfileCreateParams::setDiskCacheEnabled(bool enabled)
-{
-    DCHECK(!d_dataDir.isEmpty());
-    d_diskCacheEnabled = enabled;
-}
+    // Remove the listener having the specified 'routingId'.
+    virtual void removeRoute(int routingId) = 0;
 
-StringRef ProfileCreateParams::dataDir() const
-{
-    return d_dataDir;
-}
+    // Return the listener having the specified 'routingId', or 0 if there is
+    // no such listener.
+    virtual IPC::Listener* findListener(int routingId) = 0;
 
-bool ProfileCreateParams::diskCacheEnabled() const
-{
-    return d_diskCacheEnabled;
-}
+  protected:
+    virtual ~ProcessClient();
+};
 
 }  // close namespace blpwtk2
+
+#endif  // INCLUDED_BLPWTK2_PROCESSCLIENT_H
 

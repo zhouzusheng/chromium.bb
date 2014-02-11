@@ -23,10 +23,13 @@
 #include <blpwtk2_webcontentsviewdelegateimpl.h>
 
 #include <blpwtk2_contextmenuparams.h>
+#include <blpwtk2_contextmenuparamsimpl.h>
 #include <blpwtk2_contextmenuitem.h>
+#include <blpwtk2_contextmenuitemimpl.h>
 #include <blpwtk2_webviewimpl.h>
 #include <blpwtk2_textdirection.h>
 
+#include <base/strings/utf_string_conversions.h>
 #include <content/public/browser/web_contents.h>
 #include <content/public/common/context_menu_params.h>
 #include <third_party/WebKit/public/web/WebContextMenuData.h>
@@ -34,49 +37,49 @@
 
 namespace {
 
-void convertItem(const WebMenuItem& item1, blpwtk2::ContextMenuItem& item2);
+void convertItem(const WebMenuItem& item1, blpwtk2::ContextMenuItemImpl* item2Impl);
 
-void convertSubmenus(const WebMenuItem& item1, blpwtk2::ContextMenuItem& item2)
+void convertSubmenus(const WebMenuItem& item1, blpwtk2::ContextMenuItemImpl* item2Impl)
 {
-    item2.setNumSubMenuItems(item1.submenu.size());
+    item2Impl->d_submenu.resize(item1.submenu.size());
     for (size_t i = 0; i < item1.submenu.size(); ++i) {
-        convertItem(item1.submenu[i], item2.subMenuItem(i));
+        convertItem(item1.submenu[i], getContextMenuItemImpl(item2Impl->d_submenu[i]));
     }
 }
 
-void convertCustomItems(const content::ContextMenuParams& params, blpwtk2::ContextMenuParams& params2)
+void convertCustomItems(const content::ContextMenuParams& params, blpwtk2::ContextMenuParamsImpl* params2Impl)
 {
-    params2.setNumCustomItems(params.custom_items.size());
+    params2Impl->d_customItems.resize(params.custom_items.size());
     for (size_t i = 0; i <params.custom_items.size(); ++i) {
-        convertItem(params.custom_items[i], params2.customItem(i));
+        convertItem(params.custom_items[i], getContextMenuItemImpl(params2Impl->d_customItems[i]));
     }
 }
 
-void convertItem(const WebMenuItem& item1, blpwtk2::ContextMenuItem& item2)
+void convertItem(const WebMenuItem& item1, blpwtk2::ContextMenuItemImpl* item2Impl)
 {
-    item2.setLabel(blpwtk2::String(item1.label));
-    item2.setTooltip(blpwtk2::String(item1.toolTip));
+    item2Impl->d_label = base::UTF16ToUTF8(item1.label);
+    item2Impl->d_tooltip = base::UTF16ToUTF8(item1.toolTip);
     switch (item1.type) {
-    case WebKit::WebMenuItemInfo::Option: item2.setType(blpwtk2::ContextMenuItem::OPTION); break;
-    case WebKit::WebMenuItemInfo::CheckableOption: item2.setType(blpwtk2::ContextMenuItem::CHECKABLE_OPTION); break;
-    case WebKit::WebMenuItemInfo::Group: item2.setType(blpwtk2::ContextMenuItem::GROUP); break;
-    case WebKit::WebMenuItemInfo::Separator: item2.setType(blpwtk2::ContextMenuItem::SEPARATOR); break;
-    case WebKit::WebMenuItemInfo::SubMenu: item2.setType(blpwtk2::ContextMenuItem::SUBMENU); break;
+    case WebKit::WebMenuItemInfo::Option: item2Impl->d_type = blpwtk2::ContextMenuItem::OPTION; break;
+    case WebKit::WebMenuItemInfo::CheckableOption: item2Impl->d_type = blpwtk2::ContextMenuItem::CHECKABLE_OPTION; break;
+    case WebKit::WebMenuItemInfo::Group: item2Impl->d_type = blpwtk2::ContextMenuItem::GROUP; break;
+    case WebKit::WebMenuItemInfo::Separator: item2Impl->d_type = blpwtk2::ContextMenuItem::SEPARATOR; break;
+    case WebKit::WebMenuItemInfo::SubMenu: item2Impl->d_type = blpwtk2::ContextMenuItem::SUBMENU; break;
     }
-    item2.setAction(item1.action);
-    item2.setTextDirection(item1.rtl ? blpwtk2::TextDirection::RIGHT_TO_LEFT : blpwtk2::TextDirection::LEFT_TO_RIGHT);
-    item2.setHasDirectionalOverride(item1.has_directional_override);
-    item2.setEnabled(item1.enabled);
-    item2.setChecked(item1.checked);
-    convertSubmenus(item1, item2);
+    item2Impl->d_action = item1.action;
+    item2Impl->d_textDirection = item1.rtl ? blpwtk2::TextDirection::RIGHT_TO_LEFT : blpwtk2::TextDirection::LEFT_TO_RIGHT;
+    item2Impl->d_hasDirectionalOverride = item1.has_directional_override;
+    item2Impl->d_enabled = item1.enabled;
+    item2Impl->d_checked = item1.checked;
+    convertSubmenus(item1, item2Impl);
 }
 
-void convertSpellcheck(const content::ContextMenuParams& params, blpwtk2::ContextMenuParams& params2)
+void convertSpellcheck(const content::ContextMenuParams& params, blpwtk2::ContextMenuParamsImpl* params2Impl)
 {
-    params2.setMisspelledWord(blpwtk2::String(params.misspelled_word));
-    params2.setNumSpellSuggestions(params.dictionary_suggestions.size());
+    params2Impl->d_misspelledWord = base::UTF16ToUTF8(params.misspelled_word);
+    params2Impl->d_suggestions.resize(params.dictionary_suggestions.size());
     for (std::size_t i = 0; i < params.dictionary_suggestions.size(); ++i) {
-        params2.spellSuggestion(i) = blpwtk2::String(params.dictionary_suggestions[i]);
+        params2Impl->d_suggestions[i] = base::UTF16ToUTF8(params.dictionary_suggestions[i]);
     }
 }
 
@@ -107,14 +110,15 @@ void WebContentsViewDelegateImpl::ShowContextMenu(
     bool hasSelection = !params.selection_text.empty();
 
     ContextMenuParams params2;
-    params2.setPointOnScreen(point);
-    params2.setCanCut(params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanCut));
-    params2.setCanCopy(hasSelection || (params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanCopy)));
-    params2.setCanPaste(params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanPaste));
-    params2.setCanDelete(params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanDelete));
+    ContextMenuParamsImpl* params2Impl = getContextMenuParamsImpl(params2);
+    params2Impl->d_pointOnScreen = point;
+    params2Impl->d_canCut = params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanCut);
+    params2Impl->d_canCopy = hasSelection || (params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanCopy));
+    params2Impl->d_canPaste = params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanPaste);
+    params2Impl->d_canDelete = params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanDelete);
 
-    convertCustomItems(params, params2);
-    convertSpellcheck(params, params2);
+    convertCustomItems(params, params2Impl);
+    convertSpellcheck(params, params2Impl);
 
     webViewImpl->showContextMenu(params2);
 }

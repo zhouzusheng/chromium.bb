@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2014 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,29 +20,5 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_CONFIG_H
-#define INCLUDED_BLPWTK2_CONFIG_H
-
-#include <windows.h>  // NOLINT
-
-#if defined BUILDING_BLPWTK2_SHARED
-#define BLPWTK2_EXPORT _declspec(dllexport)
-#elif defined USING_BLPWTK2_SHARED
-#define BLPWTK2_EXPORT _declspec(dllimport)
-#else
-#define BLPWTK2_EXPORT
-#endif
-
-#include <blpwtk2_version.h>
-
-namespace blpwtk2 {
-
-// TODO: support other native handles
-typedef HWND NativeView;
-typedef void* NativeViewForTransit;
-typedef MSG NativeMsg;
-
-}  // close namespace blpwtk2
-
-#endif  // INCLUDED_BLPWTK2_CONFIG_H
+#include <blpwtk2_contextmenuitemimpl.h>
 

@@ -23,8 +23,11 @@
 #include <blpwtk2_browsercontextimpl.h>
 
 #include <blpwtk2_prefstore.h>
+#include <blpwtk2_proxyconfig.h>
+#include <blpwtk2_proxyconfigimpl.h>
 #include <blpwtk2_resourcecontextimpl.h>
 #include <blpwtk2_spellcheckconfig.h>
+#include <blpwtk2_statics.h>
 #include <blpwtk2_stringref.h>
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
 
@@ -37,6 +40,7 @@
 #include <chrome/browser/spellchecker/spellcheck_factory.h>
 #include <chrome/common/pref_names.h>
 #include <content/public/browser/browser_thread.h>
+#include <content/public/browser/render_process_host.h>
 #include <content/public/browser/storage_partition.h>
 #include <components/browser_context_keyed_service/browser_context_dependency_manager.h>
 #include <components/user_prefs/pref_registry_syncable.h>
@@ -46,10 +50,16 @@ namespace blpwtk2 {
 
 BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
                                        bool diskCacheEnabled)
-: d_isIncognito(dataDir.empty())
+: d_numWebViews(0)
+, d_isIncognito(dataDir.empty())
+, d_isDestroyed(false)
 {
     // If disk cache is enabled, then it must not be incognito.
     DCHECK(!diskCacheEnabled || !d_isIncognito);
+
+    if (Statics::isOriginalThreadMode()) {
+        ++Statics::numProfiles;
+    }
 
     base::FilePath path;
 
@@ -98,6 +108,61 @@ BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
 
 BrowserContextImpl::~BrowserContextImpl()
 {
+    DCHECK(d_isDestroyed);
+}
+
+URLRequestContextGetterImpl* BrowserContextImpl::requestContextGetter() const
+{
+    DCHECK(!d_isDestroyed);
+    return d_requestContextGetter.get();
+}
+
+void BrowserContextImpl::incrementWebViewCount()
+{
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK(!d_isDestroyed);
+    ++d_numWebViews;
+}
+
+void BrowserContextImpl::decrementWebViewCount()
+{
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK(0 < d_numWebViews);
+    DCHECK(!d_isDestroyed);
+    --d_numWebViews;
+}
+
+bool BrowserContextImpl::isDestroyed() const
+{
+    return d_isDestroyed;
+}
+
+void BrowserContextImpl::destroy()
+{
+    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK(0 == d_numWebViews);
+    DCHECK(!d_isDestroyed);
+
+    if (Statics::isOriginalThreadMode()) {
+        DCHECK(0 < Statics::numProfiles);
+        --Statics::numProfiles;
+    }
+
+    BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(this);
+
+    d_userPrefs = 0;
+    d_prefRegistry = 0;
+
+    content::BrowserThread::DeleteSoon(content::BrowserThread::UI,
+                                       FROM_HERE,
+                                       d_prefService.release());
+
+    if (d_resourceContext.get()) {
+        content::BrowserThread::DeleteSoon(content::BrowserThread::IO,
+                                           FROM_HERE,
+                                           d_resourceContext.release());
+    }
+
     if (d_isIncognito) {
         // Delete the temporary directory that we created in the constructor.
 
@@ -107,35 +172,32 @@ BrowserContextImpl::~BrowserContextImpl()
         file_util::Delete(d_requestContextGetter->path(), true);
     }
 
-    BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(this);
-
-    if (d_resourceContext.get()) {
-        content::BrowserThread::DeleteSoon(content::BrowserThread::IO,
-                                           FROM_HERE,
-                                           d_resourceContext.release());
-    }
+    d_requestContextGetter = 0;
+    d_isDestroyed = true;
 }
 
-URLRequestContextGetterImpl* BrowserContextImpl::requestContextGetter() const
-{
-    return d_requestContextGetter.get();
-}
-
-void BrowserContextImpl::setProxyConfig(const net::ProxyConfig& config)
+void BrowserContextImpl::setProxyConfig(const ProxyConfig& config)
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-    d_requestContextGetter->setProxyConfig(config);
+    DCHECK(!d_isDestroyed);
+    d_requestContextGetter->setProxyConfig(
+        getProxyConfigImpl(config)->d_config);
 }
 
 void BrowserContextImpl::useSystemProxyConfig()
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK(!d_isDestroyed);
     d_requestContextGetter->useSystemProxyConfig();
 }
 
 void BrowserContextImpl::setSpellCheckConfig(const SpellCheckConfig& config)
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK(!d_isDestroyed);
+
+    // Auto-correct cannot be enabled if spellcheck is disabled.
+    DCHECK(!config.isAutoCorrectEnabled() || config.isSpellCheckEnabled());
 
     PrefService* prefs = user_prefs::UserPrefs::Get(this);
 
@@ -172,16 +234,19 @@ void BrowserContextImpl::setSpellCheckConfig(const SpellCheckConfig& config)
 
 base::FilePath BrowserContextImpl::GetPath()
 {
+    DCHECK(!d_isDestroyed);
     return d_requestContextGetter->path();
 }
 
 bool BrowserContextImpl::IsOffTheRecord() const
 {
+    DCHECK(!d_isDestroyed);
     return d_isIncognito;
 }
 
 net::URLRequestContextGetter* BrowserContextImpl::GetRequestContext()
 {
+    DCHECK(!d_isDestroyed);
     return GetDefaultStoragePartition(this)->GetURLRequestContext();
 }
 
@@ -213,6 +278,7 @@ BrowserContextImpl::GetMediaRequestContextForStoragePartition(
 content::ResourceContext* BrowserContextImpl::GetResourceContext()
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK(!d_isDestroyed);
 
     if (!d_resourceContext.get()) {
         d_resourceContext.reset(

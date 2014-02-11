@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2014 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,12 +20,10 @@
  * IN THE SOFTWARE.
  */
 
-#include <blpwtk2_refcountedobject.h>
+// Multiply-included file, hence no include guard.
 
-namespace blpwtk2 {
+#include <blpwtk2_enumtraits.h>
+#include <blpwtk2_control_messages.h>
+#include <blpwtk2_profile_messages.h>
+#include <blpwtk2_webview_messages.h>
 
-RefCountedObject::~RefCountedObject()
-{
-}
-
-} // close namespace blpwtk2

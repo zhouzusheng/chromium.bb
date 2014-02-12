@@ -195,8 +195,8 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // were initially blocked.
   virtual void ResumeRequestsForView(int route_id) = 0;
 
-  // Return true if this is a host for an in-process renderer.
-  virtual bool IsInProcess() const = 0;
+  // Return true if this is a host for an externally managed process.
+  virtual bool IsProcessManagedExternally() const = 0;
 
   // Return true if this renderer uses in-process plugins.
   virtual bool UsesInProcessPlugins() const = 0;

@@ -331,7 +331,7 @@ void RenderProcessHost::SetMaxRendererProcessCount(size_t count) {
 
 RenderProcessHostImpl::RenderProcessHostImpl(
     int host_id,
-    bool is_in_process,
+    base::ProcessHandle externally_managed_handle,
     BrowserContext* browser_context,
     StoragePartitionImpl* storage_partition_impl,
     bool supports_browser_plugin,
@@ -345,6 +345,7 @@ RenderProcessHostImpl::RenderProcessHostImpl(
               FROM_HERE, base::TimeDelta::FromSeconds(5),
               this, &RenderProcessHostImpl::ClearTransportDIBCache),
           is_initialized_(false),
+          externally_managed_handle_(externally_managed_handle),
           id_(host_id),
           browser_context_(browser_context),
           storage_partition_impl_(storage_partition_impl),
@@ -352,7 +353,6 @@ RenderProcessHostImpl::RenderProcessHostImpl(
           ignore_input_events_(false),
           supports_browser_plugin_(supports_browser_plugin),
           is_guest_(is_guest),
-          is_in_process_(is_in_process),
           uses_in_process_plugins_(false),
           gpu_observer_registered_(false) {
   widget_helper_ = new RenderWidgetHelper();
@@ -451,9 +451,17 @@ bool RenderProcessHostImpl::Init() {
 
   CreateMessageFilters();
 
+  if (IsProcessManagedExternally() &&
+      !base::Process(externally_managed_handle_).is_current()) {
+    // Renderer is running in a separate process that is being managed
+    // externally.
+    OnProcessLaunched();  // Fake a callback that the process is ready.
+  }
+  else
   // Single-process mode not supported in split-dll mode.
 #if !defined(CHROME_SPLIT_DLL)
-  if (is_in_process_) {
+  if (IsProcessManagedExternally()) {
+    DCHECK(base::Process(externally_managed_handle_).is_current());
     DCHECK(GetContentClient()->browser()->SupportsInProcessRenderer());
     if (uses_in_process_plugins_)
       RenderProcessImpl::ForceInProcessPlugins();
@@ -692,8 +700,8 @@ void RenderProcessHostImpl::RemoveRoute(int32 routing_id) {
     return;
   }
 #endif
-  // Keep the one renderer thread around forever in single process mode.
-  if (!is_in_process_)
+  // Keep the renderer around forever in externally-managed mode.
+  if (!IsProcessManagedExternally())
     Cleanup();
 }
 
@@ -711,7 +719,7 @@ bool RenderProcessHostImpl::WaitForBackingStoreMsg(
 }
 
 void RenderProcessHostImpl::ReceivedBadMessage() {
-  if (is_in_process_) {
+  if (base::Process(externally_managed_handle_).is_current()) {
     // In single process mode it is better if we don't suicide but just
     // crash.
     CHECK(false);
@@ -1003,8 +1011,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 }
 
 base::ProcessHandle RenderProcessHostImpl::GetHandle() const {
-  if (is_in_process_)
-    return base::Process::Current().handle();
+  if (IsProcessManagedExternally())
+    return externally_managed_handle_;
 
   if (!child_process_launcher_.get() || child_process_launcher_->IsStarting())
     return base::kNullProcessHandle;
@@ -1013,8 +1021,8 @@ base::ProcessHandle RenderProcessHostImpl::GetHandle() const {
 }
 
 bool RenderProcessHostImpl::FastShutdownIfPossible() {
-  if (is_in_process_)
-    return false;  // Single process mode never shutdown the renderer.
+  if (IsProcessManagedExternally())
+    return false;  // Externally managed process never shutdown the renderer.
 
   if (!GetContentClient()->browser()->IsFastShutdownPossible())
     return false;
@@ -1260,7 +1268,7 @@ void RenderProcessHostImpl::Cleanup() {
     channel_.reset();
     gpu_message_filter_ = NULL;
 
-    if (is_in_process_)
+    if (base::Process(externally_managed_handle_).is_current())
       GetContentClient()->browser()->StopInProcessRendererThread();
 
     // Remove ourself from the list of renderer processes so that we can't be
@@ -1303,8 +1311,8 @@ void RenderProcessHostImpl::ResumeRequestsForView(int route_id) {
   widget_helper_->ResumeRequestsForView(route_id);
 }
 
-bool RenderProcessHostImpl::IsInProcess() const {
-  return is_in_process_;
+bool RenderProcessHostImpl::IsProcessManagedExternally() const {
+  return externally_managed_handle_ != base::kNullProcessHandle;
 }
 
 bool RenderProcessHostImpl::UsesInProcessPlugins() const {
@@ -1619,9 +1627,9 @@ void RenderProcessHostImpl::EndFrameSubscription(int route_id) {
 void RenderProcessHostImpl::OnShutdownRequest() {
   // Don't shut down if there are active RenderViews, or if there are pending
   // RenderViews being swapped back in.
-  // We never shutdown in-process renderers.
+  // We never shutdown externally-managed renderers.
   int num_active_views = GetActiveViewCount();
-  if (pending_views_ || num_active_views > 0 || is_in_process_)
+  if (pending_views_ || num_active_views > 0 || IsProcessManagedExternally())
     return;
 
   // Notify any contents that might have swapped out renderers from this

@@ -49,8 +49,9 @@ createRenderProcessHost(content::BrowserContext* browserContext,
     bool supportsBrowserPlugin = true;
     bool isGuest = false;
     rendererInfoMap->setRendererHostId(Constants::IN_PROCESS_RENDERER, id);
-    return new content::RenderProcessHostImpl(id, true, browserContext,
-                                              partitionImpl,
+    base::ProcessHandle inProcessHandle = base::Process::Current().handle();
+    return new content::RenderProcessHostImpl(id, inProcessHandle,
+                                              browserContext, partitionImpl,
                                               supportsBrowserPlugin, isGuest);
 }
 

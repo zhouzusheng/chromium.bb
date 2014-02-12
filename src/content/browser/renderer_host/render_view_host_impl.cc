@@ -491,7 +491,7 @@ void RenderViewHostImpl::WasSwappedOut() {
         ++views;
     }
 
-    if (!GetProcess()->IsInProcess() &&
+    if (!GetProcess()->IsProcessManagedExternally() &&
         process_handle && views <= 1) {
       // The process can safely be terminated, only if WebContents sets
       // SuddenTerminationAllowed, which indicates that the timer has expired.

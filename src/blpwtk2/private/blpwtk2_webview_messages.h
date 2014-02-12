@@ -89,6 +89,9 @@ IPC_MESSAGE_ROUTED3(BlpWebViewHostMsg_OnNCHitTestResult,
                     int /* x */,
                     int /* y */,
                     int /* result */)
+IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_NCDragMoveAck,
+                    gfx::Point /* movePoint */)
+IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_NCDragEndAck)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_PerformContextMenuAction,
                     int /* actionId */)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_EnableCustomTooltip,
@@ -135,10 +138,15 @@ IPC_MESSAGE_ROUTED1(BlpWebViewMsg_HandleExternalProtocol,
 IPC_MESSAGE_ROUTED1(BlpWebViewMsg_MoveView,
                     gfx::Rect /* rect */)
 IPC_MESSAGE_ROUTED0(BlpWebViewMsg_RequestNCHitTest)
+IPC_MESSAGE_ROUTED2(BlpWebViewMsg_NCDragBegin,
+                    int /* hitTestCode */,
+                    gfx::Point /* startPoint */)
+IPC_MESSAGE_ROUTED0(BlpWebViewMsg_NCDragMove)
+IPC_MESSAGE_ROUTED1(BlpWebViewMsg_NCDragEnd,
+                    gfx::Point /* endPoint */)
 IPC_MESSAGE_ROUTED2(BlpWebViewMsg_ShowTooltip,
                     std::string /* tooltipText */,
                     blpwtk2::TextDirection::Value /* direction */)
-
 IPC_MESSAGE_ROUTED4(BlpWebViewMsg_FindState,
                     int /* reqId */,
                     int /* numberOfMatches */,

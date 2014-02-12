@@ -129,8 +129,9 @@ public:
     virtual void enableFocusAfter(bool enabled) = 0;
 
     // If set to 'true', the WebViewDelegate will be requested to provide
-    // non-client hit testing.  Otherwise, WebViews assume they do not include
-    // non-client regions.
+    // non-client hit testing.  The WebViewDelegate will also receive
+    // notifications when the user drags inside non-client areas.  If this is
+    // set to 'false', WebViews assume they do not include non-client regions.
     virtual void enableNCHitTest(bool enabled) = 0;
 
     // When the WebViewDelegate's requestNCHitTest method is called, this

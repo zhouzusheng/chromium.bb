@@ -24,7 +24,6 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
-#include <blpwtk2_ncdragutil.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_webframeimpl.h>
 #include <blpwtk2_stringref.h>
@@ -626,12 +625,13 @@ bool WebViewImpl::OnNCHitTest(int* result)
     return false;
 }
 
-bool WebViewImpl::OnNCDragBegin(int hitTestCode, const gfx::Point& point)
+bool WebViewImpl::OnNCDragBegin(int hitTestCode)
 {
-    if (!d_ncHitTestEnabled) {
+    if (!d_ncHitTestEnabled || !d_delegate) {
         return false;
     }
 
+    POINT screenPoint;
     switch (hitTestCode) {
     case HTCAPTION:
     case HTLEFT:
@@ -642,7 +642,8 @@ bool WebViewImpl::OnNCDragBegin(int hitTestCode, const gfx::Point& point)
     case HTTOPRIGHT:
     case HTBOTTOMRIGHT:
     case HTBOTTOMLEFT:
-        NCDragUtil::onDragBegin(getNativeView(), hitTestCode, point.ToPOINT());
+        ::GetCursorPos(&screenPoint);
+        d_delegate->ncDragBegin(this, hitTestCode, screenPoint);
         return true;
     default:
         return false;
@@ -651,12 +652,20 @@ bool WebViewImpl::OnNCDragBegin(int hitTestCode, const gfx::Point& point)
 
 void WebViewImpl::OnNCDragMove()
 {
-    NCDragUtil::onDragMove();
+    if (d_delegate) {
+        POINT screenPoint;
+        ::GetCursorPos(&screenPoint);
+        d_delegate->ncDragMove(this, screenPoint);
+    }
 }
 
 void WebViewImpl::OnNCDragEnd()
 {
-    NCDragUtil::onDragEnd();
+    if (d_delegate) {
+        POINT screenPoint;
+        ::GetCursorPos(&screenPoint);
+        d_delegate->ncDragEnd(this, screenPoint);
+    }
 }
 
 bool WebViewImpl::OnSetCursor(int hitTestCode)

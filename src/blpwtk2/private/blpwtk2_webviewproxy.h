@@ -142,6 +142,9 @@ class WebViewProxy : public WebView,
     void onHandleExternalProtocol(const std::string& url);
     void onMoveView(const gfx::Rect& rect);
     void onRequestNCHitTest();
+    void onNCDragBegin(int hitTestCode, const gfx::Point& startPoint);
+    void onNCDragMove();
+    void onNCDragEnd(const gfx::Point& endPoint);
     void onShowTooltip(const std::string& tooltipText, TextDirection::Value direction);
     void onFindState(int reqId,
                      int numberOfMatches,
@@ -162,6 +165,7 @@ class WebViewProxy : public WebView,
     bool d_moveAckPending;
     bool d_isMainFrameAccessible;
     bool d_gotRendererInfo;
+    bool d_ncDragNeedsAck;
 };
 
 

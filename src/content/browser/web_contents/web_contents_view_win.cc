@@ -431,8 +431,7 @@ LRESULT WebContentsViewWin::OnNCLButtonDown(
   DCHECK(!is_delegate_nc_dragging_);
   if (web_contents_->GetDelegate()) {
     is_delegate_nc_dragging_ = web_contents_->GetDelegate()->OnNCDragBegin(
-        wparam,
-        gfx::Screen::GetNativeScreen()->GetCursorScreenPoint());
+        wparam);
     if (is_delegate_nc_dragging_) {
       nc_dragging_hittest_code_ = wparam;
       SetCapture(GetNativeView());

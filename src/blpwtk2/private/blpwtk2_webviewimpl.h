@@ -171,7 +171,7 @@ class WebViewImpl : public WebView,
     // continuously until OnNCDragEnd gets called.  Returning false means the
     // default Windows dragging will be performed.  The specified 'point' is in
     // screen coordinates.
-    virtual bool OnNCDragBegin(int hitTestCode, const gfx::Point& point) OVERRIDE;
+    virtual bool OnNCDragBegin(int hitTestCode) OVERRIDE;
 
     // Invoked while the move moves during an NC drag event.  This only gets
     // called if the previous call to OnNCDragBegin returned true.

@@ -220,8 +220,6 @@
         'private/blpwtk2_browserthread.h',
         'private/blpwtk2_ipcparamtraits.cc',
         'private/blpwtk2_ipcparamtraits.h',
-        'private/blpwtk2_ncdragutil.cc',
-        'private/blpwtk2_ncdragutil.h',
         'private/blpwtk2_networkdelegateimpl.cc',
         'private/blpwtk2_networkdelegateimpl.h',
         'private/blpwtk2_processclient.cc',

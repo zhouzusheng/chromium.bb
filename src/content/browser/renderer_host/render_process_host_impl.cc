@@ -705,6 +705,10 @@ void RenderProcessHostImpl::RemoveRoute(int32 routing_id) {
     Cleanup();
 }
 
+size_t RenderProcessHostImpl::NumListeners() {
+  return listeners_.size();
+}
+
 bool RenderProcessHostImpl::WaitForBackingStoreMsg(
     int render_widget_id,
     const base::TimeDelta& max_delay,

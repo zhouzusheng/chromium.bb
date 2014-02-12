@@ -69,6 +69,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // listeners own it any more, it will delete itself.
   virtual void AddRoute(int32 routing_id, IPC::Listener* listener) = 0;
   virtual void RemoveRoute(int32 routing_id) = 0;
+  virtual size_t NumListeners() = 0;
 
   // Called to wait for the next UpdateRect message for the specified render
   // widget.  Returns true if successful, and the msg out-param will contain a

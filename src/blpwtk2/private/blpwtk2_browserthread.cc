@@ -23,7 +23,6 @@
 #include <blpwtk2_browserthread.h>
 
 #include <blpwtk2_browsermainrunner.h>
-#include <blpwtk2_inprocessrendererhost.h>
 #include <blpwtk2_statics.h>
 
 #include <base/at_exit.h>

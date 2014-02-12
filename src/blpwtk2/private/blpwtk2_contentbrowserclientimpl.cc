@@ -110,8 +110,13 @@ void ContentBrowserClientImpl::RenderProcessHostCreated(
 {
     DCHECK(Statics::isInBrowserMainThread());
     int id = host->GetID();
-    if (d_rendererInfoMap->hostIdUsesInProcessPlugins(id)) {
-        host->SetUsesInProcessPlugins();
+    if (!host->IsProcessManagedExternally()) {
+        // Externally-managed processes (e.g. in-process renderers) get the
+        // "uses-in-process-plugins" flag set during the creation of the
+        // ManagedRenderProcessHost.
+        if (d_rendererInfoMap->hostIdUsesInProcessPlugins(id)) {
+            host->SetUsesInProcessPlugins();
+        }
     }
     host->GetChannel()->AddFilter(new SpellCheckMessageFilter(id));
 }

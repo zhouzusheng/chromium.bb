@@ -41,7 +41,7 @@ namespace blpwtk2 {
 
 class BrowserContextImplManager;
 class DevToolsHttpHandlerDelegateImpl;
-class InProcessRendererHost;
+class ManagedRenderProcessHost;
 class RendererInfoMap;
 
 // This class represents the browser-main-thread's "main".  See
@@ -70,7 +70,7 @@ class BrowserMainRunner {
     content::MainFunctionParams d_mainParams;
     scoped_ptr<content::BrowserMainRunner> d_impl;
     scoped_ptr<BrowserContextImplManager> d_browserContextImplManager;
-    scoped_ptr<InProcessRendererHost> d_inProcessRendererHost;
+    scoped_ptr<ManagedRenderProcessHost> d_inProcessRendererHost;
     scoped_ptr<DevToolsHttpHandlerDelegateImpl> d_devToolsHttpHandlerDelegate;
 
     DISALLOW_COPY_AND_ASSIGN(BrowserMainRunner);

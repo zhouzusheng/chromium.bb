@@ -29,7 +29,6 @@
 #include <blpwtk2_browsercontextimplmanager.h>
 #include <blpwtk2_control_messages.h>
 #include <blpwtk2_inprocessrenderer.h>
-#include <blpwtk2_inprocessrendererhost.h>
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_mainmessagepump.h>
 #include <blpwtk2_processclientimpl.h>

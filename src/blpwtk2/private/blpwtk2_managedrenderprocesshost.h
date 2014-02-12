@@ -20,41 +20,45 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_INPROCESSRENDERERHOST_H
-#define INCLUDED_BLPWTK2_INPROCESSRENDERERHOST_H
+#ifndef INCLUDED_BLPWTK2_MANAGEDRENDERPROCESSHOST_H
+#define INCLUDED_BLPWTK2_MANAGEDRENDERPROCESSHOST_H
 
 #include <blpwtk2_config.h>
 
-#include <base/memory/scoped_ptr.h>
+#include <base/process.h>
 
 namespace content {
-    class BrowserContext;
-    class RenderProcessHostImpl;  // TODO: remove dependency on the impl class
+class BrowserContext;
+class RenderProcessHost;
 }  // close namespace content
 
 namespace blpwtk2 {
 
-class RendererInfoMap;
-
-// This class sets up the "browser" side of the InProcessRenderer.  It creates
-// a RenderProcessHostImpl, which sets up a channel that is used to send
-// messages to the InProcessRenderer.
-class InProcessRendererHost {
+// This class sets up a RenderProcessHost for an "externally-managed" renderer
+// process.  Normally RenderProcessHosts are created and destroyed
+// automatically by chromium.  The ManagedRenderProcessHost allows us to create
+// a RenderProcessHost and keep it alive until the ManagedRenderProcessHost is
+// destroyed.
+// The process handle provided at compile time must be the handle for the
+// process where the renderer is running.  It can be the current process handle
+// (for in-process renderers).
+class ManagedRenderProcessHost {
   public:
-    InProcessRendererHost(content::BrowserContext* browserContext,
-                          RendererInfoMap* rendererInfoMap);
-    ~InProcessRendererHost();
+    ManagedRenderProcessHost(base::ProcessHandle processHandle,
+                             content::BrowserContext* browserContext,
+                             bool usesInProcessPlugins);
+    ~ManagedRenderProcessHost();
 
     int id() const;
 
   private:
-    scoped_ptr<content::RenderProcessHostImpl> d_impl;
+    content::RenderProcessHost* d_impl;
 
-    DISALLOW_COPY_AND_ASSIGN(InProcessRendererHost);
+    DISALLOW_COPY_AND_ASSIGN(ManagedRenderProcessHost);
 };
 
 }  // close namespace blpwtk2
 
-#endif  // INCLUDED_BLPWTK2_INPROCESSRENDERERHOST_H
+#endif  // INCLUDED_BLPWTK2_MANAGEDRENDERPROCESSHOST_H
 
 

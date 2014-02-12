@@ -79,6 +79,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual int GetNextRoutingID() OVERRIDE;
   virtual void AddRoute(int32 routing_id, IPC::Listener* listener) OVERRIDE;
   virtual void RemoveRoute(int32 routing_id) OVERRIDE;
+  virtual size_t NumListeners() OVERRIDE;
   virtual bool WaitForBackingStoreMsg(int render_widget_id,
                                       const base::TimeDelta& max_delay,
                                       IPC::Message* msg) OVERRIDE;

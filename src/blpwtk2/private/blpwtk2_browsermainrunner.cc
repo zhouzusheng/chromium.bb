@@ -25,7 +25,7 @@
 #include <blpwtk2_browsercontextimplmanager.h>
 #include <blpwtk2_constants.h>
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
-#include <blpwtk2_inprocessrendererhost.h>
+#include <blpwtk2_managedrenderprocesshost.h>
 #include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_statics.h>
 
@@ -88,12 +88,26 @@ int BrowserMainRunner::obtainHostAffinity(
     int hostAffinity;
     if (rendererAffinity == Constants::IN_PROCESS_RENDERER) {
         if (!d_inProcessRendererHost.get()) {
+            DCHECK(-1 == rendererInfoMap->rendererToHostId(rendererAffinity));
+
+            bool usesInProcessPlugins =
+                rendererInfoMap->rendererUsesInProcessPlugins(
+                    rendererAffinity);
+
+            base::ProcessHandle inProcessHandle =
+                base::Process::Current().handle();
+
             d_inProcessRendererHost.reset(
-                new InProcessRendererHost(browserContext, rendererInfoMap));
+                new ManagedRenderProcessHost(
+                    inProcessHandle,
+                    browserContext,
+                    usesInProcessPlugins));
+
+            rendererInfoMap->setRendererHostId(rendererAffinity,
+                                               d_inProcessRendererHost->id());
         }
 
-        hostAffinity = rendererInfoMap->rendererToHostId(rendererAffinity);
-        DCHECK(-1 != hostAffinity);
+        hostAffinity = d_inProcessRendererHost->id();
     }
     else if (rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
         hostAffinity = content::SiteInstance::kNoProcessAffinity;

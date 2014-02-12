@@ -56,6 +56,9 @@ class RendererInfoMap {
     // Marks the specified 'renderer' as using in-process plugins.
     void setRendererUsesInProcessPlugins(int renderer);
 
+    // Return true if the specified 'renderer' should use in-process plugins.
+    bool rendererUsesInProcessPlugins(int renderer);
+
     // Return true if the specified 'hostId' should use in-process plugins.
     bool hostIdUsesInProcessPlugins(int hostId);
 

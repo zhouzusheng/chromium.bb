@@ -68,6 +68,21 @@ void RendererInfoMap::setRendererUsesInProcessPlugins(int renderer)
     info.d_usesInProcessPlugins = true;
 }
 
+bool RendererInfoMap::rendererUsesInProcessPlugins(int renderer)
+{
+    DCHECK(renderer == Constants::ANY_OUT_OF_PROCESS_RENDERER
+        || renderer == Constants::IN_PROCESS_RENDERER
+        || renderer >= 0);
+
+    base::AutoLock guard(d_lock);
+
+    if (renderer == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
+        return d_anyOutOfProcessRenderersUseInProcessPlugins;
+    }
+
+    return d_map[renderer].d_usesInProcessPlugins;
+}
+
 bool RendererInfoMap::hostIdUsesInProcessPlugins(int hostId)
 {
     base::AutoLock guard(d_lock);

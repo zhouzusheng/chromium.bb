@@ -213,6 +213,8 @@ void ProcessHostImpl::onWebViewNew(const BlpWebViewHostMsg_NewParams& params)
                     profileHost->browserContext(),
                     d_inProcessRendererInfo.d_usesInProcessPlugins));
             d_inProcessRendererInfo.d_hostId = d_renderProcessHost->id();
+            Send(new BlpControlMsg_SetInProcessRendererChannelName(
+                d_renderProcessHost->channelId()));
         }
 
         DCHECK(-1 != d_inProcessRendererInfo.d_hostId);

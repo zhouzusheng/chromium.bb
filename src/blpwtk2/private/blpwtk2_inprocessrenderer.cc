@@ -112,12 +112,17 @@ base::SingleThreadTaskRunner* InProcessRenderer::ipcTaskRunner()
 // static
 void InProcessRenderer::setChannelName(const std::string& channelName)
 {
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(Statics::rendererMessageLoop);
-    Statics::rendererMessageLoop->PostTask(
-        FROM_HERE,
-        base::Bind(&content::RenderThread::SetInProcessRendererChannelName,
-                   channelName));
+    DCHECK(Statics::isInApplicationMainThread());
+    if (Statics::isInBrowserMainThread()) {
+        DCHECK(Statics::rendererMessageLoop);
+        Statics::rendererMessageLoop->PostTask(
+            FROM_HERE,
+            base::Bind(&content::RenderThread::SetInProcessRendererChannelName,
+                       channelName));
+    }
+    else {
+        content::RenderThread::SetInProcessRendererChannelName(channelName);
+    }
 }
 
 }  // close namespace blpwtk2

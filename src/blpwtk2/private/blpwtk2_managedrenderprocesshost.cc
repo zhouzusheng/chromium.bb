@@ -72,5 +72,10 @@ int ManagedRenderProcessHost::id() const
     return d_impl->GetID();
 }
 
+const std::string& ManagedRenderProcessHost::channelId() const
+{
+    return d_impl->GetChannel()->ChannelId();
+}
+
 }  // close namespace blpwtk2
 

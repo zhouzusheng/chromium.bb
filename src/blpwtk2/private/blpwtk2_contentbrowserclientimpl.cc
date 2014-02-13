@@ -24,7 +24,6 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_statics.h>
-#include <blpwtk2_inprocessrenderer.h>
 #include <blpwtk2_mediaobserverimpl.h>
 #include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
@@ -124,21 +123,6 @@ void ContentBrowserClientImpl::RenderProcessHostCreated(
 bool ContentBrowserClientImpl::SupportsInProcessRenderer()
 {
     return true;
-}
-
-void ContentBrowserClientImpl::StartInProcessRendererThread(
-    const std::string& channel_id)
-{
-    // This does not actually start the thread.  The thread is started during
-    // ToolkitImpl startup.  What we do here is set the channel name that is
-    // used by the in-process renderer thread.
-    InProcessRenderer::setChannelName(channel_id);
-}
-
-void ContentBrowserClientImpl::StopInProcessRendererThread()
-{
-    // Don't actually stop the thread here.  That is done by ToolkitImpl's
-    // shutdown procedure.
 }
 
 void ContentBrowserClientImpl::ResourceDispatcherHostCreated()

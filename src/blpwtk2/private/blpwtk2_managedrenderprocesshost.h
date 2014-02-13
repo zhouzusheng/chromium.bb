@@ -27,6 +27,8 @@
 
 #include <base/process.h>
 
+#include <string>
+
 namespace content {
 class BrowserContext;
 class RenderProcessHost;
@@ -50,6 +52,7 @@ class ManagedRenderProcessHost {
     ~ManagedRenderProcessHost();
 
     int id() const;
+    const std::string& channelId() const;
 
   private:
     content::RenderProcessHost* d_impl;

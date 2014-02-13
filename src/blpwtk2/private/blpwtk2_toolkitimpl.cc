@@ -422,6 +422,8 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
                         d_inProcessRendererInfo.d_usesInProcessPlugins));
                 d_inProcessRendererInfo.d_hostId =
                     d_inProcessRendererHost->id();
+                InProcessRenderer::setChannelName(
+                    d_inProcessRendererHost->channelId());
             }
 
             DCHECK(-1 != d_inProcessRendererInfo.d_hostId);

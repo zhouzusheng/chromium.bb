@@ -69,6 +69,9 @@ class ProcessClientImpl : public ProcessClient,
     virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
     virtual void OnChannelError() OVERRIDE;
 
+    // Control message handlers
+    void onSetInProcessRendererChannelName(const std::string& channelName);
+
     base::WaitableEvent d_shutdownEvent;
     scoped_ptr<IPC::SyncChannel> d_channel;
     IDMap<IPC::Listener> d_routes;

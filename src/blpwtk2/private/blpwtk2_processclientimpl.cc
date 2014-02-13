@@ -22,6 +22,8 @@
 
 #include <blpwtk2_processclientimpl.h>
 
+#include <blpwtk2_control_messages.h>
+#include <blpwtk2_inprocessrenderer.h>
 #include <blpwtk2_products.h>
 
 #include <ipc/ipc_sync_channel.h>
@@ -89,7 +91,16 @@ bool ProcessClientImpl::Send(IPC::Message* message)
 bool ProcessClientImpl::OnMessageReceived(const IPC::Message& message)
 {
     if (message.routing_id() == MSG_ROUTING_CONTROL) {
-        // TODO: handle control messages here
+        // Dispatch control messages
+        bool msgIsOk = true;
+        IPC_BEGIN_MESSAGE_MAP_EX(ProcessClientImpl, message, msgIsOk)
+            IPC_MESSAGE_HANDLER(BlpControlMsg_SetInProcessRendererChannelName, onSetInProcessRendererChannelName)
+            IPC_MESSAGE_UNHANDLED_ERROR()
+        IPC_END_MESSAGE_MAP_EX()
+
+        if (!msgIsOk) {
+            LOG(ERROR) << "bad message " << message.type();
+        }
         return true;
     }
 
@@ -121,6 +132,14 @@ void ProcessClientImpl::OnChannelConnected(int32 peer_pid)
 void ProcessClientImpl::OnChannelError()
 {
     LOG(ERROR) << "channel error!";
+}
+
+// Control message handlers
+
+void ProcessClientImpl::onSetInProcessRendererChannelName(
+    const std::string& channelName)
+{
+    InProcessRenderer::setChannelName(channelName);
 }
 
 }  // close namespace blpwtk2

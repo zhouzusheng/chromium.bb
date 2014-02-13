@@ -23,28 +23,28 @@
 #include <blpwtk2_processhostimpl.h>
 
 #include <blpwtk2_browsercontextimpl.h>
-#include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_constants.h>
 #include <blpwtk2_control_messages.h>
+#include <blpwtk2_managedrenderprocesshost.h>
 #include <blpwtk2_profile_messages.h>
 #include <blpwtk2_profilehost.h>
+#include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_webview_messages.h>
 #include <blpwtk2_webviewhost.h>
 
+#include <base/process_util.h>
 #include <content/public/browser/browser_thread.h>
 #include <ipc/ipc_channel_proxy.h>
 
 namespace blpwtk2 {
 
 ProcessHostImpl::ProcessHostImpl(const std::string& channelId,
-                                 RendererInfoMap* rendererInfoMap,
-                                 BrowserMainRunner* mainRunner)
-: d_rendererInfoMap(rendererInfoMap)
-, d_mainRunner(mainRunner)
+                                 RendererInfoMap* rendererInfoMap)
+: d_processHandle(base::kNullProcessHandle)
+, d_rendererInfoMap(rendererInfoMap)
 , d_lastRoutingId(0x10000)
 {
     DCHECK(d_rendererInfoMap);
-    DCHECK(d_mainRunner);
 
     scoped_refptr<base::SingleThreadTaskRunner> ioTaskRunner =
         content::BrowserThread::GetMessageLoopProxyForThread(
@@ -59,6 +59,10 @@ ProcessHostImpl::ProcessHostImpl(const std::string& channelId,
 ProcessHostImpl::~ProcessHostImpl()
 {
     d_channel.reset();
+    d_renderProcessHost.reset();
+    if (d_processHandle != base::kNullProcessHandle) {
+        base::CloseProcessHandle(d_processHandle);
+    }
 }
 
 // ProcessHost overrides
@@ -101,6 +105,7 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
         bool msgIsOk = true;
         IPC_BEGIN_MESSAGE_MAP_EX(ProcessHostImpl, message, msgIsOk)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_Sync, onSync)
+            IPC_MESSAGE_HANDLER(BlpControlHostMsg_SetInProcessRendererInfo, onSetInProcessRendererInfo)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_New, onProfileNew)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_Destroy, onProfileDestroy)
             IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_New, onWebViewNew)
@@ -137,6 +142,20 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
 void ProcessHostImpl::OnChannelConnected(int32 peer_pid)
 {
     DLOG(INFO) << "channel connected: peer_pid(" << peer_pid << ")";
+    if (peer_pid == base::GetCurrentProcId()) {
+        d_processHandle = base::GetCurrentProcessHandle();
+    }
+    else {
+        bool success =
+            base::OpenProcessHandleWithAccess(
+                peer_pid,
+                base::kProcessAccessDuplicateHandle |
+                base::kProcessAccessQueryInformation |
+                base::kProcessAccessWaitForTermination,
+                &d_processHandle);
+        CHECK(success);
+    }
+    CHECK(d_processHandle != base::kNullProcessHandle);
 }
 
 void ProcessHostImpl::OnChannelError()
@@ -149,6 +168,14 @@ void ProcessHostImpl::OnChannelError()
 void ProcessHostImpl::onSync()
 {
     DLOG(INFO) << "sync";
+}
+
+void ProcessHostImpl::onSetInProcessRendererInfo(bool usesInProcessPlugins)
+{
+    // We cannot set the 'usesInProcessPlugins' flag if the hostId has already
+    // been set.
+    DCHECK(-1 == d_inProcessRendererInfo.d_hostId);
+    d_inProcessRendererInfo.d_usesInProcessPlugins = usesInProcessPlugins;
 }
 
 void ProcessHostImpl::onProfileNew(int routingId,
@@ -172,13 +199,30 @@ void ProcessHostImpl::onWebViewNew(const BlpWebViewHostMsg_NewParams& params)
         static_cast<ProfileHost*>(findListener(params.profileId));
     DCHECK(profileHost);
 
-    int hostAffinity =
-        d_mainRunner->obtainHostAffinity(profileHost->browserContext(),
-                                         params.rendererAffinity,
-                                         d_rendererInfoMap);
-
+    int hostAffinity;
     bool isInProcess =
         params.rendererAffinity == blpwtk2::Constants::IN_PROCESS_RENDERER;
+
+    if (isInProcess) {
+        if (!d_renderProcessHost.get()) {
+            DCHECK(-1 == d_inProcessRendererInfo.d_hostId);
+            CHECK(d_processHandle != base::kNullProcessHandle);
+            d_renderProcessHost.reset(
+                new ManagedRenderProcessHost(
+                    d_processHandle,
+                    profileHost->browserContext(),
+                    d_inProcessRendererInfo.d_usesInProcessPlugins));
+            d_inProcessRendererInfo.d_hostId = d_renderProcessHost->id();
+        }
+
+        DCHECK(-1 != d_inProcessRendererInfo.d_hostId);
+        hostAffinity = d_inProcessRendererInfo.d_hostId;
+    }
+    else {
+        hostAffinity =
+            d_rendererInfoMap->obtainHostAffinity(params.rendererAffinity);
+    }
+
     new WebViewHost(this,
                     profileHost->browserContext(),
                     params.routingId,

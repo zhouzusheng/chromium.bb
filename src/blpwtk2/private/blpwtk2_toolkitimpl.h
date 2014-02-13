@@ -47,6 +47,7 @@ namespace blpwtk2 {
 
 class BrowserThread;
 class BrowserMainRunner;
+class ManagedRenderProcessHost;
 class ProcessClientImpl;
 class ProcessHostImpl;
 class Profile;
@@ -93,6 +94,7 @@ class ToolkitImpl : public Toolkit {
     bool d_threadsStopped;
     Profile* d_defaultProfile;
     RendererInfoMap d_rendererInfoMap;
+    RendererInfo d_inProcessRendererInfo;
     sandbox::SandboxInterfaceInfo d_sandboxInfo;
     ContentMainDelegateImpl d_mainDelegate;
     scoped_ptr<content::ContentMainRunner> d_mainRunner;
@@ -105,6 +107,7 @@ class ToolkitImpl : public Toolkit {
 
     // only used for the ORIGINAL thread mode
     scoped_ptr<BrowserMainRunner> d_browserMainRunner;
+    scoped_ptr<ManagedRenderProcessHost> d_inProcessRendererHost;
 };
 
 }  // close namespace blpwtk2

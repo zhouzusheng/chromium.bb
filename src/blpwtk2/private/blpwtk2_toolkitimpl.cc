@@ -31,6 +31,7 @@
 #include <blpwtk2_inprocessrenderer.h>
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_mainmessagepump.h>
+#include <blpwtk2_managedrenderprocesshost.h>
 #include <blpwtk2_processclientimpl.h>
 #include <blpwtk2_processhostimpl.h>
 #include <blpwtk2_products.h>
@@ -249,6 +250,9 @@ void ToolkitImpl::startupThreads()
         d_inProcessClient.reset(
             new ProcessClientImpl(channelId,
                                   InProcessRenderer::ipcTaskRunner()));
+        d_inProcessClient->Send(
+            new BlpControlHostMsg_SetInProcessRendererInfo(
+                d_inProcessRendererInfo.d_usesInProcessPlugins));
     }
 
     d_threadsStarted = true;
@@ -289,6 +293,7 @@ void ToolkitImpl::shutdownThreads()
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
+        d_inProcessRendererHost.reset();
         d_browserMainRunner.reset();
     }
 
@@ -302,6 +307,10 @@ void ToolkitImpl::shutdownThreads()
 
 void ToolkitImpl::setRendererUsesInProcessPlugins(int renderer)
 {
+    if (renderer == Constants::IN_PROCESS_RENDERER) {
+        d_inProcessRendererInfo.d_usesInProcessPlugins = true;
+        return;
+    }
     d_rendererInfoMap.setRendererUsesInProcessPlugins(renderer);
 }
 
@@ -380,6 +389,8 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
 
     DCHECK(singleProcess ||
            rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER ||
+           (rendererAffinity == Constants::IN_PROCESS_RENDERER &&
+            d_inProcessRendererInfo.dcheckProfile(profile)) ||
            d_rendererInfoMap.dcheckProfileForRenderer(rendererAffinity, profile));
 
     if (Statics::isRendererMainThreadMode()) {
@@ -398,10 +409,29 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     else if (Statics::isOriginalThreadMode()) {
         BrowserContextImpl* browserContext =
             static_cast<BrowserContextImpl*>(profile);
-        int hostAffinity =
-            d_browserMainRunner->obtainHostAffinity(browserContext,
-                                                    rendererAffinity,
-                                                    &d_rendererInfoMap);
+
+        int hostAffinity;
+
+        if (rendererAffinity == Constants::IN_PROCESS_RENDERER) {
+            if (!d_inProcessRendererHost.get()) {
+                DCHECK(-1 == d_inProcessRendererInfo.d_hostId);
+                d_inProcessRendererHost.reset(
+                    new ManagedRenderProcessHost(
+                        base::Process::Current().handle(),
+                        browserContext,
+                        d_inProcessRendererInfo.d_usesInProcessPlugins));
+                d_inProcessRendererInfo.d_hostId =
+                    d_inProcessRendererHost->id();
+            }
+
+            DCHECK(-1 != d_inProcessRendererInfo.d_hostId);
+            hostAffinity = d_inProcessRendererInfo.d_hostId;
+        }
+        else {
+            hostAffinity =
+                d_rendererInfoMap.obtainHostAffinity(rendererAffinity);
+        }
+
         return new WebViewImpl(delegate,
                                parent,
                                browserContext,
@@ -436,9 +466,7 @@ void ToolkitImpl::postHandleMessage(const NativeMsg* msg)
 void ToolkitImpl::createInProcessHost(const std::string& channelId)
 {
     DCHECK(Statics::isInBrowserMainThread());
-    d_inProcessHost.reset(new ProcessHostImpl(channelId,
-                                              &d_rendererInfoMap,
-                                              d_browserThread->mainRunner()));
+    d_inProcessHost.reset(new ProcessHostImpl(channelId, &d_rendererInfoMap));
 }
 
 void ToolkitImpl::destroyInProcessHost()

@@ -23,17 +23,12 @@
 #include <blpwtk2_browsermainrunner.h>
 
 #include <blpwtk2_browsercontextimplmanager.h>
-#include <blpwtk2_constants.h>
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
-#include <blpwtk2_managedrenderprocesshost.h>
-#include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_statics.h>
 
 #include <base/logging.h>  // for DCHECK
 #include <base/message_loop.h>
-#include <content/browser/renderer_host/render_process_host_impl.h>
 #include <content/public/browser/browser_main_runner.h>
-#include <content/public/browser/site_instance.h>
 
 namespace blpwtk2 {
 
@@ -61,7 +56,6 @@ BrowserMainRunner::BrowserMainRunner(
 BrowserMainRunner::~BrowserMainRunner()
 {
     d_devToolsHttpHandlerDelegate.reset();
-    d_inProcessRendererHost.reset();
     Statics::browserMainMessageLoop = 0;
 
     // This needs to happen after the main message loop has finished, but
@@ -75,53 +69,6 @@ BrowserMainRunner::~BrowserMainRunner()
 int BrowserMainRunner::Run()
 {
     return d_impl->Run();
-}
-
-int BrowserMainRunner::obtainHostAffinity(
-    content::BrowserContext* browserContext,
-    int rendererAffinity,
-    RendererInfoMap* rendererInfoMap)
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(rendererInfoMap);
-
-    int hostAffinity;
-    if (rendererAffinity == Constants::IN_PROCESS_RENDERER) {
-        if (!d_inProcessRendererHost.get()) {
-            DCHECK(-1 == rendererInfoMap->rendererToHostId(rendererAffinity));
-
-            bool usesInProcessPlugins =
-                rendererInfoMap->rendererUsesInProcessPlugins(
-                    rendererAffinity);
-
-            base::ProcessHandle inProcessHandle =
-                base::Process::Current().handle();
-
-            d_inProcessRendererHost.reset(
-                new ManagedRenderProcessHost(
-                    inProcessHandle,
-                    browserContext,
-                    usesInProcessPlugins));
-
-            rendererInfoMap->setRendererHostId(rendererAffinity,
-                                               d_inProcessRendererHost->id());
-        }
-
-        hostAffinity = d_inProcessRendererHost->id();
-    }
-    else if (rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
-        hostAffinity = content::SiteInstance::kNoProcessAffinity;
-    }
-    else {
-        hostAffinity = rendererInfoMap->rendererToHostId(rendererAffinity);
-        if (-1 == hostAffinity) {
-            hostAffinity = content::RenderProcessHostImpl::GenerateUniqueId();
-            rendererInfoMap->setRendererHostId(rendererAffinity,
-                                               hostAffinity);
-        }
-    }
-
-    return hostAffinity;
 }
 
 }  // close namespace blpwtk2

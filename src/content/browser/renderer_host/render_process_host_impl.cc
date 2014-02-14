@@ -463,8 +463,6 @@ bool RenderProcessHostImpl::Init() {
   if (IsProcessManagedExternally()) {
     DCHECK(base::Process(externally_managed_handle_).is_current());
     DCHECK(GetContentClient()->browser()->SupportsInProcessRenderer());
-    if (uses_in_process_plugins_)
-      RenderProcessImpl::ForceInProcessPlugins();
 
     // Crank up a thread and run the initialization there.  With the way that
     // messages flow between the browser and renderer, this thread is required

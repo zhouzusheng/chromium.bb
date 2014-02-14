@@ -253,7 +253,7 @@ void ToolkitImpl::startupThreads()
         d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo));
     }
 
-    InProcessRenderer::init();
+    InProcessRenderer::init(d_inProcessRendererInfo.d_usesInProcessPlugins);
     MainMessagePump::current()->init();
 
     if (Statics::isRendererMainThreadMode()) {

@@ -24,6 +24,7 @@
 
 #include <blpwtk2_browsercontextimplmanager.h>
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
+#include <blpwtk2_processhostmanager.h>
 #include <blpwtk2_statics.h>
 
 #include <base/logging.h>  // for DCHECK
@@ -51,10 +52,15 @@ BrowserMainRunner::BrowserMainRunner(
 
     d_devToolsHttpHandlerDelegate.reset(
         new DevToolsHttpHandlerDelegateImpl());
+
+    Statics::processHostManager = new ProcessHostManager();
 }
 
 BrowserMainRunner::~BrowserMainRunner()
 {
+    delete Statics::processHostManager;
+    Statics::processHostManager = 0;
+
     d_devToolsHttpHandlerDelegate.reset();
     Statics::browserMainMessageLoop = 0;
 

@@ -26,9 +26,12 @@
 #include <blpwtk2_constants.h>
 #include <blpwtk2_control_messages.h>
 #include <blpwtk2_managedrenderprocesshost.h>
+#include <blpwtk2_processhostmanager.h>
+#include <blpwtk2_products.h>
 #include <blpwtk2_profile_messages.h>
 #include <blpwtk2_profilehost.h>
 #include <blpwtk2_rendererinfomap.h>
+#include <blpwtk2_statics.h>
 #include <blpwtk2_webview_messages.h>
 #include <blpwtk2_webviewhost.h>
 
@@ -89,6 +92,11 @@ int ProcessHostImpl::getUniqueRoutingId()
     return ++d_lastRoutingId;
 }
 
+base::ProcessHandle ProcessHostImpl::processHandle()
+{
+    return d_processHandle;
+}
+
 // IPC::Sender overrides
 
 bool ProcessHostImpl::Send(IPC::Message* message)
@@ -106,6 +114,7 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
         IPC_BEGIN_MESSAGE_MAP_EX(ProcessHostImpl, message, msgIsOk)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_Sync, onSync)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_SetInProcessRendererInfo, onSetInProcessRendererInfo)
+            IPC_MESSAGE_HANDLER(BlpControlHostMsg_CreateNewHostChannel, onCreateNewHostChannel)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_New, onProfileNew)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_Destroy, onProfileDestroy)
             IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_New, onWebViewNew)
@@ -176,6 +185,17 @@ void ProcessHostImpl::onSetInProcessRendererInfo(bool usesInProcessPlugins)
     // been set.
     DCHECK(-1 == d_inProcessRendererInfo.d_hostId);
     d_inProcessRendererInfo.d_usesInProcessPlugins = usesInProcessPlugins;
+}
+
+void ProcessHostImpl::onCreateNewHostChannel(int timeoutInMilliseconds,
+                                             std::string* channelId)
+{
+    DCHECK(Statics::processHostManager);
+    *channelId = IPC::Channel::GenerateVerifiedChannelID(BLPWTK2_VERSION);
+
+    Statics::processHostManager->addProcessHost(
+        new ProcessHostImpl(*channelId, d_rendererInfoMap),
+        base::TimeDelta::FromMilliseconds(timeoutInMilliseconds));
 }
 
 void ProcessHostImpl::onProfileNew(int routingId,

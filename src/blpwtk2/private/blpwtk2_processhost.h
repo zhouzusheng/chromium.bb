@@ -25,6 +25,7 @@
 
 #include <blpwtk2_config.h>
 
+#include <base/process.h>
 #include <ipc/ipc_sender.h>
 
 namespace IPC {
@@ -41,6 +42,8 @@ namespace blpwtk2 {
 // 'addRoute' method.
 class ProcessHost : public IPC::Sender {
   public:
+    virtual ~ProcessHost();
+
     // Add the specified 'listener' to be routed using the specified
     // 'routingId'.
     virtual void addRoute(int routingId, IPC::Listener* listener) = 0;
@@ -57,8 +60,9 @@ class ProcessHost : public IPC::Sender {
     // start at 0).
     virtual int getUniqueRoutingId() = 0;
 
-  protected:
-    virtual ~ProcessHost();
+    // Return the process handle for the connected process, or
+    // base::kNullProcessHandle if there is no connected process yet.
+    virtual base::ProcessHandle processHandle() = 0;
 };
 
 }  // close namespace blpwtk2

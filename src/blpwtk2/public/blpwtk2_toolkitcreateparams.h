@@ -82,6 +82,22 @@ class ToolkitCreateParams {
     // spellchecking is enabled in one of the Profile objects.
     BLPWTK2_EXPORT void setDictionaryPath(const StringRef& path);
 
+    // By default, blpwtk2 will allocate new browser process resources for each
+    // blpwtk2 process.  However, the 'Toolkit::createHostChannel' method can
+    // be used to setup an IPC channel that this process can use to share the
+    // same browser process resources.  Use this method to set the channel-id
+    // that will be used to connect this process to the browser process.  This
+    // channel-id must have been obtained from 'Toolkit::createHostChannel' in
+    // another process using the same version of blpwtk2 (i.e.
+    // 'isValidHostChannelVersion' must return true).
+    BLPWTK2_EXPORT void setHostChannel(const StringRef& channelId);
+
+    // Return true if the specified 'channelId' was obtained from a process
+    // using the same version of blpwtk2, and false otherwise.  It is undefined
+    // behavior to use a channel-id obtained from a different version of
+    // blpwtk2.
+    BLPWTK2_EXPORT static bool isValidHostChannelVersion(
+        const StringRef& channelId);
 
     // ACCESSORS
     ThreadMode::Value threadMode() const;
@@ -95,6 +111,7 @@ class ToolkitCreateParams {
     int rendererUsingInProcessPluginsAt(size_t index) const;
     HttpTransactionHandler* httpTransactionHandler() const;
     StringRef dictionaryPath() const;
+    StringRef hostChannel() const;
 
   private:
     ToolkitCreateParamsImpl* d_impl;

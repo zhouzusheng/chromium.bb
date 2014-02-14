@@ -230,6 +230,8 @@
         'private/blpwtk2_processhost.h',
         'private/blpwtk2_processhostimpl.cc',
         'private/blpwtk2_processhostimpl.h',
+        'private/blpwtk2_processhostmanager.cc',
+        'private/blpwtk2_processhostmanager.h',
         'private/blpwtk2_profilehost.cc',
         'private/blpwtk2_profilehost.h',
         'private/blpwtk2_profileproxy.cc',

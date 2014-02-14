@@ -103,10 +103,12 @@ void ContentClient::AddNPAPIPlugins(
 }
 
 ContentMainDelegateImpl::ContentMainDelegateImpl(bool isSubProcess,
-                                                 bool pluginDiscoveryEnabled)
+                                                 bool pluginDiscoveryEnabled,
+                                                 bool sandboxDisabled)
 : d_rendererInfoMap(0)
 , d_pluginDiscoveryEnabled(pluginDiscoveryEnabled)
 , d_isSubProcess(isSubProcess)
+, d_sandboxDisabled(sandboxDisabled)
 {
 }
 
@@ -120,11 +122,6 @@ void ContentMainDelegateImpl::setRendererInfoMap(
     DCHECK(!d_isSubProcess);
     DCHECK(rendererInfoMap);
     d_rendererInfoMap = rendererInfoMap;
-}
-
-void ContentMainDelegateImpl::disablePluginDiscovery()
-{
-    d_pluginDiscoveryEnabled = false;
 }
 
 void ContentMainDelegateImpl::registerPlugin(const char* pluginPath)
@@ -150,6 +147,11 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
     if (!d_pluginDiscoveryEnabled &&
         !commandLine->HasSwitch(switches::kDisablePluginsDiscovery)) {
         commandLine->AppendSwitch(switches::kDisablePluginsDiscovery);
+    }
+
+    if (d_sandboxDisabled &&
+        !commandLine->HasSwitch(switches::kNoSandbox)) {
+        commandLine->AppendSwitch(switches::kNoSandbox);
     }
 
     InitLogging();

@@ -23,6 +23,7 @@
 #include <blpwtk2_toolkitcreateparams.h>
 
 #include <blpwtk2_constants.h>
+#include <blpwtk2_products.h>
 #include <blpwtk2_stringref.h>
 
 #include <base/logging.h>  // for DCHECK
@@ -41,6 +42,7 @@ struct ToolkitCreateParamsImpl {
     std::vector<int> d_renderersUsingInProcessPlugins;
     HttpTransactionHandler* d_httpHandler;
     std::string d_dictionaryPath;
+    std::string d_hostChannel;
 
     ToolkitCreateParamsImpl()
     : d_threadMode(ThreadMode::ORIGINAL)
@@ -125,6 +127,21 @@ void ToolkitCreateParams::setDictionaryPath(const StringRef& path)
     d_impl->d_dictionaryPath.assign(path.data(), path.length());
 }
 
+void ToolkitCreateParams::setHostChannel(const StringRef& channelId)
+{
+    DCHECK(isValidHostChannelVersion(channelId));
+    d_impl->d_hostChannel.assign(channelId.data(), channelId.length());
+}
+
+// static
+bool ToolkitCreateParams::isValidHostChannelVersion(const StringRef& channelId)
+{
+    static StringRef expected(BLPWTK2_VERSION ".");
+    return channelId.isEmpty() ||
+        (channelId.length() > expected.length() &&
+         expected.equals(StringRef(channelId.data(), expected.length())));
+}
+
 ThreadMode::Value ToolkitCreateParams::threadMode() const
 {
     return d_impl->d_threadMode;
@@ -181,6 +198,11 @@ HttpTransactionHandler* ToolkitCreateParams::httpTransactionHandler() const
 StringRef ToolkitCreateParams::dictionaryPath() const
 {
     return d_impl->d_dictionaryPath;
+}
+
+StringRef ToolkitCreateParams::hostChannel() const
+{
+    return d_impl->d_hostChannel;
 }
 
 }  // close namespace blpwtk2

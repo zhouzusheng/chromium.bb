@@ -24,28 +24,16 @@
 
 #include <blpwtk2_control_messages.h>
 #include <blpwtk2_inprocessrenderer.h>
-#include <blpwtk2_products.h>
 
 #include <ipc/ipc_sync_channel.h>
 
 namespace blpwtk2 {
-
-// static
-bool ProcessClientImpl::isValidVersion(const std::string& channelId)
-{
-    std::string expected = BLPWTK2_VERSION;
-    expected.append(".");
-    return channelId.length() > expected.length()
-        && expected == channelId.substr(0, expected.length());
-}
 
 ProcessClientImpl::ProcessClientImpl(
     const std::string& channelId,
     base::SingleThreadTaskRunner* ipcTaskRunner)
 : d_shutdownEvent(true, false)
 {
-    DCHECK(isValidVersion(channelId));
-
     d_channel.reset(new IPC::SyncChannel(channelId,
                                          IPC::Channel::MODE_CLIENT,
                                          this,

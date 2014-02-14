@@ -41,6 +41,7 @@ namespace blpwtk2 {
 
 class BrowserContextImplManager;
 class HttpTransactionHandler;
+class ProcessHostManager;
 class Profile;
 class MediaObserverImpl;
 
@@ -82,6 +83,9 @@ struct Statics {
 
     // The single BrowserContextImplManager instance.
     static BrowserContextImplManager* browserContextImplManager;
+
+    // The single ProcessHostManager instance.
+    static ProcessHostManager* processHostManager;
 
     // Whether or not devtools is available.
     static bool hasDevTools;

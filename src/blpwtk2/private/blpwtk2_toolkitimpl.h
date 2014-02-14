@@ -64,7 +64,9 @@ class ToolkitImpl : public Toolkit {
   public:
     static ToolkitImpl* instance();
 
-    ToolkitImpl(const StringRef& dictionaryPath, bool pluginDiscoveryEnabled);
+    ToolkitImpl(const StringRef& dictionaryPath,
+                const StringRef& hostChannel,
+                bool pluginDiscoveryEnabled);
     virtual ~ToolkitImpl();
 
     void startupThreads();
@@ -83,6 +85,8 @@ class ToolkitImpl : public Toolkit {
                                    WebViewDelegate* delegate,
                                    const WebViewCreateParams& params) OVERRIDE;
 
+    virtual String createHostChannel(int timeoutInMilliseconds) OVERRIDE;
+
     virtual bool preHandleMessage(const NativeMsg* msg) OVERRIDE;
     virtual void postHandleMessage(const NativeMsg* msg) OVERRIDE;
 
@@ -99,11 +103,14 @@ class ToolkitImpl : public Toolkit {
     ContentMainDelegateImpl d_mainDelegate;
     scoped_ptr<content::ContentMainRunner> d_mainRunner;
     std::string d_dictionaryPath;
+    std::string d_hostChannel;
+
+    // only used for the RENDERER_MAIN thread mode, if host channel is empty
+    scoped_ptr<BrowserThread> d_browserThread;
+    scoped_ptr<ProcessHostImpl> d_inProcessHost;
 
     // only used for the RENDERER_MAIN thread mode
-    scoped_ptr<BrowserThread> d_browserThread;
-    scoped_ptr<ProcessClientImpl> d_inProcessClient;
-    scoped_ptr<ProcessHostImpl> d_inProcessHost;
+    scoped_ptr<ProcessClientImpl> d_processClient;
 
     // only used for the ORIGINAL thread mode
     scoped_ptr<BrowserMainRunner> d_browserMainRunner;

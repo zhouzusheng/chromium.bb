@@ -88,6 +88,7 @@ namespace blpwtk2 {
 
 class Profile;
 class ProfileCreateParams;
+class String;
 class WebView;
 class WebViewDelegate;
 
@@ -128,6 +129,16 @@ class Toolkit {
         NativeView parent,
         WebViewDelegate* delegate = 0,
         const WebViewCreateParams& params = WebViewCreateParams()) = 0;
+
+    // Create a new host channel.  The returned channel-id string can be passed
+    // to 'ToolkitCreateParams::setHostChannel' in another process.  This will
+    // allow this process and the other process to share the same browser
+    // process resources.  The 'timeoutInMilliseconds' parameter specifies the
+    // amount of time that blpwtk2 will wait for a connection to be
+    // established.  If the other process does not connect within this timeout,
+    // then the channel will be destroyed and will no longer be usable.  Note
+    // that only one process may connect to a single host channel.
+    virtual String createHostChannel(int timeoutInMilliseconds) = 0;
 
     // Do extra chromium work needed at each message-loop iteration.  These
     // functions must be called on each message within the application's

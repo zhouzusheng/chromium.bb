@@ -75,6 +75,7 @@ bool ResourceDispatcherHostDelegate::HandleExternalProtocol(const GURL& url,
         doHandleExternalProtocol(url, child_id, route_id);
     }
     else {
+        DCHECK(Statics::browserMainMessageLoop);
         Statics::browserMainMessageLoop->PostTask(
             FROM_HERE,
             base::Bind(&doHandleExternalProtocol, url, child_id, route_id));

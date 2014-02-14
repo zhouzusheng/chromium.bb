@@ -60,6 +60,7 @@ class ProcessHostImpl : public ProcessHost,
     virtual void removeRoute(int routingId) OVERRIDE;
     virtual IPC::Listener* findListener(int routingId) OVERRIDE;
     virtual int getUniqueRoutingId() OVERRIDE;
+    virtual base::ProcessHandle processHandle() OVERRIDE;
 
     // IPC::Sender overrides
     virtual bool Send(IPC::Message* message) OVERRIDE;
@@ -73,6 +74,8 @@ class ProcessHostImpl : public ProcessHost,
     // Control message handlers
     void onSync();
     void onSetInProcessRendererInfo(bool usesInProcessPlugins);
+    void onCreateNewHostChannel(int timeoutInMilliseconds,
+                             std::string* channelId);
     void onProfileNew(int routingId,
                       const std::string& dataDir,
                       bool diskCacheEnabled);

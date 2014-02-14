@@ -42,6 +42,7 @@ namespace blpwtk2 {
 class BrowserContextImplManager;
 class DevToolsHttpHandlerDelegateImpl;
 class ManagedRenderProcessHost;
+class ProcessHostManager;
 class RendererInfoMap;
 
 // This class represents the browser-main-thread's "main".  See

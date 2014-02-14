@@ -89,6 +89,7 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     }
 
     ToolkitImpl* toolkit = new ToolkitImpl(params.dictionaryPath(),
+                                           params.hostChannel(),
                                            params.systemPluginsEnabled());
 
     for (size_t i = 0; i < params.numRegisteredPlugins(); ++i) {

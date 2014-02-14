@@ -48,6 +48,9 @@ bool g_spellCheckEnabled;
 bool g_autoCorrectEnabled;
 std::set<std::string> g_languages;
 std::set<std::string> g_customWords;
+std::string g_url;
+bool g_in_process_renderer = false;
+HANDLE g_hJob;
 
 #define OVERRIDE override
 #define BUTTON_WIDTH 72
@@ -267,7 +270,9 @@ public:
         if (!d_webView) {
             blpwtk2::WebViewCreateParams params;
             params.setProfile(d_profile);
-            //params.setRendererAffinity(blpwtk2::Constants::IN_PROCESS_RENDERER);
+            if (g_in_process_renderer) {
+                params.setRendererAffinity(blpwtk2::Constants::IN_PROCESS_RENDERER);
+            }
             d_webView = g_toolkit->createWebView(d_mainWnd, this, params);
         }
         else
@@ -565,59 +570,8 @@ public:
 };
 std::set<Shell*> Shell::s_shells;
 
-int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
+void runMessageLoop()
 {
-    g_instance = instance;
-
-    std::string url = "http://www.google.com";
-
-    {
-        int argc;
-        LPWSTR *argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
-        if (!argv) {
-            return -1;
-        }
-
-        for (int i = 1; i < argc; ++i) {
-            if (argv[i][0] != '-') {
-                char buf[1024];
-                sprintf_s(buf, sizeof(buf), "%S", argv[i]);
-                url = buf;
-            }
-        }
-
-        ::LocalFree(argv);
-    }
-
-    int rc = registerShellWindowClass();
-    if (rc) return rc;
-
-    blpwtk2::ToolkitCreateParams toolkitParams;
-    toolkitParams.setThreadMode(blpwtk2::ThreadMode::RENDERER_MAIN);
-    toolkitParams.setHttpTransactionHandler(createHttpTransactionHandler());
-#if AUTO_PUMP
-    toolkitParams.setPumpMode(blpwtk2::PumpMode::AUTOMATIC);
-#endif
-
-    g_toolkit = blpwtk2::ToolkitFactory::create(toolkitParams);
-
-    blpwtk2::ProfileCreateParams profileParams("");
-    blpwtk2::Profile* profile = g_toolkit->createProfile(profileParams);
-
-    g_spellCheckEnabled = true;
-    g_autoCorrectEnabled = true;
-    g_languages.insert(LANGUAGE_EN_US);
-    g_customWords.insert("foo");
-    g_customWords.insert("zzzx");
-    g_customWords.insert("Bloomberg");
-    updateSpellCheckConfig(profile);
-
-    Shell* firstShell = createShell(profile);
-    firstShell->d_webView->loadUrl(url);
-    ShowWindow(firstShell->d_mainWnd, SW_SHOW);
-    UpdateWindow(firstShell->d_mainWnd);
-    firstShell->d_webView->focus();
-
     MSG msg;
 #if AUTO_PUMP
     while (GetMessage(&msg, NULL, 0, 0) > 0) {
@@ -633,6 +587,214 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
         g_toolkit->postHandleMessage(&msg);
     }
 #endif
+}
+
+struct HostWatcherThreadData {
+    HANDLE d_processHandle;
+    int d_mainThreadId;
+};
+
+DWORD hostWatcherThreadFunc(LPVOID lParam)
+{
+    HostWatcherThreadData* data = (HostWatcherThreadData*)lParam;
+    ::WaitForSingleObject(data->d_processHandle, INFINITE);
+    ::PostThreadMessage(data->d_mainThreadId, WM_QUIT, 0, 0);
+    return 0;
+}
+
+HANDLE spawnProcess()
+{
+    blpwtk2::String channelId = g_toolkit->createHostChannel(10000);
+
+    char fileName[MAX_PATH + 1];
+    ::GetModuleFileNameA(NULL, fileName, MAX_PATH);
+
+    std::string cmdline;
+    cmdline.append("\"");
+    cmdline.append(fileName);
+    cmdline.append("\" " + g_url);
+    cmdline.append(" --host-channel=");
+    cmdline.append(channelId.c_str());
+    if (g_in_process_renderer) {
+        cmdline.append(" --in-process-renderer");
+    }
+
+    // It seems like CreateProcess wants a char* instead of
+    // a const char*.  So we need to make a copy to a modifiable
+    // buffer.
+    char cmdlineCopy[1024];
+    strcpy_s(cmdlineCopy, sizeof(cmdlineCopy), cmdline.c_str());
+
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
+
+    PROCESS_INFORMATION procInfo;
+    BOOL success = ::CreateProcessA(
+        NULL,
+        cmdlineCopy,
+        NULL,
+        NULL,
+        FALSE,
+        CREATE_BREAKAWAY_FROM_JOB,
+        NULL,
+        NULL,
+        &si,
+        &procInfo);
+
+    if (!success) {
+        DWORD lastError = ::GetLastError();
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "CreateProcess failed: %d\n", lastError);
+        OutputDebugStringA(buf);
+        return NULL;
+    }
+
+    if (!::AssignProcessToJobObject(g_hJob, procInfo.hProcess)) {
+        DWORD lastError = ::GetLastError();
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "AssignProcessToJobObject failed: %d\n", lastError);
+        OutputDebugStringA(buf);
+        ::TerminateProcess(procInfo.hProcess, -1);
+        return NULL;
+    }
+
+    ::CloseHandle(procInfo.hThread);
+    return procInfo.hProcess;
+}
+
+void runHost()
+{
+    g_hJob = ::CreateJobObject(NULL, NULL);
+    {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = { 0 };
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!::SetInformationJobObject(g_hJob,
+                                       JobObjectExtendedLimitInformation,
+                                       &info,
+                                       sizeof(info))) {
+            DWORD lastError = ::GetLastError();
+            char buf[1024];
+            sprintf_s(buf, sizeof(buf), "SetInformationJobObject failed: %d\n", lastError);
+            OutputDebugStringA(buf);
+            return;
+        }
+    }
+
+    HANDLE processHandle = spawnProcess();
+    if (!processHandle) {
+        return;
+    }
+
+    HostWatcherThreadData threadData;
+    threadData.d_mainThreadId = ::GetCurrentThreadId();
+    threadData.d_processHandle = processHandle;
+
+    HANDLE watcherThread = ::CreateThread(
+        NULL,
+        0,
+        (LPTHREAD_START_ROUTINE)hostWatcherThreadFunc,
+        &threadData,
+        0,
+        NULL);
+
+    runMessageLoop();
+    ::WaitForSingleObject(watcherThread, INFINITE);
+    ::CloseHandle(watcherThread);
+    ::CloseHandle(threadData.d_processHandle);
+    ::CloseHandle(g_hJob);
+}
+
+int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
+{
+    g_instance = instance;
+
+    g_url = "http://www.google.com";
+    std::string hostChannel = "";
+    bool isHost = false;
+
+    {
+        int argc;
+        LPWSTR *argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+        if (!argv) {
+            return -1;
+        }
+
+        for (int i = 1; i < argc; ++i) {
+            if (0 == wcscmp(L"--host", argv[i])) {
+                isHost = true;
+            }
+            else if (0 == wcsncmp(L"--host-channel=", argv[i], 15)) {
+                char buf[1024];
+                sprintf_s(buf, sizeof(buf), "%S", argv[i]+15);
+                hostChannel = buf;
+            }
+            else if (0 == wcscmp(L"--in-process-renderer", argv[i])) {
+                g_in_process_renderer = true;
+            }
+            else if (argv[i][0] != '-') {
+                char buf[1024];
+                sprintf_s(buf, sizeof(buf), "%S", argv[i]);
+                g_url = buf;
+            }
+        }
+
+        ::LocalFree(argv);
+    }
+
+    {
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "URL(%s) isHost(%d) hostChannel(%s)\n",
+                  g_url.c_str(),
+                  isHost ? 1 : 0,
+                  hostChannel.c_str());
+        OutputDebugStringA(buf);
+    }
+
+    blpwtk2::ToolkitCreateParams toolkitParams;
+    if (isHost) {
+        toolkitParams.setThreadMode(blpwtk2::ThreadMode::ORIGINAL);
+    }
+    else {
+        toolkitParams.setThreadMode(blpwtk2::ThreadMode::RENDERER_MAIN);
+        if (!hostChannel.empty()) {
+            toolkitParams.setHostChannel(hostChannel);
+        }
+    }
+    toolkitParams.setHttpTransactionHandler(createHttpTransactionHandler());
+#if AUTO_PUMP
+    toolkitParams.setPumpMode(blpwtk2::PumpMode::AUTOMATIC);
+#endif
+
+    g_toolkit = blpwtk2::ToolkitFactory::create(toolkitParams);
+
+    if (isHost) {
+        runHost();
+        g_toolkit->destroy();
+        g_toolkit = 0;
+        return 0;
+    }
+
+    int rc = registerShellWindowClass();
+    if (rc) return rc;
+
+    blpwtk2::ProfileCreateParams profileParams("");
+    blpwtk2::Profile* profile = g_toolkit->createProfile(profileParams);
+
+    g_spellCheckEnabled = true;
+    g_autoCorrectEnabled = true;
+    g_languages.insert(LANGUAGE_EN_US);
+    g_customWords.insert("foo");
+    g_customWords.insert("zzzx");
+    g_customWords.insert("Bloomberg");
+    updateSpellCheckConfig(profile);
+
+    Shell* firstShell = createShell(profile);
+    firstShell->d_webView->loadUrl(g_url);
+    ShowWindow(firstShell->d_mainWnd, SW_SHOW);
+    UpdateWindow(firstShell->d_mainWnd);
+    firstShell->d_webView->focus();
+
+    runMessageLoop();
 
     profile->destroy();
     g_toolkit->destroy();
@@ -701,9 +863,10 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             return 0;
         case IDM_NEW_WINDOW:
             newShell = createShell(shell->d_profile);
+            newShell->d_webView->loadUrl(g_url);
             ShowWindow(newShell->d_mainWnd, SW_SHOW);
             UpdateWindow(newShell->d_mainWnd);
-            SetFocus(newShell->d_urlEntryWnd);
+            newShell->d_webView->focus();
             return 0;
         case IDM_CLOSE_WINDOW:
             DestroyWindow(shell->d_mainWnd);

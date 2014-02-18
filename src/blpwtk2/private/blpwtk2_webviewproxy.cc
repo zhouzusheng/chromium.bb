@@ -553,7 +553,7 @@ void WebViewProxy::onNCDragEnd(const gfx::Point& endPoint)
 void WebViewProxy::onShowTooltip(const std::string& tooltipText, TextDirection::Value direction)
 {
     if (d_delegate) {
-        d_delegate->showTooltip(this, String(tooltipText), direction);
+        d_delegate->showTooltip(this, tooltipText, direction);
     }
 }
 

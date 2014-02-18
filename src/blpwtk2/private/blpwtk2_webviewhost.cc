@@ -529,7 +529,7 @@ void WebViewHost::ncDragEnd(WebView* source, const POINT& endPoint)
 }
 
 void WebViewHost::showTooltip(WebView* source,
-                              const String& tooltipText,
+                              const StringRef& tooltipText,
                               TextDirection::Value direction)
 {
     DCHECK(source == d_webView);

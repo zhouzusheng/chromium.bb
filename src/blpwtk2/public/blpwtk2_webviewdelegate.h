@@ -33,7 +33,6 @@ class NewViewParams;
 class StringRef;
 class WebView;
 class MediaRequest;
-class String;
 
 // This class can be implemented by the application to receive notifications
 // for various events pertaining to a particular WebView.  The delegate is
@@ -146,9 +145,9 @@ class BLPWTK2_EXPORT WebViewDelegate {
     // mouse position where the drag ended, in screen coordinates.
     virtual void ncDragEnd(WebView* source, const POINT& endPoint) {}
 
-    // Show custom tooltip. 
-    virtual void showTooltip(WebView* source, 
-                             const String& tooltipText, 
+    // Show custom tooltip.
+    virtual void showTooltip(WebView* source,
+                             const StringRef& tooltipText,
                              TextDirection::Value direction) {}
 
     // Invoked response to a WebView::find method call to report find-on-page

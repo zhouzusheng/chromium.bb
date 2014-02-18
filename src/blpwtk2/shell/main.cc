@@ -480,13 +480,14 @@ public:
         ShellExecuteA(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);        
     }
 
-    virtual void showTooltip(blpwtk2::WebView* source, 
-                             const blpwtk2::String& tooltipText, 
-                             blpwtk2::TextDirection::Value direction){
+    virtual void showTooltip(blpwtk2::WebView* source,
+                             const blpwtk2::StringRef& tooltipText,
+                             blpwtk2::TextDirection::Value direction) {
         assert(source == d_webView);
         if (!tooltipText.isEmpty()) {
+            std::string stext(tooltipText.data(), tooltipText.length());
             char buf[1024];
-            sprintf_s(buf, sizeof(buf), "DELEGATE: showTooltip '%s'\n", tooltipText.c_str());
+            sprintf_s(buf, sizeof(buf), "DELEGATE: showTooltip '%s'\n", stext.c_str());
             OutputDebugStringA(buf);
         }
     }

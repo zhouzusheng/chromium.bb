@@ -142,7 +142,9 @@ class WebViewHost : public IPC::Listener,
                              const POINT& startPoint) OVERRIDE;
     virtual void ncDragMove(WebView* source, const POINT& movePoint) OVERRIDE;
     virtual void ncDragEnd(WebView* source, const POINT& endPoint) OVERRIDE;
-    virtual void showTooltip(WebView* source, const String& tooltipText, TextDirection::Value direction) OVERRIDE;
+    virtual void showTooltip(WebView* source,
+                             const StringRef& tooltipText,
+                             TextDirection::Value direction) OVERRIDE;
     virtual void findState(WebView* source,
                            int numberOfMatches,
                            int activeMatchOrdinal,

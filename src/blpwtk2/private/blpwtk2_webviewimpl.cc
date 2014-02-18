@@ -713,8 +713,8 @@ bool WebViewImpl::ShouldSetFocusOnMouseDown()
     return d_takeFocusOnMouseDown;
 }
 
-bool WebViewImpl::ShowTooltip(content::WebContents* source_contents, 
-                              const string16& tooltip_text, 
+bool WebViewImpl::ShowTooltip(content::WebContents* source_contents,
+                              const string16& tooltip_text,
                               WebKit::WebTextDirection text_direction_hint)
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -724,14 +724,15 @@ bool WebViewImpl::ShowTooltip(content::WebContents* source_contents,
     if (d_delegate) {
         TextDirection::Value direction;
         switch (text_direction_hint) {
-            case WebKit::WebTextDirectionLeftToRight: 
-                direction = TextDirection::LEFT_TO_RIGHT; break; 
+            case WebKit::WebTextDirectionLeftToRight:
+                direction = TextDirection::LEFT_TO_RIGHT; break;
             case WebKit::WebTextDirectionRightToLeft:
-                direction = TextDirection::RIGHT_TO_LEFT; break; 
+                direction = TextDirection::RIGHT_TO_LEFT; break;
             default:
                 direction = TextDirection::LEFT_TO_RIGHT;
         }
-        d_delegate->showTooltip(this, String(tooltip_text.c_str(), tooltip_text.length()), direction);
+        String tooltipText(tooltip_text.c_str(), tooltip_text.length());
+        d_delegate->showTooltip(this, tooltipText, direction);
         return true;
     }
     return false;

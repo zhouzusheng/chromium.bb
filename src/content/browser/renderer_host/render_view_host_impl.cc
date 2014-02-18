@@ -2038,12 +2038,6 @@ void RenderViewHostImpl::OnGetWindowSnapshot(const int snapshot_id) {
       GetRoutingID(), snapshot_id, gfx::Size(), png));
 }
 
-void RenderViewHostImpl::HandleExternalProtocol(const GURL& url)
-{
-  if (delegate_)
-    delegate_->HandleExternalProtocol(url);
-}
-
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
 void RenderViewHostImpl::OnShowPopup(
     const ViewHostMsg_ShowPopup_Params& params) {

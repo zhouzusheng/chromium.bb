@@ -28,6 +28,7 @@
 #include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
 #include <blpwtk2_webcontentsviewdelegateimpl.h>
+#include <blpwtk2_webviewimpl.h>
 
 #include <base/message_loop.h>
 #include <base/threading/thread.h>
@@ -36,6 +37,7 @@
 #include <content/public/browser/render_process_host.h>
 #include <content/public/browser/resource_dispatcher_host.h>
 #include <content/public/browser/resource_dispatcher_host_delegate.h>
+#include <content/public/browser/web_contents.h>
 #include <content/public/common/url_constants.h>
 #include <chrome/browser/spellchecker/spellcheck_message_filter.h>
 
@@ -89,10 +91,22 @@ void ResourceDispatcherHostDelegate::doHandleExternalProtocol(const GURL& url,
 {
     DCHECK(Statics::isInBrowserMainThread());
 
-    content::RenderViewHost* viewHost = 
+    content::RenderViewHost* viewHost =
         content::RenderViewHost::FromID(child_id, route_id);
+    if (!viewHost) {
+        // RenderViewHost has gone away.
+        return;
+    }
 
-    viewHost->HandleExternalProtocol(url);
+    content::WebContents* webContents =
+        content::WebContents::FromRenderViewHost(viewHost);
+    DCHECK(webContents);
+
+    WebViewImpl* webViewImpl =
+        static_cast<WebViewImpl*>(webContents->GetDelegate());
+    DCHECK(webViewImpl);
+
+    webViewImpl->handleExternalProtocol(url);
 }
 
 ContentBrowserClientImpl::ContentBrowserClientImpl(RendererInfoMap* rendererInfoMap)

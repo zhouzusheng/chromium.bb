@@ -81,6 +81,7 @@ class WebViewImpl : public WebView,
     void showContextMenu(const ContextMenuParams& params);
     void saveCustomContextMenuContext(const content::CustomContextMenuContext& context);
     void handleFindRequest(const FindOnPageRequest& request);
+    void handleExternalProtocol(const GURL& url);
 
     /////////////// WebView overrides
 
@@ -149,9 +150,6 @@ class WebViewImpl : public WebView,
     // Request the delegate to close this web contents, and do whatever cleanup
     // it needs to do.
     virtual void CloseContents(content::WebContents* source) OVERRIDE;
-
-    // Handle external protocol url such as 'mailto:'
-    virtual void HandleExternalProtocol(const GURL& url) OVERRIDE;
 
     // Request the delegate to move this WebContents to the specified position
     // in screen coordinates.

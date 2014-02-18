@@ -437,9 +437,6 @@ class CONTENT_EXPORT WebContentsDelegate {
       const base::FilePath& plugin_path,
       const base::Callback<void(bool)>& callback);
 
-  // Handle external protocol such as 'mailto:'
-  virtual void HandleExternalProtocol(const GURL& url) {}
-
   // Return true if an NC hit test result was set.  Returning false means the
   // default NC hit test behavior should be performed.  The hit test should be
   // performed using the most recent mouse coordinates.

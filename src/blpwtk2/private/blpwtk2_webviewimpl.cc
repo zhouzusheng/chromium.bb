@@ -177,6 +177,14 @@ void WebViewImpl::handleFindRequest(const FindOnPageRequest& request)
     host->Find(request.reqId, textStr, options);
 }
 
+void WebViewImpl::handleExternalProtocol(const GURL& url)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    if (d_wasDestroyed || !d_delegate) return;
+
+    d_delegate->handleExternalProtocol(this, url.spec());
+}
+
 void WebViewImpl::destroy()
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -587,14 +595,6 @@ void WebViewImpl::CloseContents(content::WebContents* source)
     }
 
     d_delegate->destroyView(this);
-}
-
-void WebViewImpl::HandleExternalProtocol(const GURL& url)
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    if (d_wasDestroyed || !d_delegate) return;
-
-    d_delegate->handleExternalProtocol(this, url.spec());
 }
 
 void WebViewImpl::MoveContents(content::WebContents* source_contents, const gfx::Rect& pos)

@@ -55,6 +55,7 @@ bool g_no_disk_cache = false;
 bool g_no_disk_cookies = false;
 bool g_in_process_renderer = false;
 bool g_custom_tooltip = false;
+bool g_no_plugin_discovery = false;
 HANDLE g_hJob;
 
 #define OVERRIDE override
@@ -643,6 +644,9 @@ HANDLE spawnProcess()
     if (g_custom_tooltip) {
         cmdline.append(" --custom-tooltip");
     }
+    if (g_no_plugin_discovery) {
+        cmdline.append(" --no-plugin-discovery");
+    }
 
     // It seems like CreateProcess wants a char* instead of
     // a const char*.  So we need to make a copy to a modifiable
@@ -770,6 +774,9 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
             else if (0 == wcscmp(L"--custom-tooltip", argv[i])) {
                 g_custom_tooltip = true;
             }
+            else if (0 == wcscmp(L"--no-plugin-discovery", argv[i])) {
+                g_no_plugin_discovery = true;
+            }
             else if (argv[i][0] != '-') {
                 char buf[1024];
                 sprintf_s(buf, sizeof(buf), "%S", argv[i]);
@@ -803,6 +810,10 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
 #if AUTO_PUMP
     toolkitParams.setPumpMode(blpwtk2::PumpMode::AUTOMATIC);
 #endif
+
+    if (g_no_plugin_discovery) {
+        toolkitParams.disablePluginDiscovery();
+    }
 
     g_toolkit = blpwtk2::ToolkitFactory::create(toolkitParams);
 

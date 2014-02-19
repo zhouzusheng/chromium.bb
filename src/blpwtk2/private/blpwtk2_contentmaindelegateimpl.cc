@@ -103,10 +103,10 @@ void ContentClient::AddNPAPIPlugins(
 }
 
 ContentMainDelegateImpl::ContentMainDelegateImpl(bool isSubProcess,
-                                                 bool pluginDiscoveryEnabled,
+                                                 bool pluginDiscoveryDisabled,
                                                  bool sandboxDisabled)
 : d_rendererInfoMap(0)
-, d_pluginDiscoveryEnabled(pluginDiscoveryEnabled)
+, d_pluginDiscoveryDisabled(pluginDiscoveryDisabled)
 , d_isSubProcess(isSubProcess)
 , d_sandboxDisabled(sandboxDisabled)
 {
@@ -144,7 +144,7 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
                                         subprocess.value().c_str());
     }
 
-    if (!d_pluginDiscoveryEnabled &&
+    if (d_pluginDiscoveryDisabled &&
         !commandLine->HasSwitch(switches::kDisablePluginsDiscovery)) {
         commandLine->AppendSwitch(switches::kDisablePluginsDiscovery);
     }

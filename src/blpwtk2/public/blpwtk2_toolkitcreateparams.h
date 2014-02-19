@@ -63,9 +63,9 @@ class ToolkitCreateParams {
 
     // By default, blpwtk2 will automatically load plugins it finds on the
     // system (e.g. from paths in the Windows registry).  Use this method to
-    // enable or disable this behavior.  If it is disabled, then only plugins
-    // registered via 'registerPlugin' will be loaded.
-    BLPWTK2_EXPORT void enableSystemPlugins(bool enabled);
+    // disable this behavior.  If it is disabled, then only plugins registered
+    // via 'registerPlugin' will be loaded.
+    BLPWTK2_EXPORT void disablePluginDiscovery();
 
     // By default, renderers will run plugins in a separate process.  Use this
     // method to make any WebView created with affinity to the specified
@@ -108,7 +108,7 @@ class ToolkitCreateParams {
     int maxSocketsPerProxy() const;
     size_t numRegisteredPlugins() const;
     StringRef registeredPluginAt(size_t index) const;
-    bool systemPluginsEnabled() const;
+    bool pluginDiscoveryDisabled() const;
     size_t numRenderersUsingInProcessPlugins() const;
     int rendererUsingInProcessPluginsAt(size_t index) const;
     ResourceLoader* inProcessResourceLoader() const;

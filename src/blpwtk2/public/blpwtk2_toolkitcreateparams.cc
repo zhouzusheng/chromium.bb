@@ -38,7 +38,7 @@ struct ToolkitCreateParamsImpl {
     PumpMode::Value d_pumpMode;
     int d_maxSocketsPerProxy;
     std::vector<std::string> d_plugins;
-    bool d_systemPluginsEnabled;
+    bool d_pluginDiscoveryDisabled;
     std::vector<int> d_renderersUsingInProcessPlugins;
     ResourceLoader* d_inProcessResourceLoader;
     std::string d_dictionaryPath;
@@ -48,7 +48,7 @@ struct ToolkitCreateParamsImpl {
     : d_threadMode(ThreadMode::ORIGINAL)
     , d_pumpMode(PumpMode::MANUAL)
     , d_maxSocketsPerProxy(-1)
-    , d_systemPluginsEnabled(true)
+    , d_pluginDiscoveryDisabled(false)
     , d_inProcessResourceLoader(0)
     {
     }
@@ -101,9 +101,9 @@ void ToolkitCreateParams::registerPlugin(const StringRef& pluginPath)
     d_impl->d_plugins.back().assign(pluginPath.data(), pluginPath.length());
 }
 
-void ToolkitCreateParams::enableSystemPlugins(bool enabled)
+void ToolkitCreateParams::disablePluginDiscovery()
 {
-    d_impl->d_systemPluginsEnabled = enabled;
+    d_impl->d_pluginDiscoveryDisabled = true;
 }
 
 void ToolkitCreateParams::setRendererUsesInProcessPlugins(int renderer)
@@ -174,9 +174,9 @@ StringRef ToolkitCreateParams::registeredPluginAt(size_t index) const
     return d_impl->d_plugins[index];
 }
 
-bool ToolkitCreateParams::systemPluginsEnabled() const
+bool ToolkitCreateParams::pluginDiscoveryDisabled() const
 {
-    return d_impl->d_systemPluginsEnabled;
+    return d_impl->d_pluginDiscoveryDisabled;
 }
 
 size_t ToolkitCreateParams::numRenderersUsingInProcessPlugins() const

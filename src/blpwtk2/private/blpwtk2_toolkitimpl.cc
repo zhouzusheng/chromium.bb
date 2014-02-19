@@ -190,11 +190,11 @@ ToolkitImpl* ToolkitImpl::instance()
 
 ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
                          const StringRef& hostChannel,
-                         bool pluginDiscoveryEnabled)
+                         bool pluginDiscoveryDisabled)
 : d_threadsStarted(false)
 , d_threadsStopped(false)
 , d_defaultProfile(0)
-, d_mainDelegate(false, pluginDiscoveryEnabled, !hostChannel.isEmpty())
+, d_mainDelegate(false, pluginDiscoveryDisabled, !hostChannel.isEmpty())
 , d_dictionaryPath(dictionaryPath.data(), dictionaryPath.length())
 , d_hostChannel(hostChannel.data(), hostChannel.length())
 {

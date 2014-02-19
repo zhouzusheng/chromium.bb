@@ -69,7 +69,7 @@ class ContentClient : public content::ContentClient {
 class ContentMainDelegateImpl : public content::ContentMainDelegate {
   public:
     ContentMainDelegateImpl(bool isSubProcess,
-                            bool pluginDiscoveryEnabled,
+                            bool pluginDiscoveryDisabled,
                             bool sandboxDisabled);
     virtual ~ContentMainDelegateImpl();
 
@@ -89,7 +89,7 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
     scoped_ptr<content::ContentBrowserClient> d_contentBrowserClient;
     scoped_ptr<content::ContentRendererClient> d_contentRendererClient;
     RendererInfoMap* d_rendererInfoMap;
-    bool d_pluginDiscoveryEnabled;
+    bool d_pluginDiscoveryDisabled;
     bool d_isSubProcess;
     bool d_sandboxDisabled;
 

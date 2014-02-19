@@ -130,7 +130,7 @@ static const char LANGUAGE_RU[] = "ru-RU";
 class Shell;
 int registerShellWindowClass();
 Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView = 0);
-blpwtk2::HttpTransactionHandler* createHttpTransactionHandler();
+blpwtk2::ResourceLoader* createInProcessResourceLoader();
 void populateSubmenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem& item);
 void populateContextMenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuParams& params);
 void updateSpellCheckConfig(blpwtk2::Profile* profile);
@@ -757,11 +757,11 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     }
     else {
         toolkitParams.setThreadMode(blpwtk2::ThreadMode::RENDERER_MAIN);
+        toolkitParams.setInProcessResourceLoader(createInProcessResourceLoader());
         if (!hostChannel.empty()) {
             toolkitParams.setHostChannel(hostChannel);
         }
     }
-    toolkitParams.setHttpTransactionHandler(createHttpTransactionHandler());
 #if AUTO_PUMP
     toolkitParams.setPumpMode(blpwtk2::PumpMode::AUTOMATIC);
 #endif
@@ -1268,8 +1268,8 @@ void toggleLanguage(blpwtk2::Profile* profile, const std::string& language)
     updateSpellCheckConfig(profile);
 }
 
-class DummyHttpTransactionHandler : public blpwtk2::HttpTransactionHandler {
-    // This dummy HttpTransactionHandler handles all "http://cdrive/" requests
+class DummyResourceLoader : public blpwtk2::ResourceLoader {
+    // This dummy ResourceLoader handles all "http://cdrive/" requests
     // and responds with the file at the specified path in the C drive.  For
     // example:
     //
@@ -1280,66 +1280,63 @@ class DummyHttpTransactionHandler : public blpwtk2::HttpTransactionHandler {
     //     C:\stuff\test.html
 
 public:
-    virtual bool startTransaction(blpwtk2::HttpTransaction* transaction,
-                                  void** userData) OVERRIDE
+    static const char PREFIX[];
+
+    virtual bool canHandleURL(const blpwtk2::StringRef& url) OVERRIDE
     {
-        const char PREFIX[] = "http://cdrive/";
-        blpwtk2::String url = transaction->url();
-        if (url.length() <= sizeof(PREFIX)-1)
+        if (url.length() <= (int)strlen(PREFIX))
             return false;
-        blpwtk2::StringRef prefix(url.data(), sizeof(PREFIX)-1);
+        blpwtk2::StringRef prefix(url.data(), strlen(PREFIX));
         if (!prefix.equals(PREFIX))
             return false;
-
-        std::string filePath = "C:\\";
-        filePath.append(url.c_str() + sizeof(PREFIX)-1);
-        std::replace(filePath.begin(), filePath.end(), '/', '\\');
-
-        std::ifstream* fstream = new std::ifstream(filePath.c_str());
-        *userData = fstream;
-        if (!fstream->is_open())
-            transaction->replaceStatusLine("HTTP/1.1 404 Not Found");
-        transaction->notifyDataAvailable();
         return true;
     }
 
-    virtual int readResponseBody(blpwtk2::HttpTransaction* transaction,
-                                 void* userData,
-                                 char* buffer,
-                                 int bufferLen,
-                                 bool* isCompleted) OVERRIDE
+    virtual void start(const blpwtk2::StringRef& url,
+                       blpwtk2::ResourceContext* context,
+                       void** userData) OVERRIDE
     {
-        std::ifstream* fstream = (std::ifstream*)userData;
-        if (!fstream->is_open()) {
-            strncpy(buffer, "The specified file was not found.", bufferLen-1);
-            *isCompleted = true;
-            return strlen(buffer);
+        assert(canHandleURL(url));
+
+        std::string filePath = "C:\\";
+        filePath.append(url.data() + strlen(PREFIX),
+                        url.length() - strlen(PREFIX));
+        std::replace(filePath.begin(), filePath.end(), '/', '\\');
+
+        std::ifstream fstream(filePath.c_str());
+        char buffer[1024];
+        if (!fstream.is_open()) {
+            context->replaceStatusLine("HTTP/1.1 404 Not Found");
+            strcpy(buffer, "The specified file was not found.");
+            context->addResponseData(buffer, strlen(buffer));
         }
+        else {
+            while (!fstream.eof()) {
+                fstream.read(buffer, sizeof(buffer));
+                if (fstream.bad()) {
+                    // some other failure
+                    context->failed();
+                    break;
+                }
 
-        fstream->read(buffer, bufferLen);
-        if (fstream->bad())
-            return -1;  // some other failure
-
-        *isCompleted = fstream->eof();
-
-        // If we are not at eof, that means the supplied buffer was not big
-        // enough for our file.  Notify that we already have data so that we
-        // will be called back immediately.
-        if (!fstream->eof())
-            transaction->notifyDataAvailable();
-
-        return fstream->gcount();
+                assert(fstream.gcount() <= sizeof(buffer));
+                context->addResponseData(buffer, fstream.gcount());
+            }
+        }
+        context->finish();
     }
 
-    virtual void endTransaction(blpwtk2::HttpTransaction* transaction, void* userData) OVERRIDE
+    virtual void cancel(blpwtk2::ResourceContext* context,
+                        void* userData)
     {
-        std::ifstream* fstream = (std::ifstream*)userData;
-        delete fstream;
+        assert(false);  // everything is loaded in start(), so we should never
+                        // get canceled
     }
 };
+const char DummyResourceLoader::PREFIX[] = "http://cdrive/";
 
-blpwtk2::HttpTransactionHandler* createHttpTransactionHandler()
+blpwtk2::ResourceLoader* createInProcessResourceLoader()
 {
-    return new DummyHttpTransactionHandler();
+    return new DummyResourceLoader();
 }
 

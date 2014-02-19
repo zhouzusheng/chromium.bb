@@ -37,12 +37,12 @@
 #include <blpwtk2_webframe.h>
 #include <blpwtk2_contextmenuitem.h>
 #include <blpwtk2_contextmenuparams.h>
-#include <blpwtk2_httptransaction.h>
-#include <blpwtk2_httptransactionhandler.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_profile.h>
 #include <blpwtk2_profilecreateparams.h>
 #include <blpwtk2_proxyconfig.h>
+#include <blpwtk2_resourcecontext.h>
+#include <blpwtk2_resourceloader.h>
 #include <blpwtk2_spellcheckconfig.h>
 #include <blpwtk2_textdirection.h>
 

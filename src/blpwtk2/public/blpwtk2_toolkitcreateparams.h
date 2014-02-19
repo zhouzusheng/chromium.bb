@@ -30,7 +30,7 @@
 
 namespace blpwtk2 {
 
-class HttpTransactionHandler;
+class ResourceLoader;
 class StringRef;
 struct ToolkitCreateParamsImpl;
 
@@ -73,8 +73,10 @@ class ToolkitCreateParams {
     // will disable the sandbox for that renderer.
     BLPWTK2_EXPORT void setRendererUsesInProcessPlugins(int renderer);
 
-    // Install a custom HttpTransactionHandler.
-    BLPWTK2_EXPORT void setHttpTransactionHandler(HttpTransactionHandler*);
+    // Install a custom ResourceLoader.  Note that this is only valid when
+    // using the 'RENDERER_MAIN' thread-mode, and will only be used for
+    // in-process renderers.
+    BLPWTK2_EXPORT void setInProcessResourceLoader(ResourceLoader*);
 
     // By default, blpwtk2 will look for .bdic files in the application's
     // working directory.  Use this method to change the path where blpwtk2
@@ -109,7 +111,7 @@ class ToolkitCreateParams {
     bool systemPluginsEnabled() const;
     size_t numRenderersUsingInProcessPlugins() const;
     int rendererUsingInProcessPluginsAt(size_t index) const;
-    HttpTransactionHandler* httpTransactionHandler() const;
+    ResourceLoader* inProcessResourceLoader() const;
     StringRef dictionaryPath() const;
     StringRef hostChannel() const;
 

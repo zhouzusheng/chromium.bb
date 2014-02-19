@@ -82,7 +82,10 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     Statics::initApplicationMainThread();
     Statics::threadMode = params.threadMode();
     Statics::pumpMode = params.pumpMode();
-    Statics::httpTransactionHandler = params.httpTransactionHandler();
+    Statics::inProcessResourceLoader = params.inProcessResourceLoader();
+
+    DCHECK(!Statics::inProcessResourceLoader ||
+            Statics::isRendererMainThreadMode());
 
     if (params.isMaxSocketsPerProxySet()) {
         setMaxSocketsPerProxy(params.maxSocketsPerProxy());

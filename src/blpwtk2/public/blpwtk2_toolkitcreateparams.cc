@@ -40,7 +40,7 @@ struct ToolkitCreateParamsImpl {
     std::vector<std::string> d_plugins;
     bool d_systemPluginsEnabled;
     std::vector<int> d_renderersUsingInProcessPlugins;
-    HttpTransactionHandler* d_httpHandler;
+    ResourceLoader* d_inProcessResourceLoader;
     std::string d_dictionaryPath;
     std::string d_hostChannel;
 
@@ -49,7 +49,7 @@ struct ToolkitCreateParamsImpl {
     , d_pumpMode(PumpMode::MANUAL)
     , d_maxSocketsPerProxy(-1)
     , d_systemPluginsEnabled(true)
-    , d_httpHandler(0)
+    , d_inProcessResourceLoader(0)
     {
     }
 };
@@ -115,11 +115,11 @@ void ToolkitCreateParams::setRendererUsesInProcessPlugins(int renderer)
     d_impl->d_renderersUsingInProcessPlugins.push_back(renderer);
 }
 
-void ToolkitCreateParams::setHttpTransactionHandler(
-    HttpTransactionHandler* handler)
+void ToolkitCreateParams::setInProcessResourceLoader(
+    ResourceLoader* loader)
 {
-    DCHECK(handler);
-    d_impl->d_httpHandler = handler;
+    DCHECK(loader);
+    d_impl->d_inProcessResourceLoader = loader;
 }
 
 void ToolkitCreateParams::setDictionaryPath(const StringRef& path)
@@ -190,9 +190,9 @@ int ToolkitCreateParams::rendererUsingInProcessPluginsAt(size_t index) const
     return d_impl->d_renderersUsingInProcessPlugins[index];
 }
 
-HttpTransactionHandler* ToolkitCreateParams::httpTransactionHandler() const
+ResourceLoader* ToolkitCreateParams::inProcessResourceLoader() const
 {
-    return d_impl->d_httpHandler;
+    return d_impl->d_inProcessResourceLoader;
 }
 
 StringRef ToolkitCreateParams::dictionaryPath() const

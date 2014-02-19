@@ -22,7 +22,6 @@
 
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
 
-#include <blpwtk2_httptransactionfactoryimpl.h>
 #include <blpwtk2_networkdelegateimpl.h>
 
 #include <base/bind.h>
@@ -240,14 +239,10 @@ void URLRequestContextGetterImpl::initialize()
                                                       content::BrowserThread::GetMessageLoopProxyForThread(content::BrowserThread::CACHE))
                  : net::HttpCache::DefaultBackend::InMemory(0);
 
-    net::HttpNetworkLayer* defaultNetworkLayer
+    net::HttpNetworkLayer* networkLayer
         = new net::HttpNetworkLayer(new net::HttpNetworkSession(networkSessionParams));
 
-    // our own network layer that has hooks to blpwtk2::TransactionHandler
-    blpwtk2::HttpTransactionFactoryImpl* hookedNetworkLayer
-        = new blpwtk2::HttpTransactionFactoryImpl(defaultNetworkLayer);
-
-    net::HttpCache* mainCache = new net::HttpCache(hookedNetworkLayer,
+    net::HttpCache* mainCache = new net::HttpCache(networkLayer,
                                                    networkSessionParams.net_log,
                                                    backendFactory);
     d_storage->set_http_transaction_factory(mainCache);

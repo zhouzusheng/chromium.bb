@@ -47,7 +47,7 @@ ProfileProxy::ProfileProxy(ProcessClient* processClient,
 , d_numWebViews(0)
 {
     // If disk cache is enabled, then it must not be incognito.
-    DCHECK(!diskCacheEnabled || dataDir.empty());
+    DCHECK(!diskCacheEnabled || !dataDir.empty());
     DCHECK(d_processClient);
 
     ++Statics::numProfiles;

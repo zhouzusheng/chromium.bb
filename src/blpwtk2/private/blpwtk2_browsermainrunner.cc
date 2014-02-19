@@ -64,10 +64,12 @@ BrowserMainRunner::~BrowserMainRunner()
     d_devToolsHttpHandlerDelegate.reset();
     Statics::browserMainMessageLoop = 0;
 
-    // This needs to happen after the main message loop has finished, but
-    // before shutting down threads, because the BrowserContext holds on to
-    // state that needs to be deleted on those threads.
-    d_browserContextImplManager->deleteBrowserContexts();
+    // This deletes the BrowserContextImpl objects, and needs to happen after
+    // the main message loop has finished, but before shutting down threads,
+    // because the BrowserContext holds on to state that needs to be deleted on
+    // those threads.  For example, it holds on to the URLRequestContextGetter
+    // inside UserData (base class for content::BrowserContext).
+    d_browserContextImplManager.reset();
 
     d_impl->Shutdown();
 }

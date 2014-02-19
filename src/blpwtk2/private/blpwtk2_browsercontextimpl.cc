@@ -132,12 +132,13 @@ void BrowserContextImpl::decrementWebViewCount()
     --d_numWebViews;
 }
 
-bool BrowserContextImpl::isDestroyed() const
+bool BrowserContextImpl::diskCacheEnabled() const
 {
-    return d_isDestroyed;
+    DCHECK(!d_isDestroyed);
+    return d_requestContextGetter->diskCacheEnabled();
 }
 
-void BrowserContextImpl::destroy()
+void BrowserContextImpl::reallyDestroy()
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
     DCHECK(0 == d_numWebViews);
@@ -174,6 +175,14 @@ void BrowserContextImpl::destroy()
 
     d_requestContextGetter = 0;
     d_isDestroyed = true;
+}
+
+// Profile overrides
+
+void BrowserContextImpl::destroy()
+{
+    // This is a no-op because BrowserContextImplManager needs to keep the
+    // BrowserContextImpl objects alive until Toolkit is destroyed.
 }
 
 void BrowserContextImpl::setProxyConfig(const ProxyConfig& config)

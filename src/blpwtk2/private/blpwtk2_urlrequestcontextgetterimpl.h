@@ -65,6 +65,7 @@ public:
     void useSystemProxyConfig();
     void setProtocolHandlers(content::ProtocolHandlerMap* protocolHandlers);
     const base::FilePath& path() const { return d_path; }
+    bool diskCacheEnabled() const { return d_diskCacheEnabled; }
 
     // net::URLRequestContextGetter implementation.
     virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;

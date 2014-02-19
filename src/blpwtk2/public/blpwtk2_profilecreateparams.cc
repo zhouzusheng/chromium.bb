@@ -34,7 +34,7 @@ ProfileCreateParams::ProfileCreateParams(const StringRef& dataDir)
 
 void ProfileCreateParams::setDiskCacheEnabled(bool enabled)
 {
-    DCHECK(!d_dataDir.isEmpty());
+    DCHECK(!enabled || !d_dataDir.isEmpty());
     d_diskCacheEnabled = enabled;
 }
 

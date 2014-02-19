@@ -102,8 +102,11 @@ class Toolkit {
     // stored within the 'dataDir' path in the 'params' object.  An incognito
     // profile will be returned if the 'dataDir' is empty.
     // For non-incognito profiles, the behavior is undefined if a Profile has
-    // already been created in the 'dataDir' (in this process, or any other
-    // process).
+    // already been created in the 'dataDir'.  The only exception to this rule
+    // is when you have multiple blpwtk2 client processes connected to the same
+    // host process, and each client process creates a Profile with the same
+    // 'dataDir' (in this case, the same underlying profile in the host process
+    // will be used for all client processes).
     virtual Profile* createProfile(const ProfileCreateParams& params) = 0;
 
     // Return true if the blpwtk2_devtools pak file was detected and has been

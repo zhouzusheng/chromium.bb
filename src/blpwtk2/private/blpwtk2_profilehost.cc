@@ -41,7 +41,7 @@ ProfileHost::ProfileHost(ProcessHost* processHost,
 {
     d_processHost->addRoute(d_routingId, this);
     d_browserContext =
-        Statics::browserContextImplManager->createBrowserContextImpl(
+        Statics::browserContextImplManager->obtainBrowserContextImpl(
             dataDir,
             diskCacheEnabled);
 }

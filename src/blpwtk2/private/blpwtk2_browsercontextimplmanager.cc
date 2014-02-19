@@ -37,31 +37,62 @@ BrowserContextImplManager::BrowserContextImplManager()
 BrowserContextImplManager::~BrowserContextImplManager()
 {
     DCHECK(this == Statics::browserContextImplManager);
-    DCHECK(d_browserContexts.empty());
     Statics::browserContextImplManager = 0;
+
+    typedef std::map<std::string, BrowserContextImpl*>::iterator Iterator;
+    for (Iterator it = d_dataBrowserContexts.begin();
+        it != d_dataBrowserContexts.end(); ++it) {
+            delete it->second;
+    }
+    d_dataBrowserContexts.clear();
+
+    for (size_t i = 0; i < d_incognitoBrowserContexts.size(); ++i) {
+        delete d_incognitoBrowserContexts[i];
+    }
+    d_incognitoBrowserContexts.clear();
 }
 
-BrowserContextImpl* BrowserContextImplManager::createBrowserContextImpl(
+BrowserContextImpl* BrowserContextImplManager::obtainBrowserContextImpl(
     const std::string& dataDir,
     bool diskCacheEnabled)
 {
     DCHECK(Statics::isInBrowserMainThread());
-    BrowserContextImpl* result = new BrowserContextImpl(dataDir,
-                                                        diskCacheEnabled);
-    d_browserContexts.push_back(result);
+
+    BrowserContextImpl* result;
+
+    if (!dataDir.empty()) {
+        typedef std::map<std::string, BrowserContextImpl*>::iterator Iterator;
+        Iterator it = d_dataBrowserContexts.find(dataDir);
+        if (it == d_dataBrowserContexts.end()) {
+            result = new BrowserContextImpl(dataDir, diskCacheEnabled);
+            d_dataBrowserContexts[dataDir] = result;
+        }
+        else {
+            result = it->second;
+            DCHECK(diskCacheEnabled == result->diskCacheEnabled());
+        }
+    }
+    else {
+        result = new BrowserContextImpl(dataDir, diskCacheEnabled);
+        d_incognitoBrowserContexts.push_back(result);
+    }
+
     return result;
 }
 
-void BrowserContextImplManager::deleteBrowserContexts()
+void BrowserContextImplManager::destroyBrowserContexts()
 {
-    DCHECK(0 == Statics::browserMainMessageLoop);
-    typedef std::list<BrowserContextImpl*>::iterator Iterator;
-    for (Iterator it = d_browserContexts.begin();
-            it != d_browserContexts.end(); ++it) {
-        DCHECK((*it)->isDestroyed());
-        delete (*it);
+    DCHECK(Statics::isInBrowserMainThread());
+
+    typedef std::map<std::string, BrowserContextImpl*>::iterator Iterator;
+    for (Iterator it = d_dataBrowserContexts.begin();
+                  it != d_dataBrowserContexts.end(); ++it) {
+        it->second->reallyDestroy();
     }
-    d_browserContexts.clear();
+
+    for (size_t i = 0; i < d_incognitoBrowserContexts.size(); ++i) {
+        d_incognitoBrowserContexts[i]->reallyDestroy();
+    }
 }
 
 }  // close namespace blpwtk2

@@ -306,12 +306,23 @@ void ToolkitImpl::shutdownThreads()
                 FROM_HERE,
                 base::Bind(&ToolkitImpl::destroyInProcessHost,
                            base::Unretained(this)));
+            d_browserThread->messageLoop()->PostTask(
+                FROM_HERE,
+                base::Bind(
+                    &BrowserContextImplManager::destroyBrowserContexts,
+                    base::Unretained(Statics::browserContextImplManager)));
 
             // Make sure any tasks posted to the browser-main thread have been
             // handled.
             d_browserThread->sync();
         }
     }
+    else {
+        DCHECK(Statics::isOriginalThreadMode());
+        Statics::browserContextImplManager->destroyBrowserContexts();
+    }
+
+    DCHECK(0 == Statics::numProfiles);
 
     MainMessagePump::current()->cleanup();
     InProcessRenderer::cleanup();
@@ -368,7 +379,7 @@ Profile* ToolkitImpl::createProfile(const ProfileCreateParams& params)
     else {
         DCHECK(Statics::isOriginalThreadMode());
         DCHECK(Statics::browserContextImplManager);
-        return Statics::browserContextImplManager->createBrowserContextImpl(
+        return Statics::browserContextImplManager->obtainBrowserContextImpl(
             dataDir,
             params.diskCacheEnabled());
     }
@@ -383,7 +394,6 @@ bool ToolkitImpl::hasDevTools()
 void ToolkitImpl::destroy()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(0 == Statics::numProfiles);
     if (d_threadsStarted) {
         shutdownThreads();
     }

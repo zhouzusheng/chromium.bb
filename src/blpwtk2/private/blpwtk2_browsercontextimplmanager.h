@@ -27,8 +27,9 @@
 
 #include <base/basictypes.h>
 
-#include <list>
+#include <map>
 #include <string>
+#include <vector>
 
 namespace blpwtk2 {
 
@@ -49,17 +50,22 @@ class BrowserContextImplManager {
 
     // Create a BrowserContextImpl.  The returned object will be kept alive
     // until 'deleteBrowserContexts' is called.  This can only be called on the
-    // browser-main thread.
-    BrowserContextImpl* createBrowserContextImpl(const std::string& dataDir,
+    // browser-main thread.  Note that if 'dataDir' is non-empty, and
+    // 'obtainBrowserContextImpl' has been called previously with the same
+    // 'dataDir', then the same 'BrowserContextImpl' will be returned.
+    BrowserContextImpl* obtainBrowserContextImpl(const std::string& dataDir,
                                                  bool diskCacheEnabled);
 
-    // Delete all the browser contexts.  This invalidates all the pointers that
-    // had previously been returned from 'createBrowserContextImpl'.  This can
-    // only be called on the browser-main thread.
-    void deleteBrowserContexts();
+    // Destroy the browser contexts.  BrowserContextImpl::destroy() (the
+    // implementation of Profile::destroy) is a no-op because we need to keep
+    // the browser context around until Toolkit is shutdown.  This should be
+    // called in the browser-main thread, and before the browser-main thread
+    // has finished pumping events.
+    void destroyBrowserContexts();
 
   private:
-    std::list<BrowserContextImpl*> d_browserContexts;
+    std::map<std::string, BrowserContextImpl*> d_dataBrowserContexts;
+    std::vector<BrowserContextImpl*> d_incognitoBrowserContexts;
 
     DISALLOW_COPY_AND_ASSIGN(BrowserContextImplManager);
 };

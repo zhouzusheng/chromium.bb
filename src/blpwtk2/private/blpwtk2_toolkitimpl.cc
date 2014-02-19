@@ -374,14 +374,16 @@ Profile* ToolkitImpl::createProfile(const ProfileCreateParams& params)
         return new ProfileProxy(d_processClient.get(),
                                 Statics::getUniqueRoutingId(),
                                 dataDir,
-                                params.diskCacheEnabled());
+                                params.diskCacheEnabled(),
+                                params.cookiePersistenceEnabled());
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
         DCHECK(Statics::browserContextImplManager);
         return Statics::browserContextImplManager->obtainBrowserContextImpl(
             dataDir,
-            params.diskCacheEnabled());
+            params.diskCacheEnabled(),
+            params.cookiePersistenceEnabled());
     }
 }
 

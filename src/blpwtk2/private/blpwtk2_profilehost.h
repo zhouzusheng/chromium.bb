@@ -47,7 +47,8 @@ class ProfileHost : public IPC::Listener {
     ProfileHost(ProcessHost* processHost,
                 int routingId,
                 const std::string& dataDir,
-                bool diskCacheEnabled);
+                bool diskCacheEnabled,
+                bool cookiePersistenceEnabled);
     virtual ~ProfileHost();
 
     BrowserContextImpl* browserContext() const;

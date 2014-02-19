@@ -49,13 +49,16 @@
 namespace blpwtk2 {
 
 BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
-                                       bool diskCacheEnabled)
+                                       bool diskCacheEnabled,
+                                       bool cookiePersistenceEnabled)
 : d_numWebViews(0)
 , d_isIncognito(dataDir.empty())
 , d_isDestroyed(false)
 {
-    // If disk cache is enabled, then it must not be incognito.
+    // If disk-cache/cookie-persistence is enabled, then it must not be
+    // incognito.
     DCHECK(!diskCacheEnabled || !d_isIncognito);
+    DCHECK(!cookiePersistenceEnabled || !d_isIncognito);
 
     if (Statics::isOriginalThreadMode()) {
         ++Statics::numProfiles;
@@ -83,7 +86,10 @@ BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
         file_util::CreateNewTempDirectory(L"blpwtk2_", &path);
     }
 
-    d_requestContextGetter = new URLRequestContextGetterImpl(path, diskCacheEnabled);
+    d_requestContextGetter =
+        new URLRequestContextGetterImpl(path,
+                                        diskCacheEnabled,
+                                        cookiePersistenceEnabled);
 
     {
         // Initialize prefs for this context.
@@ -136,6 +142,12 @@ bool BrowserContextImpl::diskCacheEnabled() const
 {
     DCHECK(!d_isDestroyed);
     return d_requestContextGetter->diskCacheEnabled();
+}
+
+bool BrowserContextImpl::cookiePersistenceEnabled() const
+{
+    DCHECK(!d_isDestroyed);
+    return d_requestContextGetter->cookiePersistenceEnabled();
 }
 
 void BrowserContextImpl::reallyDestroy()

@@ -50,12 +50,20 @@ class BLPWTK2_EXPORT ProfileCreateParams {
     // directory.
     void setDiskCacheEnabled(bool enabled);
 
+    // By default, profiles with a data directory will persist cookies to disk
+    // inside the data directory.  However, setting this flag to false will
+    // disable cookie persistence.  The behavior is undefined if there is no
+    // data directory.
+    void setCookiePersistenceEnabled(bool enabled);
+
     StringRef dataDir() const;
     bool diskCacheEnabled() const;
+    bool cookiePersistenceEnabled() const;
 
   private:
     String d_dataDir;
     bool d_diskCacheEnabled;
+    bool d_cookiePersistenceEnabled;
 };
 
 }  // close namespace blpwtk2

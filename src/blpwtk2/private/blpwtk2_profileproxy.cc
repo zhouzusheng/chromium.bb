@@ -41,20 +41,24 @@ namespace blpwtk2 {
 ProfileProxy::ProfileProxy(ProcessClient* processClient,
                            int routingId,
                            const std::string& dataDir,
-                           bool diskCacheEnabled)
+                           bool diskCacheEnabled,
+                           bool cookiePersistenceEnabled)
 : d_processClient(processClient)
 , d_routingId(routingId)
 , d_numWebViews(0)
 {
-    // If disk cache is enabled, then it must not be incognito.
+    // If disk-cache/cookie-persistence is enabled, then it must not be
+    // incognito.
     DCHECK(!diskCacheEnabled || !dataDir.empty());
+    DCHECK(!cookiePersistenceEnabled || !dataDir.empty());
     DCHECK(d_processClient);
 
     ++Statics::numProfiles;
 
     Send(new BlpProfileHostMsg_New(routingId,
                                    dataDir,
-                                   diskCacheEnabled));
+                                   diskCacheEnabled,
+                                   cookiePersistenceEnabled));
 }
 
 ProfileProxy::~ProfileProxy()

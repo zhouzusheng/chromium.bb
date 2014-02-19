@@ -78,7 +78,8 @@ class ProcessHostImpl : public ProcessHost,
                              std::string* channelId);
     void onProfileNew(int routingId,
                       const std::string& dataDir,
-                      bool diskCacheEnabled);
+                      bool diskCacheEnabled,
+                      bool cookiePersistenceEnabled);
     void onProfileDestroy(int routingId);
     void onWebViewNew(const BlpWebViewHostMsg_NewParams& params);
     void onWebViewDestroy(int routingId);

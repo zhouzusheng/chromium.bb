@@ -200,9 +200,14 @@ void ProcessHostImpl::onCreateNewHostChannel(int timeoutInMilliseconds,
 
 void ProcessHostImpl::onProfileNew(int routingId,
                                    const std::string& dataDir,
-                                   bool diskCacheEnabled)
+                                   bool diskCacheEnabled,
+                                   bool cookiePersistenceEnabled)
 {
-    new ProfileHost(this, routingId, dataDir, diskCacheEnabled);
+    new ProfileHost(this,
+                    routingId,
+                    dataDir,
+                    diskCacheEnabled,
+                    cookiePersistenceEnabled);
 }
 
 void ProcessHostImpl::onProfileDestroy(int routingId)

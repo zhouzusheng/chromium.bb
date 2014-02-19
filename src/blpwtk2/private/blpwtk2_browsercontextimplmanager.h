@@ -53,8 +53,10 @@ class BrowserContextImplManager {
     // browser-main thread.  Note that if 'dataDir' is non-empty, and
     // 'obtainBrowserContextImpl' has been called previously with the same
     // 'dataDir', then the same 'BrowserContextImpl' will be returned.
-    BrowserContextImpl* obtainBrowserContextImpl(const std::string& dataDir,
-                                                 bool diskCacheEnabled);
+    BrowserContextImpl* obtainBrowserContextImpl(
+        const std::string& dataDir,
+        bool diskCacheEnabled,
+        bool cookiePersistenceEnabled);
 
     // Destroy the browser contexts.  BrowserContextImpl::destroy() (the
     // implementation of Profile::destroy) is a no-op because we need to keep

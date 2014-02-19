@@ -54,7 +54,8 @@ BrowserContextImplManager::~BrowserContextImplManager()
 
 BrowserContextImpl* BrowserContextImplManager::obtainBrowserContextImpl(
     const std::string& dataDir,
-    bool diskCacheEnabled)
+    bool diskCacheEnabled,
+    bool cookiePersistenceEnabled)
 {
     DCHECK(Statics::isInBrowserMainThread());
 
@@ -64,16 +65,22 @@ BrowserContextImpl* BrowserContextImplManager::obtainBrowserContextImpl(
         typedef std::map<std::string, BrowserContextImpl*>::iterator Iterator;
         Iterator it = d_dataBrowserContexts.find(dataDir);
         if (it == d_dataBrowserContexts.end()) {
-            result = new BrowserContextImpl(dataDir, diskCacheEnabled);
+            result = new BrowserContextImpl(dataDir,
+                                            diskCacheEnabled,
+                                            cookiePersistenceEnabled);
             d_dataBrowserContexts[dataDir] = result;
         }
         else {
             result = it->second;
             DCHECK(diskCacheEnabled == result->diskCacheEnabled());
+            DCHECK(cookiePersistenceEnabled ==
+                    result->cookiePersistenceEnabled());
         }
     }
     else {
-        result = new BrowserContextImpl(dataDir, diskCacheEnabled);
+        result = new BrowserContextImpl(dataDir,
+                                        diskCacheEnabled,
+                                        cookiePersistenceEnabled);
         d_incognitoBrowserContexts.push_back(result);
     }
 

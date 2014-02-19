@@ -37,10 +37,11 @@
 // ============== Messages from client to host ======================
 
 // This creates a new profile.
-IPC_MESSAGE_CONTROL3(BlpProfileHostMsg_New,
+IPC_MESSAGE_CONTROL4(BlpProfileHostMsg_New,
                      int /* routingId */,
                      std::string /*dataDir*/,
-                     bool /* diskCacheEnabled */)
+                     bool /* diskCacheEnabled */,
+                     bool /* cookiePersistenceEnabled */)
 
 // Set the proxy configuration.
 IPC_MESSAGE_ROUTED1(BlpProfileHostMsg_SetProxyConfig,

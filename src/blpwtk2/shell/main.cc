@@ -54,6 +54,7 @@ std::string g_dataDir;
 bool g_no_disk_cache = false;
 bool g_no_disk_cookies = false;
 bool g_in_process_renderer = false;
+bool g_custom_tooltip = false;
 HANDLE g_hJob;
 
 #define OVERRIDE override
@@ -284,7 +285,7 @@ public:
 
         d_webView->enableFocusBefore(true);
         d_webView->enableFocusAfter(true);
-        d_webView->enableCustomTooltip(true);
+        d_webView->enableCustomTooltip(g_custom_tooltip);
 
         SetWindowLongPtr(d_mainWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
         SetWindowLongPtr(d_urlEntryWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
@@ -639,6 +640,9 @@ HANDLE spawnProcess()
     if (g_no_disk_cookies) {
         cmdline.append(" --no-disk-cookies");
     }
+    if (g_custom_tooltip) {
+        cmdline.append(" --custom-tooltip");
+    }
 
     // It seems like CreateProcess wants a char* instead of
     // a const char*.  So we need to make a copy to a modifiable
@@ -762,6 +766,9 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
             }
             else if (0 == wcscmp(L"--no-disk-cookies", argv[i])) {
                 g_no_disk_cookies = true;
+            }
+            else if (0 == wcscmp(L"--custom-tooltip", argv[i])) {
+                g_custom_tooltip = true;
             }
             else if (argv[i][0] != '-') {
                 char buf[1024];

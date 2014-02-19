@@ -44,6 +44,7 @@
 HINSTANCE g_instance = 0;
 WNDPROC g_defaultEditWndProc = 0;
 blpwtk2::Toolkit* g_toolkit = 0;
+blpwtk2::Profile* g_profile = 0;
 bool g_spellCheckEnabled;
 bool g_autoCorrectEnabled;
 std::set<std::string> g_languages;
@@ -273,7 +274,7 @@ public:
         if (!d_webView) {
             blpwtk2::WebViewCreateParams params;
             params.setProfile(d_profile);
-            if (g_in_process_renderer) {
+            if (g_in_process_renderer && d_profile == g_profile) {
                 params.setRendererAffinity(blpwtk2::Constants::IN_PROCESS_RENDERER);
             }
             d_webView = g_toolkit->createWebView(d_mainWnd, this, params);
@@ -305,6 +306,12 @@ public:
         }
 
         d_webView->destroy();
+
+        if (d_profile != g_profile) {
+            // If the shell has its own profile, then the profile needs to be
+            // destroyed.  g_profile gets destroyed before main() exits.
+            d_profile->destroy();
+        }
 
         s_shells.erase(this);
         if (0 == s_shells.size()) {
@@ -807,7 +814,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
         profileParams.setDiskCacheEnabled(false);
     if (g_no_disk_cookies)
         profileParams.setCookiePersistenceEnabled(false);
-    blpwtk2::Profile* profile = g_toolkit->createProfile(profileParams);
+    g_profile = g_toolkit->createProfile(profileParams);
 
     g_spellCheckEnabled = true;
     g_autoCorrectEnabled = true;
@@ -815,9 +822,9 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     g_customWords.insert("foo");
     g_customWords.insert("zzzx");
     g_customWords.insert("Bloomberg");
-    updateSpellCheckConfig(profile);
+    updateSpellCheckConfig(g_profile);
 
-    Shell* firstShell = createShell(profile);
+    Shell* firstShell = createShell(g_profile);
     firstShell->d_webView->loadUrl(g_url);
     ShowWindow(firstShell->d_mainWnd, SW_SHOW);
     UpdateWindow(firstShell->d_mainWnd);
@@ -825,7 +832,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
 
     runMessageLoop();
 
-    profile->destroy();
+    g_profile->destroy();
     g_toolkit->destroy();
     g_toolkit = 0;
     return 0;
@@ -969,7 +976,14 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
                 shell->d_inspectorShell->d_webView->focus();
                 return 0;
             }
-            shell->d_inspectorShell = createShell(shell->d_profile);
+            {
+                blpwtk2::Profile* profile = g_profile;
+                if (!g_dataDir.empty()) {
+                    blpwtk2::ProfileCreateParams profileParams("");
+                    profile = g_toolkit->createProfile(profileParams);
+                }
+                shell->d_inspectorShell = createShell(profile);
+            }
             shell->d_inspectorShell->d_inspectorFor = shell;
             ShowWindow(shell->d_inspectorShell->d_mainWnd, SW_SHOW);
             UpdateWindow(shell->d_inspectorShell->d_mainWnd);

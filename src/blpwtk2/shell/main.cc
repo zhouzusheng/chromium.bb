@@ -49,6 +49,9 @@ bool g_autoCorrectEnabled;
 std::set<std::string> g_languages;
 std::set<std::string> g_customWords;
 std::string g_url;
+std::string g_dataDir;
+bool g_no_disk_cache = false;
+bool g_no_disk_cookies = false;
 bool g_in_process_renderer = false;
 HANDLE g_hJob;
 
@@ -619,6 +622,16 @@ HANDLE spawnProcess()
     if (g_in_process_renderer) {
         cmdline.append(" --in-process-renderer");
     }
+    if (!g_dataDir.empty()) {
+        cmdline.append(" --data-dir=");
+        cmdline.append(g_dataDir);
+    }
+    if (g_no_disk_cache) {
+        cmdline.append(" --no-disk-cache");
+    }
+    if (g_no_disk_cookies) {
+        cmdline.append(" --no-disk-cookies");
+    }
 
     // It seems like CreateProcess wants a char* instead of
     // a const char*.  So we need to make a copy to a modifiable
@@ -732,6 +745,17 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
             else if (0 == wcscmp(L"--in-process-renderer", argv[i])) {
                 g_in_process_renderer = true;
             }
+            else if (0 == wcsncmp(L"--data-dir=", argv[i], 11)) {
+                char buf[1024];
+                sprintf_s(buf, sizeof(buf), "%S", argv[i]+11);
+                g_dataDir = buf;
+            }
+            else if (0 == wcscmp(L"--no-disk-cache", argv[i])) {
+                g_no_disk_cache = true;
+            }
+            else if (0 == wcscmp(L"--no-disk-cookies", argv[i])) {
+                g_no_disk_cookies = true;
+            }
             else if (argv[i][0] != '-') {
                 char buf[1024];
                 sprintf_s(buf, sizeof(buf), "%S", argv[i]);
@@ -778,7 +802,11 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     int rc = registerShellWindowClass();
     if (rc) return rc;
 
-    blpwtk2::ProfileCreateParams profileParams("");
+    blpwtk2::ProfileCreateParams profileParams(g_dataDir);
+    if (g_no_disk_cache)
+        profileParams.setDiskCacheEnabled(false);
+    if (g_no_disk_cookies)
+        profileParams.setCookiePersistenceEnabled(false);
     blpwtk2::Profile* profile = g_toolkit->createProfile(profileParams);
 
     g_spellCheckEnabled = true;

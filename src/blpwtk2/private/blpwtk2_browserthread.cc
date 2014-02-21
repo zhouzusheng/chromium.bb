@@ -100,7 +100,7 @@ void BrowserThread::ThreadMain()
     DCHECK(s_initWaitEvent);
     s_initWaitEvent->Signal();
 
-    int rc = d_mainRunner->Run();
+    int rc = d_mainRunner->run();
     DCHECK(0 == rc);
 
     delete d_mainRunner;

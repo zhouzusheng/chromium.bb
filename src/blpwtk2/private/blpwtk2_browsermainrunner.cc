@@ -58,8 +58,7 @@ BrowserMainRunner::BrowserMainRunner(
 
 BrowserMainRunner::~BrowserMainRunner()
 {
-    delete Statics::processHostManager;
-    Statics::processHostManager = 0;
+    DCHECK(!Statics::processHostManager);
 
     d_devToolsHttpHandlerDelegate.reset();
     Statics::browserMainMessageLoop = 0;
@@ -74,7 +73,13 @@ BrowserMainRunner::~BrowserMainRunner()
     d_impl->Shutdown();
 }
 
-int BrowserMainRunner::Run()
+void BrowserMainRunner::destroyProcessHostManager()
+{
+    delete Statics::processHostManager;
+    Statics::processHostManager = 0;
+}
+
+int BrowserMainRunner::run()
 {
     return d_impl->Run();
 }

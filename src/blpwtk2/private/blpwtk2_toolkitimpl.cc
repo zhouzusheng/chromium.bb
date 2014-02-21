@@ -308,6 +308,10 @@ void ToolkitImpl::shutdownThreads()
                            base::Unretained(this)));
             d_browserThread->messageLoop()->PostTask(
                 FROM_HERE,
+                base::Bind(&BrowserMainRunner::destroyProcessHostManager,
+                           base::Unretained(d_browserThread->mainRunner())));
+            d_browserThread->messageLoop()->PostTask(
+                FROM_HERE,
                 base::Bind(
                     &BrowserContextImplManager::destroyBrowserContexts,
                     base::Unretained(Statics::browserContextImplManager)));
@@ -319,6 +323,7 @@ void ToolkitImpl::shutdownThreads()
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
+        d_browserMainRunner->destroyProcessHostManager();
         Statics::browserContextImplManager->destroyBrowserContexts();
     }
 

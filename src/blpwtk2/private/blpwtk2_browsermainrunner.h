@@ -57,7 +57,8 @@ class BrowserMainRunner {
     explicit BrowserMainRunner(sandbox::SandboxInterfaceInfo* sandboxInfo);
     ~BrowserMainRunner();
 
-    int Run();
+    void destroyProcessHostManager();
+    int run();
 
   private:
     content::MainFunctionParams d_mainParams;
